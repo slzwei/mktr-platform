@@ -377,6 +377,7 @@ export default function CustomerLogin() {
                             id="agent-email"
                             name="email"
                             type="email"
+                            autoComplete="username"
                             value={formData.email}
                             onChange={handleChange}
                             placeholder="Enter your email"
@@ -392,6 +393,7 @@ export default function CustomerLogin() {
                             id="agent-password"
                             name="password"
                             type="password"
+                            autoComplete="current-password"
                             value={formData.password}
                             onChange={handleChange}
                             placeholder="Enter your password"
@@ -469,6 +471,7 @@ export default function CustomerLogin() {
                             id="fleet-email"
                             name="email"
                             type="email"
+                            autoComplete="username"
                             value={formData.email}
                             onChange={handleChange}
                             placeholder="Enter your email"
@@ -484,6 +487,7 @@ export default function CustomerLogin() {
                             id="fleet-password"
                             name="password"
                             type="password"
+                            autoComplete="current-password"
                             value={formData.password}
                             onChange={handleChange}
                             placeholder="Enter your password"

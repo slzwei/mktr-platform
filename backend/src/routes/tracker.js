@@ -88,12 +88,12 @@ router.get('/track/:slug', limiter, asyncHandler(async (req, res) => {
   }
 
   // Redirect directly to the frontend SPA preserving shareable params
-  const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
   const search = new URLSearchParams({
     ...(qrTag.campaignId ? { campaign_id: String(qrTag.campaignId) } : {}),
     slug: qrTag.slug,
   }).toString();
-  return res.redirect(302, `${frontendBase}/LeadCapture?${search}`);
+  // Go through binder to ensure attribution ↔ session binding before landing on SPA
+  return res.redirect(302, `/lead-capture?${search}`);
 }));
 
 // Resolve current session attribution -> campaign/qrTag for SPA to load design
@@ -103,10 +103,37 @@ router.get('/session', asyncHandler(async (req, res) => {
     return res.json({ success: true, data: null });
   }
 
-  const attrib = await Attribution.findOne({
+  let attrib = await Attribution.findOne({
     where: { sessionId: sid },
     order: [['lastTouchAt', 'DESC']]
   });
+
+  // If no bound attribution yet, bind from short-lived token (atk)
+  if (!attrib && req.cookies?.atk) {
+    try {
+      const atk = req.cookies.atk;
+      const [payload, sig] = atk.split('.');
+      const expected = crypto.createHmac('sha256', process.env.ATTRIB_SECRET || 'attrib').update(payload).digest('base64url');
+      if (sig === expected) {
+        const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+        const nowSec = Math.floor(Date.now() / 1000);
+        if (!data.exp || nowSec <= data.exp) {
+          const tokenAttrib = await Attribution.findByPk(data.id);
+          if (tokenAttrib && tokenAttrib.expiresAt > new Date()) {
+            const reuse = tokenAttrib.sessionId && tokenAttrib.sessionId === sid;
+            await tokenAttrib.update({
+              sessionId: sid,
+              lastTouchAt: new Date(),
+              usedOnce: reuse ? tokenAttrib.usedOnce : true
+            });
+            attrib = tokenAttrib;
+          }
+        }
+      }
+    } catch (e) {
+      // ignore and proceed as unaffiliated session
+    }
+  }
 
   if (!attrib) {
     return res.json({ success: true, data: null });

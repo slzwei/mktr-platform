@@ -193,6 +193,14 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
 
   try {
     // Exchange authorization code for tokens
+    // Determine the frontend base URL reliably (avoid relying solely on Origin header)
+    const frontendBaseUrl = process.env.PUBLIC_BASE_URL 
+      || process.env.FRONTEND_BASE_URL 
+      || req.get('origin') 
+      || 'http://localhost:5173';
+
+    console.log('🔍 OAuth token exchange redirect_uri:', `${frontendBaseUrl}/auth/google/callback`);
+
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {
@@ -203,7 +211,7 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
         client_secret: process.env.GOOGLE_CLIENT_SECRET || '', // Optional for public clients
         code: code,
         grant_type: 'authorization_code',
-        redirect_uri: `${req.get('origin') || 'http://localhost:5173'}/auth/google/callback`,
+        redirect_uri: `${frontendBaseUrl}/auth/google/callback`,
       }),
     });
 

@@ -1028,7 +1028,7 @@ export default function Homepage() {
               <div className="w-16 h-16 mx-auto mb-6 border-2 border-white flex items-center justify-center">
                 <Users className="w-8 h-8 text-white" />
               </div>
-              <h3 className="section-title mb-4 text-white">Lead Capture</h3>
+              <h3 className="section-title mb-4 !text-white">Lead Capture</h3>
               <p className="body-text text-gray-300">
                 Mobile-optimized forms with Singapore phone verification and postal code validation.
               </p>
@@ -1038,7 +1038,7 @@ export default function Homepage() {
               <div className="w-16 h-16 mx-auto mb-6 border-2 border-white flex items-center justify-center">
                 <TrendingUp className="w-8 h-8 text-white" />
               </div>
-              <h3 className="section-title mb-4 text-white">Campaign Mgmt</h3>
+              <h3 className="section-title mb-4 !text-white">Campaign Mgmt</h3>
               <p className="body-text text-gray-300">
                 Create targeted campaigns with custom designs and real-time tracking.
               </p>
@@ -1048,7 +1048,7 @@ export default function Homepage() {
               <div className="w-16 h-16 mx-auto mb-6 border-2 border-white flex items-center justify-center">
                 <QrCode className="w-8 h-8 text-white" />
               </div>
-              <h3 className="section-title mb-4 text-white">QR Integration</h3>
+              <h3 className="section-title mb-4 !text-white">QR Integration</h3>
               <p className="body-text text-gray-300">
                 Generate QR codes for physical marketing with tracking and commission management.
               </p>

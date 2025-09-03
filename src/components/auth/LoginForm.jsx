@@ -621,6 +621,7 @@ export default function LoginForm() {
                       <Input
                         id="login-email"
                         type="email"
+                        autoComplete="username"
                         placeholder="Enter your email"
                         value={loginData.email}
                         onChange={(e) => handleInputChange('login', 'email', e.target.value)}
@@ -636,6 +637,7 @@ export default function LoginForm() {
                       <Input
                         id="login-password"
                         type={showPassword ? 'text' : 'password'}
+                        autoComplete="current-password"
                         placeholder="Enter your password"
                         value={loginData.password}
                         onChange={(e) => handleInputChange('login', 'password', e.target.value)}
@@ -703,6 +705,7 @@ export default function LoginForm() {
                       <Input
                         id="register-email"
                         type="email"
+                        autoComplete="email"
                         placeholder="Enter your email"
                         value={registerData.email}
                         onChange={(e) => handleInputChange('register', 'email', e.target.value)}
@@ -761,6 +764,7 @@ export default function LoginForm() {
                       <Input
                         id="register-password"
                         type={showPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
                         placeholder="Create a password"
                         value={registerData.password}
                         onChange={(e) => handleInputChange('register', 'password', e.target.value)}
@@ -783,6 +787,7 @@ export default function LoginForm() {
                       <Input
                         id="register-confirm-password"
                         type={showConfirmPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
                         placeholder="Confirm your password"
                         value={registerData.confirm_password}
                         onChange={(e) => handleInputChange('register', 'confirm_password', e.target.value)}
