@@ -14,7 +14,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { User } from "@/api/entities";
 import { Campaign } from "@/api/entities";
-import { Users, Save } from "lucide-react";
+import Users from "lucide-react/icons/users";
+import Save from "lucide-react/icons/save";
 
 export default function ManageAgentsDialog({ open, onOpenChange, campaign }) {
   const [agents, setAgents] = useState([]);

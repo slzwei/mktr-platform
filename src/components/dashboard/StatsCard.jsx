@@ -1,5 +1,6 @@
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, TrendingUp } from "lucide-react";
+import ArrowRight from "lucide-react/icons/arrow-right";
+import TrendingUp from "lucide-react/icons/trending-up";
 import { Link } from "react-router-dom";
 
 export default function StatsCard({ title, value, icon: Icon, bgColor, trend, linkTo }) {

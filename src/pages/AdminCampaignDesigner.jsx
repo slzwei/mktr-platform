@@ -2,7 +2,10 @@ import { useState, useEffect } from "react";
 import { User } from "@/api/entities";
 import { Campaign } from "@/api/entities";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Save, Eye, AlertTriangle } from "lucide-react";
+import ArrowLeft from "lucide-react/icons/arrow-left";
+import Save from "lucide-react/icons/save";
+import Eye from "lucide-react/icons/eye";
+import AlertTriangle from "lucide-react/icons/alert-triangle";
 import { toast } from "sonner";
 
 import DesignEditor from "../components/campaigns/DesignEditor";

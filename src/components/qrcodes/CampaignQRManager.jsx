@@ -3,7 +3,10 @@ import { QrTag } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, QrCode, Car, Tag } from "lucide-react";
+import ArrowLeft from "lucide-react/icons/arrow-left";
+import QrCode from "lucide-react/icons/qr-code";
+import Car from "lucide-react/icons/car";
+import Tag from "lucide-react/icons/tag";
 
 import ExistingQRCodes from "./ExistingQRCodes";
 import PromotionalQRForm from "./PromotionalQRForm";

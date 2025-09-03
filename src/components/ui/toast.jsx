@@ -1,6 +1,6 @@
 import * as React from "react";
 import { cva } from "class-variance-authority";
-import { X } from "lucide-react";
+import X from "lucide-react/icons/x";
 import { cn } from "@/lib/utils";
 
 const ToastProvider = React.forwardRef(({ ...props }, ref) => (

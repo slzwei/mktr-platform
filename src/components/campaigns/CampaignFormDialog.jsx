@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Calendar } from "@/components/ui/calendar";
-import { Calendar as CalendarIcon, Save } from "lucide-react";
+import CalendarIcon from "lucide-react/icons/calendar";
+import Save from "lucide-react/icons/save";
 import { format, parseISO } from "date-fns";
 
 export default function CampaignFormDialog({ open, onOpenChange, campaign, onSubmit }) {

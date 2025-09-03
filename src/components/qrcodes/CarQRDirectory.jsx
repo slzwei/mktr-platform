@@ -18,7 +18,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Car as CarIcon, Search } from "lucide-react";
+import Loader2 from "lucide-react/icons/loader-2";
+import CarIcon from "lucide-react/icons/car";
+import Search from "lucide-react/icons/search";
 
 export default function CarQRDirectory({ campaign, onAssigned }) {
   const [cars, setCars] = useState([]);

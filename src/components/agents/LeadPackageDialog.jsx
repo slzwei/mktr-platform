@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Campaign } from "@/api/entities";
-import { Package, Save } from "lucide-react";
+import Package from "lucide-react/icons/package";
+import Save from "lucide-react/icons/save";
 
 export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit }) {
   const [campaigns, setCampaigns] = useState([]);

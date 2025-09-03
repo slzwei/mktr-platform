@@ -3,7 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { CheckCircle, XCircle, AlertCircle, RefreshCw, User, LogOut, Shield } from 'lucide-react';
+import CheckCircle from 'lucide-react/icons/check-circle';
+import XCircle from 'lucide-react/icons/x-circle';
+import AlertCircle from 'lucide-react/icons/alert-circle';
+import RefreshCw from 'lucide-react/icons/refresh-cw';
+import User from 'lucide-react/icons/user';
+import LogOut from 'lucide-react/icons/log-out';
+import Shield from 'lucide-react/icons/shield';
 import { auth } from '@/api/client';
 import { useNavigate } from 'react-router-dom';
 

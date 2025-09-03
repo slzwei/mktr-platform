@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, CheckCircle, XCircle } from 'lucide-react';
+import Loader2 from 'lucide-react/icons/loader-2';
+import CheckCircle from 'lucide-react/icons/check-circle';
+import XCircle from 'lucide-react/icons/x-circle';
 import { apiClient, auth } from '@/api/client';
 import { getPostAuthRedirectPath } from '@/lib/utils';
 

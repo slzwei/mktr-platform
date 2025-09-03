@@ -1,5 +1,5 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Filter } from "lucide-react";
+import Filter from "lucide-react/icons/filter";
 
 export default function ProspectFilters({ filters, onFilterChange, campaigns }) {
   const handleFilterChange = (key, value) => {

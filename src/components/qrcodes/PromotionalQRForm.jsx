@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertCircle, Tag, Loader2, CheckCircle } from "lucide-react";
+import AlertCircle from "lucide-react/icons/alert-circle";
+import Tag from "lucide-react/icons/tag";
+import Loader2 from "lucide-react/icons/loader-2";
+import CheckCircle from "lucide-react/icons/check-circle";
 
 // Simple UUID v4 alternative using crypto API or fallback
 const generateUniqueId = () => {

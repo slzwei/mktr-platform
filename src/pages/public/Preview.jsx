@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom';
 import { apiClient } from '@/api/client';
 import CampaignSignupForm from '@/components/campaigns/CampaignSignupForm';
 import TypingLoader from '@/components/ui/TypingLoader';
-import { CheckCircle, AlertTriangle } from 'lucide-react';
+import CheckCircle from 'lucide-react/icons/check-circle';
+import AlertTriangle from 'lucide-react/icons/alert-triangle';
 
 export default function PublicPreview() {
   const { slug } = useParams();

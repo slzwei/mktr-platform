@@ -24,7 +24,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Download, Link as LinkIcon, Copy, Trash2, QrCode as QrCodeIcon, Loader2, Users } from "lucide-react";
+import Download from "lucide-react/icons/download";
+import LinkIcon from "lucide-react/icons/link";
+import Copy from "lucide-react/icons/copy";
+import Trash2 from "lucide-react/icons/trash-2";
+import QrCodeIcon from "lucide-react/icons/qr-code";
+import Loader2 from "lucide-react/icons/loader-2";
+import Users from "lucide-react/icons/users";
 
 export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
   const [copiedLink, setCopiedLink] = useState(null);

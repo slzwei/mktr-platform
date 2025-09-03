@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '@/api/client';
-import { Loader2 } from 'lucide-react';
+import Loader2 from 'lucide-react/icons/loader-2';
 import { getDefaultRouteForRole } from '@/lib/utils';
 
 export default function ProtectedRoute({ children, requiredRole = null }) {

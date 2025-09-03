@@ -3,7 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { CheckCircle, XCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import CheckCircle from 'lucide-react/icons/check-circle';
+import XCircle from 'lucide-react/icons/x-circle';
+import AlertCircle from 'lucide-react/icons/alert-circle';
+import RefreshCw from 'lucide-react/icons/refresh-cw';
 
 // Import our new API client
 import { auth, entities, dashboard, agents } from '@/api/client';

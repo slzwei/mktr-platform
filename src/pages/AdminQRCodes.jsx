@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { QrCode } from "lucide-react";
+import QrCode from "lucide-react/icons/qr-code";
 import { format, parseISO } from "date-fns";
 import CampaignQRManager from "@/components/qrcodes/CampaignQRManager";
 

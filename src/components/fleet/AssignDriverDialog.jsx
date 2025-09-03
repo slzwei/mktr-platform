@@ -11,7 +11,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { UserCheck } from "lucide-react";
+import UserCheck from "lucide-react/icons/user-check";
 
 export default function AssignDriverDialog({ 
   open, 
