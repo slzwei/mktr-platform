@@ -1,0 +1,417 @@
+# MKTR Backend API Testing
+# Use this file with REST Client extension in VS Code or any HTTP client
+
+@baseUrl = http://localhost:3001/api
+@authToken = 
+
+### Health Check
+GET http://localhost:3001/health
+
+### ===== AUTHENTICATION =====
+
+### Register Admin User
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "admin@mktr.com",
+  "password": "password123",
+  "firstName": "Admin",
+  "lastName": "User",
+  "role": "admin"
+}
+
+### Register Agent User
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "agent@mktr.com",
+  "password": "password123",
+  "firstName": "John",
+  "lastName": "Agent",
+  "role": "agent"
+}
+
+### Register Fleet Owner
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "fleet@mktr.com",
+  "password": "password123",
+  "firstName": "Fleet",
+  "lastName": "Owner",
+  "role": "fleet_owner"
+}
+
+### Login (Admin)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@mktr.com",
+  "password": "password123"
+}
+
+### Login (Agent) - Copy the token from response above
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "agent@mktr.com",
+  "password": "password123"
+}
+
+### Get Profile (requires token)
+GET {{baseUrl}}/auth/profile
+Authorization: Bearer {{authToken}}
+
+### ===== USERS =====
+
+### Get All Users (Admin only)
+GET {{baseUrl}}/users
+Authorization: Bearer {{authToken}}
+
+### Get Users with Search
+GET {{baseUrl}}/users?search=john&role=agent
+Authorization: Bearer {{authToken}}
+
+### ===== CAMPAIGNS =====
+
+### Create Campaign
+POST {{baseUrl}}/campaigns
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "Summer Promotion 2024",
+  "description": "Drive leads for summer products",
+  "type": "lead_generation",
+  "budget": 5000,
+  "targetAudience": {
+    "age": "25-45",
+    "interests": ["automotive", "technology"]
+  },
+  "startDate": "2024-01-01",
+  "endDate": "2024-12-31",
+  "landingPageUrl": "https://example.com/summer-promo",
+  "callToAction": "Get Your Quote Today!",
+  "tags": ["summer", "promotion", "leads"]
+}
+
+### Get All Campaigns
+GET {{baseUrl}}/campaigns
+Authorization: Bearer {{authToken}}
+
+### Get Campaign by ID (replace with actual ID from create response)
+GET {{baseUrl}}/campaigns/CAMPAIGN_ID_HERE
+Authorization: Bearer {{authToken}}
+
+### Update Campaign
+PUT {{baseUrl}}/campaigns/CAMPAIGN_ID_HERE
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "status": "active",
+  "budget": 7500
+}
+
+### Get Campaign Analytics
+GET {{baseUrl}}/campaigns/CAMPAIGN_ID_HERE/analytics
+Authorization: Bearer {{authToken}}
+
+### ===== QR CODES =====
+
+### Create QR Code
+POST {{baseUrl}}/qrcodes
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "Campaign QR - Summer Promo",
+  "description": "QR code for summer promotion campaign",
+  "type": "campaign",
+  "destinationUrl": "https://example.com/summer-promo",
+  "campaignId": "CAMPAIGN_ID_HERE",
+  "location": {
+    "name": "Downtown Office",
+    "address": "123 Main St",
+    "city": "New York",
+    "state": "NY"
+  },
+  "tags": ["campaign", "summer"]
+}
+
+### Get All QR Codes
+GET {{baseUrl}}/qrcodes
+Authorization: Bearer {{authToken}}
+
+### Get QR Code by ID
+GET {{baseUrl}}/qrcodes/QR_ID_HERE
+Authorization: Bearer {{authToken}}
+
+### Track QR Code Scan (Public endpoint - no auth needed)
+GET {{baseUrl}}/qrcodes/track/SHORT_URL_CODE_HERE
+
+### Record Manual Scan
+POST {{baseUrl}}/qrcodes/QR_ID_HERE/scan
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "metadata": {
+    "location": "Trade Show Booth",
+    "device": "mobile"
+  }
+}
+
+### Get QR Analytics
+GET {{baseUrl}}/qrcodes/QR_ID_HERE/analytics?period=30d
+Authorization: Bearer {{authToken}}
+
+### ===== PROSPECTS =====
+
+### Create Prospect (Lead Capture)
+POST {{baseUrl}}/prospects
+Content-Type: application/json
+
+{
+  "firstName": "Jane",
+  "lastName": "Prospect",
+  "email": "jane@example.com",
+  "phone": "555-123-4567",
+  "company": "Example Corp",
+  "jobTitle": "Marketing Manager",
+  "industry": "Technology",
+  "leadSource": "qr_code",
+  "interests": ["marketing", "automation"],
+  "location": {
+    "city": "San Francisco",
+    "state": "CA",
+    "zipCode": "94105"
+  },
+  "campaignId": "CAMPAIGN_ID_HERE",
+  "qrTagId": "QR_ID_HERE"
+}
+
+### Get All Prospects
+GET {{baseUrl}}/prospects
+Authorization: Bearer {{authToken}}
+
+### Get Prospects with Filters
+GET {{baseUrl}}/prospects?leadStatus=new&priority=high&search=jane
+Authorization: Bearer {{authToken}}
+
+### Get Prospect by ID
+GET {{baseUrl}}/prospects/PROSPECT_ID_HERE
+Authorization: Bearer {{authToken}}
+
+### Update Prospect Status
+PUT {{baseUrl}}/prospects/PROSPECT_ID_HERE
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "leadStatus": "qualified",
+  "priority": "high",
+  "notes": "Very interested in our services"
+}
+
+### Assign Prospect to Agent
+PATCH {{baseUrl}}/prospects/PROSPECT_ID_HERE/assign
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "agentId": "AGENT_USER_ID_HERE"
+}
+
+### Get Prospect Statistics
+GET {{baseUrl}}/prospects/stats/overview
+Authorization: Bearer {{authToken}}
+
+### ===== FLEET MANAGEMENT =====
+
+### Create Fleet Owner Profile
+POST {{baseUrl}}/fleet/owners
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "companyName": "City Transport LLC",
+  "businessType": "transportation",
+  "businessLicense": "BL123456",
+  "taxId": "12-3456789",
+  "address": {
+    "street": "456 Fleet St",
+    "city": "Chicago",
+    "state": "IL",
+    "zipCode": "60601"
+  },
+  "contactInfo": {
+    "primaryPhone": "555-FLEET-01",
+    "email": "contact@citytransport.com",
+    "website": "https://citytransport.com"
+  }
+}
+
+### Get Fleet Owners (Admin only)
+GET {{baseUrl}}/fleet/owners
+Authorization: Bearer {{authToken}}
+
+### Add Car to Fleet
+POST {{baseUrl}}/fleet/cars
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "make": "Toyota",
+  "model": "Camry",
+  "year": 2023,
+  "color": "White",
+  "licensePlate": "ABC123",
+  "vin": "1HGBH41JXMN109186",
+  "type": "sedan",
+  "fuelType": "gasoline",
+  "mileage": 15000,
+  "location": {
+    "address": "123 Parking Lot",
+    "city": "Chicago",
+    "state": "IL"
+  }
+}
+
+### Get All Cars
+GET {{baseUrl}}/fleet/cars
+Authorization: Bearer {{authToken}}
+
+### Add Driver
+POST {{baseUrl}}/fleet/drivers
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "userId": "DRIVER_USER_ID_HERE",
+  "licenseNumber": "D123456789",
+  "licenseClass": "CDL-A",
+  "licenseExpiration": "2025-12-31",
+  "dateOfBirth": "1985-06-15",
+  "experience": 10,
+  "certifications": ["Defensive Driving", "DOT Physical"]
+}
+
+### Assign Driver to Car
+PATCH {{baseUrl}}/fleet/cars/CAR_ID_HERE/assign-driver
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "driverId": "DRIVER_ID_HERE"
+}
+
+### Get Fleet Statistics
+GET {{baseUrl}}/fleet/stats/overview
+Authorization: Bearer {{authToken}}
+
+### ===== COMMISSIONS =====
+
+### Get All Commissions
+GET {{baseUrl}}/commissions
+Authorization: Bearer {{authToken}}
+
+### Create Commission (Admin only)
+POST {{baseUrl}}/commissions
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "agentId": "AGENT_USER_ID_HERE",
+  "amount": 150.00,
+  "type": "conversion",
+  "description": "Commission for lead conversion - Jane Prospect",
+  "campaignId": "CAMPAIGN_ID_HERE",
+  "prospectId": "PROSPECT_ID_HERE"
+}
+
+### Approve Commission (Admin only)
+PATCH {{baseUrl}}/commissions/COMMISSION_ID_HERE/approve
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "notes": "Approved - lead verified as converted"
+}
+
+### Mark Commission as Paid (Admin only)
+PATCH {{baseUrl}}/commissions/COMMISSION_ID_HERE/pay
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "paymentMethod": "bank_transfer",
+  "transactionId": "TXN123456",
+  "processingFee": 2.50,
+  "notes": "Paid via ACH transfer"
+}
+
+### Get Commission Statistics
+GET {{baseUrl}}/commissions/stats/overview?period=month
+Authorization: Bearer {{authToken}}
+
+### ===== AGENTS =====
+
+### Get All Agents (Admin only)
+GET {{baseUrl}}/agents
+Authorization: Bearer {{authToken}}
+
+### Get Agent Performance
+GET {{baseUrl}}/agents/AGENT_ID_HERE
+Authorization: Bearer {{authToken}}
+
+### Get Agent's Prospects
+GET {{baseUrl}}/agents/AGENT_ID_HERE/prospects
+Authorization: Bearer {{authToken}}
+
+### Get Agent's Commissions
+GET {{baseUrl}}/agents/AGENT_ID_HERE/commissions?period=month
+Authorization: Bearer {{authToken}}
+
+### Get Performance Leaderboard
+GET {{baseUrl}}/agents/leaderboard/performance?period=month&metric=commissions
+Authorization: Bearer {{authToken}}
+
+### ===== FILE UPLOADS =====
+
+### Upload Single File (form-data)
+POST {{baseUrl}}/uploads/single?type=image
+Authorization: Bearer {{authToken}}
+Content-Type: multipart/form-data
+
+# Note: Use a proper HTTP client for file uploads
+
+### Upload Avatar
+POST {{baseUrl}}/uploads/avatar
+Authorization: Bearer {{authToken}}
+Content-Type: multipart/form-data
+
+# Note: Use a proper HTTP client for file uploads
+
+### ===== DASHBOARD =====
+
+### Get Dashboard Overview
+GET {{baseUrl}}/dashboard/overview?period=30d
+Authorization: Bearer {{authToken}}
+
+### Get Analytics Data
+GET {{baseUrl}}/dashboard/analytics?type=prospects&period=30d
+Authorization: Bearer {{authToken}}
+
+### Get Campaign Analytics
+GET {{baseUrl}}/dashboard/analytics?type=campaigns&period=30d
+Authorization: Bearer {{authToken}}
+
+### Get Commission Analytics
+GET {{baseUrl}}/dashboard/analytics?type=commissions&period=month
+Authorization: Bearer {{authToken}}

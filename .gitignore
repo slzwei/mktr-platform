@@ -1,0 +1,26 @@
+# Node / build
+node_modules/
+build/
+dist/
+*.log
+
+# Env and secrets
+.env
+backend/.env
+.env.*
+
+# OS / editor
+.DS_Store
+*.swp
+
+# SQLite databases
+backend/*.db
+backend/**/*.db
+
+# Uploads
+backend/uploads/
+
+# Coverage / test
+coverage/
+.junit/
+

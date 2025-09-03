@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-09-01T18:51:08.663Z",
+  "results": {
+    "passed": 5,
+    "failed": 2,
+    "total": 7,
+    "successRate": "71.4"
+  },
+  "testData": {
+    "users": {},
+    "campaigns": {},
+    "prospects": {},
+    "qrTags": {},
+    "cars": {},
+    "drivers": {},
+    "commissions": {}
+  },
+  "authTokens": {
+    "admin": "NOT_SET",
+    "agent": "NOT_SET",
+    "fleetOwner": "NOT_SET"
+  }
+}

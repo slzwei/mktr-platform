@@ -1,0 +1,486 @@
+{
+  "timestamp": "2025-09-01T19:02:23.250Z",
+  "summary": {
+    "total": 56,
+    "passed": 45,
+    "failed": 5,
+    "warnings": 6,
+    "passRate": 90
+  },
+  "results": {
+    "passed": [
+      {
+        "testName": "Health Check",
+        "endpoint": "GET http://localhost:3001/health",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.211Z"
+      },
+      {
+        "testName": "User Login",
+        "endpoint": "POST /auth/login",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.219Z"
+      },
+      {
+        "testName": "Get User Profile",
+        "endpoint": "GET /auth/profile",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.220Z"
+      },
+      {
+        "testName": "Update User Profile",
+        "endpoint": "PUT /auth/profile",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.221Z"
+      },
+      {
+        "testName": "Change Password",
+        "endpoint": "PUT /auth/change-password",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.222Z"
+      },
+      {
+        "testName": "Get All Users",
+        "endpoint": "GET /users",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.224Z"
+      },
+      {
+        "testName": "Get Agents List",
+        "endpoint": "GET /users/agents/list",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.225Z"
+      },
+      {
+        "testName": "Get All Campaigns",
+        "endpoint": "GET /campaigns",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.225Z"
+      },
+      {
+        "testName": "Create Campaign",
+        "endpoint": "POST /campaigns",
+        "status": 201,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.226Z"
+      },
+      {
+        "testName": "Get Campaign by ID",
+        "endpoint": "GET /campaigns/1f1cfe85-5912-4c10-9fe8-40f823877138",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.227Z"
+      },
+      {
+        "testName": "Update Campaign",
+        "endpoint": "PUT /campaigns/1f1cfe85-5912-4c10-9fe8-40f823877138",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.227Z"
+      },
+      {
+        "testName": "Get Campaign Analytics",
+        "endpoint": "GET /campaigns/1f1cfe85-5912-4c10-9fe8-40f823877138/analytics",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.228Z"
+      },
+      {
+        "testName": "Duplicate Campaign",
+        "endpoint": "POST /campaigns/1f1cfe85-5912-4c10-9fe8-40f823877138/duplicate",
+        "status": 201,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.229Z"
+      },
+      {
+        "testName": "Get All QR Codes",
+        "endpoint": "GET /qrcodes",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.229Z"
+      },
+      {
+        "testName": "Create QR Code",
+        "endpoint": "POST /qrcodes",
+        "status": 201,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.231Z"
+      },
+      {
+        "testName": "Get QR Code by ID",
+        "endpoint": "GET /qrcodes/23dbaf73-6ef4-4e53-ae6b-abfb1c0c7b01",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.232Z"
+      },
+      {
+        "testName": "Update QR Code",
+        "endpoint": "PUT /qrcodes/23dbaf73-6ef4-4e53-ae6b-abfb1c0c7b01",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.233Z"
+      },
+      {
+        "testName": "Record QR Scan",
+        "endpoint": "POST /qrcodes/23dbaf73-6ef4-4e53-ae6b-abfb1c0c7b01/scan",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.233Z"
+      },
+      {
+        "testName": "Get QR Analytics",
+        "endpoint": "GET /qrcodes/23dbaf73-6ef4-4e53-ae6b-abfb1c0c7b01/analytics",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.234Z"
+      },
+      {
+        "testName": "Get All Prospects",
+        "endpoint": "GET /prospects",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.235Z"
+      },
+      {
+        "testName": "Create Prospect (Lead Capture)",
+        "endpoint": "POST /prospects",
+        "status": 201,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.236Z"
+      },
+      {
+        "testName": "Get Prospect by ID",
+        "endpoint": "GET /prospects/75edbc99-1a2e-457a-b3c8-2b3d547a6ee8",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.236Z"
+      },
+      {
+        "testName": "Update Prospect",
+        "endpoint": "PUT /prospects/75edbc99-1a2e-457a-b3c8-2b3d547a6ee8",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.237Z"
+      },
+      {
+        "testName": "Assign Prospect to Agent",
+        "endpoint": "PATCH /prospects/75edbc99-1a2e-457a-b3c8-2b3d547a6ee8/assign",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.238Z"
+      },
+      {
+        "testName": "Get Prospect Statistics",
+        "endpoint": "GET /prospects/stats/overview",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.239Z"
+      },
+      {
+        "testName": "Get Fleet Owners",
+        "endpoint": "GET /fleet/owners",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.239Z"
+      },
+      {
+        "testName": "Create Fleet Owner Profile",
+        "endpoint": "POST /fleet/owners",
+        "status": 201,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.240Z"
+      },
+      {
+        "testName": "Get All Cars",
+        "endpoint": "GET /fleet/cars",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.240Z"
+      },
+      {
+        "testName": "Create Car",
+        "endpoint": "POST /fleet/cars",
+        "status": 201,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.241Z"
+      },
+      {
+        "testName": "Get Car by ID",
+        "endpoint": "GET /fleet/cars/b628c167-4a3e-45b6-ae4a-15438101de98",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.241Z"
+      },
+      {
+        "testName": "Update Car",
+        "endpoint": "PUT /fleet/cars/b628c167-4a3e-45b6-ae4a-15438101de98",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.241Z"
+      },
+      {
+        "testName": "Get All Drivers",
+        "endpoint": "GET /fleet/drivers",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.242Z"
+      },
+      {
+        "testName": "Get Fleet Statistics",
+        "endpoint": "GET /fleet/stats/overview",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.242Z"
+      },
+      {
+        "testName": "Get All Commissions",
+        "endpoint": "GET /commissions",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.243Z"
+      },
+      {
+        "testName": "Create Commission",
+        "endpoint": "POST /commissions",
+        "status": 201,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.244Z"
+      },
+      {
+        "testName": "Get Commission by ID",
+        "endpoint": "GET /commissions/183ff271-b841-4ef1-a487-9e28b4634881",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.244Z"
+      },
+      {
+        "testName": "Approve Commission",
+        "endpoint": "PATCH /commissions/183ff271-b841-4ef1-a487-9e28b4634881/approve",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.245Z"
+      },
+      {
+        "testName": "Mark Commission as Paid",
+        "endpoint": "PATCH /commissions/183ff271-b841-4ef1-a487-9e28b4634881/pay",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.245Z"
+      },
+      {
+        "testName": "Get Commission Statistics",
+        "endpoint": "GET /commissions/stats/overview",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.246Z"
+      },
+      {
+        "testName": "Get All Agents",
+        "endpoint": "GET /agents",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.247Z"
+      },
+      {
+        "testName": "Get Performance Leaderboard",
+        "endpoint": "GET /agents/leaderboard/performance",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.247Z"
+      },
+      {
+        "testName": "Get Dashboard Overview",
+        "endpoint": "GET /dashboard/overview",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.248Z"
+      },
+      {
+        "testName": "Get Dashboard Analytics - Prospects",
+        "endpoint": "GET /dashboard/analytics?type=prospects&period=30d",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.248Z"
+      },
+      {
+        "testName": "Get Dashboard Analytics - Campaigns",
+        "endpoint": "GET /dashboard/analytics?type=campaigns&period=30d",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.249Z"
+      },
+      {
+        "testName": "Get Dashboard Analytics - Commissions",
+        "endpoint": "GET /dashboard/analytics?type=commissions&period=month",
+        "status": 200,
+        "details": "SUCCESS",
+        "timestamp": "2025-09-01T19:02:23.249Z"
+      }
+    ],
+    "failed": [
+      {
+        "testName": "Register Admin User",
+        "endpoint": "POST /auth/register",
+        "status": 400,
+        "details": "User already exists",
+        "timestamp": "2025-09-01T19:02:23.215Z"
+      },
+      {
+        "testName": "Register Agent User",
+        "endpoint": "POST /auth/register",
+        "status": 400,
+        "details": "User already exists",
+        "timestamp": "2025-09-01T19:02:23.216Z"
+      },
+      {
+        "testName": "Register Fleet Owner",
+        "endpoint": "POST /auth/register",
+        "status": 400,
+        "details": "User already exists",
+        "timestamp": "2025-09-01T19:02:23.217Z"
+      },
+      {
+        "testName": "Bulk QR Operations",
+        "endpoint": "POST /qrcodes/bulk",
+        "status": 0,
+        "details": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON",
+        "timestamp": "2025-09-01T19:02:23.234Z"
+      },
+      {
+        "testName": "Bulk Assign Prospects",
+        "endpoint": "PATCH /prospects/bulk/assign",
+        "status": 404,
+        "details": "Prospect not found",
+        "timestamp": "2025-09-01T19:02:23.238Z"
+      }
+    ],
+    "warnings": [
+      {
+        "testName": "Get User by ID",
+        "endpoint": "GET /users/:id",
+        "status": 0,
+        "details": "Skipped - no test user ID available",
+        "timestamp": "2025-09-01T19:02:23.224Z"
+      },
+      {
+        "testName": "Update User",
+        "endpoint": "PUT /users/:id",
+        "status": 0,
+        "details": "Skipped - no test user ID available",
+        "timestamp": "2025-09-01T19:02:23.224Z"
+      },
+      {
+        "testName": "Upload Single File",
+        "endpoint": "POST /uploads/single",
+        "status": 0,
+        "details": "Requires multipart/form-data - test manually",
+        "timestamp": "2025-09-01T19:02:23.247Z"
+      },
+      {
+        "testName": "Upload Multiple Files",
+        "endpoint": "POST /uploads/multiple",
+        "status": 0,
+        "details": "Requires multipart/form-data - test manually",
+        "timestamp": "2025-09-01T19:02:23.247Z"
+      },
+      {
+        "testName": "Upload Avatar",
+        "endpoint": "POST /uploads/avatar",
+        "status": 0,
+        "details": "Requires multipart/form-data - test manually",
+        "timestamp": "2025-09-01T19:02:23.247Z"
+      },
+      {
+        "testName": "Upload Campaign Assets",
+        "endpoint": "POST /uploads/campaign-assets",
+        "status": 0,
+        "details": "Requires multipart/form-data - test manually",
+        "timestamp": "2025-09-01T19:02:23.247Z"
+      }
+    ]
+  },
+  "testData": {
+    "users": {},
+    "campaigns": {
+      "test": {
+        "id": "1f1cfe85-5912-4c10-9fe8-40f823877138",
+        "createdBy": "admin-user-id",
+        "status": "draft",
+        "metrics": {
+          "views": 0,
+          "clicks": 0,
+          "conversions": 0,
+          "leads": 0,
+          "revenue": 0
+        },
+        "createdAt": "2025-09-01T19:02:23.226Z",
+        "updatedAt": "2025-09-01T19:02:23.226Z"
+      }
+    },
+    "prospects": {
+      "test": {
+        "id": "75edbc99-1a2e-457a-b3c8-2b3d547a6ee8",
+        "firstName": "Jane",
+        "lastName": "Prospect",
+        "email": "jane@example.com",
+        "phone": "555-123-4567",
+        "company": "Test Corp",
+        "leadSource": "qr_code",
+        "campaignId": "1f1cfe85-5912-4c10-9fe8-40f823877138",
+        "qrTagId": "23dbaf73-6ef4-4e53-ae6b-abfb1c0c7b01",
+        "leadStatus": "new",
+        "priority": "medium",
+        "createdAt": "2025-09-01T19:02:23.235Z",
+        "updatedAt": "2025-09-01T19:02:23.235Z"
+      }
+    },
+    "qrTags": {
+      "test": {
+        "id": "23dbaf73-6ef4-4e53-ae6b-abfb1c0c7b01",
+        "qrCode": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 41 41\" shape-rendering=\"crispEdges\"><path fill=\"#ffffff\" d=\"M0 0h41v41H0z\"/><path stroke=\"#000000\" d=\"M4 4.5h7m3 0h1m1 0h2m2 0h4m3 0h1m2 0h7M4 5.5h1m5 0h1m2 0h2m1 0h6m2 0h1m1 0h1m1 0h1m1 0h1m5 0h1M4 6.5h1m1 0h3m1 0h1m1 0h3m2 0h1m3 0h2m2 0h1m2 0h1m1 0h1m1 0h3m1 0h1M4 7.5h1m1 0h3m1 0h1m1 0h1m2 0h2m1 0h3m3 0h1m1 0h3m1 0h1m1 0h3m1 0h1M4 8.5h1m1 0h3m1 0h1m1 0h6m1 0h1m1 0h2m4 0h1m2 0h1m1 0h3m1 0h1M4 9.5h1m5 0h1m1 0h1m1 0h1m2 0h5m2 0h1m1 0h1m3 0h1m5 0h1M4 10.5h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7M12 11.5h3m1 0h1m1 0h2m5 0h4M4 12.5h1m1 0h5m5 0h4m1 0h1m2 0h1m1 0h1m1 0h1m1 0h5M4 13.5h1m1 0h4m1 0h1m1 0h2m1 0h1m3 0h1m1 0h2m2 0h2m2 0h1m2 0h2m1 0h1M4 14.5h1m1 0h1m1 0h4m3 0h1m3 0h1m2 0h1m2 0h2m1 0h1m1 0h1m1 0h1m1 0h1M4 15.5h2m5 0h2m1 0h1m1 0h1m1 0h1m6 0h2m2 0h2m1 0h5M6 16.5h1m1 0h1m1 0h2m1 0h1m5 0h1m2 0h1m2 0h1m1 0h2m2 0h3M5 17.5h2m1 0h1m3 0h1m1 0h1m1 0h5m3 0h2m1 0h1m2 0h1m2 0h1m1 0h2M4 18.5h3m1 0h4m2 0h2m1 0h1m4 0h2m4 0h3m1 0h2m1 0h1M4 19.5h1m1 0h1m1 0h1m2 0h1m1 0h2m3 0h1m1 0h1m2 0h6m2 0h1m1 0h2M6 20.5h1m3 0h2m2 0h2m1 0h1m2 0h2m1 0h2m1 0h1m1 0h2m1 0h3m2 0h1M4 21.5h1m1 0h4m1 0h2m2 0h3m2 0h2m1 0h1m2 0h2m2 0h2m1 0h4M5 22.5h2m1 0h5m1 0h1m1 0h2m1 0h3m4 0h1m2 0h2m1 0h1m1 0h2M4 23.5h1m1 0h1m1 0h2m2 0h1m3 0h4m1 0h2m5 0h3m1 0h4M6 24.5h1m2 0h4m1 0h2m3 0h2m3 0h3m2 0h1m1 0h3m1 0h1M4 25.5h2m2 0h2m1 0h1m2 0h1m1 0h1m2 0h1m2 0h1m2 0h1m1 0h1m2 0h1m2 0h2m1 0h1M4 26.5h1m4 0h2m1 0h1m1 0h1m4 0h2m1 0h1m1 0h3m2 0h2m3 0h2M4 27.5h1m1 0h2m1 0h1m1 0h3m1 0h3m1 0h1m2 0h1m2 0h1m1 0h1m1 0h3m1 0h2m1 0h1M4 28.5h1m4 0h5m2 0h1m2 0h3m2 0h1m3 0h6m1 0h2M12 29.5h2m1 0h3m2 0h1m1 0h2m1 0h2m1 0h1m3 0h1m1 0h1m1 0h1M4 30.5h7m4 0h1m2 0h3m1 0h1m1 0h2m1 0h2m1 0h1m1 0h1m1 0h2M4 31.5h1m5 0h1m1 0h1m2 0h1m1 0h2m1 0h1m2 0h1m1 0h4m3 0h1m1 0h1M4 32.5h1m1 0h3m1 0h1m1 0h5m5 0h1m2 0h1m2 0h6m1 0h1M4 33.5h1m1 0h3m1 0h1m1 0h2m1 0h1m3 0h3m2 0h1m1 0h2m1 0h1m1 0h2m1 0h1m1 0h1M4 34.5h1m1 0h3m1 0h1m1 0h2m1 0h1m1 0h1m4 0h2m4 0h1m1 0h2M4 35.5h1m5 0h1m2 0h2m5 0h1m2 0h3m1 0h1m2 0h5M4 36.5h7m1 0h1m1 0h1m1 0h3m2 0h4m2 0h3m1 0h2m2 0h1\"/></svg>\n",
+        "qrData": "http://localhost:3001/api/qrcodes/track/iwrcnm",
+        "shortUrl": "https://mktr.ly/iwrcnm",
+        "status": "active",
+        "scanCount": 0,
+        "createdBy": "admin-user-id",
+        "createdAt": "2025-09-01T19:02:23.231Z",
+        "updatedAt": "2025-09-01T19:02:23.231Z"
+      }
+    },
+    "commissions": {
+      "test": {
+        "id": "183ff271-b841-4ef1-a487-9e28b4634881",
+        "status": "pending",
+        "earnedDate": "2025-09-01T19:02:23.243Z",
+        "createdAt": "2025-09-01T19:02:23.243Z",
+        "updatedAt": "2025-09-01T19:02:23.243Z"
+      }
+    },
+    "fleetOwners": {
+      "test": {
+        "id": "e8863aa1-833f-41bd-977c-984a1308669a",
+        "userId": "admin-user-id",
+        "status": "active",
+        "createdAt": "2025-09-01T19:02:23.239Z",
+        "updatedAt": "2025-09-01T19:02:23.239Z"
+      }
+    },
+    "cars": {
+      "test": {
+        "id": "b628c167-4a3e-45b6-ae4a-15438101de98",
+        "status": "active",
+        "createdAt": "2025-09-01T19:02:23.240Z",
+        "updatedAt": "2025-09-01T19:02:23.240Z"
+      }
+    },
+    "drivers": {}
+  }
+}
