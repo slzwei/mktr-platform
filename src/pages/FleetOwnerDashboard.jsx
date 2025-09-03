@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Car } from "@/api/entities";
 import { Commission } from "@/api/entities";
 import { auth } from "@/api/client";
@@ -10,8 +10,7 @@ import { createPageUrl } from "@/utils";
 import { 
   Car as CarIcon, 
   DollarSign, 
-  TrendingUp, 
-  Calendar,
+  TrendingUp,
   ArrowRight,
   Users,
   AlertTriangle

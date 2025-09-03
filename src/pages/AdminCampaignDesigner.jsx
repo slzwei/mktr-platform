@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { User } from "@/api/entities";
 import { Campaign } from "@/api/entities";
 import { Button } from "@/components/ui/button";

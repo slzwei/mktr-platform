@@ -1,6 +1,6 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import { User, Prospect, Commission, Campaign, LeadPackage, sequelize } from '../models/index.js';
+import { User, Prospect, Commission, Campaign, sequelize } from '../models/index.js';
 import { authenticateToken, requireAdmin, requireAgentOrAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
@@ -294,19 +294,26 @@ router.get('/:id/commissions', authenticateToken, requireAgentOrAdmin, asyncHand
     let startDate;
     
     switch (period) {
-      case 'week':
+      case 'week': {
         startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
         break;
-      case 'month':
+      }
+      case 'month': {
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
         break;
-      case 'quarter':
+      }
+      case 'quarter': {
         const quarter = Math.floor(now.getMonth() / 3);
         startDate = new Date(now.getFullYear(), quarter * 3, 1);
         break;
-      case 'year':
+      }
+      case 'year': {
         startDate = new Date(now.getFullYear(), 0, 1);
         break;
+      }
+      default: {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
     }
     
     if (startDate) {
@@ -438,37 +445,46 @@ router.get('/leaderboard/performance', authenticateToken, requireAdmin, asyncHan
   let startDate;
   
   switch (period) {
-    case 'week':
+    case 'week': {
       startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       break;
-    case 'month':
+    }
+    case 'month': {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       break;
-    case 'quarter':
+    }
+    case 'quarter': {
       const quarter = Math.floor(now.getMonth() / 3);
       startDate = new Date(now.getFullYear(), quarter * 3, 1);
       break;
-    case 'year':
+    }
+    case 'year': {
       startDate = new Date(now.getFullYear(), 0, 1);
       break;
-    default:
+    }
+    default: {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
   }
 
   let leaderboard = [];
 
   switch (metric) {
-    case 'commissions':
+    case 'commissions': {
       leaderboard = await getCommissionLeaderboard(startDate, now, limit);
       break;
-    case 'conversions':
+    }
+    case 'conversions': {
       leaderboard = await getConversionLeaderboard(startDate, now, limit);
       break;
-    case 'prospects':
+    }
+    case 'prospects': {
       leaderboard = await getProspectLeaderboard(startDate, now, limit);
       break;
-    default:
+    }
+    default: {
       leaderboard = await getCommissionLeaderboard(startDate, now, limit);
+    }
   }
 
   res.json({

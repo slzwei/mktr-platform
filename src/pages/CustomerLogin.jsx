@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,8 +11,6 @@ import { GOOGLE_CLIENT_ID } from "@/config/google";
 import { getPostAuthRedirectPath } from "@/lib/utils";
 import {
   ArrowLeft,
-  Mail,
-  Lock,
   Users,
   Car,
   LogIn,

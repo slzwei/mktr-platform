@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { QrTag } from "@/api/entities";
 import { Car } from "@/api/entities";
 import { User } from "@/api/entities";

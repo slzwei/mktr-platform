@@ -1,5 +1,5 @@
 // REPLACED: Base44 entities with our custom API client
-import { entities, auth } from './client.js';
+import { entities } from './client.js';
 
 export const Campaign = entities.Campaign;
 

@@ -5,9 +5,8 @@ import { storageService } from '../services/storage.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { QrTag, Campaign, Car, User, QrScan, Attribution, Prospect } from '../models/index.js';
+import { QrTag, Campaign, Car, QrScan, Attribution, Prospect } from '../models/index.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
-import { validate, schemas } from '../middleware/validation.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
 const router = express.Router();

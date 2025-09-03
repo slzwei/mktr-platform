@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,6 +24,8 @@ export default function CampaignFormDialog({ open, onOpenChange, campaign, onSub
     start_date: new Date(),
     end_date: new Date(),
     is_active: true,
+    commission_amount_driver: "",
+    commission_amount_fleet: "",
   });
   const [loading, setLoading] = useState(false);
 
@@ -36,6 +38,8 @@ export default function CampaignFormDialog({ open, onOpenChange, campaign, onSub
         start_date: campaign.start_date ? parseISO(campaign.start_date) : new Date(),
         end_date: campaign.end_date ? parseISO(campaign.end_date) : new Date(),
         is_active: campaign.is_active !== undefined ? campaign.is_active : true,
+        commission_amount_driver: campaign.commission_amount_driver ?? "",
+        commission_amount_fleet: campaign.commission_amount_fleet ?? "",
       });
     } else {
       // Reset to default for new campaign
@@ -46,6 +50,8 @@ export default function CampaignFormDialog({ open, onOpenChange, campaign, onSub
         start_date: new Date(),
         end_date: new Date(),
         is_active: true,
+        commission_amount_driver: "",
+        commission_amount_fleet: "",
       });
     }
   }, [campaign, open]);
@@ -69,10 +75,16 @@ export default function CampaignFormDialog({ open, onOpenChange, campaign, onSub
     try {
       // Format dates as ISO strings
       const formattedData = {
-        ...formData,
+        name: formData.name,
+        min_age: formData.min_age,
+        max_age: formData.max_age,
+        is_active: formData.is_active,
         start_date: formData.start_date.toISOString(),
-        end_date: formData.end_date.toISOString()
+        end_date: formData.end_date.toISOString(),
       };
+      // If empty string, send null to clear value; otherwise send number
+      formattedData.commission_amount_driver = formData.commission_amount_driver === "" ? null : Number(formData.commission_amount_driver);
+      formattedData.commission_amount_fleet = formData.commission_amount_fleet === "" ? null : Number(formData.commission_amount_fleet);
       await onSubmit(formattedData);
       onOpenChange(false);
     } catch (error) {
@@ -126,6 +138,36 @@ export default function CampaignFormDialog({ open, onOpenChange, campaign, onSub
               />
             </div>
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="commission_amount_driver">Driver Commission (SGD)</Label>
+              <Input
+                id="commission_amount_driver"
+                name="commission_amount_driver"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.commission_amount_driver}
+                onChange={handleChange}
+                placeholder="$2"
+              />
+            </div>
+            <div>
+              <Label htmlFor="commission_amount_fleet">Fleet Owner Commission (SGD)</Label>
+              <Input
+                id="commission_amount_fleet"
+                name="commission_amount_fleet"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.commission_amount_fleet}
+                onChange={handleChange}
+                placeholder="$0.5"
+              />
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label>Start Date</Label>

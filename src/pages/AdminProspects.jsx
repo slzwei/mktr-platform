@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { auth } from "@/api/client";
 import { Prospect, Campaign } from "@/api/entities";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -197,7 +197,7 @@ export default function AdminProspects() {
     });
 
     const csvContent = [headers, ...csvData]
-      .map(row => row.map(field => `"${String(field).replace(/\"/g, '"')}"`).join(','))
+      .map(row => row.map(field => '"' + String(field).replace(/"/g, '"') + '"').join(','))
       .join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

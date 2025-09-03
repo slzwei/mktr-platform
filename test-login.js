@@ -1,5 +1,4 @@
 import { User } from './backend/src/models/index.js';
-import bcrypt from 'bcryptjs';
 
 async function testLogin() {
   try {

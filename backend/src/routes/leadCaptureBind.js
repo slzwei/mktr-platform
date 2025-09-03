@@ -1,6 +1,6 @@
 import express from 'express';
 import crypto from 'crypto';
-import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
 import { Attribution } from '../models/index.js';
 
 const router = express.Router();

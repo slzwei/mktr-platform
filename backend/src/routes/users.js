@@ -1,6 +1,6 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import { User, FleetOwner, Driver, sequelize } from '../models/index.js';
+import { User, sequelize } from '../models/index.js';
 import { authenticateToken, requireAdmin, requireAgentOrAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 

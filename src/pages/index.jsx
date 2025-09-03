@@ -1,4 +1,3 @@
-import Layout from "./Layout.jsx";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 
@@ -37,7 +36,7 @@ import FleetOwnerDashboard from "./FleetOwnerDashboard";
 import ApiTest from "./ApiTest";
 import AuthTest from "./AuthTest";
 
-import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PublicPreview from './public/Preview';
 
 const PAGES = {

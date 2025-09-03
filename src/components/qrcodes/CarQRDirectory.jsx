@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Car, QrTag, Campaign } from "@/api/entities";
 import { apiClient } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,7 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Car as CarIcon, QrCode, Filter, Search, Link2 } from "lucide-react";
+import { Loader2, Car as CarIcon, Search } from "lucide-react";
 
 export default function CarQRDirectory({ campaign, onAssigned }) {
   const [cars, setCars] = useState([]);
@@ -26,8 +27,10 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [filters, setFilters] = useState({ search: "" });
-  const [assignDialog, setAssignDialog] = useState({ open: false, car: null, currentTag: null, selectedCampaignId: campaign?.id || "" });
   const [campaigns, setCampaigns] = useState([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [selectedCarIds, setSelectedCarIds] = useState(new Set());
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
 
   const backendOrigin = apiClient.baseURL.replace(/\/api\/?$/, "");
   const resolveBackendUrl = (path) => {
@@ -60,7 +63,7 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
               try {
                 const tags = await QrTag.filter({ carId: car.id, type: 'car' });
                 tag = Array.isArray(tags) && tags.length > 0 ? tags[0] : null;
-              } catch {}
+              } catch (err) { void err }
             }
           }
           return { ...car, __carTag: tag };
@@ -73,9 +76,8 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
     })();
   }, []);
 
-  // Load campaigns when assign dialog opens
+  // Load campaigns on mount for bulk assignment
   useEffect(() => {
-    if (!assignDialog.open) return;
     (async () => {
       try {
         const list = await Campaign.list("-created_date");
@@ -84,35 +86,66 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
         setCampaigns([]);
       }
     })();
-  }, [assignDialog.open]);
+  }, []);
 
   const filteredCars = useMemo(() => {
     const s = (filters.search || '').toLowerCase();
     return cars.filter(c => !s || c.plate_number?.toLowerCase().includes(s));
   }, [cars, filters]);
 
-  const openAssign = (car) => {
-    const currentTag = car.__carTag || null;
-    const initial = currentTag?.campaignId || campaign?.id || "";
-    setAssignDialog({ open: true, car, currentTag, selectedCampaignId: initial });
+  const toggleSelectAll = (checked) => {
+    if (checked) {
+      setSelectedCarIds(new Set(filteredCars.map((c) => c.id)));
+    } else {
+      setSelectedCarIds(new Set());
+    }
   };
 
-  const confirmAssign = async () => {
-    if (!assignDialog.car || !assignDialog.currentTag) return;
+  const toggleSelectOne = (carId, checked) => {
+    setSelectedCarIds(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(carId); else next.delete(carId);
+      return next;
+    });
+  };
+
+  const bulkAssign = async () => {
+    if (!selectedCampaignId || selectedCarIds.size === 0) return;
     setAssigning(true);
     setError("");
     setSuccess("");
     try {
-      // Update existing fixed car QR to link to selected campaign
-      const tagId = assignDialog.currentTag.id;
-      await QrTag.update(tagId, { campaignId: assignDialog.selectedCampaignId || null });
-      setSuccess('QR assignment updated.');
-      setAssignDialog({ ...assignDialog, open: false });
-      // refresh the row
-      setCars(prev => prev.map(c => c.id === assignDialog.car.id ? { ...c, __carTag: { ...c.__carTag, campaignId: assignDialog.selectedCampaignId || null } } : c));
+      const ids = Array.from(selectedCarIds);
+      const chosenCampaign = campaigns.find(c => c.id === selectedCampaignId) || null;
+      for (const carId of ids) {
+        const car = cars.find(c => c.id === carId);
+        if (!car) continue;
+        let tag = car.__carTag;
+        if (!tag) {
+          try {
+            tag = await QrTag.create({ type: 'car', carId: car.id, label: car.plate_number });
+          } catch (e) {
+            try {
+              const tags = await QrTag.filter({ carId: car.id, type: 'car' });
+              tag = Array.isArray(tags) && tags.length > 0 ? tags[0] : null;
+            } catch (err) { void err }
+          }
+        }
+        if (tag) {
+          await QrTag.update(tag.id, { campaignId: selectedCampaignId });
+        }
+      }
+      setSuccess(`Assigned ${selectedCarIds.size} car QR${selectedCarIds.size > 1 ? 's' : ''} to campaign.`);
+      // Update local state
+      setCars(prev => prev.map(c => selectedCarIds.has(c.id)
+        ? { ...c, __carTag: { ...c.__carTag, campaignId: selectedCampaignId, campaign: chosenCampaign ? { id: chosenCampaign.id, name: chosenCampaign.name } : c.__carTag?.campaign } }
+        : c
+      ));
+      setSelectedCarIds(new Set());
+      setBulkDialogOpen(false);
       onAssigned && onAssigned();
     } catch (e) {
-      setError(e?.message || 'Failed to assign QR to campaign.');
+      setError(e?.message || 'Failed to assign selected QRs to campaign.');
     }
     setAssigning(false);
   };
@@ -134,7 +167,7 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
             <div className="text-green-700 bg-green-50 p-3 rounded">{success}</div>
           )}
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-3 md:justify-between">
             <div className="relative max-w-md w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
@@ -144,17 +177,36 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
                 onChange={(e) => setFilters({ ...filters, search: e.target.value })}
               />
             </div>
+            <div className="flex items-center gap-2 md:ml-auto">
+              {selectedCarIds.size > 0 && (
+                <Button variant="secondary" onClick={() => setSelectedCarIds(new Set())}>Clear Selection</Button>
+              )}
+              <Button
+                disabled={assigning || selectedCarIds.size === 0}
+                onClick={() => { setSelectedCampaignId(""); setBulkDialogOpen(true); }}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {assigning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Assign To Campaign ({selectedCarIds.size})
+              </Button>
+            </div>
           </div>
 
           <div className="border rounded-lg overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={filteredCars.length > 0 && selectedCarIds.size === filteredCars.length}
+                      onCheckedChange={(v) => toggleSelectAll(!!v)}
+                      aria-label="Select all"
+                    />
+                  </TableHead>
                   <TableHead>QR</TableHead>
                   <TableHead>Plate</TableHead>
                   <TableHead>Slug</TableHead>
                   <TableHead>Campaign</TableHead>
-                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -178,6 +230,13 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
                     return (
                       <TableRow key={car.id} className="hover:bg-gray-50">
                         <TableCell>
+                          <Checkbox
+                            checked={selectedCarIds.has(car.id)}
+                            onCheckedChange={(v) => toggleSelectOne(car.id, !!v)}
+                            aria-label={`Select ${car.plate_number}`}
+                          />
+                        </TableCell>
+                        <TableCell>
                           {tag?.qrImageUrl ? (
                             <div className="w-16 h-16 p-1 bg-white rounded-md border">
                               <img
@@ -196,15 +255,10 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
                         <TableCell className="text-xs">{tag?.slug || '-'}</TableCell>
                         <TableCell>
                           {tag?.campaignId ? (
-                            <Badge variant="secondary">Linked</Badge>
+                            <Badge variant="secondary">{tag?.campaign?.name || campaigns.find(c => c.id === tag.campaignId)?.name || 'Linked'}</Badge>
                           ) : (
                             <Badge variant="outline">Unassigned</Badge>
                           )}
-                        </TableCell>
-                        <TableCell>
-                          <Button size="sm" onClick={() => openAssign(car)}>
-                            <Link2 className="w-4 h-4 mr-2" /> Assign to Campaign
-                          </Button>
                         </TableCell>
                       </TableRow>
                     );
@@ -213,23 +267,20 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
               </TableBody>
             </Table>
           </div>
-
-          {/* Assign modal */}
-          <AlertDialog open={assignDialog.open} onOpenChange={(open) => setAssignDialog((prev) => ({ ...prev, open }))}>
+          <AlertDialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Assign car to campaign</AlertDialogTitle>
+                <AlertDialogTitle>Assign selected cars to campaign</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Choose a campaign to link the fixed car QR for plate {assignDialog.car?.plate_number}.
+                  Choose a campaign to link to the selected car QR codes.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <div className="space-y-3">
-                <Select value={assignDialog.selectedCampaignId || ''} onValueChange={(v) => setAssignDialog((prev) => ({ ...prev, selectedCampaignId: v }))}>
+                <Select value={selectedCampaignId || ''} onValueChange={setSelectedCampaignId}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select campaign" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Unassign from any campaign</SelectItem>
                     {campaigns.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.name}
@@ -240,7 +291,7 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
               </div>
               <AlertDialogFooter>
                 <AlertDialogCancel disabled={assigning}>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={confirmAssign} disabled={assigning || assignDialog.selectedCampaignId === undefined} className="bg-blue-600 hover:bg-blue-700">
+                <AlertDialogAction onClick={bulkAssign} disabled={assigning || !selectedCampaignId} className="bg-blue-600 hover:bg-blue-700">
                   {assigning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                   Confirm
                 </AlertDialogAction>

@@ -1,26 +1,15 @@
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
-  Shield,
   Users,
   TrendingUp,
   QrCode,
   Car,
-  DollarSign,
   ArrowRight,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  Phone, // Added Phone icon
-  MapPin, // Added MapPin icon
-  Target,
-  Zap,
-  MessageSquare,
-  Smartphone
+  X
 } from
 "lucide-react";
 

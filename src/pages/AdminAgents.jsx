@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { User } from "@/api/entities";
-import { apiClient, auth, agents as agentsAPI } from "@/api/client";
+import { auth, agents as agentsAPI } from "@/api/client";
 import { LeadPackage } from "@/api/entities"; // Assuming LeadPackage entity exists
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -15,12 +15,8 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { 
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+
+
 import { 
   Plus, 
   Edit, 

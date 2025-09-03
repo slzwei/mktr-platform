@@ -33,7 +33,6 @@ import verifyRoutes from './routes/verify.js';
 import analyticsRoutes from './routes/analytics.js';
 import { validateGoogleOAuthConfig } from './controllers/authController.js';
 import { optionalAuth } from './middleware/auth.js';
-import { QrTag as QrTagModel } from './models/index.js';
 
 // Load environment variables
 dotenv.config();
@@ -159,8 +158,27 @@ async function startServer() {
     await Prospect.sync({ alter: !isSqlite });
 
     // Ensure name fields exist and constraints are updated
-    await FleetOwner.sync({ alter: true });
-    await User.sync({ alter: true });
+    await FleetOwner.sync({ alter: !isSqlite });
+    await User.sync({ alter: !isSqlite });
+
+    // SQLite fallback: ensure new campaign commission columns exist
+    if (isSqlite) {
+      try {
+        const [columns] = await sequelize.query('PRAGMA table_info(campaigns)');
+        const hasDriver = Array.isArray(columns) && columns.some(c => c.name === 'commission_amount_driver');
+        const hasFleet = Array.isArray(columns) && columns.some(c => c.name === 'commission_amount_fleet');
+        if (!hasDriver) {
+          await sequelize.query('ALTER TABLE campaigns ADD COLUMN commission_amount_driver REAL');
+          console.log('✅ Added commission_amount_driver column to campaigns');
+        }
+        if (!hasFleet) {
+          await sequelize.query('ALTER TABLE campaigns ADD COLUMN commission_amount_fleet REAL');
+          console.log('✅ Added commission_amount_fleet column to campaigns');
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not ensure commission columns on SQLite:', e.message);
+      }
+    }
 
     // Sync remaining models
     await sequelize.sync({ alter: false });

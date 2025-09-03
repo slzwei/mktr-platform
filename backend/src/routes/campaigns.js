@@ -1,8 +1,7 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import { Campaign, User, QrTag, Prospect, sequelize } from '../models/index.js';
+import { Campaign, QrTag, Prospect, sequelize } from '../models/index.js';
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
-import { validate, schemas } from '../middleware/validation.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
 const router = express.Router();
@@ -79,7 +78,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
 // Create new campaign
 router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
   console.log('📦 Create Campaign request by user:', req.user?.id, 'role:', req.user?.role, 'body:', req.body);
-  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents } = req.body;
+  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, commission_amount_driver, commission_amount_fleet } = req.body;
 
   const campaignData = {
     name,
@@ -91,8 +90,10 @@ router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req
     assigned_agents: assigned_agents || [],
     createdBy: req.user.id,
     status: is_active ? 'active' : 'draft',
-    type: 'lead_generation' // Default type for campaigns
+    type: 'lead_generation'
   };
+  if (commission_amount_driver !== undefined) campaignData.commission_amount_driver = commission_amount_driver;
+  if (commission_amount_fleet !== undefined) campaignData.commission_amount_fleet = commission_amount_fleet;
 
   const campaign = await Campaign.create(campaignData);
   console.log('✅ Campaign created:', campaign?.id);
@@ -163,7 +164,7 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
 // Update campaign
 router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config } = req.body;
+  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, commission_amount_driver, commission_amount_fleet } = req.body;
 
   const whereConditions = { id };
   
@@ -190,6 +191,8 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
   }
   if (assigned_agents !== undefined) updateData.assigned_agents = assigned_agents;
   if (design_config !== undefined) updateData.design_config = design_config;
+  if (commission_amount_driver !== undefined) updateData.commission_amount_driver = commission_amount_driver;
+  if (commission_amount_fleet !== undefined) updateData.commission_amount_fleet = commission_amount_fleet;
 
   await campaign.update(updateData);
 

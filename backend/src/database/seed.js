@@ -1,6 +1,5 @@
 import { sequelize } from './connection.js';
 import { User } from '../models/index.js';
-import bcrypt from 'bcryptjs';
 
 const seedUsers = async () => {
   try {

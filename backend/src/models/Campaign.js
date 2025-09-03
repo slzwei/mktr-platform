@@ -146,6 +146,20 @@ const Campaign = sequelize.define('Campaign', {
       model: 'users',
       key: 'id'
     }
+  },
+  commission_amount_driver: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    validate: {
+      min: 0
+    }
+  },
+  commission_amount_fleet: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    validate: {
+      min: 0
+    }
   }
 }, {
   tableName: 'campaigns',

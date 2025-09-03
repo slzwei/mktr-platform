@@ -1,10 +1,8 @@
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { Campaign } from "@/api/entities";
-import { QrTag } from "@/api/entities";
 import { assignLead } from "@/api/functions";
-import { incrementScanCount } from "@/api/functions";
 import CampaignSignupForm from "../components/campaigns/CampaignSignupForm";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, CheckCircle, ArrowLeft } from "lucide-react";

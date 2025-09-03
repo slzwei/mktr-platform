@@ -81,7 +81,7 @@ router.post('/single', authenticateToken, upload.single('file'), asyncHandler(as
     const buffer = fs.readFileSync(req.file.path);
     const uploadedUrl = await storageService.uploadBuffer(key, buffer, req.file.mimetype);
     fileUrl = uploadedUrl;
-    try { fs.unlinkSync(req.file.path); } catch {}
+    try { fs.unlinkSync(req.file.path); } catch (err) { void err }
   }
 
   const fileInfo = {
@@ -117,7 +117,7 @@ router.post('/multiple', authenticateToken, upload.array('files', 5), asyncHandl
       const key = `${type}/${file.filename}`;
       const buffer = fs.readFileSync(file.path);
       url = await storageService.uploadBuffer(key, buffer, file.mimetype);
-      try { fs.unlinkSync(file.path); } catch {}
+      try { fs.unlinkSync(file.path); } catch (err) { void err }
     }
     files.push({
       id: uuidv4(),
@@ -155,7 +155,7 @@ router.post('/avatar', authenticateToken, upload.single('avatar'), asyncHandler(
     const key = `avatars/${req.file.filename}`;
     const buffer = fs.readFileSync(req.file.path);
     avatarUrl = await storageService.uploadBuffer(key, buffer, req.file.mimetype);
-    try { fs.unlinkSync(req.file.path); } catch {}
+    try { fs.unlinkSync(req.file.path); } catch (err) { void err }
   }
 
   // Update user's avatar
@@ -193,7 +193,7 @@ router.post('/campaign-assets', authenticateToken, upload.array('assets', 10), a
       const key = `campaigns/${campaignId}/${file.filename}`;
       const buffer = fs.readFileSync(file.path);
       url = await storageService.uploadBuffer(key, buffer, file.mimetype);
-      try { fs.unlinkSync(file.path); } catch {}
+      try { fs.unlinkSync(file.path); } catch (err) { void err }
     } else {
       const campaignDir = path.join(uploadsDir, 'campaigns', campaignId);
       if (!fs.existsSync(campaignDir)) fs.mkdirSync(campaignDir, { recursive: true });

@@ -1,5 +1,5 @@
 import request from 'supertest'
-import app, { app as expressApp } from '../src/server.js'
+import { app as expressApp } from '../src/server.js'
 
 describe('Backend routing/auth smoke tests', () => {
   it('health check should return OK', async () => {

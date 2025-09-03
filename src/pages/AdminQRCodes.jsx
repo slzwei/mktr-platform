@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { User } from "@/api/entities";
 import { Campaign } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { QrCode, AlertTriangle } from "lucide-react";
+import { QrCode } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import CampaignQRManager from "@/components/qrcodes/CampaignQRManager";
 

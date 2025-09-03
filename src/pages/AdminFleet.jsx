@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { User } from "@/api/entities";
 import { Car } from "@/api/entities";
 import { FleetOwner } from "@/api/entities";
@@ -443,7 +443,7 @@ export default function AdminFleet() {
                             >
                               {car.current_driver_id ? "Rented" : "Available"}
                             </Badge>
-                            {car.status !== 'active' && (
+                            {Boolean(car.status && car.status !== 'active') && (
                               <Badge variant="outline" className="ml-2 bg-yellow-100 text-yellow-800">
                                 {car.status}
                               </Badge>
@@ -721,7 +721,7 @@ export default function AdminFleet() {
                                     </div>
                                     <div>
                                       <p className="font-semibold text-gray-900">
-                                        {`${driver.firstName} ${driver.lastName}` || 'N/A'}
+                                        {[driver.firstName, driver.lastName].filter(Boolean).join(' ') || 'N/A'}
                                       </p>
                                       <p className="text-sm text-gray-500">ID: {driver.id.slice(-8)}</p>
                                     </div>

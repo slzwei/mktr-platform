@@ -1,14 +1,12 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { QrTag } from "@/api/entities";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, QrCode, Car, Tag, Plus } from "lucide-react";
+import { ArrowLeft, QrCode, Car, Tag } from "lucide-react";
 
 import ExistingQRCodes from "./ExistingQRCodes";
 import PromotionalQRForm from "./PromotionalQRForm";
-import CarQRSelection from "./CarQRSelection";
 import CarQRDirectory from "./CarQRDirectory";
 
 export default function CampaignQRManager({ campaign, onBack }) {
@@ -46,6 +44,12 @@ export default function CampaignQRManager({ campaign, onBack }) {
     // Refresh the QR tags list and switch to existing tab
     handleRefreshQRTags();
     setActiveTab("existing");
+  };
+
+  const handleAssignedFromCar = () => {
+    // Refresh but keep user on the Car tab
+    handleRefreshQRTags();
+    setActiveTab("car");
   };
 
   const promotionalQRs = qrTags.filter(qr => qr.type === 'promo');
@@ -111,7 +115,7 @@ export default function CampaignQRManager({ campaign, onBack }) {
           <TabsContent value="car">
             <CarQRDirectory 
               campaign={campaign}
-              onAssigned={handleQRGenerated}
+              onAssigned={handleAssignedFromCar}
             />
           </TabsContent>
         </Tabs>

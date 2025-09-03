@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiClient } from '@/api/client';
 import CampaignSignupForm from '@/components/campaigns/CampaignSignupForm';

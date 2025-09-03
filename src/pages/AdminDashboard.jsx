@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Prospect } from "@/api/entities";
 import { Campaign } from "@/api/entities";
 import { Commission } from "@/api/entities";
@@ -12,11 +12,8 @@ import { createPageUrl } from "@/utils";
 import { 
   Users, 
   DollarSign, 
-  TrendingUp, 
-  QrCode,
+  TrendingUp,
   Car as CarIcon,
-  Calendar,
-  Eye,
   ArrowRight
 } from "lucide-react";
 import { format } from "date-fns";
