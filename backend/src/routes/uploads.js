@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import { storageService } from '../services/storage.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
@@ -72,7 +73,16 @@ router.post('/single', authenticateToken, upload.single('file'), asyncHandler(as
   }
 
   const { type = 'general' } = req.query;
-  const fileUrl = `/uploads/${type}/${req.file.filename}`;
+  let fileUrl = `/uploads/${type}/${req.file.filename}`;
+
+  // If Spaces configured, upload file contents and return public URL, then remove local file
+  if (storageService.isEnabled()) {
+    const key = `${type}/${req.file.filename}`;
+    const buffer = fs.readFileSync(req.file.path);
+    const uploadedUrl = await storageService.uploadBuffer(key, buffer, req.file.mimetype);
+    fileUrl = uploadedUrl;
+    try { fs.unlinkSync(req.file.path); } catch {}
+  }
 
   const fileInfo = {
     id: uuidv4(),
@@ -100,17 +110,27 @@ router.post('/multiple', authenticateToken, upload.array('files', 5), asyncHandl
   }
 
   const { type = 'general' } = req.query;
-  const files = req.files.map(file => ({
-    id: uuidv4(),
-    originalName: file.originalname,
-    filename: file.filename,
-    mimetype: file.mimetype,
-    size: file.size,
-    url: `/uploads/${type}/${file.filename}`,
-    type,
-    uploadedBy: req.user.id,
-    uploadedAt: new Date()
-  }));
+  const files = [];
+  for (const file of req.files) {
+    let url = `/uploads/${type}/${file.filename}`;
+    if (storageService.isEnabled()) {
+      const key = `${type}/${file.filename}`;
+      const buffer = fs.readFileSync(file.path);
+      url = await storageService.uploadBuffer(key, buffer, file.mimetype);
+      try { fs.unlinkSync(file.path); } catch {}
+    }
+    files.push({
+      id: uuidv4(),
+      originalName: file.originalname,
+      filename: file.filename,
+      mimetype: file.mimetype,
+      size: file.size,
+      url,
+      type,
+      uploadedBy: req.user.id,
+      uploadedAt: new Date()
+    });
+  }
 
   res.json({
     success: true,
@@ -130,7 +150,13 @@ router.post('/avatar', authenticateToken, upload.single('avatar'), asyncHandler(
     throw new AppError('Avatar must be an image file', 400);
   }
 
-  const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+  let avatarUrl = `/uploads/avatars/${req.file.filename}`;
+  if (storageService.isEnabled()) {
+    const key = `avatars/${req.file.filename}`;
+    const buffer = fs.readFileSync(req.file.path);
+    avatarUrl = await storageService.uploadBuffer(key, buffer, req.file.mimetype);
+    try { fs.unlinkSync(req.file.path); } catch {}
+  }
 
   // Update user's avatar
   await req.user.update({ avatar: avatarUrl });
@@ -160,24 +186,27 @@ router.post('/campaign-assets', authenticateToken, upload.array('assets', 10), a
   }
 
   // Create campaign-specific directory
-  const campaignDir = path.join(uploadsDir, 'campaigns', campaignId);
-  if (!fs.existsSync(campaignDir)) {
-    fs.mkdirSync(campaignDir, { recursive: true });
-  }
-
-  // Move files to campaign directory
   const assets = [];
   for (const file of req.files) {
-    const newPath = path.join(campaignDir, file.filename);
-    fs.renameSync(file.path, newPath);
-    
+    let url = `/uploads/campaigns/${campaignId}/${file.filename}`;
+    if (storageService.isEnabled()) {
+      const key = `campaigns/${campaignId}/${file.filename}`;
+      const buffer = fs.readFileSync(file.path);
+      url = await storageService.uploadBuffer(key, buffer, file.mimetype);
+      try { fs.unlinkSync(file.path); } catch {}
+    } else {
+      const campaignDir = path.join(uploadsDir, 'campaigns', campaignId);
+      if (!fs.existsSync(campaignDir)) fs.mkdirSync(campaignDir, { recursive: true });
+      const newPath = path.join(campaignDir, file.filename);
+      fs.renameSync(file.path, newPath);
+    }
     assets.push({
       id: uuidv4(),
       originalName: file.originalname,
       filename: file.filename,
       mimetype: file.mimetype,
       size: file.size,
-      url: `/uploads/campaigns/${campaignId}/${file.filename}`,
+      url,
       type: 'campaign-asset',
       campaignId,
       uploadedBy: req.user.id,

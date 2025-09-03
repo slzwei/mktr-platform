@@ -1,6 +1,7 @@
 import express from 'express';
 import { Op } from 'sequelize';
 import QRCode from 'qrcode';
+import { storageService } from '../services/storage.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -177,9 +178,14 @@ router.post('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) 
   // Generate PNG and save to uploads
   const pngBuffer = await QRCode.toBuffer(linkUrl, { width: 600, margin: 2 });
   const fileName = `qr-${slug}.png`;
-  const filePath = path.join(uploadsDir, fileName);
-  fs.writeFileSync(filePath, pngBuffer);
-  const publicUrl = `/uploads/image/${fileName}`;
+  let publicUrl = `/uploads/image/${fileName}`;
+  if (storageService.isEnabled()) {
+    const key = `image/${fileName}`;
+    publicUrl = await storageService.uploadBuffer(key, pngBuffer, 'image/png');
+  } else {
+    const filePath = path.join(uploadsDir, fileName);
+    fs.writeFileSync(filePath, pngBuffer);
+  }
 
   const qrTag = await QrTag.create({
     slug,
@@ -271,9 +277,14 @@ router.put('/:id', authenticateToken, requireAdmin, asyncHandler(async (req, res
     // regenerate PNG
     const pngBuffer = await QRCode.toBuffer(linkUrl, { width: 600, margin: 2 });
     const fileName = `qr-${qrTag.slug}.png`;
-    const filePath = path.join(uploadsDir, fileName);
-    fs.writeFileSync(filePath, pngBuffer);
-    updateData.qrImageUrl = `/uploads/image/${fileName}`;
+    if (storageService.isEnabled()) {
+      const key = `image/${fileName}`;
+      updateData.qrImageUrl = await storageService.uploadBuffer(key, pngBuffer, 'image/png');
+    } else {
+      const filePath = path.join(uploadsDir, fileName);
+      fs.writeFileSync(filePath, pngBuffer);
+      updateData.qrImageUrl = `/uploads/image/${fileName}`;
+    }
   }
 
   await qrTag.update(updateData);
