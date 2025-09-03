@@ -50,7 +50,8 @@ export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit 
   const loadCampaigns = async () => {
     try {
       const campaignsData = await Campaign.list();
-      setCampaigns(campaignsData.filter(c => c.is_active));
+      // Filter out archived campaigns and only show active ones
+      setCampaigns(campaignsData.filter(c => c.is_active && c.status !== 'archived'));
     } catch (error) {
       console.error("Failed to load campaigns:", error);
     }

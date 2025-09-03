@@ -7,8 +7,10 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import cookieParser from 'cookie-parser';
 
 import { sequelize } from './database/connection.js';
+import { QrTag, QrScan, Attribution, SessionVisit, Prospect, FleetOwner, User } from './models/index.js';
 import './models/CampaignPreview.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
@@ -22,11 +24,16 @@ import agentRoutes from './routes/agents.js';
 import fleetRoutes from './routes/fleet.js';
 import prospectRoutes from './routes/prospects.js';
 import qrRoutes from './routes/qrcodes.js';
+import trackerRoutes from './routes/tracker.js';
+import leadCaptureBind from './routes/leadCaptureBind.js';
 import commissionRoutes from './routes/commissions.js';
 import uploadRoutes from './routes/uploads.js';
 import dashboardRoutes from './routes/dashboard.js';
 import verifyRoutes from './routes/verify.js';
+import analyticsRoutes from './routes/analytics.js';
 import { validateGoogleOAuthConfig } from './controllers/authController.js';
+import { optionalAuth } from './middleware/auth.js';
+import { QrTag as QrTagModel } from './models/index.js';
 
 // Load environment variables
 dotenv.config();
@@ -44,6 +51,11 @@ app.use(helmet({
 }));
 app.use(compression());
 
+// Trust proxy (for accurate req.ip behind reverse proxies)
+if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === 'true') {
+  app.set('trust proxy', 1);
+}
+
 // CORS configuration
 const corsOrigins = process.env.CORS_ORIGIN 
   ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
@@ -56,13 +68,17 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Rate limiting
+// Rate limiting (bypass for authenticated admins)
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => !!(req.user && req.user.role === 'admin'),
   message: 'Too many requests from this IP, please try again later.'
 });
-app.use('/api', limiter);
+// Ensure we decode JWT (if present) before limiter so skip() can see admin
+app.use('/api', optionalAuth, limiter);
 
 // Logging
 app.use(morgan('combined'));
@@ -70,6 +86,7 @@ app.use(morgan('combined'));
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
 
 // Static file serving for uploads
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -93,11 +110,24 @@ app.use('/api/previews', campaignPreviewRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/fleet', fleetRoutes);
 app.use('/api/prospects', prospectRoutes);
+// Tracker routes must come BEFORE generic qrcodes routes to avoid '/session' and '/track' being captured by '/:id'
+app.use('/api/qrcodes', trackerRoutes);
 app.use('/api/qrcodes', qrRoutes);
+
+// Bind attribution/session for SPA lead-capture page
+app.use(leadCaptureBind);
 app.use('/api/commissions', commissionRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/verify', verifyRoutes);
+app.use('/api/analytics', analyticsRoutes);
+
+// Fallback: /t/:slug → /api/qrcodes/track/:slug with noindex/no-store
+app.get('/t/:slug', (req, res) => {
+  res.set('X-Robots-Tag', 'noindex, nofollow');
+  res.set('Cache-Control', 'no-store');
+  return res.redirect(302, `/api/qrcodes/track/${encodeURIComponent(req.params.slug)}`);
+});
 
 // Error handling middleware
 app.use(notFound);
@@ -114,9 +144,31 @@ async function startServer() {
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
 
-    // Ensure preview table exists without forcing all models
+    // Targeted sync for new/changed models; avoid accidental destructive alters on sqlite
+    const isSqlite = sequelize.getDialect() === 'sqlite';
+    await QrTag.sync({ alter: !isSqlite });
+    await QrScan.sync({ alter: !isSqlite });
+    await Attribution.sync({ alter: !isSqlite });
+    await SessionVisit.sync({ alter: !isSqlite });
+    await Prospect.sync({ alter: !isSqlite });
+
+    // Ensure name fields exist and constraints are updated
+    await FleetOwner.sync({ alter: true });
+    await User.sync({ alter: true });
+
+    // Sync remaining models
     await sequelize.sync({ alter: false });
     console.log('✅ Database models synchronized.');
+
+    // Create Postgres unique index for car QR invariant if on Postgres
+    try {
+      if (sequelize.getDialect() === 'postgres') {
+        await sequelize.query("CREATE UNIQUE INDEX IF NOT EXISTS uniq_car_qr ON qr_tags(\"carId\") WHERE type = 'car'");
+        console.log('✅ Ensured uniq_car_qr index exists');
+      }
+    } catch (e) {
+      console.warn('⚠️ Could not ensure uniq_car_qr index:', e.message);
+    }
 
     // Start server
     app.listen(PORT, () => {

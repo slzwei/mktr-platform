@@ -47,14 +47,35 @@ export default function AdminDashboard() {
   const loadDashboardData = async () => {
     try {
       const userData = await auth.getCurrentUser();
+      if (!userData) {
+        console.log('No user data, redirecting to login');
+        return;
+      }
       setUser(userData);
 
-      const [prospects, campaigns, commissions, cars] = await Promise.all([
+      // Ensure API client has authentication token
+      const token = localStorage.getItem('mktr_auth_token');
+      if (!token) {
+        console.log('No authentication token found');
+        return;
+      }
+
+      const [prospects, allCampaigns, commissions] = await Promise.all([
         Prospect.list(),
         Campaign.list(),
-        Commission.list(),
-        Car.list()
+        Commission.list()
       ]);
+      
+      // Filter out archived campaigns for dashboard stats
+      const campaigns = allCampaigns.filter(campaign => campaign.status !== 'archived');
+      
+      // Load cars separately with error handling for fleet module
+      let cars = [];
+      try {
+        cars = await Car.list();
+      } catch (error) {
+        console.log('Fleet module not accessible, skipping car data:', error.message);
+      }
 
       setStats({ prospects, campaigns, commissions, cars });
     } catch (error) {

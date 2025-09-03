@@ -257,7 +257,7 @@ export default function CustomerLogin() {
 
   return (
     <>
-      <style jsx>{`
+      <style>{`
         /* CSS Custom Properties */
         :root {
           --heading-font: 'Mindset', 'Inter', sans-serif;

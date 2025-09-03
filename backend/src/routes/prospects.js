@@ -1,6 +1,6 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import { Prospect, User, Campaign, QrTag, Commission, sequelize } from '../models/index.js';
+import { Prospect, User, Campaign, QrTag, Commission, Attribution, sequelize } from '../models/index.js';
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
@@ -118,6 +118,20 @@ router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res)
     // Auto-assign to requesting agent if they're an agent
     assignedAgentId: req.user && req.user.role === 'agent' ? req.user.id : req.body.assignedAgentId
   };
+
+  // Bind attribution by session cookie (sid)
+  const sid = req.cookies?.sid || req.headers['x-session-id'];
+  if (sid) {
+    const attribution = await Attribution.findOne({
+      where: { sessionId: sid },
+      order: [['lastTouchAt', 'DESC']]
+    });
+    if (attribution) {
+      prospectData.attributionId = attribution.id;
+      prospectData.qrTagId = attribution.qrTagId;
+      prospectData.sessionId = sid;
+    }
+  }
 
   const prospect = await Prospect.create(prospectData);
 

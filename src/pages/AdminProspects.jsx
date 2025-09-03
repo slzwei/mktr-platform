@@ -103,12 +103,16 @@ export default function AdminProspects() {
 
   const loadData = async () => {
     try {
-      const [userData, prospectsData, campaignsData] = await Promise.all([
+      const [userData, prospectsData, allCampaignsData] = await Promise.all([
         auth.getCurrentUser(),
         Prospect.list(),
         Campaign.list()
       ]);
       setUser(userData);
+      
+      // Filter out archived campaigns for prospect assignment
+      const campaignsData = allCampaignsData.filter(campaign => campaign.status !== 'archived');
+      
       // Normalize and sort by created_date desc
       const normalized = (prospectsData || []).map(normalizeProspect).sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
       setProspects(normalized);

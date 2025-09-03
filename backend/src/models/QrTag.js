@@ -7,66 +7,44 @@ const QrTag = sequelize.define('QrTag', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true
   },
+  // Stable short identifier used in URLs: mktr.sg/t/:slug
+  slug: {
+    type: DataTypes.STRING(64),
+    allowNull: true
+  },
+  // Optional human-readable label
+  label: {
+    type: DataTypes.STRING(128),
+    allowNull: true
+  },
+  // Backward-compat name (deprecated in favor of label)
   name: {
     type: DataTypes.STRING,
-    allowNull: false,
-    validate: {
-      len: [1, 100]
-    }
+    allowNull: true
   },
   description: {
     type: DataTypes.TEXT,
     allowNull: true
   },
   type: {
-    type: DataTypes.ENUM('campaign', 'car', 'promotional', 'event', 'location', 'other'),
-    allowNull: false
+    type: DataTypes.STRING,
+    allowNull: true
   },
+  // SVG content
   qrCode: {
     type: DataTypes.TEXT,
-    allowNull: false,
-    unique: true,
-    comment: 'Base64 encoded QR code image or SVG'
-  },
-  qrData: {
-    type: DataTypes.TEXT,
-    allowNull: false,
-    comment: 'The actual data/URL encoded in the QR code'
-  },
-  shortUrl: {
-    type: DataTypes.STRING,
     allowNull: true,
-    unique: true,
-    comment: 'Shortened URL for the QR code destination'
+    comment: 'QR code SVG markup'
   },
-  destinationUrl: {
+  // PNG image file path for printing
+  qrImageUrl: {
     type: DataTypes.STRING,
-    allowNull: false,
-    validate: {
-      isUrl: true
-    }
-  },
-  status: {
-    type: DataTypes.ENUM('active', 'inactive', 'expired', 'archived'),
-    defaultValue: 'active'
-  },
-  scanCount: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0,
-    validate: {
-      min: 0
-    }
-  },
-  uniqueScanCount: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0,
-    validate: {
-      min: 0
-    }
-  },
-  lastScanned: {
-    type: DataTypes.DATE,
     allowNull: true
+  },
+  // Active flag (replace status enum usage)
+  active: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   },
   location: {
     type: DataTypes.JSON,
@@ -91,43 +69,6 @@ const QrTag = sequelize.define('QrTag', {
       visibility: 'high'
     }
   },
-  analytics: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {
-      dailyScans: {},
-      deviceTypes: {},
-      operatingSystems: {},
-      browsers: {},
-      referrers: {},
-      locations: {}
-    }
-  },
-  customData: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {},
-    comment: 'Additional custom data for the QR code'
-  },
-  expirationDate: {
-    type: DataTypes.DATE,
-    allowNull: true
-  },
-  isPasswordProtected: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: false
-  },
-  password: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  maxScans: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    validate: {
-      min: 1
-    }
-  },
   tags: {
     type: DataTypes.TEXT,
     allowNull: true,
@@ -148,6 +89,14 @@ const QrTag = sequelize.define('QrTag', {
       key: 'id'
     }
   },
+  ownerUserId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'users',
+      key: 'id'
+    }
+  },
   carId: {
     type: DataTypes.UUID,
     allowNull: true,
@@ -156,26 +105,17 @@ const QrTag = sequelize.define('QrTag', {
       key: 'id'
     }
   },
-  createdBy: {
+  parentQrTagId: {
     type: DataTypes.UUID,
-    allowNull: false,
+    allowNull: true,
     references: {
-      model: 'users',
+      model: 'qr_tags',
       key: 'id'
     }
   }
 }, {
   tableName: 'qr_tags',
   indexes: [
-    {
-      fields: ['qrData']
-    },
-    {
-      fields: ['shortUrl']
-    },
-    {
-      fields: ['status']
-    },
     {
       fields: ['type']
     },
@@ -185,12 +125,7 @@ const QrTag = sequelize.define('QrTag', {
     {
       fields: ['carId']
     },
-    {
-      fields: ['createdBy']
-    },
-    {
-      fields: ['expirationDate']
-    }
+    // slug index can be added via raw SQL after backfill in SQLite
   ]
 });
 

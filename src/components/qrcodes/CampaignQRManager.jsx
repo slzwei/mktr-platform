@@ -19,8 +19,8 @@ export default function CampaignQRManager({ campaign, onBack }) {
     const loadQRTags = async () => {
       setLoading(true);
       try {
-        const allQRTags = await QrTag.filter({ campaign_id: campaign.id });
-        setQrTags(allQRTags);
+        const allQRTags = await QrTag.filter({ campaignId: campaign.id });
+        setQrTags(allQRTags.filter(t => t.campaignId === campaign.id));
       } catch (error) {
         console.error("Error loading QR tags:", error);
       }
@@ -33,8 +33,8 @@ export default function CampaignQRManager({ campaign, onBack }) {
   const handleRefreshQRTags = async () => {
     setLoading(true);
     try {
-      const allQRTags = await QrTag.filter({ campaign_id: campaign.id });
-      setQrTags(allQRTags);
+      const allQRTags = await QrTag.filter({ campaignId: campaign.id });
+      setQrTags(allQRTags.filter(t => t.campaignId === campaign.id));
     } catch (error) {
       console.error("Error loading QR tags:", error);
     }
@@ -47,7 +47,7 @@ export default function CampaignQRManager({ campaign, onBack }) {
     setActiveTab("existing");
   };
 
-  const promotionalQRs = qrTags.filter(qr => qr.type === 'distribution');
+  const promotionalQRs = qrTags.filter(qr => qr.type === 'promo');
   const carQRs = qrTags.filter(qr => qr.type === 'car');
 
   return (

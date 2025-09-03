@@ -37,10 +37,13 @@ export default function MyLeadPackages({ userId }) {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [packagesData, campaignsData] = await Promise.all([
+        const [packagesData, allCampaignsData] = await Promise.all([
           LeadPackage.filter({ agent_id: userId }),
           Campaign.list()
         ]);
+        
+        // Filter out archived campaigns
+        const campaignsData = allCampaignsData.filter(campaign => campaign.status !== 'archived');
         
         setPackages(packagesData);
         setCampaigns(campaignsData);

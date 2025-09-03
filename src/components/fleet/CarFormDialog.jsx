@@ -17,14 +17,18 @@ export default function CarFormDialog({
   onOpenChange, 
   car, 
   onSubmit, 
-  fleetOwners
+  fleetOwners,
+  currentUserRole,
+  currentUserId 
 }) {
   const [formData, setFormData] = useState({
     plate_number: "",
     fleet_owner_id: "",
+    make: "",
     model: "",
     year: "",
     color: "",
+    type: "sedan",
     status: "active"
   });
   const [loading, setLoading] = useState(false);
@@ -35,18 +39,22 @@ export default function CarFormDialog({
       setFormData({
         plate_number: car.plate_number || "",
         fleet_owner_id: car.fleet_owner_id || "",
+        make: car.make || "",
         model: car.model || "",
         year: car.year || "",
         color: car.color || "",
+        type: car.type || "sedan",
         status: car.status || "active"
       });
     } else {
       setFormData({
         plate_number: "",
-        fleet_owner_id: "",
+        fleet_owner_id: currentUserRole === 'fleet_owner' ? currentUserId : "",
+        make: "",
         model: "",
         year: "",
         color: "",
+        type: "sedan",
         status: "active"
       });
     }
@@ -71,14 +79,34 @@ export default function CarFormDialog({
       if (!formData.plate_number.trim()) {
         throw new Error("Plate number is required");
       }
-      if (!formData.fleet_owner_id) {
+      if (!formData.make.trim()) {
+        throw new Error("Car make is required");
+      }
+      if (currentUserRole === 'admin' && !formData.fleet_owner_id) {
         throw new Error("Fleet owner is required");
       }
 
-      await onSubmit(formData);
+      // Convert year to number for validation
+      const submitData = {
+        ...formData,
+        year: formData.year ? parseInt(formData.year) : undefined
+      };
+      
+      await onSubmit(submitData);
       onOpenChange(false);
     } catch (err) {
-      setError(err.message || "Failed to save vehicle");
+      console.error('Car form submission error:', err);
+      
+      // Handle specific validation errors
+      let errorMessage = err.message || "Failed to save vehicle";
+      
+      if (errorMessage.includes("Validation error") || errorMessage.includes("must be unique")) {
+        errorMessage = "A vehicle with this plate number already exists. Please use a different plate number.";
+      } else if (errorMessage.includes("Fleet owner not found")) {
+        errorMessage = "Selected fleet owner not found. Please select a valid fleet owner.";
+      }
+      
+      setError(errorMessage);
     }
     setLoading(false);
   };
@@ -102,26 +130,40 @@ export default function CarFormDialog({
             />
           </div>
 
-          <div>
-            <Label htmlFor="fleet_owner_id">Fleet Owner *</Label>
-            <Select 
-              value={formData.fleet_owner_id} 
-              onValueChange={(value) => handleSelectChange("fleet_owner_id", value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select fleet owner" />
-              </SelectTrigger>
-              <SelectContent>
-                {fleetOwners.map((owner) => (
-                  <SelectItem key={owner.id} value={owner.id}>
-                    {owner.full_name || owner.email}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {currentUserRole === 'admin' && (
+            <div>
+              <Label htmlFor="fleet_owner_id">Fleet Owner *</Label>
+              <Select 
+                value={formData.fleet_owner_id} 
+                onValueChange={(value) => handleSelectChange("fleet_owner_id", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select fleet owner" />
+                </SelectTrigger>
+                <SelectContent>
+                  {fleetOwners.map((owner) => (
+                    <SelectItem key={owner.id} value={owner.id}>
+                      {owner.full_name || owner.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="make">Car Make *</Label>
+              <Input
+                id="make"
+                name="make"
+                value={formData.make}
+                onChange={handleChange}
+                placeholder="e.g., Toyota"
+                required
+              />
+            </div>
+
             <div>
               <Label htmlFor="model">Car Model</Label>
               <Input
@@ -129,10 +171,12 @@ export default function CarFormDialog({
                 name="model"
                 value={formData.model}
                 onChange={handleChange}
-                placeholder="e.g., Toyota Camry"
+                placeholder="e.g., Camry"
               />
             </div>
+          </div>
 
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="year">Year</Label>
               <Input
@@ -145,6 +189,28 @@ export default function CarFormDialog({
                 min="1900"
                 max="2030"
               />
+            </div>
+
+            <div>
+              <Label htmlFor="type">Vehicle Type *</Label>
+              <Select 
+                value={formData.type} 
+                onValueChange={(value) => handleSelectChange("type", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sedan">Sedan</SelectItem>
+                  <SelectItem value="suv">SUV</SelectItem>
+                  <SelectItem value="truck">Truck</SelectItem>
+                  <SelectItem value="van">Van</SelectItem>
+                  <SelectItem value="coupe">Coupe</SelectItem>
+                  <SelectItem value="hatchback">Hatchback</SelectItem>
+                  <SelectItem value="convertible">Convertible</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

@@ -7,150 +7,100 @@ const FleetOwner = sequelize.define('FleetOwner', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true
   },
-  companyName: {
+  firstName: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    validate: {
+      len: [0, 50]
+    }
+  },
+  lastName: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    validate: {
+      len: [0, 50]
+    }
+  },
+  full_name: {
     type: DataTypes.STRING,
     allowNull: false,
     validate: {
       len: [1, 100]
     }
   },
-  businessType: {
-    type: DataTypes.ENUM('transportation', 'delivery', 'rideshare', 'logistics', 'rental', 'other'),
-    allowNull: false
-  },
-  businessLicense: {
+  email: {
     type: DataTypes.STRING,
-    allowNull: true,
+    allowNull: false,
+    unique: true,
     validate: {
-      len: [1, 50]
+      isEmail: true
     }
   },
-  taxId: {
+  phone: {
     type: DataTypes.STRING,
     allowNull: true,
     validate: {
       len: [1, 20]
     }
   },
-  address: {
-    type: DataTypes.JSON,
+  company_name: {
+    type: DataTypes.STRING,
     allowNull: true,
-    defaultValue: {
-      street: '',
-      city: '',
-      state: '',
-      zipCode: '',
-      country: 'US'
-    }
-  },
-  contactInfo: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {
-      primaryPhone: '',
-      secondaryPhone: '',
-      email: '',
-      website: ''
-    }
-  },
-  bankingInfo: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {
-      accountNumber: '',
-      routingNumber: '',
-      bankName: '',
-      accountType: 'checking'
-    }
-  },
-  insurance: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {
-      provider: '',
-      policyNumber: '',
-      coverage: '',
-      expirationDate: null
-    }
-  },
-  fleetSize: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0,
     validate: {
-      min: 0
+      len: [1, 100]
     }
   },
-  activeVehicles: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0,
+  uen: {
+    type: DataTypes.STRING,
+    allowNull: true,
     validate: {
-      min: 0
+      len: [1, 50]
     }
   },
-  totalDrivers: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0,
-    validate: {
-      min: 0
-    }
+  payout_method: {
+    type: DataTypes.ENUM('PayNow', 'Bank Transfer'),
+    allowNull: true
   },
+
   status: {
-    type: DataTypes.ENUM('active', 'inactive', 'suspended', 'pending_approval'),
-    defaultValue: 'pending_approval'
-  },
-  verificationStatus: {
-    type: DataTypes.ENUM('pending', 'verified', 'rejected'),
-    defaultValue: 'pending'
-  },
-  documents: {
-    type: DataTypes.TEXT,
-    allowNull: true,
-    defaultValue: '[]',
-    get() {
-      const value = this.getDataValue('documents');
-      return value ? JSON.parse(value) : [];
-    },
-    set(value) {
-      this.setDataValue('documents', JSON.stringify(value || []));
-    }
-  },
-  notes: {
-    type: DataTypes.TEXT,
-    allowNull: true
-  },
-  userId: {
-    type: DataTypes.UUID,
-    allowNull: false,
-    unique: true,
-    references: {
-      model: 'users',
-      key: 'id'
-    }
-  },
-  joinedDate: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW
-  },
-  lastActive: {
-    type: DataTypes.DATE,
-    allowNull: true
+    type: DataTypes.ENUM('active', 'inactive'),
+    defaultValue: 'active'
   }
 }, {
   tableName: 'fleet_owners',
   indexes: [
     {
-      fields: ['userId']
+      fields: ['email']
     },
     {
       fields: ['status']
     },
     {
-      fields: ['verificationStatus']
-    },
-    {
-      fields: ['businessType']
+      fields: ['full_name']
     }
-  ]
+  ],
+  hooks: {
+    beforeValidate: (instance) => {
+      // If first/last provided but no full_name, compose it
+      if (!instance.full_name) {
+        const name = [instance.firstName, instance.lastName].filter(Boolean).join(' ').trim();
+        if (name) instance.full_name = name;
+      }
+      // If full_name provided but missing first/last, try to split
+      if (instance.full_name && (!instance.firstName && !instance.lastName)) {
+        const parts = String(instance.full_name).trim().split(/\s+/);
+        instance.firstName = parts[0] || null;
+        instance.lastName = parts.slice(1).join(' ') || parts[0] || null;
+      }
+    },
+    beforeSave: (instance) => {
+      // Keep full_name in sync if first/last changed
+      const name = [instance.firstName, instance.lastName].filter(Boolean).join(' ').trim();
+      if (name && instance.full_name !== name) {
+        instance.full_name = name;
+      }
+    }
+  }
 });
 
 export default FleetOwner;

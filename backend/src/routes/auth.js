@@ -11,7 +11,7 @@ const router = express.Router();
 
 // Register new user
 router.post('/register', validate(schemas.userRegister), asyncHandler(async (req, res) => {
-  const { email, password, firstName, lastName, phone, role } = req.body;
+  const { email, password, firstName, lastName, phone, role, full_name, fullName } = req.body;
 
   // Check if user already exists
   const existingUser = await User.findOne({ where: { email } });
@@ -23,8 +23,10 @@ router.post('/register', validate(schemas.userRegister), asyncHandler(async (req
   const user = await User.create({
     email,
     password,
-    firstName,
-    lastName,
+    // Prefer explicit first/last, but allow single full name string
+    firstName: firstName || undefined,
+    lastName: lastName || undefined,
+    fullName: fullName || full_name || undefined,
     phone,
     role: role || 'customer',
     emailVerificationToken: uuidv4()
@@ -57,7 +59,7 @@ router.post('/login', validate(schemas.userLogin), asyncHandler(async (req, res)
     throw new AppError('Invalid email or password', 401);
   }
 
-  // Check password
+  // Check password (returns false for OAuth-only users without password)
   const isValidPassword = await user.comparePassword(password);
   if (!isValidPassword) {
     throw new AppError('Invalid email or password', 401);

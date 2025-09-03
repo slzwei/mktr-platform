@@ -53,6 +53,16 @@ class APIClient {
   async request(endpoint, options = {}) {
     const url = `${this.baseURL}${endpoint}`;
     const token = this.getToken();
+    
+    // Debug authentication
+    if (endpoint.includes('/fleet/cars') && options.method === 'POST') {
+      console.log('🔍 API Request Debug:');
+      console.log('  Endpoint:', endpoint);
+      console.log('  Token exists:', !!token);
+      console.log('  Token length:', token?.length || 0);
+      console.log('  Token preview:', token?.substring(0, 20) + '...' || 'No token');
+      console.log('  Request body:', options.body);
+    }
 
     const config = {
       method: 'GET',
@@ -61,6 +71,7 @@ class APIClient {
         ...(token && { Authorization: `Bearer ${token}` }),
         ...options.headers
       },
+      credentials: 'include',
       ...options
     };
 
@@ -88,6 +99,29 @@ class APIClient {
           statusText: response.statusText,
           data: data
         });
+        
+        // For validation errors, include the validation details
+        if (response.status === 400 && (data.details || data.errors)) {
+          console.error('Validation Details:', data.details);
+          console.error('Validation Errors:', data.errors);
+          
+          // Handle different validation detail formats
+          let validationErrors = 'Invalid request data';
+          
+          // Check errors field first (where actual validation details are)
+          if (data.errors && Array.isArray(data.errors)) {
+            validationErrors = data.errors.map(err => `${err.field}: ${err.message}`).join(', ');
+          } else if (Array.isArray(data.details)) {
+            validationErrors = data.details.map(err => err.message || err).join(', ');
+          } else if (typeof data.details === 'string') {
+            validationErrors = data.details;
+          } else if (data.details?.message) {
+            validationErrors = data.details.message;
+          }
+          
+          throw new Error(`Validation Error: ${validationErrors}`);
+        }
+        
         throw new Error(data.message || `HTTP ${response.status}: ${response.statusText}`);
       }
 
@@ -362,6 +396,21 @@ class CampaignEntity extends BaseEntity {
     const response = await apiClient.post(`${this.endpoint}/${id}/duplicate`, { name });
     return response.data;
   }
+
+  async archive(id) {
+    const response = await apiClient.patch(`${this.endpoint}/${id}/archive`);
+    return response.data;
+  }
+
+  async restore(id) {
+    const response = await apiClient.patch(`${this.endpoint}/${id}/restore`);
+    return response.data;
+  }
+
+  async permanentDelete(id) {
+    const response = await apiClient.delete(`${this.endpoint}/${id}/permanent`);
+    return response.data;
+  }
 }
 
 // Prospect Entity
@@ -627,6 +676,7 @@ if (typeof window !== 'undefined') {
   const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
   if (token) {
     apiClient.setToken(token);
+    authToken = token; // Ensure global auth token is set
     // Try to load user data
     auth.getCurrentUser().catch(() => {
       // Silently fail if token is invalid

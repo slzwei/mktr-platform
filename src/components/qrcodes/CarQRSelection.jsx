@@ -108,7 +108,7 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
     }
   };
 
-  const handleGenerate = async () => { // Renamed from handleGenerateQRCodes
+  const handleGenerate = async () => { // assign/update campaign QR for selected cars
     if (selectedCarIds.size === 0) {
       setError("Please select at least one car");
       return;
@@ -123,45 +123,26 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
     let errorDuringGeneration = false; // Flag to indicate if any issue stopped the loop
 
     try {
-      const carsToGenerate = cars.filter(car => selectedCarIds.has(car.id)); // Use selectedCarIds
+      const carsToGenerate = cars.filter(car => selectedCarIds.has(car.id));
 
       for (const car of carsToGenerate) {
         if (errorDuringGeneration) { // Stop if an error occurred in a previous iteration
           break;
         }
         try {
-          // Generate unique code for each QR tag
-          const uniqueCode = generateUniqueId();
-
-          // Create the QR tag record
-          const newQRTag = await QrTag.create({
-            code: uniqueCode,
-            type: 'car',
-            campaign_id: campaign.id,
-            car_id: car.id,
-            is_active: true,
-            scan_count: 0
-          });
-
-          // Generate the QR code image, passing the frontend's base URL
-          const result = await generateQrCodeImage({
-            qrTagId: newQRTag.id,
-            baseUrl: window.location.origin
-          });
-
-          if (result.data.success) {
-            localSuccessCount++;
-            setSuccessCount(localSuccessCount); // Update state for progress display
+          // Try find existing car QR
+          const existed = await QrTag.filter({ carId: car.id, type: 'car' });
+          if (existed && existed.length > 0) {
+            await QrTag.update(existed[0].id, { campaignId: campaign.id });
           } else {
-            // If image generation failed for this specific QR tag via API response
-            setError(`Failed to generate QR image for car plate ${car.plate_number}. Reason: ${result.data.message || 'Unknown issue.'}`);
-            errorDuringGeneration = true;
-            break; // Stop on first failure, as per outline
+            await QrTag.create({ type: 'car', campaignId: campaign.id, carId: car.id, label: car.plate_number });
           }
+          localSuccessCount++;
+          setSuccessCount(localSuccessCount);
         } catch (err) {
           // Catching network errors or errors from QrTag.create/generateQrCodeImage calls
           console.error(`Error generating QR for car ${car.plate_number}:`, err);
-          setError(`An unexpected error occurred while generating QR for car plate ${car.plate_number}. Details: ${err.message || 'Unknown error.'}`);
+          setError(`An unexpected error occurred while assigning QR for car plate ${car.plate_number}. Details: ${err.message || 'Unknown error.'}`);
           errorDuringGeneration = true;
           break; // Stop on first exception
         }

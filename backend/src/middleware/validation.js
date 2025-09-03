@@ -29,11 +29,21 @@ export const schemas = {
   userRegister: Joi.object({
     email: Joi.string().email().required(),
     password: Joi.string().min(6).required(),
-    firstName: Joi.string().min(1).max(50).required(),
-    lastName: Joi.string().min(1).max(50).required(),
+    // Allow either full_name/fullName OR firstName+lastName
+    full_name: Joi.string().min(1).max(100),
+    fullName: Joi.string().min(1).max(100),
+    firstName: Joi.string().min(1).max(50),
+    lastName: Joi.string().min(1).max(50),
     phone: Joi.string().min(10).max(20).optional(),
     role: Joi.string().valid('admin', 'agent', 'fleet_owner', 'customer').optional()
-  }),
+  }).custom((value, helpers) => {
+    const hasFull = !!value.full_name || !!value.fullName;
+    const hasParts = !!value.firstName && !!value.lastName;
+    if (!hasFull && !hasParts) {
+      return helpers.error('any.custom', { message: 'Provide either full_name or firstName and lastName' });
+    }
+    return value;
+  }, 'Name fields validation'),
 
   userLogin: Joi.object({
     email: Joi.string().email().required(),
@@ -80,13 +90,26 @@ export const schemas = {
     model: Joi.string().min(1).max(50).required(),
     year: Joi.number().min(1900).max(new Date().getFullYear() + 1).required(),
     color: Joi.string().max(30).optional(),
-    licensePlate: Joi.string().min(1).max(20).required(),
+    plate_number: Joi.string().min(1).max(20).required(),
     vin: Joi.string().length(17).optional(),
     type: Joi.string().valid('sedan', 'suv', 'truck', 'van', 'coupe', 'hatchback', 'convertible', 'other').required(),
+    status: Joi.string().valid('active', 'inactive', 'maintenance', 'retired').optional(),
+    fleet_owner_id: Joi.string().uuid().required(),
     location: Joi.object().optional(),
     features: Joi.array().items(Joi.string()).optional(),
     mileage: Joi.number().min(0).optional(),
     fuelType: Joi.string().valid('gasoline', 'diesel', 'electric', 'hybrid', 'other').optional()
+  }),
+
+  // Fleet Owner schemas
+  fleetOwnerCreate: Joi.object({
+    full_name: Joi.string().min(1).max(100).required(),
+    email: Joi.string().email().required(),
+    phone: Joi.string().max(20).optional(),
+    company_name: Joi.string().max(100).optional(),
+    uen: Joi.string().max(50).optional(),
+    payout_method: Joi.string().valid('PayNow', 'Bank Transfer').optional(),
+    status: Joi.string().valid('active', 'inactive').optional()
   }),
 
   // Prospect schemas
@@ -121,17 +144,7 @@ export const schemas = {
     carId: Joi.string().uuid().optional()
   }),
 
-  // Fleet Owner schemas
-  fleetOwnerCreate: Joi.object({
-    companyName: Joi.string().min(1).max(100).required(),
-    businessType: Joi.string().valid('transportation', 'delivery', 'rideshare', 'logistics', 'rental', 'other').required(),
-    businessLicense: Joi.string().max(50).optional(),
-    taxId: Joi.string().max(20).optional(),
-    address: Joi.object().optional(),
-    contactInfo: Joi.object().optional(),
-    bankingInfo: Joi.object().optional(),
-    insurance: Joi.object().optional()
-  }),
+  // NOTE: Removed duplicate fleetOwnerCreate schema that conflicted with app's current model
 
   // Driver schemas
   driverCreate: Joi.object({

@@ -11,6 +11,9 @@ import QrTag from './QrTag.js';
 import Commission from './Commission.js';
 import LeadPackage from './LeadPackage.js';
 import CampaignPreview from './CampaignPreview.js';
+import QrScan from './QrScan.js';
+import Attribution from './Attribution.js';
+import SessionVisit from './SessionVisit.js';
 
 // Define associations
 const defineAssociations = () => {
@@ -18,26 +21,19 @@ const defineAssociations = () => {
   User.hasOne(FleetOwner, { foreignKey: 'userId', as: 'fleetOwnerProfile' });
   User.hasOne(Driver, { foreignKey: 'userId', as: 'driverProfile' });
   User.hasMany(Campaign, { foreignKey: 'createdBy', as: 'createdCampaigns' });
-  User.hasMany(QrTag, { foreignKey: 'createdBy', as: 'createdQrTags' });
+  User.hasMany(QrTag, { foreignKey: 'ownerUserId', as: 'ownedQrTags' });
   User.hasMany(Commission, { foreignKey: 'agentId', as: 'commissions' });
   User.hasMany(Commission, { foreignKey: 'approvedBy', as: 'approvedCommissions' });
   User.hasMany(Commission, { foreignKey: 'processedBy', as: 'processedCommissions' });
   User.hasMany(Prospect, { foreignKey: 'assignedAgentId', as: 'assignedProspects' });
   User.hasMany(LeadPackage, { foreignKey: 'createdBy', as: 'createdLeadPackages' });
 
-  // FleetOwner associations
-  FleetOwner.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-  FleetOwner.hasMany(Car, { foreignKey: 'fleetOwnerId', as: 'cars' });
-  FleetOwner.hasMany(Driver, { foreignKey: 'fleetOwnerId', as: 'drivers' });
-
-  // Driver associations
-  Driver.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-  Driver.belongsTo(FleetOwner, { foreignKey: 'fleetOwnerId', as: 'fleetOwner' });
-  Driver.hasMany(Car, { foreignKey: 'currentDriverId', as: 'assignedCars' });
+  // FleetOwner associations (standalone entity, not linked to User)
+  FleetOwner.hasMany(Car, { foreignKey: 'fleet_owner_id', as: 'cars' });
 
   // Car associations
-  Car.belongsTo(FleetOwner, { foreignKey: 'fleetOwnerId', as: 'fleetOwner' });
-  Car.belongsTo(Driver, { foreignKey: 'currentDriverId', as: 'currentDriver' });
+  Car.belongsTo(FleetOwner, { foreignKey: 'fleet_owner_id', as: 'fleetOwner' });
+  Car.belongsTo(User, { foreignKey: 'current_driver_id', as: 'currentDriver' });
   Car.hasMany(QrTag, { foreignKey: 'carId', as: 'qrTags' });
 
   // Campaign associations
@@ -49,16 +45,19 @@ const defineAssociations = () => {
   Campaign.hasOne(CampaignPreview, { foreignKey: 'campaignId', as: 'preview' });
 
   // QrTag associations
-  QrTag.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
+  QrTag.belongsTo(User, { foreignKey: 'ownerUserId', as: 'owner' });
   QrTag.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
   QrTag.belongsTo(Car, { foreignKey: 'carId', as: 'car' });
   QrTag.hasMany(Prospect, { foreignKey: 'qrTagId', as: 'prospects' });
+  QrTag.hasMany(QrScan, { foreignKey: 'qrTagId', as: 'scans' });
+  QrTag.hasMany(Attribution, { foreignKey: 'qrTagId', as: 'attributions' });
 
   // Prospect associations
   Prospect.belongsTo(User, { foreignKey: 'assignedAgentId', as: 'assignedAgent' });
   Prospect.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
   Prospect.belongsTo(QrTag, { foreignKey: 'qrTagId', as: 'qrTag' });
   Prospect.hasMany(Commission, { foreignKey: 'prospectId', as: 'commissions' });
+  Prospect.belongsTo(Attribution, { foreignKey: 'attributionId', as: 'attribution' });
 
   // Commission associations
   Commission.belongsTo(User, { foreignKey: 'agentId', as: 'agent' });
@@ -89,7 +88,10 @@ export {
   QrTag,
   Commission,
   LeadPackage,
-  CampaignPreview
+  CampaignPreview,
+  QrScan,
+  Attribution,
+  SessionVisit
 };
 
 // Export default object for convenience
@@ -104,5 +106,8 @@ export default {
   QrTag,
   Commission,
   LeadPackage,
-  CampaignPreview
+  CampaignPreview,
+  QrScan,
+  Attribution,
+  SessionVisit
 };

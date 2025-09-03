@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, CheckCircle, ArrowLeft } from "lucide-react";
 import { createPageUrl } from "@/utils";
 import TypingLoader from "../components/ui/TypingLoader";
+import { apiClient } from "@/api/client";
 
 const getBackgroundClass = (design) => {
     if (!design) return 'bg-gray-50';
@@ -43,6 +44,13 @@ export default function LeadCapture() {
     const [error, setError] = useState(null);
     const [submitted, setSubmitted] = useState(false);
 
+    const resolveImageUrl = (url) => {
+        if (!url) return '';
+        if (/^https?:\/\//i.test(url)) return url;
+        const apiOrigin = apiClient.baseURL.replace(/\/?api\/?$/, '');
+        return `${apiOrigin}${url.startsWith('/') ? url : '/' + url}`;
+    };
+
     // Ensure legacy preview page isn't indexed (only when preview=true)
     useEffect(() => {
         const params = new URLSearchParams(location.search);
@@ -55,64 +63,59 @@ export default function LeadCapture() {
         }
     }, [location.search]);
 
+    // Fire landing event on mount
+    useEffect(() => {
+        (async () => {
+            try {
+                await apiClient.post('/analytics/events', {
+                    type: 'landing',
+                    meta: { path: '/lead-capture' }
+                });
+            } catch (e) {
+                // ignore
+            }
+        })();
+    }, []);
+
     useEffect(() => {
         const params = new URLSearchParams(location.search);
-        const campaignId = params.get('campaign_id');
-        const qrTagCode = params.get('qr_tag_id');
         const preview = params.get('preview');
 
         const fetchAndDelay = async () => {
             setLoading(true);
             try {
-                // If a QR code is scanned, increment its count immediately.
-                if (qrTagCode) {
-                    // Fire-and-forget: we don't need to wait for this to finish.
-                    incrementScanCount({ qrTagCode }).catch(err => {
-                        console.error("Non-blocking error: Failed to increment scan count:", err);
-                    });
-                }
-
-                let fetchedCampaign;
-                let fetchedQrTag = null;
-
-                if (qrTagCode) {
-                    const qrTags = await QrTag.filter({ code: qrTagCode });
-                    if (qrTags.length === 0) {
-                        setError("This link could not be found.");
-                        return;
+                // Resolve current session attribution from backend
+                const resp = await apiClient.get('/qrcodes/session');
+                let fetchedCampaign = null;
+                if (resp?.success && resp.data) {
+                    // Prefer embedded campaign payload to avoid a second round-trip
+                    if (resp.data.campaign) {
+                        fetchedCampaign = resp.data.campaign;
+                    } else if (resp.data.campaignId) {
+                        fetchedCampaign = await Campaign.get(resp.data.campaignId);
                     }
-                    fetchedQrTag = qrTags[0];
-
-                    if (!fetchedQrTag.is_active) {
-                        setError("This QR code is no longer active.");
-                        return;
-                    }
-
-                    fetchedCampaign = await Campaign.get(fetchedQrTag.campaign_id);
-                    setQrTag(fetchedQrTag);
-
-                } else if (campaignId) {
-                    fetchedCampaign = await Campaign.get(campaignId);
+                    setQrTag({ id: resp.data.qrTagId });
+                } else if (params.get('campaign_id')) {
+                    // Fallback for legacy preview links
+                    fetchedCampaign = await Campaign.get(params.get('campaign_id'));
                 } else {
-                    setError("No campaign or QR code specified.");
+                    setError('No campaign or QR code specified.');
                     return;
                 }
-                // If legacy preview, allow rendering even if inactive
+
                 if (!preview) {
-                    if (!fetchedCampaign || !fetchedCampaign.is_active) {
-                        setError("This campaign is no longer active.");
+                    if (!fetchedCampaign || fetchedCampaign.is_active === false) {
+                        setError('This campaign is no longer active.');
                         return;
                     }
                 }
-                
-                setCampaign(fetchedCampaign);
 
+                setCampaign(fetchedCampaign);
             } catch (err) {
-                console.error("Error loading capture page:", err);
-                setError("An error occurred while loading the page.");
+                console.error('Error loading capture page:', err);
+                setError('An error occurred while loading the page.');
             } finally {
-                // Short delay to make loading feel smoother
-                setTimeout(() => setLoading(false), 1000); 
+                setTimeout(() => setLoading(false), 500);
             }
         };
 
@@ -142,14 +145,14 @@ export default function LeadCapture() {
         return <TypingLoader />;
     }
 
-    const design = campaign?.design || {};
+    const design = campaign?.design_config || {};
 
     return (
         <div className={`min-h-screen ${getBackgroundClass(design)}`}>
-            {campaign?.design?.imageUrl && (
+            {design?.imageUrl && (
                 <div className="w-full h-56 lg:h-72">
                     <img 
-                        src={campaign.design.imageUrl} 
+                        src={resolveImageUrl(design.imageUrl)} 
                         alt="Campaign Header" 
                         className="w-full h-full object-cover" 
                     />

@@ -1,7 +1,6 @@
 
 import React, { useState } from "react";
 import { QrTag } from "@/api/entities";
-import { generateQrCodeImage } from "@/api/functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,8 +23,8 @@ const generateUniqueId = () => {
 
 export default function PromotionalQRForm({ campaign, onQRGenerated }) {
   const [formData, setFormData] = useState({
-    tracking_tag: "",
-    description: ""
+    label: "",
+    tagsInput: ""
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -34,8 +33,8 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.tracking_tag.trim()) {
-      setError("Tracking tag is required");
+    if (!formData.label.trim()) {
+      setError("Label is required");
       return;
     }
 
@@ -44,32 +43,23 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
     setSuccess("");
 
     try {
-      // Generate unique code for the QR tag
-      const uniqueCode = generateUniqueId();
+      const tags = Array.from(new Set(
+        (formData.tagsInput || '')
+          .split(/[,\n;]+/)
+          .map(t => t.trim())
+          .filter(Boolean)
+      ));
 
-      // Create the QR tag record
-      const newQRTag = await QrTag.create({
-        code: uniqueCode,
-        type: 'distribution',
-        campaign_id: campaign.id,
-        tracking_tag: formData.tracking_tag.trim(),
-        is_active: true,
-        scan_count: 0
+      await QrTag.create({
+        label: formData.label.trim(),
+        tags,
+        type: 'promo',
+        campaignId: campaign.id
       });
 
-      // Generate the QR code image, passing the frontend's base URL
-      const result = await generateQrCodeImage({ 
-        qrTagId: newQRTag.id,
-        baseUrl: window.location.origin
-      });
-      
-      if (result.data.success) {
-        setSuccess(`Promotional QR code "${formData.tracking_tag}" generated successfully!`);
-        setFormData({ tracking_tag: "", description: "" });
-        onQRGenerated();
-      } else {
-        setError(result.data.message || 'Failed to generate QR code image');
-      }
+      setSuccess(`Promotional QR code "${formData.label}" created successfully!`);
+      setFormData({ label: "", tagsInput: "" });
+      onQRGenerated();
     } catch (err) {
       console.error('Error creating promotional QR:', err);
       setError('Failed to create promotional QR code. Please try again.');
@@ -111,18 +101,28 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="tracking_tag">Tracking Tag *</Label>
+            <Label htmlFor="label">Label *</Label>
             <Input
-              id="tracking_tag"
-              value={formData.tracking_tag}
-              onChange={(e) => setFormData({...formData, tracking_tag: e.target.value})}
-              placeholder="e.g., Orchard Road Booth, Facebook Ad, Instagram Post"
+              id="label"
+              value={formData.label}
+              onChange={(e) => setFormData({...formData, label: e.target.value})}
+              placeholder="e.g., Orchard Road Booth"
               maxLength={100}
               required
             />
-            <p className="text-sm text-gray-500">
-              Use a descriptive name to identify where this QR code will be used.
-            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="tags">Tags (comma or newline separated)</Label>
+            <Textarea
+              id="tags"
+              value={formData.tagsInput}
+              onChange={(e) => setFormData({...formData, tagsInput: e.target.value})}
+              placeholder="Facebook, Instagram, Street Team"
+              rows={3}
+              maxLength={250}
+            />
+            <p className="text-sm text-gray-500">Multiple tags are supported; a single QR will include all tags for reporting.</p>
           </div>
 
           <div className="space-y-2">
@@ -139,7 +139,7 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
 
           <Button 
             type="submit" 
-            disabled={loading || !formData.tracking_tag.trim()}
+            disabled={loading || !formData.label.trim()}
             className="w-full bg-purple-600 hover:bg-purple-700"
           >
             {loading ? (
@@ -150,7 +150,7 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
             ) : (
               <>
                 <Tag className="w-4 h-4 mr-2" />
-                Generate Promotional QR Code
+                Create Promotional QR Code
               </>
             )}
           </Button>

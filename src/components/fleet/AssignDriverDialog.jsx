@@ -50,8 +50,8 @@ export default function AssignDriverDialog({
   if (!car) return null;
 
   const availableDrivers = drivers.filter(driver => {
-    // Show active drivers who don't have any car assigned or have the current car assigned
-    return driver.status === 'active' && (!driver.current_car_id || driver.current_car_id === car.id);
+    // Show all driver_partner users - assignment logic is handled at car level
+    return driver.role === 'driver_partner';
   });
 
   const currentDriver = drivers.find(d => d.id === car.current_driver_id);
@@ -111,10 +111,7 @@ export default function AssignDriverDialog({
                           {driver.full_name?.charAt(0)?.toUpperCase() || 'D'}
                         </AvatarFallback>
                       </Avatar>
-                      <div>
-                        <span className="font-medium">{driver.full_name || driver.email}</span>
-                        <span className="text-xs text-gray-500 ml-2">({driver.license_number})</span>
-                      </div>
+                      <span className="font-medium">{driver.full_name || driver.email}</span>
                     </div>
                   </SelectItem>
                 ))}

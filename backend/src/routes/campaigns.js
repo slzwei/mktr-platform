@@ -53,7 +53,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
       },
       {
         association: 'qrTags',
-        attributes: ['id', 'name', 'type', 'scanCount']
+        attributes: ['id', 'label', 'name', 'type']
       },
       {
         association: 'prospects',
@@ -78,6 +78,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
 
 // Create new campaign
 router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
+  console.log('📦 Create Campaign request by user:', req.user?.id, 'role:', req.user?.role, 'body:', req.body);
   const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents } = req.body;
 
   const campaignData = {
@@ -94,6 +95,7 @@ router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req
   };
 
   const campaign = await Campaign.create(campaignData);
+  console.log('✅ Campaign created:', campaign?.id);
 
   res.status(201).json({
     success: true,
@@ -128,7 +130,7 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
         include: [
           {
             association: 'car',
-            attributes: ['id', 'make', 'model', 'licensePlate']
+            attributes: ['id', 'make', 'model', 'plate_number']
           }
         ]
       },
@@ -377,6 +379,98 @@ router.post('/:id/duplicate', authenticateToken, requireAgentOrAdmin, asyncHandl
     success: true,
     message: 'Campaign duplicated successfully',
     data: { campaign: duplicatedCampaign }
+  });
+}));
+
+// Archive campaign
+router.patch('/:id/archive', authenticateToken, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  const whereConditions = { id };
+  
+  // Non-admin users can only archive their own campaigns
+  if (req.user.role !== 'admin') {
+    whereConditions.createdBy = req.user.id;
+  }
+
+  const campaign = await Campaign.findOne({ where: whereConditions });
+  
+  if (!campaign) {
+    throw new AppError('Campaign not found or access denied', 404);
+  }
+
+  // Don't archive if already archived
+  if (campaign.status === 'archived') {
+    throw new AppError('Campaign is already archived', 400);
+  }
+
+  await campaign.update({ status: 'archived' });
+
+  res.json({
+    success: true,
+    message: 'Campaign archived successfully',
+    data: { campaign }
+  });
+}));
+
+// Restore campaign from archive
+router.patch('/:id/restore', authenticateToken, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  const whereConditions = { id };
+  
+  // Non-admin users can only restore their own campaigns
+  if (req.user.role !== 'admin') {
+    whereConditions.createdBy = req.user.id;
+  }
+
+  const campaign = await Campaign.findOne({ where: whereConditions });
+  
+  if (!campaign) {
+    throw new AppError('Campaign not found or access denied', 404);
+  }
+
+  // Only restore if archived
+  if (campaign.status !== 'archived') {
+    throw new AppError('Campaign is not archived', 400);
+  }
+
+  await campaign.update({ status: 'draft' });
+
+  res.json({
+    success: true,
+    message: 'Campaign restored successfully',
+    data: { campaign }
+  });
+}));
+
+// Permanently delete campaign
+router.delete('/:id/permanent', authenticateToken, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  const whereConditions = { id };
+  
+  // Non-admin users can only delete their own campaigns
+  if (req.user.role !== 'admin') {
+    whereConditions.createdBy = req.user.id;
+  }
+
+  const campaign = await Campaign.findOne({ where: whereConditions });
+  
+  if (!campaign) {
+    throw new AppError('Campaign not found or access denied', 404);
+  }
+
+  // Only allow permanent deletion of archived campaigns
+  if (campaign.status !== 'archived') {
+    throw new AppError('Campaign must be archived before permanent deletion', 400);
+  }
+
+  await campaign.destroy();
+
+  res.json({
+    success: true,
+    message: 'Campaign permanently deleted'
   });
 }));
 

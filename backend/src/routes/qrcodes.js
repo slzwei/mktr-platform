@@ -1,13 +1,22 @@
 import express from 'express';
 import { Op } from 'sequelize';
 import QRCode from 'qrcode';
-import { v4 as uuidv4 } from 'uuid';
-import { QrTag, Campaign, Car, User } from '../models/index.js';
-import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { QrTag, Campaign, Car, User, QrScan, Attribution, Prospect } from '../models/index.js';
+import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
 const router = express.Router();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+// Save under backend/uploads/image so server static route can serve them
+const uploadsDir = path.join(__dirname, '../../uploads/image');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 // Generate QR code image
 const generateQRCodeImage = async (data, options = {}) => {
@@ -31,15 +40,15 @@ const generateQRCodeImage = async (data, options = {}) => {
   }
 };
 
-// Generate short URL (simple implementation)
-const generateShortUrl = () => {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+// Generate slug (lowercase, safe)
+const generateSlug = () => {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
-  for (let i = 0; i < 8; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return `https://mktr.ly/${result}`;
+  for (let i = 0; i < 10; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
+  return result;
 };
+
+const normalizeSlug = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 64);
 
 // Get all QR codes
 router.get('/', authenticateToken, asyncHandler(async (req, res) => {
@@ -50,15 +59,15 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   
   // Non-admin users can only see their own QR codes
   if (req.user.role !== 'admin') {
-    whereConditions.createdBy = req.user.id;
+    whereConditions.ownerUserId = req.user.id;
   }
   
   if (type) {
     whereConditions.type = type;
   }
   
-  if (status) {
-    whereConditions.status = status;
+  if (status !== undefined) {
+    whereConditions.active = status === 'active' || status === true;
   }
   
   if (campaignId) {
@@ -83,7 +92,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
     order: [['createdAt', 'DESC']],
     include: [
       {
-        association: 'creator',
+        association: 'owner',
         attributes: ['id', 'firstName', 'lastName', 'email']
       },
       {
@@ -92,7 +101,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
       },
       {
         association: 'car',
-        attributes: ['id', 'make', 'model', 'licensePlate']
+        attributes: ['id', 'make', 'model', 'plate_number']
       }
     ]
   });
@@ -112,8 +121,8 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
 }));
 
 // Create new QR code
-router.post('/', authenticateToken, requireAgentOrAdmin, validate(schemas.qrTagCreate), asyncHandler(async (req, res) => {
-  const { destinationUrl, name, description, type, campaignId, carId, ...otherData } = req.body;
+router.post('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
+  const { label, tags = [], type, campaignId, carId } = req.body;
 
   // Validate campaign and car ownership
   if (campaignId) {
@@ -143,28 +152,46 @@ router.post('/', authenticateToken, requireAgentOrAdmin, validate(schemas.qrTagC
     }
   }
 
-  // Generate unique short URL
-  const shortUrl = generateShortUrl();
+  // For car QR: enforce single instance per car (idempotent create)
+  if (type === 'car' && carId) {
+    const existing = await QrTag.findOne({ where: { type: 'car', carId } });
+    if (existing) {
+      await existing.update({ campaignId: campaignId || existing.campaignId, active: true, label: label || existing.label, tags });
+      return res.status(200).json({ success: true, message: 'Car QR updated', data: { qrTag: existing } });
+    }
+  }
 
-  // Create tracking URL (this would redirect to destinationUrl and track analytics)
-  const trackingUrl = `${process.env.CORS_ORIGIN || 'http://localhost:5173'}/track/${shortUrl}`;
+  // Generate unique slug with retries on collision
+  let slug = generateSlug();
+  let retry = 0;
+  while (await QrTag.findOne({ where: { slug } })) {
+    slug = generateSlug();
+    retry += 1;
+    if (retry > 5) break;
+  }
 
-  // Generate QR code image
-  const qrCode = await generateQRCodeImage(trackingUrl);
+  // Short link path is computed at runtime; embed slug in SVG payload
+  const publicBase = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
+  const linkUrl = `${publicBase}/t/${slug}`;
+  const svg = await generateQRCodeImage(linkUrl);
+  // Generate PNG and save to uploads
+  const pngBuffer = await QRCode.toBuffer(linkUrl, { width: 600, margin: 2 });
+  const fileName = `qr-${slug}.png`;
+  const filePath = path.join(uploadsDir, fileName);
+  fs.writeFileSync(filePath, pngBuffer);
+  const publicUrl = `/uploads/image/${fileName}`;
 
-  // Create QR tag
   const qrTag = await QrTag.create({
-    name,
-    description,
-    type,
-    qrCode,
-    qrData: trackingUrl,
-    shortUrl,
-    destinationUrl,
-    campaignId,
-    carId,
-    createdBy: req.user.id,
-    ...otherData
+    slug,
+    label: label || null,
+    tags: tags,
+    type: type || null,
+    campaignId: campaignId || null,
+    carId: carId || null,
+    ownerUserId: req.user.id,
+    active: true,
+    qrCode: svg,
+    qrImageUrl: publicUrl
   });
 
   res.status(201).json({
@@ -182,14 +209,14 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
   
   // Non-admin users can only see their own QR codes
   if (req.user.role !== 'admin') {
-    whereConditions.createdBy = req.user.id;
+    whereConditions.ownerUserId = req.user.id;
   }
 
   const qrTag = await QrTag.findOne({
     where: whereConditions,
     include: [
       {
-        association: 'creator',
+        association: 'owner',
         attributes: ['id', 'firstName', 'lastName', 'email']
       },
       {
@@ -198,7 +225,7 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
       },
       {
         association: 'car',
-        attributes: ['id', 'make', 'model', 'licensePlate', 'color']
+        attributes: ['id', 'make', 'model', 'plate_number', 'color']
       },
       {
         association: 'prospects',
@@ -218,7 +245,7 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
 }));
 
 // Update QR code
-router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
+router.put('/:id', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { destinationUrl, regenerateCode, ...updateData } = req.body;
 
@@ -226,7 +253,7 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
   
   // Non-admin users can only update their own QR codes
   if (req.user.role !== 'admin') {
-    whereConditions.createdBy = req.user.id;
+    whereConditions.ownerUserId = req.user.id;
   }
 
   const qrTag = await QrTag.findOne({ where: whereConditions });
@@ -235,14 +262,18 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
     throw new AppError('QR code not found or access denied', 404);
   }
 
-  // If destination URL changed or regeneration requested, update QR code
-  if (destinationUrl && destinationUrl !== qrTag.destinationUrl || regenerateCode) {
-    const newDestinationUrl = destinationUrl || qrTag.destinationUrl;
-    const trackingUrl = `${process.env.CORS_ORIGIN || 'http://localhost:5173'}/track/${qrTag.shortUrl}`;
-    const newQrCode = await generateQRCodeImage(trackingUrl);
-    
-    updateData.destinationUrl = newDestinationUrl;
+  // If regeneration requested, re-render SVG from slug link path
+  if (regenerateCode) {
+    const publicBase = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
+    const linkUrl = `${publicBase}/t/${qrTag.slug}`;
+    const newQrCode = await generateQRCodeImage(linkUrl);
     updateData.qrCode = newQrCode;
+    // regenerate PNG
+    const pngBuffer = await QRCode.toBuffer(linkUrl, { width: 600, margin: 2 });
+    const fileName = `qr-${qrTag.slug}.png`;
+    const filePath = path.join(uploadsDir, fileName);
+    fs.writeFileSync(filePath, pngBuffer);
+    updateData.qrImageUrl = `/uploads/image/${fileName}`;
   }
 
   await qrTag.update(updateData);
@@ -255,14 +286,14 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
 }));
 
 // Delete QR code
-router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
+router.delete('/:id', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   const whereConditions = { id };
   
   // Non-admin users can only delete their own QR codes
   if (req.user.role !== 'admin') {
-    whereConditions.createdBy = req.user.id;
+    whereConditions.ownerUserId = req.user.id;
   }
 
   const qrTag = await QrTag.findOne({ where: whereConditions });
@@ -271,87 +302,33 @@ router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async
     throw new AppError('QR code not found or access denied', 404);
   }
 
-  // Archive instead of hard delete
-  await qrTag.update({ status: 'archived' });
-
-  res.json({
-    success: true,
-    message: 'QR code archived successfully'
-  });
-}));
-
-// Track QR code scan (public endpoint)
-router.get('/track/:shortUrl', asyncHandler(async (req, res) => {
-  const { shortUrl } = req.params;
-  const fullShortUrl = `https://mktr.ly/${shortUrl}`;
-
-  const qrTag = await QrTag.findOne({
-    where: { shortUrl: fullShortUrl }
-  });
-
-  if (!qrTag || qrTag.status !== 'active') {
-    return res.status(404).json({
-      success: false,
-      message: 'QR code not found or inactive'
-    });
-  }
-
-  // Check expiration
-  if (qrTag.expirationDate && new Date() > qrTag.expirationDate) {
-    await qrTag.update({ status: 'expired' });
-    return res.status(410).json({
-      success: false,
-      message: 'QR code has expired'
-    });
-  }
-
-  // Check max scans
-  if (qrTag.maxScans && qrTag.scanCount >= qrTag.maxScans) {
-    return res.status(410).json({
-      success: false,
-      message: 'QR code scan limit reached'
-    });
-  }
-
-  // Get client info for analytics
-  const clientInfo = {
-    userAgent: req.headers['user-agent'],
-    referer: req.headers.referer,
-    ip: req.ip || req.connection.remoteAddress,
-    timestamp: new Date()
-  };
-
-  // Update analytics
-  const currentAnalytics = qrTag.analytics || {};
-  const today = new Date().toISOString().split('T')[0];
-  
-  // Update daily scans
-  if (!currentAnalytics.dailyScans) currentAnalytics.dailyScans = {};
-  currentAnalytics.dailyScans[today] = (currentAnalytics.dailyScans[today] || 0) + 1;
-
-  // Update device type (simplified)
-  if (!currentAnalytics.deviceTypes) currentAnalytics.deviceTypes = {};
-  const deviceType = /Mobile|Android|iPhone|iPad/.test(clientInfo.userAgent) ? 'mobile' : 'desktop';
-  currentAnalytics.deviceTypes[deviceType] = (currentAnalytics.deviceTypes[deviceType] || 0) + 1;
-
-  // Increment scan count and update analytics
-  await qrTag.update({
-    scanCount: qrTag.scanCount + 1,
-    lastScanned: new Date(),
-    analytics: currentAnalytics
-  });
-
-  // Return tracking data and redirect URL
-  res.json({
-    success: true,
-    data: {
-      redirectUrl: qrTag.destinationUrl,
-      qrTagId: qrTag.id,
-      campaignId: qrTag.campaignId,
-      scanCount: qrTag.scanCount + 1
+  // Attempt to remove PNG from disk if present
+  try {
+    if (qrTag.qrImageUrl) {
+      const fileRel = qrTag.qrImageUrl.replace(/^\/+/, ''); // strip leading slash
+      const filePath = path.join(__dirname, '../../', fileRel);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
     }
+  } catch (e) {
+    // non-fatal
+  }
+
+  // Manually cascade in safe order: null-out FK references before deletion
+  await Prospect.update({ qrTagId: null, attributionId: null }, { where: { qrTagId: qrTag.id } });
+  await Attribution.destroy({ where: { qrTagId: qrTag.id } });
+  await QrScan.destroy({ where: { qrTagId: qrTag.id } });
+
+  await qrTag.destroy();
+
+  res.json({
+    success: true,
+    message: 'QR code deleted successfully'
   });
 }));
+
+// Placeholders removed; tracker moved to /api/qrcodes/track/:slug in a dedicated router to 302
 
 // Increment scan count (for manual tracking)
 router.post('/:id/scan', authenticateToken, asyncHandler(async (req, res) => {
@@ -394,66 +371,35 @@ router.post('/:id/scan', authenticateToken, asyncHandler(async (req, res) => {
 // Get QR code analytics
 router.get('/:id/analytics', authenticateToken, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { period = '30d' } = req.query;
-
   const whereConditions = { id };
-  
-  // Non-admin users can only see analytics for their own QR codes
-  if (req.user.role !== 'admin') {
-    whereConditions.createdBy = req.user.id;
-  }
-
+  if (req.user.role !== 'admin') whereConditions.ownerUserId = req.user.id;
   const qrTag = await QrTag.findOne({ where: whereConditions });
-  
-  if (!qrTag) {
-    throw new AppError('QR code not found or access denied', 404);
+  if (!qrTag) throw new AppError('QR code not found or access denied', 404);
+
+  const { QrScan, Attribution, SessionVisit, Prospect } = await import('../models/index.js');
+  // Scans
+  const totalScans = await QrScan.count({ where: { qrTagId: qrTag.id, botFlag: false, isDuplicate: false } });
+
+  // Landings: find sessionIds from attributions, then check visits with a 'landing' event
+  const attributions = await Attribution.findAll({ where: { qrTagId: qrTag.id }, attributes: ['sessionId'], order: [['lastTouchAt', 'DESC']] });
+  const sessionIds = [...new Set(attributions.map(a => a.sessionId).filter(Boolean))];
+  let landings = 0;
+  if (sessionIds.length > 0) {
+    const visits = await SessionVisit.findAll({ where: { sessionId: sessionIds } });
+    for (const v of visits) {
+      const events = Array.isArray(v.eventsJson) ? v.eventsJson : [];
+      if (events.some(ev => ev?.type === 'landing')) landings++;
+    }
   }
 
-  // Calculate period-specific analytics
-  const analytics = qrTag.analytics || {};
-  const dailyScans = analytics.dailyScans || {};
-  
-  // Get scans for the requested period
-  const days = period === '7d' ? 7 : period === '30d' ? 30 : 90;
-  const periodScans = [];
-  
-  for (let i = days - 1; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    periodScans.push({
-      date: dateStr,
-      scans: dailyScans[dateStr] || 0
-    });
-  }
+  // Leads
+  const leads = await Prospect.count({ where: { qrTagId: qrTag.id } });
 
-  const response = {
-    qrTag: {
-      id: qrTag.id,
-      name: qrTag.name,
-      type: qrTag.type,
-      status: qrTag.status
-    },
-    summary: {
-      totalScans: qrTag.scanCount,
-      uniqueScans: qrTag.uniqueScanCount,
-      lastScanned: qrTag.lastScanned,
-      averageScansPerDay: periodScans.reduce((sum, day) => sum + day.scans, 0) / days
-    },
-    periodData: periodScans,
-    deviceTypes: analytics.deviceTypes || {},
-    referrers: analytics.referrers || {},
-    locations: analytics.locations || {}
-  };
-
-  res.json({
-    success: true,
-    data: { analytics: response }
-  });
+  res.json({ success: true, data: { analytics: { summary: { totalScans, landings, leads } } } });
 }));
 
 // Bulk operations for QR codes
-router.post('/bulk', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
+router.post('/bulk', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
   const { operation, qrTagIds, data = {} } = req.body;
 
   if (!operation || !qrTagIds || !Array.isArray(qrTagIds)) {
@@ -466,7 +412,7 @@ router.post('/bulk', authenticateToken, requireAgentOrAdmin, asyncHandler(async 
   
   // Non-admin users can only perform bulk operations on their own QR codes
   if (req.user.role !== 'admin') {
-    whereConditions.createdBy = req.user.id;
+    whereConditions.ownerUserId = req.user.id;
   }
 
   const qrTags = await QrTag.findAll({ where: whereConditions });

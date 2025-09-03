@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { QrTag } from "@/api/entities";
+import { apiClient } from "@/api/client";
 import { Prospect } from "@/api/entities";
 import { createPageUrl } from "@/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,10 +62,54 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
     loadProspectCounts();
   }, [qrTags]);
 
-  const handleCopyLink = (qrTagCode) => {
-    const url = `${window.location.origin}${createPageUrl(`LeadCapture?qr_tag_id=${qrTagCode}`)}`;
+  const [scanTotals, setScanTotals] = useState({});
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  
+  useEffect(() => {
+    const loadAnalytics = async () => {
+      if (!qrTags || qrTags.length === 0) return;
+      
+      setLoadingAnalytics(true);
+      try {
+        const totals = {};
+        // Load analytics for each QR in parallel
+        const analyticsPromises = qrTags.map(async (qr) => {
+          try {
+            const resp = await apiClient.get(`/qrcodes/${qr.id}/analytics`);
+            return { id: qr.id, data: resp?.data?.analytics?.summary || { totalScans: 0, landings: 0, leads: 0 } };
+          } catch (e) {
+            return { id: qr.id, data: { totalScans: 0, landings: 0, leads: 0 } };
+          }
+        });
+        
+        const results = await Promise.all(analyticsPromises);
+        results.forEach(({ id, data }) => {
+          totals[id] = data;
+        });
+        
+        setScanTotals(totals);
+      } catch (e) {
+        console.warn('Failed to load QR analytics:', e);
+      } finally {
+        setLoadingAnalytics(false);
+      }
+    };
+    
+    loadAnalytics();
+  }, [qrTags]);
+
+  const backendOrigin = apiClient.baseURL.replace(/\/api\/?$/, "");
+
+  const resolveBackendUrl = (path) => {
+    if (!path) return "";
+    if (/^https?:\/\//i.test(path)) return path;
+    return `${backendOrigin}${path.startsWith('/') ? path : '/' + path}`;
+  };
+
+  const handleCopyLink = (slug) => {
+    const url = `${backendOrigin}/t/${slug}`;
     navigator.clipboard.writeText(url);
-    setCopiedLink(qrTagCode);
+    setCopiedLink(slug);
     setTimeout(() => setCopiedLink(null), 2000);
   };
 
@@ -133,11 +178,11 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                 qrTags.map((qr) => (
                   <TableRow key={qr.id} className="hover:bg-gray-50">
                     <TableCell>
-                      {qr.qr_image_url ? (
+                      {qr.qrImageUrl ? (
                         <div className="w-16 h-16 p-1 bg-white rounded-md border">
                           <img 
-                            src={qr.qr_image_url} 
-                            alt={`QR Code ${qr.code}`}
+                            src={resolveBackendUrl(qr.qrImageUrl)} 
+                            alt={`QR Code ${qr.slug}`}
                             className="w-full h-full object-contain"
                           />
                         </div>
@@ -154,14 +199,36 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                     </TableCell>
                     <TableCell>
                       <div className="font-medium text-gray-900">
-                        {qr.type === 'car' ? `Car ID: ${qr.car_id}` : `Tag: ${qr.tracking_tag}`}
+                        {qr.label || (qr.type === 'car' ? `Car ID: ${qr.carId}` : '')}
                       </div>
-                      <div className="text-xs text-gray-500 truncate" title={qr.code}>
-                        Code: {qr.code}
+                      <div className="text-xs text-gray-500 truncate" title={qr.slug}>
+                        Slug: {qr.slug}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className="font-semibold text-lg">{qr.scan_count || 0}</span>
+                      <div className="flex flex-col space-y-1">
+                        {loadingAnalytics ? (
+                          <div className="flex items-center gap-1">
+                            <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
+                            <span className="text-xs text-gray-500">Loading...</span>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-500">Scans:</span>
+                              <span className="font-semibold text-sm text-blue-600">{scanTotals[qr.id]?.totalScans ?? 0}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-500">Landings:</span>
+                              <span className="font-medium text-xs text-green-600">{scanTotals[qr.id]?.landings ?? 0}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-gray-500">Leads:</span>
+                              <span className="font-medium text-xs text-purple-600">{scanTotals[qr.id]?.leads ?? 0}</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -179,17 +246,17 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                       <Button 
                         variant="outline" 
                         size="sm"
-                        disabled={!qr.qr_image_url}
-                        onClick={() => handleDownload(qr.qr_image_url, qr.code)}
+                        disabled={!qr.qrImageUrl}
+                        onClick={() => handleDownload(qr.qrImageUrl, qr.slug)}
                       >
                         <Download className="w-4 h-4 mr-1" />
                       </Button>
                       <Button 
                         variant="outline" 
                         size="sm"
-                        onClick={() => handleCopyLink(qr.code)}
+                        onClick={() => handleCopyLink(qr.slug)}
                       >
-                        {copiedLink === qr.code ? <Copy className="w-4 h-4 mr-1 text-green-500" /> : <LinkIcon className="w-4 h-4 mr-1" />}
+                        {copiedLink === qr.slug ? <Copy className="w-4 h-4 mr-1 text-green-500" /> : <LinkIcon className="w-4 h-4 mr-1" />}
                       </Button>
                       
                       <AlertDialog>
@@ -203,7 +270,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                             <AlertDialogDescription>
                               This action cannot be undone. This will permanently delete the QR code
-                              <span className="font-bold mx-1">{qr.type === 'car' ? `for car ${qr.car_id}` : `"${qr.tracking_tag}"`}</span>
+                              <span className="font-bold mx-1">"{qr.label || (qr.type === 'car' ? `car ${qr.carId || '-'}` : ((Array.isArray(qr.tags) && qr.tags.length) ? qr.tags.join(', ') : qr.slug))}"</span>
                               and its associated data. The link will no longer work.
                             </AlertDialogDescription>
                           </AlertDialogHeader>

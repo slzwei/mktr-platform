@@ -46,7 +46,7 @@ export default function Contact() {
 
   return (
     <>
-      <style jsx>{`
+      <style>{`
         /* CSS Custom Properties */
         :root {
           --heading-font: 'Mindset', 'Inter', sans-serif;

@@ -36,7 +36,7 @@ const Car = sequelize.define('Car', {
       len: [1, 30]
     }
   },
-  licensePlate: {
+  plate_number: {
     type: DataTypes.STRING,
     allowNull: false,
     unique: true,
@@ -125,7 +125,7 @@ const Car = sequelize.define('Car', {
       notes: ''
     }
   },
-  fleetOwnerId: {
+  fleet_owner_id: {
     type: DataTypes.UUID,
     allowNull: false,
     references: {
@@ -133,28 +133,36 @@ const Car = sequelize.define('Car', {
       key: 'id'
     }
   },
-  currentDriverId: {
+  current_driver_id: {
     type: DataTypes.UUID,
     allowNull: true,
     references: {
-      model: 'drivers',
+      model: 'users',
       key: 'id'
     }
+  },
+  assignment_start: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  assignment_end: {
+    type: DataTypes.DATE,
+    allowNull: true
   }
 }, {
   tableName: 'cars',
   indexes: [
     {
-      fields: ['licensePlate']
+      fields: ['plate_number']
     },
     {
       fields: ['status']
     },
     {
-      fields: ['fleetOwnerId']
+      fields: ['fleet_owner_id']
     },
     {
-      fields: ['currentDriverId']
+      fields: ['current_driver_id']
     },
     {
       fields: ['make', 'model']

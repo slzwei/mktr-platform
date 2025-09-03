@@ -185,6 +185,18 @@ const Prospect = sequelize.define('Prospect', {
       key: 'id'
     }
   },
+  attributionId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'attributions',
+      key: 'id'
+    }
+  },
+  sessionId: {
+    type: DataTypes.STRING(64),
+    allowNull: true
+  },
   sourceMetadata: {
     type: DataTypes.JSON,
     allowNull: true,

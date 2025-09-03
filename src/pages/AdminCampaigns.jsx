@@ -22,7 +22,10 @@ import {
   Link as LinkIcon,
   Users,
   Palette,
-  AlertTriangle
+  AlertTriangle,
+  Archive,
+  RotateCcw,
+  Trash2
 } from "lucide-react";
 
 import CampaignFormDialog from "../components/campaigns/CampaignFormDialog";
@@ -31,6 +34,7 @@ import ManageAgentsDialog from "../components/campaigns/ManageAgentsDialog";
 export default function AdminCampaigns() {
   const [user, setUser] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
+  const [archivedCampaigns, setArchivedCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isAgentsDialogOpen, setIsAgentsDialogOpen] = useState(false);
@@ -49,7 +53,13 @@ export default function AdminCampaigns() {
       ]);
       
       setUser(userData);
-      setCampaigns(campaignsData);
+      
+      // Separate active and archived campaigns
+      const activeCampaigns = campaignsData.filter(campaign => campaign.status !== 'archived');
+      const archived = campaignsData.filter(campaign => campaign.status === 'archived');
+      
+      setCampaigns(activeCampaigns);
+      setArchivedCampaigns(archived);
     } catch (error) {
       console.error('Error loading campaigns:', error);
     }
@@ -91,6 +101,40 @@ export default function AdminCampaigns() {
     });
   };
 
+  const handleArchiveCampaign = async (campaignId) => {
+    if (window.confirm("Are you sure you want to archive this campaign? It will be moved to the archived campaigns section.")) {
+      try {
+        await Campaign.archive(campaignId);
+        await loadData();
+      } catch (error) {
+        console.error("Failed to archive campaign:", error);
+        alert("Failed to archive campaign. Please try again.");
+      }
+    }
+  };
+
+  const handleRestoreCampaign = async (campaignId) => {
+    try {
+      await Campaign.restore(campaignId);
+      await loadData();
+    } catch (error) {
+      console.error("Failed to restore campaign:", error);
+      alert("Failed to restore campaign. Please try again.");
+    }
+  };
+
+  const handlePermanentDelete = async (campaignId) => {
+    if (window.confirm("Are you sure you want to PERMANENTLY DELETE this campaign? This action cannot be undone and will delete all associated data.")) {
+      try {
+        await Campaign.permanentDelete(campaignId);
+        await loadData();
+      } catch (error) {
+        console.error("Failed to delete campaign:", error);
+        alert("Failed to delete campaign. Please try again.");
+      }
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-6 lg:p-8">
@@ -102,15 +146,7 @@ export default function AdminCampaigns() {
     );
   }
 
-  if (user?.role !== 'admin') {
-    return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-gray-50">
-        <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h2>
-        <p className="text-gray-600">You do not have permission to view this page.</p>
-      </div>
-    );
-  }
+  // Role gating handled by ProtectedRoute; avoid double-deny here to prevent false negatives
 
   return (
     <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
@@ -206,6 +242,14 @@ export default function AdminCampaigns() {
                         >
                           <Edit className="w-4 h-4" />
                         </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleArchiveCampaign(campaign.id)}
+                          className="text-orange-600 hover:text-orange-800"
+                        >
+                          <Archive className="w-4 h-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -220,6 +264,81 @@ export default function AdminCampaigns() {
             )}
           </CardContent>
         </Card>
+
+        {/* Archived Campaigns Section */}
+        {archivedCampaigns.length > 0 && (
+          <Card className="shadow-lg mt-8">
+            <CardHeader className="border-b border-gray-100">
+              <CardTitle className="flex items-center gap-2">
+                <Archive className="w-6 h-6" />
+                Archived Campaigns ({archivedCampaigns.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50">
+                      <TableHead>Campaign Name</TableHead>
+                      <TableHead>Archived Date</TableHead>
+                      <TableHead>Duration</TableHead>
+                      <TableHead>Age Range</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {archivedCampaigns.map((campaign) => (
+                      <TableRow key={campaign.id} className="hover:bg-gray-50">
+                        <TableCell className="font-semibold text-gray-600">
+                          {campaign.name}
+                          <Badge variant="outline" className="ml-2 bg-gray-100 text-gray-600">
+                            Archived
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {campaign.updatedAt ? format(parseISO(campaign.updatedAt), 'MMM dd, yyyy') : 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          {campaign.start_date && campaign.end_date ? (
+                            `${format(parseISO(campaign.start_date), 'MMM dd')} - ${format(parseISO(campaign.end_date), 'MMM dd, yyyy')}`
+                          ) : (
+                            <span className="text-gray-400">Not set</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {campaign.target_age_min && campaign.target_age_max
+                            ? `${campaign.target_age_min}-${campaign.target_age_max} years`
+                            : <span className="text-gray-400">Not specified</span>
+                          }
+                        </TableCell>
+                        <TableCell className="space-x-2 flex items-center">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRestoreCampaign(campaign.id)}
+                            className="text-green-600 hover:text-green-800"
+                          >
+                            <RotateCcw className="w-4 h-4 mr-2" />
+                            Restore
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePermanentDelete(campaign.id)}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <CampaignFormDialog
           open={isFormOpen}
