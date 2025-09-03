@@ -2,6 +2,7 @@ services:
   - type: web
     name: mktr-backend
     env: docker
+    region: singapore
     plan: starter
     autoDeploy: false
     rootDir: backend
