@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { QrTag } from "@/api/entities";
 import { Car } from "@/api/entities";
 import { User } from "@/api/entities";
-import { generateQrCodeImage } from "@/api/functions";
+import { Campaign } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AlertCircle, Car as CarIcon, Search, Loader2, CheckCircle, Filter } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // Simple UUID v4 alternative using crypto API or fallback
 const generateUniqueId = () => {
@@ -44,6 +54,13 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
   const [filters, setFilters] = useState({
     search: "",
     fleetOwner: "all"
+  });
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [precheck, setPrecheck] = useState({
+    toCreate: [],
+    alreadyOnCampaign: [],
+    toReassign: [],
+    campaignNames: {},
   });
 
   useEffect(() => {
@@ -108,68 +125,102 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
     }
   };
 
-  const handleGenerate = async () => { // assign/update campaign QR for selected cars
+  const handleAssign = async () => {
     if (selectedCarIds.size === 0) {
       setError("Please select at least one car");
       return;
     }
 
-    setGenerating(true);
-    setError(""); // Clear previous errors
-    setSuccess(""); // Clear previous successes
-    setSuccessCount(0); // Initialize success count for progress display
-
-    let localSuccessCount = 0;
-    let errorDuringGeneration = false; // Flag to indicate if any issue stopped the loop
+    setError("");
+    setSuccess("");
 
     try {
-      const carsToGenerate = cars.filter(car => selectedCarIds.has(car.id));
+      const carsToProcess = cars.filter(car => selectedCarIds.has(car.id));
+      const existingTags = await Promise.all(carsToProcess.map(async (car) => {
+        const tags = await QrTag.filter({ carId: car.id, type: 'car' });
+        return { car, tag: Array.isArray(tags) && tags.length > 0 ? tags[0] : null };
+      }));
 
-      for (const car of carsToGenerate) {
-        if (errorDuringGeneration) { // Stop if an error occurred in a previous iteration
-          break;
+      const toCreate = [];
+      const alreadyOnCampaign = [];
+      const toReassign = [];
+
+      for (const { car, tag } of existingTags) {
+        if (!tag) {
+          toCreate.push(car);
+        } else if (tag.campaignId === campaign.id) {
+          alreadyOnCampaign.push({ car, tag });
+        } else if (tag.campaignId) {
+          toReassign.push({ car, tag });
+        } else {
+          toCreate.push(car);
         }
+      }
+
+      const uniqueCampaignIds = [...new Set(toReassign.map(x => x.tag.campaignId).filter(Boolean))];
+      const campaignNames = { [campaign.id]: campaign.name };
+      for (const cid of uniqueCampaignIds) {
         try {
-          // Try find existing car QR
-          const existed = await QrTag.filter({ carId: car.id, type: 'car' });
-          if (existed && existed.length > 0) {
-            await QrTag.update(existed[0].id, { campaignId: campaign.id });
-          } else {
-            await QrTag.create({ type: 'car', campaignId: campaign.id, carId: car.id, label: car.plate_number });
-          }
+          const c = await Campaign.get(cid);
+          if (c && c.name) campaignNames[cid] = c.name;
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      setPrecheck({ toCreate, alreadyOnCampaign, toReassign, campaignNames });
+
+      if (toReassign.length > 0) {
+        setConfirmOpen(true);
+        return;
+      }
+
+      await executeAssign([...toCreate]);
+    } catch (err) {
+      console.error('Precheck error:', err);
+      setError('Failed to review selected cars. Please try again.');
+    }
+  };
+
+  const executeAssign = async (carsToProcess) => {
+    setGenerating(true);
+    setError("");
+    setSuccess("");
+    setSuccessCount(0);
+
+    let localSuccessCount = 0;
+    let errorDuring = false;
+
+    try {
+      for (const car of carsToProcess) {
+        if (errorDuring) break;
+        try {
+          await QrTag.create({ type: 'car', campaignId: campaign.id, carId: car.id, label: car.plate_number });
           localSuccessCount++;
           setSuccessCount(localSuccessCount);
         } catch (err) {
-          // Catching network errors or errors from QrTag.create/generateQrCodeImage calls
-          console.error(`Error generating QR for car ${car.plate_number}:`, err);
-          setError(`An unexpected error occurred while assigning QR for car plate ${car.plate_number}. Details: ${err.message || 'Unknown error.'}`);
-          errorDuringGeneration = true;
-          break; // Stop on first exception
+          console.error(`Error assigning QR for car ${car.plate_number}:`, err);
+          setError(`An error occurred while assigning QR for ${car.plate_number}. ${err.message || ''}`);
+          errorDuring = true;
+          break;
         }
       }
 
-      if (!errorDuringGeneration) {
-        // If the loop completed without any errors (either API reported failure or exception)
+      if (!errorDuring) {
         if (localSuccessCount > 0) {
-          setSuccess(`Successfully generated ${localSuccessCount} car QR code${localSuccessCount > 1 ? 's' : ''}!`);
-          setSelectedCarIds(new Set()); // Clear selection only on full success
-          onQRGenerated(); // Notify parent of successful generation
+          setSuccess(`Successfully assigned QR to ${localSuccessCount} car${localSuccessCount > 1 ? 's' : ''}.`);
+          setSelectedCarIds(new Set());
+          onQRGenerated();
         } else {
-          // This case should not be reachable if selectedCarIds.size > 0 and no error occurred.
-          // It would mean selectedCars was empty, or successCount somehow wasn't incremented.
-          setError("No QR codes were generated, even though no specific errors were reported. Please check inputs.");
+          setError('No assignments were performed.');
         }
       }
-      // If errorDuringGeneration is true, the specific error message has already been set by setError inside the loop.
-      // We do not want to override it or show a mixed message.
-
     } catch (err) {
-      // This outer catch block would only catch errors *before* the loop starts
-      // (e.g., issue with `cars.filter` if `cars` was not an array, very unlikely)
-      console.error('General error during car QR codes generation process:', err);
-      setError('A general error occurred during the QR code generation process. Please try again.');
+      console.error('Assignment error:', err);
+      setError('A general error occurred during assignment.');
     } finally {
       setGenerating(false);
+      setConfirmOpen(false);
     }
   };
 
@@ -198,7 +249,7 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <CarIcon className="w-5 h-5" />
-          Generate Car QR Codes
+          Assign QR Codes to Cars
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -206,8 +257,7 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
           <div className="bg-blue-50 p-4 rounded-lg">
             <h3 className="font-semibold text-blue-900 mb-2">About Car QR Codes</h3>
             <p className="text-blue-700 text-sm">
-              Car QR codes are placed on vehicles and track leads generated through specific cars.
-              Commissions are automatically calculated for drivers and fleet owners.
+              Each car has one permanent QR code. Assigning links it to this campaign; reassigning keeps the same QR and slug and preserves analytics.
             </p>
           </div>
 
@@ -272,19 +322,19 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
               </span>
             </div>
             <Button
-              onClick={handleGenerate} // Changed function call here
+              onClick={handleAssign}
               disabled={selectedCarIds.size === 0 || generating}
               className="bg-blue-600 hover:bg-blue-700"
             >
               {generating ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Generating ({successCount} / {selectedCarIds.size})...
+                  Assigning ({successCount} / {selectedCarIds.size})...
                 </>
               ) : (
                 <>
                   <CarIcon className="w-4 h-4 mr-2" />
-                  Generate QR Codes ({selectedCarIds.size})
+                  Assign to Campaign ({selectedCarIds.size})
                 </>
               )}
             </Button>
@@ -338,6 +388,43 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
             )}
           </div>
         </div>
+
+        {/* Reassignment confirmation */}
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirm reassignment</AlertDialogTitle>
+              <AlertDialogDescription>
+                {precheck.toReassign.length} car{precheck.toReassign.length !== 1 ? 's' : ''} already have a QR assigned to another campaign.
+                Proceeding will reassign them to "{campaign.name}". This keeps the same QR and link slug and preserves analytics.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="max-h-48 overflow-auto rounded border p-2 bg-gray-50 text-sm">
+              {precheck.toReassign.map(({ car, tag }) => (
+                <div key={car.id} className="flex justify-between py-1">
+                  <span className="font-medium">{car.plate_number}</span>
+                  <span className="text-gray-600">from {precheck.campaignNames[tag.campaignId] || tag.campaignId || 'Unknown'}</span>
+                </div>
+              ))}
+              {precheck.alreadyOnCampaign.length > 0 && (
+                <div className="mt-3 text-gray-600">
+                  {precheck.alreadyOnCampaign.length} car{precheck.alreadyOnCampaign.length !== 1 ? 's are' : ' is'} already on this campaign and will be skipped.
+                </div>
+              )}
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={generating}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => executeAssign([...precheck.toCreate, ...precheck.toReassign.map(x => x.car)])}
+                disabled={generating}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Confirm and Assign
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );

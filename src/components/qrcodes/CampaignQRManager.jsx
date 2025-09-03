@@ -9,6 +9,7 @@ import { ArrowLeft, QrCode, Car, Tag, Plus } from "lucide-react";
 import ExistingQRCodes from "./ExistingQRCodes";
 import PromotionalQRForm from "./PromotionalQRForm";
 import CarQRSelection from "./CarQRSelection";
+import CarQRDirectory from "./CarQRDirectory";
 
 export default function CampaignQRManager({ campaign, onBack }) {
   const [qrTags, setQrTags] = useState([]);
@@ -88,7 +89,7 @@ export default function CampaignQRManager({ campaign, onBack }) {
             </TabsTrigger>
             <TabsTrigger value="car" className="flex items-center gap-2">
               <Car className="w-4 h-4" />
-              Generate Car QRs
+              Car QR Directory
             </TabsTrigger>
           </TabsList>
 
@@ -108,9 +109,9 @@ export default function CampaignQRManager({ campaign, onBack }) {
           </TabsContent>
 
           <TabsContent value="car">
-            <CarQRSelection 
+            <CarQRDirectory 
               campaign={campaign}
-              onQRGenerated={handleQRGenerated}
+              onAssigned={handleQRGenerated}
             />
           </TabsContent>
         </Tabs>

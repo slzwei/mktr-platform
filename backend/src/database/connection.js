@@ -3,17 +3,41 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Database configuration - Use SQLite for testing
-const config = {
-  dialect: 'sqlite',
-  storage: process.env.DATABASE_URL || 'fresh.db',
-  logging: false,
-  define: {
-    timestamps: true,
-    underscored: false,
-    freezeTableName: true
-  }
-};
+// Database configuration:
+// - If DB_HOST is set, use Postgres
+// - Otherwise, fallback to SQLite (local dev quickstart)
+const isPostgres = !!process.env.DB_HOST;
+const config = isPostgres
+  ? {
+      dialect: 'postgres',
+      host: process.env.DB_HOST,
+      port: Number(process.env.DB_PORT || 5432),
+      database: process.env.DB_NAME,
+      username: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      logging: false,
+      define: {
+        timestamps: true,
+        underscored: false,
+        freezeTableName: true
+      },
+      pool: {
+        max: 10,
+        min: 0,
+        acquire: 30000,
+        idle: 10000
+      }
+    }
+  : {
+      dialect: 'sqlite',
+      storage: process.env.DATABASE_URL || 'fresh.db',
+      logging: false,
+      define: {
+        timestamps: true,
+        underscored: false,
+        freezeTableName: true
+      }
+    };
 
 // Create Sequelize instance
 export const sequelize = new Sequelize(config);
