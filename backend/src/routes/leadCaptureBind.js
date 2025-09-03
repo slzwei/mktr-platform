@@ -46,9 +46,11 @@ router.get('/lead-capture', asyncHandler(async (req, res, next) => {
     }
   }
 
-  // After binding, redirect to the frontend SPA route without params
+  // After binding, redirect to the frontend SPA route, preserving any shareable params
   const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
-  return res.redirect(302, `${frontendBase}/LeadCapture`);
+  const qs = req.url.includes('?') ? req.url.split('?')[1] : '';
+  const suffix = qs ? `/LeadCapture?${qs}` : '/LeadCapture';
+  return res.redirect(302, `${frontendBase}${suffix}`);
 }));
 
 export default router;

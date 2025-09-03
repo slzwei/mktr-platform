@@ -38,7 +38,7 @@ export default function LeadCapture() {
     const location = useLocation();
     const [campaign, setCampaign] = useState(null);
     const [qrTag, setQrTag] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [submitted, setSubmitted] = useState(false);
 
@@ -80,7 +80,6 @@ export default function LeadCapture() {
         const preview = params.get('preview');
 
         const fetchAndDelay = async () => {
-            setLoading(true);
             try {
                 // Resolve current session attribution from backend
                 const resp = await apiClient.get('/qrcodes/session');
@@ -112,8 +111,6 @@ export default function LeadCapture() {
             } catch (err) {
                 console.error('Error loading capture page:', err);
                 setError('An error occurred while loading the page.');
-            } finally {
-                setTimeout(() => setLoading(false), 500);
             }
         };
 
@@ -139,9 +136,7 @@ export default function LeadCapture() {
         }
     };
 
-    if (loading) {
-        return <TypingLoader />;
-    }
+    // Remove initial loading animation; render immediately with conditional content
 
     const design = campaign?.design_config || {};
 

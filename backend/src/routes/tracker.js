@@ -74,8 +74,12 @@ router.get('/track/:slug', limiter, asyncHandler(async (req, res) => {
   });
 
   // Redirect to backend binder first so we can bind session (sid) reliably,
-  // then that route will forward to the frontend SPA
-  return res.redirect(302, `/lead-capture`);
+  // then that route will forward to the frontend SPA and preserve shareable params
+  const search = new URLSearchParams({
+    ...(qrTag.campaignId ? { campaign_id: String(qrTag.campaignId) } : {}),
+    slug: qrTag.slug,
+  }).toString();
+  return res.redirect(302, `/lead-capture?${search}`);
 }));
 
 // Resolve current session attribution -> campaign/qrTag for SPA to load design
