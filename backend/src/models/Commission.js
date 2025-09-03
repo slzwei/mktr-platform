@@ -151,30 +151,14 @@ const Commission = sequelize.define('Commission', {
 }, {
   tableName: 'commissions',
   indexes: [
-    {
-      fields: ['agentId']
-    },
-    {
-      fields: ['status']
-    },
-    {
-      fields: ['type']
-    },
-    {
-      fields: ['campaignId']
-    },
-    {
-      fields: ['prospectId']
-    },
-    {
-      fields: ['earnedDate']
-    },
-    {
-      fields: ['paidDate']
-    },
-    {
-      fields: ['period']
-    }
+    { fields: ['agentId'] },
+    { fields: ['status'] },
+    { fields: ['type'] },
+    { fields: ['campaignId'] },
+    { fields: ['prospectId'] },
+    { fields: ['earnedDate'] },
+    { fields: ['paidDate'] }
+    // Note: avoid indexing JSON columns like 'period' in Postgres without an opclass
   ]
 });
 
