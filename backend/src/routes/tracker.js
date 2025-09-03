@@ -73,13 +73,27 @@ router.get('/track/:slug', limiter, asyncHandler(async (req, res) => {
     path: '/'
   });
 
-  // Redirect to backend binder first so we can bind session (sid) reliably,
-  // then that route will forward to the frontend SPA and preserve shareable params
+  // Ensure sid cookie exists here to avoid an extra binder hop
+  let sid = req.cookies?.sid;
+  if (!sid) {
+    sid = crypto.randomBytes(16).toString('hex');
+    res.cookie('sid', sid, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: isProd,
+      domain: isProd ? '.mktr.sg' : undefined,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/'
+    });
+  }
+
+  // Redirect directly to the frontend SPA preserving shareable params
+  const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
   const search = new URLSearchParams({
     ...(qrTag.campaignId ? { campaign_id: String(qrTag.campaignId) } : {}),
     slug: qrTag.slug,
   }).toString();
-  return res.redirect(302, `/lead-capture?${search}`);
+  return res.redirect(302, `${frontendBase}/LeadCapture?${search}`);
 }));
 
 // Resolve current session attribution -> campaign/qrTag for SPA to load design
