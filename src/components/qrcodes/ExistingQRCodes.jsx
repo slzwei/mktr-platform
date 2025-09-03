@@ -98,6 +98,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
   }, [qrTags]);
 
   const backendOrigin = apiClient.baseURL.replace(/\/api\/?$/, "");
+  const trackingBase = `${backendOrigin}/t`;
 
   const resolveBackendUrl = (path) => {
     if (!path) return "";
@@ -106,7 +107,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
   };
 
   const handleCopyLink = (slug) => {
-    const url = `${backendOrigin}/t/${slug}`;
+    const url = `${trackingBase}/${slug}`;
     navigator.clipboard.writeText(url);
     setCopiedLink(slug);
     setTimeout(() => setCopiedLink(null), 2000);
@@ -203,6 +204,11 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                       <div className="text-xs text-gray-500 truncate" title={qr.slug}>
                         Slug: {qr.slug}
                       </div>
+                      {qr.slug && (
+                        <div className="text-xs text-blue-700 break-all">
+                          {`${trackingBase}/${qr.slug}`}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col space-y-1">
