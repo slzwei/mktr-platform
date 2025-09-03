@@ -10,7 +10,7 @@ import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 
 import { sequelize } from './database/connection.js';
-import { QrTag, QrScan, Attribution, SessionVisit, Prospect, FleetOwner, User } from './models/index.js';
+import { QrTag, QrScan, Attribution, SessionVisit, Prospect, FleetOwner, User, Campaign, Car } from './models/index.js';
 import './models/CampaignPreview.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
@@ -146,6 +146,12 @@ async function startServer() {
 
     // Targeted sync for new/changed models; avoid accidental destructive alters on sqlite
     const isSqlite = sequelize.getDialect() === 'sqlite';
+    // Ensure base tables that QrTag depends on exist first
+    await User.sync({ alter: !isSqlite });
+    await FleetOwner.sync({ alter: !isSqlite });
+    await Campaign.sync({ alter: !isSqlite });
+    await Car.sync({ alter: !isSqlite });
+    // Now dependent tables
     await QrTag.sync({ alter: !isSqlite });
     await QrScan.sync({ alter: !isSqlite });
     await Attribution.sync({ alter: !isSqlite });
