@@ -38,6 +38,7 @@ import AuthTest from "./AuthTest";
 
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PublicPreview from './public/Preview';
+import TrackRedirect from './TrackRedirect';
 
 const PAGES = {
     
@@ -100,6 +101,7 @@ function PagesContent() {
             <Route path="/" element={<Homepage />} />
             <Route path="/LeadCapture" element={<LeadCapture />} />
             <Route path="/p/:slug" element={<PublicPreview />} />
+            <Route path="/t/:slug" element={<TrackRedirect />} />
             <Route path="/Homepage" element={<Homepage />} />
             <Route path="/Contact" element={<Contact />} />
             <Route path="/CustomerLogin" element={<CustomerLogin />} />
