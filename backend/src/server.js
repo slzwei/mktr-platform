@@ -9,6 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { sequelize } from './database/connection.js';
+import './models/CampaignPreview.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 
@@ -16,6 +17,7 @@ import { notFound } from './middleware/notFound.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import campaignRoutes from './routes/campaigns.js';
+import campaignPreviewRoutes from './routes/campaignPreviews.js';
 import agentRoutes from './routes/agents.js';
 import fleetRoutes from './routes/fleet.js';
 import prospectRoutes from './routes/prospects.js';
@@ -86,6 +88,8 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/campaigns', campaignRoutes);
+app.use('/api/campaigns', campaignPreviewRoutes);
+app.use('/api/previews', campaignPreviewRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/fleet', fleetRoutes);
 app.use('/api/prospects', prospectRoutes);
@@ -110,12 +114,9 @@ async function startServer() {
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
 
-    // Sync database models
-    // Temporarily disabled due to foreign key constraints
-    // if (process.env.NODE_ENV === 'development') {
-    //   await sequelize.sync({ force: false });
-    //   console.log('✅ Database models synchronized.');
-    // }
+    // Ensure preview table exists without forcing all models
+    await sequelize.sync({ alter: false });
+    console.log('✅ Database models synchronized.');
 
     // Start server
     app.listen(PORT, () => {

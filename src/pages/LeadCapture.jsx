@@ -43,10 +43,23 @@ export default function LeadCapture() {
     const [error, setError] = useState(null);
     const [submitted, setSubmitted] = useState(false);
 
+    // Ensure legacy preview page isn't indexed (only when preview=true)
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const isPreview = params.get('preview');
+        if (isPreview) {
+            const meta = document.querySelector('meta[name="robots"]') || document.createElement('meta');
+            meta.setAttribute('name', 'robots');
+            meta.setAttribute('content', 'noindex,nofollow');
+            if (!meta.parentElement) document.head.appendChild(meta);
+        }
+    }, [location.search]);
+
     useEffect(() => {
         const params = new URLSearchParams(location.search);
         const campaignId = params.get('campaign_id');
         const qrTagCode = params.get('qr_tag_id');
+        const preview = params.get('preview');
 
         const fetchAndDelay = async () => {
             setLoading(true);
@@ -84,10 +97,12 @@ export default function LeadCapture() {
                     setError("No campaign or QR code specified.");
                     return;
                 }
-                
-                if (!fetchedCampaign || !fetchedCampaign.is_active) {
-                    setError("This campaign is no longer active.");
-                    return;
+                // If legacy preview, allow rendering even if inactive
+                if (!preview) {
+                    if (!fetchedCampaign || !fetchedCampaign.is_active) {
+                        setError("This campaign is no longer active.");
+                        return;
+                    }
                 }
                 
                 setCampaign(fetchedCampaign);

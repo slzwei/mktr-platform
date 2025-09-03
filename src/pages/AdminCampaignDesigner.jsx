@@ -6,6 +6,7 @@ import { ArrowLeft, Save, Eye, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 import DesignEditor from "../components/campaigns/DesignEditor";
+import { apiClient } from "@/api/client";
 
 export default function AdminCampaignDesigner() {
   const [user, setUser] = useState(null);
@@ -60,10 +61,20 @@ export default function AdminCampaignDesigner() {
     setSaving(false);
   };
 
-  const handlePreview = () => {
-    if (campaign) {
-      const previewUrl = `${window.location.origin}/LeadCapture?campaign_id=${campaign.id}&preview=true`;
-      window.open(previewUrl, '_blank');
+  const handlePreview = async () => {
+    if (!campaign) return;
+    try {
+      const res = await apiClient.post(`/campaigns/${campaign.id}/preview`, {});
+      const urlPath = res?.data?.url || (res?.data?.slug ? `/p/${res.data.slug}` : null);
+      if (!urlPath) {
+        toast.error('Failed to generate preview link');
+        return;
+      }
+      const url = `${window.location.origin}${urlPath}`;
+      window.open(url, '_blank');
+    } catch (e) {
+      console.error('Failed to create preview:', e);
+      toast.error('Failed to create preview');
     }
   };
 

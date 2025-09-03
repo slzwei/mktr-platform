@@ -38,6 +38,7 @@ import ApiTest from "./ApiTest";
 import AuthTest from "./AuthTest";
 
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+import PublicPreview from './public/Preview';
 
 const PAGES = {
     
@@ -99,6 +100,7 @@ function PagesContent() {
             {/* Public routes - no protection needed */}
             <Route path="/" element={<Homepage />} />
             <Route path="/LeadCapture" element={<LeadCapture />} />
+            <Route path="/p/:slug" element={<PublicPreview />} />
             <Route path="/Homepage" element={<Homepage />} />
             <Route path="/Contact" element={<Contact />} />
             <Route path="/CustomerLogin" element={<CustomerLogin />} />

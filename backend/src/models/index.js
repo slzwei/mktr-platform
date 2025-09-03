@@ -10,6 +10,7 @@ import Prospect from './Prospect.js';
 import QrTag from './QrTag.js';
 import Commission from './Commission.js';
 import LeadPackage from './LeadPackage.js';
+import CampaignPreview from './CampaignPreview.js';
 
 // Define associations
 const defineAssociations = () => {
@@ -45,6 +46,7 @@ const defineAssociations = () => {
   Campaign.hasMany(Prospect, { foreignKey: 'campaignId', as: 'prospects' });
   Campaign.hasMany(Commission, { foreignKey: 'campaignId', as: 'commissions' });
   Campaign.hasMany(LeadPackage, { foreignKey: 'campaignId', as: 'leadPackages' });
+  Campaign.hasOne(CampaignPreview, { foreignKey: 'campaignId', as: 'preview' });
 
   // QrTag associations
   QrTag.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
@@ -86,7 +88,8 @@ export {
   Prospect,
   QrTag,
   Commission,
-  LeadPackage
+  LeadPackage,
+  CampaignPreview
 };
 
 // Export default object for convenience
@@ -100,5 +103,6 @@ export default {
   Prospect,
   QrTag,
   Commission,
-  LeadPackage
+  LeadPackage,
+  CampaignPreview
 };
