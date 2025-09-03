@@ -13,6 +13,8 @@ services:
         value: 3001
       - key: CORS_ORIGIN
         sync: false
+      - key: FRONTEND_BASE_URL
+        value: https://mktr.sg
       - key: PUBLIC_BASE_URL
         sync: false
       - key: JWT_SECRET
