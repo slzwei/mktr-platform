@@ -7,6 +7,13 @@ dotenv.config();
 // - If DB_HOST is set, use Postgres
 // - Otherwise, fallback to SQLite (local dev quickstart)
 const isPostgres = !!process.env.DB_HOST;
+const shouldUseSSL = (() => {
+  if (process.env.DB_SSL) {
+    return String(process.env.DB_SSL).toLowerCase() !== 'false';
+  }
+  // Default to SSL in production environments (e.g., Render)
+  return process.env.NODE_ENV === 'production';
+})();
 const config = isPostgres
   ? {
       dialect: 'postgres',
@@ -21,6 +28,14 @@ const config = isPostgres
         underscored: false,
         freezeTableName: true
       },
+      dialectOptions: shouldUseSSL
+        ? {
+            ssl: {
+              require: true,
+              rejectUnauthorized: false
+            }
+          }
+        : {},
       pool: {
         max: 10,
         min: 0,
