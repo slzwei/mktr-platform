@@ -674,48 +674,15 @@ router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req,
     throw new AppError('email and full_name are required', 400);
   }
 
-  // If user exists already
-  let user = await User.findOne({ where: { email } });
-  const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
+  // Disallow inviting emails that already exist (prevents accidental role changes)
+  if (req.user?.email && String(req.user.email).toLowerCase() === String(email).toLowerCase()) {
+    throw new AppError('You cannot invite your own email address', 400);
+  }
 
-  if (user) {
-    // Ensure role is agent and reactivate the account
-    const updates = { role: 'agent', isActive: true };
-    if (typeof owed_leads_count === 'number') {
-      updates.owed_leads_count = parseInt(owed_leads_count) || 0;
-    }
-
-    // If the user has NOT registered yet (no password), generate a fresh invite
-    if (!user.password) {
-      const invitationToken = uuidv4();
-      const invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      Object.assign(updates, {
-        emailVerified: false,
-        invitationToken,
-        invitationExpires
-      });
-      await user.update(updates);
-
-      const firstName = user.firstName || (String(full_name).trim().split(/\s+/)[0] || 'Agent');
-      const inviteLink = `${frontendBase}/auth/accept-invite?token=${encodeURIComponent(invitationToken)}&email=${encodeURIComponent(email)}`;
-
-      const subject = getAgentInviteSubject(process.env.COMPANY_NAME || 'MKTR');
-      const html = getAgentInviteEmail({
-        firstName,
-        inviteLink,
-        companyName: process.env.COMPANY_NAME || 'MKTR',
-        companyUrl: process.env.COMPANY_URL || process.env.FRONTEND_BASE_URL || 'http://localhost:5173',
-        expiryDays: 7
-      });
-      const text = getAgentInviteText({ firstName, inviteLink, companyName: process.env.COMPANY_NAME || 'MKTR', expiryDays: 7 });
-      await sendEmail({ to: email, subject, html, text });
-
-      return res.json({ success: true, message: 'Agent re-invited and reactivated', data: { user: user.toJSON(), inviteLink } });
-    }
-
-    // If already registered (has password), just ensure role/active status and return
-    await user.update(updates);
-    return res.json({ success: true, message: 'Agent reactivated', data: { user: user.toJSON(), inviteLink: null } });
+  const existing = await User.findOne({ where: { email } });
+  if (existing) {
+    // Policy: Existing users must be permanently deleted before they can be invited again
+    throw new AppError('A user with this email already exists. Permanently delete the existing user first to send a new invitation.', 400);
   }
 
   // Create new user and send invite
@@ -726,7 +693,7 @@ router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req,
   const invitationToken = uuidv4();
   const invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-  user = await User.create({
+  const user = await User.create({
     email,
     firstName,
     lastName,
@@ -738,6 +705,7 @@ router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req,
     owed_leads_count: parseInt(owed_leads_count) || 0
   });
 
+  const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
   const inviteLink = `${frontendBase}/auth/accept-invite?token=${encodeURIComponent(invitationToken)}&email=${encodeURIComponent(email)}`;
 
   const subject = getAgentInviteSubject(process.env.COMPANY_NAME || 'MKTR');

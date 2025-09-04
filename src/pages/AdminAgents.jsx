@@ -64,13 +64,10 @@ export default function AdminAgents() {
 
   const loadData = async () => {
     try {
-      const userData = await auth.getCurrentUser();
-      // If local cached user says admin but token/backend disagrees, force refresh
+      // Always force-refresh from backend to avoid stale cached roles
+      const userData = await auth.getCurrentUser(true);
       if (!userData || userData.role !== 'admin') {
-        const refreshed = await auth.getCurrentUser(true);
-        if (!refreshed || refreshed.role !== 'admin') {
-          throw new Error('Insufficient permissions');
-        }
+        throw new Error('Insufficient permissions');
       }
       const agentsData = await agentsAPI.getAll();
 

@@ -45,20 +45,10 @@ export default function ProtectedRoute({ children, requiredRole = null }) {
             console.log('✅ PROTECTED ROUTE: Access granted!');
           }
         } else {
-          console.log('🔍 PROTECTED ROUTE: No cached data, checking with backend...');
-          // Fallback: Check with backend
-          const currentUser = await auth.getCurrentUser();
-          console.log('🔍 PROTECTED ROUTE: Backend user:', currentUser);
-          
-          if (currentUser) {
-            setUser(currentUser);
-            setIsAuthenticated(true);
-            console.log('✅ PROTECTED ROUTE: Access granted via backend!');
-          } else {
-            console.log('❌ PROTECTED ROUTE: No user found, redirecting to login...');
-            navigate('/CustomerLogin');
-            return;
-          }
+          // No token and no stored user; don't call backend, redirect immediately
+          console.log('🔍 PROTECTED ROUTE: No cached token/user; redirecting to login without backend check...');
+          navigate('/CustomerLogin');
+          return;
         }
       } catch (error) {
         console.error('❌ PROTECTED ROUTE: Authentication check failed:', error);
