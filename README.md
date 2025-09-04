@@ -1,5 +1,7 @@
 # MKTR Platform
 
+This web app is developed by Shawn Lee Yi Heng. #Twilio's Verification
+
 A full‑stack marketing operations platform with agent management, campaign management, a visual campaign landing page designer, file uploads, QR flows, and phone verification via Twilio Verify.
 
 ## Highlights
