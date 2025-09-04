@@ -435,7 +435,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                             <img
                               src={resolveImageUrl(currentDesign.imageUrl)}
                               alt="Header preview"
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-contain"
                               onError={(e) => {
                                 console.error('Image failed to load:', resolveImageUrl(currentDesign.imageUrl));
                                 e.target.style.display = 'none';
@@ -670,7 +670,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                       <img 
                         src={resolveImageUrl(currentDesign.imageUrl)}
                         alt="Campaign header"
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                         onError={(e) => {
                           console.error('Image failed to load:', resolveImageUrl(currentDesign.imageUrl));
                           e.target.style.display = 'none';

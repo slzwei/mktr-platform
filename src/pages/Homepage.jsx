@@ -1,5 +1,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
+import { getDefaultRouteForRole } from "@/lib/utils";
+import { auth } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -205,6 +207,8 @@ const FloatingElements = () => {
 
 export default function Homepage() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
+  const [dashboardPath, setDashboardPath] = useState('/AdminDashboard');
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
 
@@ -215,6 +219,23 @@ export default function Homepage() {
       document.documentElement.style.scrollBehavior = 'auto';
     };
   }, []);
+
+  useEffect(() => {
+    // Determine auth state for hamburger menu
+    try {
+      const token = localStorage.getItem('mktr_auth_token');
+      const storedUser = localStorage.getItem('mktr_user');
+      if (token && storedUser) {
+        setIsAuthed(true);
+        const user = JSON.parse(storedUser);
+        setDashboardPath(getDefaultRouteForRole(user?.role));
+      } else {
+        setIsAuthed(false);
+      }
+    } catch (_) {
+      setIsAuthed(false);
+    }
+  }, [menuOpen]);
 
   return (
     <>
@@ -895,19 +916,42 @@ export default function Homepage() {
         </div>
         
         <div className="w-full px-6 pb-8 space-y-4">
-          <Link to={createPageUrl("CustomerLogin")} onClick={toggleMenu} className="block">
-            <button className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider 
-                              hover:bg-gray-100 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
-              Customer Login
-            </button>
-          </Link>
-          
-          <Link to={createPageUrl("AdminDashboard")} onClick={toggleMenu} className="block">
-            <button className="w-full bg-black text-white border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider 
-                              hover:bg-gray-900 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
-              Admin Portal
-            </button>
-          </Link>
+          {isAuthed ? (
+            <>
+              <Link to={dashboardPath} onClick={toggleMenu} className="block">
+                <button className="w-full bg-black text-white border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider 
+                                  hover:bg-gray-900 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
+                  Go to Dashboard
+                </button>
+              </Link>
+              <button
+                onClick={() => {
+                  auth.logout();
+                  setIsAuthed(false);
+                  toggleMenu();
+                }}
+                className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider 
+                               hover:bg-gray-100 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200"
+              >
+                Logout
+              </button>
+            </>
+          ) : (
+            <>
+              <Link to={createPageUrl("CustomerLogin")} onClick={toggleMenu} className="block">
+                <button className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider 
+                                  hover:bg-gray-100 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
+                  Customer Login
+                </button>
+              </Link>
+              <Link to={createPageUrl("AdminDashboard")} onClick={toggleMenu} className="block">
+                <button className="w-full bg-black text-white border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider 
+                                  hover:bg-gray-900 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
+                  Admin Portal
+                </button>
+              </Link>
+            </>
+          )}
         </div>
       </nav>
 

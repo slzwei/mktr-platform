@@ -317,6 +317,24 @@ export const auth = {
     currentUser = null;
     localStorage.removeItem(STORAGE_KEYS.USER);
     localStorage.removeItem(STORAGE_KEYS.TOKEN);
+
+    // Best-effort: disable Google auto select and revoke hint if GIS loaded
+    try {
+      if (typeof window !== 'undefined' && window.google?.accounts?.id) {
+        window.google.accounts.id.disableAutoSelect();
+      }
+      // Also clear Google cookies hint by hitting OAuth logout; non-blocking, may be ignored by browser
+      try {
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.referrerPolicy = 'no-referrer';
+        iframe.src = 'https://accounts.google.com/Logout';
+        document.body.appendChild(iframe);
+        setTimeout(() => {
+          if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        }, 1500);
+      } catch (_) {}
+    } catch (_) {}
   },
 
   // Check if user is authenticated

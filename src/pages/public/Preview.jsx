@@ -81,13 +81,13 @@ export default function PublicPreview() {
     <div className="min-h-screen bg-gray-50">
       {/* Title update */}
       <Title title={`Preview • ${snapshot?.name || 'Campaign'}`} />
-      {design?.imageUrl && (
-        <div className="w-full h-56 lg:h-72">
-          <img src={resolveImageUrl(design.imageUrl)} alt="Header" className="w-full h-full object-cover" />
-        </div>
-      )}
       <div className="flex items-center justify-center py-12 px-6">
         <div className="w-full" style={{ maxWidth: `${design.formWidth || 400}px` }}>
+          {design?.imageUrl && (
+            <div className="w-full h-56 lg:h-72 mb-6">
+              <img src={resolveImageUrl(design.imageUrl)} alt="Header" className="w-full h-full object-contain rounded-md" />
+            </div>
+          )}
           {submitted ? (
             <div className="bg-white p-8 rounded-lg shadow-xl text-center border">
               <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />

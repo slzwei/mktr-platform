@@ -152,6 +152,8 @@ export default function CustomerLogin() {
         `response_type=${responseType}&` +
         `scope=${scope}&` +
         `access_type=offline&` +
+        `prompt=select_account&` +
+        `include_granted_scopes=false&` +
         `state=${state}`;
       
       console.log('🔍 Redirecting to Google OAuth URL:', googleAuthUrl);
@@ -176,6 +178,18 @@ export default function CustomerLogin() {
 
   // Initialize Google OAuth
   useEffect(() => {
+    // If already authenticated, redirect immediately to default dashboard
+    try {
+      const token = localStorage.getItem('mktr_auth_token');
+      const storedUser = localStorage.getItem('mktr_user');
+      if (token && storedUser) {
+        const user = JSON.parse(storedUser);
+        const targetUrl = getPostAuthRedirectPath(user);
+        navigate(targetUrl, { replace: true });
+        return; // Skip initializing Google if redirecting
+      }
+    } catch (_) {}
+
     let isInitialized = false;
     let scriptElement = null;
     

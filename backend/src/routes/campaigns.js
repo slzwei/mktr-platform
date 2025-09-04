@@ -223,6 +223,16 @@ router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async
   // Archive instead of hard delete
   await campaign.update({ status: 'archived' });
 
+  // Detach car QR codes from this campaign when archived via DELETE
+  try {
+    await QrTag.update(
+      { campaignId: null },
+      { where: { campaignId: id, type: 'car' } }
+    );
+  } catch (e) {
+    // non-fatal
+  }
+
   res.json({
     success: true,
     message: 'Campaign archived successfully'
@@ -409,6 +419,16 @@ router.patch('/:id/archive', authenticateToken, asyncHandler(async (req, res) =>
 
   await campaign.update({ status: 'archived' });
 
+  // Detach car QR codes from this campaign when archived (car QR is unique per car)
+  try {
+    await QrTag.update(
+      { campaignId: null },
+      { where: { campaignId: id, type: 'car' } }
+    );
+  } catch (e) {
+    // non-fatal
+  }
+
   res.json({
     success: true,
     message: 'Campaign archived successfully',
@@ -467,6 +487,16 @@ router.delete('/:id/permanent', authenticateToken, asyncHandler(async (req, res)
   // Only allow permanent deletion of archived campaigns
   if (campaign.status !== 'archived') {
     throw new AppError('Campaign must be archived before permanent deletion', 400);
+  }
+
+  // Detach car QR codes from this campaign before permanent deletion
+  try {
+    await QrTag.update(
+      { campaignId: null },
+      { where: { campaignId: id, type: 'car' } }
+    );
+  } catch (e) {
+    // non-fatal
   }
 
   await campaign.destroy();

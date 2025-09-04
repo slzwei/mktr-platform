@@ -77,6 +77,14 @@ const User = sequelize.define('User', {
     type: DataTypes.DATE,
     allowNull: true
   },
+  invitationToken: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  invitationExpires: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
   fullName: {
     type: DataTypes.STRING,
     allowNull: true,
@@ -154,6 +162,13 @@ User.prototype.toJSON = function() {
   // Provide snake_case alias expected by some frontend code
   if (!values.full_name) {
     values.full_name = values.fullName || [values.firstName, values.lastName].filter(Boolean).join(' ').trim() || null;
+  }
+  // Computed status for UI compatibility
+  const isPendingRegistration = this.role === 'agent' && !this.password && !this.emailVerified;
+  values.status = isPendingRegistration ? 'pending_registration' : (this.isActive ? 'active' : 'inactive');
+  // Alias createdAt to created_date for UI compatibility
+  if (!values.created_date && values.createdAt) {
+    values.created_date = values.createdAt;
   }
   return values;
 };

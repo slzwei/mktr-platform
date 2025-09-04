@@ -144,17 +144,17 @@ export default function LeadCapture() {
 
     return (
         <div className={`min-h-screen ${getBackgroundClass(design)}`}>
-            {design?.imageUrl && (
-                <div className="w-full h-56 lg:h-72">
-                    <img 
-                        src={resolveImageUrl(design.imageUrl)} 
-                        alt="Campaign Header" 
-                        className="w-full h-full object-cover" 
-                    />
-                </div>
-            )}
             <div className={`flex items-center justify-center ${getSpacingClass(design)}`}>
                 <div className="w-full" style={{ maxWidth: `${design.formWidth || 400}px` }}>
+                    {design?.imageUrl && (
+                        <div className="w-full h-56 lg:h-72 mb-6">
+                            <img 
+                                src={resolveImageUrl(design.imageUrl)} 
+                                alt="Campaign Header" 
+                                className="w-full h-full object-contain rounded-md" 
+                            />
+                        </div>
+                    )}
                     {submitted ? (
                         <div className="bg-white p-8 rounded-lg shadow-xl text-center border">
                             <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
