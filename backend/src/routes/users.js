@@ -113,7 +113,7 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
 // Update user (Admin only or self)
 router.put('/:id', authenticateToken, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { firstName, lastName, phone, avatar, role, isActive, owed_leads_count } = req.body;
+  const { firstName, lastName, phone, avatar, role, isActive, owed_leads_count, email, dateOfBirth } = req.body;
 
   // Users can only update their own profile unless they're admin
   if (req.user.id !== id && req.user.role !== 'admin') {
@@ -131,12 +131,15 @@ router.put('/:id', authenticateToken, asyncHandler(async (req, res) => {
   if (lastName) updateData.lastName = lastName;
   if (phone) updateData.phone = phone;
   if (avatar) updateData.avatar = avatar;
+  if (dateOfBirth) updateData.dateOfBirth = dateOfBirth;
   
   // Only admins can update role, status, and owed_leads_count
   if (req.user.role === 'admin') {
     if (role) updateData.role = role;
     if (typeof isActive === 'boolean') updateData.isActive = isActive;
     if (typeof owed_leads_count === 'number') updateData.owed_leads_count = owed_leads_count;
+    // Allow admin to update email as part of editing invited/pending agents
+    if (email) updateData.email = email;
   }
 
   await user.update(updateData);
@@ -168,6 +171,33 @@ router.delete('/:id', authenticateToken, requireAdmin, asyncHandler(async (req, 
   res.json({
     success: true,
     message: 'User deactivated successfully'
+  });
+}));
+
+// Permanently delete user (Admin only)
+router.delete('/:id/permanent', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  // Prevent admin from deleting themselves
+  if (req.user.id === id) {
+    throw new AppError('Cannot delete your own account', 400);
+  }
+
+  const user = await User.findByPk(id);
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+
+  // Only allow permanent delete for agents (safety)
+  if (user.role !== 'agent') {
+    throw new AppError('Only agent accounts can be permanently deleted', 400);
+  }
+
+  await user.destroy();
+
+  res.json({
+    success: true,
+    message: 'User permanently deleted'
   });
 }));
 

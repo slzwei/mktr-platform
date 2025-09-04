@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { Sequelize } from 'sequelize';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 // Load environment variables
 dotenv.config();
@@ -9,10 +11,14 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Use SQLite for testing
+// Use SQLite for testing (anchor to backend directory to avoid stray DBs)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const backendRootDir = path.resolve(__dirname, './');
+const testDbPath = path.join(backendRootDir, 'test.db');
 const sequelize = new Sequelize({
   dialect: 'sqlite',
-  storage: 'test.db',
+  storage: testDbPath,
   logging: false
 });
 

@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Save from "lucide-react/icons/save";
 
 export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit }) {
@@ -19,35 +18,34 @@ export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit })
     full_name: "",
     email: "",
     phone: "",
-    status: "active",
+    dateOfBirth: "",
     owed_leads_count: 0,
-    agent_notes: "",
-    join_date: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const formatSgPhone = (raw) => {
+    const digits = String(raw || "").replace(/\D/g, "").slice(0, 8);
+    if (digits.length <= 4) return digits;
+    return `${digits.slice(0, 4)} ${digits.slice(4)}`;
+  };
 
   useEffect(() => {
     if (agent) {
       setFormData({
         full_name: agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim(),
         email: agent.email || "",
-        phone: agent.phone || "",
-        status: agent.isActive ? "active" : "inactive",
+        phone: formatSgPhone(agent.phone || ""),
+        dateOfBirth: agent.dateOfBirth ? String(agent.dateOfBirth).slice(0, 10) : "",
         owed_leads_count: agent.owed_leads_count || 0,
-        agent_notes: agent.agent_notes || "",
-        join_date: agent.createdAt ? agent.createdAt.split('T')[0] : "",
       });
     } else {
-      // Reset to default for new agent
       setFormData({
         full_name: "",
         email: "",
         phone: "",
-        status: "active",
+        dateOfBirth: "",
         owed_leads_count: 0,
-        agent_notes: "",
-        join_date: new Date().toISOString().split('T')[0],
       });
     }
     setError("");
@@ -55,12 +53,13 @@ export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit })
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    if (name === 'phone') {
+      return setFormData((prev) => ({ ...prev, phone: formatSgPhone(value) }));
+    }
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSelectChange = (name, value) => {
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
+  const handleSelectChange = () => {};
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -73,14 +72,7 @@ export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit })
         throw new Error("Full name and email are required");
       }
 
-      // Updated: Set role as 'user' and user_type as 'agent'
-      const agentData = {
-        ...formData,
-        role: 'user',
-        user_type: 'agent'
-      };
-
-      await onSubmit(agentData);
+      await onSubmit(formData);
       onOpenChange(false);
     } catch (err) {
       setError(err.message || "Failed to save agent");
@@ -92,9 +84,9 @@ export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit })
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{agent ? "Edit Agent" : "Add New Agent"}</DialogTitle>
+          <DialogTitle>{agent ? "Edit Agent" : "Invite New Agent"}</DialogTitle>
           <DialogDescription>
-            {agent ? "Update the agent's information below." : "Fill in the details for the new agent."}
+            {agent ? "Update the agent's information below." : "Enter the details to invite a new agent to your team."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
@@ -123,78 +115,43 @@ export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit })
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="phone">Phone Number</Label>
-              <Input
-                id="phone"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                placeholder="+65 XXXX XXXX"
-              />
-            </div>
-            <div>
-              <Label htmlFor="date_of_birth">Date of Birth</Label>
-              <Input
-                id="date_of_birth"
-                name="date_of_birth"
-                type="date"
-                value={formData.date_of_birth}
-                onChange={handleChange}
-              />
-            </div>
-          </div>
+          {agent && (
+            <>
+              <div>
+                <Label htmlFor="phone">Phone Number</Label>
+                <Input
+                  id="phone"
+                  name="phone"
+                  type="tel"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  placeholder="9123 4567"
+                />
+              </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="status">Status</Label>
-              <Select 
-                value={formData.status} 
-                onValueChange={(value) => handleSelectChange("status", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="owed_leads_count">Owed Leads Count</Label>
-              <Input
-                id="owed_leads_count"
-                name="owed_leads_count"
-                type="number"
-                min="0"
-                value={formData.owed_leads_count}
-                onChange={handleChange}
-                placeholder="0"
-              />
-            </div>
-          </div>
+              <div>
+                <Label htmlFor="dateOfBirth">Date of Birth</Label>
+                <Input
+                  id="dateOfBirth"
+                  name="dateOfBirth"
+                  type="date"
+                  value={formData.dateOfBirth}
+                  onChange={handleChange}
+                />
+              </div>
+            </>
+          )}
 
           <div>
-            <Label htmlFor="join_date">Join Date</Label>
+            <Label htmlFor="owed_leads_count">Owed Leads Count</Label>
             <Input
-              id="join_date"
-              name="join_date"
-              type="date"
-              value={formData.join_date}
+              id="owed_leads_count"
+              name="owed_leads_count"
+              type="number"
+              min="0"
+              value={formData.owed_leads_count}
               onChange={handleChange}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="agent_notes">Internal Notes</Label>
-            <Input
-              id="agent_notes"
-              name="agent_notes"
-              value={formData.agent_notes}
-              onChange={handleChange}
-              placeholder="Internal notes about this agent..."
+              placeholder="0"
             />
           </div>
 
@@ -210,7 +167,7 @@ export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit })
             </Button>
             <Button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700">
               <Save className="w-4 h-4 mr-2" />
-              {loading ? "Saving..." : "Save Agent"}
+              {loading ? "Inviting..." : agent ? "Save Agent" : "Send Invite"}
             </Button>
           </DialogFooter>
         </form>

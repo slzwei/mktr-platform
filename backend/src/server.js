@@ -142,6 +142,14 @@ async function startServer() {
     // Test database connection
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
+    try {
+      const dialect = sequelize.getDialect();
+      if (dialect === 'sqlite') {
+        console.log(`🗄️ DB Path: ${sequelize.options.storage}`);
+      } else if (dialect === 'postgres') {
+        console.log(`🗄️ DB Host: ${process.env.DB_HOST} / DB Name: ${process.env.DB_NAME}`);
+      }
+    } catch (_) {}
 
     // Targeted sync for new/changed models; avoid accidental destructive alters on sqlite
     const isSqlite = sequelize.getDialect() === 'sqlite';
@@ -161,9 +169,27 @@ async function startServer() {
     await FleetOwner.sync({ alter: !isSqlite });
     await User.sync({ alter: !isSqlite });
 
-    // SQLite fallback: ensure new campaign commission columns exist
+    // SQLite fallback: ensure new columns exist (users, campaigns)
     if (isSqlite) {
       try {
+        // Ensure invitation columns on users
+        const [userColumns] = await sequelize.query('PRAGMA table_info(users)');
+        const hasInvitationToken = Array.isArray(userColumns) && userColumns.some(c => c.name === 'invitationToken');
+        const hasInvitationExpires = Array.isArray(userColumns) && userColumns.some(c => c.name === 'invitationExpires');
+        const hasDateOfBirth = Array.isArray(userColumns) && userColumns.some(c => c.name === 'dateOfBirth');
+        if (!hasInvitationToken) {
+          await sequelize.query('ALTER TABLE users ADD COLUMN invitationToken TEXT');
+          console.log('✅ Added invitationToken column to users');
+        }
+        if (!hasInvitationExpires) {
+          await sequelize.query('ALTER TABLE users ADD COLUMN invitationExpires DATETIME');
+          console.log('✅ Added invitationExpires column to users');
+        }
+        if (!hasDateOfBirth) {
+          await sequelize.query('ALTER TABLE users ADD COLUMN dateOfBirth DATE');
+          console.log('✅ Added dateOfBirth column to users');
+        }
+
         const [columns] = await sequelize.query('PRAGMA table_info(campaigns)');
         const hasDriver = Array.isArray(columns) && columns.some(c => c.name === 'commission_amount_driver');
         const hasFleet = Array.isArray(columns) && columns.some(c => c.name === 'commission_amount_fleet');

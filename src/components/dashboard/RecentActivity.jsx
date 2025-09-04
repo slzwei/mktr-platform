@@ -34,6 +34,13 @@ const statusLabels = {
 };
 
 export default function RecentActivity({ prospects, userRole }) {
+  const formatProspectDate = (prospect) => {
+    const raw = prospect.created_date || prospect.createdAt || prospect.created_at || prospect.created || prospect.createdDate;
+    if (!raw) return '—';
+    const date = raw instanceof Date ? raw : new Date(raw);
+    return isNaN(date.getTime()) ? '—' : format(date, 'PPp');
+  };
+
   const recentProspects = prospects.slice(0, 10);
 
   return (
@@ -96,7 +103,7 @@ export default function RecentActivity({ prospects, userRole }) {
                     </div>
                     <div className="flex items-center gap-2 mt-3 text-xs text-gray-500">
                       <Clock className="w-3 h-3" />
-                      {format(new Date(prospect.created_date), 'PPp')}
+                      {formatProspectDate(prospect)}
                       {prospect.source && (
                         <span className="ml-2 px-2 py-1 bg-gray-100 rounded text-gray-600">
                           {prospect.source.toUpperCase()}

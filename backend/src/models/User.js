@@ -49,6 +49,10 @@ const User = sequelize.define('User', {
       len: [8, 20]
     }
   },
+  dateOfBirth: {
+    type: DataTypes.DATEONLY,
+    allowNull: true
+  },
   avatar: {
     type: DataTypes.STRING,
     allowNull: true

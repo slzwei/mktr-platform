@@ -2,9 +2,9 @@
 import { useState, useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { Campaign } from "@/api/entities";
-import { assignLead } from "@/api/functions";
 import CampaignSignupForm from "../components/campaigns/CampaignSignupForm";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import AlertTriangle from "lucide-react/icons/alert-triangle";
 import CheckCircle from "lucide-react/icons/check-circle";
 import ArrowLeft from "lucide-react/icons/arrow-left";
@@ -43,6 +43,8 @@ export default function LeadCapture() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [submitted, setSubmitted] = useState(false);
+    const [shareOpen, setShareOpen] = useState(false);
+    const [copied, setCopied] = useState(false);
 
     const resolveImageUrl = (url) => {
         if (!url) return '';
@@ -121,20 +123,30 @@ export default function LeadCapture() {
 
     const handleSubmit = async (formData) => {
         try {
-            const submitData = {
-                prospectData: formData,
-                campaignId: campaign.id,
+            // Map form fields to backend schema
+            const name = (formData.name || '').trim();
+            const [firstName, ...rest] = name.split(/\s+/);
+            const lastName = rest.join(' ') || '-';
+
+            const payload = {
+                firstName,
+                lastName,
+                email: formData.email,
+                phone: formData.phone, // already like 65XXXXXXXX from child form
+                leadSource: qrTag?.id ? 'qr_code' : 'website',
+                campaignId: campaign?.id || null,
                 qrTagId: qrTag?.id || null
             };
-            
-            const result = await assignLead(submitData);
-            if (result.data.success) {
+
+            const result = await apiClient.post('/prospects', payload);
+            if (result?.success) {
                 setSubmitted(true);
+                setShareOpen(true);
             } else {
-                setError(result.data.message || 'Submission failed. Please try again.');
+                setError(result?.message || 'Submission failed. Please try again.');
             }
         } catch (err) {
-            setError("An error occurred. Please try again later.");
+            setError(err?.message || 'An error occurred. Please try again later.');
         }
     };
 
@@ -183,6 +195,70 @@ export default function LeadCapture() {
                             onSubmit={handleSubmit}
                         />
                     ) : null}
+                    <Dialog open={shareOpen} onOpenChange={(v) => { setShareOpen(v); if (!v) setCopied(false); }}>
+                        <DialogContent className="sm:max-w-md">
+                            <DialogHeader>
+                                <DialogTitle className="text-lg">Share this campaign</DialogTitle>
+                                <DialogDescription>Invite friends and family to participate.</DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                                <div className="p-3 bg-gray-50 rounded-lg border flex items-center justify-between gap-2">
+                                    <div className="text-[11px] sm:text-sm break-all text-gray-800 leading-snug">
+                                        {(() => {
+                                            const baseUrl = window.location.origin;
+                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id)}` : window.location.href;
+                                            return url;
+                                        })()}
+                                    </div>
+                                    <Button
+                                        variant={copied ? 'default' : 'outline'}
+                                        className={`shrink-0 transition-all ${copied ? 'bg-green-500 hover:bg-green-600 text-white scale-105' : 'hover:scale-105'}`}
+                                        onClick={async () => {
+                                            const baseUrl = window.location.origin;
+                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id)}` : window.location.href;
+                                            try {
+                                                await navigator.clipboard.writeText(url);
+                                                setCopied(true);
+                                                setTimeout(() => setCopied(false), 1500);
+                                            } catch (_) {}
+                                        }}
+                                    >
+                                        {copied ? 'Copied!' : 'Copy link'}
+                                    </Button>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <Button
+                                        onClick={() => {
+                                            const baseUrl = window.location.origin;
+                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id)}` : window.location.href;
+                                            const text = `Check this out: ${url}`;
+                                            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                                        }}
+                                        className="bg-green-500 hover:bg-green-600 text-white flex items-center gap-2"
+                                    >
+                                        <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg" alt="WhatsApp" className="w-4 h-4 invert" />
+                                        WhatsApp
+                                    </Button>
+                                    <Button
+                                        onClick={() => {
+                                            const baseUrl = window.location.origin;
+                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id)}` : window.location.href;
+                                            const text = `Check this out: ${url}`;
+                                            window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
+                                        }}
+                                        className="bg-blue-500 hover:bg-blue-600 text-white flex items-center gap-2"
+                                    >
+                                        <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/telegram.svg" alt="Telegram" className="w-4 h-4 invert" />
+                                        Telegram
+                                    </Button>
+                                </div>
+                            </div>
+                            <DialogFooter className="mt-2">
+                                <Button variant="secondary" onClick={() => setShareOpen(false)}>Close</Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </div>
             </div>
         </div>

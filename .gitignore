@@ -16,6 +16,7 @@ backend/.env
 # SQLite databases
 backend/*.db
 backend/**/*.db
+*.db
 
 # Uploads
 backend/uploads/

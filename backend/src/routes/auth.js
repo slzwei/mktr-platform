@@ -4,8 +4,8 @@ import { User } from '../models/index.js';
 import { generateToken, authenticateToken } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
-import { v4 as uuidv4 } from 'uuid';
 import { googleLogin } from '../controllers/authController.js';
+import { v4 as uuidv4 } from 'uuid';
 
 const router = express.Router();
 
@@ -379,6 +379,51 @@ router.post('/reset-password/:token', asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: 'Password reset successfully'
+  });
+}));
+
+// Accept invite: set password and mark as verified
+router.post('/accept-invite', asyncHandler(async (req, res) => {
+  const { token, email, password, full_name } = req.body;
+
+  if (!token || !email || !password) {
+    throw new AppError('token, email and password are required', 400);
+  }
+
+  const user = await User.findOne({ where: { email, invitationToken: token } });
+  if (!user) {
+    throw new AppError('Invalid invitation token', 400);
+  }
+
+  if (user.invitationExpires && new Date(user.invitationExpires).getTime() < Date.now()) {
+    throw new AppError('Invitation has expired', 400);
+  }
+
+  // Update name if provided
+  let firstName = user.firstName;
+  let lastName = user.lastName;
+  if (full_name) {
+    const parts = String(full_name).trim().split(/\s+/);
+    firstName = parts[0] || firstName;
+    lastName = parts.slice(1).join(' ') || lastName;
+  }
+
+  await user.update({
+    password,
+    firstName,
+    lastName,
+    emailVerified: true,
+    invitationToken: null,
+    invitationExpires: null
+  });
+
+  // Issue token after acceptance
+  const tokenJwt = generateToken(user.id);
+
+  res.json({
+    success: true,
+    message: 'Invitation accepted',
+    data: { user: user.toJSON(), token: tokenJwt }
   });
 }));
 

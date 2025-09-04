@@ -1,7 +1,11 @@
 import express from 'express';
 import { Op } from 'sequelize';
 import { User, Prospect, Commission, Campaign, sequelize } from '../models/index.js';
-import { authenticateToken, requireAdmin, requireAgentOrAdmin } from '../middleware/auth.js';
+import { requireAdmin, authenticateToken } from '../middleware/auth.js';
+import { v4 as uuidv4 } from 'uuid';
+import { sendEmail } from '../services/mailer.js';
+import { getAgentInviteEmail, getAgentInviteSubject, getAgentInviteText } from '../services/emailTemplates.js';
+import { requireAgentOrAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
 const router = express.Router();
@@ -50,12 +54,26 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
     ]
   });
 
+  // Compute counts of campaigns where agents are assigned via assigned_agents JSON
+  const allCampaigns = await Campaign.findAll({ attributes: ['id', 'assigned_agents', 'createdBy', 'status'] });
+  const assignedCounts = {};
+  for (const c of allCampaigns) {
+    const arr = Array.isArray(c.assigned_agents) ? c.assigned_agents : [];
+    for (const agentId of arr) {
+      assignedCounts[agentId] = (assignedCounts[agentId] || 0) + 1;
+    }
+  }
+
   // Calculate agent statistics
   const agentsWithStats = agents.map(agent => {
     const totalProspects = agent.assignedProspects.length;
     const convertedProspects = agent.assignedProspects.filter(p => p.leadStatus === 'won').length;
     const totalCommissions = agent.commissions.reduce((sum, c) => sum + parseFloat(c.amount), 0);
     const paidCommissions = agent.commissions.filter(c => c.status === 'paid').reduce((sum, c) => sum + parseFloat(c.amount), 0);
+    const createdCampaignsCount = agent.createdCampaigns.length;
+    const assignedCampaignsCount = assignedCounts[agent.id] || 0;
+    const tiedCampaignsCount = createdCampaignsCount + assignedCampaignsCount;
+    const activeCreatedCampaigns = agent.createdCampaigns.filter(c => c.status === 'active').length;
     
     return {
       ...agent.toJSON(),
@@ -66,8 +84,9 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
         totalCommissions,
         paidCommissions,
         pendingCommissions: totalCommissions - paidCommissions,
-        totalCampaigns: agent.createdCampaigns.length,
-        activeCampaigns: agent.createdCampaigns.filter(c => c.status === 'active').length
+        totalCampaigns: createdCampaignsCount,
+        activeCampaigns: activeCreatedCampaigns,
+        tiedCampaignsCount
       }
     };
   });
@@ -381,7 +400,8 @@ router.get('/:id/campaigns', authenticateToken, requireAgentOrAdmin, asyncHandle
     throw new AppError('Access denied', 403);
   }
 
-  const whereConditions = { createdBy: id };
+  // Campaigns created by the agent OR where agent is assigned via assigned_agents
+  const whereConditions = {};
   
   if (status) {
     whereConditions.status = status;
@@ -391,10 +411,13 @@ router.get('/:id/campaigns', authenticateToken, requireAgentOrAdmin, asyncHandle
     whereConditions.type = type;
   }
 
-  const { count, rows: campaigns } = await Campaign.findAndCountAll({
-    where: whereConditions,
-    limit: parseInt(limit),
-    offset: parseInt(offset),
+  // We'll fetch a superset then filter manually for assigned_agents since it's JSON
+  const where = {};
+  if (status) where.status = status;
+  if (type) where.type = type;
+
+  const campaignsRaw = await Campaign.findAll({
+    where,
     order: [['createdAt', 'DESC']],
     include: [
       {
@@ -404,11 +427,23 @@ router.get('/:id/campaigns', authenticateToken, requireAgentOrAdmin, asyncHandle
       },
       {
         association: 'qrTags',
-        attributes: ['id', 'scanCount'],
+        attributes: ['id'],
         separate: true
       }
     ]
   });
+
+  const campaignsFiltered = campaignsRaw.filter(c => {
+    const assigned = Array.isArray(c.assigned_agents) && c.assigned_agents.includes(id);
+    const created = String(c.createdBy) === String(id);
+    if (status && c.status !== status) return false;
+    if (type && c.type !== type) return false;
+    return assigned || created;
+  });
+
+  const start = parseInt(offset);
+  const end = start + parseInt(limit);
+  const campaigns = campaignsFiltered.slice(start, end);
 
   // Add performance stats to each campaign
   const campaignsWithStats = campaigns.map(campaign => ({
@@ -416,7 +451,7 @@ router.get('/:id/campaigns', authenticateToken, requireAgentOrAdmin, asyncHandle
     stats: {
       totalProspects: campaign.prospects.length,
       convertedProspects: campaign.prospects.filter(p => p.leadStatus === 'won').length,
-      totalScans: campaign.qrTags.reduce((sum, qr) => sum + qr.scanCount, 0),
+      totalScans: campaign.qrTags.length,
       conversionRate: campaign.prospects.length > 0 ? 
         (campaign.prospects.filter(p => p.leadStatus === 'won').length / campaign.prospects.length * 100).toFixed(2) : 0
     }
@@ -428,8 +463,8 @@ router.get('/:id/campaigns', authenticateToken, requireAgentOrAdmin, asyncHandle
       campaigns: campaignsWithStats,
       pagination: {
         currentPage: parseInt(page),
-        totalPages: Math.ceil(count / limit),
-        totalItems: count,
+        totalPages: Math.ceil(campaignsFiltered.length / limit),
+        totalItems: campaignsFiltered.length,
         itemsPerPage: parseInt(limit)
       }
     }
@@ -630,3 +665,91 @@ async function getProspectLeaderboard(startDate, endDate, limit) {
 }
 
 export default router;
+
+// Invite new agent (Admin only)
+router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
+  const { email, full_name, owed_leads_count = 0 } = req.body;
+
+  if (!email || !full_name) {
+    throw new AppError('email and full_name are required', 400);
+  }
+
+  // If user exists already
+  let user = await User.findOne({ where: { email } });
+  const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
+
+  if (user) {
+    // Ensure role is agent and reactivate the account
+    const updates = { role: 'agent', isActive: true };
+    if (typeof owed_leads_count === 'number') {
+      updates.owed_leads_count = parseInt(owed_leads_count) || 0;
+    }
+
+    // If the user has NOT registered yet (no password), generate a fresh invite
+    if (!user.password) {
+      const invitationToken = uuidv4();
+      const invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      Object.assign(updates, {
+        emailVerified: false,
+        invitationToken,
+        invitationExpires
+      });
+      await user.update(updates);
+
+      const firstName = user.firstName || (String(full_name).trim().split(/\s+/)[0] || 'Agent');
+      const inviteLink = `${frontendBase}/auth/accept-invite?token=${encodeURIComponent(invitationToken)}&email=${encodeURIComponent(email)}`;
+
+      const subject = getAgentInviteSubject(process.env.COMPANY_NAME || 'MKTR');
+      const html = getAgentInviteEmail({
+        firstName,
+        inviteLink,
+        companyName: process.env.COMPANY_NAME || 'MKTR',
+        companyUrl: process.env.COMPANY_URL || process.env.FRONTEND_BASE_URL || 'http://localhost:5173',
+        expiryDays: 7
+      });
+      const text = getAgentInviteText({ firstName, inviteLink, companyName: process.env.COMPANY_NAME || 'MKTR', expiryDays: 7 });
+      await sendEmail({ to: email, subject, html, text });
+
+      return res.json({ success: true, message: 'Agent re-invited and reactivated', data: { user: user.toJSON(), inviteLink } });
+    }
+
+    // If already registered (has password), just ensure role/active status and return
+    await user.update(updates);
+    return res.json({ success: true, message: 'Agent reactivated', data: { user: user.toJSON(), inviteLink: null } });
+  }
+
+  // Create new user and send invite
+  const nameParts = String(full_name).trim().split(/\s+/);
+  const firstName = nameParts[0] || 'Agent';
+  const lastName = nameParts.slice(1).join(' ') || '';
+
+  const invitationToken = uuidv4();
+  const invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  user = await User.create({
+    email,
+    firstName,
+    lastName,
+    role: 'agent',
+    isActive: true,
+    emailVerified: false,
+    invitationToken,
+    invitationExpires,
+    owed_leads_count: parseInt(owed_leads_count) || 0
+  });
+
+  const inviteLink = `${frontendBase}/auth/accept-invite?token=${encodeURIComponent(invitationToken)}&email=${encodeURIComponent(email)}`;
+
+  const subject = getAgentInviteSubject(process.env.COMPANY_NAME || 'MKTR');
+  const html = getAgentInviteEmail({
+    firstName,
+    inviteLink,
+    companyName: process.env.COMPANY_NAME || 'MKTR',
+    companyUrl: process.env.COMPANY_URL || process.env.FRONTEND_BASE_URL || 'http://localhost:5173',
+    expiryDays: 7
+  });
+  const text = getAgentInviteText({ firstName, inviteLink, companyName: process.env.COMPANY_NAME || 'MKTR', expiryDays: 7 });
+  await sendEmail({ to: email, subject, html, text });
+
+  res.status(201).json({ success: true, message: 'Agent invited', data: { user: user.toJSON(), inviteLink } });
+}));

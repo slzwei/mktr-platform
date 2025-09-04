@@ -1,10 +1,13 @@
 
 import { useState, useEffect } from "react";
 import { User } from "@/api/entities";
-import { auth, agents as agentsAPI } from "@/api/client";
+import { auth, agents as agentsAPI, apiClient } from "@/api/client";
 import { LeadPackage } from "@/api/entities"; // Assuming LeadPackage entity exists
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Link } from "react-router-dom";
+import { createPageUrl } from "@/utils";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { 
@@ -16,6 +19,14 @@ import {
   TableRow 
 } from "@/components/ui/table";
 
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue
+} from "@/components/ui/select";
+
 
 import { 
   Plus, 
@@ -25,7 +36,8 @@ import {
   AlertTriangle,
   Phone,
   Mail,
-  Package // Import Package icon
+  Package, // Import Package icon
+  Trash2
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -42,6 +54,9 @@ export default function AdminAgents() {
   const [isPackageDialogOpen, setIsPackageDialogOpen] = useState(false); // New state for package dialog
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [campaignsDialogOpen, setCampaignsDialogOpen] = useState(false);
+  const [campaignsForAgent, setCampaignsForAgent] = useState([]);
 
   useEffect(() => {
     loadData();
@@ -49,10 +64,15 @@ export default function AdminAgents() {
 
   const loadData = async () => {
     try {
-      const [userData, agentsData] = await Promise.all([
-        auth.getCurrentUser(),
-        agentsAPI.getAll()
-      ]);
+      const userData = await auth.getCurrentUser();
+      // If local cached user says admin but token/backend disagrees, force refresh
+      if (!userData || userData.role !== 'admin') {
+        const refreshed = await auth.getCurrentUser(true);
+        if (!refreshed || refreshed.role !== 'admin') {
+          throw new Error('Insufficient permissions');
+        }
+      }
+      const agentsData = await agentsAPI.getAll();
 
       setUser(userData);
       setAgents(agentsData?.agents || []);
@@ -69,30 +89,27 @@ export default function AdminAgents() {
 
   const handleFormSubmit = async (formData) => {
     try {
-      // Normalize fields to backend schema
       const name = (formData.full_name || '').trim();
-      const [firstName, ...rest] = name.split(' ');
-      const lastName = rest.join(' ').trim() || '-';
       const isActive = (formData.status || 'active') === 'active';
 
       if (selectedAgent) {
+        const [firstName, ...rest] = name.split(' ');
+        const lastName = rest.join(' ').trim() || '-';
+        const normalizedPhone = (formData.phone || '').replace(/\D/g, '');
         await User.update(selectedAgent.id, {
           firstName,
           lastName,
           email: formData.email,
-          phone: formData.phone,
+          phone: normalizedPhone || undefined,
+          dateOfBirth: formData.dateOfBirth || undefined,
           isActive,
           owed_leads_count: parseInt(formData.owed_leads_count) || 0
         });
       } else {
-        // Create new agent using User entity
-        await User.create({
+        // Invite new agent via backend invite flow
+        await agentsAPI.invite({
           email: formData.email,
-          firstName,
-          lastName,
-          phone: formData.phone,
-          role: 'agent',
-          isActive,
+          full_name: name,
           owed_leads_count: parseInt(formData.owed_leads_count) || 0
         });
       }
@@ -108,6 +125,65 @@ export default function AdminAgents() {
   const handleOpenDetails = (agent) => {
     setSelectedAgent(agent);
     setIsDetailsOpen(true);
+  };
+
+  const openCampaignsDialog = async (agent) => {
+    if (!agent) return;
+    setSelectedAgent(agent);
+    try {
+      const resp = await agentsAPI.getCampaigns(agent.id);
+      setCampaignsForAgent(resp?.campaigns || []);
+      setCampaignsDialogOpen(true);
+    } catch (e) {
+      console.error('Failed to load agent campaigns', e);
+    }
+  };
+
+  const handleDeleteAgent = async (agent) => {
+    if (!agent) return;
+    const isPending = agent?.status === 'pending_registration' || !!agent?.invitationToken || agent?.emailVerified === false;
+    const message = isPending
+      ? `Move ${agent.fullName || agent.email} to Inactive?`
+      : `Permanently delete ${agent.fullName || agent.email}? This cannot be undone.`;
+    const confirmed = window.confirm(message);
+    if (!confirmed) return;
+    try {
+      if (isPending) {
+        // Soft delete → move to inactive
+        await User.delete(agent.id);
+      } else if (!agent.isActive) {
+        // Already inactive → permanent delete
+        await apiClient.delete(`/users/${agent.id}/permanent`);
+      } else {
+        // Active non-pending → soft delete first
+        await User.delete(agent.id);
+      }
+      await loadData();
+    } catch (error) {
+      console.error('Error deleting agent:', error);
+    }
+  };
+
+  const handleToggleStatus = async (agent) => {
+    if (!agent) return;
+    try {
+      await User.update(agent.id, { isActive: !agent.isActive });
+      await loadData();
+    } catch (error) {
+      console.error('Error toggling agent status:', error);
+    }
+  };
+
+  const handleResendInvite = async (agent) => {
+    if (!agent?.email) return;
+    try {
+      const fullName = agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim();
+      await agentsAPI.invite({ email: agent.email, full_name: fullName, owed_leads_count: agent.owed_leads_count || 0 });
+      alert('Invitation email sent');
+    } catch (error) {
+      console.error('Error resending invite:', error);
+      alert('Failed to resend invitation');
+    }
   };
 
   // New function to open lead package dialog
@@ -129,10 +205,174 @@ export default function AdminAgents() {
     }
   };
 
-  const filteredAgents = agents.filter(agent => 
-    agent.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    agent.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    agent.phone?.includes(searchTerm)
+  const filteredAgents = agents.filter(agent => {
+    const needle = (searchTerm || '').toLowerCase();
+    const name = (agent.fullName || agent.full_name || '').toLowerCase();
+    return (
+      name.includes(needle) ||
+      agent.email?.toLowerCase().includes(needle) ||
+      agent.phone?.includes(searchTerm)
+    );
+  });
+
+  const isPending = (agent) => (
+    agent?.isActive === true && (
+      agent?.status === 'pending_registration' ||
+      !!agent?.invitationToken ||
+      agent?.emailVerified === false
+    )
+  );
+
+  const pendingAgents = filteredAgents.filter(isPending);
+  const activeAgents = filteredAgents.filter(a => !isPending(a) && a.isActive);
+  const inactiveAgents = filteredAgents.filter(a => !isPending(a) && !a.isActive);
+
+  const sectionMatchesFilter = (section) => {
+    if (statusFilter === 'all') return true;
+    if (statusFilter === 'pending') return section === 'pending';
+    if (statusFilter === 'active') return section === 'active';
+    if (statusFilter === 'inactive') return section === 'inactive';
+    return true;
+  };
+
+  const renderAgentsTable = (items) => (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-gray-50">
+            <TableHead>Agent</TableHead>
+            <TableHead>Contact</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Leads Owed</TableHead>
+            <TableHead>Campaigns</TableHead>
+            <TableHead>Joined</TableHead>
+            <TableHead>Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((agent) => (
+            <TableRow key={agent.id} className="hover:bg-gray-50">
+              <TableCell>
+                <div>
+                  <p className="font-semibold text-gray-900">{agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim()}</p>
+                  <p className="text-sm text-gray-500">Agent ID: {agent.id.slice(-8)}</p>
+                </div>
+              </TableCell>
+
+              <TableCell>
+                <div className="space-y-1 text-sm">
+                  <div className="flex items-center gap-1 text-gray-600">
+                    <Mail className="w-3 h-3" />
+                    {agent.email}
+                  </div>
+                  {agent.phone && (
+                    <div className="flex items-center gap-1 text-gray-500">
+                      <Phone className="w-3 h-3" />
+                      {agent.phone}
+                    </div>
+                  )}
+                </div>
+              </TableCell>
+
+              <TableCell>
+                {(() => {
+                  const pending = isPending(agent);
+                  const cls = pending
+                    ? 'bg-yellow-100 text-yellow-800'
+                    : (agent.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800');
+                  const label = pending ? 'Pending Registration' : (agent.isActive ? 'Active' : 'Inactive');
+                  return (
+                    <Badge className={cls}>{label}</Badge>
+                  );
+                })()}
+              </TableCell>
+
+              <TableCell>
+                <span className="font-semibold">{agent.owed_leads_count || 0}</span>
+              </TableCell>
+
+              <TableCell>
+                <button
+                  className="text-blue-600 hover:text-blue-800 font-semibold underline underline-offset-2"
+                  onClick={() => openCampaignsDialog(agent)}
+                >
+                  {agent.stats?.tiedCampaignsCount ?? agent.stats?.totalCampaigns ?? 0}
+                </button>
+              </TableCell>
+
+              <TableCell>
+                <span className="text-sm text-gray-600">
+                  {agent.createdAt ? format(new Date(agent.createdAt), 'dd/MM/yyyy') : (agent.created_date ? format(new Date(agent.created_date), 'dd/MM/yyyy') : '-')}
+                </span>
+              </TableCell>
+
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleOpenDetails(agent)}
+                  >
+                    <Eye className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleOpenForm(agent)}
+                  >
+                    <Edit className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleOpenPackageDialog(agent)}
+                    className="text-blue-600 hover:text-blue-800"
+                  >
+                    <Package className="w-4 h-4" />
+                  </Button>
+                  {isPending(agent) ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleResendInvite(agent)}
+                      className="text-yellow-700 hover:text-yellow-900"
+                    >
+                      <Mail className="w-4 h-4" />
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleToggleStatus(agent)}
+                      className={agent.isActive ? 'text-gray-600 hover:text-gray-800' : 'text-green-600 hover:text-green-800'}
+                    >
+                      {agent.isActive ? 'Deactivate' : 'Activate'}
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteAgent(agent)}
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {items.length === 0 && (
+        <div className="text-center py-12">
+          <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+            <Search className="w-6 h-6 text-gray-400" />
+          </div>
+          <h3 className="font-semibold text-gray-900 mb-2">No agents found</h3>
+          <p className="text-gray-500">Try adjusting your search or add new agents</p>
+        </div>
+      )}
+    </div>
   );
 
   if (loading) {
@@ -168,7 +408,7 @@ export default function AdminAgents() {
           </div>
           <Button onClick={() => handleOpenForm()} className="bg-blue-600 hover:bg-blue-700">
             <Plus className="w-5 h-5 mr-2" />
-            Add Agent
+            Invite Agent
           </Button>
         </div>
 
@@ -184,107 +424,68 @@ export default function AdminAgents() {
                   className="pl-10"
                 />
               </div>
+              <div className="w-full lg:w-60">
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="pending">Pending registration</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </CardHeader>
-          
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50">
-                    <TableHead>Agent</TableHead>
-                    <TableHead>Contact</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Leads Owed</TableHead>
-                    <TableHead>Joined</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAgents.map((agent) => (
-                    <TableRow key={agent.id} className="hover:bg-gray-50">
-                      <TableCell>
-                        <div>
-                          <p className="font-semibold text-gray-900">{agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim()}</p>
-                          <p className="text-sm text-gray-500">Agent ID: {agent.id.slice(-8)}</p>
-                        </div>
-                      </TableCell>
-                      
-                      <TableCell>
-                        <div className="space-y-1 text-sm">
-                          <div className="flex items-center gap-1 text-gray-600">
-                            <Mail className="w-3 h-3" />
-                            {agent.email}
-                          </div>
-                          {agent.phone && (
-                            <div className="flex items-center gap-1 text-gray-500">
-                              <Phone className="w-3 h-3" />
-                              {agent.phone}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      
-                      <TableCell>
-                        <Badge className={agent.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
-                          {agent.isActive ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </TableCell>
-                      
-                      <TableCell>
-                        <span className="font-semibold">{agent.owed_leads_count || 0}</span>
-                      </TableCell>
-                      
-                      <TableCell>
-                        <span className="text-sm text-gray-600">
-                          {agent.createdAt ? format(new Date(agent.createdAt), 'dd/MM/yyyy') : '-'}
-                        </span>
-                      </TableCell>
-                      
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleOpenDetails(agent)}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleOpenForm(agent)}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          {/* New button for lead package dialog */}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleOpenPackageDialog(agent)}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
-                            <Package className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              
-              {filteredAgents.length === 0 && (
-                <div className="text-center py-12">
-                  <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                    <Search className="w-6 h-6 text-gray-400" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">No agents found</h3>
-                  <p className="text-gray-500">Try adjusting your search or add new agents</p>
-                </div>
-              )}
-            </div>
-          </CardContent>
+
+          <CardContent className="p-0"></CardContent>
         </Card>
+
+        <div className="space-y-6 mt-6">
+          {sectionMatchesFilter('pending') && (
+            <Card className="shadow-lg border-l-4 border-yellow-400">
+              <CardHeader className="bg-yellow-50">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-yellow-900">Pending Registration</h2>
+                  <Badge className="bg-yellow-100 text-yellow-800">{pendingAgents.length} pending</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {renderAgentsTable(pendingAgents)}
+              </CardContent>
+            </Card>
+          )}
+
+          {sectionMatchesFilter('active') && (
+            <Card className="shadow-lg border-l-4 border-green-500">
+              <CardHeader className="bg-green-50">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-green-900">Active Agents</h2>
+                  <Badge className="bg-green-100 text-green-800">{activeAgents.length} active</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {renderAgentsTable(activeAgents)}
+              </CardContent>
+            </Card>
+          )}
+
+          {sectionMatchesFilter('inactive') && (
+            <Card className="shadow-lg border-l-4 border-gray-400">
+              <CardHeader className="bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-gray-900">Inactive Agents</h2>
+                  <Badge className="bg-gray-200 text-gray-800">{inactiveAgents.length} inactive</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {renderAgentsTable(inactiveAgents)}
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
         <AgentFormDialog
           open={isFormOpen}
@@ -306,6 +507,37 @@ export default function AdminAgents() {
           agent={selectedAgent}
           onSubmit={handlePackageSubmit}
         />
+
+        {/* Campaigns dialog (consistent UI) */}
+        <Dialog open={campaignsDialogOpen} onOpenChange={setCampaignsDialogOpen}>
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Campaigns tied to {selectedAgent?.fullName || selectedAgent?.email}</DialogTitle>
+              <DialogDescription>Click a campaign to manage or view details.</DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[60vh] overflow-y-auto divide-y">
+              {campaignsForAgent.length === 0 ? (
+                <div className="text-sm text-gray-600 p-4">No campaigns found.</div>
+              ) : campaignsForAgent.map(c => (
+                <div key={c.id} className="py-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{c.name}</p>
+                      <p className="text-xs text-gray-500">Status: {c.status} • Leads: {c.stats?.totalProspects ?? 0} • Scans: {c.stats?.totalScans ?? 0}</p>
+                    </div>
+                    <Link
+                      to={createPageUrl(`AdminCampaigns?highlight=${c.id}`)}
+                      className="text-blue-600 hover:text-blue-800 text-sm whitespace-nowrap"
+                      onClick={() => setCampaignsDialogOpen(false)}
+                    >
+                      View
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

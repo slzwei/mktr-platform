@@ -13,6 +13,7 @@ const Contact = lazy(() => import('./Contact'));
 const CustomerLogin = lazy(() => import('./CustomerLogin'));
 const AdminLogin = lazy(() => import('./AdminLogin'));
 const GoogleCallback = lazy(() => import('./GoogleCallback'));
+const AcceptInvite = lazy(() => import('./AcceptInvite'));
 const ApiTest = lazy(() => import('./ApiTest'));
 const AuthTest = lazy(() => import('./AuthTest'));
 
@@ -42,6 +43,7 @@ function PagesContent() {
           <Route path="/CustomerLogin" element={<CustomerLogin />} />
           <Route path="/AdminLogin" element={<AdminLogin />} />
           <Route path="/auth/google/callback" element={<GoogleCallback />} />
+          <Route path="/auth/accept-invite" element={<AcceptInvite />} />
           <Route path="/ApiTest" element={<ApiTest />} />
           <Route path="/AuthTest" element={<AuthTest />} />
 

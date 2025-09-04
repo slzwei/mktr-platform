@@ -5,6 +5,8 @@ import CampaignSignupForm from '@/components/campaigns/CampaignSignupForm';
 import TypingLoader from '@/components/ui/TypingLoader';
 import CheckCircle from 'lucide-react/icons/check-circle';
 import AlertTriangle from 'lucide-react/icons/alert-triangle';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 
 export default function PublicPreview() {
   const { slug } = useParams();
@@ -12,6 +14,7 @@ export default function PublicPreview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [submitted, setSubmitted] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -57,7 +60,7 @@ export default function PublicPreview() {
         campaignId: snapshot?.id
       };
       const res = await apiClient.post('/prospects', body);
-      if (res.success) setSubmitted(true); else setError(res.message || 'Submission failed');
+      if (res.success) { setSubmitted(true); setShareOpen(true); } else setError(res.message || 'Submission failed');
     } catch (e) {
       setError(e.message || 'Submission failed');
     }
@@ -105,6 +108,56 @@ export default function PublicPreview() {
               campaign={{ min_age: snapshot?.min_age, max_age: snapshot?.max_age }}
             />
           )}
+          <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Share this campaign</DialogTitle>
+                <DialogDescription>Invite friends and family to participate.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="text-xs sm:text-sm break-all p-2 bg-gray-50 rounded border">
+                  {(() => {
+                    const url = window.location.href;
+                    return url;
+                  })()}
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Button
+                    onClick={() => {
+                      const url = window.location.href;
+                      const text = `Check this out: ${url}`;
+                      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                    }}
+                    className="bg-green-500 hover:bg-green-600 text-white"
+                  >
+                    Share on WhatsApp
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      const url = window.location.href;
+                      const text = `Check this out: ${url}`;
+                      window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
+                    }}
+                    className="bg-blue-500 hover:bg-blue-600 text-white"
+                  >
+                    Share on Telegram
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      const url = window.location.href;
+                      try { await navigator.clipboard.writeText(url); } catch (_) {}
+                    }}
+                  >
+                    Copy Link
+                  </Button>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="secondary" onClick={() => setShareOpen(false)}>Close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
     </div>
