@@ -243,12 +243,24 @@ export const auth = {
     return response;
   },
 
+  // Accept agent invite
+  async acceptInvite({ token, email, password, full_name }) {
+    const response = await apiClient.post('/auth/accept-invite', { token, email, password, full_name });
+    if (response.success && response.data?.token) {
+      apiClient.setToken(response.data.token);
+      currentUser = response.data.user;
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
+      localStorage.setItem(STORAGE_KEYS.TOKEN, response.data.token);
+    }
+    return response;
+  },
+
   // Get current user
-  async getCurrentUser() {
+  async getCurrentUser(forceRefresh = false) {
     console.log('🔍 AUTH: Getting current user...');
     console.log('🔍 AUTH: Current user in memory:', currentUser);
     
-    if (currentUser) {
+    if (currentUser && !forceRefresh) {
       console.log('✅ AUTH: Returning cached user:', currentUser);
       return currentUser;
     }
@@ -256,7 +268,7 @@ export const auth = {
     const stored = localStorage.getItem(STORAGE_KEYS.USER);
     console.log('🔍 AUTH: Stored user in localStorage:', stored);
     
-    if (stored) {
+    if (stored && !forceRefresh) {
       currentUser = JSON.parse(stored);
       console.log('✅ AUTH: Returning stored user:', currentUser);
       return currentUser;
@@ -323,17 +335,6 @@ export const auth = {
       if (typeof window !== 'undefined' && window.google?.accounts?.id) {
         window.google.accounts.id.disableAutoSelect();
       }
-      // Also clear Google cookies hint by hitting OAuth logout; non-blocking, may be ignored by browser
-      try {
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.referrerPolicy = 'no-referrer';
-        iframe.src = 'https://accounts.google.com/Logout';
-        document.body.appendChild(iframe);
-        setTimeout(() => {
-          if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-        }, 1500);
-      } catch (_) {}
     } catch (_) {}
   },
 
@@ -653,6 +654,11 @@ export const agents = {
     return response.data;
   },
 
+  async invite({ email, full_name, owed_leads_count }) {
+    const response = await apiClient.post('/agents/invite', { email, full_name, owed_leads_count });
+    return response.data;
+  },
+
   async getById(id) {
     const response = await apiClient.get(`/agents/${id}`);
     return response.data;
@@ -697,8 +703,11 @@ if (typeof window !== 'undefined') {
     authToken = token; // Ensure global auth token is set
     // Try to load user data
     auth.getCurrentUser().catch(() => {
-      // Silently fail if token is invalid
-      auth.logout();
+      // Silently clear local auth if token is invalid, without logging out of Google globally
+      apiClient.setToken(null);
+      currentUser = null;
+      localStorage.removeItem(STORAGE_KEYS.USER);
+      localStorage.removeItem(STORAGE_KEYS.TOKEN);
     });
   }
 }
