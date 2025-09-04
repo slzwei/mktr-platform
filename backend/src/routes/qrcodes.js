@@ -408,6 +408,60 @@ router.get('/:id/analytics', authenticateToken, asyncHandler(async (req, res) =>
   res.json({ success: true, data: { analytics: { summary: { totalScans, landings, leads } } } });
 }));
 
+// Download QR image (streams file to avoid client-side CORS issues)
+router.get('/:id/download', authenticateToken, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const whereConditions = { id };
+  if (req.user.role !== 'admin') {
+    whereConditions.ownerUserId = req.user.id;
+  }
+
+  const qrTag = await QrTag.findOne({ where: whereConditions });
+  if (!qrTag) {
+    throw new AppError('QR code not found or access denied', 404);
+  }
+
+  const imageUrl = qrTag.qrImageUrl;
+  if (!imageUrl) {
+    throw new AppError('QR image not available', 404);
+  }
+
+  const fileName = `qr-code-${qrTag.slug || 'code'}.png`;
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+
+  // Remote (e.g., DigitalOcean Spaces) vs local file
+  if (/^https?:\/\//i.test(imageUrl)) {
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new AppError('Failed to fetch QR image', 502);
+    }
+    const contentType = response.headers.get('content-type') || 'image/png';
+    res.setHeader('Content-Type', contentType);
+
+    // Pipe stream if available; otherwise buffer
+    if (response.body && typeof response.body.pipe === 'function') {
+      response.body.pipe(res);
+    } else {
+      const arrayBuffer = await response.arrayBuffer();
+      res.end(Buffer.from(arrayBuffer));
+    }
+    return;
+  }
+
+  // Local file path
+  const fileRel = imageUrl.replace(/^\/+/, '');
+  const filePath = path.join(__dirname, '../../', fileRel);
+  if (!fs.existsSync(filePath)) {
+    throw new AppError('File not found', 404);
+  }
+  res.setHeader('Content-Type', 'image/png');
+  const stream = fs.createReadStream(filePath);
+  stream.on('error', () => res.status(500).end());
+  stream.pipe(res);
+}));
+
 // Bulk operations for QR codes
 router.post('/bulk', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
   const { operation, qrTagIds, data = {} } = req.body;

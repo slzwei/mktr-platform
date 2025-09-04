@@ -119,9 +119,13 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
     setTimeout(() => setCopiedLink(null), 2000);
   };
 
-  const handleDownload = (imageUrl, code) => {
-    fetch(imageUrl)
-      .then(response => response.blob())
+  const handleDownload = (imageUrl, code, id) => {
+    const downloadUrl = `${apiClient.baseURL}/qrcodes/${id}/download`;
+    fetch(downloadUrl, { credentials: 'include', headers: { Authorization: `Bearer ${apiClient.getToken()}` } })
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.blob();
+      })
       .then(blob => {
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
@@ -130,7 +134,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
         link.click();
         document.body.removeChild(link);
       })
-      .catch(err => console.error("Failed to download image:", err));
+      .catch(err => console.error('Failed to download image via proxy:', err));
   };
   
   const handleDelete = async (qrTag) => {
@@ -258,7 +262,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                         variant="outline" 
                         size="sm"
                         disabled={!qr.qrImageUrl}
-                        onClick={() => handleDownload(qr.qrImageUrl, qr.slug)}
+                        onClick={() => handleDownload(qr.qrImageUrl, qr.slug, qr.id)}
                       >
                         <Download className="w-4 h-4 mr-1" />
                       </Button>
