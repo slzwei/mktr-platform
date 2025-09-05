@@ -1,6 +1,7 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import { Prospect, User, Campaign, QrTag, Commission, Attribution, sequelize } from '../models/index.js';
+import { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, sequelize } from '../models/index.js';
+import { resolveAssignedAgentId, getSystemAgentId } from '../services/systemAgent.js';
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
@@ -25,12 +26,9 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   const offset = (page - 1) * limit;
   const whereConditions = {};
   
-  // Non-admin users can only see prospects assigned to them or unassigned ones
+  // Non-admin users can only see prospects assigned to them (agents) or from their campaigns (others)
   if (req.user.role === 'agent') {
-    whereConditions[Op.or] = [
-      { assignedAgentId: req.user.id },
-      { assignedAgentId: null }
-    ];
+    whereConditions.assignedAgentId = req.user.id;
   } else if (req.user.role !== 'admin') {
     // Other roles can only see prospects from their campaigns
     const userCampaigns = await Campaign.findAll({
@@ -113,11 +111,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
 
 // Create new prospect (lead capture)
 router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res) => {
-  const prospectData = {
-    ...req.body,
-    // Auto-assign to requesting agent if they're an agent
-    assignedAgentId: req.user && req.user.role === 'agent' ? req.user.id : req.body.assignedAgentId
-  };
+  const incoming = { ...req.body };
 
   // Bind attribution by session cookie (sid)
   const sid = req.cookies?.sid || req.headers['x-session-id'];
@@ -127,13 +121,39 @@ router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res)
       order: [['lastTouchAt', 'DESC']]
     });
     if (attribution) {
-      prospectData.attributionId = attribution.id;
-      prospectData.qrTagId = attribution.qrTagId;
-      prospectData.sessionId = sid;
+      incoming.attributionId = attribution.id;
+      incoming.qrTagId = attribution.qrTagId || incoming.qrTagId;
+      incoming.sessionId = sid;
     }
   }
 
-  const prospect = await Prospect.create(prospectData);
+  // Resolve secure assignment (agent/admin override -> qr owner -> campaign -> system)
+  const assignedAgentId = await resolveAssignedAgentId({
+    reqUser: req.user,
+    requestedAgentId: req.body.assignedAgentId,
+    campaignId: incoming.campaignId,
+    qrTagId: incoming.qrTagId
+  });
+
+  const prospect = await Prospect.create({ ...incoming, assignedAgentId });
+
+  // Activity: created
+  await ProspectActivity.create({
+    prospectId: prospect.id,
+    type: 'created',
+    actorUserId: req.user?.id || null,
+    description: `Prospect created via ${incoming.leadSource || 'unknown'} for campaign ${prospect.campaignId || 'N/A'}`,
+    metadata: { leadSource: incoming.leadSource, campaignId: prospect.campaignId, qrTagId: prospect.qrTagId }
+  });
+
+  // Activity: assigned
+  await ProspectActivity.create({
+    prospectId: prospect.id,
+    type: 'assigned',
+    actorUserId: req.user?.id || null,
+    description: `Assigned to agent ${assignedAgentId}`,
+    metadata: { assignedAgentId }
+  });
 
   // If this came from a QR code, update QR tag analytics
   if (prospect.qrTagId) {
@@ -170,10 +190,7 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
   
   // Non-admin users can only see prospects assigned to them or from their campaigns
   if (req.user.role === 'agent') {
-    whereConditions[Op.or] = [
-      { assignedAgentId: req.user.id },
-      { assignedAgentId: null }
-    ];
+    whereConditions.assignedAgentId = req.user.id;
   } else if (req.user.role !== 'admin') {
     const userCampaigns = await Campaign.findAll({
       where: { createdBy: req.user.id },
@@ -201,6 +218,11 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
       {
         association: 'commissions',
         attributes: ['id', 'type', 'amount', 'status', 'earnedDate']
+      },
+      {
+        association: 'activities',
+        attributes: ['id', 'type', 'description', 'metadata', 'createdAt'],
+        order: [['createdAt', 'ASC']]
       }
     ]
   });
@@ -244,6 +266,11 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
 
   // If status changed to 'won', create commission and update metrics
   if (oldStatus !== 'won' && req.body.leadStatus === 'won') {
+    // Block conversion if assigned to System Agent
+    const systemId = await getSystemAgentId();
+    if (prospect.assignedAgentId && prospect.assignedAgentId === systemId) {
+      throw new AppError('Lead must be assigned to a real agent before marking as won', 400);
+    }
     // Create commission for assigned agent
     if (prospect.assignedAgentId) {
       await Commission.create({
@@ -345,6 +372,15 @@ router.patch('/:id/assign', authenticateToken, requireAgentOrAdmin, asyncHandler
     lastContactDate: new Date()
   });
 
+  // Activity: assigned
+  await ProspectActivity.create({
+    prospectId: prospect.id,
+    type: 'assigned',
+    actorUserId: req.user?.id || null,
+    description: `Assigned to agent ${agentId}`,
+    metadata: { assignedAgentId: agentId }
+  });
+
   res.json({
     success: true,
     message: 'Prospect assigned successfully',
@@ -377,7 +413,7 @@ router.patch('/bulk/assign', authenticateToken, requireAgentOrAdmin, asyncHandle
     id: { [Op.in]: prospectIds }
   };
 
-  // Non-admin users can only assign prospects from their campaigns or unassigned ones
+  // Non-admin users can only assign prospects from their campaigns
   if (req.user.role !== 'admin') {
     const userCampaigns = await Campaign.findAll({
       where: { createdBy: req.user.id },
@@ -385,10 +421,7 @@ router.patch('/bulk/assign', authenticateToken, requireAgentOrAdmin, asyncHandle
     });
     const campaignIds = userCampaigns.map(c => c.id);
     
-    whereConditions[Op.or] = [
-      { campaignId: { [Op.in]: campaignIds } },
-      { assignedAgentId: null }
-    ];
+    whereConditions.campaignId = { [Op.in]: campaignIds };
   }
 
   const result = await Prospect.update(
@@ -529,7 +562,17 @@ router.patch('/:id/follow-up', authenticateToken, requireAgentOrAdmin, asyncHand
     updateData.notes = notes;
   }
 
+  const previous = prospect.toJSON();
   await prospect.update(updateData);
+
+  // Activity: updated (admin/agent edits)
+  await ProspectActivity.create({
+    prospectId: prospect.id,
+    type: 'updated',
+    actorUserId: req.user?.id || null,
+    description: `Prospect updated by ${req.user?.role || 'system'}`,
+    metadata: { before: previous, after: prospect.toJSON() }
+  });
 
   res.json({
     success: true,

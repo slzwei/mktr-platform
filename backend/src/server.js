@@ -33,6 +33,7 @@ import verifyRoutes from './routes/verify.js';
 import analyticsRoutes from './routes/analytics.js';
 import { validateGoogleOAuthConfig } from './controllers/authController.js';
 import { optionalAuth } from './middleware/auth.js';
+import { initSystemAgent } from './services/systemAgent.js';
 
 // Load environment variables
 dotenv.config();
@@ -164,6 +165,7 @@ async function startServer() {
     await Attribution.sync({ alter: !isSqlite });
     await SessionVisit.sync({ alter: !isSqlite });
     await Prospect.sync({ alter: !isSqlite });
+    await (await import('./models/ProspectActivity.js')).default.sync({ alter: !isSqlite });
 
     // Ensure name fields exist and constraints are updated
     await FleetOwner.sync({ alter: !isSqlite });
@@ -209,6 +211,15 @@ async function startServer() {
     // Sync remaining models
     await sequelize.sync({ alter: false });
     console.log('✅ Database models synchronized.');
+
+    // Ensure System Agent exists and cache its ID
+    try {
+      const systemId = await initSystemAgent();
+      console.log(`✅ System Agent ready: ${systemId}`);
+    } catch (e) {
+      console.error('❌ Failed to initialize System Agent:', e);
+      // Do not block startup; assignments will retry on demand
+    }
 
     // Create Postgres unique index for car QR invariant if on Postgres
     try {

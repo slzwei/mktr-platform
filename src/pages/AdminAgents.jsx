@@ -116,6 +116,8 @@ export default function AdminAgents() {
       setSelectedAgent(null);
     } catch (error) {
       console.error('Error saving agent:', error);
+      // Re-throw so the dialog can display the specific backend error message
+      throw error;
     }
   };
 
@@ -179,7 +181,7 @@ export default function AdminAgents() {
       alert('Invitation email sent');
     } catch (error) {
       console.error('Error resending invite:', error);
-      alert('Failed to resend invitation');
+      alert(error?.message || 'Failed to resend invitation');
     }
   };
 

@@ -75,7 +75,8 @@ export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit })
       await onSubmit(formData);
       onOpenChange(false);
     } catch (err) {
-      setError(err.message || "Failed to save agent");
+      // Surface backend-provided messages like duplicate email or self-invite
+      setError(err?.message || "Failed to save agent");
     }
     setLoading(false);
   };

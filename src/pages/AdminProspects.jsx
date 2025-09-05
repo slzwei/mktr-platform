@@ -57,11 +57,17 @@ function normalizeProspect(p) {
   const name = [p.firstName, p.lastName].filter(Boolean).join(" ") || p.name || "";
   const status = (p.leadStatus || p.status || "new").toLowerCase();
   const createdDate = p.createdAt || p.created_date || new Date().toISOString();
+  const updatedDate = p.updatedAt || p.updated_date || createdDate;
   // Map leadSource to simplified UI values used in filters
   const source = (p.leadSource || p.source || "other").toLowerCase();
   let simplifiedSource = "other";
   if (source === "qr_code") simplifiedSource = "qr";
   else if (source === "website") simplifiedSource = "form";
+
+  const assignedAgentId = p.assignedAgentId || p.assigned_agent_id || "";
+  const assignedAgentName = p.assignedAgent
+    ? ([p.assignedAgent.firstName, p.assignedAgent.lastName].filter(Boolean).join(" ") || p.assignedAgent.email || "Agent")
+    : (p.assigned_agent_name || "");
 
   return {
     id: p.id,
@@ -72,8 +78,10 @@ function normalizeProspect(p) {
     date_of_birth: p.dateOfBirth || p.date_of_birth || null,
     status,
     created_date: createdDate,
+    updated_date: updatedDate,
     source: simplifiedSource,
-    assigned_agent_id: p.assignedAgentId || p.assigned_agent_id || "",
+    assigned_agent_id: assignedAgentId,
+    assigned_agent_name: assignedAgentName,
     campaign_id: p.campaignId || p.campaign_id || ""
   };
 }
@@ -273,6 +281,7 @@ export default function AdminProspects() {
                     <TableHead>Prospect</TableHead>
                     <TableHead>Contact</TableHead>
                     <TableHead>Campaign</TableHead>
+                    <TableHead>Assigned To</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Source</TableHead>
@@ -316,6 +325,12 @@ export default function AdminProspects() {
                           <Badge variant="outline" className="bg-blue-50 text-blue-700">
                             {campaign?.name || 'Unknown'}
                           </Badge>
+                        </TableCell>
+                        
+                        <TableCell>
+                          <span className="text-sm text-gray-700">
+                            {prospect.assigned_agent_name || prospect.assigned_agent_id || 'System'}
+                          </span>
                         </TableCell>
                         
                         <TableCell>
@@ -377,6 +392,7 @@ export default function AdminProspects() {
                 onStatusUpdate={handleStatusUpdate}
                 onClose={() => setSelectedProspect(null)}
                 userRole={user?.role}
+                onEdited={loadData}
               />
             )}
           </DialogContent>

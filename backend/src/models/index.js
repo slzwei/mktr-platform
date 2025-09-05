@@ -14,6 +14,7 @@ import CampaignPreview from './CampaignPreview.js';
 import QrScan from './QrScan.js';
 import Attribution from './Attribution.js';
 import SessionVisit from './SessionVisit.js';
+import ProspectActivity from './ProspectActivity.js';
 
 // Define associations
 const defineAssociations = () => {
@@ -58,6 +59,9 @@ const defineAssociations = () => {
   Prospect.belongsTo(QrTag, { foreignKey: 'qrTagId', as: 'qrTag' });
   Prospect.hasMany(Commission, { foreignKey: 'prospectId', as: 'commissions' });
   Prospect.belongsTo(Attribution, { foreignKey: 'attributionId', as: 'attribution' });
+  Prospect.hasMany(ProspectActivity, { foreignKey: 'prospectId', as: 'activities' });
+  ProspectActivity.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect' });
+  ProspectActivity.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor' });
 
   // Commission associations
   Commission.belongsTo(User, { foreignKey: 'agentId', as: 'agent' });
@@ -91,7 +95,8 @@ export {
   CampaignPreview,
   QrScan,
   Attribution,
-  SessionVisit
+  SessionVisit,
+  ProspectActivity
 };
 
 // Export default object for convenience
@@ -109,5 +114,6 @@ export default {
   CampaignPreview,
   QrScan,
   Attribution,
-  SessionVisit
+  SessionVisit,
+  ProspectActivity
 };

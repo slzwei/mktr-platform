@@ -126,7 +126,9 @@ export const schemas = {
     budget: Joi.object().optional(),
     location: Joi.object().optional(),
     campaignId: Joi.string().uuid().optional(),
-    qrTagId: Joi.string().uuid().optional()
+    qrTagId: Joi.string().uuid().optional(),
+    // Only honored for admins at handler level; validate format only
+    assignedAgentId: Joi.string().uuid().optional()
   }),
 
   // QR Tag schemas
