@@ -43,7 +43,6 @@ const MKTRAnimatedLogo = () => {
       backgroundColor: 'black'
     }}>
       <div 
-        onClick={startAnimation} 
         style={{ 
           cursor: 'pointer',
           position: 'relative',
@@ -80,6 +79,40 @@ const MKTRAnimatedLogo = () => {
           ))}
         </div>
 
+        {/* In-box glitch overlay */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 6,
+            left: 6,
+            right: 6,
+            bottom: 6,
+            borderRadius: '18px',
+            pointerEvents: 'none',
+            overflow: 'hidden',
+            opacity: glitchEffect ? 1 : 0,
+            transition: 'opacity 0.12s',
+            zIndex: 2
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'repeating-linear-gradient( to bottom, rgba(255,0,0,0.08) 0px, rgba(0,255,255,0.08) 2px, rgba(255,0,255,0.08) 4px, transparent 6px )',
+              transform: `translateY(${Math.random() * 8 - 4}px)`
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.07) 50%, transparent 100%)',
+              animation: 'mktr-glitch-scan 0.35s linear infinite'
+            }}
+          />
+        </div>
+
         <div 
           style={{
             position: 'absolute',
@@ -101,6 +134,10 @@ const MKTRAnimatedLogo = () => {
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@900&display=swap');
+        @keyframes mktr-glitch-scan {
+          0% { transform: translateX(-120%); }
+          100% { transform: translateX(120%); }
+        }
       `}</style>
     </div>
   )

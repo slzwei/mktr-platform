@@ -1,5 +1,4 @@
 import { lazy, Suspense } from 'react'
-import MKTRAnimatedLogo from '@/components/MKTRAnimatedLogo'
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
@@ -32,7 +31,7 @@ const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
 function PagesContent() {
   return (
     <ErrorBoundary>
-      <Suspense fallback={<MKTRAnimatedLogo /> }>
+      <Suspense fallback={<div /> }>
         <Routes>
           {/* Public routes - no protection needed */}
           <Route path="/" element={<Homepage />} />
