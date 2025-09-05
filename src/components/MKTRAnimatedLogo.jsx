@@ -47,10 +47,10 @@ const MKTRAnimatedLogo = () => {
         style={{ 
           cursor: 'pointer',
           position: 'relative',
-          padding: '25px 40px',
+          padding: '12px 20px',
           backgroundColor: flashEffect ? 'white' : 'transparent',
           transition: 'background-color 0.1s',
-          borderRadius: '8px',
+          borderRadius: '24px',
           border: '4px solid transparent'
         }}
       >
@@ -59,7 +59,7 @@ const MKTRAnimatedLogo = () => {
             <div
               key={letter}
               style={{
-                fontSize: '6rem',
+                fontSize: '3rem',
                 fontWeight: '900',
                 color: flashEffect ? 'black' : 'white',
                 fontFamily: 'Inter, sans-serif',
@@ -87,7 +87,7 @@ const MKTRAnimatedLogo = () => {
             left: 0,
             right: 0,
             bottom: 0,
-            borderRadius: '8px',
+            borderRadius: '24px',
             background: `conic-gradient(from 0deg, ${flashEffect ? 'black' : 'white'} ${borderProgress * 3.6}deg, transparent ${borderProgress * 3.6}deg)`,
             padding: '4px',
             mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
