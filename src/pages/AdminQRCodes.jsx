@@ -310,12 +310,7 @@ export default function AdminQRCodes() {
                 </TableBody>
               </Table>
             </div>
-            {campaigns.length === 0 && (
-              <div className="text-center py-12 text-gray-500">
-                <h3 className="font-semibold">No campaigns found.</h3>
-                <p>Create a campaign first to generate QR codes.</p>
-              </div>
-            )}
+            {/* Removed duplicate empty state below table; table row already shows empty message */}
           </CardContent>
         </Card>
 
@@ -445,12 +440,7 @@ export default function AdminQRCodes() {
                   ))}
                 </TableBody>
               </Table>
-              {promotionalQRs.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  <h3 className="font-semibold">No promotional QR codes found.</h3>
-                  <p>Generate promotional QR codes from campaign management.</p>
-                </div>
-              )}
+              {/* Removed duplicate empty state below table; table row already shows empty message */}
             </div>
           </CardContent>
         </Card>
@@ -584,12 +574,7 @@ export default function AdminQRCodes() {
                   ))}
                 </TableBody>
               </Table>
-              {carQRs.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  <h3 className="font-semibold">No car QR codes found.</h3>
-                  <p>Generate car QR codes from campaign management.</p>
-                </div>
-              )}
+              {/* Removed duplicate empty state below table; table row already shows empty message */}
             </div>
           </CardContent>
         </Card>
