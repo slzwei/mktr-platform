@@ -2,6 +2,13 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { 
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem
+} from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { Link } from "react-router-dom";
 import { apiClient } from "@/api/client";
@@ -22,20 +29,35 @@ export default function Contact() {
     email: "",
     phone: "",
     company: "",
+    userType: "",
     message: ""
   });
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // Client-side validation to match backend: message must be at least 10 characters
+    const messageLength = formData.message?.trim().length || 0;
+    if (messageLength < 10) {
+      setError('Please enter at least 10 characters in your message.');
+      return;
+    }
+    setError("");
     setLoading(true);
     try {
       await apiClient.post('/contact', formData);
       setSubmitted(true);
     } catch (err) {
       console.error('Failed to submit contact form', err);
-      alert('There was an issue sending your message. Please try again later.');
+      // Surface validation error from API if available
+      const apiMessage = err?.message || '';
+      if (apiMessage.includes('length must be at least 10')) {
+        setError('Please enter at least 10 characters in your message.');
+      } else {
+        setError('There was an issue sending your message. Please try again later.');
+      }
     } finally {
       setLoading(false);
     }
@@ -197,7 +219,7 @@ export default function Contact() {
               <p className="section-title">Get in Touch</p>
               <h1 className="hero-title mb-6">Let's Talk Business</h1>
               <p className="body-text max-w-2xl mx-auto">
-                Speak with MKTR PTE. LTD. about lead generation, campaign design, and sales enablement. We typically respond within one business day.
+                Speak with us about lead generation, campaign design, and sales enablement. We typically respond within one business day.
               </p>
             </div>
           </div>
@@ -248,6 +270,27 @@ export default function Contact() {
                           />
                         </div>
                       </div>
+
+                      {/* I am a */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          I am a
+                        </label>
+                        <Select
+                          value={formData.userType}
+                          onValueChange={(val) => setFormData({ ...formData, userType: val })}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select one" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="advertiser">Advertiser</SelectItem>
+                            <SelectItem value="phv_driver">PHV Driver</SelectItem>
+                            <SelectItem value="fleet_owner">Fleet Owner</SelectItem>
+                            <SelectItem value="salesperson">Salesperson</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
@@ -287,10 +330,14 @@ export default function Contact() {
                           value={formData.message}
                           onChange={handleChange}
                           required
+                          minLength={10}
                           rows={6}
                           className="w-full"
                           placeholder="Tell us about your marketing needs and how we can help..."
                         />
+                        {error && (
+                          <p className="mt-2 text-sm text-red-600">{error}</p>
+                        )}
                       </div>
                       
                       <Button 
@@ -345,7 +392,7 @@ export default function Contact() {
                 Singapore's leading marketer platform for intelligent lead generation.
               </p>
               <div className="mt-8 pt-8 border-t border-gray-700 text-gray-400 text-sm">
-                &copy; 2024 MKTR PTE. LTD., Singapore. All rights reserved.
+                &copy; 2025 MKTR PTE. LTD., Singapore. All rights reserved.
               </div>
             </div>
           </div>
