@@ -8,6 +8,7 @@ import {
   QrCode,
   Car,
   DollarSign,
+  FileText,
   Settings,
   LogOut,
   Menu,
@@ -41,6 +42,11 @@ const getNavigationItems = (user) => {
     {
       title: "Prospects",
       url: createPageUrl("AdminProspects"),
+      icon: Users
+    },
+    {
+      title: "Users",
+      url: createPageUrl("AdminUsers"),
       icon: Users
     },
     {
@@ -106,9 +112,33 @@ const getNavigationItems = (user) => {
     }
   ];
 
+  const driverPartnerItems = [
+    {
+      title: "Dashboard",
+      url: createPageUrl("DriverDashboard"),
+      icon: LayoutDashboard
+    },
+    {
+      title: "Profile",
+      url: "/DriverDashboard?tab=profile",
+      icon: Settings
+    },
+    {
+      title: "Payout History",
+      url: "/DriverDashboard?tab=history",
+      icon: DollarSign
+    },
+    {
+      title: "Payslip",
+      url: "/DriverDashboard?tab=payslip",
+      icon: FileText
+    }
+  ];
+
   if (user.role === 'admin') return adminItems;
   if (user.role === 'agent') return agentItems;
   if (user.role === 'fleet_owner') return fleetOwnerItems;
+  if (user.role === 'driver_partner') return driverPartnerItems;
   return [];
 };
 
@@ -176,21 +206,31 @@ export default function DashboardLayout({ children, user, userRole }) {
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {navigationItems.map((item) => (
-                    <SidebarMenuItem key={item.title}>
-                      <SidebarMenuButton
-                        asChild
-                        className={`hover:bg-blue-50 hover:text-blue-700 transition-colors rounded-lg mb-1 ${
-                          location.pathname === item.url ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600' : ''
-                        }`}
-                      >
-                        <Link to={item.url} className="flex items-center gap-3 px-3 py-3">
-                          <item.icon className="w-5 h-5" />
-                          <span className="font-medium">{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                  {navigationItems.map((item) => {
+                    const isActive = (() => {
+                      if (item.url.startsWith('/DriverDashboard')) {
+                        const currentTab = new URLSearchParams(location.search).get('tab') || 'dashboard';
+                        const itemTab = new URLSearchParams(item.url.split('?')[1] || '').get('tab') || 'dashboard';
+                        return location.pathname === '/DriverDashboard' && currentTab === itemTab;
+                      }
+                      return location.pathname === item.url;
+                    })();
+                    return (
+                      <SidebarMenuItem key={item.title}>
+                        <SidebarMenuButton
+                          asChild
+                          className={`hover:bg-blue-50 hover:text-blue-700 transition-colors rounded-lg mb-1 ${
+                            isActive ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600' : ''
+                          }`}
+                        >
+                          <Link to={item.url} className="flex items-center gap-3 px-3 py-3">
+                            <item.icon className="w-5 h-5" />
+                            <span className="font-medium">{item.title}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

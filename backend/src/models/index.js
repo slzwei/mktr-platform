@@ -15,6 +15,7 @@ import QrScan from './QrScan.js';
 import Attribution from './Attribution.js';
 import SessionVisit from './SessionVisit.js';
 import ProspectActivity from './ProspectActivity.js';
+import UserPayout from './UserPayout.js';
 
 // Define associations
 const defineAssociations = () => {
@@ -28,6 +29,7 @@ const defineAssociations = () => {
   User.hasMany(Commission, { foreignKey: 'processedBy', as: 'processedCommissions' });
   User.hasMany(Prospect, { foreignKey: 'assignedAgentId', as: 'assignedProspects' });
   User.hasMany(LeadPackage, { foreignKey: 'createdBy', as: 'createdLeadPackages' });
+  User.hasOne(UserPayout, { foreignKey: 'userId', as: 'payout' });
 
   // FleetOwner associations (standalone entity, not linked to User)
   FleetOwner.hasMany(Car, { foreignKey: 'fleet_owner_id', as: 'cars' });
@@ -96,7 +98,8 @@ export {
   QrScan,
   Attribution,
   SessionVisit,
-  ProspectActivity
+  ProspectActivity,
+  UserPayout
 };
 
 // Export default object for convenience
@@ -115,5 +118,6 @@ export default {
   QrScan,
   Attribution,
   SessionVisit,
-  ProspectActivity
+  ProspectActivity,
+  UserPayout
 };

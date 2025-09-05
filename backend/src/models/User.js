@@ -49,6 +49,13 @@ const User = sequelize.define('User', {
       len: [8, 20]
     }
   },
+  companyName: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    validate: {
+      len: [1, 100]
+    }
+  },
   dateOfBirth: {
     type: DataTypes.DATEONLY,
     allowNull: true
@@ -108,6 +115,11 @@ const User = sequelize.define('User', {
     type: DataTypes.INTEGER,
     allowNull: true,
     defaultValue: 0
+  },
+  approvalStatus: {
+    type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+    allowNull: false,
+    defaultValue: 'pending'
   }
 }, {
   tableName: 'users',
@@ -168,8 +180,12 @@ User.prototype.toJSON = function() {
     values.full_name = values.fullName || [values.firstName, values.lastName].filter(Boolean).join(' ').trim() || null;
   }
   // Computed status for UI compatibility
-  const isPendingRegistration = this.role === 'agent' && !this.password && !this.emailVerified;
-  values.status = isPendingRegistration ? 'pending_registration' : (this.isActive ? 'active' : 'inactive');
+  if (values.approvalStatus === 'pending') {
+    values.status = 'pending_approval';
+  } else {
+    const isPendingRegistration = this.role === 'agent' && !this.password && !this.emailVerified;
+    values.status = isPendingRegistration ? 'pending_registration' : (this.isActive ? 'active' : 'inactive');
+  }
   // Alias createdAt to created_date for UI compatibility
   if (!values.created_date && values.createdAt) {
     values.created_date = values.createdAt;

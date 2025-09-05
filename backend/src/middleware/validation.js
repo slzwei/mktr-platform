@@ -51,10 +51,13 @@ export const schemas = {
   }),
 
   userUpdate: Joi.object({
+    email: Joi.string().email().optional(),
     firstName: Joi.string().min(1).max(50).optional(),
     lastName: Joi.string().min(1).max(50).optional(),
-    phone: Joi.string().min(10).max(20).optional(),
-    avatar: Joi.string().optional()
+    phone: Joi.string().min(8).max(20).optional(),
+    avatar: Joi.string().optional(),
+    dateOfBirth: Joi.date().optional(),
+    companyName: Joi.string().min(1).max(100).optional()
   }),
 
   // Campaign schemas

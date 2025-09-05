@@ -7,6 +7,7 @@ import { sendEmail } from '../services/mailer.js';
 import { getAgentInviteEmail, getAgentInviteSubject, getAgentInviteText } from '../services/emailTemplates.js';
 import { requireAgentOrAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import { getSystemAgentId } from '../services/systemAgent.js';
 
 const router = express.Router();
 
@@ -16,6 +17,12 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
   const offset = (page - 1) * limit;
 
   const whereConditions = { role: 'agent' };
+  
+  // Hide the System Agent from listings
+  const systemId = await getSystemAgentId();
+  if (systemId) {
+    whereConditions.id = { [Op.ne]: systemId };
+  }
   
   if (status) {
     whereConditions.isActive = status === 'active';

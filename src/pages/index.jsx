@@ -10,23 +10,28 @@ const TrackRedirect = lazy(() => import('./TrackRedirect'));
 
 const Homepage = lazy(() => import('./Homepage'));
 const Contact = lazy(() => import('./Contact'));
-const CustomerLogin = lazy(() => import('./CustomerLogin'));
+const CustomerLogin = lazy(() => import('./Login'));
 const AdminLogin = lazy(() => import('./AdminLogin'));
 const GoogleCallback = lazy(() => import('./GoogleCallback'));
 const AcceptInvite = lazy(() => import('./AcceptInvite'));
 const ApiTest = lazy(() => import('./ApiTest'));
 const AuthTest = lazy(() => import('./AuthTest'));
+const Onboarding = lazy(() => import('./Onboarding'));
+const PendingApproval = lazy(() => import('./PendingApproval'));
+const ForgotPassword = lazy(() => import('./ForgotPassword'));
 
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const AdminProspects = lazy(() => import('./AdminProspects'));
 const AdminCampaigns = lazy(() => import('./AdminCampaigns'));
 const AdminQRCodes = lazy(() => import('./AdminQRCodes'));
 const AdminAgents = lazy(() => import('./AdminAgents'));
+const AdminUsers = lazy(() => import('./AdminUsers'));
 const AdminFleet = lazy(() => import('./AdminFleet'));
 const AdminCampaignDesigner = lazy(() => import('./AdminCampaignDesigner'));
 const AdminCommissions = lazy(() => import('./AdminCommissions'));
 const AgentDashboard = lazy(() => import('./AgentDashboard'));
 const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
+const DriverDashboard = lazy(() => import('./DriverDashboard'));
 
 function PagesContent() {
   return (
@@ -42,8 +47,11 @@ function PagesContent() {
           <Route path="/Contact" element={<Contact />} />
           <Route path="/CustomerLogin" element={<CustomerLogin />} />
           <Route path="/AdminLogin" element={<AdminLogin />} />
+          <Route path="/ForgotPassword" element={<ForgotPassword />} />
           <Route path="/auth/google/callback" element={<GoogleCallback />} />
           <Route path="/auth/accept-invite" element={<AcceptInvite />} />
+          <Route path="/Onboarding" element={<Onboarding />} />
+          <Route path="/PendingApproval" element={<PendingApproval />} />
           <Route path="/ApiTest" element={<ApiTest />} />
           <Route path="/AuthTest" element={<AuthTest />} />
 
@@ -83,6 +91,13 @@ function PagesContent() {
               </DashboardLayout>
             </ProtectedRoute>
           } />
+          <Route path="/AdminUsers" element={
+            <ProtectedRoute requiredRole="admin">
+              <DashboardLayout>
+                <AdminUsers />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
           <Route path="/AdminFleet" element={
             <ProtectedRoute requiredRole="admin">
               <DashboardLayout>
@@ -119,6 +134,15 @@ function PagesContent() {
             <ProtectedRoute requiredRole="fleet_owner">
               <DashboardLayout>
                 <FleetOwnerDashboard />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+
+          {/* Protected Driver Partner routes */}
+          <Route path="/DriverDashboard" element={
+            <ProtectedRoute requiredRole="driver_partner">
+              <DashboardLayout>
+                <DriverDashboard />
               </DashboardLayout>
             </ProtectedRoute>
           } />

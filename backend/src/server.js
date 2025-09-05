@@ -69,17 +69,28 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Rate limiting (bypass for authenticated admins)
+// Rate limiting (relaxed for development, bypass for authenticated admins)
+const isProd = process.env.NODE_ENV === 'production';
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  windowMs: isProd
+    ? (parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000)
+    : 60 * 1000, // 1 minute window in dev
+  max: isProd
+    ? (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100)
+    : (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000), // very high in dev
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => !!(req.user && req.user.role === 'admin'),
+  skip: (req) => (!isProd) || !!(req.user && req.user.role === 'admin'),
   message: 'Too many requests from this IP, please try again later.'
 });
 // Ensure we decode JWT (if present) before limiter so skip() can see admin
-app.use('/api', optionalAuth, limiter);
+if (isProd) {
+  console.log('🛡️ Rate limiter enabled (production mode)');
+  app.use('/api', optionalAuth, limiter);
+} else {
+  console.log('🛠️ Rate limiter disabled (development mode)');
+  app.use('/api', optionalAuth);
+}
 
 // Logging
 app.use(morgan('combined'));
@@ -181,6 +192,7 @@ async function startServer() {
         const hasInvitationToken = Array.isArray(userColumns) && userColumns.some(c => c.name === 'invitationToken');
         const hasInvitationExpires = Array.isArray(userColumns) && userColumns.some(c => c.name === 'invitationExpires');
         const hasDateOfBirth = Array.isArray(userColumns) && userColumns.some(c => c.name === 'dateOfBirth');
+        const hasCompanyName = Array.isArray(userColumns) && userColumns.some(c => c.name === 'companyName');
         if (!hasInvitationToken) {
           await sequelize.query('ALTER TABLE users ADD COLUMN invitationToken TEXT');
           console.log('✅ Added invitationToken column to users');
@@ -192,6 +204,10 @@ async function startServer() {
         if (!hasDateOfBirth) {
           await sequelize.query('ALTER TABLE users ADD COLUMN dateOfBirth DATE');
           console.log('✅ Added dateOfBirth column to users');
+        }
+        if (!hasCompanyName) {
+          await sequelize.query('ALTER TABLE users ADD COLUMN companyName TEXT');
+          console.log('✅ Added companyName column to users');
         }
 
         const [columns] = await sequelize.query('PRAGMA table_info(campaigns)');

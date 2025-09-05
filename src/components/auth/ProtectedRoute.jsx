@@ -33,6 +33,14 @@ export default function ProtectedRoute({ children, requiredRole = null }) {
           
           setUser(currentUser);
           setIsAuthenticated(true);
+
+          // If pending approval, redirect to PendingApproval regardless of requiredRole
+          const status = currentUser.approvalStatus || currentUser.status;
+          if (status === 'pending' || status === 'pending_approval') {
+            console.log('⏳ PROTECTED ROUTE: User pending approval, redirecting to /PendingApproval');
+            navigate('/PendingApproval');
+            return;
+          }
           
           // Check role requirement if specified
           if (requiredRole && currentUser.role !== requiredRole) {

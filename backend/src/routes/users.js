@@ -1,8 +1,11 @@
 import express from 'express';
 import { Op } from 'sequelize';
+import { v4 as uuidv4 } from 'uuid';
 import { User, sequelize } from '../models/index.js';
 import { authenticateToken, requireAdmin, requireAgentOrAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import { sendEmail } from '../services/mailer.js';
+import { getRoleInviteEmail, getRoleInviteSubject, getRoleInviteText } from '../services/emailTemplates.js';
 
 const router = express.Router();
 
@@ -36,7 +39,7 @@ router.post('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) 
 
 // Get all users (Admin only)
 router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10, role, search, status } = req.query;
+  const { page = 1, limit = 10, role, search, status, sortBy = 'createdAt', order = 'DESC' } = req.query;
   const offset = (page - 1) * limit;
 
   const whereConditions = {};
@@ -57,11 +60,15 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
     ];
   }
 
+  const allowedSortFields = ['createdAt', 'role', 'firstName', 'lastName', 'fullName', 'email', 'isActive', 'approvalStatus'];
+  const normalizedSortBy = allowedSortFields.includes(String(sortBy)) ? String(sortBy) : 'createdAt';
+  const normalizedOrder = String(order).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
   const { count, rows: users } = await User.findAndCountAll({
     where: whereConditions,
     limit: parseInt(limit),
     offset: parseInt(offset),
-    order: [['createdAt', 'DESC']],
+    order: [[normalizedSortBy, normalizedOrder]],
     include: [
       { association: 'fleetOwnerProfile', required: false },
       { association: 'driverProfile', required: false }
@@ -80,6 +87,70 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
       }
     }
   });
+}));
+
+// Invite a new user (Admin only) - supports agent, fleet_owner, driver_partner
+router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
+  const { email, full_name, role, owed_leads_count = 0 } = req.body;
+
+  if (!email || !full_name || !role) {
+    throw new AppError('email, full_name and role are required', 400);
+  }
+
+  const allowedRoles = ['agent', 'fleet_owner', 'driver_partner'];
+  if (!allowedRoles.includes(role)) {
+    throw new AppError('Invalid role. Must be one of agent, fleet_owner, driver_partner', 400);
+  }
+
+  if (req.user?.email && String(req.user.email).toLowerCase() === String(email).toLowerCase()) {
+    throw new AppError('You cannot invite your own email address', 400);
+  }
+
+  const existing = await User.findOne({ where: { email } });
+  if (existing) {
+    throw new AppError('A user with this email already exists. Permanently delete the existing user first to send a new invitation.', 400);
+  }
+
+  const nameParts = String(full_name).trim().split(/\s+/);
+  const firstName = nameParts[0] || 'User';
+  const lastName = nameParts.slice(1).join(' ') || '';
+
+  const invitationToken = uuidv4();
+  const invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  const creationData = {
+    email,
+    firstName,
+    lastName,
+    role,
+    isActive: true,
+    emailVerified: false,
+    invitationToken,
+    invitationExpires
+  };
+  if (role === 'agent') {
+    creationData.owed_leads_count = parseInt(owed_leads_count) || 0;
+  }
+
+  const user = await User.create(creationData);
+
+  const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
+  const inviteLink = `${frontendBase}/auth/accept-invite?token=${encodeURIComponent(invitationToken)}&email=${encodeURIComponent(email)}`;
+
+  const roleLabel = role === 'agent' ? 'Agent' : role === 'fleet_owner' ? 'Fleet Owner' : 'Driver Partner';
+  const subject = getRoleInviteSubject({ companyName: process.env.COMPANY_NAME || 'MKTR', roleLabel });
+  const html = getRoleInviteEmail({
+    firstName,
+    inviteLink,
+    companyName: process.env.COMPANY_NAME || 'MKTR',
+    companyUrl: process.env.COMPANY_URL || process.env.FRONTEND_BASE_URL || 'http://localhost:5173',
+    expiryDays: 7,
+    roleLabel
+  });
+  const text = getRoleInviteText({ firstName, inviteLink, companyName: process.env.COMPANY_NAME || 'MKTR', expiryDays: 7, roleLabel });
+  await sendEmail({ to: email, subject, html, text });
+
+  res.status(201).json({ success: true, message: `${roleLabel} invited`, data: { user: user.toJSON(), inviteLink } });
 }));
 
 // Get user by ID
@@ -138,8 +209,13 @@ router.put('/:id', authenticateToken, asyncHandler(async (req, res) => {
     if (role) updateData.role = role;
     if (typeof isActive === 'boolean') updateData.isActive = isActive;
     if (typeof owed_leads_count === 'number') updateData.owed_leads_count = owed_leads_count;
-    // Allow admin to update email as part of editing invited/pending agents
-    if (email) updateData.email = email;
+    // Do not allow editing email for Google-linked accounts
+    if (email) {
+      if (user.googleSub) {
+        throw new AppError('Email for Google-linked account cannot be changed.', 400);
+      }
+      updateData.email = email;
+    }
   }
 
   await user.update(updateData);
@@ -279,6 +355,29 @@ router.patch('/:id/status', authenticateToken, requireAdmin, asyncHandler(async 
   res.json({
     success: true,
     message: `User ${isActive ? 'activated' : 'deactivated'} successfully`,
+    data: { user: user.toJSON() }
+  });
+}));
+
+// Update user approval status (Admin only)
+router.patch('/:id/approval', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { approvalStatus } = req.body; // 'pending' | 'approved' | 'rejected'
+
+  if (!['pending', 'approved', 'rejected'].includes(approvalStatus)) {
+    throw new AppError('Invalid approval status', 400);
+  }
+
+  const user = await User.findByPk(id);
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+
+  await user.update({ approvalStatus });
+
+  res.json({
+    success: true,
+    message: `User marked as ${approvalStatus}`,
     data: { user: user.toJSON() }
   });
 }));

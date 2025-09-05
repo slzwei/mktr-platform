@@ -37,13 +37,19 @@ const toastVariants = cva(
   }
 );
 
-const Toast = React.forwardRef(({ className, variant, ...props }, ref) => {
+const Toast = React.forwardRef(({ className, variant, duration, ...props }, ref) => {
   return (
-    <div
-      ref={ref}
-      className={cn(toastVariants({ variant }), className)}
-      {...props}
-    />
+    <div ref={ref} className={cn(toastVariants({ variant }), className)} {...props}>
+      {props.children}
+      {duration && (
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-200/70">
+          <div
+            className="h-full bg-gray-500/70 animate-[toast-progress_linear]"
+            style={{ animationDuration: `${duration}ms` }}
+          />
+        </div>
+      )}
+    </div>
   );
 });
 Toast.displayName = "Toast";

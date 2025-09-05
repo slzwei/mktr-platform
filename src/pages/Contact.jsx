@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { Link } from "react-router-dom";
+import SiteHeader from "@/components/layout/SiteHeader";
 import { apiClient } from "@/api/client";
 import { createPageUrl } from "@/utils";
 import {
@@ -192,33 +193,16 @@ export default function Contact() {
 
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
         {/* Header */}
-        <header className="bg-white/95 backdrop-blur-sm border-b border-gray-200">
-          <div className="container">
-            <div className="flex items-center justify-between py-6">
-              <Link 
-                to={createPageUrl("Homepage")} 
-                className="text-2xl font-bold text-black"
-                style={{ fontFamily: 'var(--heading-font)' }}
-              >
-                MKTR PTE. LTD.
-              </Link>
-              <Link to={createPageUrl("Homepage")}>
-                <Button variant="outline" className="gap-2">
-                  <ArrowLeft className="w-4 h-4" />
-                  Back to Home
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </header>
+        <SiteHeader />
+        <div className="h-20 md:h-24" />
 
         {/* Hero Section */}
-        <section className="section-spacing bg-white">
+        <section className="section-spacing bg-black">
           <div className="container">
             <div className="text-center max-w-4xl mx-auto mb-16">
-              <p className="section-title">Get in Touch</p>
-              <h1 className="hero-title mb-6">Let's Talk Business</h1>
-              <p className="body-text max-w-2xl mx-auto">
+              <p className="section-title text-white" style={{ color: '#ffffff' }}>Get in Touch</p>
+              <h1 className="hero-title mb-6 text-white" style={{ color: '#ffffff' }}>Let's Talk Business</h1>
+              <p className="body-text max-w-2xl mx-auto text-white mt-4" style={{ color: '#ffffff' }}>
                 Speak with us about lead generation, campaign design, and sales enablement. We typically respond within one business day.
               </p>
             </div>
@@ -375,6 +359,27 @@ export default function Contact() {
                     </div>
                     <div className="text-sm text-gray-500">
                       For all enquiries, please use the contact form.
+                    </div>
+                  </div>
+                </Card>
+                <Card className="p-8">
+                  <h3 className="section-title mb-6">WhatsApp</h3>
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-black text-white rounded-lg flex items-center justify-center shrink-0">
+                      <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg" alt="WhatsApp" className="w-6 h-6 invert" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-1">Message us on WhatsApp</h4>
+                      <p className="text-gray-600">WhatsApp only</p>
+                      <a
+                        href="https://wa.me/6580790542"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-outline mt-4 inline-flex items-center gap-2"
+                      >
+                        <span>+65 8079 0542</span>
+                        <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg" alt="WhatsApp" className="w-4 h-4" />
+                      </a>
                     </div>
                   </div>
                 </Card>

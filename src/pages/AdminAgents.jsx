@@ -275,14 +275,16 @@ export default function AdminAgents() {
 
               <TableCell>
                 {(() => {
-                  const pending = isPending(agent);
-                  const cls = pending
+                  const pendingApproval = agent.approvalStatus === 'pending' || agent.status === 'pending_approval';
+                  const pendingRegistration = isPending(agent);
+                  const isActive = agent.isActive && !pendingApproval && !pendingRegistration;
+                  const badgeCls = pendingApproval
                     ? 'bg-yellow-100 text-yellow-800'
-                    : (agent.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800');
-                  const label = pending ? 'Pending Registration' : (agent.isActive ? 'Active' : 'Inactive');
-                  return (
-                    <Badge className={cls}>{label}</Badge>
-                  );
+                    : (isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800');
+                  const label = pendingApproval
+                    ? 'Pending Approval'
+                    : (pendingRegistration ? 'Pending Registration' : (isActive ? 'Active' : 'Inactive'));
+                  return <Badge className={badgeCls}>{label}</Badge>;
                 })()}
               </TableCell>
 
@@ -307,6 +309,26 @@ export default function AdminAgents() {
 
               <TableCell>
                 <div className="flex items-center gap-2">
+                  {(agent.approvalStatus === 'pending' || agent.status === 'pending_approval') && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-green-700 hover:text-green-900"
+                        onClick={async () => { try { await User.setApprovalStatus(agent.id, 'approved'); await loadData(); } catch(e) { console.error(e); } }}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-700 hover:text-red-900"
+                        onClick={async () => { try { await User.setApprovalStatus(agent.id, 'rejected'); await loadData(); } catch(e) { console.error(e); } }}
+                      >
+                        Reject
+                      </Button>
+                    </>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"

@@ -11,7 +11,7 @@ import {
   FleetOwner,
   sequelize
 } from '../models/index.js';
-import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
+import { authenticateToken, requireAgentOrAdmin, requireRole } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
 const router = express.Router();
@@ -493,6 +493,100 @@ router.get('/analytics', authenticateToken, requireAgentOrAdmin, asyncHandler(as
       analytics: analyticsData
     }
   });
+}));
+
+// Driver Partner: successful submissions trend (counts Prospects created via their car QR tags)
+router.get('/driver/scans', authenticateToken, requireRole('driver_partner', 'admin'), asyncHandler(async (req, res) => {
+  const { period = '30d' } = req.query;
+  const userId = req.user.id;
+
+  const now = new Date();
+  const days = period === '7d' ? 7 : period === '30d' ? 30 : 1;
+  const startDate = period === 'all' ? null : (period === '1d' ? new Date(now.getFullYear(), now.getMonth(), now.getDate()) : new Date(now.getTime() - days * 24 * 60 * 60 * 1000));
+
+  // Get prospects that originated from QR tags on cars currently assigned to this driver
+  // We consider creation time within range
+  const whereProspect = {};
+  if (startDate) {
+    whereProspect.createdAt = { [Op.gte]: startDate, [Op.lte]: now };
+  }
+
+  // Find all prospects joined through qrTag->car where current_driver_id == userId
+  const prospects = await Prospect.findAll({
+    where: whereProspect,
+    include: [{
+      association: 'qrTag',
+      required: true,
+      include: [{ association: 'car', required: true, where: { current_driver_id: userId } }]
+    }],
+    attributes: ['id', 'createdAt']
+  });
+
+  let trend = [];
+  if (period === 'all') {
+    // No trend for lifetime; client can show only total
+    trend = [];
+  } else if (period === '1d') {
+    // hourly buckets 0..23
+    const buckets = Array.from({ length: 24 }, (_, h) => ({ label: `${h}:00`, count: 0 }));
+    for (const p of prospects) {
+      const dt = new Date(p.createdAt);
+      if (dt >= startDate && dt <= now) {
+        const h = dt.getHours();
+        buckets[h].count += 1;
+      }
+    }
+    trend = buckets;
+  } else {
+    const dayCount = days;
+    const map = new Map();
+    for (let i = dayCount - 1; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const key = d.toISOString().split('T')[0];
+      map.set(key, 0);
+    }
+    for (const p of prospects) {
+      const key = new Date(p.createdAt).toISOString().split('T')[0];
+      if (map.has(key)) map.set(key, (map.get(key) || 0) + 1);
+    }
+    trend = Array.from(map.entries()).map(([day, count]) => ({ label: day.slice(5), count }));
+  }
+
+  res.json({ success: true, data: { trend, total: prospects.length } });
+}));
+
+// Driver Partner: computed commissions based on prospects and campaign commission rates
+router.get('/driver/commissions', authenticateToken, requireRole('driver_partner', 'admin'), asyncHandler(async (req, res) => {
+  const { period = '30d' } = req.query;
+  const userId = req.user.id;
+
+  const now = new Date();
+  const days = period === '7d' ? 7 : period === '30d' ? 30 : 90;
+  const startDate = period === 'all' ? null : new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+
+  const whereProspect = {};
+  if (startDate) {
+    whereProspect.createdAt = { [Op.gte]: startDate, [Op.lte]: now };
+  }
+
+  const prospects = await Prospect.findAll({
+    where: whereProspect,
+    include: [
+      { association: 'campaign', attributes: ['id', 'name', 'commission_amount_driver'] },
+      { association: 'qrTag', required: true, include: [{ association: 'car', required: true, where: { current_driver_id: userId } }] }
+    ],
+    order: [['createdAt', 'DESC']]
+  });
+
+  const commissions = prospects.map((p) => ({
+    id: p.id,
+    status: 'pending',
+    created_date: p.createdAt,
+    campaign: p.campaign ? { id: p.campaign.id, name: p.campaign.name } : null,
+    amount_driver: Number(p.campaign?.commission_amount_driver || 0)
+  }));
+
+  res.json({ success: true, data: { commissions } });
 }));
 
 // Analytics helper functions

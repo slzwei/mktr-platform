@@ -91,7 +91,10 @@ class APIClient {
         throw new Error('Authentication required');
       }
 
-      const data = await response.json();
+      // Parse JSON only if Content-Type is JSON; otherwise fall back to text
+      const contentType = response.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      const data = isJson ? await response.json() : await response.text();
 
       if (!response.ok) {
         console.error('API Error Details:', {
@@ -101,7 +104,7 @@ class APIClient {
         });
         
         // For validation errors, include the validation details
-        if (response.status === 400 && (data.details || data.errors)) {
+        if (response.status === 400 && isJson && (data.details || data.errors)) {
           console.error('Validation Details:', data.details);
           console.error('Validation Errors:', data.errors);
           
@@ -122,10 +125,14 @@ class APIClient {
           throw new Error(`Validation Error: ${validationErrors}`);
         }
         
+        // For non-JSON responses (e.g., rate limits returning plain text), bubble up text
+        if (!isJson) {
+          throw new Error(typeof data === 'string' ? data : `HTTP ${response.status}: ${response.statusText}`);
+        }
         throw new Error(data.message || `HTTP ${response.status}: ${response.statusText}`);
       }
 
-      return data;
+      return isJson ? data : { success: false, message: data };
     } catch (error) {
       console.error(`API Error [${config.method} ${endpoint}]:`, error);
       throw error;
@@ -398,6 +405,11 @@ class BaseEntity {
   async findById(id) {
     return this.get(id);
   }
+
+  async setApprovalStatus(id, approvalStatus) {
+    const response = await apiClient.patch(`${this.endpoint}/${id}/approval`, { approvalStatus });
+    return response.data?.user || response.data;
+  }
 }
 
 // Campaign Entity
@@ -553,6 +565,12 @@ class UserEntity extends BaseEntity {
       return this.getAgents();
     }
     return super.filter(params);
+  }
+
+  async invite({ email, full_name, role, owed_leads_count }) {
+    // Generic invite endpoint supports agent, fleet_owner, driver_partner
+    const response = await apiClient.post('/users/invite', { email, full_name, role, owed_leads_count });
+    return response.data;
   }
 }
 

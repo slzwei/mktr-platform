@@ -125,18 +125,9 @@ export default function LoginForm() {
       const result = await auth.register(registerData);
       
       if (result.success) {
-        setSuccess('Registration successful! You can now login.');
-        setActiveTab('login');
-        setLoginData({ email: registerData.email, password: '' });
-        setRegisterData({
-          full_name: '',
-          email: '',
-          phone: '',
-          password: '',
-          confirm_password: '',
-          role: 'customer',
-          company_name: ''
-        });
+        setSuccess('Registration successful! Redirecting...');
+        const targetUrl = '/PendingApproval';
+        navigate(targetUrl);
       } else {
         setError(result.message || 'Registration failed');
       }

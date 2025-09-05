@@ -26,6 +26,9 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   // Non-admin users can only see their own commissions
   if (req.user.role === 'agent') {
     whereConditions.agentId = req.user.id;
+  } else if (req.user.role === 'driver_partner') {
+    // driver_partner does not have entries in commissions table yet; return empty set
+    return res.json({ success: true, data: { commissions: [], pagination: { currentPage: 1, totalPages: 0, totalItems: 0, itemsPerPage: parseInt(limit) } } });
   } else if (req.user.role !== 'admin') {
     // Other roles might see commissions from their campaigns
     const userCampaigns = await Campaign.findAll({

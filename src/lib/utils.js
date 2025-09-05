@@ -18,6 +18,12 @@ export function getDefaultRouteForRole(role) {
     case 'fleet_owner':
       console.log('✅ Fleet owner role detected -> /FleetOwnerDashboard');
       return '/FleetOwnerDashboard'
+    case 'driver_partner':
+      console.log('✅ Driver Partner role detected -> /DriverDashboard');
+      return '/DriverDashboard'
+    case 'customer':
+      console.log('✅ Customer role detected -> /Onboarding');
+      return '/Onboarding'
     default:
       console.log('❌ Unknown role, defaulting to /Homepage');
       return '/Homepage'
@@ -30,6 +36,15 @@ export function getPostAuthRedirectPath(user) {
   if (!user) {
     console.log('❌ No user provided, redirecting to Homepage');
     return '/Homepage';
+  }
+  // If user has not been approved yet for roles requiring review, keep them on PendingApproval
+  const status = user.approvalStatus || user.status;
+  if (status === 'pending' || status === 'pending_approval') {
+    return '/PendingApproval';
+  }
+  // Send customers to onboarding
+  if (user.role === 'customer') {
+    return '/Onboarding';
   }
   const route = getDefaultRouteForRole(user.role);
   console.log('✅ User role:', user.role, '-> Redirecting to:', route);

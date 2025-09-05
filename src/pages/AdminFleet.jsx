@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { apiClient } from "@/api/client";
 import {
   Table,
   TableBody,
@@ -42,6 +43,7 @@ export default function AdminFleet() {
   const [cars, setCars] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [fleetOwners, setFleetOwners] = useState([]);
+  const [fleetOwnerUsers, setFleetOwnerUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -68,6 +70,13 @@ export default function AdminFleet() {
         User.filter({ role: 'driver_partner' }),
         FleetOwner.list('-created_date')
       ]);
+      // Fetch user accounts for fleet owners to read approval status
+      try {
+        const foUsersResp = await apiClient.get('/users', { role: 'fleet_owner', page: 1, limit: 1000 });
+        setFleetOwnerUsers(foUsersResp?.data?.users || []);
+      } catch (_) {
+        setFleetOwnerUsers([]);
+      }
 
       if (userData.role === 'admin') {
         fetchedCars = await Car.list('-created_date');
@@ -392,12 +401,12 @@ export default function AdminFleet() {
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-gray-50">
-                        <TableHead>Vehicle Details</TableHead>
-                        <TableHead>Fleet Owner</TableHead>
-                        <TableHead>Current Driver</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Assignment Date</TableHead>
-                        <TableHead>Actions</TableHead>
+                        <TableHead className="w-[18%]">Vehicle Details</TableHead>
+                        <TableHead className="w-[18%]">Fleet Owner</TableHead>
+                        <TableHead className="w-[18%]">Current Driver</TableHead>
+                        <TableHead className="w-[12%]">Status</TableHead>
+                        <TableHead className="w-[14%]">Assignment Date</TableHead>
+                        <TableHead className="w-[20%] text-right pr-4">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -459,8 +468,8 @@ export default function AdminFleet() {
                               <span className="text-gray-400 text-sm">-</span>
                             )}
                           </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
+                          <TableCell className="text-right pr-4">
+                            <div className="flex items-center justify-end gap-2">
                               {(user?.role === 'admin' || 
                                 (user?.role === 'fleet_owner' && fleetOwners.find(fo => fo.email === user.email)?.id === car.fleet_owner_id)) && (
                                 <>
@@ -468,6 +477,7 @@ export default function AdminFleet() {
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleOpenAssignDriver(car)}
+                                    className="w-32 justify-center whitespace-nowrap"
                                   >
                                     {car.current_driver_id ? 'Reassign' : 'Assign Driver'}
                                   </Button>
@@ -549,12 +559,13 @@ export default function AdminFleet() {
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-gray-50">
-                            <TableHead>Fleet Owner</TableHead>
-                            <TableHead>Contact Information</TableHead>
-                            <TableHead>Company</TableHead>
-                            <TableHead>Vehicles</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Actions</TableHead>
+                            <TableHead className="w-[18%]">Fleet Owner</TableHead>
+                            <TableHead className="w-[22%]">Contact Information</TableHead>
+                            <TableHead className="w-[18%]">Company</TableHead>
+                            <TableHead className="w-[12%]">Vehicles</TableHead>
+                            <TableHead className="w-[10%]">Status</TableHead>
+                            <TableHead className="w-[12%]">Approval</TableHead>
+                            <TableHead className="w-[8%] text-right pr-4">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -623,6 +634,37 @@ export default function AdminFleet() {
                                   >
                                     {owner.status || 'active'}
                                   </Badge>
+                                </TableCell>
+
+                                <TableCell>
+                                  {(() => {
+                                    const foUser = fleetOwnerUsers.find(u => (u.email || '').toLowerCase() === (owner.email || '').toLowerCase());
+                                    const approval = foUser?.approvalStatus || foUser?.status;
+                                    const isPending = approval === 'pending' || approval === 'pending_approval';
+                                    if (isPending && foUser) {
+                                      return (
+                                        <div className="flex gap-2">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-green-700 hover:text-green-900"
+                                            onClick={async () => { try { await User.setApprovalStatus(foUser.id, 'approved'); await loadData(); } catch(e) { console.error(e); } }}
+                                          >
+                                            Approve
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-red-700 hover:text-red-900"
+                                            onClick={async () => { try { await User.setApprovalStatus(foUser.id, 'rejected'); await loadData(); } catch(e) { console.error(e); } }}
+                                          >
+                                            Reject
+                                          </Button>
+                                        </div>
+                                      );
+                                    }
+                                    return <span className="text-sm text-gray-500">{foUser?.approvalStatus || 'approved'}</span>;
+                                  })()}
                                 </TableCell>
 
                                 <TableCell>
@@ -702,11 +744,12 @@ export default function AdminFleet() {
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-gray-50">
-                            <TableHead>Driver</TableHead>
-                            <TableHead>Contact Information</TableHead>
-                            <TableHead>Assigned Vehicle</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Actions</TableHead>
+                            <TableHead className="w-[22%]">Driver</TableHead>
+                            <TableHead className="w-[24%]">Contact Information</TableHead>
+                            <TableHead className="w-[18%]">Assigned Vehicle</TableHead>
+                            <TableHead className="w-[12%]">Status</TableHead>
+                            <TableHead className="w-[16%]">Approval</TableHead>
+                            <TableHead className="w-[8%] text-right pr-4">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -762,9 +805,33 @@ export default function AdminFleet() {
                                     {assignedCar ? 'Active' : 'Available'}
                                   </Badge>
                                 </TableCell>
-
                                 <TableCell>
-                                  <div className="flex gap-2">
+                                  {(driver.approvalStatus === 'pending' || driver.status === 'pending_approval') ? (
+                                    <div className="flex gap-2">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-green-700 hover:text-green-900"
+                                        onClick={async () => { try { await User.setApprovalStatus(driver.id, 'approved'); await loadData(); } catch(e) { console.error(e); } }}
+                                      >
+                                        Approve
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-red-700 hover:text-red-900"
+                                        onClick={async () => { try { await User.setApprovalStatus(driver.id, 'rejected'); await loadData(); } catch(e) { console.error(e); } }}
+                                      >
+                                        Reject
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <span className="text-sm text-gray-500">{driver.approvalStatus || 'approved'}</span>
+                                  )}
+                                </TableCell>
+
+                                <TableCell className="text-right pr-4">
+                                  <div className="flex justify-end gap-2">
                                     <Button
                                       variant="ghost"
                                       size="sm"

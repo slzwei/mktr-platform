@@ -1,6 +1,6 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import { User } from '../models/index.js';
+import { User, FleetOwner, Car, UserPayout } from '../models/index.js';
 import { generateToken, authenticateToken } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
@@ -97,6 +97,7 @@ router.get('/profile', authenticateToken, asyncHandler(async (req, res) => {
   } else if (req.user.role === 'driver') {
     includeOptions.push({ association: 'driverProfile' });
   }
+  includeOptions.push({ association: 'payout', required: false });
 
   const user = await User.findByPk(req.user.id, {
     include: includeOptions
@@ -110,13 +111,28 @@ router.get('/profile', authenticateToken, asyncHandler(async (req, res) => {
 
 // Update user profile
 router.put('/profile', authenticateToken, validate(schemas.userUpdate), asyncHandler(async (req, res) => {
-  const { firstName, lastName, phone, avatar } = req.body;
+  const { firstName, lastName, phone, avatar, dateOfBirth, companyName, email } = req.body;
+
+  // If email is changing, ensure uniqueness
+  if (email && email !== req.user.email) {
+    // Lock email edits for Google-linked accounts unless admin
+    if (req.user.googleSub && req.user.role !== 'admin') {
+      throw new AppError('Email for Google-linked account cannot be changed. Contact support.', 400);
+    }
+    const existing = await User.findOne({ where: { email } });
+    if (existing) {
+      throw new AppError('Email is already in use', 400);
+    }
+  }
 
   await req.user.update({
+    email: email || req.user.email,
     firstName: firstName || req.user.firstName,
     lastName: lastName || req.user.lastName,
     phone: phone || req.user.phone,
-    avatar: avatar || req.user.avatar
+    avatar: avatar || req.user.avatar,
+    dateOfBirth: dateOfBirth || req.user.dateOfBirth,
+    companyName: companyName || req.user.companyName
   });
 
   res.json({
@@ -282,6 +298,104 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
     console.error('❌ OAuth callback error:', error);
     throw new AppError(`Google authentication failed: ${error.message}`, 400);
   }
+}));
+
+// Onboarding: update role and basic info post-Google
+router.post('/onboarding/role', authenticateToken, asyncHandler(async (req, res) => {
+  const { role } = req.body; // 'driver_partner' | 'agent' | 'fleet_owner'
+  if (!['driver_partner', 'agent', 'fleet_owner'].includes(role)) {
+    throw new AppError('Invalid role', 400);
+  }
+  await req.user.update({ role });
+  res.json({ success: true, message: 'Role updated', data: { user: req.user.toJSON() } });
+}));
+
+// Onboarding: save payout info for current user
+router.post('/onboarding/payout', authenticateToken, asyncHandler(async (req, res) => {
+  const { method, paynowId, bankName, bankAccount } = req.body;
+  if (!['PayNow', 'Bank Transfer'].includes(method)) {
+    throw new AppError('Invalid payout method', 400);
+  }
+  const [payout, created] = await UserPayout.findOrCreate({
+    where: { userId: req.user.id },
+    defaults: { method, paynowId: paynowId || null, bankName: bankName || null, bankAccount: bankAccount || null }
+  });
+  if (!created) {
+    const updateData = { method };
+    if (method === 'PayNow') {
+      updateData.paynowId = paynowId || null;
+      updateData.bankName = null;
+      updateData.bankAccount = null;
+    } else if (method === 'Bank Transfer') {
+      updateData.bankName = bankName || null;
+      updateData.bankAccount = bankAccount || null;
+      updateData.paynowId = null;
+    }
+    await payout.update(updateData);
+  }
+  res.json({ success: true, data: { payout } });
+}));
+
+// Onboarding: self-serve car create (for driver or fleet owner)
+router.post('/onboarding/car', authenticateToken, asyncHandler(async (req, res) => {
+  const { plate_number, make, model } = req.body;
+  if (!plate_number || !make || !model) {
+    throw new AppError('plate_number, make, and model are required', 400);
+  }
+  // Create a minimal fleet owner if user is fleet owner without entity
+  let fleetOwnerId = null;
+  if (req.user.role === 'fleet_owner') {
+    const existing = await FleetOwner.findOne({ where: { email: req.user.email } });
+    const owner = existing || await FleetOwner.create({ full_name: req.user.fullName || req.user.email, email: req.user.email, phone: req.user.phone || null, status: 'active' });
+    fleetOwnerId = owner.id;
+  }
+
+  // If driver self-registers car, make them their own fleet owner-lite
+  if (req.user.role === 'driver_partner' && !fleetOwnerId) {
+    const existingDriverOwner = await FleetOwner.findOne({ where: { email: req.user.email } });
+    const selfOwner = existingDriverOwner || await FleetOwner.create({ full_name: req.user.fullName || req.user.email, email: req.user.email, phone: req.user.phone || null, status: 'active' });
+    fleetOwnerId = selfOwner.id;
+  }
+
+  if (!fleetOwnerId) {
+    throw new AppError('Unable to determine fleet owner for car', 400);
+  }
+
+  const car = await Car.create({
+    plate_number,
+    make,
+    model,
+    year: new Date().getFullYear(),
+    type: 'sedan',
+    status: 'active',
+    fleet_owner_id: fleetOwnerId,
+    current_driver_id: req.user.role === 'driver_partner' ? req.user.id : null
+  });
+
+  res.status(201).json({ success: true, data: { car } });
+}));
+
+// Onboarding: fleet owner bulk cars (CSV parsed client-side)
+router.post('/onboarding/cars/bulk', authenticateToken, asyncHandler(async (req, res) => {
+  if (req.user.role !== 'fleet_owner') {
+    throw new AppError('Only fleet owners can bulk add cars', 403);
+  }
+  const { cars } = req.body; // [{ plate_number, make, model }]
+  if (!Array.isArray(cars) || cars.length === 0) {
+    throw new AppError('No cars provided', 400);
+  }
+  const owner = await FleetOwner.findOne({ where: { email: req.user.email } })
+    || await FleetOwner.create({ full_name: req.user.fullName || req.user.email, email: req.user.email, phone: req.user.phone || null, status: 'active' });
+  const created = await Promise.all(cars.map(c => Car.create({
+    plate_number: c.plate_number,
+    make: c.make,
+    model: c.model,
+    year: new Date().getFullYear(),
+    type: 'sedan',
+    status: 'active',
+    fleet_owner_id: owner.id
+  })));
+  res.status(201).json({ success: true, data: { cars: created } });
 }));
 
 // Logout (client-side token removal, but we can track it)

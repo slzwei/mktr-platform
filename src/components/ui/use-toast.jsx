@@ -2,7 +2,8 @@
 import { useState, useEffect } from "react";
 
 const TOAST_LIMIT = 20;
-const TOAST_REMOVE_DELAY = 1000000;
+// Auto-dismiss toasts after 4 seconds
+const TOAST_REMOVE_DELAY = 4000;
 
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
@@ -128,11 +129,15 @@ function toast({ ...props }) {
       ...props,
       id,
       open: true,
+      duration: TOAST_REMOVE_DELAY,
       onOpenChange: (open) => {
         if (!open) dismiss();
       },
     },
   });
+
+  // Schedule auto-dismiss
+  addToRemoveQueue(id);
 
   return {
     id,

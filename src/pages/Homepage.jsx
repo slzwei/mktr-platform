@@ -14,6 +14,7 @@ import {
   X
 } from
 "lucide-react";
+import SiteHeader from "@/components/layout/SiteHeader";
 
 // Hamburger Menu Component
 const HamburgerMenu = ({ isOpen, toggle }) =>
@@ -869,91 +870,7 @@ export default function Homepage() {
       {/* Floating Background Elements */}
       <FloatingElements />
 
-      {/* Header */}
-      <header className="header">
-        <div className="container">
-          <div className="header-content">
-            <Link to="/" className="logo">
-              MKTR.
-            </Link>
-            <HamburgerMenu isOpen={menuOpen} toggle={toggleMenu} />
-          </div>
-        </div>
-      </header>
-
-      {/* Mobile Menu Overlay */}
-      {menuOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-998"
-          onClick={toggleMenu}
-        />
-      )}
-
-      {/* Mobile Menu */}
-      <nav className={`mobile-menu ${menuOpen ? 'open' : ''}`}>
-        <button 
-          className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          onClick={toggleMenu}
-        >
-          <X className="w-6 h-6 text-gray-600" />
-        </button>
-        
-        <div className="flex flex-col items-center gap-6 flex-1 justify-center px-6">
-          <a 
-            href="#features" 
-            className="mobile-menu-link" 
-            onClick={(e) => {
-              e.preventDefault();
-              toggleMenu();
-              document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' });
-            }}
-          >
-            Features
-          </a>
-          <Link to={createPageUrl("Contact")} className="mobile-menu-link" onClick={toggleMenu}>
-            Contact
-          </Link>
-        </div>
-        
-        <div className="w-full px-6 pb-8 space-y-4">
-          {isAuthed ? (
-            <>
-              <Link to={dashboardPath} onClick={toggleMenu} className="block">
-                <button className="w-full bg-black text-white border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider 
-                                  hover:bg-gray-900 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
-                  Go to Dashboard
-                </button>
-              </Link>
-              <button
-                onClick={() => {
-                  auth.logout();
-                  setIsAuthed(false);
-                  toggleMenu();
-                }}
-                className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider 
-                               hover:bg-gray-100 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200"
-              >
-                Logout
-              </button>
-            </>
-          ) : (
-            <>
-              <Link to={createPageUrl("CustomerLogin")} onClick={toggleMenu} className="block">
-                <button className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider 
-                                  hover:bg-gray-100 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
-                  Customer Login
-                </button>
-              </Link>
-              <Link to={createPageUrl("AdminDashboard")} onClick={toggleMenu} className="block">
-                <button className="w-full bg-black text-white border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider 
-                                  hover:bg-gray-900 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
-                  Admin Portal
-                </button>
-              </Link>
-            </>
-          )}
-        </div>
-      </nav>
+      <SiteHeader />
 
       {/* Hero Section - Responsive Design */}
       <section className="hero-section text-white pb-16 pt-20">
