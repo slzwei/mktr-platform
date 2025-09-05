@@ -9,6 +9,10 @@ const contactSchema = Joi.object({
   email: Joi.string().email().required(),
   phone: Joi.string().max(50).allow('', null),
   company: Joi.string().max(200).allow('', null),
+  // Optional role from the contact form dropdown
+  userType: Joi.string()
+    .valid('advertiser', 'phv_driver', 'fleet_owner', 'salesperson')
+    .allow('', null),
   message: Joi.string().min(10).max(5000).required()
 });
 
@@ -23,7 +27,14 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    const { name, email, phone, company, message } = value;
+    const { name, email, phone, company, message, userType } = value;
+
+    const roleLabels = {
+      advertiser: 'Advertiser',
+      phv_driver: 'PHV Driver',
+      fleet_owner: 'Fleet Owner',
+      salesperson: 'Salesperson'
+    };
 
     const subject = `New Contact Form Submission — MKTR PTE. LTD.`;
 
@@ -54,6 +65,7 @@ router.post('/', async (req, res, next) => {
                     <td style="padding:8px 0; color:#6b7280;">Email</td>
                     <td style="padding:8px 0; color:#111827; font-weight:600;">${escapeHtml(email)}</td>
                   </tr>
+                  ${userType ? `<tr><td style="padding:8px 0; color:#6b7280;">Role</td><td style="padding:8px 0; color:#111827; font-weight:600;">${escapeHtml(roleLabels[userType] || userType)}</td></tr>` : ''}
                   ${company ? `<tr><td style="padding:8px 0; color:#6b7280;">Company</td><td style="padding:8px 0; color:#111827; font-weight:600;">${escapeHtml(company)}</td></tr>` : ''}
                   ${phone ? `<tr><td style="padding:8px 0; color:#6b7280;">Phone</td><td style="padding:8px 0; color:#111827; font-weight:600;">${escapeHtml(phone)}</td></tr>` : ''}
                 </table>
@@ -77,7 +89,7 @@ router.post('/', async (req, res, next) => {
       to: 'shawnleeapps@gmail.com',
       subject,
       html,
-      text: `New contact form submission\n\nName: ${name}\nEmail: ${email}\nCompany: ${company || '-'}\nPhone: ${phone || '-'}\n\nMessage:\n${message}`
+      text: `New contact form submission\n\nName: ${name}\nEmail: ${email}\nRole: ${userType ? (roleLabels[userType] || userType) : '-'}\nCompany: ${company || '-'}\nPhone: ${phone || '-'}\n\nMessage:\n${message}`
     });
 
     if (!result.success) {
