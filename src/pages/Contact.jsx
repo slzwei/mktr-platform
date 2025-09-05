@@ -271,25 +271,27 @@ export default function Contact() {
                         </div>
                       </div>
 
-                      {/* I am a */}
+                      {/* I am an... inline with dropdown */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          I am a
-                        </label>
-                        <Select
-                          value={formData.userType}
-                          onValueChange={(val) => setFormData({ ...formData, userType: val })}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select one" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="advertiser">Advertiser</SelectItem>
-                            <SelectItem value="phv_driver">PHV Driver</SelectItem>
-                            <SelectItem value="fleet_owner">Fleet Owner</SelectItem>
-                            <SelectItem value="salesperson">Salesperson</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-medium text-gray-700 whitespace-nowrap">I am a</span>
+                          <div className="flex-1">
+                            <Select
+                              value={formData.userType}
+                              onValueChange={(val) => setFormData({ ...formData, userType: val })}
+                            >
+                              <SelectTrigger className="w-56">
+                                <SelectValue placeholder="Select one" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="advertiser">Advertiser</SelectItem>
+                                <SelectItem value="phv_driver">PHV Driver</SelectItem>
+                                <SelectItem value="fleet_owner">Fleet Owner</SelectItem>
+                                <SelectItem value="salesperson">Salesperson</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
