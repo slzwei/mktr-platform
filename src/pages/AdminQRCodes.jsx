@@ -52,6 +52,8 @@ export default function AdminQRCodes() {
   const [prospectCounts, setProspectCounts] = useState({});
   const [loadingProspects, setLoadingProspects] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [scanTotals, setScanTotals] = useState({});
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -88,6 +90,35 @@ export default function AdminQRCodes() {
       setLoading(false);
     })();
   }, []);
+
+  useEffect(() => {
+    const loadAnalytics = async () => {
+      if (!allQrTags || allQrTags.length === 0) return;
+
+      setLoadingAnalytics(true);
+      try {
+        const totals = {};
+        const analyticsPromises = (allQrTags || []).map(async (qr) => {
+          try {
+            const resp = await apiClient.get(`/qrcodes/${qr.id}/analytics`);
+            return { id: qr.id, data: resp?.data?.analytics?.summary || { totalScans: 0, landings: 0, leads: 0 } };
+          } catch (_) {
+            return { id: qr.id, data: { totalScans: 0, landings: 0, leads: 0 } };
+          }
+        });
+
+        const results = await Promise.all(analyticsPromises);
+        results.forEach(({ id, data }) => {
+          totals[id] = data;
+        });
+        setScanTotals(totals);
+      } finally {
+        setLoadingAnalytics(false);
+      }
+    };
+
+    loadAnalytics();
+  }, [allQrTags]);
 
   const handleBackToCampaigns = () => setSelectedCampaign(null);
 
@@ -352,7 +383,11 @@ export default function AdminQRCodes() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <span className="font-semibold text-lg">{qr.scanCount || 0}</span>
+                        {loadingAnalytics ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                        ) : (
+                          <span className="font-semibold text-lg">{scanTotals[qr.id]?.totalScans ?? 0}</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -487,7 +522,11 @@ export default function AdminQRCodes() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <span className="font-semibold text-lg">{qr.scanCount || 0}</span>
+                        {loadingAnalytics ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                        ) : (
+                          <span className="font-semibold text-lg">{scanTotals[qr.id]?.totalScans ?? 0}</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
