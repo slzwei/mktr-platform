@@ -1,14 +1,46 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Loader2 from 'lucide-react/icons/loader-2';
 import SiteHeader from '@/components/layout/SiteHeader';
+import { auth } from '@/api/client';
+import { getPostAuthRedirectPath } from '@/lib/utils';
 
 export default function PendingApproval() {
   const navigate = useNavigate();
+  const [checking, setChecking] = useState(false);
+  const [lastCheckedAt, setLastCheckedAt] = useState(null);
+  const intervalRef = useRef(null);
 
   useEffect(() => {
     const token = localStorage.getItem('mktr_auth_token');
     if (!token) navigate('/');
+    
+    // Poll for approval status every 5 seconds and redirect once approved
+    const checkStatus = async () => {
+      try {
+        setChecking(true);
+        const freshUser = await auth.getCurrentUser(true);
+        setLastCheckedAt(new Date());
+        if (freshUser && freshUser.approvalStatus !== 'pending' && freshUser.status !== 'pending_approval') {
+          // Keep local auth state fresh and navigate to the correct destination
+          auth.setCurrentUser(freshUser);
+          const target = getPostAuthRedirectPath(freshUser);
+          navigate(target);
+        }
+      } catch (_) {
+        // no-op: stay on page
+      } finally {
+        setChecking(false);
+      }
+    };
+
+    // Initial check immediately, then poll
+    checkStatus();
+    intervalRef.current = setInterval(checkStatus, 5000);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [navigate]);
 
   return (
@@ -59,7 +91,33 @@ export default function PendingApproval() {
                 <span className="text-white font-bold">✓</span>
               </div>
             </div>
-            <p className="text-sm text-gray-500 mt-6">If you try to sign in again, we’ll bring you back here while your account is pending approval.</p>
+            <p className="text-sm text-gray-500 mt-6">We'll automatically move you forward as soon as your account is approved.</p>
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <button
+                onClick={async () => {
+                  // Manual refresh
+                  try {
+                    setChecking(true);
+                    const freshUser = await auth.getCurrentUser(true);
+                    setLastCheckedAt(new Date());
+                    if (freshUser && freshUser.approvalStatus !== 'pending' && freshUser.status !== 'pending_approval') {
+                      auth.setCurrentUser(freshUser);
+                      const target = getPostAuthRedirectPath(freshUser);
+                      navigate(target);
+                    }
+                  } finally {
+                    setChecking(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-md bg-black text-white hover:opacity-90 disabled:opacity-60"
+                disabled={checking}
+              >
+                {checking ? 'Checking…' : 'Check status now'}
+              </button>
+              {lastCheckedAt && (
+                <span className="text-xs text-gray-400">Last checked {lastCheckedAt.toLocaleTimeString()}</span>
+              )}
+            </div>
           </div>
         </div>
       </div>

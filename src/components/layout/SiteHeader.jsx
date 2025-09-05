@@ -173,7 +173,7 @@ export default function SiteHeader() {
             <>
               <Link to={createPageUrl("CustomerLogin")} onClick={toggleMenu} className="block">
                 <button className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider hover:bg-gray-100 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
-                  Customer Login
+                  Login
                 </button>
               </Link>
             </>
