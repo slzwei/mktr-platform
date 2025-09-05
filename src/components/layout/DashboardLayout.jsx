@@ -224,7 +224,7 @@ export default function DashboardLayout({ children, user, userRole }) {
           </SidebarFooter>
         </Sidebar>
 
-        <main className="flex-1 flex flex-col">
+        <main className="min-w-0 flex-1 flex flex-col">
           <header className="bg-white border-b border-gray-200 px-6 py-4 lg:hidden">
             <div className="flex items-center justify-between">
               <SidebarTrigger className="hover:bg-gray-100 p-2 rounded-lg">

@@ -31,6 +31,7 @@ import uploadRoutes from './routes/uploads.js';
 import dashboardRoutes from './routes/dashboard.js';
 import verifyRoutes from './routes/verify.js';
 import analyticsRoutes from './routes/analytics.js';
+import contactRoutes from './routes/contact.js';
 import { validateGoogleOAuthConfig } from './controllers/authController.js';
 import { optionalAuth } from './middleware/auth.js';
 import { initSystemAgent } from './services/systemAgent.js';
@@ -121,6 +122,7 @@ app.use('/api/uploads', uploadRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/verify', verifyRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/contact', contactRoutes);
 
 // Fallback: /t/:slug → /api/qrcodes/track/:slug with noindex/no-store
 app.get('/t/:slug', (req, res) => {

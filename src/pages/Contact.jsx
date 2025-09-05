@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Link } from "react-router-dom";
+import { apiClient } from "@/api/client";
 import { createPageUrl } from "@/utils";
 import {
   ArrowLeft,
@@ -29,12 +30,15 @@ export default function Contact() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    
-    // Simulate form submission
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    setSubmitted(true);
-    setLoading(false);
+    try {
+      await apiClient.post('/contact', formData);
+      setSubmitted(true);
+    } catch (err) {
+      console.error('Failed to submit contact form', err);
+      alert('There was an issue sending your message. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleChange = (e) => {
@@ -174,7 +178,7 @@ export default function Contact() {
                 className="text-2xl font-bold text-black"
                 style={{ fontFamily: 'var(--heading-font)' }}
               >
-                MKTR.
+                MKTR PTE. LTD.
               </Link>
               <Link to={createPageUrl("Homepage")}>
                 <Button variant="outline" className="gap-2">
@@ -193,8 +197,7 @@ export default function Contact() {
               <p className="section-title">Get in Touch</p>
               <h1 className="hero-title mb-6">Let's Talk Business</h1>
               <p className="body-text max-w-2xl mx-auto">
-                Ready to transform your marketing strategy? 
-                Contact our team to learn how MKTR can help you capture more leads and drive growth.
+                Speak with MKTR PTE. LTD. about lead generation, campaign design, and sales enablement. We typically respond within one business day.
               </p>
             </div>
           </div>
@@ -270,7 +273,7 @@ export default function Contact() {
                             value={formData.phone}
                             onChange={handleChange}
                             className="w-full"
-                            placeholder="+65 XXXX XXXX"
+                            placeholder="+65 8123 4567"
                           />
                         </div>
                       </div>
@@ -309,65 +312,22 @@ export default function Contact() {
 
               {/* Contact Information */}
               <div className="space-y-8">
-                <div>
-                  <h3 className="section-title mb-6">Contact Information</h3>
-                  <div className="space-y-6">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-black text-white rounded-lg flex items-center justify-center shrink-0">
-                        <Mail className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900 mb-1">Email</h4>
-                        <p className="text-gray-600">hello@mktr.sg</p>
-                        <p className="text-sm text-gray-500">We'll respond within 24 hours</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-black text-white rounded-lg flex items-center justify-center shrink-0">
-                        <Phone className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900 mb-1">Phone</h4>
-                        <p className="text-gray-600">+65 XXXX XXXX</p>
-                        <p className="text-sm text-gray-500">Mon-Fri, 9AM-6PM SGT</p>
-                      </div>
-                    </div>
-                    
+                <Card className="p-8">
+                  <h3 className="section-title mb-6">Company</h3>
+                  <div className="space-y-4">
                     <div className="flex items-start gap-4">
                       <div className="w-12 h-12 bg-black text-white rounded-lg flex items-center justify-center shrink-0">
                         <MapPin className="w-6 h-6" />
                       </div>
                       <div>
-                        <h4 className="font-semibold text-gray-900 mb-1">Office</h4>
+                        <h4 className="font-semibold text-gray-900 mb-1">MKTR PTE. LTD.</h4>
                         <p className="text-gray-600">Singapore</p>
-                        <p className="text-sm text-gray-500">Central Business District</p>
                       </div>
                     </div>
-                    
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-black text-white rounded-lg flex items-center justify-center shrink-0">
-                        <Clock className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900 mb-1">Business Hours</h4>
-                        <p className="text-gray-600">Monday - Friday</p>
-                        <p className="text-sm text-gray-500">9:00 AM - 6:00 PM SGT</p>
-                      </div>
+                    <div className="text-sm text-gray-500">
+                      For all enquiries, please use the contact form.
                     </div>
                   </div>
-                </div>
-
-                <Card className="p-6 bg-gray-50">
-                  <h4 className="font-semibold text-gray-900 mb-3">Need Immediate Help?</h4>
-                  <p className="text-gray-600 mb-4">
-                    Book a free consultation call to discuss your marketing needs.
-                  </p>
-                  <Link to={createPageUrl("LeadCapture")}>
-                    <Button className="btn-outline w-full">
-                      Schedule Demo
-                    </Button>
-                  </Link>
                 </Card>
               </div>
             </div>
@@ -379,13 +339,13 @@ export default function Contact() {
           <div className="container">
             <div className="text-center">
               <div className="text-2xl font-bold mb-4" style={{ fontFamily: 'var(--heading-font)' }}>
-                MKTR.
+                MKTR PTE. LTD.
               </div>
               <p className="text-gray-400">
                 Singapore's leading marketer platform for intelligent lead generation.
               </p>
               <div className="mt-8 pt-8 border-t border-gray-700 text-gray-400 text-sm">
-                &copy; 2024 MKTR. Singapore. All rights reserved.
+                &copy; 2024 MKTR PTE. LTD., Singapore. All rights reserved.
               </div>
             </div>
           </div>
