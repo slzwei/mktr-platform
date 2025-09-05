@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Loader2 from 'lucide-react/icons/loader-2';
 import CheckCircle from 'lucide-react/icons/check-circle';
 import XCircle from 'lucide-react/icons/x-circle';
+import MKTRAnimatedLogo from '@/components/MKTRAnimatedLogo';
 import { apiClient, auth } from '@/api/client';
 import { getPostAuthRedirectPath } from '@/lib/utils';
 
@@ -106,6 +107,14 @@ export default function GoogleCallback() {
     handleCallback();
   }, [searchParams, navigate]);
 
+  if (status === 'processing') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <MKTRAnimatedLogo message="Verifying your login credentials…" />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white flex items-center justify-center">
       <Card className="w-full max-w-md mx-4">
@@ -115,15 +124,6 @@ export default function GoogleCallback() {
           </CardTitle>
         </CardHeader>
         <CardContent className="text-center space-y-4">
-          {status === 'processing' && (
-            <>
-              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full mx-auto flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin" />
-              </div>
-              <p className="text-gray-600">{message}</p>
-            </>
-          )}
-
           {status === 'success' && (
             <>
               <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full mx-auto flex items-center justify-center">
@@ -152,5 +152,5 @@ export default function GoogleCallback() {
         </CardContent>
       </Card>
     </div>
-  );
+  )
 }

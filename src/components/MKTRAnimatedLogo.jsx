@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 
-const MKTRAnimatedLogo = () => {
+const MKTRAnimatedLogo = ({ message }) => {
   const [borderProgress, setBorderProgress] = useState(0)
   const [flashEffect, setFlashEffect] = useState(false)
   const [glitchEffect, setGlitchEffect] = useState(false)
@@ -139,6 +139,11 @@ const MKTRAnimatedLogo = () => {
           100% { transform: translateX(120%); }
         }
       `}</style>
+      {message && (
+        <div style={{ position: 'absolute', bottom: -48, left: 0, right: 0, textAlign: 'center' }}>
+          <span style={{ color: '#E5E7EB', fontSize: 14 }}>{message}</span>
+        </div>
+      )}
     </div>
   )
 }
