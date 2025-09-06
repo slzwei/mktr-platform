@@ -3,6 +3,86 @@ name: smoke-phase-b
 on:
   pull_request:
     paths:
+      - 'services/auth-service/**'
+      - 'services/gateway/**'
+      - 'services/leadgen-service/**'
+      - 'backend/**'
+      - 'infra/docker-compose.yml'
+      - '.github/workflows/smoke-phase-b.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compose up
+        run: |
+          docker-compose -f infra/docker-compose.yml up -d --build
+          echo "Waiting for services..."
+          for i in {1..60}; do
+            sleep 3
+            if curl -sf http://localhost:4001/.well-known/jwks.json >/dev/null; then break; fi
+          done
+
+      - name: Login (password)
+        id: login
+        run: |
+          TOKEN=$(curl -s -X POST http://localhost:4001/v1/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"admin@example.com","password":"admin123"}' | jq -r '.token // .data.token')
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "Failed to get token"; exit 1; fi
+          echo "$TOKEN" > /tmp/tok
+          echo "token=$TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Leadgen health via gateway
+        run: |
+          curl -s -H "Authorization: Bearer $(cat /tmp/tok)" \
+            http://localhost:4000/api/leadgen/health | tee /tmp/health.json
+          jq -e '.ok == true and .service == "leadgen"' /tmp/health.json
+
+      - name: Create QR
+        run: |
+          curl -s -X POST http://localhost:4000/api/leadgen/v1/qrcodes \
+            -H "Authorization: Bearer $(cat /tmp/tok)" -H 'Content-Type: application/json' \
+            -d '{"code":"DEMO-CI-QR","status":"active"}' | tee /tmp/create.json
+          jq -e '.success == true' /tmp/create.json
+          jq -e '.data.tenant_id == "00000000-0000-0000-0000-000000000000"' /tmp/create.json
+
+      - name: List QRs
+        run: |
+          curl -s -H "Authorization: Bearer $(cat /tmp/tok)" \
+            http://localhost:4000/api/leadgen/v1/qrcodes | tee /tmp/list.json
+          jq -e '.success == true' /tmp/list.json
+          jq -e '.data | map(select(.code == "DEMO-CI-QR")) | length >= 1' /tmp/list.json
+          jq -e 'all(.data[]; .tenant_id == "00000000-0000-0000-0000-000000000000")' /tmp/list.json
+
+      - name: Optional Google OAuth check (skipped when no client id)
+        if: ${{ env.GOOGLE_CLIENT_ID != '' }}
+        run: |
+          curl -sSf http://localhost:4001/v1/auth/google/start -I || true
+
+      - name: Compose logs (on failure)
+        if: failure()
+        run: |
+          docker-compose -f infra/docker-compose.yml ps
+          docker-compose -f infra/docker-compose.yml logs --no-color --tail=200
+
+      - name: Compose down
+        if: always()
+        run: docker-compose -f infra/docker-compose.yml down -v
+
+name: smoke-phase-b
+
+on:
+  pull_request:
+    paths:
       - 'services/leadgen-service/**'
       - 'services/gateway/**'
       - 'infra/docker-compose.yml'

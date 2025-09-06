@@ -36,8 +36,12 @@ app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Not Found' });
 });
 
-app.listen(PORT, () => {
-  logger.info({ event: 'server_listen', port: PORT }, 'leadgen-service listening');
-});
+export { app };
+
+if (process.env.JEST_WORKER_ID === undefined) {
+  app.listen(PORT, () => {
+    logger.info({ event: 'server_listen', port: PORT }, 'leadgen-service listening');
+  });
+}
 
 

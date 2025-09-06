@@ -108,7 +108,8 @@ app.post('/v1/auth/login', async (req, res) => {
   const ok = bcrypt.compareSync(password || '', user.passwordHash);
   if (!ok) return res.status(401).json({ success: false, message: 'Invalid credentials' });
   const token = await signJwt({ sub: user.id, tid: user.tenantId, roles: user.roleKeys, email: user.email });
-  res.json({ success: true, data: { token } });
+  // Return token at top-level for simpler clients, while keeping data.token for backward compatibility
+  res.json({ success: true, token, data: { token } });
 });
 
 app.post('/v1/auth/google', (req, res) => {
@@ -216,7 +217,11 @@ app.get('/v1/auth/google/callback', async (req, res) => {
 
     const user = Array.from(users.values()).find(u => u.id === userId);
     const token = await signJwt({ sub: user.id, tid: user.tenantId, roles: user.roleKeys, email: user.email });
-    return res.redirect(302, `${process.env.GOOGLE_POST_LOGIN_REDIRECT || '/' }#token=${encodeURIComponent(token)}`);
+    return res.status(200).json({
+      success: true,
+      token,
+      user: { id: user.id, email: user.email, roles: user.roleKeys, tid: user.tenantId }
+    });
   } catch (e) {
     return res.status(500).json({ success: false, message: 'OAuth failed' });
   }
@@ -238,7 +243,7 @@ app.post('/v1/auth/m2m/token', async (req, res) => {
       .setIssuedAt()
       .setExpirationTime('5m')
       .sign(currentPrivateKey);
-    return res.json({ success: true, data: { token } });
+    return res.json({ token, expires_in: 300 });
   } catch (e) {
     return res.status(500).json({ success: false, message: 'Server error' });
   }
@@ -261,6 +266,10 @@ async function start() {
   });
 }
 
-start();
+export { app };
+
+if (process.env.JEST_WORKER_ID === undefined) {
+  start();
+}
 
 

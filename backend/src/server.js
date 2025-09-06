@@ -170,7 +170,7 @@ if (String(process.env.ENABLE_DOMAIN_PREFIXES).toLowerCase() === 'true') {
   } else {
     app.use('/api/leadgen', (req, res) => {
       console.warn('LEGACY LEADGEN PATH HIT');
-      res.status(410).json({ success: false, message: 'Use /api/leadgen/* (new service via gateway)' });
+      res.status(410).json({ success: false, message: 'Use /api/leadgen/*' });
     });
   }
 

@@ -19,6 +19,17 @@ describe('Backend routing/auth smoke tests', () => {
     const res = await request(expressApp).get('/api/campaigns')
     expect([401, 403]).toContain(res.status)
   })
+
+  it('legacy leadgen guard returns 410 when disabled', async () => {
+    const prev = process.env.ENABLE_LEGACY_LEADGEN
+    process.env.ENABLE_LEGACY_LEADGEN = 'false'
+    // Reload server app with flag off (import cycle guards prevent double-start)
+    const { app } = await import('../src/server.js')
+    const res = await request(app).get('/api/qrcodes')
+    expect(res.status).toBe(410)
+    expect(res.body?.message).toMatch(/Use \/api\/leadgen\/*/)
+    process.env.ENABLE_LEGACY_LEADGEN = prev
+  })
 })
 
 
