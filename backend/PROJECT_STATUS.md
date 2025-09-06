@@ -668,13 +668,13 @@ CI smoke-phase-b passes on PRs.
 ### Implementation (Cursor)
 
 **Commits:**
-- <sha1>: feat(auth): oauth state+pkce hardening and id token validation
-- <sha2>: feat(auth): m2m rs256 tokens (aud=services)
-- <sha3>: feat(leadgen): add m2m client with in-memory cache
-- <sha4>: feat(monolith): legacy leadgen guard ENABLE_LEGACY_LEADGEN -> 410
-- <sha5>: chore(ci): add smoke-phase-b workflow
-- <sha6>: test(leadgen): tenant scoping across v1 routes
-- <sha7>: docs: runbook for phase b
+- 81f948b: feat(auth): oauth state+pkce hardening and id token validation
+- 0469d11: feat(auth): m2m rs256 tokens (aud=services)
+- bfc9dd3: feat(leadgen): add m2m client with in-memory cache
+- 01b0de0: feat(monolith): legacy leadgen guard ENABLE_LEGACY_LEADGEN -> 410
+- 723ddcc: chore(ci): add smoke-phase-b workflow
+- 85c7ca1: test(leadgen): tenant scoping across v1 routes
+- 43e505d: docs: runbook for phase b
 
 **Completed:**
 - Google OAuth hardened: state+PKCE 10m TTL, ID token `aud/azp/email_verified` checks
@@ -720,3 +720,11 @@ curl -s -X POST http://localhost:4000/api/leadgen/v1/qrcodes \
 curl -s -H "Authorization: Bearer $(cat /tmp/tok)" \
   http://localhost:4000/api/leadgen/v1/qrcodes
 ```
+
+### tiny changelog
+
+1) harden google oauth with state+pkce and id token validation
+2) add m2m 5-min rs256 tokens (aud="services") and leadgen client cache
+3) guard legacy leadgen routes via ENABLE_LEGACY_LEADGEN → 410 when off
+4) add smoke-phase-b ci (compose, login, health, qr create/list)
+5) add tenant scoping tests and runbook
