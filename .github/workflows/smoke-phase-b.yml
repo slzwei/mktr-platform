@@ -165,6 +165,18 @@ jobs:
           docker compose -f infra/docker-compose.yml ps
           docker compose -f infra/docker-compose.yml logs --no-color > compose-logs.txt || true
 
+      - name: Seed dev user (non-prod)
+        if: ${{ env.NODE_ENV != 'production' }}
+        run: |
+          curl -fsS -X POST http://localhost:4001/internal/dev/seed-user | jq .
+
+      - name: Smoke — auto-detect API root (gateway or vite)
+        env:
+          EMAIL: test@mktr.sg
+          PASSWORD: test
+        run: |
+          bash scripts/smoke_gateway_auto.sh
+
       - name: Upload logs (always)
         if: always()
         uses: actions/upload-artifact@v4
