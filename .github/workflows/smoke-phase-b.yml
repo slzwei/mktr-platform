@@ -8,7 +8,6 @@ on:
       - "services/gateway/**"
       - "services/auth-service/**"
       - "backend/**"
-      - "backend/docker-compose.yml"
       - "infra/**"
       - ".github/workflows/smoke-phase-b.yml"
 
@@ -23,12 +22,13 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
     env:
       GATEWAY_URL: http://localhost:4000
       AUTH_URL: http://localhost:4001
       LEADGEN_HEALTH: http://localhost:4000/api/leadgen/health
       QR_CREATE: http://localhost:4000/api/leadgen/v1/qrcodes
-      QR_LIST: http://localhost:4000/api/leadgen/v1/qrcodes
+      QR_LIST:   http://localhost:4000/api/leadgen/v1/qrcodes
 
     steps:
       - name: Checkout
@@ -49,6 +49,10 @@ jobs:
         run: |
           ls -la
           find . -maxdepth 2 -type d -print
+
+      - name: Compose down (clean slate)
+        run: |
+          docker compose -f backend/docker-compose.yml down -v || true
 
       - name: Validate compose file (prints effective config)
         run: |
@@ -75,11 +79,13 @@ jobs:
         run: |
           set -euxo pipefail
           retry() { n=0; until [ $n -ge 60 ]; do "$@" && break; n=$((n+1)); echo "retry $n"; sleep 2; done; test $n -lt 60; }
-          # wait for TCP ports
           retry bash -lc "echo > /dev/tcp/127.0.0.1/4001"
           retry bash -lc "echo > /dev/tcp/127.0.0.1/4000"
-          # wait for JWKS to be real JSON
           retry bash -lc "curl -sf $AUTH_URL/.well-known/jwks.json | jq -e '.keys|length > 0'"
+
+      - name: Assert JWKS alg and kid
+        run: |
+          curl -sf $AUTH_URL/.well-known/jwks.json | jq -e '.keys[0].alg=="RS256" and (.keys[0].kid!=null)'
 
       - name: Password login -> token (try admin then admin123)
         id: login
@@ -99,22 +105,26 @@ jobs:
           echo "$TOK" > token.txt
           echo "token=$TOK" >> $GITHUB_OUTPUT
 
-      - name: Check token claim shape (iss,aud,sub,tid,roles,email,exp)
+      - name: Check token claim shape and types
         run: |
           set -euxo pipefail
           TOK=$(cat token.txt)
           B64=$(echo "$TOK" | cut -d. -f2)
-          # Convert base64url -> base64 and pad to length multiple of 4
-          B64_STD=${B64//-/+}
-          B64_STD=${B64_STD//_/\/}
-          PAD=$(( (4 - ${#B64_STD} % 4) % 4 ))
-          printf -v PADSTR '%*s' "$PAD" ''
-          PADSTR=${PADSTR// /=}
-          PAYLOAD=$(printf '%s%s' "$B64_STD" "$PADSTR" | base64 -d)
+          PAD=$(( (4 - ${#B64} % 4) % 4 )); PADDING=$(printf '=%.0s' $(seq 1 $PAD))
+          PAYLOAD=$(echo "${B64}${PADDING}" | base64 -d 2>/dev/null || echo "${B64}${PADDING}" | base64 -di)
           echo "$PAYLOAD" | jq .
           KEYS=$(echo "$PAYLOAD" | jq -c 'keys|sort')
-          EXPECT='["aud","email","exp","iss","roles","sub","tid"]'
-          [ "$KEYS" = "$EXPECT" ] || (echo "Claim shape mismatch -> $KEYS"; exit 1)
+          [ "$KEYS" = '["aud","email","exp","iss","roles","sub","tid"]' ]
+          echo "$PAYLOAD" | jq -e '
+            (.iss|type)=="string" and
+            (.aud|type)=="string" and
+            (.sub|type)=="string" and
+            (.email|type)=="string" and
+            (.roles|type)=="array"  and
+            (.exp|type)=="number"   and
+            (.tid|type)=="string"   and
+            (.tid|length)==36
+          '
 
       - name: LeadGen health via gateway
         run: |
@@ -124,22 +134,39 @@ jobs:
       - name: Create QR
         run: |
           set -euxo pipefail
-          RESP=$(curl -s -w "\n%{http_code}" -X POST "$QR_CREATE" \
+          curl -sf -X POST "$QR_CREATE" \
             -H "Authorization: Bearer $(cat token.txt)" \
             -H 'Content-Type: application/json' \
-            -d '{"code":"DEMO-CI-QR","status":"active"}')
-          BODY=$(echo "$RESP" | head -n -1)
-          CODE=$(echo "$RESP" | tail -n1)
-          echo "$BODY" | tee create.json
-          echo "HTTP_STATUS=$CODE"
-          test "$CODE" -ge 200 -a "$CODE" -lt 300
-          echo "$BODY" | jq -e '.success == true' >/dev/null
+            -d '{"code":"DEMO-CI-QR","status":"active"}' | tee create.json
+          jq -e '.success == true' create.json >/dev/null
 
       - name: List QRs and assert presence
         run: |
           set -euxo pipefail
           curl -sf -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
+
+      - name: Assert tenant_id on created QR
+        run: |
+          jq -e '
+            .data
+            | map(select(.code=="DEMO-CI-QR" and .tenant_id=="00000000-0000-0000-0000-000000000000"))
+            | length >= 1
+          ' list.json >/dev/null
+
+      - name: Negative: no token -> 401
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$LEADGEN_HEALTH")
+          [ "$code" -eq 401 ]
+
+      - name: Negative: tampered token -> 401
+        run: |
+          TOK=$(cat token.txt)
+          H=$(echo "$TOK" | cut -d. -f1); P=$(echo "$TOK" | cut -d. -f2); S=$(echo "$TOK" | cut -d. -f3)
+          P_BAD="${P}a"
+          TOK_BAD="${H}.${P_BAD}.${S}"
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_BAD" "$LEADGEN_HEALTH")
+          [ "$code" -eq 401 ]
 
       - name: Dump compose logs on failure
         if: failure()
@@ -158,6 +185,7 @@ jobs:
             list.json
           if-no-files-found: ignore
 
-      - name: Compose down
+      - name: Compose down (cleanup)
         if: always()
-        run: docker compose -f backend/docker-compose.yml down -v
+        run: |
+          docker compose -f backend/docker-compose.yml down -v || true
