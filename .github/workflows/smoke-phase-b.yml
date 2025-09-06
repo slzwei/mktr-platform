@@ -134,6 +134,7 @@ jobs:
           jq -e '.success == true' create.json >/dev/null
 
       - name: List QRs and assert presence
+        shell: bash
         run: |
           set -euxo pipefail
           curl -sf -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
@@ -160,6 +161,7 @@ jobs:
           [ "$code" -eq 401 ]
 
       - name: Assert row exists in Postgres (not just via gateway)
+        shell: bash
         run: |
           set -euxo pipefail
           docker compose -f infra/docker-compose.yml exec -T db \
@@ -169,6 +171,7 @@ jobs:
 
       - name: Dump compose logs on failure
         if: failure()
+        shell: bash
         run: |
           docker compose -f infra/docker-compose.yml ps
           docker compose -f infra/docker-compose.yml logs --no-color > compose-logs.txt || true
@@ -186,5 +189,6 @@ jobs:
 
       - name: Compose down (cleanup)
         if: always()
+        shell: bash
         run: |
           docker compose -f infra/docker-compose.yml down -v || true
