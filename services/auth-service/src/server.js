@@ -33,7 +33,6 @@ app.post('/v1/auth/login', async (req, res) => {
   const claims = { iss: ISS, aud: AUD, sub: 'user-1', tid: '00000000-0000-0000-0000-000000000000', roles: ['ADMIN'], email: 'admin@example.com', exp };
   const token = await new SignJWT(claims)
     .setProtectedHeader({ alg: 'RS256', kid: publicJwk.kid })
-    .setIssuedAt(now)
     .setExpirationTime(exp)
     .sign(privateKey);
   res.json({ token, user: { id: 'user-1', email: 'admin@example.com', roles: ['ADMIN'], tid: claims.tid } });
