@@ -31,7 +31,7 @@ services:
       - db
       - auth
     ports:
-      - "3001:3001"
+      - "3301:3001"
 
   auth:
     build:
