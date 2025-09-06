@@ -523,3 +523,52 @@ curl -s -H "Authorization: Bearer $(cat /tmp/tok)" \
 **Next Step:**
 
 - Run local smoke; if OAuth secrets absent, skip OAuth and validate password flow + leadgen v1 endpoints.
+
+---
+
+## Phase B – Local Smoke Validation (Gateway → LeadGen)
+
+**Timestamp:** 2025-09-06 14:35 SGT  
+**Branch:** feat/soar-phase-b-leadgen-extraction
+
+### Proposal (ChatGPT → Cursor)
+
+- Bring up compose, run leadgen dev migration, obtain JWT via password login, verify health through gateway, then create and list a QR tag under `/api/leadgen/\*` to confirm routing and tenant scoping.
+
+### Implementation (Cursor)
+
+**Commits:**
+
+- 98a087e: fix(leadgen): quote camelCase columns in dev data copy during migration
+- bb16f02: fix(leadgen): quote s."geoCity" in qr_scans dev copy
+- bef5cff: fix(leadgen): cast enum leadStatus/status to text before LOWER() in dev copy
+- 0bf6581: fix(gateway): strip /api/leadgen prefix when proxying to leadgen-service
+
+**Completed:**
+
+- Migration executed successfully: `[leadgen:migrate] ok schema=leadgen`.
+- Health via gateway:
+
+```json
+{"ok":true,"service":"leadgen"}
+```
+
+- Create QR via gateway:
+
+```json
+{"success":true,"data":{"id":"d2dbdaaa-b410-4af2-806b-b4b89db41106","tenant_id":"00000000-0000-0000-0000-000000000000","campaign_id":null,"car_id":null,"owner_user_id":null,"code":"SMOKE-QR-1","status":"active","created_at":"2025-09-06T06:35:11.194Z","updated_at":"2025-09-06T06:35:11.194Z"}}
+```
+
+- List QRs (tenant-scoped):
+
+```json
+{"success":true,"data":[{"id":"d2dbdaaa-b410-4af2-806b-b4b89db41106","tenant_id":"00000000-0000-0000-0000-000000000000","campaign_id":null,"car_id":null,"owner_user_id":null,"code":"SMOKE-QR-1","status":"active","created_at":"2025-09-06T06:35:11.194Z","updated_at":"2025-09-06T06:35:11.194Z"}]}
+```
+
+**Variables/Functions Added:**
+
+- Gateway: path rewrite for `/api/leadgen/\*` → `LEADGEN_URL` root to align routes.
+
+**Next Step:**
+
+- Monitor CI `smoke-phase-b` on PRs touching leadgen/gateway; set `ENABLE_LEGACY_LEADGEN=false` to validate 410 behavior when desired.
