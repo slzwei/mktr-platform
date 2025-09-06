@@ -1,5 +1,18 @@
 {
   "name": "auth-service",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": { "start": "node src/server.js" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "jose": "^5.2.0",
+    "cors": "^2.8.5"
+  }
+}
+
+{
+  "name": "auth-service",
   "version": "0.1.0",
   "private": true,
   "type": "module",

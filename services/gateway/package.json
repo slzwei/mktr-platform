@@ -1,5 +1,19 @@
 {
   "name": "gateway",
+  "private": true,
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": { "start": "node src/server.js" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "http-proxy-middleware": "^3.0.0",
+    "jose": "^5.2.0",
+    "cors": "^2.8.5"
+  }
+}
+
+{
+  "name": "gateway",
   "version": "0.1.0",
   "private": true,
   "type": "module",

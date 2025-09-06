@@ -1,65 +1,68 @@
-version: '3.8'
+version: "3.9"
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: mktr-postgres
+  db:
+    image: postgres:15
+    ports: [ "55432:5432" ]
     environment:
-      POSTGRES_DB: mktr_db
-      POSTGRES_USER: mktr_user
-      POSTGRES_PASSWORD: mktr_password
-    ports:
-      - "5433:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./src/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mktr_user -d mktr_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
-  # Backend API
-  backend:
-    build: .
-    container_name: mktr-backend
-    ports:
-      - "3001:3001"
+  auth:
+    build: { context: ../services/auth-service, dockerfile: Dockerfile }
     environment:
-      NODE_ENV: development
-      PORT: 3001
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: mktr_db
-      DB_USER: mktr_user
-      DB_PASSWORD: mktr_password
-      JWT_SECRET: your-super-secret-jwt-key-change-in-production
-      JWT_EXPIRES_IN: 7d
-      CORS_ORIGIN: http://localhost:5173
+      PORT: "4001"
+      AUTH_ISSUER: "http://auth:4001"
+      AUTH_AUDIENCE: "mktr-platform"
+    ports: [ "4001:4001" ]
+    depends_on: { db: { condition: service_healthy } }
+
+  monolith:
+    build: { context: ., dockerfile: Dockerfile }
+    environment:
+      PORT: "3001"
+      ENABLE_DOMAIN_PREFIXES: "true"
+      ENABLE_LEGACY_LEADGEN: "true"
+      AUTH_JWKS_URL: "http://auth:4001/.well-known/jwks.json"
+      AUTH_ISSUER: "http://auth:4001"
+      AUTH_AUDIENCE: "mktr-platform"
+      DATABASE_URL: "postgres://postgres:postgres@db:5432/postgres"
+    ports: [ "3301:3001" ]
     depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./uploads:/app/uploads
-      - ./src:/app/src
-    restart: unless-stopped
+      db: { condition: service_healthy }
+      auth: { condition: service_started }
 
-  # Redis for caching (optional)
-  redis:
-    image: redis:7-alpine
-    container_name: mktr-redis
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  leadgen:
+    build: { context: ../services/leadgen-service, dockerfile: Dockerfile }
+    environment:
+      PORT: "4002"
+      DATABASE_URL: "postgres://postgres:postgres@db:5432/postgres"
+      PG_SCHEMA: "leadgen"
+      AUTH_JWKS_URL: "http://auth:4001/.well-known/jwks.json"
+      AUTH_ISSUER: "http://auth:4001"
+      AUTH_AUDIENCE: "mktr-platform"
+    expose: [ "4002" ]
+    depends_on:
+      db: { condition: service_healthy }
+      auth: { condition: service_started }
 
-volumes:
-  postgres_data:
-  redis_data:
+  gateway:
+    build: { context: ../services/gateway, dockerfile: Dockerfile }
+    environment:
+      PORT: "4000"
+      AUTH_JWKS_URL: "http://auth:4001/.well-known/jwks.json"
+      AUTH_ISSUER: "http://auth:4001"
+      AUTH_AUDIENCE: "mktr-platform"
+      MONOLITH_URL: "http://monolith:3001"
+      LEADGEN_URL: "http://leadgen:4002"
+    ports: [ "4000:4000" ]
+    depends_on:
+      auth: { condition: service_started }
+      monolith: { condition: service_started }
+      leadgen: { condition: service_started }
