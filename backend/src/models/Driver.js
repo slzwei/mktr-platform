@@ -156,6 +156,11 @@ const Driver = sequelize.define('Driver', {
   lastActive: {
     type: DataTypes.DATE,
     allowNull: true
+  },
+  tenant_id: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    defaultValue: '00000000-0000-0000-0000-000000000000'
   }
 }, {
   tableName: 'drivers',
@@ -174,7 +179,8 @@ const Driver = sequelize.define('Driver', {
     },
     {
       fields: ['licenseExpiration']
-    }
+    },
+    { fields: ['tenant_id'] }
   ]
 });
 

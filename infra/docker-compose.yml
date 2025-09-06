@@ -1,0 +1,66 @@
+version: '3.9'
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: mktr
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  monolith:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    environment:
+      NODE_ENV: development
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: mktr
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      JWT_SECRET: devsecret
+      ENABLE_DOMAIN_PREFIXES: "true"
+      AUTH_JWKS_URL: http://auth:4001/.well-known/jwks.json
+      AUTH_ISSUER: http://auth:4001
+      AUTH_AUDIENCE: mktr-api
+    depends_on:
+      - db
+      - auth
+    ports:
+      - "3001:3001"
+
+  auth:
+    build:
+      context: ../services/auth-service
+    environment:
+      AUTH_ISSUER: http://auth:4001
+      AUTH_AUDIENCE: mktr-api
+      DEFAULT_TENANT_ID: 00000000-0000-0000-0000-000000000000
+      SEED_ADMIN_EMAIL: admin@example.com
+      SEED_ADMIN_PASSWORD: admin123
+    ports:
+      - "4001:4001"
+
+  gateway:
+    build:
+      context: ../services/gateway
+    environment:
+      AUTH_JWKS_URL: http://auth:4001/.well-known/jwks.json
+      AUTH_ISSUER: http://auth:4001
+      AUTH_AUDIENCE: mktr-api
+      MONOLITH_URL: http://monolith:3001
+      AUTH_URL: http://auth:4001
+    depends_on:
+      - auth
+      - monolith
+    ports:
+      - "4000:4000"
+
+volumes:
+  db_data:
+
+

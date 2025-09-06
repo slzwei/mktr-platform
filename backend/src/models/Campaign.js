@@ -160,6 +160,11 @@ const Campaign = sequelize.define('Campaign', {
     validate: {
       min: 0
     }
+  },
+  tenant_id: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    defaultValue: '00000000-0000-0000-0000-000000000000'
   }
 }, {
   tableName: 'campaigns',
@@ -175,7 +180,8 @@ const Campaign = sequelize.define('Campaign', {
     },
     {
       fields: ['startDate', 'endDate']
-    }
+    },
+    { fields: ['tenant_id'] }
   ]
 });
 

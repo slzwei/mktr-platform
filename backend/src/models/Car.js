@@ -148,6 +148,11 @@ const Car = sequelize.define('Car', {
   assignment_end: {
     type: DataTypes.DATE,
     allowNull: true
+  },
+  tenant_id: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    defaultValue: '00000000-0000-0000-0000-000000000000'
   }
 }, {
   tableName: 'cars',
@@ -166,7 +171,8 @@ const Car = sequelize.define('Car', {
     },
     {
       fields: ['make', 'model']
-    }
+    },
+    { fields: ['tenant_id'] }
   ]
 });
 

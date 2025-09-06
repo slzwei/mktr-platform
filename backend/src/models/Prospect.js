@@ -202,6 +202,11 @@ const Prospect = sequelize.define('Prospect', {
     allowNull: true,
     defaultValue: {},
     comment: 'Additional data about the lead source (referrer URL, QR code location, etc.)'
+  },
+  tenant_id: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    defaultValue: '00000000-0000-0000-0000-000000000000'
   }
 }, {
   tableName: 'prospects',
@@ -232,7 +237,8 @@ const Prospect = sequelize.define('Prospect', {
     },
     {
       fields: ['nextFollowUpDate']
-    }
+    },
+    { fields: ['tenant_id'] }
   ]
 });
 

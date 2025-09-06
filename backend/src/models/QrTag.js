@@ -112,6 +112,11 @@ const QrTag = sequelize.define('QrTag', {
       model: 'qr_tags',
       key: 'id'
     }
+  },
+  tenant_id: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    defaultValue: '00000000-0000-0000-0000-000000000000'
   }
 }, {
   tableName: 'qr_tags',
@@ -126,6 +131,7 @@ const QrTag = sequelize.define('QrTag', {
       fields: ['carId']
     },
     // slug index can be added via raw SQL after backfill in SQLite
+    { fields: ['tenant_id'] }
   ]
 });
 

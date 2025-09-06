@@ -147,6 +147,11 @@ const Commission = sequelize.define('Commission', {
       model: 'users',
       key: 'id'
     }
+  },
+  tenant_id: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    defaultValue: '00000000-0000-0000-0000-000000000000'
   }
 }, {
   tableName: 'commissions',
@@ -157,7 +162,8 @@ const Commission = sequelize.define('Commission', {
     { fields: ['campaignId'] },
     { fields: ['prospectId'] },
     { fields: ['earnedDate'] },
-    { fields: ['paidDate'] }
+    { fields: ['paidDate'] },
+    { fields: ['tenant_id'] }
     // Note: avoid indexing JSON columns like 'period' in Postgres without an opclass
   ]
 });

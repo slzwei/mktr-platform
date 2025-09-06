@@ -135,6 +135,35 @@ app.use('/api/verify', verifyRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/contact', contactRoutes);
 
+// Domain-prefixed routes (feature-flagged)
+if (String(process.env.ENABLE_DOMAIN_PREFIXES).toLowerCase() === 'true') {
+  // Health endpoints per domain
+  app.get('/api/adtech/health', (req, res) => res.json({ ok: true, service: 'adtech' }));
+  app.get('/api/leadgen/health', (req, res) => res.json({ ok: true, service: 'leadgen' }));
+  app.get('/api/fleet/health', (req, res) => res.json({ ok: true, service: 'fleet' }));
+  app.get('/api/admin/health', (req, res) => res.json({ ok: true, service: 'admin' }));
+
+  // AdTech → campaigns, analytics, previews
+  app.use('/api/adtech/campaigns', campaignRoutes);
+  app.use('/api/adtech/previews', campaignPreviewRoutes);
+  app.use('/api/adtech/analytics', analyticsRoutes);
+
+  // LeadGen → qrcodes, tracker, prospects, agents, commissions
+  // Tracker routes must come BEFORE generic qrcodes routes
+  app.use('/api/leadgen/qrcodes', trackerRoutes);
+  app.use('/api/leadgen/qrcodes', qrRoutes);
+  app.use('/api/leadgen/prospects', prospectRoutes);
+  app.use('/api/leadgen/agents', agentRoutes);
+  app.use('/api/leadgen/commissions', commissionRoutes);
+
+  // Fleet → fleet, cars, drivers
+  app.use('/api/fleet', fleetRoutes);
+
+  // Admin → users (admin ops), contact as a stub
+  app.use('/api/admin/users', userRoutes);
+  app.use('/api/admin/contact', contactRoutes);
+}
+
 // Fallback: /t/:slug → /api/qrcodes/track/:slug with noindex/no-store
 app.get('/t/:slug', (req, res) => {
   res.set('X-Robots-Tag', 'noindex, nofollow');
