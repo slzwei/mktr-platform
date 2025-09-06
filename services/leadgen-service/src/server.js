@@ -7,6 +7,7 @@ import qrcodes from './routes/qrcodes.js';
 import prospects from './routes/prospects.js';
 import commissions from './routes/commissions.js';
 import agents from './routes/agents.js';
+import scans from './routes/scans.js';
 
 dotenv.config();
 
@@ -28,6 +29,7 @@ app.use('/v1/qrcodes', qrcodes);
 app.use('/v1/prospects', prospects);
 app.use('/v1/commissions', commissions);
 app.use('/v1/agents', agents);
+app.use('/v1/scans', scans);
 
 app.use((req, res) => {
   req.log.warn({ route: req.path, method: req.method }, 'Not Found');

@@ -26,6 +26,9 @@ async function authn(req, res, next) {
     const { payload } = await jwtVerify(token, jwks, { issuer: AUTH_ISSUER, audience: AUTH_AUDIENCE });
     req.headers['x-user-id'] = payload.sub || '';
     req.headers['x-tenant-id'] = payload.tid || '00000000-0000-0000-0000-000000000000';
+    if (Array.isArray(payload.roles)) {
+      req.headers['x-roles'] = payload.roles.join(',');
+    }
     next();
   } catch (e) {
     return res.status(401).json({ success: false, message: 'Invalid token' });
@@ -33,13 +36,14 @@ async function authn(req, res, next) {
 }
 
 // Public route to auth-service
-app.use('/api/auth', createProxyMiddleware({ target: AUTH_TARGET, changeOrigin: true }));
+app.use('/api/auth', createProxyMiddleware({ target: AUTH_TARGET, changeOrigin: true, proxyTimeout: 30000, timeout: 30000 }));
 
 // Protected routes to monolith
-app.use('/api/adtech', authn, createProxyMiddleware({ target: MONOLITH_TARGET, changeOrigin: true }));
-app.use('/api/leadgen', authn, createProxyMiddleware({ target: LEADGEN_TARGET, changeOrigin: true }));
-app.use('/api/fleet', authn, createProxyMiddleware({ target: MONOLITH_TARGET, changeOrigin: true }));
-app.use('/api/admin', authn, createProxyMiddleware({ target: MONOLITH_TARGET, changeOrigin: true }));
+const proxyOpts = { changeOrigin: true, proxyTimeout: 30000, timeout: 30000 };
+app.use('/api/adtech', authn, createProxyMiddleware({ target: MONOLITH_TARGET, ...proxyOpts }));
+app.use('/api/leadgen', authn, createProxyMiddleware({ target: LEADGEN_TARGET, ...proxyOpts }));
+app.use('/api/fleet', authn, createProxyMiddleware({ target: MONOLITH_TARGET, ...proxyOpts }));
+app.use('/api/admin', authn, createProxyMiddleware({ target: MONOLITH_TARGET, ...proxyOpts }));
 
 app.listen(PORT, () => {
   console.log(`Gateway listening on ${PORT}`);

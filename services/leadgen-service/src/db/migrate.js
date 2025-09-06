@@ -139,6 +139,9 @@ async function copyDevDataIfEmpty(client) {
 
 export default async function migrate() {
   await withClient(async (client) => {
+    // Ensure required extensions (dev)
+    try { await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto'); } catch {}
+    try { await client.query('CREATE EXTENSION IF NOT EXISTS uuid-ossp'); } catch {}
     await ensureSchema(client);
     await createTables(client);
     await copyDevDataIfEmpty(client);
