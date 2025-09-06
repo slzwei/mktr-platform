@@ -14,6 +14,7 @@ const AUTH_AUDIENCE = process.env.AUTH_AUDIENCE || 'mktr-api';
 
 const MONOLITH_TARGET = process.env.MONOLITH_URL || 'http://localhost:3001';
 const AUTH_TARGET = process.env.AUTH_URL || 'http://localhost:4001';
+const LEADGEN_TARGET = process.env.LEADGEN_URL || 'http://localhost:4002';
 
 const jwks = createRemoteJWKSet(new URL(AUTH_JWKS_URL));
 
@@ -36,7 +37,7 @@ app.use('/api/auth', createProxyMiddleware({ target: AUTH_TARGET, changeOrigin: 
 
 // Protected routes to monolith
 app.use('/api/adtech', authn, createProxyMiddleware({ target: MONOLITH_TARGET, changeOrigin: true }));
-app.use('/api/leadgen', authn, createProxyMiddleware({ target: MONOLITH_TARGET, changeOrigin: true }));
+app.use('/api/leadgen', authn, createProxyMiddleware({ target: LEADGEN_TARGET, changeOrigin: true }));
 app.use('/api/fleet', authn, createProxyMiddleware({ target: MONOLITH_TARGET, changeOrigin: true }));
 app.use('/api/admin', authn, createProxyMiddleware({ target: MONOLITH_TARGET, changeOrigin: true }));
 

@@ -54,11 +54,28 @@ services:
       AUTH_AUDIENCE: mktr-api
       MONOLITH_URL: http://monolith:3001
       AUTH_URL: http://auth:4001
+      LEADGEN_URL: http://leadgen:4002
     depends_on:
       - auth
       - monolith
+      - leadgen
     ports:
       - "4000:4000"
+
+  leadgen:
+    build:
+      context: ../services/leadgen-service
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://postgres:postgres@db:5432/mktr
+      PG_SCHEMA: leadgen
+      AUTH_JWKS_URL: http://auth:4001/.well-known/jwks.json
+      AUTH_ISSUER: http://auth:4001
+      AUTH_AUDIENCE: mktr-api
+    depends_on:
+      - db
+      - auth
 
 volumes:
   db_data:
