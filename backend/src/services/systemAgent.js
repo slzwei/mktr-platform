@@ -18,7 +18,7 @@ export async function initSystemAgent() {
       cachedSystemAgentId = existing.id;
       return cachedSystemAgentId;
     }
-    console.warn('DEFAULT_AGENT_ID provided but not a valid active agent. Falling back to SYSTEM_AGENT_EMAIL.');
+    console.warn('DEFAULT_AGENT_ID provided but not a valid active agent. Fallling back to SYSTEM_AGENT_EMAIL.');
   }
 
   // Find or create by email
