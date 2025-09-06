@@ -168,6 +168,14 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_BAD" "$LEADGEN_HEALTH")
           [ "$code" -eq 401 ]
 
+        run: |
+          TOK=$(cat token.txt)
+          H=$(echo "$TOK" | cut -d. -f1); P=$(echo "$TOK" | cut -d. -f2); S=$(echo "$TOK" | cut -d. -f3)
+          P_BAD="${P}a"
+          TOK_BAD="${H}.${P_BAD}.${S}"
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_BAD" "$LEADGEN_HEALTH")
+          [ "$code" -eq 401 ]
+
       - name: Dump compose logs on failure
         if: failure()
         run: |
