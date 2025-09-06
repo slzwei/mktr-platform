@@ -11,7 +11,7 @@
 - Add `tenant_id` column to domain tables with migration and backfill default UUID.
 - Scaffold a new `auth-service` that issues RS256-signed JWTs and exposes `/.well-known/jwks.json`.
 - Upgrade monolith `authenticateToken` middleware to support both JWKS verification and legacy `JWT_SECRET`.
-- Add docker-compose with a gateway service to route requests (`/api/auth/*` → auth-service, other prefixes → monolith).
+- Add docker-compose with a gateway service to route requests (`/api/auth/\*` → auth-service, other prefixes → monolith).
 - Define acceptance checks:
   - Legacy routes remain functional.
   - Prefixed routes return health JSON.
@@ -58,7 +58,7 @@ _(to be filled by Cursor with variable names, env vars, helpers, etc.)_
 **Completed:**
 
 - Monolith route prefixes with health endpoints:
-  - `backend/src/server.js`: mounts `/api/adtech/*`, `/api/leadgen/*`, `/api/fleet/*`, `/api/admin/*` when `ENABLE_DOMAIN_PREFIXES=true`.
+  - `backend/src/server.js`: mounts `/api/adtech/\*`, `/api/leadgen/\*`, `/api/fleet/\*`, `/api/admin/\*` when `ENABLE_DOMAIN_PREFIXES=true`.
   - Health: `GET /api/{adtech|leadgen|fleet|admin}/health` → `{ ok:true, service:"..." }`.
 - Tenant plumbing (Postgres):
   - Migration helper: `backend/src/database/tenantMigration.js` creates `auth.tenants` (default tenant row) and adds `tenant_id` to domain tables with backfill + `idx_<table>_tenant` indexes.
@@ -98,7 +98,7 @@ _(to be filled by Cursor with variable names, env vars, helpers, etc.)_
 - Env vars (monolith): `ENABLE_DOMAIN_PREFIXES`, `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE`, `ENABLE_AUTH_MAPPING`.
 - Helper: `backend/src/middleware/tenant.js` exports `DEFAULT_TENANT_ID`, `getTenantId(req)`.
 - Middleware function: `mapJwtToUser(payload)` inside `backend/src/middleware/auth.js`.
-- Routes mounted: `/api/adtech/*`, `/api/leadgen/*`, `/api/fleet/*`, `/api/admin/*` and health endpoints.
+- Routes mounted: `/api/adtech/\*`, `/api/leadgen/\*`, `/api/fleet/\*`, `/api/admin/\*` and health endpoints.
 - Auth-service endpoints: `/.well-known/jwks.json`, `/v1/auth/register`, `/v1/auth/login`, `/v1/auth/google`, `/v1/auth/refresh`, `/v1/auth/logout`.
 - Gateway env: `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE`, `MONOLITH_URL`, `AUTH_URL`.
 - Migration function: `ensureTenantPlumbing(sequelize)`.
@@ -262,7 +262,7 @@ Project is now ready to begin Phase B.
 **Commits:**
 
 - 03bd8e1: feat(leadgen): scaffold service + health
-- 491b827: feat(gateway): route /api/leadgen/* → leadgen | feat(leadgen): db schema, migration, authn, and v1 routes
+- 491b827: feat(gateway): route /api/leadgen/\* → leadgen | feat(leadgen): db schema, migration, authn, and v1 routes
 - 692f703: feat(gateway): forward x-roles and set proxy timeouts | feat(leadgen): scans route + uuid extensions
 
 **Completed:**
@@ -296,8 +296,8 @@ Project is now ready to begin Phase B.
 **Next Step:**
 
 - Add leadgen service to `infra/docker-compose.yml` and wire gateway route `/api/leadgen/*`.
- - Guard monolith legacy leadgen routes with `ENABLE_LEGACY_LEADGEN` and add 410 passthrough when disabled.
- - Implement Google OAuth in auth-service and M2M token endpoint.
+- Guard monolith legacy leadgen routes with `ENABLE_LEGACY_LEADGEN` and add 410 passthrough when disabled.
+- Implement Google OAuth in auth-service and M2M token endpoint.
 
 ---
 
@@ -346,7 +346,7 @@ Project is now ready to begin Phase B.
 
 **Commits:**
 
-- 491b827: feat(gateway): route /api/leadgen/* → leadgen | feat(leadgen): db schema, migration, authn, and v1 routes
+- 491b827: feat(gateway): route /api/leadgen/\* → leadgen | feat(leadgen): db schema, migration, authn, and v1 routes
 
 **Completed:**
 
