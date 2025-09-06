@@ -9,6 +9,7 @@ on:
       - "services/auth-service/**"
       - "backend/**"
       - "backend/docker-compose.yml"
+      - "infra/**"
       - ".github/workflows/smoke-phase-b.yml"
 
 permissions:
@@ -27,7 +28,7 @@ jobs:
       AUTH_URL: http://localhost:4001
       LEADGEN_HEALTH: http://localhost:4000/api/leadgen/health
       QR_CREATE: http://localhost:4000/api/leadgen/v1/qrcodes
-      QR_LIST:   http://localhost:4000/api/leadgen/v1/qrcodes
+      QR_LIST: http://localhost:4000/api/leadgen/v1/qrcodes
 
     steps:
       - name: Checkout
@@ -74,8 +75,10 @@ jobs:
         run: |
           set -euxo pipefail
           retry() { n=0; until [ $n -ge 60 ]; do "$@" && break; n=$((n+1)); echo "retry $n"; sleep 2; done; test $n -lt 60; }
+          # wait for TCP ports
           retry bash -lc "echo > /dev/tcp/127.0.0.1/4001"
           retry bash -lc "echo > /dev/tcp/127.0.0.1/4000"
+          # wait for JWKS to be real JSON
           retry bash -lc "curl -sf $AUTH_URL/.well-known/jwks.json | jq -e '.keys|length > 0'"
 
       - name: Password login -> token (try admin then admin123)
@@ -101,6 +104,7 @@ jobs:
           set -euxo pipefail
           TOK=$(cat token.txt)
           B64=$(echo "$TOK" | cut -d. -f2)
+          # handle URL-safe base64 without padding
           PAD=$(( (4 - ${#B64} % 4) % 4 ))
           PADDING=$(printf '=%.0s' $(seq 1 $PAD))
           PAYLOAD=$(echo "${B64}${PADDING}" | base64 -d 2>/dev/null || echo "${B64}${PADDING}" | base64 -di)
