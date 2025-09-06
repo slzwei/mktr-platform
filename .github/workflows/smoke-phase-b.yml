@@ -52,27 +52,27 @@ jobs:
 
       - name: Compose down (clean slate)
         run: |
-          docker compose -f backend/docker-compose.yml down -v || true
+          docker compose -f infra/docker-compose.yml down -v || true
 
       - name: Validate compose file (prints effective config)
         run: |
           set -euxo pipefail
-          docker compose -f backend/docker-compose.yml config
+          docker compose -f infra/docker-compose.yml config
 
       - name: Compose up (build + start, plain logs)
         run: |
           set -euxo pipefail
-          docker compose -f backend/docker-compose.yml up -d --build
-          docker compose -f backend/docker-compose.yml ps
+          docker compose -f infra/docker-compose.yml up -d --build
+          docker compose -f infra/docker-compose.yml ps
 
       - name: Inspect containers (ps + last 200 lines per service)
         run: |
           set -euxo pipefail
-          docker compose -f backend/docker-compose.yml ps -a
-          echo "---- AUTH LOGS ----";     docker compose -f backend/docker-compose.yml logs --no-color --tail=200 auth     || true
-          echo "---- GATEWAY LOGS ----";  docker compose -f backend/docker-compose.yml logs --no-color --tail=200 gateway  || true
-          echo "---- LEADGEN LOGS ----";  docker compose -f backend/docker-compose.yml logs --no-color --tail=200 leadgen  || true
-          echo "---- MONOLITH LOGS ----"; docker compose -f backend/docker-compose.yml logs --no-color --tail=200 monolith || true
+          docker compose -f infra/docker-compose.yml ps -a
+          echo "---- AUTH LOGS ----";     docker compose -f infra/docker-compose.yml logs --no-color --tail=200 auth     || true
+          echo "---- GATEWAY LOGS ----";  docker compose -f infra/docker-compose.yml logs --no-color --tail=200 gateway  || true
+          echo "---- LEADGEN LOGS ----";  docker compose -f infra/docker-compose.yml logs --no-color --tail=200 leadgen  || true
+          echo "---- MONOLITH LOGS ----"; docker compose -f infra/docker-compose.yml logs --no-color --tail=200 monolith || true
 
       - name: Wait for services (auth jwks & gateway tcp)
         shell: bash
@@ -171,8 +171,8 @@ jobs:
       - name: Dump compose logs on failure
         if: failure()
         run: |
-          docker compose -f backend/docker-compose.yml ps
-          docker compose -f backend/docker-compose.yml logs --no-color > compose-logs.txt || true
+          docker compose -f infra/docker-compose.yml ps
+          docker compose -f infra/docker-compose.yml logs --no-color > compose-logs.txt || true
 
       - name: Upload logs (always)
         if: always()
@@ -188,5 +188,5 @@ jobs:
       - name: Compose down (cleanup)
         if: always()
         run: |
-          docker compose -f backend/docker-compose.yml down -v || true
+          docker compose -f infra/docker-compose.yml down -v || true
 
