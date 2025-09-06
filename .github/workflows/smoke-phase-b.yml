@@ -140,12 +140,14 @@ jobs:
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
 
       - name: Negative: no token -> 401
+        shell: bash
         run: |
           set -euxo pipefail
           code=$(curl -s -o /dev/null -w "%{http_code}" "$LEADGEN_HEALTH")
           [ "$code" -eq 401 ]
 
       - name: Negative: tampered token -> 401
+        shell: bash
         run: |
           set -euxo pipefail
           TOK=$(cat token.txt)
