@@ -21,7 +21,7 @@ services:
       AUTH_ISSUER: "http://auth:4001"
       AUTH_AUDIENCE: "mktr-platform"
     ports: [ "4001:4001" ]
-    depends_on: { db: { condition: service_healthy } }
+    # No DB dependency needed; start immediately
 
   monolith:
     build: { context: ., dockerfile: Dockerfile }
