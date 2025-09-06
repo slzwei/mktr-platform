@@ -114,6 +114,9 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Feature flag for legacy leadgen
+const ENABLE_LEGACY_LEADGEN = String(process.env.ENABLE_LEGACY_LEADGEN ?? 'true').toLowerCase() !== 'false';
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -122,10 +125,17 @@ app.use('/api/campaigns', campaignPreviewRoutes);
 app.use('/api/previews', campaignPreviewRoutes);
 app.use('/api/agents', agentRoutes);
 app.use('/api/fleet', fleetRoutes);
-app.use('/api/prospects', prospectRoutes);
-// Tracker routes must come BEFORE generic qrcodes routes to avoid '/session' and '/track' being captured by '/:id'
-app.use('/api/qrcodes', trackerRoutes);
-app.use('/api/qrcodes', qrRoutes);
+if (ENABLE_LEGACY_LEADGEN) {
+  app.use('/api/prospects', prospectRoutes);
+  // Tracker routes must come BEFORE generic qrcodes routes to avoid '/session' and '/track' being captured by '/:id'
+  app.use('/api/qrcodes', trackerRoutes);
+  app.use('/api/qrcodes', qrRoutes);
+} else {
+  app.use(['/api/prospects', '/api/qrcodes', '/api/commissions'], (req, res) => {
+    console.warn('LEGACY LEADGEN PATH HIT');
+    res.status(410).json({ success: false, message: 'Use /api/leadgen/*' });
+  });
+}
 
 // Bind attribution/session for SPA lead-capture page
 app.use(leadCaptureBind);
@@ -150,12 +160,19 @@ if (String(process.env.ENABLE_DOMAIN_PREFIXES).toLowerCase() === 'true') {
   app.use('/api/adtech/analytics', analyticsRoutes);
 
   // LeadGen → qrcodes, tracker, prospects, agents, commissions
-  // Tracker routes must come BEFORE generic qrcodes routes
-  app.use('/api/leadgen/qrcodes', trackerRoutes);
-  app.use('/api/leadgen/qrcodes', qrRoutes);
-  app.use('/api/leadgen/prospects', prospectRoutes);
-  app.use('/api/leadgen/agents', agentRoutes);
-  app.use('/api/leadgen/commissions', commissionRoutes);
+  if (ENABLE_LEGACY_LEADGEN) {
+    // During transition, still serve via monolith for prefixed paths
+    app.use('/api/leadgen/qrcodes', trackerRoutes);
+    app.use('/api/leadgen/qrcodes', qrRoutes);
+    app.use('/api/leadgen/prospects', prospectRoutes);
+    app.use('/api/leadgen/agents', agentRoutes);
+    app.use('/api/leadgen/commissions', commissionRoutes);
+  } else {
+    app.use('/api/leadgen', (req, res) => {
+      console.warn('LEGACY LEADGEN PATH HIT');
+      res.status(410).json({ success: false, message: 'Use /api/leadgen/* (new service via gateway)' });
+    });
+  }
 
   // Fleet → fleet, cars, drivers
   app.use('/api/fleet', fleetRoutes);
