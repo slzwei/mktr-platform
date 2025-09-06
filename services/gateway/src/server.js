@@ -41,7 +41,7 @@ app.use('/api/auth', createProxyMiddleware({ target: AUTH_TARGET, changeOrigin: 
 // Protected routes to monolith
 const proxyOpts = { changeOrigin: true, proxyTimeout: 30000, timeout: 30000 };
 app.use('/api/adtech', authn, createProxyMiddleware({ target: MONOLITH_TARGET, ...proxyOpts }));
-app.use('/api/leadgen', authn, createProxyMiddleware({ target: LEADGEN_TARGET, ...proxyOpts }));
+app.use('/api/leadgen', authn, createProxyMiddleware({ target: LEADGEN_TARGET, ...proxyOpts, pathRewrite: { '^/api/leadgen': '' } }));
 app.use('/api/fleet', authn, createProxyMiddleware({ target: MONOLITH_TARGET, ...proxyOpts }));
 app.use('/api/admin', authn, createProxyMiddleware({ target: MONOLITH_TARGET, ...proxyOpts }));
 
