@@ -28,7 +28,7 @@ jobs:
       AUTH_URL: http://localhost:4001
       LEADGEN_HEALTH: http://localhost:4000/api/leadgen/health
       QR_CREATE: http://localhost:4000/api/leadgen/v1/qrcodes
-      QR_LIST:   http://localhost:4000/api/leadgen/v1/qrcodes
+      QR_LIST: http://localhost:4000/api/leadgen/v1/qrcodes
 
     steps:
       - name: Checkout
@@ -186,4 +186,3 @@ jobs:
         if: always()
         run: |
           docker compose -f infra/docker-compose.yml down -v || true
-
