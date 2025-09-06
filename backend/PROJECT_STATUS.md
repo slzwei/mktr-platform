@@ -412,3 +412,114 @@ Project is now ready to begin Phase B.
 - Scaffold `leadgen-service` with Express + Postgres (leadgen schema).
 - Port existing leadgen routes/controllers into the new service.
 - Update gateway routing and verify end-to-end via smoke tests.
+
+## Phase B – CTO Checkpoint & Required Fixes
+
+**Timestamp:** 2025-09-06 14:16 SGT  
+**Branch:** feat/soar-phase-b-leadgen-extraction
+
+### CTO Findings
+
+- LeadGen service, schema, gateway routing, tenant scoping, scans rate-limit, and proxy timeouts are implemented ✅
+- Missing items to complete Phase B:
+  1. Google OAuth web flow in auth-service (start + callback) with **state + PKCE**, Google ID token/userinfo validation (`aud`, `azp`, `email_verified`), and **claim shape identical to Phase A** (`iss`, `aud`, `sub`, `tid`, `roles`, `email`, `exp`) ❗
+  2. M2M auth: `POST /v1/auth/m2m/token` in auth-service (short-lived RS256, `aud="services"`, `roles=["service"]`, `tid=00000000-...-000000000000`) + minimal client util in leadgen-service ❗
+  3. Legacy compatibility switch: `ENABLE_LEGACY_LEADGEN` (default `true`) on monolith leadgen routes; when `false`, return **410 Gone** JSON hinting to `/api/leadgen/*` ❗
+  4. CI smoke job `smoke-phase-b` that brings up compose (without Google secrets), logs in via password path, hits `/api/leadgen/health`, creates & lists a `qr_tag` ❗
+  5. No cross-schema FKs in Phase B; keep `campaign_id` nullable and treat as opaque reference (documented) ✔️ policy to be enforced in code review.
+
+### Required Actions (Cursor)
+
+- Implement Google OAuth:
+  - `GET /v1/auth/google/start` → redirect with `state` + PKCE.
+  - `GET /v1/auth/google/callback?code=...&state=...`:
+    - verify `state`; exchange code with PKCE;
+    - validate Google ID token (`aud`, `azp`), require `email_verified=true` if present;
+    - upsert identity (provider `google`, `provider_subject`);
+    - issue RS256 JWT with Phase-A claim shape.
+- Implement M2M:
+  - `POST /v1/auth/m2m/token` (client_id/secret) → 5m RS256 JWT (`aud="services"`, `roles=["service"]`, `tid` default).
+  - Add a tiny fetch util in leadgen-service to obtain m2m tokens for future internal calls (not heavily used yet).
+- Legacy guard:
+  - Wrap monolith leadgen routes with `ENABLE_LEGACY_LEADGEN` (default `true`); when `false`, 410 Gone JSON: `{success:false, message:"Use /api/leadgen/*"}`
+- CI smoke:
+  - Add GitHub Action `smoke-phase-b`:
+    - start compose;
+    - call `/v1/auth/login` on auth-service → token;
+    - call gateway `/api/leadgen/health`;
+    - POST `/api/leadgen/v1/qrcodes` then GET list.
+    - Skip Google OAuth steps if `GOOGLE_*` envs are absent.
+- Cleanups:
+  - Ensure Phase B commits live on `feat/soar-phase-b-leadgen-extraction`.
+  - Remove the duplicate “Next Step” block in Milestone 3.
+
+### Acceptance Checks
+
+- `GET /.well-known/jwks.json` still returns RS256 key(s).
+- Password login still works; token accepted by gateway and leadgen routes.
+- Google OAuth end-to-end issues a JWT whose claims **exactly** match Phase A (diff any mismatch).
+- `ENABLE_LEGACY_LEADGEN=false` → monolith routes return 410 Gone; `/api/leadgen/*` works.
+- CI `smoke-phase-b` job passes on PRs touching leadgen or gateway.
+
+### Smoke Commands (local)
+
+```bash
+# 1) password login -> token
+curl -s -X POST http://localhost:4001/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com","password":"admin"}' | jq -r '.token' > /tmp/tok
+
+# 2) health via gateway
+curl -s -H "Authorization: Bearer $(cat /tmp/tok)" \
+  http://localhost:4000/api/leadgen/health
+
+# 3) create & list qr_tag
+curl -s -X POST http://localhost:4000/api/leadgen/v1/qrcodes \
+  -H "Authorization: Bearer $(cat /tmp/tok)" -H 'Content-Type: application/json' \
+  -d '{"code":"DEMO-QR-2","status":"active"}'
+
+curl -s -H "Authorization: Bearer $(cat /tmp/tok)" \
+  http://localhost:4000/api/leadgen/v1/qrcodes
+```
+
+## Phase B – Milestone 4: Google OAuth + M2M + Legacy Guard + CI
+
+**Timestamp:** 2025-09-06 14:25 SGT  
+**Branch:** feat/soar-phase-b-leadgen-extraction
+
+### Proposal (ChatGPT → Cursor)
+
+- Implement Google OAuth web flow with state + PKCE and token issuance compatible with Phase A.
+- Add service-to-service (M2M) short-lived JWT endpoint in auth-service and a minimal client util in leadgen-service.
+- Guard monolith legacy leadgen routes with `ENABLE_LEGACY_LEADGEN` (default true), returning 410 Gone when disabled.
+- Add CI smoke job for Phase B.
+
+### Implementation (Cursor)
+
+**Commits:**
+
+- b9b8204: feat(auth): Google OAuth web flow (state+PKCE) and M2M token endpoint
+- 437a38d: feat(monolith): guard legacy leadgen routes with ENABLE_LEGACY_LEADGEN; 410 passthrough when disabled
+- c5fedcc: chore(ci): add smoke-phase-b workflow (compose up, login, health, qr create+list)
+
+**Completed:**
+
+- Auth-service:
+  - `GET /v1/auth/google/start` (state + PKCE) and `GET /v1/auth/google/callback` (code exchange, ID token verify `aud`/`azp`, `email_verified` check), issues RS256 JWT with Phase-A claim shape.
+  - `POST /v1/auth/m2m/token`: 5m RS256 JWT with `aud="services"`, `roles=["service"]`, `tid`=default.
+- Leadgen-service:
+  - Minimal `src/lib/m2m.js` client to obtain M2M token.
+- Monolith:
+  - `ENABLE_LEGACY_LEADGEN` flag added (default true). When disabled, legacy leadgen paths return 410 Gone with JSON message suggesting `/api/leadgen/*`.
+- CI:
+  - `smoke-phase-b` workflow: brings up compose, login (password), health via gateway, QR create+list.
+
+**Variables/Functions Added:**
+
+- Env (auth-service): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `AUTH_M2M_CLIENT_ID`, `AUTH_M2M_CLIENT_SECRET`.
+- Env (monolith): `ENABLE_LEGACY_LEADGEN` (default true).
+- Env (leadgen-service): may reuse `AUTH_M2M_CLIENT_ID`, `AUTH_M2M_CLIENT_SECRET`, `AUTH_URL` for M2M.
+
+**Next Step:**
+
+- Run local smoke; if OAuth secrets absent, skip OAuth and validate password flow + leadgen v1 endpoints.
