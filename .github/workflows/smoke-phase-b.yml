@@ -143,6 +143,33 @@ jobs:
           curl -sf -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
 
+            - name: Assert JWKS alg and kid
+        run: |
+          curl -sf "$AUTH_URL/.well-known/jwks.json" \
+          | jq -e '.keys[0].alg=="RS256" and (.keys[0].kid|type)=="string" and (.keys[0].kid|length)>0'
+
+      - name: Negative: no token -> 401
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$LEADGEN_HEALTH")
+          [ "$code" -eq 401 ]
+
+      - name: Negative: tampered token -> 401
+        run: |
+          TOK=$(cat token.txt)
+          H=$(echo "$TOK" | cut -d. -f1); P=$(echo "$TOK" | cut -d. -f2); S=$(echo "$TOK" | cut -d. -f3)
+          P_BAD="${P}a"
+          TOK_BAD="${H}.${P_BAD}.${S}"
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_BAD" "$LEADGEN_HEALTH")
+          [ "$code" -eq 401 ]
+
+      - name: Assert row exists in Postgres (not just via gateway)
+        run: |
+          set -euxo pipefail
+          docker compose -f backend/docker-compose.yml exec -T db \
+            psql -U postgres -d postgres -c \
+            "SELECT code, tenant_id FROM leadgen.qrcodes WHERE code='DEMO-CI-QR' AND tenant_id='00000000-0000-0000-0000-000000000000' LIMIT 1;" \
+          | grep -q DEMO-CI-QR
+
       - name: Assert tenant_id on created QR
         run: |
           jq -e '
