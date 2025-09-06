@@ -43,7 +43,12 @@ jobs:
           set -x
           docker --version
           docker compose version
-
+          
+      - name: Show repo tree (top 2 levels)
+        run: |
+          ls -la
+          find . -maxdepth 2 -type d -print
+   
       - name: Validate compose file (prints effective config)
         run: |
           set -euxo pipefail
