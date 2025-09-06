@@ -35,6 +35,7 @@ import contactRoutes from './routes/contact.js';
 import { validateGoogleOAuthConfig } from './controllers/authController.js';
 import { optionalAuth } from './middleware/auth.js';
 import { initSystemAgent } from './services/systemAgent.js';
+import ensureTenantPlumbing from './database/tenantMigration.js';
 
 // Load environment variables
 dotenv.config();
@@ -258,6 +259,14 @@ async function startServer() {
     // Sync remaining models
     await sequelize.sync({ alter: false });
     console.log('✅ Database models synchronized.');
+
+    // Ensure tenant plumbing on Postgres
+    try {
+      await ensureTenantPlumbing(sequelize);
+      console.log('✅ Tenant plumbing ensured.');
+    } catch (e) {
+      console.warn('⚠️ Tenant plumbing failed (non-fatal):', e.message);
+    }
 
     // Ensure System Agent exists and cache its ID
     try {
