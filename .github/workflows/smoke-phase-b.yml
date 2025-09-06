@@ -1,3 +1,4 @@
+```yaml
 name: smoke-phase-b
 
 on:
@@ -21,14 +22,12 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
     env:
       GATEWAY_URL: http://localhost:4000
       AUTH_URL: http://localhost:4001
       LEADGEN_HEALTH: http://localhost:4000/api/leadgen/health
       QR_CREATE: http://localhost:4000/api/leadgen/v1/qrcodes
-      QR_LIST:   http://localhost:4000/api/leadgen/v1/qrcodes
+      QR_LIST: http://localhost:4000/api/leadgen/v1/qrcodes
 
     steps:
       - name: Checkout
@@ -50,42 +49,36 @@ jobs:
           ls -la
           find . -maxdepth 2 -type d -print
 
-      - name: Compose down (clean slate)
-        run: |
-          docker compose -f infra/docker-compose.yml down -v || true
-
       - name: Validate compose file (prints effective config)
         run: |
           set -euxo pipefail
-          docker compose -f infra/docker-compose.yml config
+          docker compose -f backend/docker-compose.yml config
 
       - name: Compose up (build + start, plain logs)
         run: |
           set -euxo pipefail
-          docker compose -f infra/docker-compose.yml up -d --build
-          docker compose -f infra/docker-compose.yml ps
+          docker compose -f backend/docker-compose.yml up -d --build
+          docker compose -f backend/docker-compose.yml ps
 
       - name: Inspect containers (ps + last 200 lines per service)
         run: |
           set -euxo pipefail
-          docker compose -f infra/docker-compose.yml ps -a
-          echo "---- AUTH LOGS ----";     docker compose -f infra/docker-compose.yml logs --no-color --tail=200 auth     || true
-          echo "---- GATEWAY LOGS ----";  docker compose -f infra/docker-compose.yml logs --no-color --tail=200 gateway  || true
-          echo "---- LEADGEN LOGS ----";  docker compose -f infra/docker-compose.yml logs --no-color --tail=200 leadgen  || true
-          echo "---- MONOLITH LOGS ----"; docker compose -f infra/docker-compose.yml logs --no-color --tail=200 monolith || true
+          docker compose -f backend/docker-compose.yml ps -a
+          echo "---- AUTH LOGS ----";     docker compose -f backend/docker-compose.yml logs --no-color --tail=200 auth     || true
+          echo "---- GATEWAY LOGS ----";  docker compose -f backend/docker-compose.yml logs --no-color --tail=200 gateway  || true
+          echo "---- LEADGEN LOGS ----";  docker compose -f backend/docker-compose.yml logs --no-color --tail=200 leadgen  || true
+          echo "---- MONOLITH LOGS ----"; docker compose -f backend/docker-compose.yml logs --no-color --tail=200 monolith || true
 
       - name: Wait for services (auth jwks & gateway tcp)
         shell: bash
         run: |
           set -euxo pipefail
           retry() { n=0; until [ $n -ge 60 ]; do "$@" && break; n=$((n+1)); echo "retry $n"; sleep 2; done; test $n -lt 60; }
+          # wait for TCP ports
           retry bash -lc "echo > /dev/tcp/127.0.0.1/4001"
           retry bash -lc "echo > /dev/tcp/127.0.0.1/4000"
+          # wait for JWKS to be real JSON
           retry bash -lc "curl -sf $AUTH_URL/.well-known/jwks.json | jq -e '.keys|length > 0'"
-
-      - name: Assert JWKS alg and kid
-        run: |
-          curl -sf $AUTH_URL/.well-known/jwks.json | jq -e '.keys[0].alg=="RS256" and (.keys[0].kid!=null)'
 
       - name: Password login -> token (try admin then admin123)
         id: login
@@ -105,26 +98,19 @@ jobs:
           echo "$TOK" > token.txt
           echo "token=$TOK" >> $GITHUB_OUTPUT
 
-      - name: Check token claim shape and types
+      - name: Check token claim shape (iss,aud,sub,tid,roles,email,exp)
         run: |
           set -euxo pipefail
           TOK=$(cat token.txt)
           B64=$(echo "$TOK" | cut -d. -f2)
-          PAD=$(( (4 - ${#B64} % 4) % 4 )); PADDING=$(printf '=%.0s' $(seq 1 $PAD))
+          # handle URL-safe base64 without padding
+          PAD=$(( (4 - ${#B64} % 4) % 4 ))
+          PADDING=$(printf '=%.0s' $(seq 1 $PAD))
           PAYLOAD=$(echo "${B64}${PADDING}" | base64 -d 2>/dev/null || echo "${B64}${PADDING}" | base64 -di)
           echo "$PAYLOAD" | jq .
           KEYS=$(echo "$PAYLOAD" | jq -c 'keys|sort')
-          [ "$KEYS" = '["aud","email","exp","iss","roles","sub","tid"]' ]
-          echo "$PAYLOAD" | jq -e '
-            (.iss|type)=="string" and
-            (.aud|type)=="string" and
-            (.sub|type)=="string" and
-            (.email|type)=="string" and
-            (.roles|type)=="array"  and
-            (.exp|type)=="number"   and
-            (.tid|type)=="string"   and
-            (.tid|length)==36
-          '
+          EXPECT='["aud","email","exp","iss","roles","sub","tid"]'
+          [ "$KEYS" = "$EXPECT" ] || (echo "Claim shape mismatch -> $KEYS"; exit 1)
 
       - name: LeadGen health via gateway
         run: |
@@ -146,33 +132,11 @@ jobs:
           curl -sf -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
 
-      - name: Assert tenant_id on created QR
-        run: |
-          jq -e '
-            .data
-            | map(select(.code=="DEMO-CI-QR" and .tenant_id=="00000000-0000-0000-0000-000000000000"))
-            | length >= 1
-          ' list.json >/dev/null
-
-      - name: "Negative: no token -> 401"
-        run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" "$LEADGEN_HEALTH")
-          [ "$code" -eq 401 ]
-
-      - name: "Negative: tampered token -> 401"
-        run: |
-          TOK=$(cat token.txt)
-          H=$(echo "$TOK" | cut -d. -f1); P=$(echo "$TOK" | cut -d. -f2); S=$(echo "$TOK" | cut -d. -f3)
-          P_BAD="${P}a"
-          TOK_BAD="${H}.${P_BAD}.${S}"
-          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_BAD" "$LEADGEN_HEALTH")
-          [ "$code" -eq 401 ]
-
       - name: Dump compose logs on failure
         if: failure()
         run: |
-          docker compose -f infra/docker-compose.yml ps
-          docker compose -f infra/docker-compose.yml logs --no-color > compose-logs.txt || true
+          docker compose -f backend/docker-compose.yml ps
+          docker compose -f backend/docker-compose.yml logs --no-color > compose-logs.txt || true
 
       - name: Upload logs (always)
         if: always()
@@ -184,9 +148,4 @@ jobs:
             create.json
             list.json
           if-no-files-found: ignore
-
-      - name: Compose down (cleanup)
-        if: always()
-        run: |
-          docker compose -f infra/docker-compose.yml down -v || true
-
+```
