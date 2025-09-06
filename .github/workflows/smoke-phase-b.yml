@@ -1,0 +1,117 @@
+name: smoke-phase-b
+
+on:
+  workflow_dispatch: {}     # lets you run it manually from the Actions tab
+  pull_request:
+    paths:
+      - "services/leadgen-service/**"
+      - "services/gateway/**"
+      - "services/auth-service/**"
+      - "backend/**"
+      - "infra/**"
+      - ".github/workflows/smoke-phase-b.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-phase-b-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+
+    env:
+      # These ports/paths must match infra/docker-compose.yml
+      GATEWAY_URL: http://localhost:4000
+      AUTH_URL: http://localhost:4001
+      LEADGEN_HEALTH: http://localhost:4000/api/leadgen/health
+      QR_CREATE: http://localhost:4000/api/leadgen/v1/qrcodes
+      QR_LIST:   http://localhost:4000/api/leadgen/v1/qrcodes
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq curl
+
+      - name: Show Docker & Compose versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Compose up (build + start)
+        run: |
+          docker compose -f infra/docker-compose.yml up -d --build
+          docker compose -f infra/docker-compose.yml ps
+
+      - name: Wait for services (auth/gateway/leadgen)
+        shell: bash
+        run: |
+          retry() { n=0; until [ $n -ge 30 ]; do "$@" && break; n=$((n+1)); echo "retry $n"; sleep 2; done; }
+          # Auth JWKS
+          retry curl -sf $AUTH_URL/.well-known/jwks.json | jq '.keys[0].alg'
+          # Gateway health (will return 401 if no token; just check it responds)
+          retry curl -sI $GATEWAY_URL | head -n 1
+
+      - name: Password login -> token
+        id: login
+        run: |
+          TOK=$(curl -s -X POST $AUTH_URL/v1/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"admin@example.com","password":"admin"}' | jq -r '.token')
+          if [ -z "$TOK" ] || [ "$TOK" = "null" ]; then
+            echo "Login failed or token missing"; exit 1
+          fi
+          echo "$TOK" > token.txt
+          echo "token=$TOK" >> $GITHUB_OUTPUT
+
+      - name: Check token claim shape (iss,aud,sub,tid,roles,email,exp)
+        run: |
+          TOK=$(cat token.txt)
+          PAYLOAD=$(echo "$TOK" | cut -d. -f2 | base64 -d 2>/dev/null || echo "$TOK" | cut -d. -f2 | base64 -di)
+          KEYS=$(echo "$PAYLOAD" | jq -c 'keys|sort')
+          EXPECT='["aud","email","exp","iss","roles","sub","tid"]'
+          echo "Payload keys: $KEYS"
+          [ "$KEYS" = "$EXPECT" ] || (echo "Claim shape mismatch"; echo "$PAYLOAD"; exit 1)
+
+      - name: LeadGen health via gateway
+        run: |
+          curl -sf -H "Authorization: Bearer $(cat token.txt)" "$LEADGEN_HEALTH" | jq -e '.ok == true and .service == "leadgen"'
+
+      - name: Create QR
+        run: |
+          curl -sf -X POST "$QR_CREATE" \
+            -H "Authorization: Bearer $(cat token.txt)" \
+            -H 'Content-Type: application/json' \
+            -d '{"code":"DEMO-CI-QR","status":"active"}' | tee create.json
+          jq -e '.success == true' create.json >/dev/null
+
+      - name: List QRs and assert presence
+        run: |
+          curl -sf -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
+          jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
+
+      - name: (Conditional) Google OAuth presence check
+        if: ${{ env.GOOGLE_CLIENT_ID != '' }}
+        run: echo "Google secrets detected; OAuth steps would run in an extended workflow."
+
+      - name: Dump compose logs on failure
+        if: failure()
+        run: |
+          docker compose -f infra/docker-compose.yml logs --no-color > compose-logs.txt || true
+
+      - name: Upload logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-logs
+          path: |
+            compose-logs.txt
+            create.json
+            list.json
+          if-no-files-found: ignore
