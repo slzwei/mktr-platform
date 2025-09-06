@@ -85,7 +85,8 @@ jobs:
 
       - name: Assert JWKS alg and kid
         run: |
-          curl -sf $AUTH_URL/.well-known/jwks.json | jq -e '.keys[0].alg=="RS256" and (.keys[0].kid!=null)'
+          curl -sf "$AUTH_URL/.well-known/jwks.json" \
+          | jq -e '.keys[0].alg=="RS256" and (.keys[0].kid|type)=="string" and (.keys[0].kid|length)>0'
 
       - name: Password login -> token (try admin then admin123)
         id: login
@@ -94,7 +95,7 @@ jobs:
           set -euxo pipefail
           try_login() {
             PW="$1"
-            TOK=$(curl -s -X POST $AUTH_URL/v1/auth/login \
+            TOK=$(curl -s -X POST "$AUTH_URL/v1/auth/login" \
               -H 'Content-Type: application/json' \
               -d "{\"email\":\"admin@example.com\",\"password\":\"$PW\"}" | jq -r '.token // empty')
             echo "$TOK"
@@ -103,25 +104,23 @@ jobs:
           if [ -z "$TOK" ]; then TOK=$(try_login admin123); fi
           if [ -z "$TOK" ]; then echo "Login failed with both admin and admin123"; exit 1; fi
           echo "$TOK" > token.txt
-          echo "token=$TOK" >> $GITHUB_OUTPUT
+          echo "token=$TOK" >> "$GITHUB_OUTPUT"
 
       - name: Check token claim shape (iss,aud,sub,tid,roles,email,exp)
         shell: bash
         run: |
           set -euxo pipefail
-          TOK=$(cat token.txt)
-          B64=$(echo "$TOK" | cut -d. -f2)
-          # base64url -> base64 and pad to multiple of 4
-          B64_STD=${B64//-/+}
-          B64_STD=${B64_STD//_/\/}
-          PAD=$(( (4 - ${#B64_STD} % 4) % 4 ))
-          printf -v PADSTR '%*s' "$PAD" ''
-          PADSTR=${PADSTR// /=}
-          PAYLOAD=$(printf '%s%s' "$B64_STD" "$PADSTR" | base64 -d)
-          echo "$PAYLOAD" | jq .
-          KEYS=$(echo "$PAYLOAD" | jq -c 'keys|sort')
-          EXPECT='["aud","email","exp","iss","roles","sub","tid"]'
-          [ "$KEYS" = "$EXPECT" ] || (echo "Claim shape mismatch -> $KEYS"; exit 1)
+          python3 - << 'PY'
+import base64, json
+tok = open('token.txt').read().strip()
+p = tok.split('.')[1]
+pad = '=' * (-len(p) % 4)
+payload = base64.urlsafe_b64decode(p + pad).decode()
+print(payload)
+keys = sorted(json.loads(payload).keys())
+expect = ['aud','email','exp','iss','roles','sub','tid']
+assert keys == expect, f"Claim shape mismatch -> {keys}"
+PY
 
       - name: LeadGen health via gateway
         run: |
@@ -143,20 +142,12 @@ jobs:
           curl -sf -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
 
-      - name: Assert tenant_id on created QR
-        run: |
-          jq -e '
-            .data
-            | map(select(.code=="DEMO-CI-QR" and .tenant_id=="00000000-0000-0000-0000-000000000000"))
-            | length >= 1
-          ' list.json >/dev/null
-
-      - name: "Negative: no token -> 401"
+      - name: Negative: no token -> 401
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" "$LEADGEN_HEALTH")
           [ "$code" -eq 401 ]
 
-      - name: "Negative: tampered token -> 401"
+      - name: Negative: tampered token -> 401
         run: |
           TOK=$(cat token.txt)
           H=$(echo "$TOK" | cut -d. -f1); P=$(echo "$TOK" | cut -d. -f2); S=$(echo "$TOK" | cut -d. -f3)
@@ -164,6 +155,14 @@ jobs:
           TOK_BAD="${H}.${P_BAD}.${S}"
           code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_BAD" "$LEADGEN_HEALTH")
           [ "$code" -eq 401 ]
+
+      - name: Assert row exists in Postgres (not just via gateway)
+        run: |
+          set -euxo pipefail
+          docker compose -f infra/docker-compose.yml exec -T db \
+            psql -U mktr -d mktr -c \
+            "SELECT code, tenant_id FROM leadgen.qrcodes WHERE code='DEMO-CI-QR' AND tenant_id='00000000-0000-0000-0000-000000000000' LIMIT 1;" \
+          | grep -q DEMO-CI-QR
 
       - name: Dump compose logs on failure
         if: failure()
