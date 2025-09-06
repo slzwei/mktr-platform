@@ -98,7 +98,8 @@ async function copyDevDataIfEmpty(client) {
       INSERT INTO ${SCHEMA}.qr_scans (id, tenant_id, qr_tag_id, ts, ip, ua, geo_json)
       SELECT id,
              (SELECT tenant_id FROM public.qr_tags t WHERE t.id = s."qrTagId") AS tenant_id,
-             s."qrTagId", s.ts, NULL::inet, s.ua, jsonb_build_object('referer', s.referer, 'device', s.device, 'geoCity', s.geoCity, 'botFlag', s."botFlag", 'isDuplicate', s."isDuplicate")
+             s."qrTagId", s.ts, NULL::inet, s.ua,
+             jsonb_build_object('referer', s.referer, 'device', s.device, 'geoCity', s."geoCity", 'botFlag', s."botFlag", 'isDuplicate', s."isDuplicate")
       FROM public.qr_scans s
       ON CONFLICT (id) DO NOTHING;
     `);
