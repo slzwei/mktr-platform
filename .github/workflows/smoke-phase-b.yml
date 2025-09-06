@@ -47,13 +47,13 @@ jobs:
       - name: Validate compose file (prints effective config)
         run: |
           set -euxo pipefail
-          docker compose -f infra/docker-compose.yml config
+          docker compose -f backend/docker-compose.yml config
 
       - name: Compose up (build + start, plain logs)
         run: |
           set -euxo pipefail
-          docker compose -f infra/docker-compose.yml up -d --build
-          docker compose -f infra/docker-compose.yml ps
+          docker compose -f backend/docker-compose.yml up -d --build
+          docker compose -f backend/docker-compose.yml ps
 
       - name: Wait for services (auth jwks & gateway tcp)
         shell: bash
@@ -121,8 +121,8 @@ jobs:
       - name: Dump compose logs on failure
         if: failure()
         run: |
-          docker compose -f infra/docker-compose.yml ps
-          docker compose -f infra/docker-compose.yml logs --no-color > compose-logs.txt || true
+          docker compose -f backend/docker-compose.yml ps
+          docker compose -f backend/docker-compose.yml logs --no-color > compose-logs.txt || true
 
       - name: Upload logs (always)
         if: always()
