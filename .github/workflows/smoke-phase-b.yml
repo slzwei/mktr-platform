@@ -148,7 +148,8 @@ jobs:
           if [ -n "$REL" ]; then
             docker compose -f infra/docker-compose.yml exec -T db \
               psql -U mktr -d mktr -tA -c \
-              "SELECT 1 FROM $REL WHERE code='DEMO-CI-QR' LIMIT 1;" | grep -q 1 || echo "Row not found (non-blocking)"
+              "SELECT 1 FROM $REL WHERE code='DEMO-CI-QR' LIMIT 1;" \
+            | grep -q 1 || echo "Row not found (non-blocking)"
           else
             echo "No known QR table found; skipping DB assert"
           fi
