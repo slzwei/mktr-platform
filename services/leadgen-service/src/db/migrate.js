@@ -110,7 +110,7 @@ async function copyDevDataIfEmpty(client) {
     await client.query(`
       INSERT INTO ${SCHEMA}.prospects (id, tenant_id, qr_tag_id, campaign_id, assigned_agent_id, status, payload_json, verified_at, created_at)
       SELECT id, tenant_id, "qrTagId", "campaignId", "assignedAgentId",
-             LOWER(COALESCE("leadStatus", 'new')) AS status,
+             LOWER(COALESCE("leadStatus"::text, 'new')) AS status,
              jsonb_build_object(
                'firstName', "firstName", 'lastName', "lastName", 'email', email, 'phone', phone,
                'company', company, 'jobTitle', "jobTitle", 'source', "leadSource",
@@ -130,7 +130,7 @@ async function copyDevDataIfEmpty(client) {
       INSERT INTO ${SCHEMA}.commissions (id, tenant_id, prospect_id, agent_id, amount_cents, status, created_at)
       SELECT id, tenant_id, COALESCE("prospectId", gen_random_uuid()), "agentId",
              ROUND((COALESCE(amount, 0) * 100))::int AS amount_cents,
-             LOWER(COALESCE(status, 'pending')) AS status,
+             LOWER(COALESCE(status::text, 'pending')) AS status,
              COALESCE("earnedDate", NOW()) AS created_at
       FROM public.commissions
       ON CONFLICT (id) DO NOTHING;
