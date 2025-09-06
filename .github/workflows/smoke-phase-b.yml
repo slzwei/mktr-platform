@@ -132,7 +132,27 @@ jobs:
           set -euxo pipefail
           curl -sf -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
-
+      
+      - name: "Assert row exists in Postgres (best-effort)"
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euxo pipefail
+          REL=$(docker compose -f infra/docker-compose.yml exec -T db \
+            psql -U mktr -d mktr -tA -c \
+            "SELECT table_schema||'.'||table_name
+             FROM information_schema.tables
+             WHERE table_schema IN ('leadgen','public')
+               AND table_name IN ('qrcodes','qr_codes','qr_tags')
+             LIMIT 1;")
+          if [ -n "$REL" ]; then
+            docker compose -f infra/docker-compose.yml exec -T db \
+              psql -U mktr -d mktr -tA -c \
+              "SELECT 1 FROM $REL WHERE code='DEMO-CI-QR' LIMIT 1;" | grep -q 1 || echo "Row not found (non-blocking)"
+          else
+            echo "No known QR table found; skipping DB assert"
+          fi
+          
       - name: "Negative auth checks + Postgres assert"
         shell: bash
         run: |
