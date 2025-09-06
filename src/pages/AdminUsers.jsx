@@ -48,6 +48,19 @@ export default function AdminUsers() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
 
+  // Edit dialog state
+  const [editOpen, setEditOpen] = useState(false);
+  const [edit, setEdit] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    role: 'agent',
+    isActive: true,
+    owed_leads_count: 0,
+    dateOfBirth: ''
+  });
+
   // Invite form state
   const [invite, setInvite] = useState({ email: "", full_name: "", role: "agent" });
 
@@ -132,6 +145,47 @@ export default function AdminUsers() {
   };
 
   const openDetails = (u) => { setSelectedUser(u); setDetailsOpen(true); };
+
+  const openEdit = (u) => {
+    setSelectedUser(u);
+    setEdit({
+      firstName: u.firstName || '',
+      lastName: u.lastName || '',
+      email: u.email || '',
+      phone: u.phone || '',
+      role: u.role || 'customer',
+      isActive: !!u.isActive,
+      owed_leads_count: typeof u.owed_leads_count === 'number' ? u.owed_leads_count : 0,
+      dateOfBirth: u.dateOfBirth ? String(u.dateOfBirth).slice(0, 10) : ''
+    });
+    setEditOpen(true);
+  };
+
+  const handleUpdateUser = async (e) => {
+    e?.preventDefault?.();
+    if (!selectedUser) return;
+    try {
+      const isGoogleLinked = !!(selectedUser?.googleSub);
+      const isAdmin = me?.role === 'admin';
+      await User.update(selectedUser.id, {
+        firstName: edit.firstName || undefined,
+        lastName: edit.lastName || undefined,
+        phone: edit.phone || undefined,
+        avatar: undefined,
+        role: isAdmin ? (edit.role || undefined) : undefined,
+        isActive: isAdmin ? (typeof edit.isActive === 'boolean' ? edit.isActive : undefined) : undefined,
+        owed_leads_count: (isAdmin && selectedUser.role === 'agent')
+          ? (Number.isFinite(Number(edit.owed_leads_count)) ? Number(edit.owed_leads_count) : undefined)
+          : undefined,
+        email: (isAdmin && !isGoogleLinked) ? (edit.email || undefined) : undefined,
+        dateOfBirth: edit.dateOfBirth || undefined
+      });
+      setEditOpen(false);
+      await load();
+    } catch (err) {
+      alert(err?.message || 'Failed to update user');
+    }
+  };
 
   const approve = async (u, decision) => {
     try { await User.setApprovalStatus(u.id, decision); await load(); } catch(e) { console.error(e); }
@@ -308,7 +362,7 @@ export default function AdminUsers() {
                             <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); resendInvite(u); }}>Resend Invite</Button>
                           )}
                           <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openDetails(u); }}><Eye className="w-4 h-4"/></Button>
-                          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedUser(u); }}><Edit className="w-4 h-4"/></Button>
+                          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(u); }}><Edit className="w-4 h-4"/></Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -409,6 +463,91 @@ export default function AdminUsers() {
                   )}
                 </div>
               </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit dialog */}
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Edit User</DialogTitle>
+              <DialogDescription>Update user details. Admins can also change role and status.</DialogDescription>
+            </DialogHeader>
+            {selectedUser ? (
+              <form className="space-y-4" onSubmit={handleUpdateUser}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-gray-600">First name</label>
+                    <Input value={edit.firstName} onChange={(e) => setEdit({ ...edit, firstName: e.target.value })} placeholder="Jane" />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Last name</label>
+                    <Input value={edit.lastName} onChange={(e) => setEdit({ ...edit, lastName: e.target.value })} placeholder="Doe" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-gray-600">Email</label>
+                    <Input
+                      type="email"
+                      value={edit.email}
+                      onChange={(e) => setEdit({ ...edit, email: e.target.value })}
+                      placeholder="jane@example.com"
+                      disabled={!!selectedUser?.googleSub}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600">Phone</label>
+                    <Input value={edit.phone} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} placeholder="(555) 000-0000" />
+                  </div>
+                </div>
+                {me?.role === 'admin' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-gray-600">Role</label>
+                      <Select value={edit.role} onValueChange={(v) => setEdit({ ...edit, role: v })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="admin">Admin</SelectItem>
+                          <SelectItem value="agent">Agent</SelectItem>
+                          <SelectItem value="fleet_owner">Fleet Owner</SelectItem>
+                          <SelectItem value="driver_partner">Driver</SelectItem>
+                          <SelectItem value="customer">Customer</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-600">Status</label>
+                      <Select value={edit.isActive ? 'active' : 'inactive'} onValueChange={(v) => setEdit({ ...edit, isActive: v === 'active' })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="inactive">Inactive</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+                {me?.role === 'admin' && selectedUser.role === 'agent' && (
+                  <div>
+                    <label className="text-sm text-gray-600">Leads owed</label>
+                    <Input type="number" value={edit.owed_leads_count} onChange={(e) => setEdit({ ...edit, owed_leads_count: e.target.value })} />
+                  </div>
+                )}
+                <div>
+                  <label className="text-sm text-gray-600">Date of Birth</label>
+                  <Input type="date" value={edit.dateOfBirth} onChange={(e) => setEdit({ ...edit, dateOfBirth: e.target.value })} />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+                  <Button type="submit" className="bg-blue-600 hover:bg-blue-700">Save Changes</Button>
+                </div>
+              </form>
             ) : null}
           </DialogContent>
         </Dialog>

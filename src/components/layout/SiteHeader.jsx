@@ -105,10 +105,13 @@ export default function SiteHeader() {
         .hamburger--spring.is-active .hamburger-inner::after { top: 0; transform: translate3d(0, 10px, 0) rotate(-45deg); }
 
         .fixed.inset-0.bg-black.bg-opacity-50.z-998 { z-index: 998; }
-        .mobile-menu { position: fixed; top: 0; right: 0; width: 100%; max-width: 320px; height: 100vh; background: var(--white); z-index: 999; transform: translateX(100%); transition: transform 0.3s ease; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; box-shadow: -4px 0 20px rgba(0,0,0,0.15); }
+        .mobile-menu { position: fixed; top: 0; right: 0; width: 100%; max-width: 320px; height: 100vh; height: 100dvh; background: var(--white); z-index: 999; transform: translateX(100%); transition: transform 0.3s ease; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; box-shadow: -4px 0 20px rgba(0,0,0,0.15); padding-bottom: env(safe-area-inset-bottom); padding-bottom: constant(safe-area-inset-bottom); overflow-y: auto; }
         .mobile-menu.open { transform: translateX(0); }
         .mobile-menu-link { font-family: 'PT Mono', 'Courier New', monospace; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 2px; color: var(--black); text-decoration: none; transition: opacity 0.2s ease; padding: 0.75rem 0; }
         .mobile-menu-link:hover { opacity: 0.7; }
+
+        /* Ensure footer actions clear iOS Safari bottom bar */
+        .mobile-menu-footer { padding-bottom: calc(2rem + env(safe-area-inset-bottom)); padding-bottom: calc(2rem + constant(safe-area-inset-bottom)); }
       `}</style>
 
       <header className="header">
@@ -128,6 +131,10 @@ export default function SiteHeader() {
         <button className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors" onClick={toggleMenu}>
           <X className="w-6 h-6 text-gray-600" />
         </button>
+
+        <div className="w-full px-6 pt-8 flex justify-start">
+          <Link to="/" className="logo" onClick={toggleMenu}>MKTR.</Link>
+        </div>
 
         <div className="flex flex-col items-center gap-6 flex-1 justify-center px-6">
           <Link to={createPageUrl("Homepage")} className="mobile-menu-link" onClick={toggleMenu}>
@@ -149,7 +156,7 @@ export default function SiteHeader() {
           </Link>
         </div>
 
-        <div className="w-full px-6 pb-8 space-y-4">
+        <div className="mobile-menu-footer w-full px-6 pb-8 space-y-4">
           {isAuthed ? (
             <>
               <Link to={dashboardPath} onClick={toggleMenu} className="block">

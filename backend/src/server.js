@@ -76,7 +76,7 @@ const limiter = rateLimit({
     ? (parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000)
     : 60 * 1000, // 1 minute window in dev
   max: isProd
-    ? (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100)
+    ? (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200)
     : (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000), // very high in dev
   standardHeaders: true,
   legacyHeaders: false,
