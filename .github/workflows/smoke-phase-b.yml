@@ -133,7 +133,7 @@ jobs:
           curl -sf -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
       
-      - name: "Assert row exists in Postgres (best-effort)"
+      - name: "Assert row exists in Postgres (retry, best‑effort)"
         continue-on-error: true
         shell: bash
         run: |
@@ -145,14 +145,19 @@ jobs:
              WHERE table_schema IN ('leadgen','public')
                AND table_name IN ('qrcodes','qr_codes','qr_tags')
              LIMIT 1;")
-          if [ -n "$REL" ]; then
-            docker compose -f infra/docker-compose.yml exec -T db \
-              psql -U mktr -d mktr -tA -c \
-              "SELECT 1 FROM $REL WHERE code='DEMO-CI-QR' LIMIT 1;" \
-            | grep -q 1 || echo "Row not found (non-blocking)"
-          else
-            echo "No known QR table found; skipping DB assert"
-          fi
+          if [ -z "$REL" ]; then echo "No QR table; skipping"; exit 0; fi
+          for i in $(seq 1 30); do
+            if docker compose -f infra/docker-compose.yml exec -T db \
+                 psql -U mktr -d mktr -tA -c \
+                 "SELECT 1 FROM $REL
+                  WHERE code='DEMO-CI-QR'
+                    AND tenant_id='00000000-0000-0000-0000-000000000000'
+                  LIMIT 1;" | grep -q 1; then
+              echo "Row found in $REL"; exit 0
+            fi
+            sleep 2
+          done
+          echo "Row not found after retries (non‑blocking)"
           
       - name: "Negative auth checks + Postgres assert"
         shell: bash
