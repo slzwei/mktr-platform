@@ -133,17 +133,16 @@ jobs:
           curl -sf -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
 
-      - name: Negative: no token -> 401
+      - name: "Negative auth checks + Postgres assert"
         shell: bash
         run: |
           set -euxo pipefail
+
+          # no token -> 401
           code=$(curl -s -o /dev/null -w "%{http_code}" "$LEADGEN_HEALTH")
           [ "$code" -eq 401 ]
 
-      - name: Negative: tampered token -> 401
-        shell: bash
-        run: |
-          set -euxo pipefail
+          # tampered token -> 401
           TOK=$(cat token.txt)
           H=$(echo "$TOK" | cut -d. -f1)
           P=$(echo "$TOK" | cut -d. -f2)
@@ -153,10 +152,7 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_BAD" "$LEADGEN_HEALTH")
           [ "$code" -eq 401 ]
 
-      - name: Assert row exists in Postgres (not just via gateway)
-        shell: bash
-        run: |
-          set -euxo pipefail
+          # Postgres persistence
           docker compose -f infra/docker-compose.yml exec -T db \
             psql -U mktr -d mktr -c \
             "SELECT code, tenant_id FROM leadgen.qrcodes WHERE code='DEMO-CI-QR' AND tenant_id='00000000-0000-0000-0000-000000000000' LIMIT 1;" \
