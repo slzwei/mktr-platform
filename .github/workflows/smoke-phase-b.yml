@@ -3,12 +3,12 @@ name: smoke-phase-b
 on:
   pull_request:
     paths:
-      - 'services/auth-service/**'
-      - 'services/gateway/**'
-      - 'services/leadgen-service/**'
-      - 'backend/**'
-      - 'backend/docker-compose.yml'
-      - '.github/workflows/smoke-phase-b.yml'
+      - "services/auth-service/**"
+      - "services/gateway/**"
+      - "services/leadgen-service/**"
+      - "backend/**"
+      - "backend/docker-compose.yml"
+      - ".github/workflows/smoke-phase-b.yml"
 
 jobs:
   smoke:
@@ -24,10 +24,19 @@ jobs:
       - name: Compose up
         run: |
           docker compose -f backend/docker-compose.yml up -d --build
-          echo "Waiting for services..."
-          for i in {1..60}; do
-            sleep 3
-            if curl -sf http://localhost:4001/.well-known/jwks.json >/dev/null; then break; fi
+          echo "Waiting for auth-service on :4001 (JWKS)..."
+          tries=0
+          until curl -sf http://localhost:4001/.well-known/jwks.json >/dev/null; do
+            tries=$((tries+1))
+            echo "retry $tries"
+            if [ "$tries" -ge 60 ]; then
+              echo "auth-service did not start in time; dumping compose status and logs" >&2
+              docker compose -f backend/docker-compose.yml ps || true
+              docker compose -f backend/docker-compose.yml logs --no-color --tail=200 auth || true
+              docker compose -f backend/docker-compose.yml logs --no-color --tail=200 gateway || true
+              exit 1
+            fi
+            sleep 2
           done
 
       - name: Login (password)
@@ -77,7 +86,3 @@ jobs:
       - name: Compose down
         if: always()
         run: docker compose -f backend/docker-compose.yml down -v
-
- 
-
-
