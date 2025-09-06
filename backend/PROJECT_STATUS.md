@@ -152,3 +152,263 @@ _(to be filled by Cursor with variable names, env vars, helpers, etc.)_
 **Next Step:**
 
 - Continue documenting new variables/functions in subsequent phases; link code references to this section for faster onboarding.
+
+## Phase A – Infra Fixes for Compose/Docker
+
+**Timestamp:** 2025-09-06 14:50 SGT  
+**Branch:** feat/soar-phase-a-auth-and-prefixes
+
+### Proposal (ChatGPT → Cursor)
+
+- Unblock local stack by adding missing service Dockerfiles, fixing monolith build context and start script issues, resolving port binding conflicts, and adjusting npm install strategy to avoid lockfile CI failures after adding new deps. Verify end-to-end: JWKS, login, and prefixed health via gateway.
+
+### Implementation (Cursor)
+
+**Commits:**
+
+- 5a22680: chore(infra): add Dockerfiles for auth-service and gateway
+- 439f2f7: chore(infra): change Postgres host port to 55432 to avoid local conflicts
+- 4f13d86: chore(infra): change monolith host port to 3301 to avoid local conflicts
+- cb9fb28: fix(infra): build monolith from backend context; container failed missing start script
+- d27dbfb: fix(monolith): add jose dep required for RS256/JWKS verification
+- 6275436: fix(infra): use npm install in backend Dockerfile to resolve lockfile mismatch after adding jose
+
+**Completed:**
+
+- Added Dockerfiles:
+  - `services/auth-service/Dockerfile` (Node 18, `npm install --omit=dev`, expose 4001).
+  - `services/gateway/Dockerfile` (Node 18, `npm install --omit=dev`, expose 4000).
+- Fixed compose build context for monolith:
+  - `infra/docker-compose.yml`: `monolith.build.context: ../backend`, `dockerfile: Dockerfile`.
+- Resolved port conflicts on host:
+  - Postgres host port `5432` → `55432` in `infra/docker-compose.yml`.
+  - Monolith host port `3001` → `3301` in `infra/docker-compose.yml` (container still listens on 3001).
+- Resolved npm lockfile errors in containers:
+  - `backend/Dockerfile`: `npm ci --only=production` → `npm install --omit=dev`.
+  - Service Dockerfiles already use `npm install --omit=dev`.
+- Installed missing dependency for RS256/JWKS:
+  - `backend/package.json`: added `"jose": "^5.2.0"`.
+- Verified end-to-end in local stack:
+  - `GET http://localhost:4001/.well-known/jwks.json` returns `{ kid, alg: RS256, use: sig }`.
+  - `POST http://localhost:4001/v1/auth/login` returns RS256 JWT including claims `sub`, `tid`, `roles`, `email`, `iss`, `aud`, `exp`.
+  - `GET http://localhost:4000/api/adtech/health` with Bearer token returns `{ ok: true, service: "adtech" }`.
+
+**Variables/Functions Added:**
+
+- Dockerfiles:
+  - `services/auth-service/Dockerfile`: container runtime for auth-service.
+  - `services/gateway/Dockerfile`: container runtime for gateway.
+- Compose updates in `infra/docker-compose.yml`:
+  - `db.ports: 55432:5432` (host:container).
+  - `monolith.ports: 3301:3001`.
+  - `monolith.build.context: ../backend`.
+- Dependency:
+  - `backend/package.json`: `jose` library used by `backend/src/middleware/auth.js` for JWKS verification.
+
+**Next Step:**
+
+- Keep compose stable and add smoke tests in CI for JWKS/login/health.
+- Proceed to Phase B: implement Google OAuth in `services/auth-service` and begin extracting LeadGen into a dedicated service (re-route via gateway) while retaining shared Postgres with schema separation.
+
+## Phase A – Auth + Prefixes (Closure)
+
+**Timestamp:** 2025-09-06 13:58 SGT  
+**Branch:** feat/soar-phase-a-auth-and-prefixes
+
+### CTO Verification
+
+- All Phase A acceptance criteria were confirmed:
+  - Domain prefixes live with health endpoints.
+  - Tenant plumbing added (`tenant_id` migration, default tenant, indexes).
+  - Auth-service scaffolded with RS256 JWT + JWKS, login working.
+  - Monolith JWT middleware upgraded for RS256 + legacy fallback.
+  - Gateway and docker-compose stack operational.
+  - Smoke tests successful: JWKS fetch, login → token, health endpoint via gateway with token.
+  - Legacy JWT tokens still accepted.
+- Outstanding note: add CI automation for smoke tests (tracked separately).
+
+### Status
+
+Phase A is complete and officially closed.  
+Project is now ready to begin Phase B.
+
+---
+
+## Phase B – LeadGen Extraction + Google OAuth (Proposal)
+
+**Timestamp:** 2025-09-06 15:10 SGT  
+**Branch:** feat/soar-phase-b-leadgen-extraction
+
+### Proposal (ChatGPT → Cursor)
+
+- Extract LeadGen-related routes into a dedicated `services/leadgen-service`, including:
+  - `qrcodes.js`
+  - `prospects.js`
+  - `agents.js`
+  - `commissions.js`
+  - related attribution/scan logic
+- Keep Postgres shared but move data into a new `leadgen` schema.
+- Update gateway to route `/api/leadgen/*` → leadgen-service.
+- Implement Google OAuth in `auth-service` (`/v1/auth/google`) with full token issuance.
+- Add service-to-service authentication for leadgen ↔ auth ↔ monolith.
+- Acceptance checks:
+  - Legacy leadgen routes still functional during transition.
+  - New service reachable via gateway.
+  - Leadgen queries scoped by `tenant_id`.
+  - Google OAuth login returns JWT compatible with monolith.
+
+### Implementation (Cursor)
+
+**Commits:**
+
+- 03bd8e1: feat(leadgen): scaffold service + health
+- 491b827: feat(gateway): route /api/leadgen/* → leadgen | feat(leadgen): db schema, migration, authn, and v1 routes
+- 692f703: feat(gateway): forward x-roles and set proxy timeouts | feat(leadgen): scans route + uuid extensions
+
+**Completed:**
+
+- Scaffolded `services/leadgen-service` with Express and health endpoint:
+  - `package.json`, `src/server.js`, `Dockerfile`, `README.md`.
+  - Health: `GET /health` → `{ ok: true, service: "leadgen" }`.
+- Added leadgen service to compose and gateway route to it:
+  - `infra/docker-compose.yml`: service `leadgen` (internal port 4002), envs wired.
+  - `services/gateway/src/server.js`: `/api/leadgen/*` → `LEADGEN_URL` (authn at gateway, forwards headers).
+- Implemented leadgen DB layer and idempotent migration:
+  - `services/leadgen-service/src/db/index.js` (pg pool, schema search_path), `src/db/migrate.js` (creates schema/tables, copies dev data if empty).
+- Implemented auth middleware and v1 endpoints with tenant scoping:
+  - `src/middleware/authn.js` (JWKS RS256 verify, require tenant).
+  - Routes: `qrcodes`, `prospects`, `commissions`, `agents` under `/v1/*`.
+  - `scans` endpoint with basic per-IP rate limit under `/v1/scans`.
+
+**Variables/Functions Added:**
+
+- Env (leadgen-service): `LOG_LEVEL` (default `info`).
+- Port: `4002` (container).
+- Env (compose/gateway): `LEADGEN_URL=http://leadgen:4002`.
+- Env (leadgen-service): `DATABASE_URL`, `PG_SCHEMA`, `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE`.
+- Endpoints (leadgen-service):
+  - `GET /health`
+  - `POST /v1/qrcodes`, `GET /v1/qrcodes/:id`, `GET /v1/qrcodes`
+  - `POST /v1/prospects`, `GET /v1/prospects/:id`, `GET /v1/prospects`
+  - `POST /v1/commissions`, `GET /v1/commissions/:id`, `GET /v1/commissions`
+  - `GET /v1/agents`
+
+**Next Step:**
+
+- Add leadgen service to `infra/docker-compose.yml` and wire gateway route `/api/leadgen/*`.
+ - Guard monolith legacy leadgen routes with `ENABLE_LEGACY_LEADGEN` and add 410 passthrough when disabled.
+ - Implement Google OAuth in auth-service and M2M token endpoint.
+
+---
+
+## Phase B – Milestone 1: LeadGen Scaffold (Health)
+
+**Timestamp:** 2025-09-06 14:13 SGT  
+**Branch:** feat/soar-phase-a-auth-and-prefixes
+
+### Proposal (ChatGPT → Cursor)
+
+- Scaffold `services/leadgen-service` with Express, JSON logging, and health endpoint. Prepare Docker image.
+
+### Implementation (Cursor)
+
+**Commits:**
+
+- 03bd8e1: feat(leadgen): scaffold service + health
+
+**Completed:**
+
+- Created service skeleton and health:
+  - Files: `services/leadgen-service/package.json`, `src/server.js`, `Dockerfile`, `README.md`.
+  - Endpoint: `GET /health` → `{ ok: true, service: "leadgen" }`.
+- Logging: `pino` + `pino-http` with `service: leadgen-service`.
+
+**Variables/Functions Added:**
+
+- Env (leadgen-service): `LOG_LEVEL=info` (default), `PORT=4002`.
+
+**Next Step:**
+
+- Add service to compose and wire gateway route to `/api/leadgen/*`.
+
+---
+
+## Phase B – Milestone 2: Compose + Gateway + DB Schema + V1 Endpoints
+
+**Timestamp:** 2025-09-06 14:13 SGT  
+**Branch:** feat/soar-phase-a-auth-and-prefixes
+
+### Proposal (ChatGPT → Cursor)
+
+- Add `leadgen` service to compose, route `/api/leadgen/*` → leadgen via gateway, implement Postgres schema `leadgen` with idempotent migration, and add tenant-scoped v1 endpoints.
+
+### Implementation (Cursor)
+
+**Commits:**
+
+- 491b827: feat(gateway): route /api/leadgen/* → leadgen | feat(leadgen): db schema, migration, authn, and v1 routes
+
+**Completed:**
+
+- Compose and gateway:
+  - `infra/docker-compose.yml`: added `leadgen` (internal port 4002), wired env.
+  - `services/gateway/src/server.js`: added `LEADGEN_URL` target; `/api/leadgen/*` proxy.
+- Database + migration (idempotent; dev-only copy):
+  - `services/leadgen-service/src/db/index.js`: pg pool + `SET search_path TO leadgen, public`.
+  - `services/leadgen-service/src/db/migrate.js`: creates schema/tables and copies from public tables if empty.
+- Auth middleware + routes (tenant-scoped):
+  - `src/middleware/authn.js`: RS256 verify via JWKS; `requireTenant` from `tid` or `x-tenant-id`.
+  - Endpoints under `/v1/*`: `qrcodes`, `prospects`, `commissions`, `agents`.
+
+**Variables/Functions Added:**
+
+- Env (gateway): `LEADGEN_URL=http://leadgen:4002`.
+- Env (leadgen-service): `DATABASE_URL`, `PG_SCHEMA=leadgen`, `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE`, `LOG_LEVEL`.
+- Endpoints:
+  - `POST /v1/qrcodes`, `GET /v1/qrcodes/:id`, `GET /v1/qrcodes`
+  - `POST /v1/prospects`, `GET /v1/prospects/:id`, `GET /v1/prospects`
+  - `POST /v1/commissions`, `GET /v1/commissions/:id`, `GET /v1/commissions`
+  - `GET /v1/agents`
+
+**Next Step:**
+
+- Add scans endpoint and gateway header forwarding/timeouts; ensure UUID extensions in migration.
+
+---
+
+## Phase B – Milestone 3: Scans + Gateway Hardening
+
+**Timestamp:** 2025-09-06 14:13 SGT  
+**Branch:** feat/soar-phase-a-auth-and-prefixes
+
+### Proposal (ChatGPT → Cursor)
+
+- Add `POST /v1/scans` with basic per-IP rate limit; forward `x-roles` via gateway; set 30s proxy timeout; ensure UUID extensions in migration.
+
+### Implementation (Cursor)
+
+**Commits:**
+
+- 692f703: feat(gateway): forward x-roles and set proxy timeouts | feat(leadgen): scans route + uuid extensions
+
+**Completed:**
+
+- Gateway: forwards `x-roles` and sets `proxyTimeout/timeout=30000` for all proxied routes.
+- Leadgen: added `POST /v1/scans` with naive per-IP limit (60/min) and inserts into `leadgen.qr_scans`.
+- Migration: attempts to enable `pgcrypto` and `uuid-ossp`.
+
+**Variables/Functions Added:**
+
+- Endpoint: `POST /v1/scans`.
+- Headers forwarded by gateway: `x-user-id`, `x-tenant-id`, `x-roles`.
+
+**Next Step:**
+
+- Guard monolith legacy leadgen routes with `ENABLE_LEGACY_LEADGEN` and passthrough 410 when disabled.
+- Implement Google OAuth web flow in auth-service and M2M token endpoint; add minimal M2M client in leadgen.
+
+**Next Step:**
+
+- Scaffold `leadgen-service` with Express + Postgres (leadgen schema).
+- Port existing leadgen routes/controllers into the new service.
+- Update gateway routing and verify end-to-end via smoke tests.
