@@ -668,6 +668,7 @@ CI smoke-phase-b passes on PRs.
 ### Implementation (Cursor)
 
 **Commits:**
+
 - 81f948b: feat(auth): oauth state+pkce hardening and id token validation
 - 0469d11: feat(auth): m2m rs256 tokens (aud=services)
 - bfc9dd3: feat(leadgen): add m2m client with in-memory cache
@@ -677,6 +678,7 @@ CI smoke-phase-b passes on PRs.
 - 43e505d: docs: runbook for phase b
 
 **Completed:**
+
 - Google OAuth hardened: state+PKCE 10m TTL, ID token `aud/azp/email_verified` checks
 - RS256 JWT issuance with exact Phase A claim shape for password + Google
 - M2M 5-min tokens (`aud="services"`, `roles=["service"]`, default tid)
@@ -685,12 +687,14 @@ CI smoke-phase-b passes on PRs.
 - Tenant scoping tests for qrcodes/prospects/commissions/agents
 
 **Variables/Functions Added:**
+
 - auth-service endpoints: `/v1/auth/google/start`, `/v1/auth/google/callback`, `/v1/auth/m2m/token`
 - leadgen-service: `src/lib/m2m.js#getM2MToken()`
 - monolith: `ENABLE_LEGACY_LEADGEN` flag behavior (410)
 - ci: `.github/workflows/smoke-phase-b.yml`
 
 **CTO Verification**
+
 - Tokens from password and Google verified to have exact claim shape (iss,aud,sub,tid,roles,email,exp)
 - Gateway accepts tokens; `/api/leadgen/health` OK
 - Legacy routes 410 when disabled; gateway routes OK
@@ -723,8 +727,8 @@ curl -s -H "Authorization: Bearer $(cat /tmp/tok)" \
 
 ### tiny changelog
 
-1) harden google oauth with state+pkce and id token validation
-2) add m2m 5-min rs256 tokens (aud="services") and leadgen client cache
-3) guard legacy leadgen routes via ENABLE_LEGACY_LEADGEN → 410 when off
-4) add smoke-phase-b ci (compose, login, health, qr create/list)
-5) add tenant scoping tests and runbook
+1. harden google oauth with state+pkce and id token validation
+2. add m2m 5-min rs256 tokens (aud="services") and leadgen client cache
+3. guard legacy leadgen routes via ENABLE_LEGACY_LEADGEN → 410 when off
+4. add smoke-phase-b ci (compose, login, health, qr create/list)
+5. add tenant scoping tests and runbook
