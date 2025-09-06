@@ -1,8 +1,7 @@
-```yaml
 name: smoke-phase-b
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
   pull_request:
     paths:
       - "services/leadgen-service/**"
@@ -22,6 +21,7 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       GATEWAY_URL: http://localhost:4000
       AUTH_URL: http://localhost:4001
@@ -74,10 +74,8 @@ jobs:
         run: |
           set -euxo pipefail
           retry() { n=0; until [ $n -ge 60 ]; do "$@" && break; n=$((n+1)); echo "retry $n"; sleep 2; done; test $n -lt 60; }
-          # wait for TCP ports
           retry bash -lc "echo > /dev/tcp/127.0.0.1/4001"
           retry bash -lc "echo > /dev/tcp/127.0.0.1/4000"
-          # wait for JWKS to be real JSON
           retry bash -lc "curl -sf $AUTH_URL/.well-known/jwks.json | jq -e '.keys|length > 0'"
 
       - name: Password login -> token (try admin then admin123)
@@ -87,7 +85,7 @@ jobs:
           set -euxo pipefail
           try_login() {
             PW="$1"
-            TOK=$(curl -s -X POST $AUTH_URL/v1/auth/login \
+            TOK=$(curl -s -X POST "$AUTH_URL/v1/auth/login" \
               -H 'Content-Type: application/json' \
               -d "{\"email\":\"admin@example.com\",\"password\":\"$PW\"}" | jq -r '.token // empty')
             echo "$TOK"
@@ -96,14 +94,14 @@ jobs:
           if [ -z "$TOK" ]; then TOK=$(try_login admin123); fi
           if [ -z "$TOK" ]; then echo "Login failed with both admin and admin123"; exit 1; fi
           echo "$TOK" > token.txt
-          echo "token=$TOK" >> $GITHUB_OUTPUT
+          echo "token=$TOK" >> "$GITHUB_OUTPUT"
 
       - name: Check token claim shape (iss,aud,sub,tid,roles,email,exp)
+        shell: bash
         run: |
           set -euxo pipefail
           TOK=$(cat token.txt)
           B64=$(echo "$TOK" | cut -d. -f2)
-          # handle URL-safe base64 without padding
           PAD=$(( (4 - ${#B64} % 4) % 4 ))
           PADDING=$(printf '=%.0s' $(seq 1 $PAD))
           PAYLOAD=$(echo "${B64}${PADDING}" | base64 -d 2>/dev/null || echo "${B64}${PADDING}" | base64 -di)
@@ -148,4 +146,3 @@ jobs:
             create.json
             list.json
           if-no-files-found: ignore
-```
