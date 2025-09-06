@@ -1,7 +1,8 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import { randomUUID } from 'crypto';
-import { generateKeyPair, exportJWK, SignJWT } from 'jose';
+import { generateKeyPair, exportJWK, SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 
 dotenv.config();
@@ -13,6 +14,11 @@ const PORT = process.env.PORT || 4001;
 const ISSUER = process.env.AUTH_ISSUER || 'http://localhost:4001';
 const AUDIENCE = process.env.AUTH_AUDIENCE || 'mktr-api';
 const DEFAULT_TENANT_ID = process.env.DEFAULT_TENANT_ID || '00000000-0000-0000-0000-000000000000';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || '';
+const AUTH_M2M_CLIENT_ID = process.env.AUTH_M2M_CLIENT_ID || '';
+const AUTH_M2M_CLIENT_SECRET = process.env.AUTH_M2M_CLIENT_SECRET || '';
 
 let currentPrivateKey;
 let currentKid;
@@ -31,6 +37,26 @@ async function initKeys() {
 
 // in-memory user store for dev; replace with auth schema later
 const users = new Map();
+const googleIdentities = new Map(); // provider_subject -> userId
+const oauthStates = new Map(); // state -> { codeVerifier, createdAt }
+
+function base64url(input) {
+  return input.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function generatePkcePair() {
+  const codeVerifier = base64url(crypto.randomBytes(64));
+  const hash = crypto.createHash('sha256').update(codeVerifier).digest();
+  const codeChallenge = base64url(hash);
+  return { codeVerifier, codeChallenge };
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [state, meta] of oauthStates.entries()) {
+    if (now - meta.createdAt > 10 * 60 * 1000) oauthStates.delete(state);
+  }
+}, 60 * 1000).unref();
 
 function seedAdmin() {
   const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@example.com';
@@ -87,6 +113,135 @@ app.post('/v1/auth/login', async (req, res) => {
 
 app.post('/v1/auth/google', (req, res) => {
   res.status(501).json({ success: false, message: 'Not implemented' });
+});
+
+// Google OAuth start (web)
+app.get('/v1/auth/google/start', (req, res) => {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_REDIRECT_URI) {
+    return res.status(500).json({ success: false, message: 'Google OAuth not configured' });
+  }
+  const state = base64url(crypto.randomBytes(16));
+  const { codeVerifier, codeChallenge } = generatePkcePair();
+  oauthStates.set(state, { codeVerifier, createdAt: Date.now() });
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: GOOGLE_REDIRECT_URI,
+    response_type: 'code',
+    scope: 'openid email profile',
+    state,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256',
+    access_type: 'offline',
+    include_granted_scopes: 'true'
+  });
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  return res.redirect(302, url);
+});
+
+// Google OAuth callback
+app.get('/v1/auth/google/callback', async (req, res) => {
+  try {
+    const { code, state } = req.query || {};
+    if (!code || !state) return res.status(400).json({ success: false, message: 'Missing code/state' });
+    const record = oauthStates.get(state);
+    oauthStates.delete(state);
+    if (!record) return res.status(400).json({ success: false, message: 'Invalid state' });
+    const params = new URLSearchParams({
+      code,
+      client_id: GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
+      redirect_uri: GOOGLE_REDIRECT_URI,
+      grant_type: 'authorization_code',
+      code_verifier: record.codeVerifier
+    });
+    const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+    if (!tokenResp.ok) {
+      const text = await tokenResp.text();
+      return res.status(401).json({ success: false, message: 'Token exchange failed', detail: text });
+    }
+    const tokenJson = await tokenResp.json();
+    const { id_token: idToken, access_token: accessToken } = tokenJson;
+    if (!idToken) return res.status(401).json({ success: false, message: 'Missing id_token' });
+
+    // Verify Google ID token
+    const googleJwks = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
+    const { payload } = await jwtVerify(idToken, googleJwks, {
+      issuer: ['https://accounts.google.com', 'accounts.google.com'],
+      audience: GOOGLE_CLIENT_ID
+    });
+    if (payload.azp && payload.azp !== GOOGLE_CLIENT_ID) {
+      return res.status(401).json({ success: false, message: 'Invalid azp' });
+    }
+    if (payload.email_verified === false) {
+      return res.status(401).json({ success: false, message: 'Email not verified' });
+    }
+
+    // Fetch userinfo (optional, enrich)
+    let userinfo = {};
+    if (accessToken) {
+      try {
+        const uiResp = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        if (uiResp.ok) userinfo = await uiResp.json();
+      } catch {}
+    }
+
+    // Identity linking / user upsert (in-memory for dev)
+    const providerSubject = String(payload.sub);
+    let userId = googleIdentities.get(providerSubject);
+    const email = String(payload.email || userinfo.email || '');
+    if (!userId) {
+      // try existing by email
+      const existing = Array.from(users.values()).find(u => u.email === email);
+      if (existing) {
+        userId = existing.id;
+      } else {
+        // create
+        userId = randomUUID();
+        users.set(email || providerSubject, {
+          id: userId,
+          email: email || `${providerSubject}@google.local`,
+          passwordHash: '',
+          roleKeys: ['customer'],
+          tenantId: DEFAULT_TENANT_ID
+        });
+      }
+      googleIdentities.set(providerSubject, userId);
+    }
+
+    const user = Array.from(users.values()).find(u => u.id === userId);
+    const token = await signJwt({ sub: user.id, tid: user.tenantId, roles: user.roleKeys, email: user.email });
+    return res.redirect(302, `${process.env.GOOGLE_POST_LOGIN_REDIRECT || '/' }#token=${encodeURIComponent(token)}`);
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'OAuth failed' });
+  }
+});
+
+// M2M token issuance
+app.post('/v1/auth/m2m/token', async (req, res) => {
+  try {
+    const { client_id, client_secret } = req.body || {};
+    if (!client_id || !client_secret) return res.status(400).json({ success: false, message: 'Invalid payload' });
+    if (client_id !== AUTH_M2M_CLIENT_ID || client_secret !== AUTH_M2M_CLIENT_SECRET) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const token = await new SignJWT({ tid: DEFAULT_TENANT_ID, roles: ['service'] })
+      .setProtectedHeader({ alg: 'RS256', kid: currentKid })
+      .setIssuer(ISSUER)
+      .setAudience('services')
+      .setSubject(client_id)
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(currentPrivateKey);
+    return res.json({ success: true, data: { token } });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
 });
 
 app.post('/v1/auth/refresh', (req, res) => {
