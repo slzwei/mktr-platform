@@ -104,10 +104,12 @@ jobs:
           set -euxo pipefail
           TOK=$(cat token.txt)
           B64=$(echo "$TOK" | cut -d. -f2)
-          # handle URL-safe base64 without padding
-          PAD=$(( (4 - ${#B64} % 4) % 4 ))
-          PADDING=$(printf '=%.0s' $(seq 1 $PAD))
-          PAYLOAD=$(echo "${B64}${PADDING}" | base64 -d 2>/dev/null || echo "${B64}${PADDING}" | base64 -di)
+          # Convert base64url -> base64 and pad to length multiple of 4
+          B64_STD=$(echo "$B64" | tr '-_' '+/')
+          PAD=$(( (4 - ${#B64_STD} % 4) % 4 ))
+          printf -v PADSTR '%*s' "$PAD" ''
+          PADSTR=${PADSTR// /=}
+          PAYLOAD=$(printf '%s%s' "$B64_STD" "$PADSTR" | base64 -d)
           echo "$PAYLOAD" | jq .
           KEYS=$(echo "$PAYLOAD" | jq -c 'keys|sort')
           EXPECT='["aud","email","exp","iss","roles","sub","tid"]'
