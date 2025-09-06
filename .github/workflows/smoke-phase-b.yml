@@ -28,7 +28,7 @@ jobs:
       AUTH_URL: http://localhost:4001
       LEADGEN_HEALTH: http://localhost:4000/api/leadgen/health
       QR_CREATE: http://localhost:4000/api/leadgen/v1/qrcodes
-      QR_LIST:   http://localhost:4000/api/leadgen/v1/qrcodes
+      QR_LIST: http://localhost:4000/api/leadgen/v1/qrcodes
 
     steps:
       - name: Checkout
@@ -85,7 +85,8 @@ jobs:
 
       - name: Assert JWKS alg and kid
         run: |
-          curl -sf $AUTH_URL/.well-known/jwks.json | jq -e '.keys[0].alg=="RS256" and (.keys[0].kid!=null)'
+          curl -sf "$AUTH_URL/.well-known/jwks.json" \
+          | jq -e '.keys[0].alg=="RS256" and (.keys[0].kid|type)=="string" and (.keys[0].kid|length)>0'
 
       - name: Password login -> token (try admin then admin123)
         id: login
@@ -94,7 +95,7 @@ jobs:
           set -euxo pipefail
           try_login() {
             PW="$1"
-            TOK=$(curl -s -X POST $AUTH_URL/v1/auth/login \
+            TOK=$(curl -s -X POST "$AUTH_URL/v1/auth/login" \
               -H 'Content-Type: application/json' \
               -d "{\"email\":\"admin@example.com\",\"password\":\"$PW\"}" | jq -r '.token // empty')
             echo "$TOK"
@@ -103,7 +104,7 @@ jobs:
           if [ -z "$TOK" ]; then TOK=$(try_login admin123); fi
           if [ -z "$TOK" ]; then echo "Login failed with both admin and admin123"; exit 1; fi
           echo "$TOK" > token.txt
-          echo "token=$TOK" >> $GITHUB_OUTPUT
+          echo "token=$TOK" >> "$GITHUB_OUTPUT"
 
       - name: Check token claim shape (iss,aud,sub,tid,roles,email,exp)
         shell: bash
@@ -143,11 +144,6 @@ jobs:
           curl -sf -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
 
-            - name: Assert JWKS alg and kid
-        run: |
-          curl -sf "$AUTH_URL/.well-known/jwks.json" \
-          | jq -e '.keys[0].alg=="RS256" and (.keys[0].kid|type)=="string" and (.keys[0].kid|length)>0'
-
       - name: Negative: no token -> 401
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" "$LEADGEN_HEALTH")
@@ -165,32 +161,10 @@ jobs:
       - name: Assert row exists in Postgres (not just via gateway)
         run: |
           set -euxo pipefail
-          docker compose -f backend/docker-compose.yml exec -T db \
-            psql -U postgres -d postgres -c \
+          docker compose -f infra/docker-compose.yml exec -T db \
+            psql -U mktr -d mktr -c \
             "SELECT code, tenant_id FROM leadgen.qrcodes WHERE code='DEMO-CI-QR' AND tenant_id='00000000-0000-0000-0000-000000000000' LIMIT 1;" \
           | grep -q DEMO-CI-QR
-
-      - name: Assert tenant_id on created QR
-        run: |
-          jq -e '
-            .data
-            | map(select(.code=="DEMO-CI-QR" and .tenant_id=="00000000-0000-0000-0000-000000000000"))
-            | length >= 1
-          ' list.json >/dev/null
-
-      - name: "Negative: no token -> 401"
-        run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" "$LEADGEN_HEALTH")
-          [ "$code" -eq 401 ]
-
-      - name: "Negative: tampered token -> 401"
-        run: |
-          TOK=$(cat token.txt)
-          H=$(echo "$TOK" | cut -d. -f1); P=$(echo "$TOK" | cut -d. -f2); S=$(echo "$TOK" | cut -d. -f3)
-          P_BAD="${P}a"
-          TOK_BAD="${H}.${P_BAD}.${S}"
-          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_BAD" "$LEADGEN_HEALTH")
-          [ "$code" -eq 401 ]
 
       - name: Dump compose logs on failure
         if: failure()
@@ -213,4 +187,3 @@ jobs:
         if: always()
         run: |
           docker compose -f infra/docker-compose.yml down -v || true
-
