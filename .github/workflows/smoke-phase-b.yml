@@ -112,7 +112,7 @@ jobs:
           set -euxo pipefail
           TOK=$(cat token.txt)
           B64=$(echo "$TOK" | cut -d. -f2)
-          # base64url -> base64 and pad to multiple of 4
+          # base64url -> base64 and pad
           B64_STD=${B64//-/+}
           B64_STD=${B64_STD//_/\/}
           PAD=$(( (4 - ${#B64_STD} % 4) % 4 ))
