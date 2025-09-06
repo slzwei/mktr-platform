@@ -105,7 +105,8 @@ jobs:
           TOK=$(cat token.txt)
           B64=$(echo "$TOK" | cut -d. -f2)
           # Convert base64url -> base64 and pad to length multiple of 4
-          B64_STD=$(echo "$B64" | tr '-_' '+/')
+          B64_STD=${B64//-/+}
+          B64_STD=${B64_STD//_/\/}
           PAD=$(( (4 - ${#B64_STD} % 4) % 4 ))
           printf -v PADSTR '%*s' "$PAD" ''
           PADSTR=${PADSTR// /=}
