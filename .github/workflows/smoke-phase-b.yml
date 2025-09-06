@@ -7,7 +7,7 @@ on:
       - 'services/gateway/**'
       - 'services/leadgen-service/**'
       - 'backend/**'
-      - 'infra/docker-compose.yml'
+      - 'backend/docker-compose.yml'
       - '.github/workflows/smoke-phase-b.yml'
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
 
       - name: Compose up
         run: |
-          docker-compose -f infra/docker-compose.yml up -d --build
+          docker compose -f backend/docker-compose.yml up -d --build
           echo "Waiting for services..."
           for i in {1..60}; do
             sleep 3
@@ -71,52 +71,13 @@ jobs:
       - name: Compose logs (on failure)
         if: failure()
         run: |
-          docker-compose -f infra/docker-compose.yml ps
-          docker-compose -f infra/docker-compose.yml logs --no-color --tail=200
+          docker compose -f backend/docker-compose.yml ps
+          docker compose -f backend/docker-compose.yml logs --no-color --tail=200
 
       - name: Compose down
         if: always()
-        run: docker-compose -f infra/docker-compose.yml down -v
+        run: docker compose -f backend/docker-compose.yml down -v
 
-name: smoke-phase-b
-
-on:
-  pull_request:
-    paths:
-      - 'services/leadgen-service/**'
-      - 'services/gateway/**'
-      - 'infra/docker-compose.yml'
-
-jobs:
-  smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-      - name: Start compose
-        run: |
-          docker compose -f infra/docker-compose.yml up -d --build db auth monolith gateway leadgen
-          echo 'Waiting for services...'
-          for i in {1..60}; do curl -sf http://localhost:4001/.well-known/jwks.json && break; sleep 2; done
-      - name: Login to auth-service
-        id: login
-        run: |
-          TOKEN=$(curl -s -X POST http://localhost:4001/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"admin@example.com","password":"admin123"}' | jq -r '.data.token')
-          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then echo 'No token'; exit 1; fi
-          echo "token=$TOKEN" >> $GITHUB_OUTPUT
-      - name: Leadgen health
-        run: |
-          curl -s -H "Authorization: Bearer ${{ steps.login.outputs.token }}" http://localhost:4000/api/leadgen/health | tee /tmp/health.json
-          jq -e '.ok == true and .service == "leadgen"' /tmp/health.json
-      - name: Create QR and list
-        run: |
-          curl -s -X POST http://localhost:4000/api/leadgen/v1/qrcodes -H "Authorization: Bearer ${{ steps.login.outputs.token }}" -H 'Content-Type: application/json' -d '{"code":"CI-QR-1","status":"active"}' | tee /tmp/create.json
-          curl -s -H "Authorization: Bearer ${{ steps.login.outputs.token }}" http://localhost:4000/api/leadgen/v1/qrcodes | jq -e '.success == true'
-      - name: Teardown
-        if: always()
-        run: docker compose -f infra/docker-compose.yml down -v
+ 
 
 
