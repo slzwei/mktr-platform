@@ -84,7 +84,7 @@ async function copyDevDataIfEmpty(client) {
   if (qrTagsEmpty) {
     await client.query(`
       INSERT INTO ${SCHEMA}.qr_tags (id, tenant_id, campaign_id, car_id, owner_user_id, code, status, created_at, updated_at)
-      SELECT id, tenant_id, campaignId, carId, ownerUserId, COALESCE(slug, id::text) AS code,
+      SELECT id, tenant_id, "campaignId", "carId", "ownerUserId", COALESCE("slug", id::text) AS code,
              CASE WHEN active THEN 'active' ELSE 'inactive' END AS status,
              NOW(), NOW()
       FROM public.qr_tags
