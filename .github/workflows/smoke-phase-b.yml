@@ -54,6 +54,15 @@ jobs:
           set -euxo pipefail
           docker compose -f backend/docker-compose.yml up -d --build
           docker compose -f backend/docker-compose.yml ps
+          
+      - name: Inspect containers (ps + last 200 lines per service)
+        run: |
+          set -euxo pipefail
+          docker compose -f backend/docker-compose.yml ps -a
+          echo "---- AUTH LOGS ----";     docker compose -f backend/docker-compose.yml logs --no-color --tail=200 auth     || true
+          echo "---- GATEWAY LOGS ----";  docker compose -f backend/docker-compose.yml logs --no-color --tail=200 gateway  || true
+          echo "---- LEADGEN LOGS ----";  docker compose -f backend/docker-compose.yml logs --no-color --tail=200 leadgen  || true
+          echo "---- MONOLITH LOGS ----"; docker compose -f backend/docker-compose.yml logs --no-color --tail=200 monolith || true
 
       - name: Wait for services (auth jwks & gateway tcp)
         shell: bash
