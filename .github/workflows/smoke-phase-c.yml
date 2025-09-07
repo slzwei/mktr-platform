@@ -83,7 +83,7 @@ jobs:
           set -euxo pipefail
           docker compose -f infra/docker-compose.yml exec -T -e TEST_DEVICE_KEY="$TEST_DEVICE_KEY" monolith \
             node src/scripts/register_test_device.js | tee device.json
-          jq -e '.ok==true' device.json >/dev/null
+          ok=$(jq -r '.ok' device.json); [ "$ok" = "true" ]
 
       - name: Manifest 200 and ETag/304
         run: |
@@ -151,5 +151,3 @@ jobs:
       - name: Compose down
         if: always()
         run: docker compose -f infra/docker-compose.yml down -v || true
-
-
