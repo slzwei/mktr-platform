@@ -458,3 +458,22 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - pr: n/a
   - commit: n/a
+
+### [2025-09-07 20:25 sgt] — phase c — gateway proxy fix + healthcheck stabilization (ci green)
+
+- branch: phase-c/scaffold-manifest-beacons
+- summary:
+  1. fixed gateway adtech proxy to preserve original paths; stabilized monolith healthcheck; phase b/c workflows now green
+- changes:
+  1. services/gateway/src/server.js: forward `req.originalUrl` for `/api/adtech/v1/manifest` and `/api/adtech/v1/beacons/*` to avoid 404s
+  2. infra/docker-compose.yml: monolith healthcheck now hits `/health` (flag-agnostic)
+  3. .github/workflows/smoke-phase-b.yml: wait on monolith `/health` before tests
+  4. backend/Dockerfile: install curl for compose healthcheck
+- acceptance:
+  1. phase b workflow: passes end-to-end (jwks → login → leadgen health/create/list)
+  2. phase c workflow: manifest 200 then 304 via ETag; manifest 400/429; beacons heartbeat idempotent 200; impressions 200 with dedupe
+- notes:
+  1. flags default to true in compose for ci; production should set explicitly
+- links:
+  - pr: n/a
+  - commit: merged
