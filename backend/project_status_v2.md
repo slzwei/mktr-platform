@@ -221,6 +221,23 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 
 <!-- new entries go here. do not edit sections above except to fix typos or update endpoint/env tables when the system evolves. -->
 
+### [2025-09-08 03:10 sgt] — phase b/c — legacy ui compat guard (self-proxy bypass)
+
+- branch: phase-c/scaffold-manifest-beacons
+- summary:
+  1) add self-proxy guard to monolith leadgen shim so legacy endpoints work even when gateway/leadgen envs point back to the same host; restores pre-revamp frontend without losing phase a–c work
+- changes:
+  1) backend/src/middleware/leadgenProxyShim.js: detect when `req.host` equals target host (from `GATEWAY_INTERNAL_URL`); if equal, bypass proxy and let monolith handle legacy routes directly; set header `x-legacy-shim-bypass: self-proxy-guard`
+  2) no behavior change when `GATEWAY_INTERNAL_URL` points to a private gateway (docker/k8s); normal `/api → /api/leadgen/*` forwarding remains
+- acceptance:
+  1) with misconfigured env (target → public api host), `/api/qrcodes` responds 200 (monolith handler) instead of 504; response includes `x-legacy-shim-bypass`
+  2) with correct env (target → internal gateway), `/api/qrcodes` forwards to `/api/leadgen/v1/qrcodes` as before
+- notes:
+  1) this is a guardrail to avoid prod outages during cutover; recommended to still point `LEADGEN_URL` to an internal upstream and eventually disable the shim
+- links:
+  - pr: n/a
+  - commit: n/a
+
 ### [2025-09-07 04:36 sgt] — phase b — auth-service dev seed endpoint (non-prod)
 
 - branch: feat/auth-dev-seeder
