@@ -90,6 +90,11 @@ app.use('/api/leadgen', authn, createProxyMiddleware({
   proxyTimeout: 30000
 }));
 
+// Allow device-key based auth at monolith for specific adtech endpoints only (manifest/beacons)
+app.use('/api/adtech/v1/manifest', createProxyMiddleware({ target: MONOLITH_URL, changeOrigin: true }));
+app.use('/api/adtech/v1/beacons', createProxyMiddleware({ target: MONOLITH_URL, changeOrigin: true }));
+
+// Other adtech endpoints remain JWT-protected
 app.use('/api/adtech', authn, createProxyMiddleware({ target: MONOLITH_URL, changeOrigin: true }));
 
 // Proxy auth routes to auth-service (no authn required for login/register)
