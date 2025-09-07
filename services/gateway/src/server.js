@@ -91,11 +91,25 @@ app.use('/api/leadgen', authn, createProxyMiddleware({
 }));
 
 // Allow device-key based auth at monolith for specific adtech endpoints only (manifest/beacons)
-// For device-key adtech endpoints, forward original path unchanged to monolith
+// For device-key adtech endpoints, forward original path unchanged and re-serialize JSON body
 const forwardFullPath = createProxyMiddleware({
   target: MONOLITH_URL,
   changeOrigin: true,
-  pathRewrite: (path, req) => req.originalUrl
+  proxyTimeout: 15000,
+  timeout: 15000,
+  pathRewrite: (path, req) => req.originalUrl,
+  onProxyReq: (proxyReq, req) => {
+    // Re-send JSON body because express.json() has already consumed the stream
+    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+      const body = req.body;
+      if (body && typeof body === 'object') {
+        const bodyData = Buffer.from(JSON.stringify(body));
+        proxyReq.setHeader('Content-Type', 'application/json');
+        proxyReq.setHeader('Content-Length', bodyData.length);
+        proxyReq.write(bodyData);
+      }
+    }
+  }
 });
 app.use('/api/adtech/v1/manifest', forwardFullPath);
 app.use('/api/adtech/v1/beacons', forwardFullPath);
