@@ -1,4 +1,5 @@
 import { withClient, SCHEMA } from './index.js';
+import { ensureIdempotencyTable } from '../lib/idempotency.js';
 
 async function ensureSchema(client) {
   await client.query(`CREATE SCHEMA IF NOT EXISTS ${SCHEMA}`);
@@ -71,6 +72,9 @@ async function createTables(client) {
     CREATE INDEX IF NOT EXISTS idx_commissions_agent ON ${SCHEMA}.commissions(agent_id);
     CREATE INDEX IF NOT EXISTS idx_commissions_status ON ${SCHEMA}.commissions(status);
   `);
+
+  // Idempotency keys table in leadgen schema
+  await ensureIdempotencyTable(client);
 }
 
 async function tableIsEmpty(client, fqtn) {

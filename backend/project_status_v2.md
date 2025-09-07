@@ -369,3 +369,50 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - pr: n/a
   - commit: n/a
+
+### [2025-09-07 16:40 sgt] — phase b — auth persistent rsa + ci parity; monolith health + compose
+
+- branch: main
+- summary:
+  1. auth-service now supports persistent RSA keys with optional dual-KID rotation window; tokens include iat.
+  2. gateway logs issuer/KIDs and uses bounded JWKS cache; CI adds unknown-KID negative check.
+  3. monolith duplicate import fixed; added /api/adtech/health, compose healthcheck, and non-blocking CI probe.
+- changes:
+  1. services/auth-service/src/server.js: `AUTH_PRIVATE_KEY_PEM`, `AUTH_JWKS_KID`, `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, optional `AUTH_PREVIOUS_PUBLIC_KEY_PEM`/`AUTH_PREVIOUS_KID`; JWKS cache headers; iat in tokens.
+  2. services/gateway/src/server.js: RemoteJWKSet with cooldown; boot log issuer/KIDs/key count.
+  3. .github/workflows/smoke-phase-b.yml: JWKS kid(s) recorded; unknown-KID 401; token-claim check expects iat; adtech health probe.
+  4. backend/src/server.js: remove duplicate import; keep legacy leadgen proxy; expose /api/adtech/health.
+  5. infra/docker-compose.yml: monolith healthcheck and restart on-failure.
+  6. docs/audit/auth.md, docs/audit/compose.md, docs/audit/routes.md added.
+- acceptance:
+  1. CI green: jwks ok, login ok, leadgen health ok, qr create/list ok, unknown/tampered token 401, adtech health printed, DB check non-blocking.
+  2. local JWKS via gateway shows kid(s); gateway logs issuer/KIDs on boot.
+- notes:
+  1. production: set `AUTH_PRIVATE_KEY_PEM` + `AUTH_JWKS_KID` and (during rotation) `AUTH_PREVIOUS_PUBLIC_KEY_PEM` + `AUTH_PREVIOUS_KID`; configure services to use `AUTH_JWT_ISSUER`/`AUTH_JWKS_URL`.
+  2. adtech health is informational in CI; routing remains via gateway.
+- links:
+  - pr: auth persistent rsa + ci; monolith health fix (merged)
+  - commit: n/a
+
+### [2025-09-07 17:05 sgt] — phase b — leadgen hardening + contract tests + observability (pr-3)
+
+- branch: feat/leadgen-pr3-phase-b
+- summary:
+  1. add idempotent qr create, validation, pagination, per-tenant rate limits, structured logs, and lightweight metrics
+- changes:
+  1. services/leadgen-service/src/: export app; add observability middleware and /metrics; central validation + rate-limit; idempotency store and logic in qrcodes; scans attribution hook (car→driver)
+  2. infra/docker-compose.yml: set LEADGEN_RPS_LIST/CREATE=1 for deterministic 429 in ci; LEADGEN_IDEMP_WINDOW_HOURS=24
+  3. .github/workflows/smoke-phase-b.yml: add steps for idempotent duplicate, pagination next_cursor, 400 validation, 429 rate limit (leadgen direct)
+  4. docs/audit/leadgen.md: document idempotency, validation, pagination, rate limits, observability, examples
+- acceptance:
+  1. jwks via gateway ok → login via auth → leadgen health ok
+  2. idempotency: duplicate POST with same key returns 200 replay (leadgen direct)
+  3. pagination: limit=1 returns next_cursor when >1 rows
+  4. validation: create without code/status returns 400
+  5. rate limit: burst lists yield 429 with Retry-After
+- notes:
+  1. gateway fallback intentionally unchanged; new assertions use leadgen direct to avoid fallback masking idempotency/limits
+  2. attribution uses monolith public.cars current driver fields best-effort at scan time
+- links:
+  - pr: n/a
+  - commit: n/a
