@@ -109,11 +109,10 @@ jobs:
               -d "{\"email\":\"$email\",\"password\":\"$pw\"}")
             local status=$(echo "$resp" | tail -n1)
             local body=$(echo "$resp" | sed '$d')
-            echo "http_status=$status"
             if [ "$status" != "200" ]; then
               echo "login failed (status=$status) body:" >&2
               echo "$body" >&2
-              echo ""; return 1
+              return 1
             fi
             echo "$body" | jq -r '.token // empty'
           }
@@ -121,7 +120,6 @@ jobs:
           TOK=$(login_once 'admin@example.com' 'admin' || true)
           if [ -z "$TOK" ]; then TOK=$(login_once 'admin@example.com' 'admin123' || true); fi
           if [ -z "$TOK" ]; then TOK=$(login_once "${EMAIL:-test@mktr.sg}" "${PASSWORD:-test}" || true); fi
-          echo "token_length=${#TOK}"
           if [ -z "$TOK" ]; then echo "Login failed with all attempts"; exit 1; fi
           echo "$TOK" > token.txt
           echo "token=$TOK" >> "$GITHUB_OUTPUT"
