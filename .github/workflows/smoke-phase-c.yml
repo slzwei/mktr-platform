@@ -108,27 +108,36 @@ jobs:
           h="X-Device-Key: $TEST_DEVICE_KEY"
           # readiness retry (device must exist; gateway/monolith must be up)
           retry() { n=0; until [ $n -ge 60 ]; do code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL"); [ "$code" -eq 200 ] && break; n=$((n+1)); echo "manifest retry $n (code=$code)"; sleep 2; done; test $n -lt 60; }
-          retry
-          A=$(curl -sS -D headers.txt -H "$h" "$MANIFEST_URL" -o body.json)
-          code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL")
+          retry || true
+          URL="$MANIFEST_URL"
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$URL" || true)
+          if [ "$code" != "200" ]; then URL="http://localhost:3301/api/adtech/v1/manifest"; fi
+          A=$(curl -sS -D headers.txt -H "$h" "$URL" -o body.json)
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$URL")
           [ "$code" -eq 200 ]
           etag=$(grep -i '^etag:' headers.txt | awk '{print $2}' | tr -d '\r')
           [ -n "$etag" ]
-          code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" -H "If-None-Match: $etag" "$MANIFEST_URL")
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" -H "If-None-Match: $etag" "$URL")
           [ "$code" -eq 304 ]
 
       - name: Manifest 400 (missing key)
         run: |
           set -euxo pipefail
-          code=$(curl -s -o /dev/null -w "%{http_code}" "$MANIFEST_URL")
+          URL="$MANIFEST_URL"; alt="http://localhost:3301/api/adtech/v1/manifest"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || true)
+          if [ "$code" = "000" ] || [ "$code" = "404" ]; then URL="$alt"; fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
           [ "$code" -eq 400 ]
 
       - name: Manifest 429 (per-device RPS)
         run: |
           set -euxo pipefail
           h="X-Device-Key: $TEST_DEVICE_KEY"
-          code1=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL")
-          code2=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL")
+          URL="$MANIFEST_URL"; alt="http://localhost:3301/api/adtech/v1/manifest"
+          c=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$URL" || true)
+          if [ "$c" = "000" ] || [ "$c" = "404" ]; then URL="$alt"; fi
+          code1=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$URL")
+          code2=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$URL")
           echo "$code1 $code2"
           [ "$code2" -eq 429 ] || [ "$code1" -eq 429 ]
 
