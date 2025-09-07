@@ -99,21 +99,28 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          try_login() {
-            PW="$1"
-            TOK=$(curl -s -X POST "$GATEWAY_URL/api/auth/v1/auth/login" \
+          login_once() {
+            local email="$1" pw="$2"
+            # capture body and status separately to avoid jq parse errors on non-200
+            local resp
+            resp=$(curl -sS -w "\n%{http_code}" -X POST "$GATEWAY_URL/api/auth/v1/auth/login" \
               -H 'Content-Type: application/json' \
-              -d "{\"email\":\"admin@example.com\",\"password\":\"$PW\"}" | jq -r '.token // empty')
-            echo "$TOK"
+              -d "{\"email\":\"$email\",\"password\":\"$pw\"}")
+            local status=$(echo "$resp" | tail -n1)
+            local body=$(echo "$resp" | sed '$d')
+            echo "http_status=$status"
+            if [ "$status" != "200" ]; then
+              echo "login failed (status=$status) body:" >&2
+              echo "$body" >&2
+              echo ""; return 1
+            fi
+            echo "$body" | jq -r '.token // empty'
           }
-          TOK=$(try_login admin)
-          if [ -z "$TOK" ]; then TOK=$(try_login admin123); fi
-          if [ -z "$TOK" ]; then
-            TOK=$(curl -s -X POST "$GATEWAY_URL/api/auth/v1/auth/login" \
-              -H 'Content-Type: application/json' \
-              -d "{\"email\":\"${EMAIL:-test@mktr.sg}\",\"password\":\"${PASSWORD:-test}\"}" | jq -r '.token // empty')
-          fi
-          if [ -z "$TOK" ]; then echo "Login failed with both admin and admin123"; exit 1; fi
+
+          TOK=$(login_once 'admin@example.com' 'admin' || true)
+          if [ -z "$TOK" ]; then TOK=$(login_once 'admin@example.com' 'admin123' || true); fi
+          if [ -z "$TOK" ]; then TOK=$(login_once "${EMAIL:-test@mktr.sg}" "${PASSWORD:-test}" || true); fi
+          if [ -z "$TOK" ]; then echo "Login failed with all attempts"; exit 1; fi
           echo "$TOK" > token.txt
           echo "token=$TOK" >> "$GITHUB_OUTPUT"
 
