@@ -42,8 +42,11 @@ jobs:
       - name: Compose up with flags
         run: |
           set -euxo pipefail
-          MANIFEST_ENABLED=true BEACONS_ENABLED=true \
-          MANIFEST_REFRESH_SECONDS=60 BEACON_IDEMP_WINDOW_MIN=1 MANIFEST_RPS_PER_DEVICE=5 \
+          export MANIFEST_ENABLED=true
+          export BEACONS_ENABLED=true
+          export MANIFEST_REFRESH_SECONDS=60
+          export BEACON_IDEMP_WINDOW_MIN=1
+          export MANIFEST_RPS_PER_DEVICE=5
           docker compose -f infra/docker-compose.yml up -d --build
 
       - name: Wait for gateway and jwks via gateway
