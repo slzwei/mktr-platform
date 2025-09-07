@@ -732,3 +732,37 @@ curl -s -H "Authorization: Bearer $(cat /tmp/tok)" \
 3. guard legacy leadgen routes via ENABLE_LEGACY_LEADGEN → 410 when off
 4. add smoke-phase-b ci (compose, login, health, qr create/list)
 5. add tenant scoping tests and runbook
+
+## Phase B – Dev Seed Endpoint for Auth-Service (Implemented)
+
+**Timestamp:** 2025-09-07 04:34 SGT  
+**Branch:** feat/auth-dev-seeder
+
+### Proposal (ChatGPT → Cursor)
+
+- If password login for `test@mktr.sg`/`test` fails in dev, add a dev-only endpoint to upsert the user using the same hashing as normal login.
+
+### Implementation (Cursor)
+
+**Commits:**
+
+- (workspace) feat(auth-service): add dev-only `/internal/dev/seed-user`; bcrypt hashing; tests; env example
+
+**Completed:**
+
+- JWKS endpoint verified: `/.well-known/jwks.json` returns RS256 key.
+- Added dev-only route registered when `NODE_ENV!="production"`:
+  - `POST /internal/dev/seed-user` → upserts `SEED_EMAIL` with bcrypt-hashed `SEED_PASSWORD`, role `admin`.
+  - Idempotent; logs `seeded dev user: <email>` only on first create.
+- Login path unchanged; DB-backed auth in dev now works with seeded user.
+- Minimal integration test added under `services/auth-service/src/__tests__/seed-user.integration.test.js`.
+- Env example added at `services/auth-service/.env.example`.
+
+**Variables/Functions Added:**
+
+- Env (auth-service): `SEED_EMAIL`, `SEED_PASSWORD`, `BCRYPT_ROUNDS`.
+- Route (dev-only): `POST /internal/dev/seed-user`.
+
+**Next Steps:**
+
+- Run full smoke via gateway when all services are up: `EMAIL=test@mktr.sg PASSWORD=test API_ROOT=http://localhost:4000/api ./scripts/smoke_gateway_auto.sh`.

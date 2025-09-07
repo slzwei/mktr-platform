@@ -36,6 +36,7 @@ import { validateGoogleOAuthConfig } from './controllers/authController.js';
 import { optionalAuth } from './middleware/auth.js';
 import { initSystemAgent } from './services/systemAgent.js';
 import ensureTenantPlumbing from './database/tenantMigration.js';
+import leadgenProxyShim from './middleware/leadgenProxyShim.js';
 
 // Load environment variables
 dotenv.config();
@@ -101,6 +102,11 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
+// Legacy LeadGen proxy shim → forwards to gateway leadgen domain
+// This preserves existing frontend calls during a one-week grace window.
+import leadgenProxyShim from './middleware/leadgenProxyShim.js';
+app.use(leadgenProxyShim());
+
 // Static file serving for uploads
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
@@ -135,6 +141,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/verify', verifyRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/contact', contactRoutes);
+
 
 // Domain-prefixed routes (feature-flagged)
 if (String(process.env.ENABLE_DOMAIN_PREFIXES).toLowerCase() === 'true') {
