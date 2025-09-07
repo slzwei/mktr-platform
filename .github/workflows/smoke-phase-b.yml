@@ -103,7 +103,8 @@ jobs:
             local email="$1" pw="$2"
             # capture body and status separately to avoid jq parse errors on non-200
             local resp
-            resp=$(curl -sS -w "\n%{http_code}" -X POST "$GATEWAY_URL/api/auth/v1/auth/login" \
+            # call auth-service directly to avoid proxy variations
+            resp=$(curl -sS -w "\n%{http_code}" -X POST "$AUTH_URL/v1/auth/login" \
               -H 'Content-Type: application/json' \
               -d "{\"email\":\"$email\",\"password\":\"$pw\"}")
             local status=$(echo "$resp" | tail -n1)
@@ -120,6 +121,7 @@ jobs:
           TOK=$(login_once 'admin@example.com' 'admin' || true)
           if [ -z "$TOK" ]; then TOK=$(login_once 'admin@example.com' 'admin123' || true); fi
           if [ -z "$TOK" ]; then TOK=$(login_once "${EMAIL:-test@mktr.sg}" "${PASSWORD:-test}" || true); fi
+          echo "token_length=${#TOK}"
           if [ -z "$TOK" ]; then echo "Login failed with all attempts"; exit 1; fi
           echo "$TOK" > token.txt
           echo "token=$TOK" >> "$GITHUB_OUTPUT"
