@@ -82,7 +82,7 @@ jobs:
         run: |
           set -euxo pipefail
           docker compose -f infra/docker-compose.yml exec -T -e TEST_DEVICE_KEY="$TEST_DEVICE_KEY" monolith \
-            node src/scripts/register_test_device.js | tee device.json
+            node src/scripts/register_test_device.js | tail -n 1 | tee device.json
           ok=$(jq -r '.ok' device.json); [ "$ok" = "true" ]
 
       - name: Manifest 200 and ETag/304
