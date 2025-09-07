@@ -484,7 +484,7 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - summary:
   1. add probe script and adapt workflows to read RateLimit-\* headers; assert 429 using BURST+5 derived at runtime
 - changes:
-  1. scripts/ci/ratelimit_probe.sh (new): detects RateLimit-_ or X-RateLimit-_; prints DERIVED_BURST and DERIVED_WINDOW_SECS; defaults 60/60
+  1. scripts/ci/ratelimit*probe.sh (new): detects RateLimit-* or X-RateLimit-\_; prints DERIVED_BURST and DERIVED_WINDOW_SECS; defaults 60/60
   2. .github/workflows/smoke-phase-b.yml: probe list/create/scans; burst BURST+5; respect Retry-After/window on retry; echo derived burst
   3. .github/workflows/smoke-phase-c.yml: probe manifest/heartbeat/impressions; same adaptive pattern; echo derived burst
   4. services/leadgen-service/src/middleware/rateLimit.js: set RateLimit-Limit/Remaining/Reset + Retry-After on 429; list/create
