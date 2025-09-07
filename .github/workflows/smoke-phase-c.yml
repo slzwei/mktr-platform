@@ -20,7 +20,7 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
     env:
       GATEWAY_URL: http://localhost:4000
       AUTH_URL: http://localhost:4001
@@ -38,6 +38,11 @@ jobs:
 
       - name: Compose down
         run: docker compose -f infra/docker-compose.yml down -v || true
+
+      - name: Compose pull base images
+        run: |
+          set -euxo pipefail
+          docker compose -f infra/docker-compose.yml pull --quiet || true
 
       - name: Compose up with flags (relaxed RPS for readiness)
         run: |
