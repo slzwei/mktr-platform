@@ -61,15 +61,27 @@ jobs:
         id: login
         run: |
           set -euxo pipefail
-          TOK=$(curl -sS -w "\n%{http_code}" -X POST "$AUTH_URL/v1/auth/login" -H 'Content-Type: application/json' -d '{"email":"test@mktr.sg","password":"test"}')
-          code=$(echo "$TOK" | tail -n1); body=$(echo "$TOK" | sed '$d')
-          [ "$code" -eq 200 ]
-          echo "$body" | jq -r .token > token.txt
+          login_once() {
+            local email="$1" pw="$2"
+            local resp status body
+            resp=$(curl -sS -w "\n%{http_code}" -X POST "$AUTH_URL/v1/auth/login" \
+              -H 'Content-Type: application/json' \
+              -d "{\"email\":\"$email\",\"password\":\"$pw\"}")
+            status=$(echo "$resp" | tail -n1)
+            body=$(echo "$resp" | sed '$d')
+            if [ "$status" != "200" ]; then return 1; fi
+            echo "$body" | jq -r '.token // empty'
+          }
+          TOK=$(login_once 'admin@example.com' 'admin' || true)
+          if [ -z "$TOK" ]; then TOK=$(login_once 'admin@example.com' 'admin123' || true); fi
+          if [ -z "$TOK" ]; then TOK=$(login_once 'test@mktr.sg' 'test' || true); fi
+          if [ -z "$TOK" ]; then echo "Login failed"; exit 1; fi
+          echo "$TOK" > token.txt
 
       - name: Register test device
         run: |
           set -euxo pipefail
-          docker compose -f infra/docker-compose.yml exec -T monolith \
+          docker compose -f infra/docker-compose.yml exec -T -e TEST_DEVICE_KEY="$TEST_DEVICE_KEY" monolith \
             node src/scripts/register_test_device.js | tee device.json
           jq -e '.ok==true' device.json >/dev/null
 
