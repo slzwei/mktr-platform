@@ -107,6 +107,7 @@ const forwardFullPath = createProxyMiddleware({
         proxyReq.setHeader('Content-Type', 'application/json');
         proxyReq.setHeader('Content-Length', bodyData.length);
         proxyReq.write(bodyData);
+        try { proxyReq.end(); } catch (_) {}
       }
     }
   }
