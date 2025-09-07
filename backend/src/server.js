@@ -31,6 +31,7 @@ import uploadRoutes from './routes/uploads.js';
 import dashboardRoutes from './routes/dashboard.js';
 import verifyRoutes from './routes/verify.js';
 import analyticsRoutes from './routes/analytics.js';
+import leadgenProxyShim from './middleware/leadgenProxyShim.js';
 import adtechManifestRoutes from './routes/adtechManifest.js';
 import adtechBeaconsRoutes from './routes/adtechBeacons.js';
 import contactRoutes from './routes/contact.js';
