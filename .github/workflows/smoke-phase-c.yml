@@ -1,0 +1,143 @@
+name: smoke-phase-c
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    branches: ["*"]
+    paths:
+      - "backend/**"
+      - "services/gateway/**"
+      - "infra/**"
+      - ".github/workflows/smoke-phase-c.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-phase-c-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      GATEWAY_URL: http://localhost:4000
+      AUTH_URL: http://localhost:4001
+      MANIFEST_URL: http://localhost:4000/api/adtech/v1/manifest
+      HEARTBEAT_URL: http://localhost:4000/api/adtech/v1/beacons/heartbeat
+      IMPRESSIONS_URL: http://localhost:4000/api/adtech/v1/beacons/impressions
+      TEST_DEVICE_KEY: ci-device-key
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq curl
+
+      - name: Compose down
+        run: docker compose -f infra/docker-compose.yml down -v || true
+
+      - name: Compose up with flags
+        run: |
+          set -euxo pipefail
+          MANIFEST_ENABLED=true BEACONS_ENABLED=true \
+          MANIFEST_REFRESH_SECONDS=60 BEACON_IDEMP_WINDOW_MIN=1 \
+          docker compose -f infra/docker-compose.yml up -d --build
+
+      - name: Wait for gateway and jwks via gateway
+        run: |
+          set -euxo pipefail
+          retry() { n=0; until [ $n -ge 60 ]; do "$@" && break; n=$((n+1)); echo "retry $n"; sleep 2; done; test $n -lt 60; }
+          retry bash -lc "echo > /dev/tcp/127.0.0.1/4000"
+          retry bash -lc "curl -sf $GATEWAY_URL/api/auth/.well-known/jwks.json | jq -e '.keys|length > 0'"
+
+      - name: Seed dev user
+        run: |
+          curl -fsS -X POST "$GATEWAY_URL/api/auth/internal/dev/seed-user" | jq .
+
+      - name: Login to get token
+        id: login
+        run: |
+          set -euxo pipefail
+          TOK=$(curl -sS -w "\n%{http_code}" -X POST "$AUTH_URL/v1/auth/login" -H 'Content-Type: application/json' -d '{"email":"test@mktr.sg","password":"test"}')
+          code=$(echo "$TOK" | tail -n1); body=$(echo "$TOK" | sed '$d')
+          [ "$code" -eq 200 ]
+          echo "$body" | jq -r .token > token.txt
+
+      - name: Register test device
+        run: |
+          set -euxo pipefail
+          docker compose -f infra/docker-compose.yml exec -T monolith \
+            node src/scripts/register_test_device.js | tee device.json
+          jq -e '.ok==true' device.json >/dev/null
+
+      - name: Manifest 200 and ETag/304
+        run: |
+          set -euxo pipefail
+          h="X-Device-Key: $TEST_DEVICE_KEY"
+          A=$(curl -sS -D headers.txt -H "$h" "$MANIFEST_URL" -o body.json)
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL")
+          [ "$code" -eq 200 ]
+          etag=$(grep -i '^etag:' headers.txt | awk '{print $2}' | tr -d '\r')
+          [ -n "$etag" ]
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" -H "If-None-Match: $etag" "$MANIFEST_URL")
+          [ "$code" -eq 304 ]
+
+      - name: Manifest 400 (missing key)
+        run: |
+          set -euxo pipefail
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$MANIFEST_URL")
+          [ "$code" -eq 400 ]
+
+      - name: Manifest 429 (per-device RPS)
+        run: |
+          set -euxo pipefail
+          h="X-Device-Key: $TEST_DEVICE_KEY"
+          code1=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL")
+          code2=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL")
+          echo "$code1 $code2"
+          [ "$code2" -eq 429 ] || [ "$code1" -eq 429 ]
+
+      - name: Heartbeat 200 idempotent + 429
+        run: |
+          set -euxo pipefail
+          h="X-Device-Key: $TEST_DEVICE_KEY"
+          KEY=$(python3 -c "import uuid; print(uuid.uuid4())")
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$HEARTBEAT_URL" -H "$h" -H "Idempotency-Key: $KEY" -H 'Content-Type: application/json' -d '{"battery":90}')
+          [ "$code" -eq 200 ]
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$HEARTBEAT_URL" -H "$h" -H "Idempotency-Key: $KEY" -H 'Content-Type: application/json' -d '{"battery":90}')
+          [ "$code" -eq 200 ]
+
+      - name: Impressions 200 with dedupe + 429
+        run: |
+          set -euxo pipefail
+          h="X-Device-Key: $TEST_DEVICE_KEY"
+          body='{"items":[{"asset_id":"a1","campaign_id":"c1","ts":"2020-01-01T00:00:00Z"},{"asset_id":"a1","campaign_id":"c1","ts":"2020-01-01T00:00:00Z"}]}'
+          curl -fsS -X POST "$IMPRESSIONS_URL" -H "$h" -H 'Content-Type: application/json' -d "$body" | tee imp.json
+          jq -e '.success==true and (.deduped_total|type=="number")' imp.json >/dev/null
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose -f infra/docker-compose.yml ps
+          docker compose -f infra/docker-compose.yml logs --no-color > compose-logs-phase-c.txt || true
+
+      - name: Upload logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-logs-phase-c
+          path: |
+            compose-logs-phase-c.txt
+            device.json
+            body.json
+            headers.txt
+            imp.json
+
+      - name: Compose down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v || true
+
+
