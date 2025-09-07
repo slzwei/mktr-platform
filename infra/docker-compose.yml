@@ -62,7 +62,8 @@ services:
       GATEWAY_INTERNAL_URL: http://gateway:4000
     ports: ["3301:3001"]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:3001/api/adtech/health || exit 1"]
+      # Use generic /health so Phase B (no adtech flags required) stays green
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3001/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
