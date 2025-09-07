@@ -40,6 +40,7 @@ function rewritePath(path) {
 }
 
 export function leadgenProxyShim() {
+  const forceOff = String(process.env.LEGACY_SHIM_FORCE_OFF || '').toLowerCase() === 'true';
   const mw = createProxyMiddleware({
     target,
     changeOrigin: true,
@@ -50,6 +51,10 @@ export function leadgenProxyShim() {
   });
 
   return function shim(req, res, next) {
+    if (forceOff) {
+      res.setHeader('x-legacy-shim-bypass', 'force-off');
+      return next();
+    }
     const p = req.path || '';
     if (/^\/api\/(v1\/)?(qrcodes|prospects|commissions|variants)(\/|$)/.test(p)) {
       // Self-proxy guard: if target host equals current host, bypass proxy to avoid 504 loops
