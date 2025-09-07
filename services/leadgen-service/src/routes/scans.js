@@ -4,10 +4,10 @@ import { respond } from '../middleware/observability.js';
 
 const router = Router();
 
-// naive in-memory rate limit per IP for scans
+// naive in-memory rate limit per IP for scans (configurable)
 const scanCounts = new Map();
 const WINDOW_MS = 60 * 1000;
-const MAX_PER_WINDOW = 60;
+const MAX_PER_WINDOW = parseInt(process.env.SCANS_RPS || process.env.LEADGEN_SCANS_RPS || '60', 10);
 setInterval(() => scanCounts.clear(), WINDOW_MS).unref();
 
 router.post('/', async (req, res) => {
@@ -19,7 +19,10 @@ router.post('/', async (req, res) => {
   const cnt = (scanCounts.get(key) || 0) + 1;
   scanCounts.set(key, cnt);
   if (cnt > MAX_PER_WINDOW) {
-    res.setHeader('Retry-After', '60');
+    res.setHeader('RateLimit-Limit', String(MAX_PER_WINDOW));
+    res.setHeader('RateLimit-Remaining', '0');
+    res.setHeader('RateLimit-Reset', String(Math.ceil((WINDOW_MS - (Date.now() % WINDOW_MS)) / 1000)));
+    res.setHeader('Retry-After', String(Math.ceil((WINDOW_MS - (Date.now() % WINDOW_MS)) / 1000)));
     return respond(res, 429, { error: 'rate_limit' });
   }
 

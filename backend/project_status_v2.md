@@ -477,3 +477,24 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - pr: n/a
   - commit: merged
+
+### [2025-09-08 02:00 sgt] — phase b/c — ci rate-limit smokes are header-driven (env-agnostic)
+
+- branch: phase-c/scaffold-manifest-beacons
+- summary:
+  1. add probe script and adapt workflows to read RateLimit-\* headers; assert 429 using BURST+5 derived at runtime
+- changes:
+  1. scripts/ci/ratelimit_probe.sh (new): detects RateLimit-_ or X-RateLimit-_; prints DERIVED_BURST and DERIVED_WINDOW_SECS; defaults 60/60
+  2. .github/workflows/smoke-phase-b.yml: probe list/create/scans; burst BURST+5; respect Retry-After/window on retry; echo derived burst
+  3. .github/workflows/smoke-phase-c.yml: probe manifest/heartbeat/impressions; same adaptive pattern; echo derived burst
+  4. services/leadgen-service/src/middleware/rateLimit.js: set RateLimit-Limit/Remaining/Reset + Retry-After on 429; list/create
+  5. services/leadgen-service/src/routes/scans.js: make limit configurable via SCANS_RPS; on 429 set RateLimit-\* and Retry-After
+  6. backend/src/routes/adtechManifest.js, adtechBeacons.js: add RateLimit-\* on 429 and advertise RateLimit-Limit on 200s
+  7. services/gateway/src/server.js: preserve headers through proxy; log upstream urls on boot
+- acceptance:
+  1. workflows no longer depend on hard-coded bursts; they assert at least one 429 using runtime BURST and window; retries respect Retry-After when present
+- notes:
+  1. if services emit combined header format (e.g., "10;w=1"), probe parses it; defaults remain conservative
+- links:
+  - pr: n/a
+  - commit: n/a

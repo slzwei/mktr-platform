@@ -16,6 +16,9 @@ function perDeviceLimiter(envKey, defaultRps) {
     legacyHeaders: false,
     keyGenerator: (req) => (req.device?.id || req.ip),
     handler: (req, res) => {
+      res.set('RateLimit-Limit', String(rps));
+      res.set('RateLimit-Remaining', '0');
+      res.set('RateLimit-Reset', '1');
       res.set('Retry-After', '1');
       return res.status(429).json({ success: false, message: 'Too Many Requests' });
     }
@@ -67,6 +70,9 @@ router.post('/v1/beacons/heartbeat', guardFlags('BEACONS_ENABLED'), authenticate
     await device.update({ lastSeenAt: new Date() });
     incCounter('beacon_heartbeat_count');
     logEvent('beacon_heartbeat', { device_id: device.id, latency_ms: timeMs(started) });
+    // Include advertised limit for probe discovery on success
+    const limit = parseInt(process.env.BEACON_RPS_PER_DEVICE || '2');
+    res.set('RateLimit-Limit', String(limit));
     return { code: 200, body: { success: true } };
   });
 });
@@ -95,6 +101,8 @@ router.post('/v1/beacons/impressions', guardFlags('BEACONS_ENABLED'), authentica
     incCounter('beacon_impressions_count', items.length - deduped);
     incCounter('beacon_impressions_deduped_total', deduped);
     logEvent('beacon_impressions', { device_id: device.id, count: items.length, deduped_total: deduped, latency_ms: timeMs(started) });
+    const limit = parseInt(process.env.BEACON_RPS_PER_DEVICE || '5');
+    res.set('RateLimit-Limit', String(limit));
     return { code: 200, body: { success: true, deduped_total: deduped } };
   });
 });

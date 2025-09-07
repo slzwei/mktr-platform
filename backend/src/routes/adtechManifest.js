@@ -41,6 +41,10 @@ const manifestLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
+    const limit = parseInt(process.env.MANIFEST_RPS_PER_DEVICE || '2');
+    res.set('RateLimit-Limit', String(limit));
+    res.set('RateLimit-Remaining', '0');
+    res.set('RateLimit-Reset', '1');
     res.set('Retry-After', '1');
     return res.status(429).json({ success: false, message: 'Too Many Requests' });
   }
@@ -52,6 +56,10 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
   const etag = computeEtagFromJson(manifest);
   res.set('ETag', etag);
   res.set('Cache-Control', 'private, max-age=0, must-revalidate');
+  // Expose current bucket state on 200s too when standard headers enabled
+  const limit = parseInt(process.env.MANIFEST_RPS_PER_DEVICE || '2');
+  res.set('RateLimit-Limit', String(limit));
+  // Remaining and reset are not tracked here; keep limit for probe discovery
 
   const inm = req.headers['if-none-match'];
   if (inm && inm === etag) {
