@@ -7,6 +7,15 @@ import crypto from 'crypto';
 const app = express();
 app.use(cors());
 
+// Define env-derived constants BEFORE middleware that uses them
+const PORT = process.env.PORT || 4000;
+const AUTH_JWKS_URL = process.env.AUTH_JWKS_URL || 'http://auth:4001/.well-known/jwks.json';
+const ISS = process.env.AUTH_ISSUER || 'http://auth:4001';
+const AUD = process.env.AUTH_AUDIENCE || 'mktr-platform';
+const MONOLITH_URL = process.env.MONOLITH_URL || 'http://monolith:3001';
+const LEADGEN_URL = process.env.LEADGEN_URL || 'http://leadgen:4002';
+const AUTH_URL = process.env.AUTH_URL || 'http://auth:4001';
+
 // Register adtech device-key proxies BEFORE body parsing so request bodies stream through untouched
 // Device-key endpoints (no JWT at gateway)
 app.use('/api/adtech/v1/manifest', createProxyMiddleware({
@@ -24,14 +33,6 @@ app.use('/api/adtech/v1/beacons', createProxyMiddleware({
 
 // Parse JSON for all other routes
 app.use(express.json());
-
-const PORT = process.env.PORT || 4000;
-const AUTH_JWKS_URL = process.env.AUTH_JWKS_URL || 'http://auth:4001/.well-known/jwks.json';
-const ISS = process.env.AUTH_ISSUER || 'http://auth:4001';
-const AUD = process.env.AUTH_AUDIENCE || 'mktr-platform';
-const MONOLITH_URL = process.env.MONOLITH_URL || 'http://monolith:3001';
-const LEADGEN_URL = process.env.LEADGEN_URL || 'http://leadgen:4002';
-const AUTH_URL = process.env.AUTH_URL || 'http://auth:4001';
 
 // Bounded-cache JWKS with conservative cooldown
 const JWKS = createRemoteJWKSet(new URL(AUTH_JWKS_URL), {
