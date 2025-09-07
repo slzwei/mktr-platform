@@ -76,6 +76,9 @@ services:
       AUTH_JWKS_URL: http://auth:4001/.well-known/jwks.json
       AUTH_ISSUER: http://auth:4001
       AUTH_AUDIENCE: mktr
+      LEADGEN_RPS_LIST: "1"
+      LEADGEN_RPS_CREATE: "1"
+      LEADGEN_IDEMP_WINDOW_HOURS: "24"
     ports: ["4002:4002"]
     depends_on:
       db: { condition: service_healthy }
