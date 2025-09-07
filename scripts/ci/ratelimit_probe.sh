@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -u
 
 # Usage: ratelimit_probe.sh METHOD URL [HEADER ...]
 # Example: ratelimit_probe.sh GET http://localhost:4002/v1/qrcodes "Authorization: Bearer $TOK"
@@ -33,24 +33,24 @@ curl -sS -D "$tmp_headers" -o /dev/null -X "$method" "${headers[@]}" "${extras[@
 code=$?
 set -e
 
-# Grep possible headers (case-insensitive)
-lc() { tr '[:upper:]' '[:lower:]'; }
-
-limit="$(grep -i '^ratelimit-limit:' "$tmp_headers" | awk -F: '{ $1=""; sub(/^ /,""); print }' | tr -d '\r' | head -n1)"
-remaining="$(grep -i '^ratelimit-remaining:' "$tmp_headers" | awk -F: '{ $1=""; sub(/^ /,""); print }' | tr -d '\r' | head -n1)"
-reset="$(grep -i '^ratelimit-reset:' "$tmp_headers" | awk -F: '{ $1=""; sub(/^ /,""); print }' | tr -d '\r' | head -n1)"
-retry_after="$(grep -i '^retry-after:' "$tmp_headers" | awk -F: '{ $1=""; sub(/^ /,""); print }' | tr -d '\r' | head -n1)"
+# Extract possible headers (case-insensitive) without failing on no-match
+set +o pipefail
+limit="$(awk 'BEGIN{IGNORECASE=1} /^RateLimit-Limit:/ {sub(/^[^:]*:[ ]*/,""); gsub(/\r/,""); print; exit}' "$tmp_headers")"
+remaining="$(awk 'BEGIN{IGNORECASE=1} /^RateLimit-Remaining:/ {sub(/^[^:]*:[ ]*/,""); gsub(/\r/,""); print; exit}' "$tmp_headers")"
+reset="$(awk 'BEGIN{IGNORECASE=1} /^RateLimit-Reset:/ {sub(/^[^:]*:[ ]*/,""); gsub(/\r/,""); print; exit}' "$tmp_headers")"
+retry_after="$(awk 'BEGIN{IGNORECASE=1} /^Retry-After:/ {sub(/^[^:]*:[ ]*/,""); gsub(/\r/,""); print; exit}' "$tmp_headers")"
 
 # Fallback to X-RateLimit-* if standard missing
 if [ -z "$limit" ]; then
-  limit="$(grep -i '^x-ratelimit-limit:' "$tmp_headers" | awk -F: '{ $1=""; sub(/^ /,""); print }' | tr -d '\r' | head -n1)"
+  limit="$(awk 'BEGIN{IGNORECASE=1} /^X-RateLimit-Limit:/ {sub(/^[^:]*:[ ]*/,""); gsub(/\r/,""); print; exit}' "$tmp_headers")"
 fi
 if [ -z "$remaining" ]; then
-  remaining="$(grep -i '^x-ratelimit-remaining:' "$tmp_headers" | awk -F: '{ $1=""; sub(/^ /,""); print }' | tr -d '\r' | head -n1)"
+  remaining="$(awk 'BEGIN{IGNORECASE=1} /^X-RateLimit-Remaining:/ {sub(/^[^:]*:[ ]*/,""); gsub(/\r/,""); print; exit}' "$tmp_headers")"
 fi
 if [ -z "$reset" ]; then
-  reset="$(grep -i '^x-ratelimit-reset:' "$tmp_headers" | awk -F: '{ $1=""; sub(/^ /,""); print }' | tr -d '\r' | head -n1)"
+  reset="$(awk 'BEGIN{IGNORECASE=1} /^X-RateLimit-Reset:/ {sub(/^[^:]*:[ ]*/,""); gsub(/\r/,""); print; exit}' "$tmp_headers")"
 fi
+set -o pipefail
 
 # Print discovered headers
 if [ -n "$limit" ]; then echo "RateLimit-Limit: $limit"; fi

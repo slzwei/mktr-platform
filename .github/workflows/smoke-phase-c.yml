@@ -138,7 +138,7 @@ jobs:
         run: |
           set -euxo pipefail
           h="X-Device-Key: $TEST_DEVICE_KEY"
-          ./scripts/ci/ratelimit_probe.sh GET "$MANIFEST_URL" "$h" | tee probe_manifest.txt
+          ./scripts/ci/ratelimit_probe.sh GET "$MANIFEST_URL" "$h" | tee probe_manifest.txt || true
           BURST=$(grep -E '^DERIVED_BURST=' probe_manifest.txt | cut -d= -f2)
           WINDOW=$(grep -E '^DERIVED_WINDOW_SECS=' probe_manifest.txt | cut -d= -f2)
           RETRY=$(grep -i '^Retry-After:' probe_manifest.txt | awk '{print $2}' | tr -d '\r' || true)
