@@ -38,6 +38,9 @@ app.get('/metrics', (_req, res) => {
 try { await migrate(); } catch (e) { console.warn('[leadgen] migrate failed (non-fatal):', e?.message || String(e)); }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  app.listen(PORT, '0.0.0.0', () => console.log(`leadgen-service on ${PORT}`));
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`leadgen-service on ${PORT}`);
+    console.log(`[leadgen] RPS env: LEADGEN_RPS_LIST=${process.env.LEADGEN_RPS_LIST || '10'} LEADGEN_RPS_CREATE=${process.env.LEADGEN_RPS_CREATE || '5'} SCANS_RPS=${process.env.SCANS_RPS || process.env.LEADGEN_SCANS_RPS || '60'}`);
+  });
 }
 

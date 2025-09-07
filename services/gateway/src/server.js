@@ -24,7 +24,12 @@ app.use('/api/adtech/v1/manifest', createProxyMiddleware({
   proxyTimeout: 15000,
   timeout: 15000,
   // Preserve full original path when forwarding
-  pathRewrite: (_path, req) => req.originalUrl
+  pathRewrite: (_path, req) => req.originalUrl,
+  onProxyRes: (proxyRes) => {
+    // Ensure standard rate-limit headers are preserved to client
+    // http-proxy-middleware forwards headers by default; this is future-proof if we need to map
+    // No-op intentionally
+  }
 }));
 app.use('/api/adtech/v1/beacons', createProxyMiddleware({
   target: MONOLITH_URL,
@@ -32,7 +37,10 @@ app.use('/api/adtech/v1/beacons', createProxyMiddleware({
   proxyTimeout: 15000,
   timeout: 15000,
   // Preserve full original path when forwarding
-  pathRewrite: (_path, req) => req.originalUrl
+  pathRewrite: (_path, req) => req.originalUrl,
+  onProxyRes: (proxyRes) => {
+    // Preserve RateLimit-* headers
+  }
 }));
 
 // Parse JSON for all other routes
@@ -126,6 +134,7 @@ app.use('/api/auth', createProxyMiddleware({
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`gateway on ${PORT}`);
   logJwksMetadata();
+  console.log(`[gateway] Upstream URLs: MONOLITH_URL=${MONOLITH_URL} LEADGEN_URL=${LEADGEN_URL}`);
 });
 
 

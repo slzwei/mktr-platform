@@ -2,6 +2,23 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 
 const target = process.env.GATEWAY_INTERNAL_URL || 'http://gateway:4000';
 
+function getReqHost(req) {
+  const xfHost = (req.headers['x-forwarded-host'] || '').toString().trim().toLowerCase();
+  const host = (req.headers.host || '').toString().trim().toLowerCase();
+  return xfHost || host;
+}
+
+function isSelfProxy(req) {
+  try {
+    const reqHost = getReqHost(req);
+    const targetHost = new URL(target).host.toLowerCase();
+    if (!reqHost || !targetHost) return false;
+    return reqHost === targetHost;
+  } catch (_) {
+    return false;
+  }
+}
+
 function rewritePath(path) {
   if (!path.startsWith('/api/')) return path;
   const rest = path.replace(/^\/api\//, '');
@@ -35,6 +52,11 @@ export function leadgenProxyShim() {
   return function shim(req, res, next) {
     const p = req.path || '';
     if (/^\/api\/(v1\/)?(qrcodes|prospects|commissions|variants)(\/|$)/.test(p)) {
+      // Self-proxy guard: if target host equals current host, bypass proxy to avoid 504 loops
+      if (isSelfProxy(req)) {
+        res.setHeader('x-legacy-shim-bypass', 'self-proxy-guard');
+        return next();
+      }
       // TODO: Return 410 after one-week grace period
       return mw(req, res, next);
     }

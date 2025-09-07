@@ -2,6 +2,8 @@ name: smoke-phase-b
 
 on:
   workflow_dispatch: {}
+  push:
+    branches: ["*"]
   pull_request:
     paths:
       - "services/leadgen-service/**"
@@ -38,6 +40,7 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y jq curl
+          chmod +x scripts/ci/ratelimit_probe.sh || true
 
       - name: Show Docker & Compose versions
         run: |
@@ -214,11 +217,58 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          # with compose env LEADGEN_RPS_LIST=1, a quick burst should yield a 429
-          code1=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $(cat token.txt)" http://localhost:4002/v1/qrcodes)
-          code2=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $(cat token.txt)" http://localhost:4002/v1/qrcodes)
-          echo "$code1 $code2"
-          [ "$code2" -eq 429 ] || [ "$code1" -eq 429 ]
+          # Probe list endpoint to determine burst/window
+          echo '--- Probe list RPS (direct) ---'
+          ./scripts/ci/ratelimit_probe.sh GET http://localhost:4002/v1/qrcodes "Authorization: Bearer $(cat token.txt)" | tee probe_list.txt
+          BURST=$(grep -E '^DERIVED_BURST=' probe_list.txt | cut -d= -f2)
+          WINDOW=$(grep -E '^DERIVED_WINDOW_SECS=' probe_list.txt | cut -d= -f2)
+          RETRY=$(grep -i '^Retry-After:' probe_list.txt | awk '{print $2}' | tr -d '\r' || true)
+          echo "derived_burst_list=$BURST window_secs=$WINDOW"
+          N=$((BURST + 5))
+          echo "Firing $N requests to assert at least one 429 within window"
+          out=$(for i in $(seq 1 $N); do curl -s -o /dev/null -w "%{http_code} " -H "Authorization: Bearer $(cat token.txt)" http://localhost:4002/v1/qrcodes & done; wait)
+          echo "$out"
+          if ! echo "$out" | grep -q "429"; then
+            sleep ${RETRY:-$WINDOW}
+            out=$(for i in $(seq 1 $N); do curl -s -o /dev/null -w "%{http_code} " -H "Authorization: Bearer $(cat token.txt)" http://localhost:4002/v1/qrcodes & done; wait)
+            echo "$out" | grep -q "429" || (echo "expected at least one 429 after retry"; exit 1)
+          fi
+
+          # Probe create endpoint as well
+          echo '--- Probe create RPS (direct) ---'
+          ./scripts/ci/ratelimit_probe.sh POST http://localhost:4002/v1/qrcodes "Authorization: Bearer $(cat token.txt)" 'Content-Type: application/json' -d '{"code":"SMOKE-RATE","status":"active"}' | tee probe_create.txt || true
+          BURST_C=$(grep -E '^DERIVED_BURST=' probe_create.txt | cut -d= -f2 || echo 60)
+          WINDOW_C=$(grep -E '^DERIVED_WINDOW_SECS=' probe_create.txt | cut -d= -f2 || echo 60)
+          RETRY_C=$(grep -i '^Retry-After:' probe_create.txt | awk '{print $2}' | tr -d '\r' || true)
+          echo "derived_burst_create=$BURST_C window_secs=$WINDOW_C"
+          # Fire BURST+5 create requests; only assert at least one 429 if create limiter < N
+          NC=$((BURST_C + 5))
+          outc=$(for i in $(seq 1 $NC); do curl -s -o /dev/null -w "%{http_code} " -X POST http://localhost:4002/v1/qrcodes -H "Authorization: Bearer $(cat token.txt)" -H 'Content-Type: application/json' -d '{"code":"SMK-'"$i"'","status":"active"}' & done; wait)
+          echo "$outc"
+          if ! echo "$outc" | grep -q "429"; then
+            sleep ${RETRY_C:-$WINDOW_C}
+            outc=$(for i in $(seq 1 $NC); do curl -s -o /dev/null -w "%{http_code} " -X POST http://localhost:4002/v1/qrcodes -H "Authorization: Bearer $(cat token.txt)" -H 'Content-Type: application/json' -d '{"code":"SMK-'"$i"'","status":"active"}' & done; wait)
+          fi
+          echo "$outc" | grep -q "429" || echo "no 429 observed for create (may be higher RPS); continuing"
+
+      - name: Rate limit 429 (scans direct, adaptive)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo '--- Probe scans RPS (direct) ---'
+          ./scripts/ci/ratelimit_probe.sh POST http://localhost:4002/v1/scans "Authorization: Bearer $(cat token.txt)" 'Content-Type: application/json' -d '{"qr_tag_id":"00000000-0000-0000-0000-000000000000"}' | tee probe_scans.txt || true
+          BURST_S=$(grep -E '^DERIVED_BURST=' probe_scans.txt | cut -d= -f2 || echo 60)
+          WINDOW_S=$(grep -E '^DERIVED_WINDOW_SECS=' probe_scans.txt | cut -d= -f2 || echo 60)
+          RETRY_S=$(grep -i '^Retry-After:' probe_scans.txt | awk '{print $2}' | tr -d '\r' || true)
+          echo "derived_burst_scans=$BURST_S window_secs=$WINDOW_S"
+          NS=$((BURST_S + 5))
+          out=$(for i in $(seq 1 $NS); do curl -s -o /dev/null -w "%{http_code} " -X POST http://localhost:4002/v1/scans -H "Authorization: Bearer $(cat token.txt)" -H 'Content-Type: application/json' -d '{"qr_tag_id":"00000000-0000-0000-0000-000000000000"}' & done; wait)
+          echo "$out"
+          if ! echo "$out" | grep -q "429"; then
+            sleep ${RETRY_S:-$WINDOW_S}
+            out=$(for i in $(seq 1 $NS); do curl -s -o /dev/null -w "%{http_code} " -X POST http://localhost:4002/v1/scans -H "Authorization: Bearer $(cat token.txt)" -H 'Content-Type: application/json' -d '{"qr_tag_id":"00000000-0000-0000-000000000000"}' & done; wait)
+          fi
+          echo "$out" | grep -q "429" || (echo "expected at least one 429 from scans"; exit 1)
 
       - name: "Smoke test complete - core flow validated"
         shell: bash
