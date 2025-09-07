@@ -163,6 +163,61 @@ jobs:
           curl -fsS -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
 
+      - name: Idempotent create (leadgen direct)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          KEY=$(python3 - <<'PY'
+import uuid; print(str(uuid.uuid4()))
+PY
+)
+          A=$(curl -sS -X POST http://localhost:4002/v1/qrcodes \
+            -H "Authorization: Bearer $(cat token.txt)" \
+            -H 'Content-Type: application/json' \
+            -H "Idempotency-Key: $KEY" \
+            -d '{"code":"SMOKE-IDEMP","status":"active"}')
+          echo "$A" | jq -e '.code==201 and .status=="success"'
+          B=$(curl -sS -X POST http://localhost:4002/v1/qrcodes \
+            -H "Authorization: Bearer $(cat token.txt)" \
+            -H 'Content-Type: application/json' \
+            -H "Idempotency-Key: $KEY" \
+            -d '{"code":"SMOKE-IDEMP","status":"active"}')
+          echo "$B" | jq -e '.code==200 and .status=="success"'
+          diff <(echo "$A" | jq -S .data) <(echo "$B" | jq -S .data)
+
+      - name: Pagination (leadgen direct) limit=1 returns next_cursor when >1
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # ensure at least 2 rows
+          curl -fsS -X POST http://localhost:4002/v1/qrcodes \
+            -H "Authorization: Bearer $(cat token.txt)" -H 'Content-Type: application/json' \
+            -d '{"code":"SMOKE-PAGE-1","status":"active"}' >/dev/null
+          curl -fsS -X POST http://localhost:4002/v1/qrcodes \
+            -H "Authorization: Bearer $(cat token.txt)" -H 'Content-Type: application/json' \
+            -d '{"code":"SMOKE-PAGE-2","status":"active"}' >/dev/null
+          curl -fsS -H "Authorization: Bearer $(cat token.txt)" 'http://localhost:4002/v1/qrcodes?limit=1' | tee page1.json
+          # next_cursor should exist when more than limit
+          jq -e '.next_cursor|type=="string"' page1.json >/dev/null
+
+      - name: Validation 400 (leadgen direct)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:4002/v1/qrcodes \
+            -H "Authorization: Bearer $(cat token.txt)" -H 'Content-Type: application/json' -d '{}')
+          [ "$code" -eq 400 ]
+
+      - name: Rate limit 429 (leadgen direct)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # with compose env LEADGEN_RPS_LIST=1, a quick burst should yield a 429
+          code1=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $(cat token.txt)" http://localhost:4002/v1/qrcodes)
+          code2=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $(cat token.txt)" http://localhost:4002/v1/qrcodes)
+          echo "$code1 $code2"
+          [ "$code2" -eq 429 ] || [ "$code1" -eq 429 ]
+
       - name: "Smoke test complete - core flow validated"
         shell: bash
         run: |

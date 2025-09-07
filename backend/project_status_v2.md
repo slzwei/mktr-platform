@@ -393,3 +393,26 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - pr: auth persistent rsa + ci; monolith health fix (merged)
   - commit: n/a
+
+### [2025-09-07 17:05 sgt] — phase b — leadgen hardening + contract tests + observability (pr-3)
+
+- branch: feat/leadgen-pr3-phase-b
+- summary:
+  1. add idempotent qr create, validation, pagination, per-tenant rate limits, structured logs, and lightweight metrics
+- changes:
+  1. services/leadgen-service/src/: export app; add observability middleware and /metrics; central validation + rate-limit; idempotency store and logic in qrcodes; scans attribution hook (car→driver)
+  2. infra/docker-compose.yml: set LEADGEN_RPS_LIST/CREATE=1 for deterministic 429 in ci; LEADGEN_IDEMP_WINDOW_HOURS=24
+  3. .github/workflows/smoke-phase-b.yml: add steps for idempotent duplicate, pagination next_cursor, 400 validation, 429 rate limit (leadgen direct)
+  4. docs/audit/leadgen.md: document idempotency, validation, pagination, rate limits, observability, examples
+- acceptance:
+  1. jwks via gateway ok → login via auth → leadgen health ok
+  2. idempotency: duplicate POST with same key returns 200 replay (leadgen direct)
+  3. pagination: limit=1 returns next_cursor when >1 rows
+  4. validation: create without code/status returns 400
+  5. rate limit: burst lists yield 429 with Retry-After
+- notes:
+  1. gateway fallback intentionally unchanged; new assertions use leadgen direct to avoid fallback masking idempotency/limits
+  2. attribution uses monolith public.cars current driver fields best-effort at scan time
+- links:
+  - pr: n/a
+  - commit: n/a
