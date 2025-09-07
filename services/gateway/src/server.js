@@ -91,11 +91,21 @@ app.use('/api/leadgen', authn, createProxyMiddleware({
 }));
 
 // Allow device-key based auth at monolith for specific adtech endpoints only (manifest/beacons)
-app.use('/api/adtech/v1/manifest', createProxyMiddleware({ target: MONOLITH_URL, changeOrigin: true }));
-app.use('/api/adtech/v1/beacons', createProxyMiddleware({ target: MONOLITH_URL, changeOrigin: true }));
+// For device-key adtech endpoints, forward original path unchanged to monolith
+const forwardFullPath = createProxyMiddleware({
+  target: MONOLITH_URL,
+  changeOrigin: true,
+  pathRewrite: (path, req) => req.originalUrl
+});
+app.use('/api/adtech/v1/manifest', forwardFullPath);
+app.use('/api/adtech/v1/beacons', forwardFullPath);
 
-// Other adtech endpoints remain JWT-protected
-app.use('/api/adtech', authn, createProxyMiddleware({ target: MONOLITH_URL, changeOrigin: true }));
+// Other adtech endpoints remain JWT-protected; forward full original path
+app.use('/api/adtech', authn, createProxyMiddleware({
+  target: MONOLITH_URL,
+  changeOrigin: true,
+  pathRewrite: (path, req) => req.originalUrl
+}));
 
 // Proxy auth routes to auth-service (no authn required for login/register)
 app.use('/api/auth', createProxyMiddleware({
