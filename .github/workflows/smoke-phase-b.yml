@@ -155,7 +155,7 @@ jobs:
           set -euxo pipefail
           curl -fsS -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
-      
+
       - name: "Smoke test complete - core flow validated"
         shell: bash
         run: |
@@ -164,16 +164,15 @@ jobs:
           echo "✅ LeadGen: health + create/list working"
           echo "✅ Security: 401s for missing/tampered tokens"
           echo "Note: DB persistence check skipped (non-critical for smoke)"
-          
+
       - name: "Negative auth checks"
         shell: bash
         run: |
           set -euxo pipefail
-          
+
           # no token -> 401
           code=$(curl -s -o /dev/null -w "%{http_code}" "$LEADGEN_HEALTH")
           [ "$code" -eq 401 ]
-<<<<<<< HEAD
 
           # unknown KID -> 401 (re-sign header with fake kid)
           TOK=$(cat token.txt)
@@ -186,10 +185,6 @@ jobs:
             code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_UNKNOWN_KID" "$LEADGEN_HEALTH")
             [ "$code" -eq 401 ]
           fi
-
-=======
-          
->>>>>>> origin/main
           # tampered token -> 401
           TOK=$(cat token.txt)
           H=$(echo "$TOK" | cut -d. -f1)
@@ -200,23 +195,11 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_BAD" "$LEADGEN_HEALTH")
           [ "$code" -eq 401 ]
 
-<<<<<<< HEAD
           # Postgres persistence (non-blocking; gateway may use in-memory fallback)
           docker compose -f infra/docker-compose.yml exec -T db \
             psql -U mktr -d mktr -c \
             "SELECT code, tenant_id FROM leadgen.qr_tags WHERE code='DEMO-CI-QR' AND tenant_id='00000000-0000-0000-0000-000000000000' LIMIT 1;" \
           | grep -q DEMO-CI-QR || echo "Row not found (non-blocking)"
-=======
-      - name: "DB persistence check (non-blocking)"
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euxo pipefail
-          docker compose -f infra/docker-compose.yml exec -T db \
-            psql -U mktr -d mktr -c \
-            "SELECT code, tenant_id FROM leadgen.qrcodes WHERE code='DEMO-CI-QR' AND tenant_id='00000000-0000-0000-0000-000000000000' LIMIT 1;" \
-          | grep -q DEMO-CI-QR || echo "Row not in DB (non-blocking; may be in-memory)"
->>>>>>> origin/main
 
       - name: Dump compose logs on failure
         if: failure()
