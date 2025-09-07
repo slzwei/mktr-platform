@@ -35,6 +35,8 @@ import contactRoutes from './routes/contact.js';
 import { validateGoogleOAuthConfig } from './controllers/authController.js';
 import { optionalAuth } from './middleware/auth.js';
 import { initSystemAgent } from './services/systemAgent.js';
+import ensureTenantPlumbing from './database/tenantMigration.js';
+import leadgenProxyShim from './middleware/leadgenProxyShim.js';
 
 // Load environment variables
 dotenv.config();
@@ -100,6 +102,11 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
+// Legacy LeadGen proxy shim → forwards to gateway leadgen domain
+// This preserves existing frontend calls during a one-week grace window.
+import leadgenProxyShim from './middleware/leadgenProxyShim.js';
+app.use(leadgenProxyShim());
+
 // Static file serving for uploads
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
@@ -134,6 +141,35 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/verify', verifyRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/contact', contactRoutes);
+
+
+// Domain-prefixed routes (feature-flagged)
+if (String(process.env.ENABLE_DOMAIN_PREFIXES).toLowerCase() === 'true') {
+  // Health endpoints per domain
+  app.get('/api/adtech/health', (req, res) => res.json({ ok: true, service: 'adtech' }));
+  app.get('/api/leadgen/health', (req, res) => res.json({ ok: true, service: 'leadgen' }));
+  app.get('/api/fleet/health', (req, res) => res.json({ ok: true, service: 'fleet' }));
+  app.get('/api/admin/health', (req, res) => res.json({ ok: true, service: 'admin' }));
+
+  // AdTech → campaigns, analytics, previews
+  app.use('/api/adtech/campaigns', campaignRoutes);
+  app.use('/api/adtech/previews', campaignPreviewRoutes);
+  app.use('/api/adtech/analytics', analyticsRoutes);
+
+  // LeadGen → qrcodes, tracker, prospects, agents, commissions
+  app.use('/api/leadgen/qrcodes', trackerRoutes);
+  app.use('/api/leadgen/qrcodes', qrRoutes);
+  app.use('/api/leadgen/prospects', prospectRoutes);
+  app.use('/api/leadgen/agents', agentRoutes);
+  app.use('/api/leadgen/commissions', commissionRoutes);
+
+  // Fleet → fleet, cars, drivers
+  app.use('/api/fleet', fleetRoutes);
+
+  // Admin → users (admin ops), contact stub
+  app.use('/api/admin/users', userRoutes);
+  app.use('/api/admin/contact', contactRoutes);
+}
 
 // Fallback: /t/:slug → /api/qrcodes/track/:slug with noindex/no-store
 app.get('/t/:slug', (req, res) => {
@@ -229,6 +265,14 @@ async function startServer() {
     // Sync remaining models
     await sequelize.sync({ alter: false });
     console.log('✅ Database models synchronized.');
+
+    // Ensure tenant plumbing on Postgres
+    try {
+      await ensureTenantPlumbing(sequelize);
+      console.log('✅ Tenant plumbing ensured.');
+    } catch (e) {
+      console.warn('⚠️ Tenant plumbing failed (non-fatal):', e.message);
+    }
 
     // Ensure System Agent exists and cache its ID
     try {

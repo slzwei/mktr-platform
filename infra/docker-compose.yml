@@ -47,9 +47,14 @@ services:
       AUTH_JWKS_URL: http://auth:4001/.well-known/jwks.json
       AUTH_ISSUER: http://auth:4001
       AUTH_AUDIENCE: mktr
-      DATABASE_URL: postgres://mktr:mktr@db:5432/mktr
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: mktr
+      DB_USER: mktr
+      DB_PASSWORD: mktr
       REDIS_URL: redis://redis:6379/0
-    ports: ["3001:3001"]
+      GATEWAY_INTERNAL_URL: http://gateway:4000
+    ports: ["3301:3001"]
     depends_on:
       db: { condition: service_healthy }
       auth: { condition: service_started }

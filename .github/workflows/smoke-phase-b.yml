@@ -74,35 +74,53 @@ jobs:
           echo "---- LEADGEN LOGS ----";  docker compose -f infra/docker-compose.yml logs --no-color --tail=200 leadgen  || true
           echo "---- MONOLITH LOGS ----"; docker compose -f infra/docker-compose.yml logs --no-color --tail=200 monolith || true
 
-      - name: Wait for services (auth jwks & gateway tcp)
+      - name: Wait for services (gateway tcp & jwks via gateway)
         shell: bash
         run: |
           set -euxo pipefail
           retry() { n=0; until [ $n -ge 60 ]; do "$@" && break; n=$((n+1)); echo "retry $n"; sleep 2; done; test $n -lt 60; }
-          retry bash -lc "echo > /dev/tcp/127.0.0.1/4001"
           retry bash -lc "echo > /dev/tcp/127.0.0.1/4000"
-          retry bash -lc "curl -sf $AUTH_URL/.well-known/jwks.json | jq -e '.keys|length > 0'"
+          # prefer jwks via gateway to tolerate network namespace in CI
+          retry bash -lc "curl -sf $GATEWAY_URL/api/auth/.well-known/jwks.json | jq -e '.keys|length > 0'"
 
-      - name: Assert JWKS alg and kid
+      - name: Seed dev user (non-prod)
+        if: ${{ env.NODE_ENV != 'production' }}
         run: |
-          curl -sf "$AUTH_URL/.well-known/jwks.json" \
+          # route via gateway to avoid direct container networking assumptions
+          curl -fsS -X POST "$GATEWAY_URL/api/auth/internal/dev/seed-user" | jq .
+
+      - name: Assert JWKS alg and kid (via gateway)
+        run: |
+          curl -sf "$GATEWAY_URL/api/auth/.well-known/jwks.json" \
           | jq -e '.keys[0].alg=="RS256" and (.keys[0].kid|type)=="string" and (.keys[0].kid|length)>0'
 
-      - name: Password login -> token (try admin then admin123)
+      - name: Password login -> token (try admin/admin123 then seeded creds)
         id: login
         shell: bash
         run: |
           set -euxo pipefail
-          try_login() {
-            PW="$1"
-            TOK=$(curl -s -X POST "$AUTH_URL/v1/auth/login" \
+          login_once() {
+            local email="$1" pw="$2"
+            # capture body and status separately to avoid jq parse errors on non-200
+            local resp
+            # call auth-service directly to avoid proxy variations
+            resp=$(curl -sS -w "\n%{http_code}" -X POST "$AUTH_URL/v1/auth/login" \
               -H 'Content-Type: application/json' \
-              -d "{\"email\":\"admin@example.com\",\"password\":\"$PW\"}" | jq -r '.token // empty')
-            echo "$TOK"
+              -d "{\"email\":\"$email\",\"password\":\"$pw\"}")
+            local status=$(echo "$resp" | tail -n1)
+            local body=$(echo "$resp" | sed '$d')
+            if [ "$status" != "200" ]; then
+              echo "login failed (status=$status) body:" >&2
+              echo "$body" >&2
+              return 1
+            fi
+            echo "$body" | jq -r '.token // empty'
           }
-          TOK=$(try_login admin)
-          if [ -z "$TOK" ]; then TOK=$(try_login admin123); fi
-          if [ -z "$TOK" ]; then echo "Login failed with both admin and admin123"; exit 1; fi
+
+          TOK=$(login_once 'admin@example.com' 'admin' || true)
+          if [ -z "$TOK" ]; then TOK=$(login_once 'admin@example.com' 'admin123' || true); fi
+          if [ -z "$TOK" ]; then TOK=$(login_once "${EMAIL:-test@mktr.sg}" "${PASSWORD:-test}" || true); fi
+          if [ -z "$TOK" ]; then echo "Login failed with all attempts"; exit 1; fi
           echo "$TOK" > token.txt
           echo "token=$TOK" >> "$GITHUB_OUTPUT"
 
@@ -115,12 +133,12 @@ jobs:
       - name: LeadGen health via gateway
         run: |
           set -euxo pipefail
-          curl -sf -H "Authorization: Bearer $(cat token.txt)" "$LEADGEN_HEALTH" | jq -e '.ok == true and .service == "leadgen"'
+          curl -fsS -H "Authorization: Bearer $(cat token.txt)" "$LEADGEN_HEALTH" | jq -e '.ok == true and .service == "leadgen"'
 
       - name: Create QR
         run: |
           set -euxo pipefail
-          curl -sf -X POST "$QR_CREATE" \
+          curl -fsS -X POST "$QR_CREATE" \
             -H "Authorization: Bearer $(cat token.txt)" \
             -H 'Content-Type: application/json' \
             -d '{"code":"DEMO-CI-QR","status":"active"}' | tee create.json
@@ -130,7 +148,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          curl -sf -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
+          curl -fsS -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
       
       - name: "Smoke test complete - core flow validated"

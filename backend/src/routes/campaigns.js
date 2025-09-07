@@ -1,6 +1,7 @@
 import express from 'express';
 import { Op } from 'sequelize';
 import { Campaign, QrTag, Prospect, sequelize } from '../models/index.js';
+import { getTenantId } from '../middleware/tenant.js';
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
@@ -11,7 +12,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   const { page = 1, limit = 10, status, type, search, createdBy } = req.query;
   const offset = (page - 1) * limit;
 
-  const whereConditions = {};
+  const whereConditions = { tenant_id: getTenantId(req) };
   
   // Non-admin users can only see their own campaigns or public ones
   if (req.user.role !== 'admin') {
@@ -109,7 +110,7 @@ router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req
 router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const whereConditions = { id };
+  const whereConditions = { id, tenant_id: getTenantId(req) };
   
   // Non-admin users can only see their own campaigns or public ones
   if (req.user.role !== 'admin') {
@@ -166,7 +167,7 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
   const { id } = req.params;
   const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, commission_amount_driver, commission_amount_fleet } = req.body;
 
-  const whereConditions = { id };
+  const whereConditions = { id, tenant_id: getTenantId(req) };
   
   // Non-admin users can only update their own campaigns
   if (req.user.role !== 'admin') {
@@ -207,7 +208,7 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
 router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const whereConditions = { id };
+  const whereConditions = { id, tenant_id: getTenantId(req) };
   
   // Non-admin users can only delete their own campaigns
   if (req.user.role !== 'admin') {
@@ -243,7 +244,7 @@ router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async
 router.get('/:id/analytics', authenticateToken, asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const whereConditions = { id };
+  const whereConditions = { id, tenant_id: getTenantId(req) };
   
   // Non-admin users can only see analytics for their own campaigns or public ones
   if (req.user.role !== 'admin') {

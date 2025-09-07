@@ -14,6 +14,7 @@ const ISS = process.env.AUTH_ISSUER || 'http://auth:4001';
 const AUD = process.env.AUTH_AUDIENCE || 'mktr-platform';
 const MONOLITH_URL = process.env.MONOLITH_URL || 'http://monolith:3001';
 const LEADGEN_URL = process.env.LEADGEN_URL || 'http://leadgen:4002';
+const AUTH_URL = process.env.AUTH_URL || 'http://auth:4001';
 
 const JWKS = createRemoteJWKSet(new URL(AUTH_JWKS_URL));
 
@@ -75,6 +76,14 @@ app.use('/api/leadgen', authn, createProxyMiddleware({
 }));
 
 app.use('/api/adtech', authn, createProxyMiddleware({ target: MONOLITH_URL, changeOrigin: true }));
+
+// Proxy auth routes to auth-service (no authn required for login/register)
+app.use('/api/auth', createProxyMiddleware({
+  target: AUTH_URL,
+  changeOrigin: true,
+  pathRewrite: { '^/api/auth': '' },
+  proxyTimeout: 15000
+}));
 
 app.listen(PORT, '0.0.0.0', () => console.log(`gateway on ${PORT}`));
 
