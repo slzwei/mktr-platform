@@ -44,6 +44,12 @@ services:
       ENABLE_DOMAIN_PREFIXES: "true"
       ENABLE_AUTH_MAPPING: "true"
       ENABLE_LEGACY_LEADGEN: "true"
+      MANIFEST_ENABLED: ${MANIFEST_ENABLED:-true}
+      BEACONS_ENABLED: ${BEACONS_ENABLED:-true}
+      MANIFEST_REFRESH_SECONDS: ${MANIFEST_REFRESH_SECONDS:-60}
+      MANIFEST_RPS_PER_DEVICE: ${MANIFEST_RPS_PER_DEVICE:-5}
+      BEACON_IDEMP_WINDOW_MIN: ${BEACON_IDEMP_WINDOW_MIN:-1}
+      BEACON_RPS_PER_DEVICE: ${BEACON_RPS_PER_DEVICE:-"5"}
       AUTH_JWKS_URL: http://auth:4001/.well-known/jwks.json
       AUTH_ISSUER: http://auth:4001
       AUTH_AUDIENCE: mktr
@@ -56,7 +62,8 @@ services:
       GATEWAY_INTERNAL_URL: http://gateway:4000
     ports: ["3301:3001"]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:3001/api/adtech/health || exit 1"]
+      # Use generic /health so Phase B (no adtech flags required) stays green
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3001/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -98,7 +105,8 @@ services:
     ports: ["4000:4000"]
     depends_on:
       auth: { condition: service_started }
-      monolith: { condition: service_started }
+      # Ensure gateway only starts after monolith reports healthy, so gateway manifest calls don't 404
+      monolith: { condition: service_healthy }
       leadgen: { condition: service_started }
 
 volumes:

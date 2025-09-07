@@ -416,3 +416,64 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - pr: n/a
   - commit: n/a
+
+### [2025-09-07 18:05 sgt] — phase b — pr-3 merged on main; ready for phase c
+
+- branch: main
+- summary:
+  1. merged leadgen hardening (idempotency, validation, pagination, rate limits, logs/metrics) and CI contract tests
+- changes:
+  1. services/leadgen-service: idempotent POST /v1/qrcodes; centralized validation; pagination with next_cursor; per‑tenant RPS limits; structured JSON logs; /metrics snapshot
+  2. infra/docker-compose.yml: added LEADGEN_RPS_LIST/CREATE and LEADGEN_IDEMP_WINDOW_HOURS envs
+  3. .github/workflows/smoke-phase-b.yml: idempotency replay, pagination, 400, and 429 checks; artifacts on failure
+  4. docs/audit/leadgen.md added
+- acceptance:
+  1. CI smoke green on PR and main: jwks → login → leadgen health → create/list; idempotent replay (200) → pagination next_cursor → 400 invalid → 429 rate‑limit
+- notes:
+  1. gateway fallback remains by design; CI uses leadgen direct for idempotency/limits
+  2. attribution in scans is best‑effort via monolith cars table at scan ts
+- links:
+  - pr: leadgen: hardening + contract tests + observability (phase b / pr-3)
+  - commit: merged
+
+### [2025-09-07 19:40 sgt] — phase c — scaffold: manifest v1 + beacons behind flags
+
+- branch: phase-c/scaffold-manifest-beacons
+- summary:
+  1. added guarded adtech routes: manifest and beacons; device auth + idempotency + per-device RPS; CI smoke for phase C
+- changes:
+  1. backend/src/routes/: `adtechManifest.js` (GET /api/adtech/v1/manifest with ETag), `adtechBeacons.js` (POST heartbeat, impressions with Idempotency-Key and dedupe)
+  2. backend/src/models/: `Device.js`, `BeaconEvent.js`, `IdempotencyKey.js`; wired in `models/index.js`
+  3. backend/src/middleware/: `deviceAuth.js` (X-Device-Key → devices.secret_hash)
+  4. backend/src/utils/: `assetSigning.js` placeholder + test; backend/src/schemas/manifest_v1.json added
+  5. backend/src/scripts/: `register_test_device.js` for CI bootstrap
+  6. backend/src/server.js: mount routes behind `MANIFEST_ENABLED` / `BEACONS_ENABLED`
+  7. infra/docker-compose.yml: add flags (manifest/beacons, rps, idemp window)
+  8. .github/workflows/smoke-phase-c.yml: manifest 200/304/401; beacons 200 idempotent; logs artifacts
+  9. docs/audit/: `manifest.md`, `beacons.md` with findings and questions
+- acceptance:
+  1. flags off: routes return 404; flags on: ci smoke-phase-c passes manifest (200→304) and heartbeat/impressions (200, idempotent)
+- notes:
+  1. validation envelopes and metrics/log sampling to be added next; no changes to phase B endpoints/workflow
+- links:
+  - pr: n/a
+  - commit: n/a
+
+### [2025-09-07 20:25 sgt] — phase c — gateway proxy fix + healthcheck stabilization (ci green)
+
+- branch: phase-c/scaffold-manifest-beacons
+- summary:
+  1. fixed gateway adtech proxy to preserve original paths; stabilized monolith healthcheck; phase b/c workflows now green
+- changes:
+  1. services/gateway/src/server.js: forward `req.originalUrl` for `/api/adtech/v1/manifest` and `/api/adtech/v1/beacons/*` to avoid 404s
+  2. infra/docker-compose.yml: monolith healthcheck now hits `/health` (flag-agnostic)
+  3. .github/workflows/smoke-phase-b.yml: wait on monolith `/health` before tests
+  4. backend/Dockerfile: install curl for compose healthcheck
+- acceptance:
+  1. phase b workflow: passes end-to-end (jwks → login → leadgen health/create/list)
+  2. phase c workflow: manifest 200 then 304 via ETag; manifest 400/429; beacons heartbeat idempotent 200; impressions 200 with dedupe
+- notes:
+  1. flags default to true in compose for ci; production should set explicitly
+- links:
+  - pr: n/a
+  - commit: merged

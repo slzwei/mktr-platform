@@ -6,8 +6,8 @@ import crypto from 'crypto';
 
 const app = express();
 app.use(cors());
-app.use(express.json());
 
+// Define env-derived constants BEFORE middleware that uses them
 const PORT = process.env.PORT || 4000;
 const AUTH_JWKS_URL = process.env.AUTH_JWKS_URL || 'http://auth:4001/.well-known/jwks.json';
 const ISS = process.env.AUTH_ISSUER || 'http://auth:4001';
@@ -15,6 +15,28 @@ const AUD = process.env.AUTH_AUDIENCE || 'mktr-platform';
 const MONOLITH_URL = process.env.MONOLITH_URL || 'http://monolith:3001';
 const LEADGEN_URL = process.env.LEADGEN_URL || 'http://leadgen:4002';
 const AUTH_URL = process.env.AUTH_URL || 'http://auth:4001';
+
+// Register adtech device-key proxies BEFORE body parsing so request bodies stream through untouched
+// Device-key endpoints (no JWT at gateway)
+app.use('/api/adtech/v1/manifest', createProxyMiddleware({
+  target: MONOLITH_URL,
+  changeOrigin: true,
+  proxyTimeout: 15000,
+  timeout: 15000,
+  // Preserve full original path when forwarding
+  pathRewrite: (_path, req) => req.originalUrl
+}));
+app.use('/api/adtech/v1/beacons', createProxyMiddleware({
+  target: MONOLITH_URL,
+  changeOrigin: true,
+  proxyTimeout: 15000,
+  timeout: 15000,
+  // Preserve full original path when forwarding
+  pathRewrite: (_path, req) => req.originalUrl
+}));
+
+// Parse JSON for all other routes
+app.use(express.json());
 
 // Bounded-cache JWKS with conservative cooldown
 const JWKS = createRemoteJWKSet(new URL(AUTH_JWKS_URL), {
@@ -90,6 +112,7 @@ app.use('/api/leadgen', authn, createProxyMiddleware({
   proxyTimeout: 30000
 }));
 
+// Other adtech endpoints remain JWT-protected
 app.use('/api/adtech', authn, createProxyMiddleware({ target: MONOLITH_URL, changeOrigin: true }));
 
 // Proxy auth routes to auth-service (no authn required for login/register)

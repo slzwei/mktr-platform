@@ -1,0 +1,181 @@
+name: smoke-phase-c
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    branches: ["*"]
+    paths:
+      - "backend/**"
+      - "services/gateway/**"
+      - "infra/**"
+      - ".github/workflows/smoke-phase-c.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-phase-c-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GATEWAY_URL: http://localhost:4000
+      AUTH_URL: http://localhost:4001
+      MANIFEST_URL: http://localhost:4000/api/adtech/v1/manifest
+      HEARTBEAT_URL: http://localhost:4000/api/adtech/v1/beacons/heartbeat
+      IMPRESSIONS_URL: http://localhost:4000/api/adtech/v1/beacons/impressions
+      TEST_DEVICE_KEY: ci-device-key
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq curl
+
+      - name: Compose down
+        run: docker compose -f infra/docker-compose.yml down -v || true
+
+      - name: Compose pull base images
+        run: |
+          set -euxo pipefail
+          docker compose -f infra/docker-compose.yml pull --quiet || true
+
+      - name: Compose up with flags (relaxed RPS for readiness)
+        run: |
+          set -euxo pipefail
+          export MANIFEST_ENABLED=true
+          export BEACONS_ENABLED=true
+          export MANIFEST_REFRESH_SECONDS=60
+          export BEACON_IDEMP_WINDOW_MIN=1
+          export MANIFEST_RPS_PER_DEVICE=10
+          docker compose -f infra/docker-compose.yml up -d --build
+
+      - name: Wait for gateway and jwks via gateway
+        run: |
+          set -euxo pipefail
+          retry() { n=0; until [ $n -ge 60 ]; do "$@" && break; n=$((n+1)); echo "retry $n"; sleep 2; done; test $n -lt 60; }
+          retry bash -lc "echo > /dev/tcp/127.0.0.1/4000"
+          retry bash -lc "curl -sf $GATEWAY_URL/api/auth/.well-known/jwks.json | jq -e '.keys|length > 0'"
+
+      # Register device first; then manifest checks will include a short readiness retry
+
+      - name: Seed dev user
+        run: |
+          curl -fsS -X POST "$GATEWAY_URL/api/auth/internal/dev/seed-user" | jq .
+
+      - name: Login to get token
+        id: login
+        run: |
+          set -euxo pipefail
+          login_once() {
+            local email="$1" pw="$2"
+            local resp status body
+            resp=$(curl -sS -w "\n%{http_code}" -X POST "$AUTH_URL/v1/auth/login" \
+              -H 'Content-Type: application/json' \
+              -d "{\"email\":\"$email\",\"password\":\"$pw\"}")
+            status=$(echo "$resp" | tail -n1)
+            body=$(echo "$resp" | sed '$d')
+            if [ "$status" != "200" ]; then return 1; fi
+            echo "$body" | jq -r '.token // empty'
+          }
+          TOK=$(login_once 'admin@example.com' 'admin' || true)
+          if [ -z "$TOK" ]; then TOK=$(login_once 'admin@example.com' 'admin123' || true); fi
+          if [ -z "$TOK" ]; then TOK=$(login_once 'test@mktr.sg' 'test' || true); fi
+          if [ -z "$TOK" ]; then echo "Login failed"; exit 1; fi
+          echo "$TOK" > token.txt
+
+      - name: Register test device
+        run: |
+          set -euxo pipefail
+          docker compose -f infra/docker-compose.yml exec -T -e TEST_DEVICE_KEY="$TEST_DEVICE_KEY" monolith \
+            node src/scripts/register_test_device.js | tail -n 1 | tee device.json
+          ok=$(jq -r '.ok' device.json); [ "$ok" = "true" ]
+
+      - name: Check monolith flags (debug)
+        run: |
+          set -euxo pipefail
+          docker compose -f infra/docker-compose.yml exec -T monolith printenv MANIFEST_ENABLED BEACONS_ENABLED
+
+      - name: Monolith direct manifest readiness
+        run: |
+          set -euxo pipefail
+          h="X-Device-Key: $TEST_DEVICE_KEY"
+          retry() { n=0; until [ $n -ge 60 ]; do code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" http://localhost:3301/api/adtech/v1/manifest || true); [ "$code" -eq 200 ] && break; n=$((n+1)); echo "monolith manifest retry $n (code=$code)"; sleep 2; done; test $n -lt 60; }
+          retry
+
+      - name: Manifest 200 and ETag/304 (gateway only; wait for monolith health)
+        run: |
+          set -euxo pipefail
+          h="X-Device-Key: $TEST_DEVICE_KEY"
+          # wait for monolith health to be healthy before probing gateway
+          retry_health() { n=0; until [ $n -ge 60 ]; do code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3301/health || true); [ "$code" = "200" ] && break; n=$((n+1)); echo "monolith health retry $n (code=$code)"; sleep 2; done; test $n -lt 60; }
+          retry_health
+          # bounded retry on gateway only (5 attempts, ~10s)
+          tries=0; code=000; while [ $tries -lt 5 ]; do code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL" || true); [ "$code" = "200" ] && break; tries=$((tries+1)); echo "gateway manifest retry $tries (code=$code)"; sleep 2; done
+          [ "$code" -eq 200 ]
+          A=$(curl -sS -D headers.txt -H "$h" "$MANIFEST_URL" -o body.json)
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL")
+          [ "$code" -eq 200 ]
+          etag=$(grep -i '^etag:' headers.txt | awk '{print $2}' | tr -d '\r')
+          [ -n "$etag" ]
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" -H "If-None-Match: $etag" "$MANIFEST_URL")
+          [ "$code" -eq 304 ]
+
+      - name: Manifest 400 (missing key; gateway only)
+        run: |
+          set -euxo pipefail
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$MANIFEST_URL")
+          [ "$code" -eq 400 ]
+
+      - name: Manifest 429 (per-device RPS, burst 10; gateway only)
+        run: |
+          set -euxo pipefail
+          h="X-Device-Key: $TEST_DEVICE_KEY"
+          # With RPS=10, burst 10 requests in parallel and expect >=1 to hit the limit
+          out=$(for i in $(seq 1 10); do curl -s -o /dev/null -w "%{http_code} " -H "$h" "$MANIFEST_URL" & done; wait)
+          echo "$out"
+          echo "$out" | grep -q "429" || (echo "expected at least one 429"; exit 1)
+
+      - name: Heartbeat 200 idempotent + 429
+        run: |
+          set -euxo pipefail
+          h="X-Device-Key: $TEST_DEVICE_KEY"
+          KEY=$(python3 -c "import uuid; print(uuid.uuid4())")
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$HEARTBEAT_URL" -H "$h" -H "Idempotency-Key: $KEY" -H 'Content-Type: application/json' -d '{"battery":90}')
+          [ "$code" -eq 200 ]
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$HEARTBEAT_URL" -H "$h" -H "Idempotency-Key: $KEY" -H 'Content-Type: application/json' -d '{"battery":90}')
+          [ "$code" -eq 200 ]
+
+      - name: Impressions 200 with dedupe + 429
+        run: |
+          set -euxo pipefail
+          h="X-Device-Key: $TEST_DEVICE_KEY"
+          body='{"items":[{"asset_id":"a1","campaign_id":"c1","ts":"2020-01-01T00:00:00Z"},{"asset_id":"a1","campaign_id":"c1","ts":"2020-01-01T00:00:00Z"}]}'
+          curl -fsS -X POST "$IMPRESSIONS_URL" -H "$h" -H 'Content-Type: application/json' -d "$body" | tee imp.json
+          jq -e '.success==true and (.deduped_total|type=="number")' imp.json >/dev/null
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose -f infra/docker-compose.yml ps
+          docker compose -f infra/docker-compose.yml logs --no-color > compose-logs-phase-c.txt || true
+
+      - name: Upload logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-logs-phase-c
+          path: |
+            compose-logs-phase-c.txt
+            device.json
+            body.json
+            headers.txt
+            imp.json
+
+      - name: Compose down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v || true

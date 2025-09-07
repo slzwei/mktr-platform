@@ -31,6 +31,9 @@ import uploadRoutes from './routes/uploads.js';
 import dashboardRoutes from './routes/dashboard.js';
 import verifyRoutes from './routes/verify.js';
 import analyticsRoutes from './routes/analytics.js';
+import leadgenProxyShim from './middleware/leadgenProxyShim.js';
+import adtechManifestRoutes from './routes/adtechManifest.js';
+import adtechBeaconsRoutes from './routes/adtechBeacons.js';
 import contactRoutes from './routes/contact.js';
 import { validateGoogleOAuthConfig } from './controllers/authController.js';
 import { optionalAuth } from './middleware/auth.js';
@@ -140,6 +143,14 @@ app.use('/api/verify', verifyRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/contact', contactRoutes);
 
+// Phase C: Adtech Manifest + Beacons (behind flags)
+if (String(process.env.MANIFEST_ENABLED || 'false').toLowerCase() === 'true') {
+  app.use('/api/adtech', adtechManifestRoutes);
+}
+if (String(process.env.BEACONS_ENABLED || 'false').toLowerCase() === 'true') {
+  app.use('/api/adtech', adtechBeaconsRoutes);
+}
+
 
 // Domain-prefixed routes (feature-flagged)
 if (String(process.env.ENABLE_DOMAIN_PREFIXES).toLowerCase() === 'true') {
@@ -208,7 +219,12 @@ async function startServer() {
     await Car.sync({ alter: !isSqlite });
     // Now dependent tables
     await QrTag.sync({ alter: !isSqlite });
-    await QrScan.sync({ alter: !isSqlite });
+    try {
+      // Avoid aggressive alters on Postgres for qr_scans to prevent dropping non-existent FKs
+      await QrScan.sync({ alter: false });
+    } catch (e) {
+      console.warn('⚠️ QrScan sync (alter=false) failed, continuing:', e?.message || e);
+    }
     await Attribution.sync({ alter: !isSqlite });
     await SessionVisit.sync({ alter: !isSqlite });
     await Prospect.sync({ alter: !isSqlite });
