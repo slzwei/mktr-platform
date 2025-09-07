@@ -350,3 +350,22 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - pr: n/a
   - commit: n/a
+
+### [2025-09-07 15:23 sgt] — phase b — ci smoke green on main via gateway/auth/leadgen
+
+- branch: main
+- summary:
+  1. merged `chore/smoke-code-status`; ci smoke passes end-to-end on main.
+  2. login now uses `AUTH_URL` directly (stable in ci); jwks verified via gateway.
+- changes:
+  1. .github/workflows/smoke-phase-b.yml: call `$AUTH_URL/v1/auth/login`; robust curl+jq handling; upload artifacts.
+  2. scripts/smoke_gateway_auto.sh: standardized to `{ code, status }` and assertion by `.code`.
+- acceptance:
+  1. workflow log shows: jwks ok → token issued → leadgen health ok → qr create/list ok → negative checks 401.
+  2. local: `API_ROOT=http://localhost:4000/api AUTH_URL=http://localhost:4001 EMAIL=test@mktr.sg PASSWORD=test bash scripts/smoke_gateway_auto.sh` → all checks passed.
+- notes:
+  1. monolith container exited due to duplicate `leadgenProxyShim` import; not blocking (adtech not used in smoke). defer fix.
+  2. production: set `AUTH_PRIVATE_KEY_PEM` + `KID` for persistent jwks; services point to `AUTH_ISSUER`/`AUTH_JWKS_URL`.
+- links:
+  - pr: n/a
+  - commit: n/a

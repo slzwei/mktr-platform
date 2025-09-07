@@ -11,12 +11,14 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const PORT = process.env.PORT || 4001;
-const ISS = process.env.AUTH_ISSUER || `http://auth:${PORT}`;
-const AUD = process.env.AUTH_AUDIENCE || 'mktr-platform';
+const ISS = process.env.AUTH_JWT_ISSUER || process.env.AUTH_ISSUER || `http://auth:${PORT}`;
+const AUD = process.env.AUTH_JWT_AUDIENCE || process.env.AUTH_AUDIENCE || 'mktr-platform';
 
 async function buildKeyMaterial() {
   const pemEnv = process.env.AUTH_PRIVATE_KEY_PEM;
-  const kidEnv = process.env.KID && String(process.env.KID).trim();
+  const kidEnv = (process.env.AUTH_JWKS_KID || process.env.KID) && String(process.env.AUTH_JWKS_KID || process.env.KID).trim();
+  const prevPemEnv = process.env.AUTH_PREVIOUS_PUBLIC_KEY_PEM;
+  const prevKidEnv = process.env.AUTH_PREVIOUS_KID && String(process.env.AUTH_PREVIOUS_KID).trim();
   if (pemEnv && pemEnv.trim()) {
     const normalizedPem = pemEnv.replace(/\\n/g, '\n');
     const privateKey = await importPKCS8(normalizedPem, 'RS256');
@@ -25,7 +27,18 @@ async function buildKeyMaterial() {
     publicJwk.use = 'sig';
     publicJwk.alg = 'RS256';
     publicJwk.kid = kidEnv || await calculateJwkThumbprint(publicJwk);
-    return { privateKey, publicJwk };
+    // Optional previous public key for rotation grace window (served in JWKS only)
+    let previousJwk = null;
+    if (prevPemEnv && prevPemEnv.trim()) {
+      const prevNormalized = prevPemEnv.replace(/\\n/g, '\n');
+      const prevPublicKey = createPublicKey(prevNormalized);
+      const prevJwk = await exportJWK(prevPublicKey);
+      prevJwk.use = 'sig';
+      prevJwk.alg = 'RS256';
+      prevJwk.kid = prevKidEnv || await calculateJwkThumbprint(prevJwk);
+      previousJwk = prevJwk;
+    }
+    return { privateKey, publicJwk, previousJwk };
   }
 
   if (process.env.NODE_ENV === 'production') {
@@ -38,7 +51,7 @@ async function buildKeyMaterial() {
   publicJwk.alg = 'RS256';
   publicJwk.kid = kidEnv || `dev-${randomBytes(8).toString('hex')}`;
   console.warn('[auth-service] Generated ephemeral RSA key pair for development. Tokens will not survive restarts.');
-  return { privateKey, publicJwk };
+  return { privateKey, publicJwk, previousJwk: null };
 }
 
 export async function createApp() {
@@ -46,13 +59,16 @@ export async function createApp() {
   app.use(cors());
   app.use(express.json());
 
-  const { privateKey, publicJwk } = await buildKeyMaterial();
+  const { privateKey, publicJwk, previousJwk } = await buildKeyMaterial();
 
   // Seed a development user (no-op in production)
   await seedDevUser();
 
   app.get('/.well-known/jwks.json', (_req, res) => {
-    res.json({ keys: [publicJwk] });
+    const keys = previousJwk ? [publicJwk, previousJwk] : [publicJwk];
+    res.set('Cache-Control', 'public, max-age=60');
+    res.set('Content-Type', 'application/json');
+    res.json({ keys });
   });
 
   app.get('/health', (_req, res) => res.json({ ok: true, service: 'auth' }));
@@ -102,9 +118,10 @@ export async function createApp() {
     if (email === 'admin@example.com' && ['admin','admin123'].includes(password)) {
       const now = Math.floor(Date.now() / 1000);
       const exp = now + 15 * 60;
-      const claims = { iss: ISS, aud: AUD, sub: 'user-1', tid: '00000000-0000-0000-0000-000000000000', roles: ['ADMIN'], email: 'admin@example.com', exp };
+      const claims = { iss: ISS, aud: AUD, iat: now, exp, sub: 'user-1', tid: '00000000-0000-0000-0000-000000000000', roles: ['ADMIN'], email: 'admin@example.com' };
       const token = await new SignJWT(claims)
         .setProtectedHeader({ alg: 'RS256', kid: publicJwk.kid })
+        .setIssuedAt(now)
         .setExpirationTime(exp)
         .sign(privateKey);
       return res.json({ token, user: { id: 'user-1', email: 'admin@example.com', roles: ['ADMIN'], tid: claims.tid } });
@@ -122,9 +139,10 @@ export async function createApp() {
             const now = Math.floor(Date.now() / 1000);
             const exp = now + 15 * 60;
             const role = (user.role || 'customer').toString().toUpperCase();
-            const claims = { iss: ISS, aud: AUD, sub: user.id, tid: '00000000-0000-0000-0000-000000000000', roles: [role], email: user.email, exp };
+            const claims = { iss: ISS, aud: AUD, iat: now, exp, sub: user.id, tid: '00000000-0000-0000-0000-000000000000', roles: [role], email: user.email };
             const token = await new SignJWT(claims)
               .setProtectedHeader({ alg: 'RS256', kid: publicJwk.kid })
+              .setIssuedAt(now)
               .setExpirationTime(exp)
               .sign(privateKey);
             return res.json({ token, user: { id: user.id, email: user.email, roles: [role], tid: claims.tid } });

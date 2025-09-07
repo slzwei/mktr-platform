@@ -94,6 +94,11 @@ jobs:
           curl -sf "$GATEWAY_URL/api/auth/.well-known/jwks.json" \
           | jq -e '.keys[0].alg=="RS256" and (.keys[0].kid|type)=="string" and (.keys[0].kid|length)>0'
 
+      - name: Record JWKS kid(s)
+        run: |
+          curl -sf "$GATEWAY_URL/api/auth/.well-known/jwks.json" | jq -r '.keys[].kid' | paste -sd, - > jwks_kids.txt
+          echo "jwks_kids=$(cat jwks_kids.txt)" >> "$GITHUB_OUTPUT"
+
       - name: Password login -> token (try admin/admin123 then seeded creds)
         id: login
         shell: bash
@@ -150,7 +155,7 @@ jobs:
           set -euxo pipefail
           curl -fsS -H "Authorization: Bearer $(cat token.txt)" "$QR_LIST" | tee list.json
           jq -e '.data | map(select(.code=="DEMO-CI-QR")) | length >= 1' list.json >/dev/null
-      
+
       - name: "Smoke test complete - core flow validated"
         shell: bash
         run: |
@@ -159,16 +164,27 @@ jobs:
           echo "✅ LeadGen: health + create/list working"
           echo "✅ Security: 401s for missing/tampered tokens"
           echo "Note: DB persistence check skipped (non-critical for smoke)"
-          
+
       - name: "Negative auth checks"
         shell: bash
         run: |
           set -euxo pipefail
-          
+
           # no token -> 401
           code=$(curl -s -o /dev/null -w "%{http_code}" "$LEADGEN_HEALTH")
           [ "$code" -eq 401 ]
-          
+
+          # unknown KID -> 401 (re-sign header with fake kid)
+          TOK=$(cat token.txt)
+          H=$(echo "$TOK" | cut -d. -f1 | base64 -d 2>/dev/null || true)
+          P=$(echo "$TOK" | cut -d. -f2)
+          S=$(echo "$TOK" | cut -d. -f3)
+          if [ -n "$H" ]; then
+            FAKE_H=$(echo "$H" | jq -c '.kid="unknown-kid"' | base64 -w0 2>/dev/null || base64)
+            TOK_UNKNOWN_KID="${FAKE_H}.${P}.${S}"
+            code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_UNKNOWN_KID" "$LEADGEN_HEALTH")
+            [ "$code" -eq 401 ]
+          fi
           # tampered token -> 401
           TOK=$(cat token.txt)
           H=$(echo "$TOK" | cut -d. -f1)
@@ -179,15 +195,11 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_BAD" "$LEADGEN_HEALTH")
           [ "$code" -eq 401 ]
 
-      - name: "DB persistence check (non-blocking)"
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euxo pipefail
+          # Postgres persistence (non-blocking; gateway may use in-memory fallback)
           docker compose -f infra/docker-compose.yml exec -T db \
             psql -U mktr -d mktr -c \
-            "SELECT code, tenant_id FROM leadgen.qrcodes WHERE code='DEMO-CI-QR' AND tenant_id='00000000-0000-0000-0000-000000000000' LIMIT 1;" \
-          | grep -q DEMO-CI-QR || echo "Row not in DB (non-blocking; may be in-memory)"
+            "SELECT code, tenant_id FROM leadgen.qr_tags WHERE code='DEMO-CI-QR' AND tenant_id='00000000-0000-0000-0000-000000000000' LIMIT 1;" \
+          | grep -q DEMO-CI-QR || echo "Row not found (non-blocking)"
 
       - name: Dump compose logs on failure
         if: failure()
