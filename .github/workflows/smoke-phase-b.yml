@@ -167,10 +167,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          KEY=$(python3 - <<'PY'
-import uuid; print(str(uuid.uuid4()))
-PY
-)
+          KEY=$(python3 -c "import uuid; print(uuid.uuid4())")
           A=$(curl -sS -X POST http://localhost:4002/v1/qrcodes \
             -H "Authorization: Bearer $(cat token.txt)" \
             -H 'Content-Type: application/json' \
