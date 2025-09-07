@@ -102,10 +102,13 @@ jobs:
           retry() { n=0; until [ $n -ge 60 ]; do code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" http://localhost:3301/api/adtech/v1/manifest || true); [ "$code" -eq 200 ] && break; n=$((n+1)); echo "monolith manifest retry $n (code=$code)"; sleep 2; done; test $n -lt 60; }
           retry
 
-      - name: Manifest 200 and ETag/304 (gateway only)
+      - name: Manifest 200 and ETag/304 (gateway only; wait for monolith health)
         run: |
           set -euxo pipefail
           h="X-Device-Key: $TEST_DEVICE_KEY"
+          # wait for monolith health to be healthy before probing gateway
+          retry_health() { n=0; until [ $n -ge 60 ]; do code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3301/health || true); [ "$code" = "200" ] && break; n=$((n+1)); echo "monolith health retry $n (code=$code)"; sleep 2; done; test $n -lt 60; }
+          retry_health
           # bounded retry on gateway only (5 attempts, ~10s)
           tries=0; code=000; while [ $tries -lt 5 ]; do code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL" || true); [ "$code" = "200" ] && break; tries=$((tries+1)); echo "gateway manifest retry $tries (code=$code)"; sleep 2; done
           [ "$code" -eq 200 ]

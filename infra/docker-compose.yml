@@ -104,7 +104,8 @@ services:
     ports: ["4000:4000"]
     depends_on:
       auth: { condition: service_started }
-      monolith: { condition: service_started }
+      # Ensure gateway only starts after monolith reports healthy, so gateway manifest calls don't 404
+      monolith: { condition: service_healthy }
       leadgen: { condition: service_started }
 
 volumes:
