@@ -53,12 +53,7 @@ jobs:
           retry bash -lc "echo > /dev/tcp/127.0.0.1/4000"
           retry bash -lc "curl -sf $GATEWAY_URL/api/auth/.well-known/jwks.json | jq -e '.keys|length > 0'"
 
-      - name: Wait for manifest ready via gateway
-        run: |
-          set -euxo pipefail
-          h="X-Device-Key: $TEST_DEVICE_KEY"
-          retry() { n=0; until [ $n -ge 60 ]; do code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL"); [ "$code" -eq 200 ] && break; n=$((n+1)); echo "manifest retry $n (code=$code)"; sleep 2; done; test $n -lt 60; }
-          retry
+      # Register device first; then manifest checks will include a short readiness retry
 
       - name: Seed dev user
         run: |
@@ -96,6 +91,9 @@ jobs:
         run: |
           set -euxo pipefail
           h="X-Device-Key: $TEST_DEVICE_KEY"
+          # readiness retry (device must exist; gateway/monolith must be up)
+          retry() { n=0; until [ $n -ge 60 ]; do code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL"); [ "$code" -eq 200 ] && break; n=$((n+1)); echo "manifest retry $n (code=$code)"; sleep 2; done; test $n -lt 60; }
+          retry
           A=$(curl -sS -D headers.txt -H "$h" "$MANIFEST_URL" -o body.json)
           code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL")
           [ "$code" -eq 200 ]
