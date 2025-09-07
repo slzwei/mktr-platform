@@ -22,13 +22,15 @@ app.use('/api/adtech/v1/manifest', createProxyMiddleware({
   target: MONOLITH_URL,
   changeOrigin: true,
   proxyTimeout: 15000,
-  timeout: 15000
+  timeout: 15000,
+  pathRewrite: (_path, _req) => '/api/adtech/v1/manifest'
 }));
 app.use('/api/adtech/v1/beacons', createProxyMiddleware({
   target: MONOLITH_URL,
   changeOrigin: true,
   proxyTimeout: 15000,
-  timeout: 15000
+  timeout: 15000,
+  pathRewrite: (path, _req) => `/api/adtech/v1/beacons${path}`
 }));
 
 // Parse JSON for all other routes
