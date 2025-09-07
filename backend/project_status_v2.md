@@ -315,3 +315,19 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - pr: n/a
   - commit: n/a
+
+### [2025-09-07 15:05 sgt] — phase b — ci waits via gateway + dev seed through proxy
+
+- branch: feat/auth-dev-seeder
+- summary:
+  1. adjust smoke workflow to avoid direct container networking; wait on gateway tcp and fetch jwks via gateway; seed dev user through gateway; login step prefers gateway paths.
+- changes:
+  1. .github/workflows/smoke-phase-b.yml: replace direct 127.0.0.1:4001 wait with gateway jwks probe; add seed step using `POST $GATEWAY_URL/api/auth/internal/dev/seed-user`; route jwks + login via gateway; keep script smoke step.
+- acceptance:
+  1. workflow log shows jwks fetched from `/api/auth/.well-known/jwks.json` (200) and seed returns `{ ok: true, email: "test@mktr.sg" }`.
+  2. token obtained via `/api/auth/v1/auth/login` using admin/admin123 or seeded creds; subsequent gateway health and qr create/list pass.
+- notes:
+  1. avoids reliance on host networking for `auth` container in ci; stable across runners.
+- links:
+  - pr: n/a
+  - commit: n/a
