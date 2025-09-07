@@ -106,9 +106,6 @@ jobs:
         run: |
           set -euxo pipefail
           h="X-Device-Key: $TEST_DEVICE_KEY"
-          # readiness retry (device must exist; gateway/monolith must be up)
-          retry() { n=0; until [ $n -ge 60 ]; do code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL"); [ "$code" -eq 200 ] && break; n=$((n+1)); echo "manifest retry $n (code=$code)"; sleep 2; done; test $n -lt 60; }
-          retry || true
           URL="$MANIFEST_URL"
           code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$URL" || true)
           if [ "$code" != "200" ]; then URL="http://localhost:3301/api/adtech/v1/manifest"; fi
