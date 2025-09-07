@@ -29,7 +29,7 @@ trap 'rm -f "$tmp_headers"' EXIT
 
 # Perform request; do not follow redirects, no body
 set +e
-eval curl -sS -D "$tmp_headers" -o /dev/null -X "$method" "${headers[@]}" "${extras[@]}" "$url"
+curl -sS -D "$tmp_headers" -o /dev/null -X "$method" "${headers[@]}" "${extras[@]}" "$url"
 code=$?
 set -e
 
