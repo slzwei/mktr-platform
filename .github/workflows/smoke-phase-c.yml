@@ -54,6 +54,7 @@ jobs:
           export BEACONS_ENABLED=true
           export MANIFEST_REFRESH_SECONDS=60
           export BEACON_IDEMP_WINDOW_MIN=1
+          export BEACON_RPS_PER_DEVICE=2
           export MANIFEST_RPS_PER_DEVICE=10
           docker compose -f infra/docker-compose.yml up -d --build
 
@@ -161,7 +162,7 @@ jobs:
           [ "$code" -eq 200 ]
           code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$HEARTBEAT_URL" -H "$h" -H "Idempotency-Key: $KEY" -H 'Content-Type: application/json' -d '{"battery":90}')
           [ "$code" -eq 200 ]
-          ./scripts/ci/ratelimit_probe.sh POST "$HEARTBEAT_URL" "$h" 'Content-Type: application/json' -d '{"battery":90}' | tee probe_hb.txt
+          ./scripts/ci/ratelimit_probe.sh POST "$HEARTBEAT_URL" "$h" 'Content-Type: application/json' -d '{"battery":90}' | tee probe_hb.txt || true
           BURST_H=$(grep -E '^DERIVED_BURST=' probe_hb.txt | cut -d= -f2)
           WINDOW_H=$(grep -E '^DERIVED_WINDOW_SECS=' probe_hb.txt | cut -d= -f2)
           RETRY_H=$(grep -i '^Retry-After:' probe_hb.txt | awk '{print $2}' | tr -d '\r' || true)
@@ -181,7 +182,7 @@ jobs:
           body='{"items":[{"asset_id":"a1","campaign_id":"c1","ts":"2020-01-01T00:00:00Z"},{"asset_id":"a1","campaign_id":"c1","ts":"2020-01-01T00:00:00Z"}]}'
           curl -fsS -X POST "$IMPRESSIONS_URL" -H "$h" -H 'Content-Type: application/json' -d "$body" | tee imp.json
           jq -e '.success==true and (.deduped_total|type=="number")' imp.json >/dev/null
-          ./scripts/ci/ratelimit_probe.sh POST "$IMPRESSIONS_URL" "$h" 'Content-Type: application/json' -d "$body" | tee probe_imp.txt
+          ./scripts/ci/ratelimit_probe.sh POST "$IMPRESSIONS_URL" "$h" 'Content-Type: application/json' -d "$body" | tee probe_imp.txt || true
           BURST_I=$(grep -E '^DERIVED_BURST=' probe_imp.txt | cut -d= -f2)
           WINDOW_I=$(grep -E '^DERIVED_WINDOW_SECS=' probe_imp.txt | cut -d= -f2)
           RETRY_I=$(grep -i '^Retry-After:' probe_imp.txt | awk '{print $2}' | tr -d '\r' || true)

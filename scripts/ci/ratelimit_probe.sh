@@ -17,9 +17,12 @@ extras=( )
 for arg in "$@"; do
   if [[ "$arg" == -* ]]; then
     extras+=( "$arg" )
-  elif [[ "$arg" == *:* ]]; then
+    continue
+  fi
+  # Treat as header only if it looks like "Name: value" (starts with an alpha/header token and a colon+space)
+  if [[ "$arg" =~ ^[A-Za-z0-9-]+:\  ]]; then
     headers+=( -H "$arg" )
-  elif [[ -n "$arg" ]]; then
+  else
     extras+=( "$arg" )
   fi
 done
