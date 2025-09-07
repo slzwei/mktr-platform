@@ -94,6 +94,11 @@ jobs:
           curl -sf "$GATEWAY_URL/api/auth/.well-known/jwks.json" \
           | jq -e '.keys[0].alg=="RS256" and (.keys[0].kid|type)=="string" and (.keys[0].kid|length)>0'
 
+      - name: Record JWKS kid(s)
+        run: |
+          curl -sf "$GATEWAY_URL/api/auth/.well-known/jwks.json" | jq -r '.keys[].kid' | paste -sd, - > jwks_kids.txt
+          echo "jwks_kids=$(cat jwks_kids.txt)" >> "$GITHUB_OUTPUT"
+
       - name: Password login -> token (try admin/admin123 then seeded creds)
         id: login
         shell: bash
@@ -159,6 +164,18 @@ jobs:
           # no token -> 401
           code=$(curl -s -o /dev/null -w "%{http_code}" "$LEADGEN_HEALTH")
           [ "$code" -eq 401 ]
+
+          # unknown KID -> 401 (re-sign header with fake kid)
+          TOK=$(cat token.txt)
+          H=$(echo "$TOK" | cut -d. -f1 | base64 -d 2>/dev/null || true)
+          P=$(echo "$TOK" | cut -d. -f2)
+          S=$(echo "$TOK" | cut -d. -f3)
+          if [ -n "$H" ]; then
+            FAKE_H=$(echo "$H" | jq -c '.kid="unknown-kid"' | base64 -w0 2>/dev/null || base64)
+            TOK_UNKNOWN_KID="${FAKE_H}.${P}.${S}"
+            code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TOK_UNKNOWN_KID" "$LEADGEN_HEALTH")
+            [ "$code" -eq 401 ]
+          fi
 
           # tampered token -> 401
           TOK=$(cat token.txt)

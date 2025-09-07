@@ -16,7 +16,22 @@ const MONOLITH_URL = process.env.MONOLITH_URL || 'http://monolith:3001';
 const LEADGEN_URL = process.env.LEADGEN_URL || 'http://leadgen:4002';
 const AUTH_URL = process.env.AUTH_URL || 'http://auth:4001';
 
-const JWKS = createRemoteJWKSet(new URL(AUTH_JWKS_URL));
+// Bounded-cache JWKS with conservative cooldown
+const JWKS = createRemoteJWKSet(new URL(AUTH_JWKS_URL), {
+  cooldownDuration: 60_000
+});
+
+async function logJwksMetadata() {
+  try {
+    const res = await fetch(AUTH_JWKS_URL, { method: 'GET' });
+    const body = await res.json();
+    const keys = Array.isArray(body?.keys) ? body.keys : [];
+    const kids = keys.map(k => k?.kid).filter(Boolean);
+    console.log(`[gateway] auth issuer: ${ISS} | audience: ${AUD} | jwks keys=${keys.length} | kids=${kids.join(',')}`);
+  } catch (e) {
+    console.warn('[gateway] failed to fetch JWKS for metadata:', e?.message || String(e));
+  }
+}
 
 // Minimal in-memory fallback for CI to avoid 504s if leadgen is booting
 const memoryQrsByTenant = new Map();
@@ -85,6 +100,9 @@ app.use('/api/auth', createProxyMiddleware({
   proxyTimeout: 15000
 }));
 
-app.listen(PORT, '0.0.0.0', () => console.log(`gateway on ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`gateway on ${PORT}`);
+  logJwksMetadata();
+});
 
 
