@@ -219,7 +219,12 @@ async function startServer() {
     await Car.sync({ alter: !isSqlite });
     // Now dependent tables
     await QrTag.sync({ alter: !isSqlite });
-    await QrScan.sync({ alter: !isSqlite });
+    try {
+      // Avoid aggressive alters on Postgres for qr_scans to prevent dropping non-existent FKs
+      await QrScan.sync({ alter: false });
+    } catch (e) {
+      console.warn('⚠️ QrScan sync (alter=false) failed, continuing:', e?.message || e);
+    }
     await Attribution.sync({ alter: !isSqlite });
     await SessionVisit.sync({ alter: !isSqlite });
     await Prospect.sync({ alter: !isSqlite });
