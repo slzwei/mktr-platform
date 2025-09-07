@@ -16,6 +16,9 @@ import Attribution from './Attribution.js';
 import SessionVisit from './SessionVisit.js';
 import ProspectActivity from './ProspectActivity.js';
 import UserPayout from './UserPayout.js';
+import Device from './Device.js';
+import BeaconEvent from './BeaconEvent.js';
+import IdempotencyKey from './IdempotencyKey.js';
 
 // Define associations
 const defineAssociations = () => {
@@ -77,6 +80,10 @@ const defineAssociations = () => {
   LeadPackage.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
   LeadPackage.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
   LeadPackage.hasMany(Commission, { foreignKey: 'leadPackageId', as: 'commissions' });
+
+  // Device associations
+  Device.hasMany(BeaconEvent, { foreignKey: 'deviceId', as: 'events' });
+  BeaconEvent.belongsTo(Device, { foreignKey: 'deviceId', as: 'device' });
 };
 
 // Initialize associations
@@ -99,7 +106,10 @@ export {
   Attribution,
   SessionVisit,
   ProspectActivity,
-  UserPayout
+  UserPayout,
+  Device,
+  BeaconEvent,
+  IdempotencyKey
 };
 
 // Export default object for convenience
@@ -119,5 +129,8 @@ export default {
   Attribution,
   SessionVisit,
   ProspectActivity,
-  UserPayout
+  UserPayout,
+  Device,
+  BeaconEvent,
+  IdempotencyKey
 };
