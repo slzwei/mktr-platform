@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euxo pipefail
           MANIFEST_ENABLED=true BEACONS_ENABLED=true \
-          MANIFEST_REFRESH_SECONDS=60 BEACON_IDEMP_WINDOW_MIN=1 \
+          MANIFEST_REFRESH_SECONDS=60 BEACON_IDEMP_WINDOW_MIN=1 MANIFEST_RPS_PER_DEVICE=5 \
           docker compose -f infra/docker-compose.yml up -d --build
 
       - name: Wait for gateway and jwks via gateway
@@ -52,6 +52,13 @@ jobs:
           retry() { n=0; until [ $n -ge 60 ]; do "$@" && break; n=$((n+1)); echo "retry $n"; sleep 2; done; test $n -lt 60; }
           retry bash -lc "echo > /dev/tcp/127.0.0.1/4000"
           retry bash -lc "curl -sf $GATEWAY_URL/api/auth/.well-known/jwks.json | jq -e '.keys|length > 0'"
+
+      - name: Wait for manifest ready via gateway
+        run: |
+          set -euxo pipefail
+          h="X-Device-Key: $TEST_DEVICE_KEY"
+          retry() { n=0; until [ $n -ge 60 ]; do code=$(curl -s -o /dev/null -w "%{http_code}" -H "$h" "$MANIFEST_URL"); [ "$code" -eq 200 ] && break; n=$((n+1)); echo "manifest retry $n (code=$code)"; sleep 2; done; test $n -lt 60; }
+          retry
 
       - name: Seed dev user
         run: |
