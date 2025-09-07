@@ -36,7 +36,6 @@ import { validateGoogleOAuthConfig } from './controllers/authController.js';
 import { optionalAuth } from './middleware/auth.js';
 import { initSystemAgent } from './services/systemAgent.js';
 import ensureTenantPlumbing from './database/tenantMigration.js';
-import leadgenProxyShim from './middleware/leadgenProxyShim.js';
 
 // Load environment variables
 dotenv.config();
@@ -104,7 +103,6 @@ app.use(cookieParser());
 
 // Legacy LeadGen proxy shim → forwards to gateway leadgen domain
 // This preserves existing frontend calls during a one-week grace window.
-import leadgenProxyShim from './middleware/leadgenProxyShim.js';
 app.use(leadgenProxyShim());
 
 // Static file serving for uploads

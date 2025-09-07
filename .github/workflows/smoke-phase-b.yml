@@ -50,6 +50,13 @@ jobs:
           ls -la
           find . -maxdepth 2 -type d -print
 
+      - name: Adtech health (non-blocking)
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3301/api/adtech/health || true)
+          echo "adtech_health_http_status=${code}"
+
       - name: Compose down (clean slate)
         run: |
           docker compose -f infra/docker-compose.yml down -v || true
@@ -133,7 +140,7 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          python3 -c "import base64,json; tok=open('token.txt').read().strip(); p=tok.split('.')[1]; pad='='*(-len(p)%4); payload=base64.urlsafe_b64decode(p+pad).decode(); print(payload); keys=sorted(json.loads(payload).keys()); expect=['aud','email','exp','iss','roles','sub','tid']; assert keys==expect, f'Claim shape mismatch -> {keys}'"
+          python3 -c "import base64,json; tok=open('token.txt').read().strip(); p=tok.split('.')[1]; pad='='*(-len(p)%4); payload=base64.urlsafe_b64decode(p+pad).decode(); print(payload); keys=sorted(json.loads(payload).keys()); expect=['aud','email','exp','iat','iss','roles','sub','tid']; assert keys==expect, f'Claim shape mismatch -> {keys}'"
 
       - name: LeadGen health via gateway
         run: |
