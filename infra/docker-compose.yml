@@ -77,7 +77,7 @@ services:
       AUTH_ISSUER: http://auth:4001
       AUTH_AUDIENCE: mktr
       LEADGEN_RPS_LIST: "1"
-      LEADGEN_RPS_CREATE: "1"
+      LEADGEN_RPS_CREATE: "5"
       LEADGEN_IDEMP_WINDOW_HOURS: "24"
     ports: ["4002:4002"]
     depends_on:
