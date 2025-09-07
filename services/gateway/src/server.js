@@ -6,6 +6,23 @@ import crypto from 'crypto';
 
 const app = express();
 app.use(cors());
+
+// Register adtech device-key proxies BEFORE body parsing so request bodies stream through untouched
+// Device-key endpoints (no JWT at gateway)
+app.use('/api/adtech/v1/manifest', createProxyMiddleware({
+  target: MONOLITH_URL,
+  changeOrigin: true,
+  proxyTimeout: 15000,
+  timeout: 15000
+}));
+app.use('/api/adtech/v1/beacons', createProxyMiddleware({
+  target: MONOLITH_URL,
+  changeOrigin: true,
+  proxyTimeout: 15000,
+  timeout: 15000
+}));
+
+// Parse JSON for all other routes
 app.use(express.json());
 
 const PORT = process.env.PORT || 4000;
@@ -90,37 +107,8 @@ app.use('/api/leadgen', authn, createProxyMiddleware({
   proxyTimeout: 30000
 }));
 
-// Allow device-key based auth at monolith for specific adtech endpoints only (manifest/beacons)
-// For device-key adtech endpoints, forward original path unchanged and re-serialize JSON body
-const forwardFullPath = createProxyMiddleware({
-  target: MONOLITH_URL,
-  changeOrigin: true,
-  proxyTimeout: 15000,
-  timeout: 15000,
-  pathRewrite: (path, req) => req.originalUrl,
-  onProxyReq: (proxyReq, req) => {
-    // Re-send JSON body because express.json() has already consumed the stream
-    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
-      const body = req.body;
-      if (body && typeof body === 'object') {
-        const bodyData = Buffer.from(JSON.stringify(body));
-        proxyReq.setHeader('Content-Type', 'application/json');
-        proxyReq.setHeader('Content-Length', bodyData.length);
-        proxyReq.write(bodyData);
-        try { proxyReq.end(); } catch (_) {}
-      }
-    }
-  }
-});
-app.use('/api/adtech/v1/manifest', forwardFullPath);
-app.use('/api/adtech/v1/beacons', forwardFullPath);
-
-// Other adtech endpoints remain JWT-protected; forward full original path
-app.use('/api/adtech', authn, createProxyMiddleware({
-  target: MONOLITH_URL,
-  changeOrigin: true,
-  pathRewrite: (path, req) => req.originalUrl
-}));
+// Other adtech endpoints remain JWT-protected
+app.use('/api/adtech', authn, createProxyMiddleware({ target: MONOLITH_URL, changeOrigin: true }));
 
 // Proxy auth routes to auth-service (no authn required for login/register)
 app.use('/api/auth', createProxyMiddleware({
