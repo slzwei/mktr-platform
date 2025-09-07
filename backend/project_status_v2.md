@@ -241,6 +241,25 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
   - pr: n/a
   - commit: n/a
 
+### [2025-09-07 14:52 sgt] — phase b — smoke script standardized to code/status; e2e green via gateway
+
+- branch: feat/auth-dev-seeder
+- summary:
+  1. update `scripts/smoke_gateway_auto.sh` to send `{ code, status }` and assert by `code`.
+  2. verified end-to-end: auth → gateway → leadgen (postgres) with jwks-based auth.
+- changes:
+  1. scripts/smoke_gateway_auto.sh: post body now `{ code, status }`; list assertion matches `.code`.
+  2. no gateway changes; fallback remains; script now works whether upstream leadgen handles it or fallback does.
+- acceptance:
+  1. services running (auth:4001, gateway:4000, leadgen:4002, db up).
+  2. run: `API_ROOT=http://localhost:4000/api AUTH_URL=http://localhost:4001 EMAIL=test@mktr.sg PASSWORD=test bash scripts/smoke_gateway_auto.sh` → ends with `all checks passed`.
+- notes:
+  1. production: persist auth keys (`AUTH_PRIVATE_KEY_PEM`, `KID`) to avoid ephemeral tokens.
+  2. optional follow-up: gateway fallback should engage only when upstream is down (harden behavior).
+- links:
+  - pr: n/a
+  - commit: n/a
+
 ### [2025-09-07 04:01 sgt] — phase b — auth-service dev user seeder + db-backed login (non-prod)
 
 - branch: feat/auth-dev-seeder

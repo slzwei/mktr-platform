@@ -121,21 +121,21 @@ say "leadgen health"
 curl -fsS "${API_ROOT}/leadgen/health" -H "Authorization: Bearer $TOKEN" | jq .
 
 # --- create QR via gateway ---
-LABEL="ci-qr-$(date +%s)"
-say "create QR: $LABEL"
+CODE="ci-qr-$(date +%s)"
+say "create QR: $CODE"
 CREATE_OUT="$(curl -fsS -X POST "${API_ROOT}/leadgen/v1/qrcodes" \
   -H "Authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' \
-  -d "{\"label\":\"$LABEL\",\"cap\":5}")"
+  -d "{\"code\":\"$CODE\",\"status\":\"active\"}")"
 echo "$CREATE_OUT" | jq .
 QR_ID="$(echo "$CREATE_OUT" | jq -r '.id // .data.id // empty')"
 [[ -n "$QR_ID" ]] || err "qr create did not return an id"
 
 # --- list QR & assert presence ---
-say "list QR & assert label present"
+say "list QR & assert code present"
 LIST_OUT="$(curl -fsS "${API_ROOT}/leadgen/v1/qrcodes" -H "Authorization: Bearer $TOKEN")"
 echo "$LIST_OUT" | jq '.'
-MATCH_COUNT="$(echo "$LIST_OUT" | jq --arg L "$LABEL" '[.. | objects? | select(has("label")) | select(.label == $L)] | length')"
-[[ "$MATCH_COUNT" -ge 1 ]] || err "qr list did not include label $LABEL"
+MATCH_COUNT="$(echo "$LIST_OUT" | jq --arg C "$CODE" '[.. | objects? | select(has("code")) | select(.code == $C)] | length')"
+[[ "$MATCH_COUNT" -ge 1 ]] || err "qr list did not include code $CODE"
 
 say "all checks passed ✅ (API_ROOT=${API_ROOT})"
