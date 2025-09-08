@@ -77,7 +77,7 @@ export default function AdminDashboard() {
         console.log('Fleet module not accessible, skipping car data:', error.message);
       }
 
-      const totalScans = overview?.data?.stats?.qrCodes?.totalScans || 0;
+      const totalScans = overview?.stats?.qrCodes?.totalScans || 0;
       setStats({ prospects, campaigns, commissions, cars, totalScans });
     } catch (error) {
       console.error('Error loading dashboard data:', error);

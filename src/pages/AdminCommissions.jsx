@@ -67,8 +67,9 @@ export default function AdminCommissions() {
       items = items.filter(c => {
         const agentName = [c.agent?.firstName, c.agent?.lastName].filter(Boolean).join(" ").toLowerCase();
         const agentEmail = (c.agent?.email || "").toLowerCase();
-        const campaignName = (c.campaign?.name || "").toLowerCase();
-        return agentName.includes(q) || agentEmail.includes(q) || campaignName.includes(q);
+        const fleetOwnerName = (c.fleetOwner?.full_name || c.fleet_owner_name || "").toLowerCase();
+        const fleetOwnerEmail = (c.fleetOwner?.email || c.fleet_owner_email || "").toLowerCase();
+        return agentName.includes(q) || agentEmail.includes(q) || fleetOwnerName.includes(q) || fleetOwnerEmail.includes(q);
       });
     }
     return items;
@@ -109,21 +110,21 @@ export default function AdminCommissions() {
     return arr;
   }, [filteredCommissions]);
 
-  const campaignAggregates = useMemo(() => {
+  const fleetOwnerAggregates = useMemo(() => {
     const map = new Map();
     for (const c of filteredCommissions) {
-      const campaignId = c.campaign?.id || c.campaignId || "unknown";
-      const key = String(campaignId);
+      const ownerId = c.fleet_owner_id || c.fleetOwner?.id || c.fleetOwnerId || c.car?.fleet_owner_id || "unknown";
+      const key = String(ownerId);
       if (!map.has(key)) {
         map.set(key, {
-          campaign: c.campaign || { id: key, name: "Unknown", type: "" },
+          owner: c.fleetOwner || { id: key, full_name: c.fleet_owner_name || "Unknown", email: c.fleet_owner_email || "" },
           total: 0,
           count: 0,
           byStatus: { pending: 0, approved: 0, paid: 0 }
         });
       }
       const agg = map.get(key);
-      const amt = Number(c.amount || 0);
+      const amt = Number(c.amount_fleet || 0);
       agg.total += amt;
       agg.count += 1;
       if (c.status && agg.byStatus[c.status] !== undefined) agg.byStatus[c.status] += amt;
@@ -163,7 +164,7 @@ export default function AdminCommissions() {
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Commission Management</h1>
-            <p className="text-gray-600 mt-1">Track and manage agent commissions</p>
+            <p className="text-gray-600 mt-1">Track and manage agent and fleet owner commissions</p>
           </div>
         </div>
 
@@ -203,7 +204,7 @@ export default function AdminCommissions() {
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <Input
-                  placeholder="Search agents or campaigns..."
+                  placeholder="Search agents or fleet owners..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -230,7 +231,7 @@ export default function AdminCommissions() {
         <Tabs defaultValue="agents" className="space-y-6">
           <TabsList>
             <TabsTrigger value="agents">Agent Commissions</TabsTrigger>
-            <TabsTrigger value="campaigns">Campaign Commissions</TabsTrigger>
+            <TabsTrigger value="fleet_owners">Fleet Owner Commissions</TabsTrigger>
           </TabsList>
 
           <TabsContent value="agents">
@@ -317,12 +318,12 @@ export default function AdminCommissions() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="campaigns">
+          <TabsContent value="fleet_owners">
             <Card className="shadow-lg">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="w-6 h-6" />
-                  Campaign Commission Summary ({campaignAggregates.length})
+                  <Users className="w-6 h-6" />
+                  Fleet Owner Commission Summary ({fleetOwnerAggregates.length})
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -330,55 +331,69 @@ export default function AdminCommissions() {
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-gray-50">
-                        <TableHead>Campaign</TableHead>
+                        <TableHead>Fleet Owner</TableHead>
+                        <TableHead>Contact</TableHead>
                         <TableHead>Total Earned</TableHead>
                         <TableHead>Commissions</TableHead>
                         <TableHead>Status Breakdown</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {campaignAggregates.map((item) => (
-                        <TableRow key={item.campaign.id} className="hover:bg-gray-50">
-                          <TableCell>
-                            <div>
-                              <p className="font-semibold text-gray-900">{item.campaign.name || 'Unnamed Campaign'}</p>
-                              <p className="text-xs text-gray-500">ID: {String(item.campaign.id).slice(-8)}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-lg font-bold text-green-600">${item.total.toFixed(2)}</span>
-                          </TableCell>
-                          <TableCell>
-                            <span className="font-semibold">{item.count}</span>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-1">
-                              {item.byStatus.pending > 0 && (
-                                <Badge variant="outline" className={statusColors.pending}>
-                                  ${item.byStatus.pending.toFixed(2)}
-                                </Badge>
-                              )}
-                              {item.byStatus.approved > 0 && (
-                                <Badge variant="outline" className={statusColors.approved}>
-                                  ${item.byStatus.approved.toFixed(2)}
-                                </Badge>
-                              )}
-                              {item.byStatus.paid > 0 && (
-                                <Badge variant="outline" className={statusColors.paid}>
-                                  ${item.byStatus.paid.toFixed(2)}
-                                </Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {fleetOwnerAggregates.map((item) => {
+                        const fullName = item.owner.full_name || 'N/A';
+                        return (
+                          <TableRow key={item.owner.id} className="hover:bg-gray-50">
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-green-100 text-green-700 rounded-full flex items-center justify-center font-semibold">
+                                  {(fullName || 'F').charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-gray-900">{fullName}</p>
+                                  <p className="text-sm text-gray-500">ID: {String(item.owner.id).slice(-8)}</p>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-sm">
+                                <p className="text-gray-900">{item.owner.email}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-lg font-bold text-green-600">${item.total.toFixed(2)}</span>
+                            </TableCell>
+                            <TableCell>
+                              <span className="font-semibold">{item.count}</span>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                {item.byStatus.pending > 0 && (
+                                  <Badge variant="outline" className={statusColors.pending}>
+                                    ${item.byStatus.pending.toFixed(2)}
+                                  </Badge>
+                                )}
+                                {item.byStatus.approved > 0 && (
+                                  <Badge variant="outline" className={statusColors.approved}>
+                                    ${item.byStatus.approved.toFixed(2)}
+                                  </Badge>
+                                )}
+                                {item.byStatus.paid > 0 && (
+                                  <Badge variant="outline" className={statusColors.paid}>
+                                    ${item.byStatus.paid.toFixed(2)}
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
 
-                  {campaignAggregates.length === 0 && (
+                  {fleetOwnerAggregates.length === 0 && (
                     <div className="text-center py-12">
-                      <TrendingUp className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                      <h3 className="font-semibold text-gray-900 mb-2">No campaign commissions found</h3>
+                      <Users className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                      <h3 className="font-semibold text-gray-900 mb-2">No fleet owner commissions found</h3>
                       <p className="text-gray-500">{searchTerm ? 'Try adjusting your search criteria' : 'No commissions have been generated yet'}</p>
                     </div>
                   )}

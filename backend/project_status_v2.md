@@ -369,6 +369,20 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - commit: n/a
 
+### [2025-09-09 00:15 sgt] — phase b — commissions ui: remove campaign commissions, add fleet owners
+
+- branch: main
+- summary:
+  1. updated Admin Commissions to show only Agent and Fleet Owner commissions.
+- changes:
+  1. frontend: `src/pages/AdminCommissions.jsx` — removed Campaign tab; added Fleet Owner tab with aggregation by `fleet_owner_id` using `amount_fleet`; updated search placeholder and headers.
+- acceptance:
+  1. navigate to `/AdminCommissions` and verify two tabs: "Agent Commissions" and "Fleet Owner Commissions". no campaign commissions visible.
+- notes:
+  1. if backend commissions payload lacks `fleet_owner_id`/`amount_fleet`, align API to include these for Fleet Owner views.
+- links:
+  - commit: n/a
+
 ### [2025-09-08 23:05 sgt] — phase b — correction: `/share/:slug` uses ShareRedirect
 
 - branch: main
@@ -426,3 +440,19 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
   1. safe to call repeatedly; 404 when id not found.
 - links:
   - commit: n/a
+
+### [2025-09-09 01:05 sgt] — phase b — admin dashboard: correct metrics (frontend)
+
+- branch: main
+- summary:
+  1. admin dashboard now shows partner commissions breakdown (drivers vs fleet owners) and total scans; removes lifetime earnings/earned blocks intended for drivers/fleet owners.
+- changes:
+  1. frontend: `src/components/dashboard/CommissionSummary.jsx` — for `userRole==='admin'`, render total driver commissions, total fleet owner commissions, and total scans; hide lifetime blocks.
+  2. frontend: `src/pages/AdminDashboard.jsx` — fetch `/dashboard/overview` and pass `qrCodes.totalScans` to `CommissionSummary`.
+- acceptance:
+  1. login as admin → `/AdminDashboard` shows three cards in Commission Summary: Driver Commissions, Fleet Owner Commissions, Total Scans.
+  2. driver/fleet dashboards remain unchanged and still show their lifetime metrics.
+- notes:
+  1. uses existing backend `/api/dashboard/overview` qrCodes.totalScans; no backend changes.
+- links:
+  - commit: 33356a3
