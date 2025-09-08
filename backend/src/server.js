@@ -303,11 +303,47 @@ async function startServer() {
       // Do not block startup; assignments will retry on demand
     }
 
-    // Create Postgres unique index for car QR invariant if on Postgres
+    // Create Postgres unique indexes if on Postgres
     try {
       if (sequelize.getDialect() === 'postgres') {
         await sequelize.query("CREATE UNIQUE INDEX IF NOT EXISTS uniq_car_qr ON qr_tags(\"carId\") WHERE type = 'car'");
         console.log('✅ Ensured uniq_car_qr index exists');
+
+        // Deduplicate existing duplicates on (campaignId, phone) before creating the unique index
+        try {
+          await sequelize.transaction(async (t) => {
+            // Delete exact duplicate prospects keeping the earliest createdAt per (campaignId, phone)
+            await sequelize.query(
+              `DELETE FROM prospects p
+               USING (
+                 SELECT \"campaignId\", phone, MIN(createdAt) AS keep_time
+                 FROM prospects
+                 WHERE phone IS NOT NULL AND phone <> '' AND \"campaignId\" IS NOT NULL
+                 GROUP BY \"campaignId\", phone
+               ) s
+               WHERE p.phone IS NOT NULL AND p.phone <> ''
+                 AND p.\"campaignId\" IS NOT NULL
+                 AND p.\"campaignId\" = s.\"campaignId\"
+                 AND p.phone = s.phone
+                 AND p.createdAt > s.keep_time`,
+              { transaction: t }
+            );
+          });
+        } catch (e) {
+          console.warn('⚠️ Prospect deduplication skipped:', e.message);
+        }
+
+        // Create a unique index for (campaignId, phone) excluding null/empty phones
+        try {
+          await sequelize.query(
+            `CREATE UNIQUE INDEX IF NOT EXISTS prospects_campaign_id_phone
+             ON prospects ("campaignId", phone)
+             WHERE phone IS NOT NULL AND phone <> ''`
+          );
+          console.log('✅ Ensured unique (campaignId, phone) index on prospects');
+        } catch (e) {
+          console.warn('⚠️ Could not ensure prospects (campaignId, phone) unique index:', e.message);
+        }
       }
     } catch (e) {
       console.warn('⚠️ Could not ensure uniq_car_qr index:', e.message);

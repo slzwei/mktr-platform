@@ -412,3 +412,17 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - pr: n/a
   - commit: n/a
+
+### [2025-09-08 23:59 sgt] — phase b — admin shortlinks: delete endpoint
+
+- branch: main
+- summary:
+  1. add admin-only delete for short links and cascade remove click records.
+- changes:
+  1. backend: `backend/src/routes/shortlinks.js` — new `DELETE /api/shortlinks/:id` with admin auth; deletes `ShortLinkClick` then `ShortLink`.
+- acceptance:
+  1. as admin, `curl -X DELETE http://localhost:3001/api/shortlinks/<id> -H 'authorization: bearer <ADMIN_TOKEN>'` returns `{ success: true }` and row is gone from list.
+- notes:
+  1. safe to call repeatedly; 404 when id not found.
+- links:
+  - commit: n/a

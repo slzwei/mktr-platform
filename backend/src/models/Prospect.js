@@ -209,10 +209,8 @@ const Prospect = sequelize.define('Prospect', {
     {
       fields: ['email']
     },
-    {
-      unique: true,
-      fields: ['campaignId', 'phone']
-    },
+    // unique constraint on (campaignId, phone) will be enforced via a partial index in Postgres at startup
+    // to allow safe de-duplication on existing data before creating the index.
     {
       fields: ['leadStatus']
     },
