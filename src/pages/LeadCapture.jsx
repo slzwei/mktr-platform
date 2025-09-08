@@ -236,7 +236,7 @@ export default function LeadCapture() {
                                             const text = `Check this out: ${url}`;
                                             window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
                                         }}
-                                        className="bg-green-500 hover:bg-green-600 text-white flex items-center gap-2"
+                                        className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
                                     >
                                         <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg" alt="WhatsApp" className="w-4 h-4 invert" />
                                         WhatsApp

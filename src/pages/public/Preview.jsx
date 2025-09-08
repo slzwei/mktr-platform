@@ -128,7 +128,7 @@ export default function PublicPreview() {
                       const text = `Check this out: ${url}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
                     }}
-                    className="bg-green-500 hover:bg-green-600 text-white"
+                    className="bg-green-600 hover:bg-green-700 text-white"
                   >
                     Share on WhatsApp
                   </Button>

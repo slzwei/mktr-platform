@@ -255,3 +255,20 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - pr: n/a
   - commit: 7c34115
+
+### [2025-09-08 03:32 sgt] — phase b — t&c text opens marketing consent dialog
+
+- branch: main
+- summary:
+  1. make “terms & conditions” footer text clickable to open the same marketing consent dialog across lead capture, public preview, and interactive preview
+- changes:
+  1. frontend: update `src/components/campaigns/CampaignSignupForm.jsx` and `src/components/campaigns/DesignEditor.jsx` to wire the T&C text to the dialog
+- acceptance:
+  1. on `/LeadCapture`, clicking “terms & conditions” opens the dialog
+  2. on `/p/<slug>`, clicking “terms & conditions” opens the dialog
+  3. in campaign designer interactive preview, clicking “terms & conditions” opens the dialog
+- notes:
+  1. consistent UX; dialog content remains centrally managed
+- links:
+  - pr: n/a
+  - commit: 7549051
