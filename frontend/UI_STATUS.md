@@ -147,3 +147,17 @@
   2. submit again with the same phone for the same campaign → share dialog opens (no error back button).
 - links:
   - commit: n/a
+
+### [2025-01-27 14:30 sgt] — admin prospects: add delete buttons to every row
+
+- summary:
+  1. add delete buttons to every row in admin prospects table for both desktop and mobile views, with confirmation dialog.
+- changes:
+  1. `src/pages/AdminProspects.jsx` — add delete button with trash icon to each table row, confirmation dialog, delete handler function, and state management for delete confirmation.
+- acceptance:
+  1. open `/AdminProspects` as admin → see red trash icon button in each row.
+  2. click delete button → confirmation dialog opens with prospect name.
+  3. confirm deletion → prospect is removed from list and data refreshes.
+  4. works on both desktop table view and mobile card view.
+- links:
+  - commit: n/a

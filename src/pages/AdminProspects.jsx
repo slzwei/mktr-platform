@@ -23,7 +23,8 @@ import { useLocation } from "react-router-dom";
 import { format } from "date-fns";
 import { 
   Search, 
-  Download
+  Download,
+  Trash2
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -90,6 +91,7 @@ export default function AdminProspects() {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedProspect, setSelectedProspect] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [filters, setFilters] = useState({
     search: "",
     status: "all",
@@ -167,6 +169,17 @@ export default function AdminProspects() {
       await loadData();
     } catch (error) {
       console.error('Error updating status:', error);
+    }
+  };
+
+  const handleDeleteProspect = async (prospectId) => {
+    try {
+      await Prospect.delete(prospectId);
+      await loadData();
+      setDeleteConfirm(null);
+    } catch (error) {
+      console.error('Error deleting prospect:', error);
+      alert('Failed to delete prospect. Please try again.');
     }
   };
 
@@ -283,6 +296,7 @@ export default function AdminProspects() {
                       <TableHead className="whitespace-nowrap">Created Date/Time</TableHead>
                       <TableHead className="whitespace-nowrap">Source</TableHead>
                       <TableHead className="whitespace-nowrap">Status</TableHead>
+                      <TableHead className="whitespace-nowrap w-20">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -319,6 +333,16 @@ export default function AdminProspects() {
                             <Badge className={statusColors[prospect.status] + " whitespace-nowrap"}>
                               {statusLabels[prospect.status] || prospect.status}
                             </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDeleteConfirm(prospect)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       );
@@ -362,9 +386,19 @@ export default function AdminProspects() {
                           >
                             {prospect.name}
                           </button>
-                          <Badge className={statusColors[prospect.status] + " ml-2"}>
-                            {statusLabels[prospect.status] || prospect.status}
-                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <Badge className={statusColors[prospect.status] + " ml-2"}>
+                              {statusLabels[prospect.status] || prospect.status}
+                            </Badge>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDeleteConfirm(prospect)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 p-1"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
                         <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-gray-600">
                           <div>
@@ -410,6 +444,34 @@ export default function AdminProspects() {
                 />
               </ScrollArea>
             )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Delete Prospect</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-gray-600">
+                Are you sure you want to delete <strong>{deleteConfirm?.name}</strong>? 
+                This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setDeleteConfirm(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => handleDeleteProspect(deleteConfirm.id)}
+              >
+                Delete
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
