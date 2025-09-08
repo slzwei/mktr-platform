@@ -1,5 +1,6 @@
 import express from 'express';
 import crypto from 'crypto';
+import { Op } from 'sequelize';
 import { ShortLink, ShortLinkClick } from '../models/index.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
@@ -71,5 +72,39 @@ router.get('/:slug', asyncHandler(async (req, res) => {
 }));
 
 export default router;
+
+// Admin list/manage APIs (mounted under /api/shortlinks)
+router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, search = '', campaignId, purpose } = req.query;
+  const where = {};
+  if (campaignId) where.campaignId = campaignId;
+  if (purpose) where.purpose = purpose;
+  if (search) where.slug = { [Op.like]: `%${String(search).trim()}%` };
+
+  const { rows, count } = await ShortLink.findAndCountAll({
+    where,
+    order: [['createdAt', 'DESC']],
+    offset: (Number(page) - 1) * Number(limit),
+    limit: Number(limit)
+  });
+  res.json({ success: true, data: { items: rows, total: count } });
+}));
+
+router.patch('/:id', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { expiresAt } = req.body || {};
+  const link = await ShortLink.findByPk(id);
+  if (!link) throw new AppError('Not found', 404);
+  const updates = {};
+  if (expiresAt) updates.expiresAt = new Date(expiresAt);
+  await link.update(updates);
+  res.json({ success: true, data: { link } });
+}));
+
+router.get('/:id/clicks', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const clicks = await ShortLinkClick.findAll({ where: { shortLinkId: id }, order: [['ts', 'DESC']], limit: 200 });
+  res.json({ success: true, data: { clicks } });
+}));
 
 

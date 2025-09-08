@@ -29,6 +29,7 @@ const AdminUsers = lazy(() => import('./AdminUsers'));
 const AdminFleet = lazy(() => import('./AdminFleet'));
 const AdminCampaignDesigner = lazy(() => import('./AdminCampaignDesigner'));
 const AdminCommissions = lazy(() => import('./AdminCommissions'));
+const AdminShortLinks = lazy(() => import('./AdminShortLinks'));
 const AgentDashboard = lazy(() => import('./AgentDashboard'));
 const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
 const DriverDashboard = lazy(() => import('./DriverDashboard'));
@@ -60,6 +61,13 @@ function PagesContent() {
             <ProtectedRoute requiredRole="admin">
               <DashboardLayout>
                 <AdminDashboard />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/AdminShortLinks" element={
+            <ProtectedRoute requiredRole="admin">
+              <DashboardLayout>
+                <AdminShortLinks />
               </DashboardLayout>
             </ProtectedRoute>
           } />
