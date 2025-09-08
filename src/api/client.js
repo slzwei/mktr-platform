@@ -141,7 +141,9 @@ class APIClient {
 
   // HTTP method shortcuts
   async get(endpoint, params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    // Guard against non-object params (e.g., strings like '-created_date')
+    const safeParams = (params && typeof params === 'object' && !Array.isArray(params)) ? params : {};
+    const queryString = new URLSearchParams(safeParams).toString();
     const url = queryString ? `${endpoint}?${queryString}` : endpoint;
     return this.request(url);
   }

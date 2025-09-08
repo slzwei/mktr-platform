@@ -1,3 +1,17 @@
+## Phase X - 2025-09-08 18:05 SGT
+
+- Branch: main
+- Proposal: Fix localhost failures on prospects/campaigns due to dev proxy and tenant filter
+- Implementation Details:
+  - Disabled leadgen proxy shim in development to prevent 504 proxy loops. (File: `src/middleware/leadgenProxyShim.js`)
+  - Guarded campaigns list route to only apply `tenant_id` filter on Postgres, avoiding SQLite dev 500s. (File: `src/routes/campaigns.js`)
+  - No schema changes. Phase A/B/C logic untouched.
+- Variables/Functions Added:
+  - None
+- Next Steps:
+  - Verify local pages: Admin Prospects, Admin Campaigns, QR Codes, Commissions.
+  - If further 500s appear, add similar guards where `tenant_id` may be referenced.
+
 ## Phase X: Neutral referral sharing for Lead Capture
 
 - Timestamp: 2025-09-08 00:00 SGT
