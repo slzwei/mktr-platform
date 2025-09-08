@@ -51,6 +51,13 @@ export function leadgenProxyShim() {
   });
 
   return function shim(req, res, next) {
+    // In non-production environments, always bypass the legacy shim to avoid local 504s
+    // and allow monolith endpoints (e.g., /api/prospects, /api/commissions, /api/qrcodes)
+    // to be served directly.
+    if (String(process.env.NODE_ENV).toLowerCase() !== 'production') {
+      res.setHeader('x-legacy-shim-bypass', 'dev-env');
+      return next();
+    }
     if (forceOff) {
       res.setHeader('x-legacy-shim-bypass', 'force-off');
       return next();

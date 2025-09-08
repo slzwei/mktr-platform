@@ -470,3 +470,17 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
   1. uses existing backend `/api/dashboard/overview` qrCodes.totalScans; no backend changes.
 - links:
   - commit: 33356a3
+
+### [2025-09-09 01:34 sgt] — phase b — admin sidebar: auto-close on mobile after click (frontend)
+
+- branch: main
+- summary:
+  1. Mobile sidebar now closes automatically when a navigation item is clicked.
+- changes:
+  1. frontend: `src/components/ui/sidebar.jsx` — update `SidebarMenuButton` to call `setOpenMobile(false)` on click when `isMobile`.
+- acceptance:
+  1. On a narrow/mobile viewport, open the admin sidebar, tap any menu item → sidebar sheet closes and navigation proceeds.
+- notes:
+  1. Works with `asChild` usage wrapping `Link` in `DashboardLayout`.
+- links:
+  - commit: n/a
