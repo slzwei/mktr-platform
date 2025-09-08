@@ -135,6 +135,22 @@ router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res)
     qrTagId: incoming.qrTagId
   });
 
+  // Enforce: a phone can register once per campaign, but can register for different campaigns
+  if (incoming.phone && incoming.campaignId) {
+    const normalizedPhone = String(incoming.phone).replace(/\D/g, '');
+    const existing = await Prospect.findOne({
+      where: {
+        campaignId: incoming.campaignId,
+        phone: { [Op.iLike]: normalizedPhone }
+      }
+    });
+    if (existing) {
+      throw new AppError('This phone number has already signed up for this campaign.', 409);
+    }
+    // Persist normalized phone
+    incoming.phone = normalizedPhone;
+  }
+
   const prospect = await Prospect.create({ ...incoming, assignedAgentId });
 
   // Activity: created

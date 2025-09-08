@@ -5,6 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 import { 
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
 } from "@/components/ui/table";
@@ -24,7 +31,11 @@ import {
   Phone,
   UserRound,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Grid as GridIcon,
+  List as ListIcon,
+  MoreVertical,
+  Download
 } from "lucide-react";
 import {
   Select,
@@ -47,6 +58,8 @@ export default function AdminUsers() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [viewMode, setViewMode] = useState('list'); // list | grid
+  const [lifecycleTab, setLifecycleTab] = useState('all'); // all | pendingApproval | pendingRegistration | active | inactive
 
   // Edit dialog state
   const [editOpen, setEditOpen] = useState(false);
@@ -128,6 +141,76 @@ export default function AdminUsers() {
     });
     return copy;
   }, [users, sortBy, order]);
+
+  // derived groups for tabs
+  const deriveLifecycle = (u) => {
+    const pendingApproval = u.approvalStatus === 'pending' || u.status === 'pending_approval';
+    const pendingRegistration = (u?.isActive === true) && (
+      u?.status === 'pending_registration' || !!u?.invitationToken || u?.emailVerified === false
+    );
+    if (pendingApproval) return 'pendingApproval';
+    if (pendingRegistration) return 'pendingRegistration';
+    return u.isActive ? 'active' : 'inactive';
+  };
+
+  const lifecycleCounts = useMemo(() => {
+    const acc = { all: users.length, pendingApproval: 0, pendingRegistration: 0, active: 0, inactive: 0 };
+    users.forEach(u => { acc[deriveLifecycle(u)]++; });
+    return acc;
+  }, [users]);
+
+  const visibleUsers = useMemo(() => {
+    if (lifecycleTab === 'all') return sortedUsers;
+    return sortedUsers.filter(u => deriveLifecycle(u) === lifecycleTab);
+  }, [sortedUsers, lifecycleTab]);
+
+  const exportCsv = () => {
+    const header = ['id','fullName','email','phone','role','status','approvalStatus','createdAt'];
+    const rows = visibleUsers.map(u => [
+      u.id,
+      (u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim()),
+      u.email || '',
+      u.phone || '',
+      u.role || '',
+      u.isActive ? 'active' : 'inactive',
+      u.approvalStatus || '',
+      u.createdAt || ''
+    ]);
+    const csv = [header, ...rows].map(r => r.map(v => {
+      const s = String(v ?? '');
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+    }).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `users_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const RowActions = ({ u }) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
+          <MoreVertical className="w-4 h-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {(u.approvalStatus === 'pending' || u.status === 'pending_approval') && (
+          <>
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); approve(u, 'approved'); }}>Approve</DropdownMenuItem>
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); approve(u, 'rejected'); }}>Reject</DropdownMenuItem>
+          </>
+        )}
+        {(u.status === 'pending_registration' || !!u.invitationToken || u.emailVerified === false) && (
+          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); resendInvite(u); }}>Resend Invite</DropdownMenuItem>
+        )}
+        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDetails(u); }}>View</DropdownMenuItem>
+        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEdit(u); }}>Edit</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   const statusBadge = (u) => {
     const pendingApproval = u.approvalStatus === 'pending' || u.status === 'pending_approval';
@@ -246,15 +329,28 @@ export default function AdminUsers() {
   return (
     <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Admin - Users</h1>
             <p className="text-gray-600 mt-1">View, filter, and manage all users.</p>
           </div>
-          <Button onClick={() => setInviteOpen(true)} className="bg-blue-600 hover:bg-blue-700">
-            <Plus className="w-5 h-5 mr-2" />
-            Invite User
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={exportCsv}>
+              <Download className="w-4 h-4 mr-2" /> Export CSV
+            </Button>
+            <Button onClick={() => setInviteOpen(true)} className="bg-blue-600 hover:bg-blue-700">
+              <Plus className="w-5 h-5 mr-2" />
+              Invite User
+            </Button>
+          </div>
+        </div>
+
+        {/* quick stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
+          <Card><CardContent className="py-3"><div className="text-sm text-gray-500">All</div><div className="text-2xl font-semibold">{lifecycleCounts.all}</div></CardContent></Card>
+          <Card><CardContent className="py-3"><div className="text-sm text-gray-500">Pending Approval</div><div className="text-2xl font-semibold">{lifecycleCounts.pendingApproval}</div></CardContent></Card>
+          <Card><CardContent className="py-3"><div className="text-sm text-gray-500">Pending Registration</div><div className="text-2xl font-semibold">{lifecycleCounts.pendingRegistration}</div></CardContent></Card>
+          <Card><CardContent className="py-3"><div className="text-sm text-gray-500">Active</div><div className="text-2xl font-semibold">{lifecycleCounts.active}</div></CardContent></Card>
         </div>
 
         <Card className="shadow-lg">
@@ -296,90 +392,121 @@ export default function AdminUsers() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex items-center gap-2 ml-auto">
+                <Button variant={viewMode === 'list' ? 'default' : 'outline'} onClick={() => setViewMode('list')}>
+                  <ListIcon className="w-4 h-4 mr-2" /> List
+                </Button>
+                <Button variant={viewMode === 'grid' ? 'default' : 'outline'} onClick={() => setViewMode('grid')}>
+                  <GridIcon className="w-4 h-4 mr-2" /> Grid
+                </Button>
+              </div>
             </div>
           </CardHeader>
 
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50">
-                    <TableHead className="cursor-pointer" onClick={() => handleToggleSort('fullName')}>
-                      User {sortBy === 'fullName' ? (order === 'ASC' ? <ChevronUp className="inline w-4 h-4"/> : <ChevronDown className="inline w-4 h-4"/>) : null}
-                    </TableHead>
-                    <TableHead className="cursor-pointer" onClick={() => handleToggleSort('role')}>
-                      Role {sortBy === 'role' ? (order === 'ASC' ? <ChevronUp className="inline w-4 h-4"/> : <ChevronDown className="inline w-4 h-4"/>) : null}
-                    </TableHead>
-                    <TableHead>Contact</TableHead>
-                    <TableHead className="cursor-pointer" onClick={() => handleToggleSort('approvalStatus')}>
-                      Status {sortBy === 'approvalStatus' ? (order === 'ASC' ? <ChevronUp className="inline w-4 h-4"/> : <ChevronDown className="inline w-4 h-4"/>) : null}
-                    </TableHead>
-                    <TableHead className="cursor-pointer" onClick={() => handleToggleSort('createdAt')}>
-                      Joined {sortBy === 'createdAt' ? (order === 'ASC' ? <ChevronUp className="inline w-4 h-4"/> : <ChevronDown className="inline w-4 h-4"/>) : null}
-                    </TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sortedUsers.map((u) => (
-                    <TableRow key={u.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openDetails(u)}>
-                      <TableCell>
-                        <div>
-                          <p className="font-semibold text-gray-900">{u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email}</p>
-                          <p className="text-xs text-gray-500">ID: {u.id.slice(-8)}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="capitalize">{u.role?.replace('_',' ') || '-'}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1 text-sm">
-                          <div className="flex items-center gap-1 text-gray-600">
-                            <Mail className="w-3 h-3" />
-                            {u.email}
-                          </div>
-                          {u.phone && (
-                            <div className="flex items-center gap-1 text-gray-500">
-                              <Phone className="w-3 h-3" />
-                              {u.phone}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{statusBadge(u)}</TableCell>
-                      <TableCell>
-                        <span className="text-sm text-gray-600">{u.createdAt ? format(new Date(u.createdAt), 'dd/MM/yyyy') : '-'}</span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {(u.approvalStatus === 'pending' || u.status === 'pending_approval') && (
-                            <>
-                              <Button variant="ghost" size="sm" className="text-green-700 hover:text-green-900" onClick={(e) => { e.stopPropagation(); approve(u, 'approved'); }}>Approve</Button>
-                              <Button variant="ghost" size="sm" className="text-red-700 hover:text-red-900" onClick={(e) => { e.stopPropagation(); approve(u, 'rejected'); }}>Reject</Button>
-                            </>
-                          )}
-                          {(u.status === 'pending_registration' || !!u.invitationToken || u.emailVerified === false) && (
-                            <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); resendInvite(u); }}>Resend Invite</Button>
-                          )}
-                          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openDetails(u); }}><Eye className="w-4 h-4"/></Button>
-                          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(u); }}><Edit className="w-4 h-4"/></Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+          <CardContent className="p-4">
+            <Tabs value={lifecycleTab} onValueChange={setLifecycleTab}>
+              <TabsList>
+                <TabsTrigger value="all">All ({lifecycleCounts.all})</TabsTrigger>
+                <TabsTrigger value="pendingApproval">Pending Approval ({lifecycleCounts.pendingApproval})</TabsTrigger>
+                <TabsTrigger value="pendingRegistration">Pending Registration ({lifecycleCounts.pendingRegistration})</TabsTrigger>
+                <TabsTrigger value="active">Active ({lifecycleCounts.active})</TabsTrigger>
+                <TabsTrigger value="inactive">Inactive ({lifecycleCounts.inactive})</TabsTrigger>
+              </TabsList>
 
-              {sortedUsers.length === 0 && (
-                <div className="text-center py-12">
-                  <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                    <Search className="w-6 h-6 text-gray-400" />
+              <TabsContent value={lifecycleTab} className="mt-4">
+                {viewMode === 'list' ? (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50">
+                          <TableHead className="cursor-pointer" onClick={() => handleToggleSort('fullName')}>
+                            User {sortBy === 'fullName' ? (order === 'ASC' ? <ChevronUp className="inline w-4 h-4"/> : <ChevronDown className="inline w-4 h-4"/>) : null}
+                          </TableHead>
+                          <TableHead className="cursor-pointer" onClick={() => handleToggleSort('role')}>
+                            Role {sortBy === 'role' ? (order === 'ASC' ? <ChevronUp className="inline w-4 h-4"/> : <ChevronDown className="inline w-4 h-4"/>) : null}
+                          </TableHead>
+                          <TableHead>Contact</TableHead>
+                          <TableHead className="cursor-pointer" onClick={() => handleToggleSort('approvalStatus')}>
+                            Status {sortBy === 'approvalStatus' ? (order === 'ASC' ? <ChevronUp className="inline w-4 h-4"/> : <ChevronDown className="inline w-4 h-4"/>) : null}
+                          </TableHead>
+                          <TableHead className="cursor-pointer" onClick={() => handleToggleSort('createdAt')}>
+                            Joined {sortBy === 'createdAt' ? (order === 'ASC' ? <ChevronUp className="inline w-4 h-4"/> : <ChevronDown className="inline w-4 h-4"/>) : null}
+                          </TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {visibleUsers.map((u) => (
+                          <TableRow key={u.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openDetails(u)}>
+                            <TableCell>
+                              <div>
+                                <p className="font-semibold text-gray-900">{u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email}</p>
+                                <p className="text-xs text-gray-500">ID: {u.id.slice(-8)}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="capitalize">{u.role?.replace('_',' ') || '-'}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-1 text-sm">
+                                <div className="flex items-center gap-1 text-gray-600">
+                                  <Mail className="w-3 h-3" />
+                                  {u.email}
+                                </div>
+                                {u.phone && (
+                                  <div className="flex items-center gap-1 text-gray-500">
+                                    <Phone className="w-3 h-3" />
+                                    {u.phone}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>{statusBadge(u)}</TableCell>
+                            <TableCell>
+                              <span className="text-sm text-gray-600">{u.createdAt ? format(new Date(u.createdAt), 'dd/MM/yyyy') : '-'}</span>
+                            </TableCell>
+                            <TableCell>
+                              <RowActions u={u} />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">No users found</h3>
-                  <p className="text-gray-500">Try adjusting filters or invite a new user</p>
-                </div>
-              )}
-            </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {visibleUsers.map(u => (
+                      <Card key={u.id} className="shadow-sm cursor-pointer" onClick={() => openDetails(u)}>
+                        <CardHeader className="flex flex-row items-center justify-between pb-2">
+                          <CardTitle className="text-base font-semibold truncate">{u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email}</CardTitle>
+                          {statusBadge(u)}
+                        </CardHeader>
+                        <CardContent className="space-y-2 text-sm text-gray-600">
+                          <div className="flex items-center gap-2"><Mail className="w-4 h-4" /> {u.email}</div>
+                          {u.phone && <div className="flex items-center gap-2"><Phone className="w-4 h-4" /> {u.phone}</div>}
+                          <div className="text-xs text-gray-500">Joined: {u.createdAt ? format(new Date(u.createdAt), 'dd/MM/yyyy') : '-'}</div>
+                          <div className="pt-2 flex justify-end"><RowActions u={u} /></div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                    {visibleUsers.length === 0 && (
+                      <div className="col-span-full text-center py-12 text-gray-500">
+                        <h3 className="font-semibold">No users found.</h3>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {visibleUsers.length === 0 && (
+                  <div className="text-center py-12">
+                    <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                      <Search className="w-6 h-6 text-gray-400" />
+                    </div>
+                    <h3 className="font-semibold text-gray-900 mb-2">No users found</h3>
+                    <p className="text-gray-500">Try adjusting filters or invite a new user</p>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
 

@@ -237,6 +237,24 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 
 <!-- new entries go here. do not edit sections above except to fix typos or update endpoint/env tables when the system evolves. -->
 
+### [2025-09-08 23:59 sgt] — phase b — dedupe: one signup per campaign per phone
+
+- branch: main
+- summary:
+  1. enforce that a phone can sign up once per campaign; same phone can join different campaigns
+- changes:
+  1. backend: `backend/src/models/Prospect.js` add unique index on `(campaignId, phone)`
+  2. backend: `backend/src/routes/prospects.js` guard in `POST /api/prospects` to reject duplicates (409) and normalize phone digits
+- acceptance:
+  1. submit lead with phone X for campaign A → 201
+  2. submit again with phone X for campaign A → 409 "already signed up"
+  3. submit with phone X for campaign B → 201
+- notes:
+  1. index covers both sqlite and postgres via sequelize; phone is digit-normalized before save
+- links:
+  - pr: n/a
+  - commit: n/a
+
 ### [2025-09-08 03:10 sgt] — phase b/c — legacy ui compat guard (self-proxy bypass)
 
 - branch: phase-c/scaffold-manifest-beacons
@@ -363,4 +381,34 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - notes:
   1. QR tracker remains at `/t/:slug` (SPA) and `/api/qrcodes/track/:slug` (backend).
 - links:
+  - commit: n/a
+
+### [2025-09-08 23:45 sgt] — phase b — pointer: admin campaigns ui redesign (frontend)
+
+- branch: main
+- summary:
+  1. admin campaign management page refreshed for usability (tabs, filters, grid/list, actions menu).
+- changes:
+  1. see `frontend/UI_STATUS.md` entry "admin campaigns ui redesign" for details.
+- acceptance:
+  1. navigate to `/AdminCampaigns` and verify new controls and tabs; behavior matches ui log.
+- notes:
+  1. backend unchanged.
+- links:
+  - pr: n/a
+  - commit: n/a
+
+### [2025-09-08 23:58 sgt] — phase b — pointer: admin users ui enhancements (frontend)
+
+- branch: main
+- summary:
+  1. admin users page upgraded with stats, lifecycle tabs, list/grid toggle, actions menu, and csv export.
+- changes:
+  1. see `frontend/UI_STATUS.md` entry "admin users ui enhancements" for details.
+- acceptance:
+  1. navigate to `/AdminUsers` and verify new tabs, view toggle, and export.
+- notes:
+  1. backend unchanged.
+- links:
+  - pr: n/a
   - commit: n/a

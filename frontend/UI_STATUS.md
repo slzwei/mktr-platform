@@ -14,6 +14,20 @@
 
 ## append entries below
 
+### [2025-09-08 23:45 sgt] — admin campaigns ui redesign
+
+- summary:
+  1. improved admin campaign management page with tabs (active/archived), search + status filter, list/grid toggle, quick stats, and consolidated actions menu.
+- changes:
+  1. `src/pages/AdminCampaigns.jsx` — add tabs, filters, grid/list views, dropdown actions; refine empty states.
+- acceptance:
+  1. open `/AdminCampaigns` as admin → see quick stats and controls.
+  2. search by name filters results instantly; status filter toggles active/inactive.
+  3. switch between list and grid view; actions available via "more" menu.
+  4. archived tab shows restore/delete controls.
+- links:
+  - commit: n/a
+
 ### [2025-09-08 03:25 sgt] — marketing consent modal on lead capture + previews
 
 - summary:
@@ -85,3 +99,26 @@
   1. as admin, navigate to `/AdminShortLinks` → see table; clicking “Clicks” shows recent click details; “Extend +90d” updates expiry.
 - links:
   - commit: 95a9ca0
+
+### [2025-09-08 23:07 sgt] — admin sidebar: add “short links” item
+
+- summary:
+  1. add a left-nav item “short links” for admins pointing to `/AdminShortLinks`.
+- changes:
+  1. `src/components/layout/DashboardLayout.jsx`: add menu item under admin section with `Link2` icon.
+- acceptance:
+  1. login as admin → sidebar shows “short links”; clicking navigates to the management page.
+- links:
+  - commit: 0e924fa
+
+### [2025-09-08 23:58 sgt] — admin users ui enhancements
+
+- summary:
+  1. improved admin users page with quick stats, lifecycle tabs (all/pending approval/pending registration/active/inactive), list/grid toggle, consolidated row actions, and csv export.
+- changes:
+  1. `src/pages/AdminUsers.jsx` — add tabs, quick stats, grid/list views, dropdown actions, export csv.
+- acceptance:
+  1. open `/AdminUsers` → see stats; switch tabs and views; actions via kebab menu.
+  2. click Export CSV downloads current filtered/visible users.
+- links:
+  - commit: n/a

@@ -210,6 +210,10 @@ const Prospect = sequelize.define('Prospect', {
       fields: ['email']
     },
     {
+      unique: true,
+      fields: ['campaignId', 'phone']
+    },
+    {
       fields: ['leadStatus']
     },
     {

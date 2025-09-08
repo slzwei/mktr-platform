@@ -107,4 +107,14 @@ router.get('/:id/clicks', authenticateToken, requireAdmin, asyncHandler(async (r
   res.json({ success: true, data: { clicks } });
 }));
 
+// Delete a short link and its associated click records
+router.delete('/:id', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const link = await ShortLink.findByPk(id);
+  if (!link) throw new AppError('Not found', 404);
+  await ShortLinkClick.destroy({ where: { shortLinkId: id } });
+  await link.destroy();
+  res.json({ success: true });
+}));
+
 

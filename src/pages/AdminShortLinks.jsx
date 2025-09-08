@@ -38,6 +38,13 @@ export default function AdminShortLinks() {
     await load();
   };
 
+  const remove = async (item) => {
+    if (!window.confirm(`Delete short link /share/${item.slug}? This cannot be undone.`)) return;
+    await apiClient.delete(`/shortlinks/${item.id}`);
+    if (selected?.id === item.id) setSelected(null);
+    await load();
+  };
+
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-4">Short Links</h1>
@@ -66,6 +73,7 @@ export default function AdminShortLinks() {
                 <td className="p-2 flex gap-2">
                   <Button variant="outline" onClick={() => openClicks(it)}>Clicks</Button>
                   <Button onClick={() => extend90Days(it)}>Extend +90d</Button>
+                  <Button variant="destructive" onClick={() => remove(it)}>Delete</Button>
                 </td>
               </tr>
             ))}
