@@ -14,6 +14,17 @@
 
 ## append entries below
 
+### [2025-09-09 14:05 sgt] — lead capture: label tweak on duplicate dialog
+
+- summary:
+  1. change button label from “Open Share Now” to “Share Now” in the unsuccessful (duplicate signup) dialog.
+- changes:
+  1. `src/pages/LeadCapture.jsx` — update button text.
+- acceptance:
+  1. trigger duplicate signup → dialog shows “Share Now”.
+- links:
+  - commit: n/a
+
 ### [2025-09-09 12:55 sgt] — admin prospects: mobile responsiveness
 
 - summary:

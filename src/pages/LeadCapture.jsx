@@ -273,7 +273,7 @@ export default function LeadCapture() {
                                     <p className="text-gray-600 mt-2">{error}</p>
                                     <p className="text-gray-500 mt-1">Redirecting to share options in {duplicateCountdown}s…</p>
                                     <div className="mt-6 flex items-center justify-center gap-3">
-                                        <Button onClick={() => setShareOpen(true)}>Open Share Now</Button>
+                                        <Button onClick={() => setShareOpen(true)}>Share Now</Button>
                                     </div>
                                 </>
                             ) : (
