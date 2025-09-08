@@ -527,3 +527,18 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
   1. Works with `asChild` usage wrapping `Link` in `DashboardLayout`.
 - links:
   - commit: n/a
+
+### [2025-09-09 02:20 sgt] — phase b — prospects list: clickable name only (frontend)
+
+- branch: main
+- summary:
+  1. open details dialog by clicking prospect name; remove row/tile click and eye icon
+- changes:
+  1. frontend: `src/pages/AdminProspects.jsx` — add click handler on name (desktop & mobile), remove row/button handlers
+- acceptance:
+  1. desktop: click the prospect name → dialog opens; clicking elsewhere in row does nothing
+  2. mobile: tap the prospect name → dialog opens; tapping elsewhere in tile does nothing
+- notes:
+  1. no backend changes
+- links:
+  - commit: 508a3ef

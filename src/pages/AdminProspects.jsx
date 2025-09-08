@@ -26,6 +26,7 @@ import {
   Download
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 import ProspectFilters from "@/components/prospects/ProspectFilters";
 import ProspectDetails from "@/components/prospects/ProspectDetails";
@@ -392,19 +393,21 @@ export default function AdminProspects() {
         </Card>
 
         <Dialog open={!!selectedProspect} onOpenChange={() => setSelectedProspect(null)}>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl max-h-[80vh]">
             <DialogHeader>
               <DialogTitle>Prospect Details</DialogTitle>
             </DialogHeader>
             {selectedProspect && (
-              <ProspectDetails
-                prospect={selectedProspect}
-                campaigns={campaigns}
-                onStatusUpdate={handleStatusUpdate}
-                onClose={() => setSelectedProspect(null)}
-                userRole={user?.role}
-                onEdited={loadData}
-              />
+              <ScrollArea className="max-h-[70vh] pr-2">
+                <ProspectDetails
+                  prospect={selectedProspect}
+                  campaigns={campaigns}
+                  onStatusUpdate={handleStatusUpdate}
+                  onClose={() => setSelectedProspect(null)}
+                  userRole={user?.role}
+                  onEdited={loadData}
+                />
+              </ScrollArea>
             )}
           </DialogContent>
         </Dialog>
