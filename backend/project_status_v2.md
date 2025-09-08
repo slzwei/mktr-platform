@@ -469,6 +469,20 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - commit: c5852f7
 
+### [2025-09-09 01:42 sgt] — phase b — dashboard overview: campaign counts corrected (backend)
+
+- branch: main
+- summary:
+  1. fix admin campaign totals in `/api/dashboard/overview`: total excludes archived; active includes `status='active'` or `is_active=true` (legacy flag).
+- changes:
+  1. backend: `backend/src/routes/dashboard.js` — update `getAdminStats` campaign counts with `Op.ne` and `Op.or` conditions.
+- acceptance:
+  1. call `/api/dashboard/overview` as admin → `stats.campaigns.total` excludes archived; `stats.campaigns.active` includes legacy `is_active`.
+- notes:
+  1. aligns with frontend Admin Dashboard cards using overview values.
+- links:
+  - commit: n/a
+
 ### [2025-09-09 01:05 sgt] — phase b — admin dashboard: correct metrics (frontend)
 
 - branch: main

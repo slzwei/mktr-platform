@@ -135,3 +135,15 @@
   2. click Export CSV downloads current filtered/visible users.
 - links:
   - commit: n/a
+
+### [2025-09-09 13:05 sgt] — lead capture: open share dialog on duplicate signup
+
+- summary:
+  1. when a phone has already signed up for the same campaign, show the existing share dialog instead of an error with a back button.
+- changes:
+  1. `src/pages/LeadCapture.jsx` — detect 409 duplicate message ("already signed up for this campaign") during submit and set `submitted=true` + `shareOpen=true`.
+- acceptance:
+  1. submit once → share dialog opens as usual.
+  2. submit again with the same phone for the same campaign → share dialog opens (no error back button).
+- links:
+  - commit: n/a

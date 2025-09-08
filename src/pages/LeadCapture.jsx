@@ -167,7 +167,15 @@ export default function LeadCapture() {
                 setError(result?.message || 'Submission failed. Please try again.');
             }
         } catch (err) {
-            setError(err?.message || 'An error occurred. Please try again later.');
+            const msg = err?.message || '';
+            // If duplicate phone for this campaign, open share dialog instead of error card
+            if (/already signed up for this campaign/i.test(msg)) {
+                setSubmitted(true);
+                setShareOpen(true);
+                setError(null);
+                return;
+            }
+            setError(msg || 'An error occurred. Please try again later.');
         }
     };
 
