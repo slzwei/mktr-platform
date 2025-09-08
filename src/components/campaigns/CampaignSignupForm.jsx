@@ -667,14 +667,6 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                     >
                         Terms & Conditions
                     </button>
-                    {' '}and{' '}
-                    <button
-                        type="button"
-                        onClick={() => setConsentOpen(true)}
-                        className="text-blue-600 hover:underline"
-                    >
-                        Marketing Consent
-                    </button>
                     .
                 </p>
             </div>

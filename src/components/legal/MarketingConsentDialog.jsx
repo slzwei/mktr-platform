@@ -4,11 +4,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 export default function MarketingConsentDialog({ open, onOpenChange }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="w-[92vw] max-w-md sm:max-w-lg max-h-[80vh] overflow-y-auto p-5">
         <DialogHeader>
           <DialogTitle>Marketing Consent – MKTR PTE. LTD. (UEN: 202507548M)</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 text-sm text-gray-700 leading-6">
+        <div className="space-y-4 text-sm text-gray-700 leading-6 pr-1">
           <p>
             By submitting this form, you agree to receive updates on promotions, offers, customer rewards, and other marketing-related communications from MKTR PTE. LTD. and its authorised representatives ("MKTR Partners"). You also agree that your personal data may be collected, used, stored, and shared in accordance with this consent form and the MKTR Personal Data Policy (
             <a href="https://mktr.sg/personal-data-policy" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">https://mktr.sg/personal-data-policy</a>

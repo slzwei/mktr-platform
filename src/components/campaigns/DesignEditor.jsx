@@ -965,14 +965,6 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                         >
                           Terms & Conditions
                         </button>
-                        {' '}and{' '}
-                        <button
-                          type="button"
-                          onClick={() => setConsentOpen(true)}
-                          className="text-blue-600 hover:underline"
-                        >
-                          Marketing Consent
-                        </button>
                         .
                       </p>
                     </div>
