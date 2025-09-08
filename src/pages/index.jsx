@@ -44,6 +44,7 @@ function PagesContent() {
           <Route path="/LeadCapture" element={<LeadCapture />} />
           <Route path="/p/:slug" element={<PublicPreview />} />
           <Route path="/t/:slug" element={<TrackRedirect />} />
+          <Route path="/share/:slug" element={<TrackRedirect />} />
           <Route path="/Homepage" element={<Homepage />} />
           <Route path="/Contact" element={<Contact />} />
           <Route path="/CustomerLogin" element={<CustomerLogin />} />

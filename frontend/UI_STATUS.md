@@ -74,3 +74,14 @@
   3. if shortening fails, long link is used transparently.
 - links:
   - commit: 240d845
+
+### [2025-09-08 22:40 sgt] — admin short links management page
+
+- summary:
+  1. new admin page to list/search short links, view clicks, and extend expiry by +90 days.
+- changes:
+  1. `src/pages/AdminShortLinks.jsx` (new), route wired in `src/pages/index.jsx` under `/AdminShortLinks`.
+- acceptance:
+  1. as admin, navigate to `/AdminShortLinks` → see table; clicking “Clicks” shows recent click details; “Extend +90d” updates expiry.
+- links:
+  - commit: 95a9ca0
