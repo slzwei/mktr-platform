@@ -181,33 +181,19 @@ export default function LeadCapture() {
         return campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id + '&ref=1')}` : window.location.href;
     }, [campaign]);
 
-    // Attempt to shorten only when the dialog opens
+    // Attempt to shorten only when the dialog opens (via backend shortlinks)
     useEffect(() => {
-        const shortenUrl = async (url) => {
-            try {
-                // Try TinyURL (no key). Falls back silently on CORS or errors
-                const r1 = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`, { method: 'GET', mode: 'cors' });
-                if (r1.ok) {
-                    const t = (await r1.text()).trim();
-                    if (/^https?:\/\//i.test(t)) return t;
-                }
-            } catch (_) { /* ignore */ }
-            try {
-                // Try is.gd as secondary
-                const r2 = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(url)}`, { method: 'GET', mode: 'cors' });
-                if (r2.ok) {
-                    const t = (await r2.text()).trim();
-                    if (/^https?:\/\//i.test(t)) return t;
-                }
-            } catch (_) { /* ignore */ }
-            return null;
-        };
-
         (async () => {
             if (shareOpen) {
                 setShortening(true);
-                const s = await shortenUrl(longShareUrl);
-                setShortShareUrl(s || "");
+                try {
+                    const resp = await apiClient.post('/shortlinks', { targetUrl: longShareUrl, campaignId: campaign?.id, purpose: 'share', ttlDays: 90 });
+                    const url = resp?.data?.url;
+                    const absolute = url?.startsWith('http') ? url : `${window.location.origin}${url}`;
+                    setShortShareUrl(absolute || "");
+                } catch (_) {
+                    setShortShareUrl("");
+                }
                 setShortening(false);
             } else {
                 setShortShareUrl("");

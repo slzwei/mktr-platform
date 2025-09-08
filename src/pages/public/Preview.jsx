@@ -39,35 +39,23 @@ export default function PublicPreview() {
   const longShareUrl = useMemo(() => window.location.href, []);
 
   useEffect(() => {
-    const shortenUrl = async (url) => {
-      try {
-        const r1 = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`);
-        if (r1.ok) {
-          const t = (await r1.text()).trim();
-          if (/^https?:\/\//i.test(t)) return t;
-        }
-      } catch(_) {}
-      try {
-        const r2 = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(url)}`);
-        if (r2.ok) {
-          const t = (await r2.text()).trim();
-          if (/^https?:\/\//i.test(t)) return t;
-        }
-      } catch(_) {}
-      return null;
-    };
-
     (async () => {
       if (shareOpen) {
         setShortening(true);
-        const s = await shortenUrl(longShareUrl);
-        setShortShareUrl(s || '');
+        try {
+          const resp = await apiClient.post('/shortlinks', { targetUrl: longShareUrl, campaignId: snapshot?.id, purpose: 'share', ttlDays: 90 });
+          const url = resp?.data?.url;
+          const absolute = url?.startsWith('http') ? url : `${window.location.origin}${url}`;
+          setShortShareUrl(absolute || '');
+        } catch (_) {
+          setShortShareUrl('');
+        }
         setShortening(false);
       } else {
         setShortShareUrl('');
       }
     })();
-  }, [shareOpen, longShareUrl]);
+  }, [shareOpen, longShareUrl, snapshot]);
 
   const resolveImageUrl = (url) => {
     if (!url) return '';

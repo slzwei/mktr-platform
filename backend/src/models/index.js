@@ -19,6 +19,8 @@ import UserPayout from './UserPayout.js';
 import Device from './Device.js';
 import BeaconEvent from './BeaconEvent.js';
 import IdempotencyKey from './IdempotencyKey.js';
+import ShortLink from './ShortLink.js';
+import ShortLinkClick from './ShortLinkClick.js';
 
 // Define associations
 const defineAssociations = () => {
@@ -84,6 +86,12 @@ const defineAssociations = () => {
   // Device associations
   Device.hasMany(BeaconEvent, { foreignKey: 'deviceId', as: 'events' });
   BeaconEvent.belongsTo(Device, { foreignKey: 'deviceId', as: 'device' });
+
+  // ShortLink associations
+  ShortLink.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
+  ShortLink.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
+  ShortLink.hasMany(ShortLinkClick, { foreignKey: 'shortLinkId', as: 'clicks' });
+  ShortLinkClick.belongsTo(ShortLink, { foreignKey: 'shortLinkId', as: 'shortLink' });
 };
 
 // Initialize associations
@@ -109,7 +117,9 @@ export {
   UserPayout,
   Device,
   BeaconEvent,
-  IdempotencyKey
+  IdempotencyKey,
+  ShortLink,
+  ShortLinkClick
 };
 
 // Export default object for convenience
@@ -132,5 +142,7 @@ export default {
   UserPayout,
   Device,
   BeaconEvent,
-  IdempotencyKey
+  IdempotencyKey,
+  ShortLink,
+  ShortLinkClick
 };

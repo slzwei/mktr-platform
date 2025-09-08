@@ -10,7 +10,7 @@ import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 
 import { sequelize } from './database/connection.js';
-import { QrTag, QrScan, Attribution, SessionVisit, Prospect, FleetOwner, User, Campaign, Car } from './models/index.js';
+import { QrTag, QrScan, Attribution, SessionVisit, Prospect, FleetOwner, User, Campaign, Car, ShortLink, ShortLinkClick } from './models/index.js';
 import './models/CampaignPreview.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
@@ -35,6 +35,7 @@ import leadgenProxyShim from './middleware/leadgenProxyShim.js';
 import adtechManifestRoutes from './routes/adtechManifest.js';
 import adtechBeaconsRoutes from './routes/adtechBeacons.js';
 import contactRoutes from './routes/contact.js';
+import shortLinkRoutes from './routes/shortlinks.js';
 import { validateGoogleOAuthConfig } from './controllers/authController.js';
 import { optionalAuth } from './middleware/auth.js';
 import { initSystemAgent } from './services/systemAgent.js';
@@ -142,6 +143,9 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/verify', verifyRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/contact', contactRoutes);
+// short links: admin-minted, public redirects
+app.use('/api/shortlinks', shortLinkRoutes);
+app.use('/share', shortLinkRoutes);
 
 // Phase C: Adtech Manifest + Beacons (behind flags)
 if (String(process.env.MANIFEST_ENABLED || 'false').toLowerCase() === 'true') {
@@ -229,6 +233,8 @@ async function startServer() {
     await SessionVisit.sync({ alter: !isSqlite });
     await Prospect.sync({ alter: !isSqlite });
     await (await import('./models/ProspectActivity.js')).default.sync({ alter: !isSqlite });
+    await (await import('./models/ShortLink.js')).default.sync({ alter: !isSqlite });
+    await (await import('./models/ShortLinkClick.js')).default.sync({ alter: !isSqlite });
 
     // Ensure name fields exist and constraints are updated
     await FleetOwner.sync({ alter: !isSqlite });
