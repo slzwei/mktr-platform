@@ -48,6 +48,8 @@ export default function LeadCapture() {
     const [referralMarked, setReferralMarked] = useState(false);
     const [shortening, setShortening] = useState(false);
     const [shortShareUrl, setShortShareUrl] = useState("");
+    const [duplicateDetected, setDuplicateDetected] = useState(false);
+    const [duplicateCountdown, setDuplicateCountdown] = useState(5);
 
     const resolveImageUrl = (url) => {
         if (!url) return '';
@@ -168,11 +170,13 @@ export default function LeadCapture() {
             }
         } catch (err) {
             const msg = err?.message || '';
-            // If duplicate phone for this campaign, open share dialog instead of error card
+            // If duplicate phone for this campaign, show unsuccessful prompt and auto-open share dialog in 5s
             if (/already signed up for this campaign/i.test(msg)) {
-                setSubmitted(true);
-                setShareOpen(true);
-                setError(null);
+                setDuplicateDetected(true);
+                setDuplicateCountdown(5);
+                setSubmitted(false);
+                setShareOpen(false);
+                setError('You have already signed up for this campaign. We\'ll open the share options in 5 seconds.');
                 return;
             }
             setError(msg || 'An error occurred. Please try again later.');
@@ -209,6 +213,23 @@ export default function LeadCapture() {
         })();
     }, [shareOpen, longShareUrl]);
 
+    // When duplicate signup detected, start countdown and then open share dialog
+    useEffect(() => {
+        if (!duplicateDetected) return;
+        setDuplicateCountdown(5);
+        const interval = setInterval(() => {
+            setDuplicateCountdown((prev) => {
+                if (prev <= 1) {
+                    clearInterval(interval);
+                    setShareOpen(true);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [duplicateDetected]);
+
     return (
         <div className={`min-h-screen ${getBackgroundClass(design)}`}>
             <div className={`flex items-center justify-center ${getSpacingClass(design)}`}>
@@ -231,14 +252,27 @@ export default function LeadCapture() {
                     ) : error ? (
                         <div className="bg-white p-8 rounded-lg shadow-xl text-center border">
                             <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-                            <h2 className="text-2xl font-bold text-gray-900">An Error Occurred</h2>
-                            <p className="text-gray-600 mt-2">{error}</p>
-                            <Link to={createPageUrl("Dashboard")}>
-                                <Button variant="outline" className="mt-6">
-                                    <ArrowLeft className="w-4 h-4 mr-2" />
-                                    Go Back
-                                </Button>
-                            </Link>
+                            {duplicateDetected ? (
+                                <>
+                                    <h2 className="text-2xl font-bold text-gray-900">Unsuccessful</h2>
+                                    <p className="text-gray-600 mt-2">{error}</p>
+                                    <p className="text-gray-500 mt-1">Redirecting to share options in {duplicateCountdown}s…</p>
+                                    <div className="mt-6 flex items-center justify-center gap-3">
+                                        <Button onClick={() => setShareOpen(true)}>Open Share Now</Button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <h2 className="text-2xl font-bold text-gray-900">An Error Occurred</h2>
+                                    <p className="text-gray-600 mt-2">{error}</p>
+                                    <Link to={createPageUrl("Dashboard")}>
+                                        <Button variant="outline" className="mt-6">
+                                            <ArrowLeft className="w-4 h-4 mr-2" />
+                                            Go Back
+                                        </Button>
+                                    </Link>
+                                </>
+                            )}
                         </div>
                     ) : campaign ? (
                         <CampaignSignupForm
