@@ -3,6 +3,7 @@ import { Prospect } from "@/api/entities";
 import { Campaign } from "@/api/entities";
 import { Commission } from "@/api/entities";
 import { Car } from "@/api/entities";
+import { dashboard } from "@/api/client";
 import { auth } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +29,8 @@ export default function AdminDashboard() {
     prospects: [],
     campaigns: [],
     commissions: [],
-    cars: []
+    cars: [],
+    totalScans: 0
   });
   const [loading, setLoading] = useState(true);
   
@@ -57,10 +59,11 @@ export default function AdminDashboard() {
         return;
       }
 
-      const [prospects, allCampaigns, commissions] = await Promise.all([
+      const [prospects, allCampaigns, commissions, overview] = await Promise.all([
         Prospect.list(),
         Campaign.list(),
-        Commission.list()
+        Commission.list(),
+        dashboard.getOverview('30d')
       ]);
       
       // Filter out archived campaigns for dashboard stats
@@ -74,7 +77,8 @@ export default function AdminDashboard() {
         console.log('Fleet module not accessible, skipping car data:', error.message);
       }
 
-      setStats({ prospects, campaigns, commissions, cars });
+      const totalScans = overview?.data?.stats?.qrCodes?.totalScans || 0;
+      setStats({ prospects, campaigns, commissions, cars, totalScans });
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     }
@@ -219,6 +223,7 @@ export default function AdminDashboard() {
             <CommissionSummary 
               commissions={getFilteredData(stats.commissions, user?.role, user?.id)}
               userRole={user?.role}
+              totalScans={stats.totalScans}
             />
             
             <Card>

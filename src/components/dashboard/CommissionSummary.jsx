@@ -18,14 +18,17 @@ const statusColors = {
   paid: "bg-gray-100 text-gray-800 border-gray-200"
 };
 
-export default function CommissionSummary({ commissions, userRole, period = '30d', lifetimeEarnings = 0, lifetimeScans = 0 }) {
+export default function CommissionSummary({ commissions, userRole, period = '30d', lifetimeEarnings = 0, lifetimeScans = 0, totalScans = 0 }) {
   const recentCommissions = commissions.slice(0, 8);
   
   const totalEarnings = commissions.reduce((sum, c) => {
-    if (userRole === 'driver_partner') return sum + c.amount_driver;
-    if (userRole === 'fleet_owner') return sum + c.amount_fleet;
-    return sum + c.amount_driver + c.amount_fleet;
+    if (userRole === 'driver_partner') return sum + Number(c.amount_driver || 0);
+    if (userRole === 'fleet_owner') return sum + Number(c.amount_fleet || 0);
+    return sum + Number(c.amount_driver || 0) + Number(c.amount_fleet || 0);
   }, 0);
+
+  const totalDriverCommissions = commissions.reduce((sum, c) => sum + Number(c.amount_driver || 0), 0);
+  const totalFleetCommissions = commissions.reduce((sum, c) => sum + Number(c.amount_fleet || 0), 0);
 
   const periodLabel = (() => {
     if (period === '1d') return 'Today';
@@ -48,40 +51,74 @@ export default function CommissionSummary({ commissions, userRole, period = '30d
         </div>
       </CardHeader>
       <CardContent className="p-6">
-        {/* Lifetime Stats */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div className="text-center p-3 bg-indigo-50 rounded-lg">
-            <div className="flex items-center justify-center mb-2">
-              <DollarSign className="w-5 h-5 text-indigo-600" />
+        {userRole === 'admin' ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="text-center p-3 bg-green-50 rounded-lg">
+              <div className="flex items-center justify-center mb-2">
+                <DollarSign className="w-5 h-5 text-green-600" />
+              </div>
+              <p className="text-2xl font-bold text-green-900">
+                ${totalDriverCommissions.toFixed(2)}
+              </p>
+              <p className="text-sm text-green-700">Driver Commissions (total)</p>
             </div>
-            <p className="text-2xl font-bold text-indigo-900">
-              ${Number(lifetimeEarnings).toFixed(2)}
-            </p>
-            <p className="text-sm text-indigo-600">Total Lifetime Earnings</p>
-          </div>
-          <div className="text-center p-3 bg-purple-50 rounded-lg">
-            <div className="flex items-center justify-center mb-2">
-              <BarChart3 className="w-5 h-5 text-purple-600" />
+            <div className="text-center p-3 bg-blue-50 rounded-lg">
+              <div className="flex items-center justify-center mb-2">
+                <DollarSign className="w-5 h-5 text-blue-600" />
+              </div>
+              <p className="text-2xl font-bold text-blue-900">
+                ${totalFleetCommissions.toFixed(2)}
+              </p>
+              <p className="text-sm text-blue-700">Fleet Owner Commissions (total)</p>
             </div>
-            <p className="text-2xl font-bold text-purple-900">
-              {Number(lifetimeScans)}
-            </p>
-            <p className="text-sm text-purple-600">Total Lifetime Scans</p>
+            <div className="text-center p-3 bg-purple-50 rounded-lg">
+              <div className="flex items-center justify-center mb-2">
+                <BarChart3 className="w-5 h-5 text-purple-600" />
+              </div>
+              <p className="text-2xl font-bold text-purple-900">
+                {Number(totalScans).toLocaleString()}
+              </p>
+              <p className="text-sm text-purple-700">Total Scans</p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <>
+            {/* Lifetime Stats */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="text-center p-3 bg-indigo-50 rounded-lg">
+                <div className="flex items-center justify-center mb-2">
+                  <DollarSign className="w-5 h-5 text-indigo-600" />
+                </div>
+                <p className="text-2xl font-bold text-indigo-900">
+                  ${Number(lifetimeEarnings).toFixed(2)}
+                </p>
+                <p className="text-sm text-indigo-600">Total Lifetime Earnings</p>
+              </div>
+              <div className="text-center p-3 bg-purple-50 rounded-lg">
+                <div className="flex items-center justify-center mb-2">
+                  <BarChart3 className="w-5 h-5 text-purple-600" />
+                </div>
+                <p className="text-2xl font-bold text-purple-900">
+                  {Number(lifetimeScans)}
+                </p>
+                <p className="text-sm text-purple-600">Total Lifetime Scans</p>
+              </div>
+            </div>
 
-        {/* Period Earned */}
-        <div className="grid grid-cols-1 gap-4 mb-6">
-          <div className="text-center p-3 bg-blue-50 rounded-lg">
-            <div className="flex items-center justify-center mb-2">
-              <DollarSign className="w-5 h-5 text-blue-600" />
+            {/* Period Earned */}
+            <div className="grid grid-cols-1 gap-4 mb-6">
+              <div className="text-center p-3 bg-blue-50 rounded-lg">
+                <div className="flex items-center justify-center mb-2">
+                  <DollarSign className="w-5 h-5 text-blue-600" />
+                </div>
+                <p className="text-2xl font-bold text-blue-900">
+                  ${totalEarnings.toFixed(2)}
+                </p>
+                <p className="text-sm text-blue-600">Earned ({periodLabel})</p>
+              </div>
             </div>
-            <p className="text-2xl font-bold text-blue-900">
-              ${totalEarnings.toFixed(2)}
-            </p>
-            <p className="text-sm text-blue-600">Earned ({periodLabel})</p>
-          </div>
-        </div>
+          </>
+        )}
 
         {/* Recent Commissions */}
         <div className="space-y-3">
