@@ -13,7 +13,8 @@ import {
   LogOut,
   Menu,
   Bell,
-  Shield
+  Shield,
+  Link2
 } from "lucide-react";
 import {
   Sidebar,
@@ -63,6 +64,11 @@ const getNavigationItems = (user) => {
       title: "QR Codes",
       url: createPageUrl("AdminQRCodes"),
       icon: QrCode
+    },
+    {
+      title: "Short Links",
+      url: createPageUrl("AdminShortLinks"),
+      icon: Link2
     },
     {
       title: "Fleet Management",
