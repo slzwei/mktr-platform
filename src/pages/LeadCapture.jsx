@@ -192,6 +192,7 @@ export default function LeadCapture() {
                             formSubheadline={design.formSubheadline || 'Fill out the form to get started.'}
                             headlineSize={design.headlineSize || 20}
                             campaignId={campaign.id}
+                            campaign={campaign}
                             onSubmit={handleSubmit}
                         />
                     ) : null}

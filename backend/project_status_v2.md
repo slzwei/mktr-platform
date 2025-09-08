@@ -515,3 +515,22 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - pr: n/a
   - commit: n/a
+
+## Phase 8: Real-time Date of Birth Validation Enhancement
+
+- timestamp: 2024-12-19 15:30 SGT
+- branch: main
+- proposal: Implement real-time validation for date of birth field on lead capture page with immediate error feedback for invalid dates and age range validation
+- implementation details:
+  - Fixed missing campaign prop in LeadCapture.jsx causing age validation to not work
+  - Enhanced validateAge function in CampaignSignupForm.jsx with immediate feedback for invalid dates
+  - Added real-time validation for invalid date formats (e.g., Feb 30, Apr 31)
+  - Improved visual feedback with red border styling for both incomplete and invalid dates
+  - Validation now triggers on every keystroke, not just on blur
+- variables/functions added:
+  - Enhanced validateAge() function with immediate date validation
+  - Updated handleFormChange() to trigger validation on every keystroke
+  - Improved Input className styling for error states
+- next steps:
+  - Test with various campaign age ranges
+  - Consider adding more specific error messages for different validation scenarios

@@ -89,18 +89,45 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         return age;
     };
 
-    // New: Validate age against campaign range
+    // Enhanced: Validate age against campaign range with immediate feedback
     const validateAge = (dateString) => {
         if (!campaign) { // If campaign object is not provided, no age validation is performed
             setAgeError('');
             return;
         }
         
-        // Check if user entered incomplete date (not exactly 8 digits)
         const digitsOnly = dateString.replace(/\D/g, '');
+        
+        // Check for incomplete date format
         if (digitsOnly.length > 0 && digitsOnly.length !== 8) {
             setAgeError('Please enter full year in DDMMYYYY format');
             return;
+        }
+
+        // If no digits entered, clear error
+        if (digitsOnly.length === 0) {
+            setAgeError('');
+            return;
+        }
+
+        // Check for invalid date format (exactly 8 digits but invalid date)
+        if (digitsOnly.length === 8) {
+            const day = parseInt(digitsOnly.slice(0, 2), 10);
+            const month = parseInt(digitsOnly.slice(2, 4), 10);
+            const year = parseInt(digitsOnly.slice(4, 8), 10);
+            
+            // Basic range validation
+            if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > new Date().getFullYear()) {
+                setAgeError('Please enter a valid date');
+                return;
+            }
+            
+            // Check for invalid dates (e.g., Feb 30, Apr 31)
+            const testDate = new Date(year, month - 1, day);
+            if (testDate.getDate() !== day || testDate.getMonth() !== month - 1 || testDate.getFullYear() !== year) {
+                setAgeError('Please enter a valid date');
+                return;
+            }
         }
 
         const age = calculateAge(dateString);
@@ -155,6 +182,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 setDobIncomplete(false);
             }
             
+            // Validate immediately as user types
             validateAge(formattedDate);
         } else {
             setFormData(prev => ({ ...prev, [key]: value }));
@@ -581,7 +609,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                 type="tel" // Use tel for numeric keyboard on mobile
                                 inputMode="numeric" // Ensure numeric keyboard
                                 placeholder="DD/MM/YYYY"
-                                className={`pl-7 h-8 text-sm ${dobIncomplete ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                className={`pl-7 h-8 text-sm ${(dobIncomplete || ageError) ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
                                 value={formData.date_of_birth}
                                 onChange={(e) => handleFormChange('date_of_birth', e.target.value)}
                                 onBlur={handleDobBlur} // Add this
