@@ -344,9 +344,23 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
   1. frontend: `src/pages/index.jsx` add `<Route path="/share/:slug" element={<TrackRedirect />} />`.
   2. no backend changes; aligns with admin shortlinks that generate `/share/<slug>`.
 - acceptance:
-  1. open `/share/ofmki6it` → browser redirects to backend `/api/qrcodes/track/ofmki6it` via `TrackRedirect`.
+  1. open `/share/ofmki6it` → SPA forwards to backend `/share/ofmki6it` (server redirects to target).
   2. console no longer shows “No routes matched location \"/share/...\"”.
 - notes:
   1. `AdminShortLinks` already renders links to `/share/<slug>`; this makes them functional on the SPA router.
+- links:
+  - commit: n/a
+
+### [2025-09-08 23:05 sgt] — phase b — correction: `/share/:slug` uses ShareRedirect
+
+- branch: main
+- summary:
+  1. fix routing to use a dedicated `ShareRedirect` that forwards to backend `/share/:slug` instead of QR tracker.
+- changes:
+  1. frontend: add `src/pages/ShareRedirect.jsx` and update `src/pages/index.jsx` to map `/share/:slug` → `ShareRedirect`.
+- acceptance:
+  1. visiting `/share/<slug>` results in a 302 to the shortlink target (via backend), and shortlink analytics increment.
+- notes:
+  1. QR tracker remains at `/t/:slug` (SPA) and `/api/qrcodes/track/:slug` (backend).
 - links:
   - commit: n/a
