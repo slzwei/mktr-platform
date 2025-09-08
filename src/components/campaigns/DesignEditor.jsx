@@ -21,6 +21,7 @@ import {
   CheckCircle2, // Added CheckCircle2 for verification status
   X // Added X for OTP section close button
 } from "lucide-react";
+import MarketingConsentDialog from "@/components/legal/MarketingConsentDialog";
 
 const colorPresets = [
   { name: "Ocean Blue", color: "#3B82F6" },
@@ -163,6 +164,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
   });
 
   const [previewErrors, setPreviewErrors] = useState({});
+  const [consentOpen, setConsentOpen] = useState(false);
 
   // Effect for resend cooldown timer
   useEffect(() => {
@@ -955,7 +957,15 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                     {/* Terms Footer */}
                     <div className="pt-2 text-center">
                       <p className="text-xs text-gray-500 leading-relaxed">
-                        By signing up, you agree to our Terms of Service
+                        By signing up, you agree to our Terms of Service and{' '}
+                        <button
+                          type="button"
+                          onClick={() => setConsentOpen(true)}
+                          className="text-blue-600 hover:underline"
+                        >
+                          Marketing Consent
+                        </button>
+                        .
                       </p>
                     </div>
                   </div>
@@ -972,6 +982,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
           </CardContent>
         </Card>
       </div>
+      <MarketingConsentDialog open={consentOpen} onOpenChange={setConsentOpen} />
     </div>
   );
 }

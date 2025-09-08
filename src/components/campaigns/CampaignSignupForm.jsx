@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { sendOtp, verifyOtp } from "../lib/customFunctions";
 import { motion } from "framer-motion";
+import MarketingConsentDialog from "@/components/legal/MarketingConsentDialog";
 
 export default function CampaignSignupForm({ themeColor, formHeadline, formSubheadline, headlineSize, campaignId, onSubmit, campaign }) {
     const [formData, setFormData] = useState({
@@ -34,6 +35,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
     const [dobIncomplete, setDobIncomplete] = useState(false); // New: Track incomplete DOB format
     const [resendCooldown, setResendCooldown] = useState(0);
     const [showSuccessTick, setShowSuccessTick] = useState(false);
+    const [consentOpen, setConsentOpen] = useState(false);
 
     useEffect(() => {
         let timer;
@@ -657,9 +659,19 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                     {loading === 'submitting' ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit'}
                 </Button>
                  <p className="text-xs text-gray-500 text-center pt-1">
-                    By signing up, you agree to our Terms of Service.
+                    By signing up, you agree to our Terms of Service and
+                    {" "}
+                    <button
+                        type="button"
+                        onClick={() => setConsentOpen(true)}
+                        className="text-blue-600 hover:underline"
+                    >
+                        Marketing Consent
+                    </button>
+                    .
                 </p>
             </div>
+            <MarketingConsentDialog open={consentOpen} onOpenChange={setConsentOpen} />
         </form>
     );
 }
