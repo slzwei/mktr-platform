@@ -73,3 +73,19 @@ router.get('/slug/:slug', asyncHandler(async (req, res) => {
 export default router;
 
 
+
+// Public: minimal campaign data by ID for lead capture (no auth)
+router.get('/public/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const campaign = await Campaign.findByPk(id, {
+    attributes: ['id', 'name', 'design_config', 'is_active']
+  });
+
+  if (!campaign) {
+    throw new AppError('Campaign not found', 404);
+  }
+
+  res.json({ success: true, data: { campaign } });
+}));
+

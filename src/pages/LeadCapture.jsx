@@ -102,8 +102,18 @@ export default function LeadCapture() {
                     }
                     setQrTag({ id: resp.data.qrTagId });
                 } else if (params.get('campaign_id')) {
-                    // Fallback for legacy preview links
-                    fetchedCampaign = await Campaign.get(params.get('campaign_id'));
+                    // Fallback: public minimal endpoint without auth (works for logged-out users)
+                    const cid = params.get('campaign_id');
+                    try {
+                        const pub = await apiClient.get(`/previews/public/${cid}`);
+                        if (pub?.success && pub.data?.campaign) {
+                            fetchedCampaign = pub.data.campaign;
+                        } else {
+                            fetchedCampaign = await Campaign.get(cid);
+                        }
+                    } catch (_) {
+                        fetchedCampaign = await Campaign.get(cid);
+                    }
                 } else {
                     setError('No campaign or QR code specified.');
                     return;

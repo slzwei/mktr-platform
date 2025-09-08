@@ -251,6 +251,22 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 
 <!-- new entries go here. do not edit sections above except to fix typos or update endpoint/env tables when the system evolves. -->
 
+### [2025-09-09 03:05 sgt] — phase b — lead capture duplicate signup ux (frontend)
+
+- branch: main
+- summary:
+  1. show unsuccessful prompt when a prospect re-signs up with the same phone for the same campaign; auto-open share dialog in 5 seconds
+- changes:
+  1. frontend: `src/pages/LeadCapture.jsx` — detect backend 409 "already signed up" error; render an unsuccessful message with a 5s countdown and an "Open Share Now" button; automatically open the share dialog after countdown
+  2. no backend changes; duplicate enforcement already exists in `backend/src/routes/prospects.js`
+- acceptance:
+  1. submit lead for a campaign → 201 and share dialog opens
+  2. submit again with the same phone on the same campaign → page shows "Unsuccessful" message and a countdown; after 5s, share dialog opens automatically; clicking "Open Share Now" opens immediately
+- notes:
+  1. copy and timing are configurable in code; future enhancement could show campaign name in the message
+- links:
+  - commit: 35fb464
+
 ### [2025-09-08 23:59 sgt] — phase b — dedupe: one signup per campaign per phone
 
 - branch: main
@@ -542,3 +558,17 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
   1. no backend changes
 - links:
   - commit: 508a3ef
+
+### [2025-09-09 02:28 sgt] — phase b — prospects dialog: reliable scrolling using ScrollArea (frontend)
+
+- branch: main
+- summary:
+  1. wrap details in `ScrollArea` with fixed max height; remove outer overflow
+- changes:
+  1. frontend: `src/pages/AdminProspects.jsx` — import `ScrollArea`; wrap `ProspectDetails` with `ScrollArea max-h-[70vh]`; keep dialog `max-w-2xl max-h-[80vh]`
+- acceptance:
+  1. open any prospect with long details → dialog stays within viewport; inner content scrolls smoothly
+- notes:
+  1. no backend changes
+- links:
+  - commit: 104daa0
