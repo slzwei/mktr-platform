@@ -127,6 +127,14 @@ router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res)
     }
   }
 
+  // If qrTagId is provided but campaignId is missing/null, derive from QR tag
+  if (incoming.qrTagId && !incoming.campaignId) {
+    const qr = await QrTag.findByPk(incoming.qrTagId);
+    if (qr?.campaignId) {
+      incoming.campaignId = qr.campaignId;
+    }
+  }
+
   // Resolve secure assignment (agent/admin override -> qr owner -> campaign -> system)
   const assignedAgentId = await resolveAssignedAgentId({
     reqUser: req.user,

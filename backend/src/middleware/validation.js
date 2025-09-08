@@ -128,8 +128,9 @@ export const schemas = {
     interests: Joi.array().items(Joi.string()).optional(),
     budget: Joi.object().optional(),
     location: Joi.object().optional(),
-    campaignId: Joi.string().uuid().optional(),
-    qrTagId: Joi.string().uuid().optional(),
+    // Optional associations: when omitted or null, backend may still bind via session attribution
+    campaignId: Joi.alternatives().try(Joi.string().uuid(), Joi.valid(null)).optional(),
+    qrTagId: Joi.alternatives().try(Joi.string().uuid(), Joi.valid(null)).optional(),
     // Only honored for admins at handler level; validate format only
     assignedAgentId: Joi.string().uuid().optional()
   }),

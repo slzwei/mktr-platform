@@ -111,7 +111,8 @@ export default function AdminProspects() {
     try {
       const [userData, prospectsData, allCampaignsData] = await Promise.all([
         auth.getCurrentUser(),
-        Prospect.list(),
+        // Request a larger page size to ensure newly created signups are included
+        Prospect.list({ page: 1, limit: 200 }),
         Campaign.list()
       ]);
       setUser(userData);

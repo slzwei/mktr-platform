@@ -267,6 +267,19 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - commit: 35fb464
 
+### [2025-09-09 03:58 sgt] — phase b — admin prospects fetch includes recent signups
+
+- branch: main
+- summary:
+  1. increase prospects list page size in admin ui to avoid missing new submissions due to pagination
+- changes:
+  1. frontend: `src/pages/AdminProspects.jsx` — call `Prospect.list({ page: 1, limit: 200 })`
+  2. no backend change; server already supports `page`/`limit` and sorts by `createdAt desc`
+- acceptance:
+  1. submit a new lead via `/LeadCapture` while logged out → after login as admin, open `/AdminProspects` and see the new record at the top without adjusting filters
+- notes:
+  1. consider adding explicit server-side `limit` defaults or cursor paging later
+
 ### [2025-09-08 23:59 sgt] — phase b — dedupe: one signup per campaign per phone
 
 - branch: main
@@ -606,3 +619,52 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
   1. Postgres will persist new columns via sync; safe guards keep older envs from breaking.
 - links:
   - commit: n/a
+
+### [2025-09-08 14:00 sgt] — phase b — lead capture validation fix (frontend)
+
+- branch: main
+- summary:
+  1. Prevent Joi validation error on `POST /api/prospects` when visiting lead capture without a QR session. The frontend previously sent `qrTagId: null` (and sometimes `campaignId: null`), which violated the schema requiring UUID strings when the fields are present.
+- changes:
+  1. frontend: `src/pages/LeadCapture.jsx` — construct `basePayload` and strip null/undefined/empty fields via `Object.fromEntries(...filter(...))`, so optional IDs are omitted unless valid UUID strings.
+- acceptance:
+  1. Visit `/LeadCapture?campaign_id=<id>` while logged out (no QR attribution) → submit form → 201 response and Thank You message; no "qrTagId must be a string" error.
+  2. Visit via actual QR link `/t/<slug>` so session resolves `qrTagId` → submit form → 201 and Prospect row contains `qrTagId`.
+- notes:
+  1. The Joi schema is correct; the bug was the frontend sending `null`. Backend continues to auto-bind `qrTagId` from attribution when available.
+- links:
+  - commit: n/a
+  - file: `src/pages/LeadCapture.jsx`
+  - endpoint: `POST /api/prospects`
+
+### [2025-09-08 14:05 sgt] — phase b — accept null optional IDs (backend)
+
+- branch: main
+- summary:
+  1. Relax prospect creation validator to accept `null` for `campaignId` and `qrTagId` so older clients or edge flows that send explicit nulls won’t fail. Backend still prefers omission and auto-binds from attribution when present.
+- changes:
+  1. backend: `backend/src/middleware/validation.js` — change `campaignId`/`qrTagId` to `Joi.alternatives().try(Joi.string().uuid(), Joi.valid(null)).optional()`.
+- acceptance:
+  1. `POST /api/prospects` with `qrTagId: null` → 201 created when other fields valid.
+  2. `POST /api/prospects` with valid UUID strings → 201 created and values persisted.
+- notes:
+  1. Frontend also updated to omit nulls; this backend change is defensive.
+- links:
+  - file: `backend/src/middleware/validation.js`
+  - endpoint: `POST /api/prospects`
+
+### [2025-09-08 14:12 sgt] — phase b — derive campaignId from qrTagId (backend)
+
+- branch: main
+- summary:
+  1. Ensure prospects from QR flows always tie to the correct campaign even if the client omits `campaignId`. When `qrTagId` is present and `campaignId` is missing/null, backend fetches the QR tag and copies its `campaignId` into the incoming payload.
+- changes:
+  1. backend: `backend/src/routes/prospects.js` — before assignment and creation, load `QrTag` and set `incoming.campaignId = qr.campaignId` when applicable.
+- acceptance:
+  1. Hit `/t/<slug>` → redirected to LeadCapture → submit form with only `qrTagId` bound via session → created prospect has both `qrTagId` and `campaignId` populated.
+  2. Submit with explicit `campaignId` → preserved as provided.
+- notes:
+  1. Works with existing attribution binding; keeps dedupe-by-campaign logic functioning.
+- links:
+  - file: `backend/src/routes/prospects.js`
+  - endpoint: `POST /api/prospects`

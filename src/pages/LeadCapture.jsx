@@ -50,8 +50,6 @@ export default function LeadCapture() {
     const [shortShareUrl, setShortShareUrl] = useState("");
     const [duplicateDetected, setDuplicateDetected] = useState(false);
     const [duplicateCountdown, setDuplicateCountdown] = useState(5);
-    const [duplicateTitle, setDuplicateTitle] = useState('Unsuccessful');
-    const [duplicateBody, setDuplicateBody] = useState('');
 
     const resolveImageUrl = (url) => {
         if (!url) return '';
@@ -163,15 +161,20 @@ export default function LeadCapture() {
             const [firstName, ...rest] = name.split(/\s+/);
             const lastName = rest.join(' ') || '-';
 
-            const payload = {
+            // Build payload and omit null/undefined optional IDs to satisfy backend Joi schema
+            const basePayload = {
                 firstName,
                 lastName,
                 email: formData.email,
                 phone: formData.phone, // already like 65XXXXXXXX from child form
                 leadSource: isReferral ? 'referral' : (qrTag?.id ? 'qr_code' : 'website'),
-                campaignId: campaign?.id || null,
-                qrTagId: qrTag?.id || null
+                campaignId: campaign?.id,
+                qrTagId: qrTag?.id
             };
+
+            const payload = Object.fromEntries(
+                Object.entries(basePayload).filter(([_, v]) => v !== null && v !== undefined && v !== '')
+            );
 
             const result = await apiClient.post('/prospects', payload);
             if (result?.success) {
@@ -188,10 +191,7 @@ export default function LeadCapture() {
                 setDuplicateCountdown(5);
                 setSubmitted(false);
                 setShareOpen(false);
-                const body = 'Oops! You have already signed up for this campaign. Why not share it with others?';
-                setDuplicateTitle('Unsuccessful');
-                setDuplicateBody(body);
-                setError(body);
+                setError('You have already signed up for this campaign. We\'ll open the share options in 5 seconds.');
                 return;
             }
             setError(msg || 'An error occurred. Please try again later.');
@@ -269,12 +269,11 @@ export default function LeadCapture() {
                             <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
                             {duplicateDetected ? (
                                 <>
-                                    <h2 className="text-2xl font-bold text-gray-900">{duplicateTitle}</h2>
-                                    <p className="text-gray-600 mt-2">{duplicateBody}</p>
+                                    <h2 className="text-2xl font-bold text-gray-900">Unsuccessful</h2>
+                                    <p className="text-gray-600 mt-2">{error}</p>
+                                    <p className="text-gray-500 mt-1">Redirecting to share options in {duplicateCountdown}s…</p>
                                     <div className="mt-6 flex items-center justify-center gap-3">
-                                        <Button onClick={() => { setDuplicateTitle('Thanks For Sharing!'); setDuplicateBody('Sharing is caring!'); setShareOpen(true); }}>
-                                            {`Go And Share (${duplicateCountdown}s)`}
-                                        </Button>
+                                        <Button onClick={() => setShareOpen(true)}>Open Share Now</Button>
                                     </div>
                                 </>
                             ) : (
