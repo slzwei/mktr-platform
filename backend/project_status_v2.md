@@ -572,3 +572,37 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
   1. no backend changes
 - links:
   - commit: 104daa0
+
+### [2025-09-09 03:22 sgt] — phase b — lead capture public access (backend + frontend)
+
+- branch: main
+- summary:
+  1. ensure all lead capture pages and form submissions work for logged-out users
+- changes:
+  1. backend: add public endpoint `GET /api/previews/public/:id` returning minimal campaign `{id,name,design_config,is_active}` in `backend/src/routes/campaignPreviews.js`
+  2. frontend: `src/pages/LeadCapture.jsx` fallback to call `/api/previews/public/:id` when only `campaign_id` query param is present (no session attribution)
+  3. existing binder `/lead-capture` and tracker `/api/qrcodes/track/:slug` remain unchanged to set cookies for session attribution
+- acceptance:
+  1. visit `/LeadCapture?campaign_id=<id>` while logged out → page loads with campaign design and form visible
+  2. submit the form without auth → `POST /api/prospects` succeeds (201) and shows thank-you dialog
+  3. visit a QR link `/t/<slug>` → redirects to `/LeadCapture?...` and renders without login
+- notes:
+  1. campaign CRUD remains protected; only minimal design fetch is public
+- links:
+  - commit: n/a
+
+### [2025-09-09 03:30 sgt] — phase b — admin dashboard 500 on overview (backend)
+
+- branch: main
+- summary:
+  1. fix 500 “Database Error” on `GET /api/dashboard/overview` caused by missing QrTag scan fields in some envs.
+- changes:
+  1. backend: `backend/src/models/QrTag.js` — add `scanCount`, `uniqueScanCount`, `lastScanned`, `analytics`, and `status` fields with sane defaults.
+  2. backend: `backend/src/routes/dashboard.js` — wrap counts/sums with safe helpers to avoid DatabaseError when optional columns are absent; provide zero fallbacks.
+- acceptance:
+  1. call `/api/dashboard/overview?period=30d` as admin → 200 with `stats.qrCodes.totalScans` present (0 if no data) and no 500.
+  2. Admin Dashboard loads without red error toast; cards render counts.
+- notes:
+  1. Postgres will persist new columns via sync; safe guards keep older envs from breaking.
+- links:
+  - commit: n/a

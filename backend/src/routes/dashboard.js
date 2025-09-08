@@ -55,6 +55,23 @@ router.get('/overview', authenticateToken, asyncHandler(async (req, res) => {
 
 // Admin dashboard statistics
 async function getAdminStats(startDate, endDate) {
+  // Defensive helpers to avoid DatabaseError when optional columns are missing on certain envs
+  const safeSum = async (model, column, options = {}) => {
+    try {
+      const val = await model.sum(column, options);
+      return Number(val) || 0;
+    } catch (_) {
+      return 0;
+    }
+  };
+  const safeCount = async (model, options = {}) => {
+    try {
+      return await model.count(options);
+    } catch (_) {
+      return 0;
+    }
+  };
+
   const [
     totalUsers,
     activeUsers,
@@ -69,20 +86,20 @@ async function getAdminStats(startDate, endDate) {
     totalCars,
     activeCars
   ] = await Promise.all([
-    User.count(),
-    User.count({ where: { isActive: true } }),
+    safeCount(User),
+    safeCount(User, { where: { isActive: true } }),
     // Total campaigns excludes archived
-    Campaign.count({ where: { status: { [Op.ne]: 'archived' } } }),
+    safeCount(Campaign, { where: { status: { [Op.ne]: 'archived' } } }),
     // Active campaigns if status is 'active' OR legacy flag is_active is true
-    Campaign.count({ where: { [Op.or]: [{ status: 'active' }, { is_active: true }] } }),
-    Prospect.count(),
-    Prospect.count({ where: { createdAt: { [Op.gte]: startDate } } }),
-    Commission.sum('amount') || 0,
-    Commission.sum('amount', { where: { status: 'pending' } }) || 0,
-    QrTag.count(),
-    QrTag.sum('scanCount') || 0,
-    Car.count(),
-    Car.count({ where: { status: 'active' } })
+    safeCount(Campaign, { where: { [Op.or]: [{ status: 'active' }, { is_active: true }] } }),
+    safeCount(Prospect),
+    safeCount(Prospect, { where: { createdAt: { [Op.gte]: startDate } } }),
+    safeSum(Commission, 'amount'),
+    safeSum(Commission, 'amount', { where: { status: 'pending' } }),
+    safeCount(QrTag),
+    safeSum(QrTag, 'scanCount'),
+    safeCount(Car),
+    safeCount(Car, { where: { status: 'active' } })
   ]);
 
   // User growth trend

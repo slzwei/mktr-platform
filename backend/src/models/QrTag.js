@@ -7,6 +7,33 @@ const QrTag = sequelize.define('QrTag', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true
   },
+  // Aggregate counters for scans
+  scanCount: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  },
+  uniqueScanCount: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  },
+  lastScanned: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  // JSON analytics blob (JSONB on Postgres)
+  analytics: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: {}
+  },
+  // Lifecycle status used by some admin/bulk ops
+  status: {
+    type: DataTypes.ENUM('active', 'inactive', 'archived'),
+    allowNull: false,
+    defaultValue: 'active'
+  },
   // Stable short identifier used in URLs: mktr.sg/t/:slug
   slug: {
     type: DataTypes.STRING(64),
