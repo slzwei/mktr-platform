@@ -766,3 +766,31 @@ curl -s -H "Authorization: Bearer $(cat /tmp/tok)" \
 **Next Steps:**
 
 - Run full smoke via gateway when all services are up: `EMAIL=test@mktr.sg PASSWORD=test API_ROOT=http://localhost:4000/api ./scripts/smoke_gateway_auto.sh`.
+
+## Phase B – Frontend Route: /share/:slug → TrackRedirect (Implemented)
+
+**Timestamp:** 2025-09-08 22:55 SGT  
+**Branch:** main
+
+### Proposal (ChatGPT → Cursor)
+
+- Add SPA route to handle MKTR shortlinks (`/share/:slug`) by reusing the existing `TrackRedirect` page which forwards to backend tracking.
+
+### Implementation (Cursor)
+
+**Commits:**
+
+- (tiny) frontend route addition; no backend changes
+
+**Completed:**
+
+- `src/pages/index.jsx`: added `<Route path="/share/:slug" element={<TrackRedirect />} />`.
+- Navigating to `/share/<slug>` triggers client redirect to backend `GET /api/qrcodes/track/:slug`.
+
+**Variables/Functions Added:**
+
+- None (route only).
+
+**Next Step:**
+
+- Ensure admin Short Links table links open in new tab still resolve correctly; add e2e check.

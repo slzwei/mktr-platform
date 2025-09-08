@@ -334,3 +334,19 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
   1. expand analytics later with path/source tagging; add admin UI listing.
 - links:
   - commit: a734468
+
+### [2025-09-08 22:55 sgt] — phase b — frontend route: /share/:slug → TrackRedirect
+
+- branch: main
+- summary:
+  1. add react-router route `/share/:slug` to reuse existing `TrackRedirect` component.
+- changes:
+  1. frontend: `src/pages/index.jsx` add `<Route path="/share/:slug" element={<TrackRedirect />} />`.
+  2. no backend changes; aligns with admin shortlinks that generate `/share/<slug>`.
+- acceptance:
+  1. open `/share/ofmki6it` → browser redirects to backend `/api/qrcodes/track/ofmki6it` via `TrackRedirect`.
+  2. console no longer shows “No routes matched location \"/share/...\"”.
+- notes:
+  1. `AdminShortLinks` already renders links to `/share/<slug>`; this makes them functional on the SPA router.
+- links:
+  - commit: n/a

@@ -7,6 +7,7 @@ import ErrorBoundary from './ErrorBoundary';
 const LeadCapture = lazy(() => import('./LeadCapture'));
 const PublicPreview = lazy(() => import('./public/Preview'));
 const TrackRedirect = lazy(() => import('./TrackRedirect'));
+const ShareRedirect = lazy(() => import('./ShareRedirect'));
 
 const Homepage = lazy(() => import('./Homepage'));
 const Contact = lazy(() => import('./Contact'));
@@ -44,7 +45,7 @@ function PagesContent() {
           <Route path="/LeadCapture" element={<LeadCapture />} />
           <Route path="/p/:slug" element={<PublicPreview />} />
           <Route path="/t/:slug" element={<TrackRedirect />} />
-          <Route path="/share/:slug" element={<TrackRedirect />} />
+          <Route path="/share/:slug" element={<ShareRedirect />} />
           <Route path="/Homepage" element={<Homepage />} />
           <Route path="/Contact" element={<Contact />} />
           <Route path="/CustomerLogin" element={<CustomerLogin />} />
