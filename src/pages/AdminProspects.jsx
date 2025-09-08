@@ -289,11 +289,16 @@ export default function AdminProspects() {
                       return (
                         <TableRow
                           key={prospect.id}
-                          className="hover:bg-gray-50 cursor-pointer"
-                          onClick={() => setSelectedProspect(prospect)}
+                          className="hover:bg-gray-50"
                         >
                           <TableCell>
-                            <p className="font-semibold text-gray-900 truncate">{prospect.name}</p>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedProspect(prospect)}
+                              className="font-semibold text-blue-600 hover:underline truncate"
+                            >
+                              {prospect.name}
+                            </button>
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="bg-blue-50 text-blue-700">
@@ -343,13 +348,18 @@ export default function AdminProspects() {
                   filteredProspects.map((prospect) => {
                     const campaign = campaigns.find(c => c.id === prospect.campaign_id);
                     return (
-                      <button
+                      <div
                         key={prospect.id}
-                        onClick={() => setSelectedProspect(prospect)}
-                        className="w-full text-left p-4 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full text-left p-4 hover:bg-gray-50"
                       >
                         <div className="flex items-center justify-between">
-                          <p className="font-semibold text-gray-900 truncate">{prospect.name}</p>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedProspect(prospect)}
+                            className="font-semibold text-blue-600 hover:underline truncate"
+                          >
+                            {prospect.name}
+                          </button>
                           <Badge className={statusColors[prospect.status] + " ml-2"}>
                             {statusLabels[prospect.status] || prospect.status}
                           </Badge>
@@ -372,7 +382,7 @@ export default function AdminProspects() {
                             </span>
                           </div>
                         </div>
-                      </button>
+                      </div>
                     );
                   })
                 )}

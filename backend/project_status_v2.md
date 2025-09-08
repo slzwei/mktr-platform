@@ -485,6 +485,21 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 
 ### [2025-09-09 01:05 sgt] — phase b — admin dashboard: correct metrics (frontend)
 
+### [2025-09-09 02:12 sgt] — phase b — prospects details dialog: scrollable, constrained height (frontend)
+
+- branch: main
+- summary:
+  1. prevent vertical overflow by limiting dialog height and enabling scroll
+- changes:
+  1. frontend: `src/pages/AdminProspects.jsx` — add `max-h-[80vh] overflow-y-auto` to `<DialogContent>`
+- acceptance:
+  1. open any prospect details → dialog fits viewport, content scrolls vertically
+- notes:
+  1. no backend changes
+- links:
+
+  - commit: f9a54d2
+
 - branch: main
 - summary:
   1. admin dashboard now shows partner commissions breakdown (drivers vs fleet owners) and total scans; removes lifetime earnings/earned blocks intended for drivers/fleet owners.
