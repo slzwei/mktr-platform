@@ -30,7 +30,14 @@ export default function AdminDashboard() {
     campaigns: [],
     commissions: [],
     cars: [],
-    totalScans: 0
+    totalScans: 0,
+    overview: {
+      prospectsTotal: 0,
+      newProspects: 0,
+      campaignsTotal: 0,
+      campaignsActive: 0,
+      commissionsTotal: 0
+    }
   });
   const [loading, setLoading] = useState(true);
   
@@ -78,7 +85,14 @@ export default function AdminDashboard() {
       }
 
       const totalScans = overview?.stats?.qrCodes?.totalScans || 0;
-      setStats({ prospects, campaigns, commissions, cars, totalScans });
+      const overviewStats = {
+        prospectsTotal: overview?.stats?.prospects?.total || 0,
+        newProspects: overview?.stats?.prospects?.new || 0,
+        campaignsTotal: overview?.stats?.campaigns?.total || 0,
+        campaignsActive: overview?.stats?.campaigns?.active || 0,
+        commissionsTotal: Number(overview?.stats?.commissions?.total || 0)
+      };
+      setStats({ prospects, campaigns, commissions, cars, totalScans, overview: overviewStats });
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     }
@@ -179,7 +193,7 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatsCard
             title="Total Prospects"
-            value={stats.prospects.length}
+            value={stats.overview.prospectsTotal || stats.prospects.length}
             icon={Users}
             bgColor="bg-blue-500"
             trend="+12% this month"
@@ -187,15 +201,18 @@ export default function AdminDashboard() {
           />
           <StatsCard
             title="Active Campaigns"
-            value={stats.campaigns.filter(c => c.is_active || c.status === 'active').length}
+            value={stats.overview.campaignsActive || stats.campaigns.filter(c => c.is_active || c.status === 'active').length}
             icon={TrendingUp}
             bgColor="bg-green-500"
-            trend={`${stats.campaigns.length} total`}
+            trend={`${stats.overview.campaignsTotal || stats.campaigns.length} total`}
             linkTo={createPageUrl("AdminCampaigns")}
           />
           <StatsCard
             title="Total Commissions"
-            value={`$${stats.commissions.reduce((sum, c) => sum + (c.amount_driver || 0) + (c.amount_fleet || 0), 0).toFixed(2)}`}
+            value={`$${(
+              stats.overview.commissionsTotal ||
+              stats.commissions.reduce((sum, c) => sum + (Number(c.amount_driver || 0)) + (Number(c.amount_fleet || 0)), 0)
+            ).toFixed(2)}`}
             icon={DollarSign}
             bgColor="bg-purple-500"
             linkTo={createPageUrl("AdminCommissions")}
