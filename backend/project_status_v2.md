@@ -1,3 +1,19 @@
+## Phase X: Neutral referral sharing for Lead Capture
+
+- Timestamp: 2025-09-08 00:00 SGT
+- Branch: main
+- Proposal: Decouple shared LeadCapture links from QR attribution to prevent driver commissions on shared links; introduce neutral referral counting tied to campaign only.
+- Implementation Details:
+  - Frontend: `src/pages/LeadCapture.jsx` now appends `ref=1` to shared URLs and sets `leadSource` to `referral` when the param is present. It also posts to `/api/analytics/referrals` once per visit to increment campaign referral metrics.
+  - Backend: Added `POST /api/analytics/referrals` in `backend/src/routes/analytics.js` to increment `campaign.metrics.referrals` and record a `referral_visit` event in `SessionVisit`.
+  - No schema changes required; reused `Campaign.metrics` JSON.
+- Variables/Functions Added:
+  - Frontend state: `referralMarked` in `LeadCapture.jsx`
+  - Backend route handler: `POST /api/analytics/referrals`
+- Next Steps:
+  - Surface `metrics.referrals` in admin dashboard analytics.
+  - Add automated tests for referral param and ensure no `qrTagId` is bound when only `ref` is present.
+
 # project_status_v2.md — mktr build log (singapore-only)
 
 > single source of truth for what’s completed, in progress, and next. keep entries short, dated, and in lower‑case. this file is meant to be appended over time.

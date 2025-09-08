@@ -45,6 +45,7 @@ export default function LeadCapture() {
     const [submitted, setSubmitted] = useState(false);
     const [shareOpen, setShareOpen] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [referralMarked, setReferralMarked] = useState(false);
 
     const resolveImageUrl = (url) => {
         if (!url) return '';
@@ -121,8 +122,26 @@ export default function LeadCapture() {
         fetchAndDelay();
     }, [location.search]);
 
+    // If this is a referral share visit, increment referral count once per session
+    useEffect(() => {
+        (async () => {
+            try {
+                const params = new URLSearchParams(location.search);
+                const ref = params.get('ref') || params.get('refshare');
+                if (ref && campaign && !referralMarked) {
+                    await apiClient.post('/analytics/referrals', { campaignId: campaign.id });
+                    setReferralMarked(true);
+                }
+            } catch (_) {
+                // ignore referral analytics failure
+            }
+        })();
+    }, [location.search, campaign, referralMarked]);
+
     const handleSubmit = async (formData) => {
         try {
+            const params = new URLSearchParams(location.search);
+            const isReferral = !!(params.get('ref') || params.get('refshare'));
             // Map form fields to backend schema
             const name = (formData.name || '').trim();
             const [firstName, ...rest] = name.split(/\s+/);
@@ -133,7 +152,7 @@ export default function LeadCapture() {
                 lastName,
                 email: formData.email,
                 phone: formData.phone, // already like 65XXXXXXXX from child form
-                leadSource: qrTag?.id ? 'qr_code' : 'website',
+                leadSource: isReferral ? 'referral' : (qrTag?.id ? 'qr_code' : 'website'),
                 campaignId: campaign?.id || null,
                 qrTagId: qrTag?.id || null
             };
@@ -207,7 +226,7 @@ export default function LeadCapture() {
                                     <div className="text-[11px] sm:text-sm break-all text-gray-800 leading-snug">
                                         {(() => {
                                             const baseUrl = window.location.origin;
-                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id)}` : window.location.href;
+                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id + '&ref=1')}` : window.location.href;
                                             return url;
                                         })()}
                                     </div>
@@ -216,7 +235,7 @@ export default function LeadCapture() {
                                         className={`shrink-0 transition-all ${copied ? 'bg-green-500 hover:bg-green-600 text-white scale-105' : 'hover:scale-105'}`}
                                         onClick={async () => {
                                             const baseUrl = window.location.origin;
-                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id)}` : window.location.href;
+                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id + '&ref=1')}` : window.location.href;
                                             try {
                                                 await navigator.clipboard.writeText(url);
                                                 setCopied(true);
@@ -232,7 +251,7 @@ export default function LeadCapture() {
                                     <Button
                                         onClick={() => {
                                             const baseUrl = window.location.origin;
-                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id)}` : window.location.href;
+                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id + '&ref=1')}` : window.location.href;
                                             const text = `Check this out: ${url}`;
                                             window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
                                         }}
@@ -244,7 +263,7 @@ export default function LeadCapture() {
                                     <Button
                                         onClick={() => {
                                             const baseUrl = window.location.origin;
-                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id)}` : window.location.href;
+                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id + '&ref=1')}` : window.location.href;
                                             const text = `Check this out: ${url}`;
                                             window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
                                         }}

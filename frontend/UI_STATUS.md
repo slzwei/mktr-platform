@@ -48,3 +48,16 @@
   1. share dialog → whatsapp button appears darker
 - links:
   - commit: 2e79ac9
+
+### [2025-09-08 03:50 sgt] — t&c-only footer + mobile-friendly consent dialog
+
+- summary:
+  1. show only “terms & conditions” in footer; remove explicit “marketing consent” text
+  2. make consent dialog smaller and scrollable, optimized for mobile
+- changes:
+  1. `src/components/campaigns/CampaignSignupForm.jsx`, `src/components/campaigns/DesignEditor.jsx` (footer copy)
+  2. `src/components/legal/MarketingConsentDialog.jsx` (max-w-md/sm, max-h with overflow-y)
+- acceptance:
+  1. on mobile, T&C link opens a smaller, scrollable dialog
+- links:
+  - commit: 355438f
