@@ -71,8 +71,10 @@ async function getAdminStats(startDate, endDate) {
   ] = await Promise.all([
     User.count(),
     User.count({ where: { isActive: true } }),
-    Campaign.count(),
-    Campaign.count({ where: { status: 'active' } }),
+    // Total campaigns excludes archived
+    Campaign.count({ where: { status: { [Op.ne]: 'archived' } } }),
+    // Active campaigns if status is 'active' OR legacy flag is_active is true
+    Campaign.count({ where: { [Op.or]: [{ status: 'active' }, { is_active: true }] } }),
     Prospect.count(),
     Prospect.count({ where: { createdAt: { [Op.gte]: startDate } } }),
     Commission.sum('amount') || 0,

@@ -23,13 +23,9 @@ import { useLocation } from "react-router-dom";
 import { format } from "date-fns";
 import { 
   Search, 
-  Download, 
-  Phone, 
-  Mail, 
-  MapPin,
-  Calendar,
-  Eye
+  Download
 } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 import ProspectFilters from "@/components/prospects/ProspectFilters";
 import ProspectDetails from "@/components/prospects/ProspectDetails";
@@ -99,6 +95,7 @@ export default function AdminProspects() {
     campaign: "all",
     source: "all"
   });
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -274,109 +271,113 @@ export default function AdminProspects() {
           </CardHeader>
           
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50">
-                    <TableHead className="whitespace-nowrap">Prospect</TableHead>
-                    <TableHead className="hidden sm:table-cell whitespace-nowrap">Contact</TableHead>
-                    <TableHead className="whitespace-nowrap">Campaign</TableHead>
-                    <TableHead className="hidden md:table-cell whitespace-nowrap">Assigned To</TableHead>
-                    <TableHead className="whitespace-nowrap">Status</TableHead>
-                    <TableHead className="whitespace-nowrap">Created</TableHead>
-                    <TableHead className="hidden md:table-cell whitespace-nowrap">Source</TableHead>
-                    <TableHead className="hidden sm:table-cell whitespace-nowrap">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredProspects.map((prospect) => {
-                    const campaign = campaigns.find(c => c.id === prospect.campaign_id);
-                    
-                    return (
-                      <TableRow key={prospect.id} className="hover:bg-gray-50">
-                        <TableCell className="max-w-[180px] sm:max-w-none">
-                          <div>
+            {!isMobile ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50">
+                      <TableHead className="whitespace-nowrap">Prospect Name</TableHead>
+                      <TableHead className="whitespace-nowrap">Campaign</TableHead>
+                      <TableHead className="whitespace-nowrap">Created Date/Time</TableHead>
+                      <TableHead className="whitespace-nowrap">Source</TableHead>
+                      <TableHead className="whitespace-nowrap">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredProspects.map((prospect) => {
+                      const campaign = campaigns.find(c => c.id === prospect.campaign_id);
+                      return (
+                        <TableRow
+                          key={prospect.id}
+                          className="hover:bg-gray-50 cursor-pointer"
+                          onClick={() => setSelectedProspect(prospect)}
+                        >
+                          <TableCell>
                             <p className="font-semibold text-gray-900 truncate">{prospect.name}</p>
-                            {prospect.postal_code && (
-                              <div className="flex items-center gap-1 text-sm text-gray-500">
-                                <MapPin className="w-3 h-3" />
-                                {prospect.postal_code}
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                        
-                        <TableCell className="hidden sm:table-cell">
-                          <div className="space-y-1 text-sm">
-                            <div className="flex items-center gap-1 text-gray-600">
-                              <Phone className="w-3 h-3" />
-                              {prospect.phone}
-                            </div>
-                            {prospect.email && (
-                              <div className="flex items-center gap-1 text-gray-500">
-                                <Mail className="w-3 h-3" />
-                                {prospect.email}
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                        
-                        <TableCell>
-                          <Badge variant="outline" className="bg-blue-50 text-blue-700">
-                            {campaign?.name || 'Unknown'}
-                          </Badge>
-                        </TableCell>
-                        
-                        <TableCell className="hidden md:table-cell">
-                          <span className="text-sm text-gray-700">
-                            {prospect.assigned_agent_name || prospect.assigned_agent_id || 'System'}
-                          </span>
-                        </TableCell>
-                        
-                        <TableCell>
-                          <Badge className={statusColors[prospect.status] + " whitespace-nowrap"}>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                              {campaign?.name || 'Unknown'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-sm text-gray-700">
+                            {format(new Date(prospect.created_date), 'dd/MM/yyyy HH:mm')}
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-600">
+                              {(prospect.source || '').toUpperCase()}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={statusColors[prospect.status] + " whitespace-nowrap"}>
+                              {statusLabels[prospect.status] || prospect.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+
+                {filteredProspects.length === 0 && (
+                  <div className="text-center py-12">
+                    <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                      <Search className="w-6 h-6 text-gray-400" />
+                    </div>
+                    <h3 className="font-semibold text-gray-900 mb-2">No prospects found</h3>
+                    <p className="text-gray-500">Try adjusting your search or filters</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="divide-y">
+                {filteredProspects.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                      <Search className="w-6 h-6 text-gray-400" />
+                    </div>
+                    <h3 className="font-semibold text-gray-900 mb-2">No prospects found</h3>
+                    <p className="text-gray-500">Try adjusting your search or filters</p>
+                  </div>
+                ) : (
+                  filteredProspects.map((prospect) => {
+                    const campaign = campaigns.find(c => c.id === prospect.campaign_id);
+                    return (
+                      <button
+                        key={prospect.id}
+                        onClick={() => setSelectedProspect(prospect)}
+                        className="w-full text-left p-4 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold text-gray-900 truncate">{prospect.name}</p>
+                          <Badge className={statusColors[prospect.status] + " ml-2"}>
                             {statusLabels[prospect.status] || prospect.status}
                           </Badge>
-                        </TableCell>
-                        
-                        <TableCell className="whitespace-nowrap">
-                          <div className="flex items-center gap-1 text-sm text-gray-600 whitespace-nowrap">
-                            <Calendar className="w-3 h-3" />
-                            {format(new Date(prospect.created_date), 'dd/MM/yyyy')}
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-gray-600">
+                          <div>
+                            <span className="block text-gray-500">Campaign</span>
+                            <span className="inline-block mt-1 text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded">
+                              {campaign?.name || 'Unknown'}
+                            </span>
                           </div>
-                        </TableCell>
-                        
-                        <TableCell className="hidden md:table-cell">
-                          <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-600">
-                            {(prospect.source || '').toUpperCase()}
-                          </span>
-                        </TableCell>
-                        
-                        <TableCell className="hidden sm:table-cell">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedProspect(prospect)}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
+                          <div>
+                            <span className="block text-gray-500">Created</span>
+                            <span className="block mt-1">{format(new Date(prospect.created_date), 'dd/MM/yyyy HH:mm')}</span>
+                          </div>
+                          <div>
+                            <span className="block text-gray-500">Source</span>
+                            <span className="inline-block mt-1 text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded">
+                              {(prospect.source || '').toUpperCase()}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
                     );
-                  })}
-                </TableBody>
-              </Table>
-              
-              {filteredProspects.length === 0 && (
-                <div className="text-center py-12">
-                  <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                    <Search className="w-6 h-6 text-gray-400" />
-                  </div>
-                  <h3 className="font-semibold text-gray-900 mb-2">No prospects found</h3>
-                  <p className="text-gray-500">Try adjusting your search or filters</p>
-                </div>
-              )}
-            </div>
+                  })
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
