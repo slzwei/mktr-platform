@@ -272,3 +272,18 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - pr: n/a
   - commit: 7549051
+
+### [2025-09-08 03:38 sgt] — phase b — darker whatsapp share button (~15%)
+
+- branch: main
+- summary:
+  1. slightly darken whatsapp share button to improve contrast/visibility
+- changes:
+  1. frontend: `src/pages/LeadCapture.jsx`, `src/pages/public/Preview.jsx` (bg-green-600 / hover:bg-green-700)
+- acceptance:
+  1. open share dialog; WhatsApp button appears a bit darker than before
+- notes:
+  1. visual-only; no behavior changes
+- links:
+  - pr: n/a
+  - commit: 2e79ac9
