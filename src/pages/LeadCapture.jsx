@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { Campaign } from "@/api/entities";
 import CampaignSignupForm from "../components/campaigns/CampaignSignupForm";
@@ -46,6 +46,8 @@ export default function LeadCapture() {
     const [shareOpen, setShareOpen] = useState(false);
     const [copied, setCopied] = useState(false);
     const [referralMarked, setReferralMarked] = useState(false);
+    const [shortening, setShortening] = useState(false);
+    const [shortShareUrl, setShortShareUrl] = useState("");
 
     const resolveImageUrl = (url) => {
         if (!url) return '';
@@ -173,6 +175,46 @@ export default function LeadCapture() {
 
     const design = campaign?.design_config || {};
 
+    // Compute canonical long share URL (used as fallback)
+    const longShareUrl = useMemo(() => {
+        const baseUrl = window.location.origin;
+        return campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id + '&ref=1')}` : window.location.href;
+    }, [campaign]);
+
+    // Attempt to shorten only when the dialog opens
+    useEffect(() => {
+        const shortenUrl = async (url) => {
+            try {
+                // Try TinyURL (no key). Falls back silently on CORS or errors
+                const r1 = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`, { method: 'GET', mode: 'cors' });
+                if (r1.ok) {
+                    const t = (await r1.text()).trim();
+                    if (/^https?:\/\//i.test(t)) return t;
+                }
+            } catch (_) { /* ignore */ }
+            try {
+                // Try is.gd as secondary
+                const r2 = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(url)}`, { method: 'GET', mode: 'cors' });
+                if (r2.ok) {
+                    const t = (await r2.text()).trim();
+                    if (/^https?:\/\//i.test(t)) return t;
+                }
+            } catch (_) { /* ignore */ }
+            return null;
+        };
+
+        (async () => {
+            if (shareOpen) {
+                setShortening(true);
+                const s = await shortenUrl(longShareUrl);
+                setShortShareUrl(s || "");
+                setShortening(false);
+            } else {
+                setShortShareUrl("");
+            }
+        })();
+    }, [shareOpen, longShareUrl]);
+
     return (
         <div className={`min-h-screen ${getBackgroundClass(design)}`}>
             <div className={`flex items-center justify-center ${getSpacingClass(design)}`}>
@@ -218,26 +260,28 @@ export default function LeadCapture() {
                     <Dialog open={shareOpen} onOpenChange={(v) => { setShareOpen(v); if (!v) setCopied(false); }}>
                         <DialogContent className="sm:max-w-md">
                             <DialogHeader>
-                                <DialogTitle className="text-lg">Share this campaign</DialogTitle>
+                                <DialogTitle className="text-lg">
+                                    {`Share ${campaign?.name ? campaign.name : 'this campaign'} with your friends and family`}
+                                </DialogTitle>
                                 <DialogDescription>Invite friends and family to participate.</DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4">
-                                <div className="p-3 bg-gray-50 rounded-lg border flex items-center justify-between gap-2">
-                                    <div className="text-[11px] sm:text-sm break-all text-gray-800 leading-snug">
-                                        {(() => {
-                                            const baseUrl = window.location.origin;
-                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id + '&ref=1')}` : window.location.href;
-                                            return url;
-                                        })()}
+                                <div className="p-3 bg-gray-50 rounded-lg border flex items-center gap-3">
+                                    <div className="flex-1">
+                                        <div className="text-[11px] sm:text-sm break-all text-gray-800 leading-snug">
+                                            {shortening ? 'Generating short link…' : (shortShareUrl || longShareUrl)}
+                                        </div>
+                                        {shortShareUrl && (
+                                            <div className="text-[10px] text-gray-500 mt-1">Shortened for sharing</div>
+                                        )}
                                     </div>
                                     <Button
                                         variant={copied ? 'default' : 'outline'}
                                         className={`shrink-0 transition-all ${copied ? 'bg-green-500 hover:bg-green-600 text-white scale-105' : 'hover:scale-105'}`}
                                         onClick={async () => {
-                                            const baseUrl = window.location.origin;
-                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id + '&ref=1')}` : window.location.href;
+                                            const shareUrl = shortShareUrl || longShareUrl;
                                             try {
-                                                await navigator.clipboard.writeText(url);
+                                                await navigator.clipboard.writeText(shareUrl);
                                                 setCopied(true);
                                                 setTimeout(() => setCopied(false), 1500);
                                             } catch (_) {}
@@ -247,30 +291,37 @@ export default function LeadCapture() {
                                     </Button>
                                 </div>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                     <Button
                                         onClick={() => {
-                                            const baseUrl = window.location.origin;
-                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id + '&ref=1')}` : window.location.href;
-                                            const text = `Check this out: ${url}`;
+                                            const url = shortShareUrl || longShareUrl;
+                                            const text = campaign?.name ? `Join me in ${campaign.name}! ${url}` : `Check this out: ${url}`;
                                             window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
                                         }}
-                                        className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+                                        className="bg-green-600 hover:bg-green-700 text-white flex items-center justify-center gap-2"
                                     >
                                         <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg" alt="WhatsApp" className="w-4 h-4 invert" />
                                         WhatsApp
                                     </Button>
                                     <Button
                                         onClick={() => {
-                                            const baseUrl = window.location.origin;
-                                            const url = campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id + '&ref=1')}` : window.location.href;
-                                            const text = `Check this out: ${url}`;
+                                            const url = shortShareUrl || longShareUrl;
+                                            const text = campaign?.name ? `Join me in ${campaign.name}!` : 'Check this out:';
                                             window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
                                         }}
-                                        className="bg-blue-500 hover:bg-blue-600 text-white flex items-center gap-2"
+                                        className="bg-blue-500 hover:bg-blue-600 text-white flex items-center justify-center gap-2"
                                     >
                                         <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/telegram.svg" alt="Telegram" className="w-4 h-4 invert" />
                                         Telegram
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        onClick={async () => {
+                                            const url = shortShareUrl || longShareUrl;
+                                            try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) {}
+                                        }}
+                                    >
+                                        {copied ? 'Copied!' : 'Copy Link'}
                                     </Button>
                                 </div>
                             </div>

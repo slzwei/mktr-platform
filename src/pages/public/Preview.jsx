@@ -15,6 +15,8 @@ export default function PublicPreview() {
   const [error, setError] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [shortening, setShortening] = useState(false);
+  const [shortShareUrl, setShortShareUrl] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -33,6 +35,39 @@ export default function PublicPreview() {
   }, [slug]);
 
   const design = useMemo(() => snapshot?.design_config || {}, [snapshot]);
+
+  const longShareUrl = useMemo(() => window.location.href, []);
+
+  useEffect(() => {
+    const shortenUrl = async (url) => {
+      try {
+        const r1 = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`);
+        if (r1.ok) {
+          const t = (await r1.text()).trim();
+          if (/^https?:\/\//i.test(t)) return t;
+        }
+      } catch(_) {}
+      try {
+        const r2 = await fetch(`https://is.gd/create.php?format=simple&url=${encodeURIComponent(url)}`);
+        if (r2.ok) {
+          const t = (await r2.text()).trim();
+          if (/^https?:\/\//i.test(t)) return t;
+        }
+      } catch(_) {}
+      return null;
+    };
+
+    (async () => {
+      if (shareOpen) {
+        setShortening(true);
+        const s = await shortenUrl(longShareUrl);
+        setShortShareUrl(s || '');
+        setShortening(false);
+      } else {
+        setShortShareUrl('');
+      }
+    })();
+  }, [shareOpen, longShareUrl]);
 
   const resolveImageUrl = (url) => {
     if (!url) return '';
@@ -111,21 +146,34 @@ export default function PublicPreview() {
           <Dialog open={shareOpen} onOpenChange={setShareOpen}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Share this campaign</DialogTitle>
+                <DialogTitle>{`Share ${snapshot?.name || 'this campaign'} with your friends and family`}</DialogTitle>
                 <DialogDescription>Invite friends and family to participate.</DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
-                <div className="text-xs sm:text-sm break-all p-2 bg-gray-50 rounded border">
-                  {(() => {
-                    const url = window.location.href;
-                    return url;
-                  })()}
+                <div className="p-3 bg-gray-50 rounded-lg border flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="text-[11px] sm:text-sm break-all text-gray-800 leading-snug">
+                      {shortening ? 'Generating short link…' : (shortShareUrl || longShareUrl)}
+                    </div>
+                    {shortShareUrl && (
+                      <div className="text-[10px] text-gray-500 mt-1">Shortened for sharing</div>
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      const url = shortShareUrl || longShareUrl;
+                      try { await navigator.clipboard.writeText(url); } catch (_) {}
+                    }}
+                  >
+                    Copy Link
+                  </Button>
                 </div>
-                <div className="flex flex-col sm:flex-row gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <Button
                     onClick={() => {
-                      const url = window.location.href;
-                      const text = `Check this out: ${url}`;
+                      const url = shortShareUrl || longShareUrl;
+                      const text = snapshot?.name ? `Join me in ${snapshot.name}! ${url}` : `Check this out: ${url}`;
                       window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
                     }}
                     className="bg-green-600 hover:bg-green-700 text-white"
@@ -134,28 +182,18 @@ export default function PublicPreview() {
                   </Button>
                   <Button
                     onClick={() => {
-                      const url = window.location.href;
-                      const text = `Check this out: ${url}`;
-                      window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
+                      const url = shortShareUrl || longShareUrl;
+                      const text = snapshot?.name ? `Join me in ${snapshot.name}!` : 'Check this out:';
+                      window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}` , '_blank');
                     }}
                     className="bg-blue-500 hover:bg-blue-600 text-white"
                   >
                     Share on Telegram
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={async () => {
-                      const url = window.location.href;
-                      try { await navigator.clipboard.writeText(url); } catch (_) {}
-                    }}
-                  >
-                    Copy Link
-                  </Button>
+                  <Button variant="secondary" onClick={() => setShareOpen(false)}>Close</Button>
                 </div>
               </div>
-              <DialogFooter>
-                <Button variant="secondary" onClick={() => setShareOpen(false)}>Close</Button>
-              </DialogFooter>
+              <DialogFooter />
             </DialogContent>
           </Dialog>
         </div>
