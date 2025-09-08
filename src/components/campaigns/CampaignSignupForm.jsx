@@ -138,14 +138,34 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             return;
         }
         
-        const minAge = campaign.min_age || 0;
-        const maxAge = campaign.max_age || 150; // Default max age if not specified
+        const hasMinAge = campaign.min_age !== undefined && campaign.min_age !== null;
+        const hasMaxAge = campaign.max_age !== undefined && campaign.max_age !== null;
+        const minAge = hasMinAge ? campaign.min_age : 0;
+        const maxAge = hasMaxAge ? campaign.max_age : 150; // Default max age if not specified
         
-        if (age < minAge || age > maxAge) {
-            setAgeError(`Age should be between ${minAge} to ${maxAge} years old.`);
-        } else {
-            setAgeError('');
+        if (hasMinAge && age < minAge) {
+            setAgeError(`Must be at least ${minAge} years old`);
+            return;
         }
+        if (hasMaxAge && age > maxAge) {
+            setAgeError(`Only available for ages ${hasMinAge ? `${minAge}-` : ''}${maxAge}`);
+            return;
+        }
+        
+        setAgeError('');
+    };
+
+    const renderAgeRestrictionHint = () => {
+        if (!campaign) return null;
+        const hasMinAge = campaign.min_age !== undefined && campaign.min_age !== null;
+        const hasMaxAge = campaign.max_age !== undefined && campaign.max_age !== null;
+        if (!hasMinAge && !hasMaxAge) return null;
+        const hint = hasMinAge && hasMaxAge
+            ? `Only available for ages ${campaign.min_age}-${campaign.max_age}`
+            : hasMinAge
+                ? `Only available for ages ${campaign.min_age}+`
+                : `Only available for ages up to ${campaign.max_age}`;
+        return hint;
     };
 
     // New: Handle DOB field blur to check for incomplete format
@@ -628,6 +648,11 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                 <AlertCircle className="w-3 h-3" />
                                 <span>{ageError || 'Please enter full year (DDMMYYYY)'}</span>
                             </motion.div>
+                        )}
+                        {(!ageError && !dobIncomplete && renderAgeRestrictionHint()) && (
+                            <div className="text-[11px] text-gray-500 pt-1">
+                                {renderAgeRestrictionHint()}
+                            </div>
                         )}
                     </div>
                     <div className="space-y-1">

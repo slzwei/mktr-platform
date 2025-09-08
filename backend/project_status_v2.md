@@ -303,3 +303,34 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - pr: n/a
   - commit: 2e79ac9
+
+### [2025-09-08 22:17 sgt] — phase b — nicer share dialog + short links (frontend)
+
+- branch: main
+- summary:
+  1. redesigned share dialog; dynamic title “share <name> with your friends and family”; share-only url shortening with graceful fallback.
+- changes:
+  1. frontend: `src/pages/LeadCapture.jsx`, `src/pages/public/Preview.jsx` — improved layout, added TinyURL/is.gd shortener (client-side) used only in share UI.
+  2. no backend changes.
+- acceptance:
+  1. submit form → dialog shows dynamic title; buttons for whatsapp/telegram use short link when available; copy button works; if shortening fails, long url is used.
+- notes:
+  1. consider moving shortening server-side later for analytics & reliability.
+- links:
+  - commit: 240d845
+
+### [2025-09-08 22:34 sgt] — phase b — mktr shortlinks service (/share/:slug)
+
+- branch: main
+- summary:
+  1. add first-party short links with 90-day expiry; minimal ua/device analytics; admin-only minting.
+- changes:
+  1. backend: models `ShortLink`, `ShortLinkClick`; routes `POST /api/shortlinks` (admin), `GET /share/:slug` (public redirect); wired into server and model sync.
+  2. frontend: share dialogs now call backend to mint short links; falls back to long url if error.
+- acceptance:
+  1. admin user triggers share → dialog uses `https://<host>/share/<slug>`; clicking redirects to original long url; after 90 days link expires with friendly redirect to `/lead-capture?error=expired`.
+  2. db shows incremented `clickCount`; clicks table stores ua/device/referer/ipHash.
+- notes:
+  1. expand analytics later with path/source tagging; add admin UI listing.
+- links:
+  - commit: a734468

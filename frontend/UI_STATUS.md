@@ -61,3 +61,16 @@
   1. on mobile, T&C link opens a smaller, scrollable dialog
 - links:
   - commit: 355438f
+
+### [2025-09-08 22:17 sgt] — share dialog redesign + short links (share-only)
+
+- summary:
+  1. redesigned share dialog ui; dynamic title includes campaign name; shortens url for sharing only (tinyurl/is.gd), with automatic fallback to long url.
+- changes:
+  1. `src/pages/LeadCapture.jsx`, `src/pages/public/Preview.jsx` — ui revamp, shortener logic, refined buttons layout.
+- acceptance:
+  1. after submitting, dialog title reads “share <campaign> with your friends and family”.
+  2. whatsapp/telegram open with short link when available; copy uses short link.
+  3. if shortening fails, long link is used transparently.
+- links:
+  - commit: 240d845
