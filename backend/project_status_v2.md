@@ -273,17 +273,17 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
   - pr: n/a
   - commit: 7549051
 
-### [2025-09-08 03:38 sgt] — phase b — darker whatsapp share button (~15%)
+### [2025-09-08 03:38 sgt] — phase b — note: ui changes moved to `frontend/UI_STATUS.md`
 
 - branch: main
 - summary:
-  1. slightly darken whatsapp share button to improve contrast/visibility
+  1. starting now, ui-only changes are logged in `frontend/UI_STATUS.md`; this backend log remains for backend/services infra
 - changes:
-  1. frontend: `src/pages/LeadCapture.jsx`, `src/pages/public/Preview.jsx` (bg-green-600 / hover:bg-green-700)
+  1. created `frontend/UI_STATUS.md`; migrated recent ui entries there
 - acceptance:
-  1. open share dialog; WhatsApp button appears a bit darker than before
+  1. ui updates appear in `frontend/UI_STATUS.md`; backend/service updates continue here
 - notes:
-  1. visual-only; no behavior changes
+  1. keeps backend log focused and ui iterations cleanly tracked
 - links:
   - pr: n/a
   - commit: 2e79ac9
