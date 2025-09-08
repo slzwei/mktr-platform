@@ -193,7 +193,7 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatsCard
             title="Total Prospects"
-            value={stats.overview.prospectsTotal || stats.prospects.length}
+            value={(stats.overview.prospectsTotal ?? stats.prospects.length)}
             icon={Users}
             bgColor="bg-blue-500"
             trend="+12% this month"
@@ -201,17 +201,17 @@ export default function AdminDashboard() {
           />
           <StatsCard
             title="Active Campaigns"
-            value={stats.overview.campaignsActive || stats.campaigns.filter(c => c.is_active || c.status === 'active').length}
+            value={(stats.overview.campaignsActive ?? stats.campaigns.filter(c => c.is_active || c.status === 'active').length)}
             icon={TrendingUp}
             bgColor="bg-green-500"
-            trend={`${stats.overview.campaignsTotal || stats.campaigns.length} total`}
+            trend={`${(stats.overview.campaignsTotal ?? stats.campaigns.length)} total`}
             linkTo={createPageUrl("AdminCampaigns")}
           />
           <StatsCard
             title="Total Commissions"
             value={`$${(
-              stats.overview.commissionsTotal ||
-              stats.commissions.reduce((sum, c) => sum + (Number(c.amount_driver || 0)) + (Number(c.amount_fleet || 0)), 0)
+              (stats.overview.commissionsTotal ??
+                stats.commissions.reduce((sum, c) => sum + (Number(c.amount_driver || 0)) + (Number(c.amount_fleet || 0)), 0))
             ).toFixed(2)}`}
             icon={DollarSign}
             bgColor="bg-purple-500"
