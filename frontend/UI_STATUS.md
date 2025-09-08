@@ -14,6 +14,19 @@
 
 ## append entries below
 
+### [2025-09-09 12:55 sgt] — admin prospects: mobile responsiveness
+
+- summary:
+  1. make prospects table clean on mobile by switching table layout to `table-auto` on small screens and hiding less-critical columns; ensure status/date don’t wrap and names truncate.
+- changes:
+  1. `src/components/ui/table.jsx` — responsive class `table-auto md:table-fixed`.
+  2. `src/pages/AdminProspects.jsx` — hide `Contact` (sm+), `Assigned To` (md+), `Source` (md+), `Actions` (sm+); add `whitespace-nowrap` and `truncate` where needed.
+- acceptance:
+  1. open `/AdminProspects` on a phone viewport (~375px): headers align without overlapping; only columns shown are Prospect, Campaign, Status, Created; row action eye icon hidden but tapping a row is not required; details still accessible from larger screens.
+  2. on tablet/desktop, all columns reappear.
+- links:
+  - commit: n/a
+
 ### [2025-09-08 23:45 sgt] — admin campaigns ui redesign
 
 - summary:

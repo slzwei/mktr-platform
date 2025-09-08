@@ -278,14 +278,14 @@ export default function AdminProspects() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
-                    <TableHead>Prospect</TableHead>
-                    <TableHead>Contact</TableHead>
-                    <TableHead>Campaign</TableHead>
-                    <TableHead>Assigned To</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead className="whitespace-nowrap">Prospect</TableHead>
+                    <TableHead className="hidden sm:table-cell whitespace-nowrap">Contact</TableHead>
+                    <TableHead className="whitespace-nowrap">Campaign</TableHead>
+                    <TableHead className="hidden md:table-cell whitespace-nowrap">Assigned To</TableHead>
+                    <TableHead className="whitespace-nowrap">Status</TableHead>
+                    <TableHead className="whitespace-nowrap">Created</TableHead>
+                    <TableHead className="hidden md:table-cell whitespace-nowrap">Source</TableHead>
+                    <TableHead className="hidden sm:table-cell whitespace-nowrap">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -294,9 +294,9 @@ export default function AdminProspects() {
                     
                     return (
                       <TableRow key={prospect.id} className="hover:bg-gray-50">
-                        <TableCell>
+                        <TableCell className="max-w-[180px] sm:max-w-none">
                           <div>
-                            <p className="font-semibold text-gray-900">{prospect.name}</p>
+                            <p className="font-semibold text-gray-900 truncate">{prospect.name}</p>
                             {prospect.postal_code && (
                               <div className="flex items-center gap-1 text-sm text-gray-500">
                                 <MapPin className="w-3 h-3" />
@@ -306,7 +306,7 @@ export default function AdminProspects() {
                           </div>
                         </TableCell>
                         
-                        <TableCell>
+                        <TableCell className="hidden sm:table-cell">
                           <div className="space-y-1 text-sm">
                             <div className="flex items-center gap-1 text-gray-600">
                               <Phone className="w-3 h-3" />
@@ -327,32 +327,32 @@ export default function AdminProspects() {
                           </Badge>
                         </TableCell>
                         
-                        <TableCell>
+                        <TableCell className="hidden md:table-cell">
                           <span className="text-sm text-gray-700">
                             {prospect.assigned_agent_name || prospect.assigned_agent_id || 'System'}
                           </span>
                         </TableCell>
                         
                         <TableCell>
-                          <Badge className={statusColors[prospect.status]}>
+                          <Badge className={statusColors[prospect.status] + " whitespace-nowrap"}>
                             {statusLabels[prospect.status] || prospect.status}
                           </Badge>
                         </TableCell>
                         
-                        <TableCell>
-                          <div className="flex items-center gap-1 text-sm text-gray-600">
+                        <TableCell className="whitespace-nowrap">
+                          <div className="flex items-center gap-1 text-sm text-gray-600 whitespace-nowrap">
                             <Calendar className="w-3 h-3" />
                             {format(new Date(prospect.created_date), 'dd/MM/yyyy')}
                           </div>
                         </TableCell>
                         
-                        <TableCell>
+                        <TableCell className="hidden md:table-cell">
                           <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-600">
                             {(prospect.source || '').toUpperCase()}
                           </span>
                         </TableCell>
                         
-                        <TableCell>
+                        <TableCell className="hidden sm:table-cell">
                           <Button
                             variant="ghost"
                             size="sm"

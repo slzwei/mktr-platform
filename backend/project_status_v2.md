@@ -441,6 +441,20 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - commit: n/a
 
+### [2025-09-09 01:22 sgt] — phase b — admin dashboard totals via overview (frontend)
+
+- branch: main
+- summary:
+  1. fix admin totals (prospects, campaigns, commissions) by using `/dashboard/overview` instead of paginated lists.
+- changes:
+  1. frontend: `src/pages/AdminDashboard.jsx` now reads `stats.prospects.total`, `stats.campaigns.{total,active}`, and `stats.commissions.total` from overview; falls back to client counts if missing.
+- acceptance:
+  1. open `/AdminDashboard` as admin → totals match backend `/api/dashboard/overview` payload; campaigns active equals overview value; commissions shows the summed total.
+- notes:
+  1. list endpoints are paginated, so array lengths can undercount; overview is authoritative for admin.
+- links:
+  - commit: c5852f7
+
 ### [2025-09-09 01:05 sgt] — phase b — admin dashboard: correct metrics (frontend)
 
 - branch: main
