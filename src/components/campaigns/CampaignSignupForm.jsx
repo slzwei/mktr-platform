@@ -659,8 +659,15 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                     {loading === 'submitting' ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit'}
                 </Button>
                  <p className="text-xs text-gray-500 text-center pt-1">
-                    By signing up, you agree to our Terms of Service and
-                    {" "}
+                    By signing up, you agree to our{' '}
+                    <button
+                        type="button"
+                        onClick={() => setConsentOpen(true)}
+                        className="text-blue-600 hover:underline"
+                    >
+                        Terms & Conditions
+                    </button>
+                    {' '}and{' '}
                     <button
                         type="button"
                         onClick={() => setConsentOpen(true)}

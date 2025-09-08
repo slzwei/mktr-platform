@@ -957,7 +957,15 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                     {/* Terms Footer */}
                     <div className="pt-2 text-center">
                       <p className="text-xs text-gray-500 leading-relaxed">
-                        By signing up, you agree to our Terms of Service and{' '}
+                        By signing up, you agree to our{' '}
+                        <button
+                          type="button"
+                          onClick={() => setConsentOpen(true)}
+                          className="text-blue-600 hover:underline"
+                        >
+                          Terms & Conditions
+                        </button>
+                        {' '}and{' '}
                         <button
                           type="button"
                           onClick={() => setConsentOpen(true)}
