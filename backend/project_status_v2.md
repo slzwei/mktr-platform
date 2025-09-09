@@ -758,3 +758,18 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
   2. Suitable as a preflight before staging Postgres load; idempotency/duplication guards validated for phone/email within campaign.
 - links:
   - commit: n/a
+
+### [2025-09-09 21:05 sgt] — phase b — admin agents: campaigns dialog shows none (backend)
+
+- branch: main
+- summary:
+  1. normalize agent id comparisons for campaign matching so assigned campaigns appear in the Admin Agents campaigns dialog and counts align.
+- changes:
+  1. backend: `backend/src/routes/agents.js` — compare ids as strings when computing `assignedCounts` and when filtering in `GET /api/agents/:id/campaigns`.
+  2. no schema changes; `assigned_agents` remains JSON array.
+- acceptance:
+  1. login as admin → open `/AdminAgents` → click the number under Campaigns for an agent assigned to campaigns → dialog lists campaigns with status/leads/scans and “View” link.
+- notes:
+  1. fix addresses environments where `assigned_agents` may contain non-string values; string coercion ensures reliable matching.
+- links:
+  - commit: n/a

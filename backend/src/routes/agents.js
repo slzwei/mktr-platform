@@ -67,7 +67,8 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
   for (const c of allCampaigns) {
     const arr = Array.isArray(c.assigned_agents) ? c.assigned_agents : [];
     for (const agentId of arr) {
-      assignedCounts[agentId] = (assignedCounts[agentId] || 0) + 1;
+      const key = String(agentId);
+      assignedCounts[key] = (assignedCounts[key] || 0) + 1;
     }
   }
 
@@ -78,7 +79,7 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
     const totalCommissions = agent.commissions.reduce((sum, c) => sum + parseFloat(c.amount), 0);
     const paidCommissions = agent.commissions.filter(c => c.status === 'paid').reduce((sum, c) => sum + parseFloat(c.amount), 0);
     const createdCampaignsCount = agent.createdCampaigns.length;
-    const assignedCampaignsCount = assignedCounts[agent.id] || 0;
+    const assignedCampaignsCount = assignedCounts[String(agent.id)] || 0;
     const tiedCampaignsCount = createdCampaignsCount + assignedCampaignsCount;
     const activeCreatedCampaigns = agent.createdCampaigns.filter(c => c.status === 'active').length;
     
@@ -441,7 +442,7 @@ router.get('/:id/campaigns', authenticateToken, requireAgentOrAdmin, asyncHandle
   });
 
   const campaignsFiltered = campaignsRaw.filter(c => {
-    const assigned = Array.isArray(c.assigned_agents) && c.assigned_agents.includes(id);
+    const assigned = Array.isArray(c.assigned_agents) && c.assigned_agents.map(v => String(v)).includes(String(id));
     const created = String(c.createdBy) === String(id);
     if (status && c.status !== status) return false;
     if (type && c.type !== type) return false;
