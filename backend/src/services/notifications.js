@@ -1,39 +1,82 @@
 import { Op } from 'sequelize';
 import { User, Prospect, ProspectActivity, QrScan, QrTag, Car, Campaign, FleetOwner } from '../models/index.js';
 
+function roleLabel(role) {
+  if (role === 'driver_partner') return 'driver';
+  if (role === 'fleet_owner') return 'fleet owner';
+  return role || 'user';
+}
+
+function maskPhone(phone) {
+  if (!phone) return '';
+  const digits = String(phone).replace(/\D/g, '');
+  if (digits.length <= 4) return digits;
+  return `${'*'.repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
+}
+
+function shortHost(ref) {
+  try {
+    const u = new URL(ref);
+    return u.host;
+  } catch (_) {
+    return null;
+  }
+}
+
 function mapUserSignup(u) {
+  const via = u.googleSub ? 'Google' : 'email/password';
+  const status = u.approvalStatus || (u.isActive ? 'active' : 'inactive');
   return {
     id: `user_${u.id}`,
     type: 'user_signup',
-    title: 'New user signup',
-    message: `${u.fullName || u.email} joined as ${u.role}`,
+    title: `User signup: ${roleLabel(u.role)}`,
+    message: `${u.fullName || u.email} (${u.email}) • status: ${status} • via ${via}`,
     createdAt: u.createdAt,
     link: '/AdminUsers',
-    meta: { userId: u.id, role: u.role }
+    meta: { userId: u.id, role: u.role, avatarUrl: u.avatarUrl || null }
   };
 }
 
 function mapProspectCreated(a, prospect) {
+  const name = [prospect?.firstName, prospect?.lastName].filter(Boolean).join(' ') || 'Lead';
+  const campaignName = prospect?.campaign?.name ? ` for ${prospect.campaign.name}` : '';
+  const phoneMasked = maskPhone(prospect?.phone);
+  const src = prospect?.leadSource || a?.metadata?.leadSource || 'unknown';
+  const agentName = prospect?.assignedAgent?.fullName || prospect?.assignedAgent?.email || 'TBD';
+  const qr = prospect?.qrTag;
+  const car = qr?.car;
+  const qrInfo = qr?.label || qr?.slug ? ` • QR: ${qr?.label || qr?.slug}` : '';
+  const carInfo = car?.plate_number ? ` • Car: ${car.plate_number}` : '';
   return {
     id: `lead_${a.id}`,
     type: 'lead_created',
-    title: 'New lead captured',
-    message: `${prospect?.firstName || 'Lead'} created${prospect?.campaign ? ` for ${prospect.campaign.name}` : ''}`,
+    title: `New lead${campaignName}`,
+    message: `${name}${phoneMasked ? ` (${phoneMasked})` : ''} • source: ${src} • assigned: ${agentName}${qrInfo}${carInfo}`,
     createdAt: a.createdAt,
     link: '/AdminProspects',
-    meta: { prospectId: prospect?.id, campaignId: prospect?.campaignId, assignedAgentId: prospect?.assignedAgentId }
+    meta: {
+      prospectId: prospect?.id,
+      campaignId: prospect?.campaignId,
+      assignedAgentId: prospect?.assignedAgentId,
+      qrTagId: qr?.id,
+      carId: car?.id
+    }
   };
 }
 
 function mapQrScan(s, qr, car) {
+  const where = s.geoCity ? ` in ${s.geoCity}` : '';
+  const host = shortHost(s.referer);
+  const from = host ? ` from ${host}` : '';
+  const campaignName = qr?.campaign?.name ? ` • ${qr.campaign.name}` : '';
   return {
     id: `scan_${s.id}`,
     type: 'qr_scan',
-    title: 'QR code scanned',
-    message: `${qr?.label || qr?.slug || 'QR'} was scanned${car?.plate_number ? ` (car ${car.plate_number})` : ''}`,
+    title: `QR scanned: ${qr?.label || qr?.slug || 'QR'}`,
+    message: `${car?.plate_number ? `Car ${car.plate_number} • ` : ''}${s.device || 'device'}${where}${from}${campaignName}`,
     createdAt: s.ts,
     link: '/AdminQRCodes',
-    meta: { qrTagId: qr?.id, carId: car?.id, slug: qr?.slug }
+    meta: { qrTagId: qr?.id, carId: car?.id, slug: qr?.slug, campaignId: qr?.campaignId }
   };
 }
 
@@ -58,7 +101,15 @@ export async function getNotificationsForUser(user, { limit = 15, since } = {}) 
     tasks.push(
       ProspectActivity.findAll({
         where: { type: 'created', ...(createdSince ? { createdAt: whereTime } : {}) },
-        include: [{ model: Prospect, as: 'prospect', include: [{ model: Campaign, as: 'campaign' }] }],
+        include: [{
+          model: Prospect,
+          as: 'prospect',
+          include: [
+            { model: Campaign, as: 'campaign' },
+            { model: QrTag, as: 'qrTag', include: [{ model: Car, as: 'car' }] },
+            { model: User, as: 'assignedAgent' }
+          ]
+        }],
         limit,
         order: [['createdAt', 'DESC']]
       }).then(rows => rows.map(a => mapProspectCreated(a, a.prospect)))
@@ -66,7 +117,7 @@ export async function getNotificationsForUser(user, { limit = 15, since } = {}) 
     tasks.push(
       QrScan.findAll({
         where: createdSince ? { ts: whereTime } : undefined,
-        include: [{ model: QrTag, as: 'qrTag', include: [{ model: Car, as: 'car' }] }],
+        include: [{ model: QrTag, as: 'qrTag', include: [{ model: Car, as: 'car' }, { model: Campaign, as: 'campaign' }] }],
         limit,
         order: [['ts', 'DESC']]
       }).then(rows => rows.map(s => mapQrScan(s, s.qrTag, s.qrTag?.car)))
@@ -75,7 +126,16 @@ export async function getNotificationsForUser(user, { limit = 15, since } = {}) 
     tasks.push(
       ProspectActivity.findAll({
         where: { type: 'created', ...(createdSince ? { createdAt: whereTime } : {}) },
-        include: [{ model: Prospect, as: 'prospect', where: { assignedAgentId: user.id }, include: [{ model: Campaign, as: 'campaign' }] }],
+        include: [{
+          model: Prospect,
+          as: 'prospect',
+          where: { assignedAgentId: user.id },
+          include: [
+            { model: Campaign, as: 'campaign' },
+            { model: QrTag, as: 'qrTag', include: [{ model: Car, as: 'car' }] },
+            { model: User, as: 'assignedAgent' }
+          ]
+        }],
         limit,
         order: [['createdAt', 'DESC']]
       }).then(rows => rows.map(a => mapProspectCreated(a, a.prospect)))
@@ -85,7 +145,10 @@ export async function getNotificationsForUser(user, { limit = 15, since } = {}) 
       QrScan.findAll({
         where: createdSince ? { ts: whereTime } : undefined,
         include: [{
-          model: QrTag, as: 'qrTag', include: [{ model: Car, as: 'car', required: true, where: { current_driver_id: user.id } }]
+          model: QrTag, as: 'qrTag', include: [
+            { model: Car, as: 'car', required: true, where: { current_driver_id: user.id } },
+            { model: Campaign, as: 'campaign' }
+          ]
         }],
         limit,
         order: [['ts', 'DESC']]
@@ -98,7 +161,10 @@ export async function getNotificationsForUser(user, { limit = 15, since } = {}) 
       QrScan.findAll({
         where: createdSince ? { ts: whereTime } : undefined,
         include: [{
-          model: QrTag, as: 'qrTag', include: [{ model: Car, as: 'car', required: true, where: fleetOwnerId ? { fleet_owner_id: fleetOwnerId } : {} }]
+          model: QrTag, as: 'qrTag', include: [
+            { model: Car, as: 'car', required: true, where: fleetOwnerId ? { fleet_owner_id: fleetOwnerId } : {} },
+            { model: Campaign, as: 'campaign' }
+          ]
         }],
         limit,
         order: [['ts', 'DESC']]
