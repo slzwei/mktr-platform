@@ -180,6 +180,7 @@
   - commit: n/a
 
 ### [2025-09-09 21:12 SGT] — Admin Agents: Campaigns UX
+
 - Replaced numeric campaigns count with a Manage button and an Assign action per agent row.
 - Added in-page Assign Campaigns dialog: searchable list of campaigns with checkboxes; saves by updating each campaign's `assigned_agents`.
 - Campaigns Dialog now includes a top-right "Assign campaigns" button.
@@ -188,3 +189,28 @@
   - On `/AdminAgents`, each agent row shows Manage + Assign under Campaigns.
   - Clicking Manage opens the campaigns list dialog for that agent.
   - Clicking Assign opens a dialog listing campaigns; toggling checkboxes and saving updates assignments and refreshes counts/dialog data.
+
+### [2025-09-09 22:05 sgt] — fleet: add vehicle form parity with onboarding
+
+- summary:
+  1. align fleet add-vehicle form fields with onboarding: same make/model lists with "Other" support, and live SG plate validation with on-the-fly red highlight.
+- changes:
+  1. `src/components/fleet/CarFormDialog.jsx` — import `@/data/mktr_make_models.json`, build make→models map, swap Make/Model inputs to selects with "Other" branches, add live plate formatting and validation (EA–EZ or SB–SN + 1–4 digits + letter), surface inline errors.
+- acceptance:
+  1. Admin/Fleet Owner clicks “Add Vehicle” → Make shows list; selecting make populates Model list; choosing "Other" enables free-text fields.
+  2. Typing invalid plate shows red border + hint text; valid plate clears highlight.
+  3. Submitting maps custom make/model correctly and sends clean uppercase plate.
+- links:
+  - commit: n/a
+
+### [2025-09-09 22:12 sgt] — driver dashboard: plate validation parity
+
+- summary:
+  1. update driver’s car details editor to use the same SG plate rules and live highlighting as onboarding (EA–EZ or SB–SN + 1–4 digits + letter), with on-change normalization to uppercase and alphanumerics.
+- changes:
+  1. `src/pages/DriverDashboard.jsx` — add allowed-prefix validator, input formatting, inline hint text.
+- acceptance:
+  1. In Profile → Car Details, typing an invalid plate shows red border + hint; valid clears it.
+  2. Saving sends uppercase cleaned plate.
+- links:
+  - commit: n/a

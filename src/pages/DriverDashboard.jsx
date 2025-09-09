@@ -270,18 +270,31 @@ export default function DriverDashboard() {
     } catch (_) {}
   };
 
-  // Plate validation
-  const isValidSgPlate = (value) => {
-    const v = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    return /^[A-Z]{1,3}\d{1,4}[A-Z]$/.test(v);
+  // Plate validation — align with onboarding rules (EA–EZ or SB–SN + 1–4 digits + letter)
+  const LETTERS_NO_IO = ['A','B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z'];
+  const SERIES_SECOND_LETTERS = ['B','C','D','F','G','J','K','L','M','N'];
+  const ALLOWED_PREFIXES = useMemo(() => new Set([
+    ...LETTERS_NO_IO.map((l) => `E${l}`),
+    ...SERIES_SECOND_LETTERS.flatMap((sec) => LETTERS_NO_IO.map((third) => `S${sec}${third}`))
+  ]), []);
+  const formatPlateInputToStrict = (plate) => String(plate || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const isValidAllowedPlateFormat = (raw) => {
+    const v = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!v) return false;
+    let prefix = '';
+    if (v.startsWith('S')) prefix = v.slice(0, 3); else if (v.startsWith('E')) prefix = v.slice(0, 2); else return false;
+    if (!ALLOWED_PREFIXES.has(prefix)) return false;
+    const rest = v.slice(prefix.length);
+    const match = rest.match(/^(\d{1,4})([A-Z])$/);
+    return !!match;
   };
 
   const saveCarDetails = async () => {
     if (!carId) return;
-    const cleanPlate = String(carPlate || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const cleanPlate = formatPlateInputToStrict(carPlate);
     const newErrors = {};
     if (!cleanPlate) newErrors.plate = 'Car plate is required';
-    else if (!isValidSgPlate(cleanPlate)) newErrors.plate = 'Enter valid car plate (e.g., SGP1234A)';
+    else if (!isValidAllowedPlateFormat(cleanPlate)) newErrors.plate = 'Enter valid car plate (EA–EZ or SB–SN + 1–4 digits + letter)';
     if (!carMake) newErrors.make = 'Please select the car make';
     const finalMake = carMake === 'Other' ? (carCustomMake || '').trim() : carMake;
     const finalModel = (carMake === 'Other' || carModel === 'Other') ? (carCustomModel || '').trim() : carModel;
@@ -819,7 +832,17 @@ export default function DriverDashboard() {
                       <Input
                         className={`h-8 text-sm ${carErrors.plate ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
                         value={carPlate}
-                        onChange={(e)=>{ setCarPlate(e.target.value.toUpperCase()); if (carErrors.plate) setCarErrors(prev=>({ ...prev, plate: undefined })); }}
+                        onChange={(e)=>{
+                          const v = formatPlateInputToStrict(e.target.value);
+                          setCarPlate(v);
+                          if (v.length === 0) {
+                            setCarErrors(prev=>({ ...prev, plate: undefined }));
+                          } else if (!isValidAllowedPlateFormat(v)) {
+                            setCarErrors(prev=>({ ...prev, plate: 'Format: EA–EZ or SB–SN + 1–4 digits + letter' }));
+                          } else {
+                            setCarErrors(prev=>({ ...prev, plate: undefined }));
+                          }
+                        }}
                         placeholder="e.g., SGP1234A"
                       />
                       {carErrors.plate && <div className="text-xs text-red-600 mt-1">{carErrors.plate}</div>}
