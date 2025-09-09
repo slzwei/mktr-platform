@@ -61,6 +61,9 @@ const defineAssociations = () => {
   QrTag.hasMany(QrScan, { foreignKey: 'qrTagId', as: 'scans' });
   QrTag.hasMany(Attribution, { foreignKey: 'qrTagId', as: 'attributions' });
 
+  // QrScan associations
+  QrScan.belongsTo(QrTag, { foreignKey: 'qrTagId', as: 'qrTag' });
+
   // Prospect associations
   Prospect.belongsTo(User, { foreignKey: 'assignedAgentId', as: 'assignedAgent' });
   Prospect.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
