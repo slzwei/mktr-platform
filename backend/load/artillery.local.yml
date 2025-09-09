@@ -1,0 +1,157 @@
+config:
+  target: "{{ $processEnvironment.TARGET_BASE_URL }}"
+  phases:
+    # Default smoke profile; others can be overridden via CLI --overrides
+    - name: smoke
+      duration: 30
+      arrivalRate: 5
+  processor: ./processors.cjs
+  defaults:
+    headers:
+      content-type: application/json
+
+scenarios:
+  - name: Admin Login Flow
+    flow:
+      - post:
+          url: "/api/campaigns"
+          json:
+            name: "LT {{ $randomNumber(1000000,9999999) }}"
+            type: "lead_generation"
+          capture:
+            - json: "$..data.campaign.id"
+              as: campaignId
+          expect:
+            - statusCode: 201
+      - post:
+          url: "/api/qrcodes"
+          json:
+            name: "QR {{ $randomNumber(100000,999999) }}"
+            type: "campaign"
+            destinationUrl: "https://example.com"
+            campaignId: "{{ campaignId }}"
+          capture:
+            - json: "$..data.qrTag.id"
+              as: qrId
+            - json: "$..data.qrTag.slug"
+              as: slug
+          expect:
+            - statusCode: 201
+      - post:
+          url: "/api/auth/register"
+          json:
+            email: "{{ email }}"
+            password: "password123"
+            firstName: "Load"
+            lastName: "Admin"
+            role: "admin"
+          expect:
+            - statusCode: 201
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "{{ email }}"
+            password: "password123"
+          capture:
+            - json: "$..data.token"
+              as: token
+          expect:
+            - statusCode: 200
+      - get:
+          url: "/api/auth/profile"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          expect:
+            - statusCode: 200
+      - post:
+          url: "/api/campaigns"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          json:
+            name: "LT {{ $randomNumber(1000000,9999999) }}"
+            type: "lead_generation"
+          capture:
+            - json: "$..data.campaign.id"
+              as: campaignId
+          expect:
+            - statusCode: 201
+      - get:
+          url: "/api/campaigns/{{ campaignId }}"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          expect:
+            - statusCode: 200
+      - post:
+          url: "/api/qrcodes"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          json:
+            name: "QR {{ $randomNumber(100000,999999) }}"
+            type: "campaign"
+            destinationUrl: "https://example.com"
+            campaignId: "{{ campaignId }}"
+          capture:
+            - json: "$..data.qrTag.id"
+              as: qrId
+          expect:
+            - statusCode: 201
+      - post:
+          url: "/api/qrcodes/{{ qrId }}/scan"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          json:
+            metadata:
+              loc: "test"
+          expect:
+            - statusCode: 200
+      - get:
+          url: "/api/dashboard/overview"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          expect:
+            - statusCode: 200
+
+  - name: Public Prospect Submit
+    flow:
+      - get:
+          url: "/health"
+          expect:
+            - statusCode: 200
+      - post:
+          url: "/api/prospects"
+          json:
+            firstName: "Pat"
+            lastName: "Visitor"
+            email: "visitor+{{ $randomNumber(1000000,9999999) }}@test.com"
+            leadSource: "qr_code"
+          expect:
+            - statusCode: 201
+
+  - name: QR Scan + Lead Submit
+    flow:
+      - get:
+          url: "/api/qrcodes/track/{{ slug }}"
+          expect:
+            - statusCode: 302
+      - post:
+          url: "/api/prospects"
+          json:
+            firstName: "QR"
+            lastName: "Lead"
+            email: "qrlead+{{ $randomNumber(1000000,9999999) }}@test.com"
+            leadSource: "qr_code"
+            qrTagId: "{{ qrId }}"
+          expect:
+            - statusCode: 201
+
+beforeRequest: |
+  function cacheEmail(req, context, ee, next) {
+    if (!context.vars.email) {
+      const r = Math.floor(Math.random() * 1e9);
+      context.vars.email = `admin_${r}@load.local`;
+    }
+    return next();
+  }
+
+hooks:
+  beforeRequest: cacheEmail

@@ -390,23 +390,24 @@ async function getCommissionTrend(userId, startDate, endDate) {
 
 // Helper function to get recent activities
 async function getRecentActivities(limit) {
+  const chunk = Math.max(1, Math.floor(limit / 3));
   // Get recent prospects, campaigns, and QR scans
   const [recentProspects, recentCampaigns, recentScans] = await Promise.all([
     Prospect.findAll({
-      limit: limit / 3,
+      limit: chunk,
       order: [['createdAt', 'DESC']],
       attributes: ['id', 'firstName', 'lastName', 'createdAt'],
       include: [{ association: 'campaign', attributes: ['name'] }]
     }),
     Campaign.findAll({
-      limit: limit / 3,
+      limit: chunk,
       order: [['createdAt', 'DESC']],
       attributes: ['id', 'name', 'createdAt', 'status'],
       include: [{ association: 'creator', attributes: ['firstName', 'lastName'] }]
     }),
     QrTag.findAll({
       where: { lastScanned: { [Op.not]: null } },
-      limit: limit / 3,
+      limit: chunk,
       order: [['lastScanned', 'DESC']],
       attributes: ['id', 'name', 'lastScanned', 'scanCount']
     })

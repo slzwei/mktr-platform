@@ -21,6 +21,7 @@ import BeaconEvent from './BeaconEvent.js';
 import IdempotencyKey from './IdempotencyKey.js';
 import ShortLink from './ShortLink.js';
 import ShortLinkClick from './ShortLinkClick.js';
+import RoundRobinCursor from './RoundRobinCursor.js';
 
 // Define associations
 const defineAssociations = () => {
@@ -92,6 +93,7 @@ const defineAssociations = () => {
   ShortLink.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
   ShortLink.hasMany(ShortLinkClick, { foreignKey: 'shortLinkId', as: 'clicks' });
   ShortLinkClick.belongsTo(ShortLink, { foreignKey: 'shortLinkId', as: 'shortLink' });
+  // RoundRobinCursor has implicit relation to Campaign via campaignId
 };
 
 // Initialize associations
@@ -120,6 +122,7 @@ export {
   IdempotencyKey,
   ShortLink,
   ShortLinkClick
+  , RoundRobinCursor
 };
 
 // Export default object for convenience
@@ -145,4 +148,5 @@ export default {
   IdempotencyKey,
   ShortLink,
   ShortLinkClick
+  , RoundRobinCursor
 };

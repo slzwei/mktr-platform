@@ -251,6 +251,27 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 
 <!-- new entries go here. do not edit sections above except to fix typos or update endpoint/env tables when the system evolves. -->
 
+### [2025-09-09 20:15 sgt] — phase b — role-based notifications api (+ ui bell)
+
+- branch: main
+- summary:
+  1. add `/api/notifications` aggregating recent events; frontend bell dropdown shows role-scoped items.
+- changes:
+  1. backend: `backend/src/services/notifications.js` (new) — composes notifications from `User` (signups), `ProspectActivity(type='created')`, and `QrScan` with role filters (admin=all; agent=assigned leads; driver_partner=car scans; fleet_owner=fleet scans).
+  2. backend: `backend/src/routes/notifications.js` (new) — `GET /api/notifications?limit&since` (auth required).
+  3. backend: `backend/src/server.js` — mount `/api/notifications`.
+  4. frontend: `src/api/client.js` — add `notifications.list` helper.
+  5. frontend: `src/components/layout/NotificationBell.jsx` (new) — dropdown bell polling every 30s; `DashboardLayout.jsx` now uses it.
+- acceptance:
+  1. login as admin → bell shows user signups, new leads, and qr scans.
+  2. login as agent → bell shows new leads assigned to the agent.
+  3. login as driver_partner → bell shows qr scans on the driver’s current car.
+  4. login as fleet_owner → bell shows qr scans on cars in the owner’s fleet.
+- notes:
+  1. derived from existing tables; no new schema. future: persistence/read-state and web socket live updates.
+- links:
+  - commit: n/a
+
 ### [2025-09-09 03:05 sgt] — phase b — lead capture duplicate signup ux (frontend)
 
 - branch: main
@@ -668,3 +689,72 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - links:
   - file: `backend/src/routes/prospects.js`
   - endpoint: `POST /api/prospects`
+
+### [2025-09-09 04:05 sgt] — phase b — legacy safe test harness (backend)
+
+- branch: main
+- summary:
+  1. Add non-destructive E2E harness that boots backend on ephemeral SQLite and runs core endpoint checks with a real JWT; writes JSON report; leaves temp artifacts on failure.
+- changes:
+  1. backend: `backend/legacy-safe-harness.js` — start server with `NODE_ENV=test`, `DATABASE_URL` pointing to temp sqlite file, `LEGACY_SHIM_FORCE_OFF=true`, `UPLOAD_PATH` to temp dir; health-check wait; register→login→exercise campaigns/QR/prospects/dashboard; write `comprehensive-test-results.json`.
+  2. backend: `backend/package.json` — add script `test:legacy-safe` to run the harness.
+- acceptance:
+  1. From `backend/`, run `npm run test:legacy-safe` → server starts on port 3101 (overrideable via `SAFE_HARNESS_PORT`), health passes, suite executes, JSON report saved.
+  2. No writes to production DB or uploads; SQLite/temp uploads live under `backend/.tmp/legacy-safe-<timestamp>/`.
+- notes:
+  1. Mailer/Spaces remain disabled without credentials; proxy shim is forced off; Manifest/Beacons disabled.
+  2. If any check fails, temp dir is retained for debugging.
+- links:
+  - commit: n/a
+
+### [2025-09-09 04:15 sgt] — phase b — fix sqlite compat: tenant guard + dashboard limit (backend)
+
+- branch: main
+- summary:
+  1. Avoid `tenant_id` filters on SQLite by guarding to Postgres only; fix fractional LIMIT causing `SQLITE_MISMATCH` in dashboard recent activities.
+- changes:
+  1. backend: `backend/src/routes/campaigns.js` — wrap `tenant_id` in `if (dialect==='postgres')` for `GET /:id`, `PUT /:id`, `GET /:id/analytics`, `DELETE /:id`.
+  2. backend: `backend/src/routes/dashboard.js` — use integer chunk size `Math.floor(limit/3)` for three recent lists.
+- acceptance:
+  1. Run `npm run test:legacy-safe` → all checks pass including `Get campaign by id` and `Dashboard overview` on ephemeral SQLite.
+- notes:
+  1. Postgres environments keep tenant scoping intact.
+- links:
+  - commit: n/a
+
+### [2025-09-09 04:30 sgt] — phase b — local load testing (backend)
+
+- branch: main
+- summary:
+  1. Add local load harness using ephemeral SQLite and Artillery with safe profiles (smoke/spike/stress/soak), avoiding destructive side effects.
+- changes:
+  1. backend: `backend/load/artillery.local.yml` — scenarios (admin login flow, public prospect submit), CommonJS processor, env-driven target.
+  2. backend: `backend/load/processors.cjs` — processor stub (CJS).
+  3. backend: `backend/load/run-local-load.js` — orchestration: boot ephemeral backend then run Artillery; supports `LOAD_PROFILE` and `TARGET_BASE_URL`.
+  4. backend: `backend/package.json` — scripts `load:smoke|spike|stress|soak`.
+- acceptance:
+  1. `TARGET_BASE_URL=http://localhost:3101 npm run load:smoke` runs without errors from missing processors/templating; admin register collisions removed (login-only), prospects create 201s.
+- notes:
+  1. For admin login, set `LOAD_EMAIL`/`LOAD_PASSWORD` or adjust to seed a known admin.
+- links:
+  - commit: n/a
+
+### [2025-09-09 19:30 sgt] — phase b — round-robin load validation (backend)
+
+- branch: main
+- summary:
+  1. Parameterized RR load runner to scale agents/leads and validated per-campaign round-robin under load on ephemeral SQLite.
+  2. Results: 500 leads over 3 agents → 167/166/167 (balanced). 1,000 leads over 25 agents → 40 each (balanced max-min=0). All `POST /api/prospects` returned 201; no data loss observed.
+- changes:
+  1. backend: `backend/load/round_robin_check.js` — accept `RR_AGENTS` env; create N agents; compute distribution; assert balance.
+  2. backend: `backend/load/run-rr.js` — forward `RR_AGENTS`/`RR_N` env; boot ephemeral server and execute checker.
+  3. backend: `backend/src/server.js` — applied SQLite PRAGMAs (WAL, busy_timeout, synchronous=NORMAL) for better local concurrency during tests.
+  4. backend: `backend/src/services/systemAgent.js` — per-campaign in-process queue + transactional cursor to reduce lock contention and ensure fair rotation.
+- acceptance:
+  1. `SAFE_HARNESS_PORT=3205 RR_N=500 RR_AGENTS=3 TARGET_BASE_URL=http://localhost:3205 npm run load:rr` → Total=500; counts ~equal; balanced yes.
+  2. `SAFE_HARNESS_PORT=3206 RR_N=1000 RR_AGENTS=25 TARGET_BASE_URL=http://localhost:3206 npm run load:rr` → Total=1000; each agent=40; balanced yes (max-min=0).
+- notes:
+  1. Runs are hermetic (`NODE_ENV=test`, temp SQLite, temp uploads); zero production side effects. Mailer/external IO disabled.
+  2. Suitable as a preflight before staging Postgres load; idempotency/duplication guards validated for phone/email within campaign.
+- links:
+  - commit: n/a

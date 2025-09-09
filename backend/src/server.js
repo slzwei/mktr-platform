@@ -29,6 +29,7 @@ import leadCaptureBind from './routes/leadCaptureBind.js';
 import commissionRoutes from './routes/commissions.js';
 import uploadRoutes from './routes/uploads.js';
 import dashboardRoutes from './routes/dashboard.js';
+import notificationRoutes from './routes/notifications.js';
 import verifyRoutes from './routes/verify.js';
 import analyticsRoutes from './routes/analytics.js';
 import leadgenProxyShim from './middleware/leadgenProxyShim.js';
@@ -140,6 +141,7 @@ app.use(leadCaptureBind);
 app.use('/api/commissions', commissionRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/verify', verifyRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/contact', contactRoutes);
@@ -205,6 +207,16 @@ async function startServer() {
     // Test database connection
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
+    // Improve SQLite concurrency characteristics for local stress testing
+    try {
+      if (sequelize.getDialect() === 'sqlite') {
+        await sequelize.query('PRAGMA journal_mode=WAL');
+        await sequelize.query('PRAGMA busy_timeout=5000');
+        await sequelize.query('PRAGMA synchronous=NORMAL');
+      }
+    } catch (e) {
+      console.warn('⚠️ Failed to apply SQLite PRAGMAs:', e?.message || e);
+    }
     try {
       const dialect = sequelize.getDialect();
       if (dialect === 'sqlite') {

@@ -149,7 +149,7 @@ router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res)
     const existing = await Prospect.findOne({
       where: {
         campaignId: incoming.campaignId,
-        phone: { [Op.iLike]: normalizedPhone }
+        phone: normalizedPhone
       }
     });
     if (existing) {

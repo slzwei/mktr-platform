@@ -12,10 +12,10 @@ import {
   Settings,
   LogOut,
   Menu,
-  Bell,
   Shield,
   Link2
 } from "lucide-react";
+import NotificationBell from './NotificationBell.jsx';
 import {
   Sidebar,
   SidebarContent,
@@ -279,7 +279,7 @@ export default function DashboardLayout({ children, user, userRole }) {
               <h1 className="text-xl font-semibold text-gray-900">
                 MKTR {localUser?.role === 'admin' ? 'Admin' : localUser?.role === 'agent' ? 'Agent' : 'Portal'}
               </h1>
-              <Bell className="w-5 h-5 text-gray-400" />
+              <NotificationBell />
             </div>
           </header>
 

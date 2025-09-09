@@ -120,7 +120,13 @@ router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req
 router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const whereConditions = { id, tenant_id: getTenantId(req) };
+  const whereConditions = { id };
+  try {
+    const dialect = Campaign.sequelize.getDialect();
+    if (dialect === 'postgres') {
+      whereConditions.tenant_id = getTenantId(req);
+    }
+  } catch (_) {}
   
   // Non-admin users can only see their own campaigns or public ones
   if (req.user.role !== 'admin') {
@@ -177,7 +183,13 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
   const { id } = req.params;
   const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, commission_amount_driver, commission_amount_fleet } = req.body;
 
-  const whereConditions = { id, tenant_id: getTenantId(req) };
+  const whereConditions = { id };
+  try {
+    const dialect = Campaign.sequelize.getDialect();
+    if (dialect === 'postgres') {
+      whereConditions.tenant_id = getTenantId(req);
+    }
+  } catch (_) {}
   
   // Non-admin users can only update their own campaigns
   if (req.user.role !== 'admin') {
@@ -218,7 +230,13 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
 router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const whereConditions = { id, tenant_id: getTenantId(req) };
+  const whereConditions = { id };
+  try {
+    const dialect = Campaign.sequelize.getDialect();
+    if (dialect === 'postgres') {
+      whereConditions.tenant_id = getTenantId(req);
+    }
+  } catch (_) {}
   
   // Non-admin users can only delete their own campaigns
   if (req.user.role !== 'admin') {
@@ -254,7 +272,13 @@ router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async
 router.get('/:id/analytics', authenticateToken, asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const whereConditions = { id, tenant_id: getTenantId(req) };
+  const whereConditions = { id };
+  try {
+    const dialect = Campaign.sequelize.getDialect();
+    if (dialect === 'postgres') {
+      whereConditions.tenant_id = getTenantId(req);
+    }
+  } catch (_) {}
   
   // Non-admin users can only see analytics for their own campaigns or public ones
   if (req.user.role !== 'admin') {

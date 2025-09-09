@@ -666,6 +666,19 @@ export const dashboard = {
 };
 
 /**
+ * Notifications API
+ */
+export const notifications = {
+  async list({ limit = 15, since } = {}) {
+    const params = {};
+    if (limit) params.limit = limit;
+    if (since) params.since = since;
+    const response = await apiClient.get('/notifications', params);
+    return response.data?.notifications || [];
+  }
+};
+
+/**
  * Agent API
  */
 export const agents = {
@@ -739,6 +752,7 @@ export const mktrAPI = {
   functions,
   integrations,
   dashboard,
+  notifications,
   agents,
   fleet,
   client: apiClient

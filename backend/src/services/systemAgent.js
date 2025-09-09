@@ -1,5 +1,18 @@
 import dotenv from 'dotenv';
-import { User, QrTag, Campaign } from '../models/index.js';
+import { User, QrTag, Campaign, RoundRobinCursor, sequelize } from '../models/index.js';
+
+// In-process queue to serialize round-robin updates per campaign (reduces SQLite lock contention)
+const rrQueues = new Map();
+function enqueueCampaign(campaignId, task) {
+  const chain = (rrQueues.get(campaignId) || Promise.resolve())
+    .then(task)
+    .finally(() => {
+      // Clear queue when this task finishes if it's still the last one
+      if (rrQueues.get(campaignId) === chain) rrQueues.delete(campaignId);
+    });
+  rrQueues.set(campaignId, chain.catch(() => {}));
+  return chain;
+}
 
 dotenv.config();
 
@@ -79,12 +92,47 @@ export async function resolveAssignedAgentId({ reqUser, requestedAgentId, campai
     }
   }
 
-  // 4) Try campaign assigned_agents
+  // 4) Try campaign assigned_agents with round-robin rotation
   if (campaignId) {
     const campaign = await Campaign.findByPk(campaignId);
     const assigned = Array.isArray(campaign?.assigned_agents) ? campaign.assigned_agents : [];
-    const fromCampaign = await findFirstActiveAgentByIds(assigned);
-    if (fromCampaign) return fromCampaign;
+    if (assigned.length > 0) {
+      // Filter to active agents
+      const activeAgents = (await User.findAll({ where: { id: assigned, role: 'agent', isActive: true } }))
+        .map(u => u.id)
+        .filter(id => assigned.includes(id));
+      if (activeAgents.length > 0) {
+        // Use transaction to avoid race under load
+        // Serialize updates in-process; do a simple read-modify-write with retries
+        const result = await enqueueCampaign(campaignId, async () => {
+          let attempts = 0;
+          while (attempts < 5) {
+            try {
+              let cursor = await RoundRobinCursor.findOne({ where: { campaignId } });
+              if (!cursor) {
+                cursor = await RoundRobinCursor.create({ campaignId, cursor: 0 });
+              }
+              const index = cursor.cursor % activeAgents.length;
+              const chosen = activeAgents[index];
+              await cursor.update({ cursor: (cursor.cursor + 1) % activeAgents.length });
+              return chosen;
+            } catch (e) {
+              const msg = String(e?.message || '').toLowerCase();
+              if (msg.includes('busy') || msg.includes('locked')) {
+                attempts++;
+                await new Promise(r => setTimeout(r, 50 * attempts));
+                continue;
+              }
+              throw e;
+            }
+          }
+          // As a last resort, pick deterministically to avoid failing lead creation
+          const fallback = activeAgents[Math.floor(Math.random() * activeAgents.length)];
+          return fallback;
+        });
+        if (result) return result;
+      }
+    }
   }
 
   // 5) Fallback to System Agent

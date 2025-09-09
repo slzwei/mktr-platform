@@ -1,3 +1,9 @@
+## [2025-09-09] Notification bell
+
+- Added `NotificationBell` in `src/components/layout/NotificationBell.jsx` showing role-based notifications (user signup, lead captured, QR scanned).
+- Replaced static bell in `src/components/layout/DashboardLayout.jsx` header with dropdown bell.
+- Uses `/api/notifications` endpoint; polls every 30s.
+
 # ui_status.md — mktr ui build log (singapore-only)
 
 > single source of truth for ui changes only. backend/service changes stay in `backend/project_status_v2.md`.
