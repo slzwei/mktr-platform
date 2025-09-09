@@ -178,3 +178,13 @@
   4. works on both desktop table view and mobile card view.
 - links:
   - commit: n/a
+
+### [2025-09-09 21:12 SGT] — Admin Agents: Campaigns UX
+- Replaced numeric campaigns count with a Manage button and an Assign action per agent row.
+- Added in-page Assign Campaigns dialog: searchable list of campaigns with checkboxes; saves by updating each campaign's `assigned_agents`.
+- Campaigns Dialog now includes a top-right "Assign campaigns" button.
+- Files: `src/pages/AdminAgents.jsx`
+- Acceptance:
+  - On `/AdminAgents`, each agent row shows Manage + Assign under Campaigns.
+  - Clicking Manage opens the campaigns list dialog for that agent.
+  - Clicking Assign opens a dialog listing campaigns; toggling checkboxes and saving updates assignments and refreshes counts/dialog data.

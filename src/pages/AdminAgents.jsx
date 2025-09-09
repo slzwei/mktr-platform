@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from "react";
-import { User } from "@/api/entities";
+import { User, Campaign } from "@/api/entities";
 import { auth, agents as agentsAPI, apiClient } from "@/api/client";
 import { LeadPackage } from "@/api/entities"; // Assuming LeadPackage entity exists
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   Table, 
   TableBody, 
@@ -57,6 +58,11 @@ export default function AdminAgents() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [campaignsDialogOpen, setCampaignsDialogOpen] = useState(false);
   const [campaignsForAgent, setCampaignsForAgent] = useState([]);
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [allCampaigns, setAllCampaigns] = useState([]);
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState(new Set());
+  const [campaignSearch, setCampaignSearch] = useState("");
 
   useEffect(() => {
     loadData();
@@ -135,6 +141,75 @@ export default function AdminAgents() {
       setCampaignsDialogOpen(true);
     } catch (e) {
       console.error('Failed to load agent campaigns', e);
+    }
+  };
+
+  const openAssignDialog = async (agent) => {
+    if (!agent) return;
+    setSelectedAgent(agent);
+    setAssignLoading(true);
+    try {
+      const list = await Campaign.list({ limit: 500 });
+      const campaigns = Array.isArray(list) ? list : [];
+      setAllCampaigns(campaigns);
+      const preselected = new Set(
+        campaigns
+          .filter(c => Array.isArray(c.assigned_agents) && c.assigned_agents.map(String).includes(String(agent.id)))
+          .map(c => c.id)
+      );
+      setSelectedCampaignIds(preselected);
+      setAssignDialogOpen(true);
+    } catch (e) {
+      console.error('Failed to load campaigns for assignment', e);
+      alert(e?.message || 'Failed to load campaigns');
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  const toggleCampaignSelected = (campaignId) => {
+    setSelectedCampaignIds(prev => {
+      const next = new Set(prev);
+      if (next.has(campaignId)) next.delete(campaignId); else next.add(campaignId);
+      return next;
+    });
+  };
+
+  const handleSaveAssignments = async () => {
+    if (!selectedAgent) return;
+    setAssignLoading(true);
+    try {
+      const agentIdStr = String(selectedAgent.id);
+      const updates = [];
+      for (const c of allCampaigns) {
+        const current = Array.isArray(c.assigned_agents) ? c.assigned_agents.map(String) : [];
+        const wantSelected = selectedCampaignIds.has(c.id);
+        const hasNow = current.includes(agentIdStr);
+        if (wantSelected && !hasNow) {
+          const nextArr = Array.from(new Set([...current, agentIdStr]));
+          updates.push(Campaign.update(c.id, { assigned_agents: nextArr }));
+        } else if (!wantSelected && hasNow) {
+          const nextArr = current.filter(id => id !== agentIdStr);
+          updates.push(Campaign.update(c.id, { assigned_agents: nextArr }));
+        }
+      }
+      if (updates.length > 0) {
+        await Promise.all(updates);
+      }
+      await loadData();
+      setAssignDialogOpen(false);
+      // Refresh campaigns dialog if it is open
+      if (campaignsDialogOpen && selectedAgent) {
+        try {
+          const resp = await agentsAPI.getCampaigns(selectedAgent.id);
+          setCampaignsForAgent(resp?.campaigns || []);
+        } catch (_) {}
+      }
+    } catch (e) {
+      console.error('Failed to save assignments', e);
+      alert(e?.message || 'Failed to save assignments');
+    } finally {
+      setAssignLoading(false);
     }
   };
 
@@ -293,12 +368,23 @@ export default function AdminAgents() {
               </TableCell>
 
               <TableCell>
-                <button
-                  className="text-blue-600 hover:text-blue-800 font-semibold underline underline-offset-2"
-                  onClick={() => openCampaignsDialog(agent)}
-                >
-                  {agent.stats?.tiedCampaignsCount ?? agent.stats?.totalCampaigns ?? 0}
-                </button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openCampaignsDialog(agent)}
+                  >
+                    Manage
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openAssignDialog(agent)}
+                    className="text-blue-600 hover:text-blue-800"
+                  >
+                    Assign
+                  </Button>
+                </div>
               </TableCell>
 
               <TableCell>
@@ -533,8 +619,15 @@ export default function AdminAgents() {
         <Dialog open={campaignsDialogOpen} onOpenChange={setCampaignsDialogOpen}>
           <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Campaigns tied to {selectedAgent?.fullName || selectedAgent?.email}</DialogTitle>
-              <DialogDescription>Click a campaign to manage or view details.</DialogDescription>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <DialogTitle>Campaigns tied to {selectedAgent?.fullName || selectedAgent?.email}</DialogTitle>
+                  <DialogDescription>Click a campaign to manage or view details.</DialogDescription>
+                </div>
+                <Button onClick={() => openAssignDialog(selectedAgent)} className="bg-blue-600 hover:bg-blue-700">
+                  Assign campaigns
+                </Button>
+              </div>
             </DialogHeader>
             <div className="max-h-[60vh] overflow-y-auto divide-y">
               {campaignsForAgent.length === 0 ? (
