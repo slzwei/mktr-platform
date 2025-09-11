@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DollarSign, BarChart3, AlertTriangle } from "lucide-react";
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { lazy } from "react";
 import CommissionSummary from "@/components/dashboard/CommissionSummary";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Phone, Mail, ShieldCheck, Loader2, AlertCircle, X, CheckCircle2 } from "lucide-react";
 import { sendOtp, verifyOtp } from "@/components/lib/customFunctions";
 import { motion } from "framer-motion";
+const TrendsChart = lazy(() => import("@/components/ui/TrendsChart"));
 import { toast } from "@/components/ui/use-toast";
 
 const BANK_OPTIONS = [
@@ -950,17 +951,7 @@ export default function DriverDashboard() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="w-full h-72">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={scanTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-                          <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                          <Tooltip formatter={(v) => [v, 'Scans']} labelStyle={{ color: '#64748b' }} />
-                          <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
+                    <TrendsChart data={scanTrend} xKey="label" yKey="count" />
                   </CardContent>
                 </Card>
                 <Card className="shadow-md">
@@ -980,17 +971,7 @@ export default function DriverDashboard() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="w-full h-72">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={earnTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-                          <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" tickFormatter={(v)=>`$${v}`} />
-                          <Tooltip formatter={(v) => [`$${Number(v).toFixed(2)}`, 'Earnings']} labelStyle={{ color: '#64748b' }} />
-                          <Line type="monotone" dataKey="amount" stroke="#10b981" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
+                    <TrendsChart data={earnTrend} xKey="label" yKey="amount" yFormatter={(v)=>`$${v}`} className="w-full h-72" lineColor="#10b981" />
                   </CardContent>
                 </Card>
               </div>
