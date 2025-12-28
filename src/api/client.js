@@ -88,6 +88,12 @@ class APIClient {
         this.setToken(null);
         currentUser = null;
         localStorage.removeItem(STORAGE_KEYS.USER);
+        
+        if (typeof window !== 'undefined') {
+          console.log('🔒 API: 401 Unauthorized - Dispatching global auth:unauthorized event');
+          window.dispatchEvent(new Event('auth:unauthorized'));
+        }
+        
         throw new Error('Authentication required');
       }
 
@@ -371,6 +377,11 @@ class BaseEntity {
   // Base44-compatible methods
   async list(params = {}) {
     const response = await apiClient.get(this.endpoint, params);
+    // If pagination metadata exists, return the full data object with pagination
+    if (response.data?.pagination) {
+      return response.data;
+    }
+    // Otherwise return just the data array for backwards compatibility
     return response.data?.campaigns || response.data?.prospects || response.data?.qrTags || response.data?.users || response.data?.cars || response.data?.drivers || response.data?.fleetOwners || response.data?.commissions || response.data?.agents || [];
   }
 

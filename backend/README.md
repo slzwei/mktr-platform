@@ -224,6 +224,54 @@ EMAIL_PASSWORD=your-app-password
 - `npm run docker:build` - Build Docker image
 - `npm run docker:run` - Run with Docker Compose
 
+### Stress Testing
+
+Test the lead capture system with thousands of realistic prospects:
+
+```bash
+cd backend
+
+# Generate test leads
+./stress-test.sh run 1000           # Generate 1000 test leads
+
+# Preview cleanup
+./stress-test.sh preview            # See what will be deleted
+
+# Clean up test data
+./stress-test.sh cleanup            # Remove all test leads
+
+# Get help
+./stress-test.sh help               # Show all commands
+```
+
+**Features:**
+- Generate realistic test prospects with complete data
+- Batch processing for high performance (50-100+ leads/second)
+- All test data tagged with "STRESS_TEST" for safe cleanup
+- Real-time progress tracking and statistics
+- Safe dry-run mode for cleanup preview
+
+**Documentation:**
+- **Quick Start:** [STRESS-TEST-QUICK-START.md](./STRESS-TEST-QUICK-START.md)
+- **Full Guide:** [STRESS-TEST-README.md](./STRESS-TEST-README.md)
+
+**Common Use Cases:**
+```bash
+cd backend
+
+# Dashboard UI testing
+./stress-test.sh run 1000
+
+# Performance testing
+./stress-test.sh run 10000
+
+# API development
+./stress-test.sh run 500
+
+# Clean up when done
+./stress-test.sh cleanup
+```
+
 ## Deployment
 
 ### Using Render

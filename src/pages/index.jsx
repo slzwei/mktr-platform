@@ -1,7 +1,7 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, useNavigate } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
 
 const LeadCapture = lazy(() => import('./LeadCapture'));
@@ -36,9 +36,22 @@ const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
 const DriverDashboard = lazy(() => import('./DriverDashboard'));
 
 function PagesContent() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      console.log('🔒 AUTH: Received auth:unauthorized event, redirecting to login');
+      // Clear any remaining stales states if needed
+      navigate('/CustomerLogin');
+    };
+
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
+  }, [navigate]);
+
   return (
     <ErrorBoundary>
-      <Suspense fallback={<div /> }>
+      <Suspense fallback={<div />}>
         <Routes>
           {/* Public routes - no protection needed */}
           <Route path="/" element={<Homepage />} />

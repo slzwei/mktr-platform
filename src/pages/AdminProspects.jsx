@@ -24,10 +24,21 @@ import { format } from "date-fns";
 import { 
   Search, 
   Download,
-  Trash2
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import ProspectFilters from "@/components/prospects/ProspectFilters";
 import ProspectDetails from "@/components/prospects/ProspectDetails";
@@ -98,6 +109,12 @@ export default function AdminProspects() {
     campaign: "all",
     source: "all"
   });
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    itemsPerPage: 25
+  });
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -106,15 +123,94 @@ export default function AdminProspects() {
     if (campaignId) {
       setFilters(prevFilters => ({...prevFilters, campaign: campaignId}));
     }
-    loadData();
   }, [location.search]);
 
-  const loadData = async () => {
+  // Reload data when filters or pagination changes
+  useEffect(() => {
+    loadDataWithFilters();
+  }, [filters, pagination.currentPage, pagination.itemsPerPage]);
+
+  const loadDataWithFilters = async () => {
+    setLoading(true);
     try {
-      const [userData, prospectsData, allCampaignsData] = await Promise.all([
+      const params = {
+        page: pagination.currentPage,
+        limit: pagination.itemsPerPage
+      };
+
+      // Add search param
+      if (filters.search) {
+        params.search = filters.search;
+      }
+
+      // Add status filter
+      if (filters.status !== "all") {
+        params.leadStatus = filters.status;
+      }
+
+      // Add campaign filter
+      if (filters.campaign !== "all") {
+        params.campaignId = filters.campaign;
+      }
+
+      // Add source filter
+      if (filters.source !== "all") {
+        // Map UI source values back to backend values
+        if (filters.source === "qr") {
+          params.leadSource = "qr_code";
+        } else if (filters.source === "form") {
+          params.leadSource = "website";
+        } else {
+          params.leadSource = filters.source;
+        }
+      }
+
+      const [userData, prospectsResponse, allCampaignsData] = await Promise.all([
+        user || auth.getCurrentUser(),
+        Prospect.list(params),
+        campaigns.length > 0 ? Promise.resolve(campaigns) : Campaign.list()
+      ]);
+
+      if (!user) setUser(userData);
+
+      // Filter out archived campaigns
+      const campaignsData = Array.isArray(allCampaignsData) 
+        ? allCampaignsData.filter(campaign => campaign.status !== 'archived')
+        : campaigns;
+
+      // Handle paginated response
+      const prospectsData = prospectsResponse.prospects || prospectsResponse || [];
+      const paginationData = prospectsResponse.pagination || {
+        currentPage: pagination.currentPage,
+        totalPages: 1,
+        totalItems: prospectsData.length,
+        itemsPerPage: pagination.itemsPerPage
+      };
+
+      // Normalize prospects
+      const normalized = (prospectsData || []).map(normalizeProspect);
+      setProspects(normalized);
+      if (!campaigns.length) setCampaigns(campaignsData || []);
+      setPagination(paginationData);
+    } catch (error) {
+      console.error('Error loading prospects:', error);
+    }
+    setLoading(false);
+  };
+
+  const handlePageChange = (newPage) => {
+    setPagination(prev => ({ ...prev, currentPage: newPage }));
+  };
+
+  const handlePageSizeChange = (newSize) => {
+    setPagination(prev => ({ ...prev, currentPage: 1, itemsPerPage: newSize }));
+  };
+
+  const loadData = async (page = pagination.currentPage, pageSize = pagination.itemsPerPage) => {
+    try {
+      const [userData, prospectsResponse, allCampaignsData] = await Promise.all([
         auth.getCurrentUser(),
-        // Request a larger page size to ensure newly created signups are included
-        Prospect.list({ page: 1, limit: 200 }),
+        Prospect.list({ page, limit: pageSize }),
         Campaign.list()
       ]);
       setUser(userData);
@@ -122,46 +218,29 @@ export default function AdminProspects() {
       // Filter out archived campaigns for prospect assignment
       const campaignsData = allCampaignsData.filter(campaign => campaign.status !== 'archived');
       
-      // Normalize and sort by created_date desc
-      const normalized = (prospectsData || []).map(normalizeProspect).sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
+      // Handle paginated response
+      const prospectsData = prospectsResponse.prospects || prospectsResponse || [];
+      const paginationData = prospectsResponse.pagination || {
+        currentPage: 1,
+        totalPages: 1,
+        totalItems: prospectsData.length,
+        itemsPerPage: pageSize
+      };
+      
+      // Normalize prospects (they're already sorted by backend)
+      const normalized = (prospectsData || []).map(normalizeProspect);
       setProspects(normalized);
       setCampaigns(campaignsData || []);
+      setPagination(paginationData);
     } catch (error) {
       console.error('Error loading prospects:', error);
     }
     setLoading(false);
   };
 
-  const getFilteredProspects = () => {
-    let filtered = prospects.slice();
-
-    if (user?.role === 'agent') {
-      filtered = filtered.filter(p => p.assigned_agent_id === user.id);
-    }
-
-    if (filters.search) {
-      const search = filters.search.toLowerCase();
-      filtered = filtered.filter(p => 
-        p.name?.toLowerCase().includes(search) ||
-        p.phone?.includes(search) ||
-        p.email?.toLowerCase().includes(search)
-      );
-    }
-
-    if (filters.status !== "all") {
-      filtered = filtered.filter(p => p.status === filters.status);
-    }
-
-    if (filters.campaign !== "all") {
-      filtered = filtered.filter(p => String(p.campaign_id) === String(filters.campaign));
-    }
-
-    if (filters.source !== "all") {
-      filtered = filtered.filter(p => p.source === filters.source);
-    }
-
-    return filtered;
-  };
+  // Server-side filtering is now handled in loadDataWithFilters
+  // prospects already contains the filtered and paginated results
+  const filteredProspects = prospects;
 
   const handleStatusUpdate = async (prospectId, newStatus) => {
     try {
@@ -184,7 +263,8 @@ export default function AdminProspects() {
   };
 
   const exportToCSV = () => {
-    const filteredProspects = getFilteredProspects();
+    // Note: This exports only the current page. For full export, we'd need a separate API endpoint
+    const filteredProspectsForExport = filteredProspects;
     const headers = [
       'Created Date',
       'Campaign',
@@ -199,7 +279,7 @@ export default function AdminProspects() {
       'Source'
     ];
 
-    const csvData = filteredProspects.map(p => {
+    const csvData = filteredProspectsForExport.map(p => {
       const campaign = campaigns.find(c => (c.id === p.campaign_id));
       return [
         format(new Date(p.created_date), 'dd/MM/yyyy HH:mm'),
@@ -229,8 +309,6 @@ export default function AdminProspects() {
     link.click();
     document.body.removeChild(link);
   };
-
-  const filteredProspects = getFilteredProspects();
 
   if (loading) {
     return (
@@ -267,21 +345,49 @@ export default function AdminProspects() {
 
         <Card className="shadow-lg">
           <CardHeader className="border-b border-gray-100">
-            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <Input
-                  placeholder="Search prospects..."
-                  value={filters.search}
-                  onChange={(e) => setFilters({...filters, search: e.target.value})}
-                  className="pl-10"
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <Input
+                    placeholder="Search prospects..."
+                    value={filters.search}
+                    onChange={(e) => setFilters({...filters, search: e.target.value})}
+                    className="pl-10"
+                  />
+                </div>
+                <ProspectFilters 
+                  filters={filters} 
+                  onFilterChange={setFilters}
+                  campaigns={campaigns}
                 />
               </div>
-              <ProspectFilters 
-                filters={filters} 
-                onFilterChange={setFilters}
-                campaigns={campaigns}
-              />
+              
+              {/* Pagination info and page size selector */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-sm text-gray-600">
+                <div className="flex items-center gap-2">
+                  <span>
+                    Showing <span className="font-semibold text-gray-900">{pagination.totalItems > 0 ? Math.min((pagination.currentPage - 1) * pagination.itemsPerPage + 1, pagination.totalItems) : 0}</span> to{' '}
+                    <span className="font-semibold text-gray-900">{Math.min(pagination.currentPage * pagination.itemsPerPage, pagination.totalItems)}</span> of{' '}
+                    <span className="font-semibold text-gray-900">{pagination.totalItems.toLocaleString()}</span> prospects
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-600">Show:</span>
+                  <Select value={String(pagination.itemsPerPage)} onValueChange={(value) => handlePageSizeChange(parseInt(value))}>
+                    <SelectTrigger className="w-20">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-gray-600">per page</span>
+                </div>
+              </div>
             </div>
           </CardHeader>
           
@@ -425,6 +531,148 @@ export default function AdminProspects() {
               </div>
             )}
           </CardContent>
+
+          {/* Pagination Controls */}
+          {pagination.totalItems > 0 && (
+            <div className="border-t border-gray-100 px-6 py-4 bg-gray-50">
+              <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
+                {/* Results info */}
+                <div className="text-sm text-gray-600 order-2 lg:order-1">
+                  Showing {Math.min((pagination.currentPage - 1) * pagination.itemsPerPage + 1, pagination.totalItems)} to {Math.min(pagination.currentPage * pagination.itemsPerPage, pagination.totalItems)} of {pagination.totalItems.toLocaleString()} prospects
+                </div>
+
+                {/* Page size selector */}
+                <div className="flex items-center gap-2 order-1 lg:order-2">
+                  <span className="text-sm text-gray-600">Show</span>
+                  <Select
+                    value={String(pagination.itemsPerPage)}
+                    onValueChange={(value) => handlePageSizeChange(parseInt(value))}
+                  >
+                    <SelectTrigger className="w-20">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-sm text-gray-600">per page</span>
+                </div>
+
+                {/* Pagination buttons */}
+                <div className="flex items-center gap-1 order-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePageChange(1)}
+                    disabled={pagination.currentPage === 1}
+                    className="hidden sm:flex"
+                  >
+                    <ChevronsLeft className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePageChange(pagination.currentPage - 1)}
+                    disabled={pagination.currentPage === 1}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    <span className="hidden sm:inline ml-1">Previous</span>
+                  </Button>
+
+                  {/* Page numbers */}
+                  <div className="hidden sm:flex items-center gap-1 mx-2">
+                    {(() => {
+                      const pages = [];
+                      const maxVisible = 5;
+                      let startPage = Math.max(1, pagination.currentPage - Math.floor(maxVisible / 2));
+                      let endPage = Math.min(pagination.totalPages, startPage + maxVisible - 1);
+                      
+                      if (endPage - startPage + 1 < maxVisible) {
+                        startPage = Math.max(1, endPage - maxVisible + 1);
+                      }
+
+                      if (startPage > 1) {
+                        pages.push(
+                          <Button
+                            key={1}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePageChange(1)}
+                            className="w-9"
+                          >
+                            1
+                          </Button>
+                        );
+                        if (startPage > 2) {
+                          pages.push(<span key="ellipsis1" className="px-2 text-gray-400">...</span>);
+                        }
+                      }
+
+                      for (let i = startPage; i <= endPage; i++) {
+                        pages.push(
+                          <Button
+                            key={i}
+                            variant={i === pagination.currentPage ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => handlePageChange(i)}
+                            className="w-9"
+                          >
+                            {i}
+                          </Button>
+                        );
+                      }
+
+                      if (endPage < pagination.totalPages) {
+                        if (endPage < pagination.totalPages - 1) {
+                          pages.push(<span key="ellipsis2" className="px-2 text-gray-400">...</span>);
+                        }
+                        pages.push(
+                          <Button
+                            key={pagination.totalPages}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePageChange(pagination.totalPages)}
+                            className="w-9"
+                          >
+                            {pagination.totalPages}
+                          </Button>
+                        );
+                      }
+
+                      return pages;
+                    })()}
+                  </div>
+
+                  {/* Mobile page indicator */}
+                  <div className="sm:hidden px-3 py-1 text-sm text-gray-600">
+                    Page {pagination.currentPage} of {pagination.totalPages}
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePageChange(pagination.currentPage + 1)}
+                    disabled={pagination.currentPage === pagination.totalPages}
+                  >
+                    <span className="hidden sm:inline mr-1">Next</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePageChange(pagination.totalPages)}
+                    disabled={pagination.currentPage === pagination.totalPages}
+                    className="hidden sm:flex"
+                  >
+                    <ChevronsRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </Card>
 
         <Dialog open={!!selectedProspect} onOpenChange={() => setSelectedProspect(null)}>
