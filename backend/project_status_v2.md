@@ -371,15 +371,15 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
   - pr: n/a
   - commit: 7549051
 
-### [2025-09-08 03:38 sgt] — phase b — note: ui changes moved to `frontend/UI_STATUS.md`
+### [2025-09-08 03:38 sgt] — phase b — note: ui changes moved to `docs/UI_STATUS.md`
 
 - branch: main
 - summary:
-  1. starting now, ui-only changes are logged in `frontend/UI_STATUS.md`; this backend log remains for backend/services infra
+  1. starting now, ui-only changes are logged in `docs/UI_STATUS.md`; this backend log remains for backend/services infra
 - changes:
-  1. created `frontend/UI_STATUS.md`; migrated recent ui entries there
+  1. created `docs/UI_STATUS.md`; migrated recent ui entries there
 - acceptance:
-  1. ui updates appear in `frontend/UI_STATUS.md`; backend/service updates continue here
+  1. ui updates appear in `docs/UI_STATUS.md`; backend/service updates continue here
 - notes:
   1. keeps backend log focused and ui iterations cleanly tracked
 - links:
@@ -467,7 +467,7 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - summary:
   1. admin campaign management page refreshed for usability (tabs, filters, grid/list, actions menu).
 - changes:
-  1. see `frontend/UI_STATUS.md` entry "admin campaigns ui redesign" for details.
+  1. see `docs/UI_STATUS.md` entry "admin campaigns ui redesign" for details.
 - acceptance:
   1. navigate to `/AdminCampaigns` and verify new controls and tabs; behavior matches ui log.
 - notes:
@@ -482,7 +482,7 @@ curl -s http://localhost:4000/api/leadgen/v1/qrcodes -H "authorization: bearer $
 - summary:
   1. admin users page upgraded with stats, lifecycle tabs, list/grid toggle, actions menu, and csv export.
 - changes:
-  1. see `frontend/UI_STATUS.md` entry "admin users ui enhancements" for details.
+  1. see `docs/UI_STATUS.md` entry "admin users ui enhancements" for details.
 - acceptance:
   1. navigate to `/AdminUsers` and verify new tabs, view toggle, and export.
 - notes:

@@ -15,11 +15,10 @@ const CustomerLogin = lazy(() => import('./Login'));
 const AdminLogin = lazy(() => import('./AdminLogin'));
 const GoogleCallback = lazy(() => import('./GoogleCallback'));
 const AcceptInvite = lazy(() => import('./AcceptInvite'));
-const ApiTest = lazy(() => import('./ApiTest'));
-const AuthTest = lazy(() => import('./AuthTest'));
 const Onboarding = lazy(() => import('./Onboarding'));
 const PendingApproval = lazy(() => import('./PendingApproval'));
 const ForgotPassword = lazy(() => import('./ForgotPassword'));
+const DevRoutes = lazy(() => import('../dev/DevRoutes'));
 
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const AdminProspects = lazy(() => import('./AdminProspects'));
@@ -68,8 +67,11 @@ function PagesContent() {
           <Route path="/auth/accept-invite" element={<AcceptInvite />} />
           <Route path="/Onboarding" element={<Onboarding />} />
           <Route path="/PendingApproval" element={<PendingApproval />} />
-          <Route path="/ApiTest" element={<ApiTest />} />
-          <Route path="/AuthTest" element={<AuthTest />} />
+
+          {/* Development routes */}
+          {import.meta.env.DEV && (
+            <Route path="/*" element={<DevRoutes />} />
+          )}
 
           {/* Protected Admin routes */}
           <Route path="/AdminDashboard" element={

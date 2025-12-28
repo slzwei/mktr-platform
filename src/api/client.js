@@ -53,16 +53,11 @@ class APIClient {
   async request(endpoint, options = {}) {
     const url = `${this.baseURL}${endpoint}`;
     const token = this.getToken();
-    
-    // Debug authentication
-    if (endpoint.includes('/fleet/cars') && options.method === 'POST') {
-      console.log('🔍 API Request Debug:');
-      console.log('  Endpoint:', endpoint);
-      console.log('  Token exists:', !!token);
-      console.log('  Token length:', token?.length || 0);
-      console.log('  Token preview:', token?.substring(0, 20) + '...' || 'No token');
-      console.log('  Request body:', options.body);
-    }
+
+    // Debug authentication - removed for security
+    // if (endpoint.includes('/fleet/cars') && options.method === 'POST') {
+    //   console.debug('🔍 API Request Debug: ' + endpoint);
+    // }
 
     const config = {
       method: 'GET',
@@ -82,18 +77,18 @@ class APIClient {
 
     try {
       const response = await fetch(url, config);
-      
+
       // Handle authentication errors
       if (response.status === 401) {
         this.setToken(null);
         currentUser = null;
         localStorage.removeItem(STORAGE_KEYS.USER);
-        
+
         if (typeof window !== 'undefined') {
           console.log('🔒 API: 401 Unauthorized - Dispatching global auth:unauthorized event');
           window.dispatchEvent(new Event('auth:unauthorized'));
         }
-        
+
         throw new Error('Authentication required');
       }
 
@@ -108,15 +103,15 @@ class APIClient {
           statusText: response.statusText,
           data: data
         });
-        
+
         // For validation errors, include the validation details
         if (response.status === 400 && isJson && (data.details || data.errors)) {
           console.error('Validation Details:', data.details);
           console.error('Validation Errors:', data.errors);
-          
+
           // Handle different validation detail formats
           let validationErrors = 'Invalid request data';
-          
+
           // Check errors field first (where actual validation details are)
           if (data.errors && Array.isArray(data.errors)) {
             validationErrors = data.errors.map(err => `${err.field}: ${err.message}`).join(', ');
@@ -127,10 +122,10 @@ class APIClient {
           } else if (data.details?.message) {
             validationErrors = data.details.message;
           }
-          
+
           throw new Error(`Validation Error: ${validationErrors}`);
         }
-        
+
         // For non-JSON responses (e.g., rate limits returning plain text), bubble up text
         if (!isJson) {
           throw new Error(typeof data === 'string' ? data : `HTTP ${response.status}: ${response.statusText}`);
@@ -186,7 +181,7 @@ class APIClient {
 
     try {
       const response = await fetch(url, config);
-      
+
       if (response.status === 401) {
         this.setToken(null);
         throw new Error('Authentication required');
@@ -216,13 +211,13 @@ export const auth = {
   // Login user
   async login(email, password) {
     const response = await apiClient.post('/auth/login', { email, password });
-    
+
     if (response.success && response.data.token) {
       apiClient.setToken(response.data.token);
       currentUser = response.data.user;
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
     }
-    
+
     return response;
   },
 
@@ -231,7 +226,7 @@ export const auth = {
     console.log('🔍 AUTH: Sending Google credential to backend...');
     const response = await apiClient.post('/auth/google', { credential });
     console.log('🔍 AUTH: Backend response:', response);
-    
+
     if (response.success && response.data.token) {
       console.log('✅ AUTH: Google login successful, storing token...');
       apiClient.setToken(response.data.token);
@@ -241,20 +236,20 @@ export const auth = {
     } else {
       console.error('❌ AUTH: Google login failed:', response);
     }
-    
+
     return response;
   },
 
   // Register user
   async register(userData) {
     const response = await apiClient.post('/auth/register', userData);
-    
+
     if (response.success && response.data.token) {
       apiClient.setToken(response.data.token);
       currentUser = response.data.user;
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
     }
-    
+
     return response;
   },
 
@@ -274,15 +269,15 @@ export const auth = {
   async getCurrentUser(forceRefresh = false) {
     console.log('🔍 AUTH: Getting current user...');
     console.log('🔍 AUTH: Current user in memory:', currentUser);
-    
+
     if (currentUser && !forceRefresh) {
       console.log('✅ AUTH: Returning cached user:', currentUser);
       return currentUser;
     }
-    
+
     const stored = localStorage.getItem(STORAGE_KEYS.USER);
     console.log('🔍 AUTH: Stored user in localStorage:', stored);
-    
+
     if (stored && !forceRefresh) {
       currentUser = JSON.parse(stored);
       console.log('✅ AUTH: Returning stored user:', currentUser);
@@ -293,7 +288,7 @@ export const auth = {
     try {
       const response = await apiClient.get('/auth/profile');
       console.log('🔍 AUTH: Backend response:', response);
-      
+
       if (response.success) {
         currentUser = response.data.user;
         localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
@@ -303,7 +298,7 @@ export const auth = {
     } catch (error) {
       console.error('❌ AUTH: Failed to get current user:', error);
     }
-    
+
     console.log('❌ AUTH: No user found, returning null');
     return null;
   },
@@ -311,12 +306,12 @@ export const auth = {
   // Update profile
   async updateProfile(updates) {
     const response = await apiClient.put('/auth/profile', updates);
-    
+
     if (response.success) {
       currentUser = { ...currentUser, ...updates };
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
     }
-    
+
     return response;
   },
 
@@ -329,7 +324,7 @@ export const auth = {
   setCurrentUser(user) {
     currentUser = user;
     console.log('🔧 AUTH: Current user set to:', user);
-    
+
     // Also ensure API client has the latest token
     const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
     if (token && !apiClient.getToken()) {
@@ -350,7 +345,7 @@ export const auth = {
       if (typeof window !== 'undefined' && window.google?.accounts?.id) {
         window.google.accounts.id.disableAutoSelect();
       }
-    } catch (_) {}
+    } catch (_) { }
   },
 
   // Check if user is authenticated
@@ -636,7 +631,7 @@ export const integrations = {
     async UploadFile(file, type = 'general') {
       const formData = new FormData();
       formData.append('file', file);
-      
+
       const response = await apiClient.upload(`/uploads/single?type=${type}`, formData);
       return response.data;
     },
