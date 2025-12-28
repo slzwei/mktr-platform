@@ -3,7 +3,6 @@ import { User } from "@/api/entities";
 import { Campaign } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import ArrowLeft from "lucide-react/icons/arrow-left";
-import Save from "lucide-react/icons/save";
 import Eye from "lucide-react/icons/eye";
 import AlertTriangle from "lucide-react/icons/alert-triangle";
 import { toast } from "sonner";
@@ -15,8 +14,6 @@ export default function AdminCampaignDesigner() {
   const [user, setUser] = useState(null);
   const [campaign, setCampaign] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [previewMode, setPreviewMode] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -29,7 +26,7 @@ export default function AdminCampaignDesigner() {
 
       const params = new URLSearchParams(window.location.search);
       const campaignId = params.get('campaign_id');
-      
+
       if (campaignId) {
         const campaignData = await Campaign.get(campaignId);
         if (campaignData) {
@@ -45,23 +42,21 @@ export default function AdminCampaignDesigner() {
 
   const handleSave = async (designData) => {
     if (!campaign) return;
-    
-    setSaving(true);
+
     try {
       console.log('Saving design data to campaign:', designData);
       await Campaign.update(campaign.id, {
         design_config: designData
       });
-      
+
       // Reload the entire campaign data to ensure we get the latest
       await loadData();
-      
+
       toast.success("Design saved successfully!");
     } catch (error) {
       console.error('Error saving design:', error);
       toast.error("Failed to save design");
     }
-    setSaving(false);
   };
 
   const handlePreview = async () => {
@@ -125,14 +120,7 @@ export default function AdminCampaignDesigner() {
             <Eye className="w-4 h-4 mr-2" />
             Preview
           </Button>
-          <Button
-            onClick={() => handleSave(campaign.design_config)} // Pass current design_config to handleSave if called directly from button
-            disabled={!campaign || saving}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            <Save className="w-4 h-4 mr-2" />
-            {saving ? 'Saving...' : 'Save Design'}
-          </Button>
+
         </div>
       </div>
 
@@ -141,7 +129,6 @@ export default function AdminCampaignDesigner() {
           key={campaign.id} // Force re-render when campaign changes
           campaign={campaign}
           onSave={handleSave}
-          previewMode={previewMode}
         />
       ) : (
         <div className="flex items-center justify-center h-96">
