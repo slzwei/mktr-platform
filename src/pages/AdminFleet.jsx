@@ -66,10 +66,14 @@ export default function AdminFleet() {
       setUser(userData);
 
       let fetchedCars = [];
-      const [fetchedDrivers, fetchedFleetOwners] = await Promise.all([
+      const [driversData, fleetOwnersData] = await Promise.all([
         User.filter({ role: 'driver_partner' }),
-        FleetOwner.list('-created_date')
+        FleetOwner.list({ sort: '-created_date', limit: 100 })
       ]);
+
+      const fetchedDrivers = Array.isArray(driversData) ? driversData : (driversData.users || []);
+      const fetchedFleetOwners = Array.isArray(fleetOwnersData) ? fleetOwnersData : (fleetOwnersData.fleetOwners || []);
+
       // Fetch user accounts for fleet owners to read approval status
       try {
         const foUsersResp = await apiClient.get('/users', { role: 'fleet_owner', page: 1, limit: 1000 });
@@ -79,15 +83,18 @@ export default function AdminFleet() {
       }
 
       if (userData.role === 'admin') {
-        fetchedCars = await Car.list('-created_date');
+        const carsData = await Car.list({ sort: '-created_date', limit: 500 });
+        fetchedCars = Array.isArray(carsData) ? carsData : (carsData.cars || []);
       } else if (userData.role === 'fleet_owner') {
         // For fleet owners, we need to find cars that belong to their fleet owner record
         const userFleetOwner = fetchedFleetOwners.find(fo => fo.email === userData.email);
         if (userFleetOwner) {
-          fetchedCars = await Car.filter({ fleet_owner_id: userFleetOwner.id });
+          const carsData = await Car.filter({ fleet_owner_id: userFleetOwner.id });
+          fetchedCars = Array.isArray(carsData) ? carsData : (carsData.cars || []);
         }
       } else if (userData.role === 'driver_partner') {
-        fetchedCars = await Car.filter({ current_driver_id: userData.id });
+        const carsData = await Car.filter({ current_driver_id: userData.id });
+        fetchedCars = Array.isArray(carsData) ? carsData : (carsData.cars || []);
       }
 
       setCars(fetchedCars);
@@ -135,12 +142,12 @@ export default function AdminFleet() {
             throw new Error("Fleet owner profile not found. Please contact administrator.");
           }
         }
-        
+
         // Validate required fields for admin users
         if (user.role === 'admin' && !dataToCreate.fleet_owner_id) {
           throw new Error("Please select a fleet owner for this vehicle.");
         }
-        
+
         console.log('📝 Creating car with data:', dataToCreate);
         console.log('📝 Fleet owner ID being sent:', dataToCreate.fleet_owner_id);
         console.log('📝 All form data:', formData);
@@ -470,34 +477,34 @@ export default function AdminFleet() {
                           </TableCell>
                           <TableCell className="text-right pr-4">
                             <div className="flex items-center justify-end gap-2">
-                              {(user?.role === 'admin' || 
+                              {(user?.role === 'admin' ||
                                 (user?.role === 'fleet_owner' && fleetOwners.find(fo => fo.email === user.email)?.id === car.fleet_owner_id)) && (
-                                <>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleOpenAssignDriver(car)}
-                                    className="w-32 justify-center whitespace-nowrap"
-                                  >
-                                    {car.current_driver_id ? 'Reassign' : 'Assign Driver'}
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleOpenCarForm(car)}
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleDeleteCar(car.id)}
-                                    className="text-red-600 hover:text-red-800"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                </>
-                              )}
+                                  <>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleOpenAssignDriver(car)}
+                                      className="w-32 justify-center whitespace-nowrap"
+                                    >
+                                      {car.current_driver_id ? 'Reassign' : 'Assign Driver'}
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleOpenCarForm(car)}
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleDeleteCar(car.id)}
+                                      className="text-red-600 hover:text-red-800"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </>
+                                )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -589,7 +596,7 @@ export default function AdminFleet() {
                                     </div>
                                   </div>
                                 </TableCell>
-                                
+
                                 <TableCell>
                                   <div className="space-y-1">
                                     <div className="flex items-center gap-2 text-sm">
@@ -628,7 +635,7 @@ export default function AdminFleet() {
                                 </TableCell>
 
                                 <TableCell>
-                                  <Badge 
+                                  <Badge
                                     variant={owner.status === 'active' ? 'default' : 'outline'}
                                     className={owner.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}
                                   >
@@ -648,7 +655,7 @@ export default function AdminFleet() {
                                             variant="ghost"
                                             size="sm"
                                             className="text-green-700 hover:text-green-900"
-                                            onClick={async () => { try { await User.setApprovalStatus(foUser.id, 'approved'); await loadData(); } catch(e) { console.error(e); } }}
+                                            onClick={async () => { try { await User.setApprovalStatus(foUser.id, 'approved'); await loadData(); } catch (e) { console.error(e); } }}
                                           >
                                             Approve
                                           </Button>
@@ -656,7 +663,7 @@ export default function AdminFleet() {
                                             variant="ghost"
                                             size="sm"
                                             className="text-red-700 hover:text-red-900"
-                                            onClick={async () => { try { await User.setApprovalStatus(foUser.id, 'rejected'); await loadData(); } catch(e) { console.error(e); } }}
+                                            onClick={async () => { try { await User.setApprovalStatus(foUser.id, 'rejected'); await loadData(); } catch (e) { console.error(e); } }}
                                           >
                                             Reject
                                           </Button>
@@ -770,7 +777,7 @@ export default function AdminFleet() {
                                     </div>
                                   </div>
                                 </TableCell>
-                                
+
                                 <TableCell>
                                   <div className="space-y-1">
                                     <div className="flex items-center gap-2 text-sm">
@@ -798,7 +805,7 @@ export default function AdminFleet() {
                                 </TableCell>
 
                                 <TableCell>
-                                  <Badge 
+                                  <Badge
                                     variant={assignedCar ? 'default' : 'outline'}
                                     className={assignedCar ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}
                                   >
@@ -812,7 +819,7 @@ export default function AdminFleet() {
                                         variant="ghost"
                                         size="sm"
                                         className="text-green-700 hover:text-green-900"
-                                        onClick={async () => { try { await User.setApprovalStatus(driver.id, 'approved'); await loadData(); } catch(e) { console.error(e); } }}
+                                        onClick={async () => { try { await User.setApprovalStatus(driver.id, 'approved'); await loadData(); } catch (e) { console.error(e); } }}
                                       >
                                         Approve
                                       </Button>
@@ -820,7 +827,7 @@ export default function AdminFleet() {
                                         variant="ghost"
                                         size="sm"
                                         className="text-red-700 hover:text-red-900"
-                                        onClick={async () => { try { await User.setApprovalStatus(driver.id, 'rejected'); await loadData(); } catch(e) { console.error(e); } }}
+                                        onClick={async () => { try { await User.setApprovalStatus(driver.id, 'rejected'); await loadData(); } catch (e) { console.error(e); } }}
                                       >
                                         Reject
                                       </Button>

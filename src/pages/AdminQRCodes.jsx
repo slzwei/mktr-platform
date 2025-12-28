@@ -59,22 +59,30 @@ export default function AdminQRCodes() {
     (async () => {
       setLoading(true);
       try {
-        const [userData, campaignsData, qrTagsData] = await Promise.all([
+        const [userData, campaignsData, qrTagsDataHelper] = await Promise.all([
           User.me(),
-          Campaign.list("-created_date"),
-          QrTag.list("-created_date"),
+          Campaign.list({ sort: "-created_date", limit: 100 }),
+          QrTag.list({ sort: "-created_date", limit: 500 }),
         ]);
         setUser(userData);
+
+        // Handle paginated responses
+        const campaignsList = Array.isArray(campaignsData) ? campaignsData : (campaignsData.campaigns || []);
+        const qrTagsList = Array.isArray(qrTagsDataHelper) ? qrTagsDataHelper : (qrTagsDataHelper.qrTags || []);
+
         // Filter out archived campaigns - only show active campaigns for QR management
-        const activeCampaigns = campaignsData.filter(campaign => campaign.status !== 'archived');
+        const activeCampaigns = campaignsList.filter(campaign => campaign.status !== 'archived');
         setCampaigns(activeCampaigns);
-        setAllQrTags(qrTagsData || []);
+        setAllQrTags(qrTagsList || []);
+
 
         // Load prospect counts for all tags
         try {
           const counts = {};
-          const allProspects = await Prospect.list();
-          (qrTagsData || []).forEach(qrTag => {
+          const prospectsResp = await Prospect.list({ limit: 1000 });
+          const allProspects = Array.isArray(prospectsResp) ? prospectsResp : (prospectsResp.prospects || []);
+
+          (qrTagsList || []).forEach(qrTag => {
             const count = allProspects.filter(p => p.qr_tag_id === qrTag.id || p.qrTagId === qrTag.id).length;
             counts[qrTag.id] = count;
           });
@@ -160,8 +168,9 @@ export default function AdminQRCodes() {
     try {
       await QrTag.delete(qrTag.id);
       // refresh lists
-      const refreshed = await QrTag.list("-created_date");
-      setAllQrTags(refreshed || []);
+      const refreshed = await QrTag.list({ sort: "-created_date", limit: 500 });
+      const refreshedList = Array.isArray(refreshed) ? refreshed : (refreshed.qrTags || []);
+      setAllQrTags(refreshedList || []);
     } catch (e) {
       console.error('Failed to delete QR tag:', e);
     }
@@ -171,12 +180,15 @@ export default function AdminQRCodes() {
   const refreshQrTables = async () => {
     setRefreshing(true);
     try {
-      const qrTagsData = await QrTag.list("-created_date");
-      setAllQrTags(qrTagsData || []);
+      const qrTagsData = await QrTag.list({ sort: "-created_date", limit: 500 });
+      const qrTagsList = Array.isArray(qrTagsData) ? qrTagsData : (qrTagsData.qrTags || []);
+      setAllQrTags(qrTagsList || []);
       try {
         const counts = {};
-        const allProspects = await Prospect.list();
-        (qrTagsData || []).forEach(qrTag => {
+        const prospectsResp = await Prospect.list({ limit: 1000 });
+        const allProspects = Array.isArray(prospectsResp) ? prospectsResp : (prospectsResp.prospects || []);
+
+        (qrTagsList || []).forEach(qrTag => {
           const count = allProspects.filter(p => p.qr_tag_id === qrTag.id || p.qrTagId === qrTag.id).length;
           counts[qrTag.id] = count;
         });

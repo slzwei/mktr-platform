@@ -152,7 +152,8 @@ export default function DriverDashboard() {
         const resp = await apiClient.get(`/dashboard/driver/scans`, { period: p });
         scans = resp?.data?.trend || [];
       } catch (_) {
-        const qrList = await entities.QrTag.list({});
+        const qrData = await entities.QrTag.list({});
+        const qrList = Array.isArray(qrData) ? qrData : (qrData.qrTags || []);
         const mine = (qrList || []).filter((q) => String(q.ownerUserId) === String(user.id));
         const map = new Map();
         const now = new Date();
@@ -181,7 +182,7 @@ export default function DriverDashboard() {
               if (map.has(day)) map.set(day, (map.get(day) || 0) + (cnt || 0));
             }
           }
-          scans = Array.from(map.entries()).map(([day, count]) => ({ label: `${day.slice(8)}-${day.slice(5,7)}`, count }));
+          scans = Array.from(map.entries()).map(([day, count]) => ({ label: `${day.slice(8)}-${day.slice(5, 7)}`, count }));
         }
       }
       setScanTrend(scans);
@@ -210,7 +211,7 @@ export default function DriverDashboard() {
             const key = new Date(c.created_date).toISOString().split('T')[0];
             if (map.has(key)) map.set(key, (map.get(key) || 0) + (Number(c.amount_driver) || 0));
           }
-          setEarnTrend(Array.from(map.entries()).map(([day, amount]) => ({ label: `${day.slice(8)}-${day.slice(5,7)}`, amount })));
+          setEarnTrend(Array.from(map.entries()).map(([day, amount]) => ({ label: `${day.slice(8)}-${day.slice(5, 7)}`, amount })));
         }
       } catch (_) {
         setEarnTrend([]);
@@ -230,7 +231,7 @@ export default function DriverDashboard() {
       const totalEarned = lifetimeCommissions.reduce((sum, c) => sum + (Number(c.amount_driver) || 0), 0);
       setLifetimeEarnings(totalEarned);
       setLifetimeScans(scansResp?.data?.total || 0);
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const loadAssignedCar = async () => {
@@ -267,12 +268,12 @@ export default function DriverDashboard() {
         setCarCustomMake('');
         setCarCustomModel('');
       }
-    } catch (_) {}
+    } catch (_) { }
   };
 
   // Plate validation — align with onboarding rules (EA–EZ or SB–SN + 1–4 digits + letter)
-  const LETTERS_NO_IO = ['A','B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z'];
-  const SERIES_SECOND_LETTERS = ['B','C','D','F','G','J','K','L','M','N'];
+  const LETTERS_NO_IO = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+  const SERIES_SECOND_LETTERS = ['B', 'C', 'D', 'F', 'G', 'J', 'K', 'L', 'M', 'N'];
   const ALLOWED_PREFIXES = useMemo(() => new Set([
     ...LETTERS_NO_IO.map((l) => `E${l}`),
     ...SERIES_SECOND_LETTERS.flatMap((sec) => LETTERS_NO_IO.map((third) => `S${sec}${third}`))
@@ -327,13 +328,13 @@ export default function DriverDashboard() {
   const displayPhone = (value) => {
     const digits = (value || '').replace(/\D/g, '');
     if (digits.length <= 4) return digits;
-    return `${digits.slice(0,4)} ${digits.slice(4,8)}`;
+    return `${digits.slice(0, 4)} ${digits.slice(4, 8)}`;
   };
 
   const handlePhoneChange = (value) => {
     let digits = (value || '').replace(/\D/g, '');
     if (digits.startsWith('65') && digits.length > 8) digits = digits.slice(2);
-    setPhone(digits.slice(0,8));
+    setPhone(digits.slice(0, 8));
   };
 
   const getFullPhone = () => `+65${phone}`;
@@ -344,7 +345,7 @@ export default function DriverDashboard() {
       return;
     }
     const first = phone[0];
-    if (!['3','6','8','9'].includes(first)) {
+    if (!['3', '6', '8', '9'].includes(first)) {
       setErrorMsg('Invalid number. Must start with 3, 6, 8, or 9.');
       return;
     }
@@ -411,7 +412,7 @@ export default function DriverDashboard() {
       }
       // Require phone verified if phone differs from user's original
       const originalRaw = (user?.phone || '').replace(/\D/g, '');
-      const originalLocal = originalRaw.startsWith('65') ? originalRaw.slice(2,10) : originalRaw.slice(0,8);
+      const originalLocal = originalRaw.startsWith('65') ? originalRaw.slice(2, 10) : originalRaw.slice(0, 8);
       const phoneChanged = phone && phone !== originalLocal;
       if (phoneChanged && otpState !== 'verified') {
         setErrorMsg('Please verify your new phone number.');
@@ -509,8 +510,8 @@ export default function DriverDashboard() {
     for (let i = 0; i < 7; i++) sum += digits[i] * weights[i];
     if (prefix === 'T' || prefix === 'G') sum += 4; // Adjustment for T/G
     const remainder = sum % 11;
-    const mapST = ['J','Z','I','H','G','F','E','D','C','B','A'];
-    const mapFG = ['X','W','U','T','R','Q','P','N','M','L','K'];
+    const mapST = ['J', 'Z', 'I', 'H', 'G', 'F', 'E', 'D', 'C', 'B', 'A'];
+    const mapFG = ['X', 'W', 'U', 'T', 'R', 'Q', 'P', 'N', 'M', 'L', 'K'];
     const mapping = (prefix === 'S' || prefix === 'T') ? mapST : mapFG; // Treat M like F/G
     return mapping[remainder] === suffix;
   };
@@ -520,13 +521,13 @@ export default function DriverDashboard() {
     const digits = (value || '').replace(/\D/g, '');
     const local = digits.startsWith('65') ? digits.slice(2, 10) : digits.slice(0, 8);
     if (local.length <= 4) return local;
-    return `${local.slice(0,4)} ${local.slice(4,8)}`;
+    return `${local.slice(0, 4)} ${local.slice(4, 8)}`;
   };
 
   const handlePaynowPhoneChange = (value) => {
     let digits = (value || '').replace(/\D/g, '');
     if (digits.startsWith('65') && digits.length > 8) digits = digits.slice(2);
-    const local8 = digits.slice(0,8);
+    const local8 = digits.slice(0, 8);
     setPaynowValue(local8);
     if (local8.length > 0 && local8.length !== 8) setPaynowError('Enter 8 digits'); else setPaynowError('');
   };
@@ -600,221 +601,221 @@ export default function DriverDashboard() {
                 <CardTitle className="text-lg">Profile</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-xs font-medium">Email</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                    <Input
-                      type="email"
-                      className={`pl-7 h-8 text-sm ${emailError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-                      value={email}
-                      onChange={(e)=>{ const v=e.target.value; setEmail(v); setEmailError(v && !isValidEmail(v) ? 'Please enter a valid email address' : ''); }}
-                      onBlur={(e)=>{ const v=e.target.value; setEmailError(v && !isValidEmail(v) ? 'Please enter a valid email address' : ''); }}
-                      disabled
-                    />
-                    <div className="text-xs text-gray-500 mt-1">Email is linked to Google and cannot be changed.</div>
-                  </div>
-                  {emailError && (
-                    <div className="text-xs text-red-600 mt-1">{emailError}</div>
-                  )}
-                </div>
-                <div>
-                  <Label className="text-xs font-medium">Contact Number</Label>
-                  <div className="flex items-center gap-1">
-                    <div className="relative flex-grow">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-700 text-sm whitespace-nowrap">🇸🇬 +65</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs font-medium">Email</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
                       <Input
-                        type="tel"
-                        placeholder="9123 4567"
-                        className="pl-16 pr-24 h-8 text-sm"
-                        value={displayPhone(phone)}
-                        onChange={(e)=>handlePhoneChange(e.target.value)}
-                        disabled={otpState !== 'idle'}
-                        maxLength={9}
+                        type="email"
+                        className={`pl-7 h-8 text-sm ${emailError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                        value={email}
+                        onChange={(e) => { const v = e.target.value; setEmail(v); setEmailError(v && !isValidEmail(v) ? 'Please enter a valid email address' : ''); }}
+                        onBlur={(e) => { const v = e.target.value; setEmailError(v && !isValidEmail(v) ? 'Please enter a valid email address' : ''); }}
+                        disabled
                       />
+                      <div className="text-xs text-gray-500 mt-1">Email is linked to Google and cannot be changed.</div>
+                    </div>
+                    {emailError && (
+                      <div className="text-xs text-red-600 mt-1">{emailError}</div>
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium">Contact Number</Label>
+                    <div className="flex items-center gap-1">
+                      <div className="relative flex-grow">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-700 text-sm whitespace-nowrap">🇸🇬 +65</span>
+                        <Input
+                          type="tel"
+                          placeholder="9123 4567"
+                          className="pl-16 pr-24 h-8 text-sm"
+                          value={displayPhone(phone)}
+                          onChange={(e) => handlePhoneChange(e.target.value)}
+                          disabled={otpState !== 'idle'}
+                          maxLength={9}
+                        />
+                        {(() => {
+                          const originalRaw = (user?.phone || '').replace(/\D/g, '');
+                          const originalLocal = originalRaw.startsWith('65') ? originalRaw.slice(2, 10) : originalRaw.slice(0, 8);
+                          const phoneChanged = (phone || '') !== (originalLocal || '');
+                          const showVerified = (!phoneChanged && otpState === 'idle') || otpState === 'verified';
+                          return showVerified ? (
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded px-2 h-6 text-[11px]">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Verified</span>
+                            </div>
+                          ) : null;
+                        })()}
+                      </div>
                       {(() => {
                         const originalRaw = (user?.phone || '').replace(/\D/g, '');
                         const originalLocal = originalRaw.startsWith('65') ? originalRaw.slice(2, 10) : originalRaw.slice(0, 8);
                         const phoneChanged = (phone || '') !== (originalLocal || '');
-                        const showVerified = (!phoneChanged && otpState === 'idle') || otpState === 'verified';
-                        return showVerified ? (
-                          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded px-2 h-6 text-[11px]">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Verified</span>
-                          </div>
-                        ) : null;
+                        if (otpState === 'idle' && phoneChanged) {
+                          return (
+                            <motion.div initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
+                              <Button type="button" onClick={handleSendOtp} disabled={loadingKind === 'sending' || phone.length !== 8} className="w-28 h-8 bg-black hover:bg-gray-800 text-white font-medium text-sm">
+                                {loadingKind === 'sending' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify'}
+                              </Button>
+                            </motion.div>
+                          );
+                        }
+                        return null;
                       })()}
+                      {otpState === 'verified' && (
+                        <div className="flex items-center justify-center gap-2 text-white font-medium text-sm w-28 h-8 bg-green-500 rounded-md">
+                          <CheckCircle2 className="w-5 h-5" />
+                          <span>OK</span>
+                        </div>
+                      )}
                     </div>
-                    {(() => {
-                      const originalRaw = (user?.phone || '').replace(/\D/g, '');
-                      const originalLocal = originalRaw.startsWith('65') ? originalRaw.slice(2, 10) : originalRaw.slice(0, 8);
-                      const phoneChanged = (phone || '') !== (originalLocal || '');
-                      if (otpState === 'idle' && phoneChanged) {
-                        return (
-                          <motion.div initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
-                            <Button type="button" onClick={handleSendOtp} disabled={loadingKind === 'sending' || phone.length !== 8} className="w-28 h-8 bg-black hover:bg-gray-800 text-white font-medium text-sm">
-                              {loadingKind === 'sending' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify'}
-                            </Button>
-                          </motion.div>
-                        );
-                      }
-                      return null;
-                    })()}
-                    {otpState === 'verified' && (
-                      <div className="flex items-center justify-center gap-2 text-white font-medium text-sm w-28 h-8 bg-green-500 rounded-md">
-                        <CheckCircle2 className="w-5 h-5" />
-                        <span>OK</span>
+                  </div>
+                </div>
+
+                {otpState === 'pending' && (
+                  <div className="space-y-2 p-3 bg-gray-50 rounded-lg border">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium text-gray-800">Enter Code</Label>
+                      <Button type="button" variant="ghost" size="sm" onClick={handleCancelOtp} className="text-gray-500 hover:text-gray-700 h-6 px-1">
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500 !-mt-1">Sent to +65 {displayPhone(phone)}</p>
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-grow">
+                        <ShieldCheck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                        <Input id="otp" type="tel" inputMode="numeric" autoComplete="one-time-code" placeholder="123456" className="pl-8 tracking-wider h-9 text-sm" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} />
+                      </div>
+                      <Button type="button" size="sm" onClick={handleVerifyOtp} disabled={loadingKind === 'verifying' || showSuccessTick} className={`h-9 px-4 text-sm w-28 transition-colors duration-300 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600' : ''}`}>
+                        {showSuccessTick ? <CheckCircle2 className="w-5 h-5 text-white" /> : (loadingKind === 'verifying' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm')}
+                      </Button>
+                    </div>
+                    <div className="text-center text-xs text-gray-500 pt-1">
+                      Didn't receive a code?{' '}
+                      <Button type="button" variant="link" size="sm" onClick={handleSendOtp} disabled={resendCooldown > 0} className="h-auto p-0 text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:text-gray-500 disabled:no-underline">
+                        {resendCooldown > 0 ? (resendCooldown > 60 ? `Wait ${Math.ceil(resendCooldown / 60)} min` : `Resend in ${resendCooldown}s`) : 'Resend now'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {errorMsg && (
+                  <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded border">
+                    <AlertCircle className="w-3 h-3" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs font-medium">Payout Method</Label>
+                    <Select value={payoutMethod} onValueChange={(v) => { setPayoutMethod(v); setPaynowValue(''); setBankName(''); setBankAccount(''); }}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select method" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="PayNow">PayNow</SelectItem>
+                        <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    {payoutMethod === 'PayNow' ? (
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium">PayNow Type</Label>
+                        <Select value={paynowType} onValueChange={(v) => { setPaynowType(v); setPaynowValue(''); }}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="UEN">UEN</SelectItem>
+                            <SelectItem value="Number">Phone Number</SelectItem>
+                            <SelectItem value="NRIC">NRIC</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {paynowType === 'Number' ? (
+                          <div>
+                            <Label className="text-xs font-medium">PayNow Number</Label>
+                            <div>
+                              <div className="relative h-8">
+                                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-gray-700 text-sm whitespace-nowrap">🇸🇬 +65</span>
+                                <Input
+                                  type="tel"
+                                  placeholder="9123 4567"
+                                  className={`pl-16 h-8 text-sm ${paynowError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                  value={displayPaynowPhone(paynowValue)}
+                                  onChange={(e) => handlePaynowPhoneChange(e.target.value)}
+                                  maxLength={9}
+                                />
+                              </div>
+                              {paynowError && (
+                                <div className="text-xs text-red-600 mt-1">{paynowError}</div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <Label className="text-xs font-medium">{paynowType === 'UEN' ? 'UEN' : 'NRIC'}</Label>
+                            <Input
+                              type="text"
+                              className={`w-full h-8 text-sm ${paynowType === 'NRIC' && nricError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                              placeholder={paynowType === 'UEN' ? 'e.g., 201912345Z' : 'e.g., S1234567A'}
+                              value={paynowValue}
+                              onChange={(e) => (paynowType === 'UEN' ? handleUENChange(e.target.value) : handleNRICChange(e.target.value))}
+                              maxLength={paynowType === 'UEN' ? 10 : 9}
+                            />
+                            {paynowType === 'NRIC' && nricError && (
+                              <div className="text-xs text-red-600 mt-1">{nricError}</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : payoutMethod === 'Bank Transfer' ? (
+                      <div className="grid grid-cols-1 gap-2">
+                        <div>
+                          <Label className="text-xs font-medium">Bank Name</Label>
+                          <Select value={bankName} onValueChange={(v) => setBankName(v)}>
+                            <SelectTrigger className="w-full h-8 text-sm">
+                              <SelectValue placeholder="Select Bank" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {BANK_OPTIONS.map((b) => (
+                                <SelectItem key={b} value={b}>{b}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label className="text-xs font-medium">Bank Account Number</Label>
+                          <Input
+                            type="text"
+                            className="w-full h-8 text-sm"
+                            inputMode="numeric"
+                            placeholder="Up to 20 digits (no dashes)"
+                            value={bankAccount}
+                            maxLength={20}
+                            onChange={(e) => {
+                              const digits = String(e.target.value || '').replace(/\D/g, '').slice(0, 20);
+                              setBankAccount(digits);
+                            }}
+                          />
+                          <div className="text-[10px] text-gray-500 mt-1">Up to 20 digits. Please remove any dashes.</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <Label className="text-xs font-medium">PayNow / Bank Details</Label>
+                        <Input type="text" className="w-full h-8 text-sm" placeholder="Select a payout method to enter details" disabled />
                       </div>
                     )}
                   </div>
                 </div>
-              </div>
 
-              {otpState === 'pending' && (
-                <div className="space-y-2 p-3 bg-gray-50 rounded-lg border">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium text-gray-800">Enter Code</Label>
-                    <Button type="button" variant="ghost" size="sm" onClick={handleCancelOtp} className="text-gray-500 hover:text-gray-700 h-6 px-1">
-                      <X className="w-3 h-3" />
-                    </Button>
-                  </div>
-                  <p className="text-xs text-gray-500 !-mt-1">Sent to +65 {displayPhone(phone)}</p>
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-grow">
-                      <ShieldCheck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                      <Input id="otp" type="tel" inputMode="numeric" autoComplete="one-time-code" placeholder="123456" className="pl-8 tracking-wider h-9 text-sm" maxLength={6} value={otp} onChange={(e)=>setOtp(e.target.value.replace(/\D/g,''))} />
-                    </div>
-                    <Button type="button" size="sm" onClick={handleVerifyOtp} disabled={loadingKind === 'verifying' || showSuccessTick} className={`h-9 px-4 text-sm w-28 transition-colors duration-300 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600' : ''}`}>
-                      {showSuccessTick ? <CheckCircle2 className="w-5 h-5 text-white" /> : (loadingKind === 'verifying' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm')}
-                    </Button>
-                  </div>
-                  <div className="text-center text-xs text-gray-500 pt-1">
-                    Didn't receive a code?{' '}
-                    <Button type="button" variant="link" size="sm" onClick={handleSendOtp} disabled={resendCooldown > 0} className="h-auto p-0 text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:text-gray-500 disabled:no-underline">
-                      {resendCooldown > 0 ? (resendCooldown > 60 ? `Wait ${Math.ceil(resendCooldown/60)} min` : `Resend in ${resendCooldown}s`) : 'Resend now'}
-                    </Button>
-                  </div>
+                <div className="pt-2">
+                  <Button onClick={handleUpdateProfile} disabled={loadingKind === 'updating'} className="bg-black hover:bg-gray-800">
+                    {loadingKind === 'updating' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Update'}
+                  </Button>
                 </div>
-              )}
-
-              {errorMsg && (
-                <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded border">
-                  <AlertCircle className="w-3 h-3" />
-                  <span>{errorMsg}</span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-xs font-medium">Payout Method</Label>
-                  <Select value={payoutMethod} onValueChange={(v)=>{ setPayoutMethod(v); setPaynowValue(''); setBankName(''); setBankAccount(''); }}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select method" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PayNow">PayNow</SelectItem>
-                      <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  {payoutMethod === 'PayNow' ? (
-                    <div className="space-y-2">
-                      <Label className="text-xs font-medium">PayNow Type</Label>
-                      <Select value={paynowType} onValueChange={(v)=>{ setPaynowType(v); setPaynowValue(''); }}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="UEN">UEN</SelectItem>
-                          <SelectItem value="Number">Phone Number</SelectItem>
-                          <SelectItem value="NRIC">NRIC</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {paynowType === 'Number' ? (
-                        <div>
-                          <Label className="text-xs font-medium">PayNow Number</Label>
-                          <div>
-                            <div className="relative h-8">
-                              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-gray-700 text-sm whitespace-nowrap">🇸🇬 +65</span>
-                              <Input
-                                type="tel"
-                                placeholder="9123 4567"
-                                className={`pl-16 h-8 text-sm ${paynowError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-                                value={displayPaynowPhone(paynowValue)}
-                                onChange={(e)=>handlePaynowPhoneChange(e.target.value)}
-                                maxLength={9}
-                              />
-                            </div>
-                            {paynowError && (
-                              <div className="text-xs text-red-600 mt-1">{paynowError}</div>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <Label className="text-xs font-medium">{paynowType === 'UEN' ? 'UEN' : 'NRIC'}</Label>
-                          <Input
-                            type="text"
-                            className={`w-full h-8 text-sm ${paynowType === 'NRIC' && nricError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-                            placeholder={paynowType === 'UEN' ? 'e.g., 201912345Z' : 'e.g., S1234567A'}
-                            value={paynowValue}
-                            onChange={(e)=> (paynowType === 'UEN' ? handleUENChange(e.target.value) : handleNRICChange(e.target.value))}
-                            maxLength={paynowType === 'UEN' ? 10 : 9}
-                          />
-                          {paynowType === 'NRIC' && nricError && (
-                            <div className="text-xs text-red-600 mt-1">{nricError}</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ) : payoutMethod === 'Bank Transfer' ? (
-                    <div className="grid grid-cols-1 gap-2">
-                      <div>
-                        <Label className="text-xs font-medium">Bank Name</Label>
-                        <Select value={bankName} onValueChange={(v)=>setBankName(v)}>
-                          <SelectTrigger className="w-full h-8 text-sm">
-                            <SelectValue placeholder="Select Bank" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {BANK_OPTIONS.map((b) => (
-                              <SelectItem key={b} value={b}>{b}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label className="text-xs font-medium">Bank Account Number</Label>
-                        <Input
-                          type="text"
-                          className="w-full h-8 text-sm"
-                          inputMode="numeric"
-                          placeholder="Up to 20 digits (no dashes)"
-                          value={bankAccount}
-                          maxLength={20}
-                          onChange={(e)=>{
-                            const digits = String(e.target.value || '').replace(/\D/g,'').slice(0,20);
-                            setBankAccount(digits);
-                          }}
-                        />
-                        <div className="text-[10px] text-gray-500 mt-1">Up to 20 digits. Please remove any dashes.</div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <Label className="text-xs font-medium">PayNow / Bank Details</Label>
-                      <Input type="text" className="w-full h-8 text-sm" placeholder="Select a payout method to enter details" disabled />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <Button onClick={handleUpdateProfile} disabled={loadingKind === 'updating'} className="bg-black hover:bg-gray-800">
-                  {loadingKind === 'updating' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Update'}
-                </Button>
-              </div>
               </CardContent>
             </Card>
 
@@ -832,15 +833,15 @@ export default function DriverDashboard() {
                       <Input
                         className={`h-8 text-sm ${carErrors.plate ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
                         value={carPlate}
-                        onChange={(e)=>{
+                        onChange={(e) => {
                           const v = formatPlateInputToStrict(e.target.value);
                           setCarPlate(v);
                           if (v.length === 0) {
-                            setCarErrors(prev=>({ ...prev, plate: undefined }));
+                            setCarErrors(prev => ({ ...prev, plate: undefined }));
                           } else if (!isValidAllowedPlateFormat(v)) {
-                            setCarErrors(prev=>({ ...prev, plate: 'Format: EA–EZ or SB–SN + 1–4 digits + letter' }));
+                            setCarErrors(prev => ({ ...prev, plate: 'Format: EA–EZ or SB–SN + 1–4 digits + letter' }));
                           } else {
-                            setCarErrors(prev=>({ ...prev, plate: undefined }));
+                            setCarErrors(prev => ({ ...prev, plate: undefined }));
                           }
                         }}
                         placeholder="e.g., SGP1234A"
@@ -852,7 +853,7 @@ export default function DriverDashboard() {
                       <select
                         className={`w-full border rounded h-8 text-sm px-2 ${carErrors.make ? 'border-red-500' : ''}`}
                         value={carMake}
-                        onChange={(e)=>{ const val=e.target.value; setCarMake(val); setCarErrors(prev=>({ ...prev, make: undefined, customMake: undefined, model: undefined, customModel: undefined })); if (val !== 'Other') { setCarModel(''); setCarCustomMake(''); } }}
+                        onChange={(e) => { const val = e.target.value; setCarMake(val); setCarErrors(prev => ({ ...prev, make: undefined, customMake: undefined, model: undefined, customModel: undefined })); if (val !== 'Other') { setCarModel(''); setCarCustomMake(''); } }}
                       >
                         <option value="" disabled>Select Make</option>
                         {Object.keys(makesToModels).sort().map(m => (
@@ -862,7 +863,7 @@ export default function DriverDashboard() {
                       </select>
                       {carErrors.make && <div className="text-xs text-red-600 mt-1">{carErrors.make}</div>}
                       {carMake === 'Other' && (
-                        <Input className={`h-8 mt-2 text-sm ${carErrors.customMake ? 'border-red-500' : ''}`} placeholder="Enter make" value={carCustomMake} onChange={(e)=>{ setCarCustomMake(e.target.value); if (carErrors.customMake) setCarErrors(prev=>({ ...prev, customMake: undefined })); }} />
+                        <Input className={`h-8 mt-2 text-sm ${carErrors.customMake ? 'border-red-500' : ''}`} placeholder="Enter make" value={carCustomMake} onChange={(e) => { setCarCustomMake(e.target.value); if (carErrors.customMake) setCarErrors(prev => ({ ...prev, customMake: undefined })); }} />
                       )}
                       {carErrors.customMake && <div className="text-xs text-red-600 mt-1">{carErrors.customMake}</div>}
                     </div>
@@ -870,7 +871,7 @@ export default function DriverDashboard() {
                       <Label className="text-xs font-medium">Model</Label>
                       {carMake === 'Other' ? (
                         <>
-                          <Input className={`h-8 text-sm ${carErrors.customModel ? 'border-red-500' : ''}`} placeholder="Enter model" value={carCustomModel} onChange={(e)=>{ setCarCustomModel(e.target.value); if (carErrors.customModel) setCarErrors(prev=>({ ...prev, customModel: undefined })); }} />
+                          <Input className={`h-8 text-sm ${carErrors.customModel ? 'border-red-500' : ''}`} placeholder="Enter model" value={carCustomModel} onChange={(e) => { setCarCustomModel(e.target.value); if (carErrors.customModel) setCarErrors(prev => ({ ...prev, customModel: undefined })); }} />
                           {carErrors.customModel && <div className="text-xs text-red-600 mt-1">{carErrors.customModel}</div>}
                         </>
                       ) : (
@@ -878,7 +879,7 @@ export default function DriverDashboard() {
                           <select
                             className={`w-full border rounded h-8 text-sm px-2 ${carErrors.model ? 'border-red-500' : ''}`}
                             value={carModel}
-                            onChange={(e)=>{ setCarModel(e.target.value); if (carErrors.model) setCarErrors(prev=>({ ...prev, model: undefined })); }}
+                            onChange={(e) => { setCarModel(e.target.value); if (carErrors.model) setCarErrors(prev => ({ ...prev, model: undefined })); }}
                           >
                             <option value="" disabled>Select Model</option>
                             {availableModels.slice().sort().map(mo => (
@@ -888,7 +889,7 @@ export default function DriverDashboard() {
                           </select>
                           {carErrors.model && <div className="text-xs text-red-600 mt-1">{carErrors.model}</div>}
                           {carModel === 'Other' && (
-                            <Input className={`h-8 mt-2 text-sm ${carErrors.customModel ? 'border-red-500' : ''}`} placeholder="Enter model" value={carCustomModel} onChange={(e)=>{ setCarCustomModel(e.target.value); if (carErrors.customModel) setCarErrors(prev=>({ ...prev, customModel: undefined })); }} />
+                            <Input className={`h-8 mt-2 text-sm ${carErrors.customModel ? 'border-red-500' : ''}`} placeholder="Enter model" value={carCustomModel} onChange={(e) => { setCarCustomModel(e.target.value); if (carErrors.customModel) setCarErrors(prev => ({ ...prev, customModel: undefined })); }} />
                           )}
                           {carErrors.customModel && <div className="text-xs text-red-600 mt-1">{carErrors.customModel}</div>}
                         </>
@@ -929,7 +930,7 @@ export default function DriverDashboard() {
           </Card>
         )}
 
-        {section === 'dashboard' || !['profile','history','payslip'].includes(section) ? (
+        {section === 'dashboard' || !['profile', 'history', 'payslip'].includes(section) ? (
           <>
             <div className="grid lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-6">
@@ -985,7 +986,7 @@ export default function DriverDashboard() {
                         <LineChart data={earnTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
                           <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" tickFormatter={(v)=>`$${v}`} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" tickFormatter={(v) => `$${v}`} />
                           <Tooltip formatter={(v) => [`$${Number(v).toFixed(2)}`, 'Earnings']} labelStyle={{ color: '#64748b' }} />
                           <Line type="monotone" dataKey="amount" stroke="#10b981" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                         </LineChart>
@@ -996,9 +997,9 @@ export default function DriverDashboard() {
               </div>
 
               <div className="space-y-6">
-                <CommissionSummary 
-                  commissions={commissions} 
-                  userRole="driver_partner" 
+                <CommissionSummary
+                  commissions={commissions}
+                  userRole="driver_partner"
                   period={period}
                   lifetimeEarnings={lifetimeEarnings}
                   lifetimeScans={lifetimeScans}

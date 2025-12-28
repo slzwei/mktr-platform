@@ -11,13 +11,13 @@ import { createPageUrl } from "@/utils";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
 
 import {
@@ -29,9 +29,9 @@ import {
 } from "@/components/ui/select";
 
 
-import { 
-  Plus, 
-  Edit, 
+import {
+  Plus,
+  Edit,
   Eye,
   Search,
   AlertTriangle,
@@ -116,7 +116,7 @@ export default function AdminAgents() {
           owed_leads_count: parseInt(formData.owed_leads_count) || 0
         });
       }
-      
+
       await loadData();
       setIsFormOpen(false);
       setSelectedAgent(null);
@@ -149,8 +149,8 @@ export default function AdminAgents() {
     setSelectedAgent(agent);
     setAssignLoading(true);
     try {
-      const list = await Campaign.list({ limit: 500 });
-      const campaigns = Array.isArray(list) ? list : [];
+      const listData = await Campaign.list({ limit: 500 });
+      const campaigns = Array.isArray(listData) ? listData : (listData.campaigns || []);
       setAllCampaigns(campaigns);
       const preselected = new Set(
         campaigns
@@ -203,7 +203,7 @@ export default function AdminAgents() {
         try {
           const resp = await agentsAPI.getCampaigns(selectedAgent.id);
           setCampaignsForAgent(resp?.campaigns || []);
-        } catch (_) {}
+        } catch (_) { }
       }
     } catch (e) {
       console.error('Failed to save assignments', e);
@@ -270,7 +270,7 @@ export default function AdminAgents() {
   const handlePackageSubmit = async (packageData) => {
     try {
       // Assuming LeadPackage.create exists and is correctly implemented
-      await LeadPackage.create(packageData); 
+      await LeadPackage.create(packageData);
       await loadData(); // Refresh agent data after package creation
       setIsPackageDialogOpen(false);
       setSelectedAgent(null);
@@ -401,7 +401,7 @@ export default function AdminAgents() {
                         variant="ghost"
                         size="sm"
                         className="text-green-700 hover:text-green-900"
-                        onClick={async () => { try { await User.setApprovalStatus(agent.id, 'approved'); await loadData(); } catch(e) { console.error(e); } }}
+                        onClick={async () => { try { await User.setApprovalStatus(agent.id, 'approved'); await loadData(); } catch (e) { console.error(e); } }}
                       >
                         Approve
                       </Button>
@@ -409,7 +409,7 @@ export default function AdminAgents() {
                         variant="ghost"
                         size="sm"
                         className="text-red-700 hover:text-red-900"
-                        onClick={async () => { try { await User.setApprovalStatus(agent.id, 'rejected'); await loadData(); } catch(e) { console.error(e); } }}
+                        onClick={async () => { try { await User.setApprovalStatus(agent.id, 'rejected'); await loadData(); } catch (e) { console.error(e); } }}
                       >
                         Reject
                       </Button>

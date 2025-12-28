@@ -10,9 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { 
-  Users, 
-  DollarSign, 
+import {
+  Users,
+  DollarSign,
   TrendingUp,
   Car as CarIcon,
   ArrowRight
@@ -40,7 +40,7 @@ export default function AdminDashboard() {
     }
   });
   const [loading, setLoading] = useState(true);
-  
+
   // Debug logging for loading state
   console.log('🔍 ADMIN DASHBOARD: Loading state:', loading);
   console.log('🔍 ADMIN DASHBOARD: User state:', user);
@@ -66,16 +66,21 @@ export default function AdminDashboard() {
         return;
       }
 
-      const [prospects, allCampaigns, commissions, overview] = await Promise.all([
-        Prospect.list(),
-        Campaign.list(),
-        Commission.list(),
+      const [prospectsData, campaignsData, commissionsData, overview] = await Promise.all([
+        Prospect.list({ limit: 100 }),
+        Campaign.list({ limit: 100 }),
+        Commission.list({ limit: 100 }),
         dashboard.getOverview('30d')
       ]);
-      
+
+      // Handle both array (legacy) and paginated object responses
+      const prospects = Array.isArray(prospectsData) ? prospectsData : (prospectsData.prospects || []);
+      const allCampaigns = Array.isArray(campaignsData) ? campaignsData : (campaignsData.campaigns || []);
+      const commissions = Array.isArray(commissionsData) ? commissionsData : (commissionsData.commissions || []);
+
       // Filter out archived campaigns for dashboard stats
       const campaigns = allCampaigns.filter(campaign => campaign.status !== 'archived');
-      
+
       // Load cars separately with error handling for fleet module
       let cars = [];
       try {
@@ -121,7 +126,7 @@ export default function AdminDashboard() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const todayCommissions = filteredCommissions.filter(c => 
+    const todayCommissions = filteredCommissions.filter(c =>
       new Date(c.created_date || c.created_at) >= today
     );
 
@@ -129,7 +134,7 @@ export default function AdminDashboard() {
     thisMonth.setDate(1);
     thisMonth.setHours(0, 0, 0, 0);
 
-    const monthCommissions = filteredCommissions.filter(c => 
+    const monthCommissions = filteredCommissions.filter(c =>
       new Date(c.created_date || c.created_at) >= thisMonth
     );
 
@@ -168,7 +173,7 @@ export default function AdminDashboard() {
   const roleLabels = {
     admin: "Administrator",
     agent: "Sales Agent",
-    fleet_owner: "Fleet Owner", 
+    fleet_owner: "Fleet Owner",
     driver_partner: "Driver Partner"
   };
 
@@ -230,19 +235,19 @@ export default function AdminDashboard() {
         {/* Main Content Grid */}
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-            <RecentActivity 
+            <RecentActivity
               prospects={getFilteredData(stats.prospects, user?.role, user?.id)}
               userRole={user?.role}
             />
           </div>
-          
+
           <div className="space-y-6">
-            <CommissionSummary 
+            <CommissionSummary
               commissions={getFilteredData(stats.commissions, user?.role, user?.id)}
               userRole={user?.role}
               totalScans={stats.totalScans}
             />
-            
+
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Quick Actions</CardTitle>

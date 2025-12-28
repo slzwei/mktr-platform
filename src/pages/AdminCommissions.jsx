@@ -40,12 +40,13 @@ export default function AdminCommissions() {
     const load = async () => {
       setLoading(true);
       try {
-        const [currentUser, list] = await Promise.all([
+        const [currentUser, listData] = await Promise.all([
           auth.getCurrentUser(),
           Commission.list({ limit: 1000 })
         ]);
         setUser(currentUser);
-        setCommissions(Array.isArray(list) ? list : []);
+        const list = Array.isArray(listData) ? listData : (listData.commissions || []);
+        setCommissions(list);
       } catch (e) {
         console.error("Failed to load commissions:", e);
       }

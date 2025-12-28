@@ -5,15 +5,15 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
-import { 
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -21,8 +21,8 @@ import {
 } from "@/components/ui/dialog";
 import { useLocation } from "react-router-dom";
 import { format } from "date-fns";
-import { 
-  Search, 
+import {
+  Search,
   Download,
   Trash2,
   ChevronLeft,
@@ -46,7 +46,7 @@ import ProspectDetails from "@/components/prospects/ProspectDetails";
 const statusColors = {
   new: "bg-blue-100 text-blue-800",
   contacted: "bg-yellow-100 text-yellow-800",
-  meeting: "bg-purple-100 text-purple-800", 
+  meeting: "bg-purple-100 text-purple-800",
   close_won: "bg-green-100 text-green-800",
   close_lost: "bg-red-100 text-red-800",
   rejected: "bg-gray-100 text-gray-800"
@@ -57,7 +57,7 @@ const statusLabels = {
   contacted: "Contacted",
   meeting: "Meeting",
   close_won: "Won",
-  close_lost: "Lost", 
+  close_lost: "Lost",
   rejected: "Rejected"
 };
 
@@ -121,7 +121,7 @@ export default function AdminProspects() {
     const params = new URLSearchParams(location.search);
     const campaignId = params.get('campaign');
     if (campaignId) {
-      setFilters(prevFilters => ({...prevFilters, campaign: campaignId}));
+      setFilters(prevFilters => ({ ...prevFilters, campaign: campaignId }));
     }
   }, [location.search]);
 
@@ -174,9 +174,8 @@ export default function AdminProspects() {
       if (!user) setUser(userData);
 
       // Filter out archived campaigns
-      const campaignsData = Array.isArray(allCampaignsData) 
-        ? allCampaignsData.filter(campaign => campaign.status !== 'archived')
-        : campaigns;
+      const campaignsResponse = Array.isArray(allCampaignsData) ? allCampaignsData : (allCampaignsData.campaigns || []);
+      const campaignsData = campaignsResponse.filter(campaign => campaign.status !== 'archived');
 
       // Handle paginated response
       const prospectsData = prospectsResponse.prospects || prospectsResponse || [];
@@ -190,7 +189,11 @@ export default function AdminProspects() {
       // Normalize prospects
       const normalized = (prospectsData || []).map(normalizeProspect);
       setProspects(normalized);
-      if (!campaigns.length) setCampaigns(campaignsData || []);
+      // Only update campaigns if we fetched them (or force update if needed)
+      // Original logic was: if (!campaigns.length) setCampaigns...
+      // But we should probably update them if we fetched them to be safe
+      if (campaignsData.length > 0) setCampaigns(campaignsData);
+
       setPagination(paginationData);
     } catch (error) {
       console.error('Error loading prospects:', error);
@@ -214,10 +217,11 @@ export default function AdminProspects() {
         Campaign.list()
       ]);
       setUser(userData);
-      
+
       // Filter out archived campaigns for prospect assignment
-      const campaignsData = allCampaignsData.filter(campaign => campaign.status !== 'archived');
-      
+      const campaignsList = Array.isArray(allCampaignsData) ? allCampaignsData : (allCampaignsData.campaigns || []);
+      const campaignsData = campaignsList.filter(campaign => campaign.status !== 'archived');
+
       // Handle paginated response
       const prospectsData = prospectsResponse.prospects || prospectsResponse || [];
       const paginationData = prospectsResponse.pagination || {
@@ -226,7 +230,7 @@ export default function AdminProspects() {
         totalItems: prospectsData.length,
         itemsPerPage: pageSize
       };
-      
+
       // Normalize prospects (they're already sorted by backend)
       const normalized = (prospectsData || []).map(normalizeProspect);
       setProspects(normalized);
@@ -268,7 +272,7 @@ export default function AdminProspects() {
     const headers = [
       'Created Date',
       'Campaign',
-      'Prospect ID', 
+      'Prospect ID',
       'Name',
       'Phone',
       'Status',
@@ -332,8 +336,8 @@ export default function AdminProspects() {
             </p>
           </div>
           <div className="flex gap-3">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={exportToCSV}
               disabled={filteredProspects.length === 0}
             >
@@ -352,17 +356,17 @@ export default function AdminProspects() {
                   <Input
                     placeholder="Search prospects..."
                     value={filters.search}
-                    onChange={(e) => setFilters({...filters, search: e.target.value})}
+                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
                     className="pl-10"
                   />
                 </div>
-                <ProspectFilters 
-                  filters={filters} 
+                <ProspectFilters
+                  filters={filters}
                   onFilterChange={setFilters}
                   campaigns={campaigns}
                 />
               </div>
-              
+
               {/* Pagination info and page size selector */}
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-sm text-gray-600">
                 <div className="flex items-center gap-2">
@@ -390,7 +394,7 @@ export default function AdminProspects() {
               </div>
             </div>
           </CardHeader>
-          
+
           <CardContent className="p-0">
             {!isMobile ? (
               <div className="overflow-x-auto">
@@ -589,7 +593,7 @@ export default function AdminProspects() {
                       const maxVisible = 5;
                       let startPage = Math.max(1, pagination.currentPage - Math.floor(maxVisible / 2));
                       let endPage = Math.min(pagination.totalPages, startPage + maxVisible - 1);
-                      
+
                       if (endPage - startPage + 1 < maxVisible) {
                         startPage = Math.max(1, endPage - maxVisible + 1);
                       }
@@ -702,7 +706,7 @@ export default function AdminProspects() {
             </DialogHeader>
             <div className="py-4">
               <p className="text-gray-600">
-                Are you sure you want to delete <strong>{deleteConfirm?.name}</strong>? 
+                Are you sure you want to delete <strong>{deleteConfirm?.name}</strong>?
                 This action cannot be undone.
               </p>
             </div>

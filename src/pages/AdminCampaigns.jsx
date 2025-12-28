@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { 
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -19,20 +19,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { format, parseISO } from "date-fns";
-import { 
-  Plus, 
-  Edit, 
+import {
+  Plus,
+  Edit,
   Copy,
   Link as LinkIcon,
   Users,
@@ -71,15 +71,18 @@ export default function AdminCampaigns() {
     try {
       const [userData, campaignsData] = await Promise.all([
         User.me(),
-        Campaign.list('-created_date')
+        Campaign.list({ sort: '-created_date', limit: 100 })
       ]);
-      
+
       setUser(userData);
-      
+
+      // Handle both array (legacy) and paginated object responses
+      const campaignsList = Array.isArray(campaignsData) ? campaignsData : (campaignsData.campaigns || []);
+
       // Separate active and archived campaigns
-      const activeCampaigns = campaignsData.filter(campaign => campaign.status !== 'archived');
-      const archived = campaignsData.filter(campaign => campaign.status === 'archived');
-      
+      const activeCampaigns = campaignsList.filter(campaign => campaign.status !== 'archived');
+      const archived = campaignsList.filter(campaign => campaign.status === 'archived');
+
       setCampaigns(activeCampaigns);
       setArchivedCampaigns(archived);
     } catch (error) {
@@ -116,7 +119,7 @@ export default function AdminCampaigns() {
   const handleCopyLink = (campaignId) => {
     const baseUrl = window.location.origin;
     const campaignUrl = `${baseUrl}${createPageUrl(`LeadCapture?campaign_id=${campaignId}`)}`;
-    
+
     navigator.clipboard.writeText(campaignUrl).then(() => {
       setCopiedId(campaignId);
       setTimeout(() => setCopiedId(null), 2000);
@@ -241,7 +244,7 @@ export default function AdminCampaigns() {
                 {archived ? (
                   <span className="text-gray-700">{campaign.name}</span>
                 ) : (
-                  <Link 
+                  <Link
                     to={createPageUrl(`AdminProspects?campaign=${campaign.id}`)}
                     className="text-blue-600 hover:underline hover:text-blue-800"
                   >
