@@ -110,9 +110,11 @@ export default function AdminAgents() {
         });
       } else {
         // Invite new agent via backend invite flow
+        const normalizedPhone = (formData.phone || '').replace(/\D/g, '');
         await agentsAPI.invite({
           email: formData.email,
           full_name: name,
+          phone: normalizedPhone,
           owed_leads_count: parseInt(formData.owed_leads_count) || 0
         });
       }

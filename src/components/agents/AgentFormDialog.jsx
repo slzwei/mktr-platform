@@ -59,7 +59,7 @@ export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit })
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSelectChange = () => {};
+  const handleSelectChange = () => { };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -116,31 +116,29 @@ export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit })
             />
           </div>
 
-          {agent && (
-            <>
-              <div>
-                <Label htmlFor="phone">Phone Number</Label>
-                <Input
-                  id="phone"
-                  name="phone"
-                  type="tel"
-                  value={formData.phone}
-                  onChange={handleChange}
-                  placeholder="9123 4567"
-                />
-              </div>
+          <div>
+            <Label htmlFor="phone">Phone Number</Label>
+            <Input
+              id="phone"
+              name="phone"
+              type="tel"
+              value={formData.phone}
+              onChange={handleChange}
+              placeholder="9123 4567"
+            />
+          </div>
 
-              <div>
-                <Label htmlFor="dateOfBirth">Date of Birth</Label>
-                <Input
-                  id="dateOfBirth"
-                  name="dateOfBirth"
-                  type="date"
-                  value={formData.dateOfBirth}
-                  onChange={handleChange}
-                />
-              </div>
-            </>
+          {agent && (
+            <div>
+              <Label htmlFor="dateOfBirth">Date of Birth</Label>
+              <Input
+                id="dateOfBirth"
+                name="dateOfBirth"
+                type="date"
+                value={formData.dateOfBirth}
+                onChange={handleChange}
+              />
+            </div>
           )}
 
           <div>

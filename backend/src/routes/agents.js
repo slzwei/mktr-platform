@@ -17,17 +17,17 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
   const offset = (page - 1) * limit;
 
   const whereConditions = { role: 'agent' };
-  
+
   // Hide the System Agent from listings
   const systemId = await getSystemAgentId();
   if (systemId) {
     whereConditions.id = { [Op.ne]: systemId };
   }
-  
+
   if (status) {
     whereConditions.isActive = status === 'active';
   }
-  
+
   if (search) {
     whereConditions[Op.or] = [
       { firstName: { [Op.iLike]: `%${search}%` } },
@@ -82,7 +82,7 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
     const assignedCampaignsCount = assignedCounts[String(agent.id)] || 0;
     const tiedCampaignsCount = createdCampaignsCount + assignedCampaignsCount;
     const activeCreatedCampaigns = agent.createdCampaigns.filter(c => c.status === 'active').length;
-    
+
     return {
       ...agent.toJSON(),
       stats: {
@@ -219,7 +219,7 @@ router.put('/:id', authenticateToken, asyncHandler(async (req, res) => {
   if (lastName) updateData.lastName = lastName;
   if (phone) updateData.phone = phone;
   if (avatar) updateData.avatar = avatar;
-  
+
   // Only admins can update isActive status
   if (req.user.role === 'admin' && typeof isActive === 'boolean') {
     updateData.isActive = isActive;
@@ -246,15 +246,15 @@ router.get('/:id/prospects', authenticateToken, requireAgentOrAdmin, asyncHandle
   }
 
   const whereConditions = { assignedAgentId: id };
-  
+
   if (status) {
     whereConditions.leadStatus = status;
   }
-  
+
   if (priority) {
     whereConditions.priority = priority;
   }
-  
+
   if (search) {
     whereConditions[Op.or] = [
       { firstName: { [Op.iLike]: `%${search}%` } },
@@ -307,19 +307,19 @@ router.get('/:id/commissions', authenticateToken, requireAgentOrAdmin, asyncHand
   }
 
   const whereConditions = { agentId: id };
-  
+
   if (status) {
     whereConditions.status = status;
   }
-  
+
   if (type) {
     whereConditions.type = type;
   }
-  
+
   if (period) {
     const now = new Date();
     let startDate;
-    
+
     switch (period) {
       case 'week': {
         startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -342,7 +342,7 @@ router.get('/:id/commissions', authenticateToken, requireAgentOrAdmin, asyncHand
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       }
     }
-    
+
     if (startDate) {
       whereConditions.earnedDate = {
         [Op.gte]: startDate,
@@ -410,11 +410,11 @@ router.get('/:id/campaigns', authenticateToken, requireAgentOrAdmin, asyncHandle
 
   // Campaigns created by the agent OR where agent is assigned via assigned_agents
   const whereConditions = {};
-  
+
   if (status) {
     whereConditions.status = status;
   }
-  
+
   if (type) {
     whereConditions.type = type;
   }
@@ -460,7 +460,7 @@ router.get('/:id/campaigns', authenticateToken, requireAgentOrAdmin, asyncHandle
       totalProspects: campaign.prospects.length,
       convertedProspects: campaign.prospects.filter(p => p.leadStatus === 'won').length,
       totalScans: campaign.qrTags.length,
-      conversionRate: campaign.prospects.length > 0 ? 
+      conversionRate: campaign.prospects.length > 0 ?
         (campaign.prospects.filter(p => p.leadStatus === 'won').length / campaign.prospects.length * 100).toFixed(2) : 0
     }
   }));
@@ -486,7 +486,7 @@ router.get('/leaderboard/performance', authenticateToken, requireAdmin, asyncHan
   // Calculate date range
   const now = new Date();
   let startDate;
-  
+
   switch (period) {
     case 'week': {
       startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -676,7 +676,7 @@ export default router;
 
 // Invite new agent (Admin only)
 router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
-  const { email, full_name, owed_leads_count = 0 } = req.body;
+  const { email, full_name, phone, owed_leads_count = 0 } = req.body;
 
   if (!email || !full_name) {
     throw new AppError('email and full_name are required', 400);
@@ -705,6 +705,7 @@ router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req,
     email,
     firstName,
     lastName,
+    phone,
     role: 'agent',
     isActive: true,
     emailVerified: false,
