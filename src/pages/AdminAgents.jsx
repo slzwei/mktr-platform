@@ -654,6 +654,69 @@ export default function AdminAgents() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Assign Campaigns Dialog */}
+        <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Assign Campaigns</DialogTitle>
+              <DialogDescription>
+                Select campaigns to assign to {selectedAgent?.fullName || 'this agent'}.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  className="pl-9"
+                  placeholder="Filter campaigns..."
+                  value={campaignSearch}
+                  onChange={(e) => setCampaignSearch(e.target.value)}
+                />
+              </div>
+              <div className="border rounded-md max-h-60 overflow-y-auto p-2 space-y-1">
+                {allCampaigns
+                  .filter(c => (c.name || '').toLowerCase().includes(campaignSearch.toLowerCase()))
+                  .map(campaign => (
+                    <div
+                      key={campaign.id}
+                      className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer"
+                      onClick={() => toggleCampaignSelected(campaign.id)}
+                    >
+                      <Checkbox
+                        id={`c-${campaign.id}`}
+                        checked={selectedCampaignIds.has(campaign.id)}
+                        onCheckedChange={() => toggleCampaignSelected(campaign.id)}
+                      />
+                      <label
+                        htmlFor={`c-${campaign.id}`}
+                        className="text-sm font-medium leading-none cursor-pointer flex-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {campaign.name}
+                        {campaign.status !== 'active' && (
+                          <span className="ml-2 text-xs text-gray-500 font-normal">({campaign.status})</span>
+                        )}
+                      </label>
+                    </div>
+                  ))}
+                {allCampaigns.length === 0 && (
+                  <div className="text-center text-sm text-gray-500 py-4">
+                    No campaigns available.
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveAssignments} disabled={assignLoading}>
+                {assignLoading ? 'Saving...' : 'Save Assignments'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
