@@ -130,17 +130,17 @@ export const optionalAuth = async (req, res, next) => {
             audience: expectedAudience || undefined
           });
           user = await mapJwtToUser(payload);
-        } catch (_) {}
+        } catch (_) { }
       }
       if (!user) {
         try {
           const decoded = jwt.verify(token, process.env.JWT_SECRET);
           user = await User.findByPk(decoded.userId);
-        } catch (_) {}
+        } catch (_) { }
       }
       if (user && user.isActive) req.user = user;
     }
-    
+
     next();
   } catch (error) {
     // Continue without authentication

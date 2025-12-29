@@ -6,11 +6,11 @@ async function makeRequest(endpoint, options = {}) {
     try {
         const url = endpoint.startsWith('http') ? endpoint : `${API_URL}${endpoint}`;
         const response = await fetch(url, {
+            ...options,
             headers: {
                 'Content-Type': 'application/json',
                 ...options.headers
-            },
-            ...options
+            }
         });
 
         const data = await response.json();

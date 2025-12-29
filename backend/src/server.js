@@ -64,7 +64,7 @@ if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === 'true')
 }
 
 // CORS configuration
-const corsOrigins = process.env.CORS_ORIGIN 
+const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
   : ['http://localhost:5173'];
 
@@ -203,7 +203,7 @@ async function startServer() {
     // Validate environment configuration
     console.log('🔧 Validating environment configuration...');
     validateGoogleOAuthConfig();
-    
+
     // Test database connection
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
@@ -224,7 +224,7 @@ async function startServer() {
       } else if (dialect === 'postgres') {
         console.log(`🗄️ DB Host: ${process.env.DB_HOST} / DB Name: ${process.env.DB_NAME}`);
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // Targeted sync for new/changed models; avoid accidental destructive alters on sqlite
     const isSqlite = sequelize.getDialect() === 'sqlite';

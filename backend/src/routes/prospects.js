@@ -5,27 +5,28 @@ import { resolveAssignedAgentId, getSystemAgentId } from '../services/systemAgen
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import { sendLeadAssignmentEmail } from '../services/mailer.js';
 
 const router = express.Router();
 
 // Get all prospects
 router.get('/', authenticateToken, asyncHandler(async (req, res) => {
-  const { 
-    page = 1, 
-    limit = 10, 
-    leadStatus, 
-    priority, 
-    leadSource, 
-    assignedAgentId, 
+  const {
+    page = 1,
+    limit = 10,
+    leadStatus,
+    priority,
+    leadSource,
+    assignedAgentId,
     campaignId,
     search,
     dateFrom,
     dateTo
   } = req.query;
-  
+
   const offset = (page - 1) * limit;
   const whereConditions = {};
-  
+
   // Non-admin users can only see prospects assigned to them (agents) or from their campaigns (others)
   if (req.user.role === 'agent') {
     whereConditions.assignedAgentId = req.user.id;
@@ -38,27 +39,27 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
     const campaignIds = userCampaigns.map(c => c.id);
     whereConditions.campaignId = { [Op.in]: campaignIds };
   }
-  
+
   if (leadStatus) {
     whereConditions.leadStatus = leadStatus;
   }
-  
+
   if (priority) {
     whereConditions.priority = priority;
   }
-  
+
   if (leadSource) {
     whereConditions.leadSource = leadSource;
   }
-  
+
   if (assignedAgentId) {
     whereConditions.assignedAgentId = assignedAgentId;
   }
-  
+
   if (campaignId) {
     whereConditions.campaignId = campaignId;
   }
-  
+
   if (search) {
     whereConditions[Op.or] = [
       { firstName: { [Op.iLike]: `%${search}%` } },
@@ -67,7 +68,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
       { company: { [Op.iLike]: `%${search}%` } }
     ];
   }
-  
+
   if (dateFrom || dateTo) {
     whereConditions.createdAt = {};
     if (dateFrom) whereConditions.createdAt[Op.gte] = new Date(dateFrom);
@@ -199,6 +200,16 @@ router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res)
     }
   }
 
+  // Notify assigned agent
+  if (assignedAgentId) {
+    // Fetch full agent details if not already available
+    const agent = await User.findByPk(assignedAgentId);
+    // Don't await email sending to avoid blocking response
+    sendLeadAssignmentEmail(agent, prospect).catch(err =>
+      console.error('Failed to send assignment email:', err)
+    );
+  }
+
   res.status(201).json({
     success: true,
     message: 'Prospect created successfully',
@@ -209,9 +220,9 @@ router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res)
 // Get prospect by ID
 router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  
+
   const whereConditions = { id };
-  
+
   // Non-admin users can only see prospects assigned to them or from their campaigns
   if (req.user.role === 'agent') {
     whereConditions.assignedAgentId = req.user.id;
@@ -264,9 +275,9 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
 // Update prospect
 router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  
+
   const whereConditions = { id };
-  
+
   // Non-admin users can only update prospects assigned to them
   if (req.user.role === 'agent') {
     whereConditions.assignedAgentId = req.user.id;
@@ -280,7 +291,7 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
   }
 
   const prospect = await Prospect.findOne({ where: whereConditions });
-  
+
   if (!prospect) {
     throw new AppError('Prospect not found or access denied', 404);
   }
@@ -334,9 +345,9 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
 // Delete prospect
 router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  
+
   const whereConditions = { id };
-  
+
   // Non-admin users can only delete prospects assigned to them
   if (req.user.role === 'agent') {
     whereConditions.assignedAgentId = req.user.id;
@@ -350,7 +361,7 @@ router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async
   }
 
   const prospect = await Prospect.findOne({ where: whereConditions });
-  
+
   if (!prospect) {
     throw new AppError('Prospect not found or access denied', 404);
   }
@@ -374,10 +385,10 @@ router.patch('/:id/assign', authenticateToken, requireAgentOrAdmin, asyncHandler
 
   // Verify agent exists and is active
   const agent = await User.findOne({
-    where: { 
-      id: agentId, 
-      role: 'agent', 
-      isActive: true 
+    where: {
+      id: agentId,
+      role: 'agent',
+      isActive: true
     }
   });
 
@@ -386,12 +397,12 @@ router.patch('/:id/assign', authenticateToken, requireAgentOrAdmin, asyncHandler
   }
 
   const prospect = await Prospect.findByPk(id);
-  
+
   if (!prospect) {
     throw new AppError('Prospect not found', 404);
   }
 
-  await prospect.update({ 
+  await prospect.update({
     assignedAgentId: agentId,
     lastContactDate: new Date()
   });
@@ -404,6 +415,11 @@ router.patch('/:id/assign', authenticateToken, requireAgentOrAdmin, asyncHandler
     description: `Assigned to agent ${agentId}`,
     metadata: { assignedAgentId: agentId }
   });
+
+  // Notify agent
+  sendLeadAssignmentEmail(agent, prospect).catch(err =>
+    console.error('Failed to send assignment email:', err)
+  );
 
   res.json({
     success: true,
@@ -422,10 +438,10 @@ router.patch('/bulk/assign', authenticateToken, requireAgentOrAdmin, asyncHandle
 
   // Verify agent exists and is active
   const agent = await User.findOne({
-    where: { 
-      id: agentId, 
-      role: 'agent', 
-      isActive: true 
+    where: {
+      id: agentId,
+      role: 'agent',
+      isActive: true
     }
   });
 
@@ -444,17 +460,24 @@ router.patch('/bulk/assign', authenticateToken, requireAgentOrAdmin, asyncHandle
       attributes: ['id']
     });
     const campaignIds = userCampaigns.map(c => c.id);
-    
+
     whereConditions.campaignId = { [Op.in]: campaignIds };
   }
 
   const result = await Prospect.update(
-    { 
+    {
       assignedAgentId: agentId,
       lastContactDate: new Date()
     },
     { where: whereConditions }
   );
+
+  // Notify agent about bulk assignment
+  if (result[0] > 0) {
+    sendLeadAssignmentEmail(agent, null, true, result[0]).catch(err =>
+      console.error('Failed to send bulk assignment email:', err)
+    );
+  }
 
   res.json({
     success: true,
@@ -466,7 +489,7 @@ router.patch('/bulk/assign', authenticateToken, requireAgentOrAdmin, asyncHandle
 // Get prospect statistics
 router.get('/stats/overview', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
   const whereConditions = {};
-  
+
   // Non-admin users see stats for their assigned prospects or campaigns
   if (req.user.role === 'agent') {
     whereConditions.assignedAgentId = req.user.id;
@@ -480,7 +503,7 @@ router.get('/stats/overview', authenticateToken, requireAgentOrAdmin, asyncHandl
   }
 
   const totalProspects = await Prospect.count({ where: whereConditions });
-  
+
   const prospectsByStatus = await Prospect.findAll({
     where: whereConditions,
     attributes: [
@@ -565,14 +588,14 @@ router.patch('/:id/follow-up', authenticateToken, requireAgentOrAdmin, asyncHand
   }
 
   const whereConditions = { id };
-  
+
   // Non-admin users can only update prospects assigned to them
   if (req.user.role === 'agent') {
     whereConditions.assignedAgentId = req.user.id;
   }
 
   const prospect = await Prospect.findOne({ where: whereConditions });
-  
+
   if (!prospect) {
     throw new AppError('Prospect not found or access denied', 404);
   }

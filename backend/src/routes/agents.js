@@ -726,7 +726,13 @@ router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req,
     expiryDays: 7
   });
   const text = getAgentInviteText({ firstName, inviteLink, companyName: process.env.COMPANY_NAME || 'MKTR', expiryDays: 7 });
-  await sendEmail({ to: email, subject, html, text });
+
+  try {
+    await sendEmail({ to: email, subject, html, text });
+  } catch (emailError) {
+    console.error('❌ Failed to send invite email:', emailError.message);
+    // Don't fail the request; user is created and link is returned
+  }
 
   res.status(201).json({ success: true, message: 'Agent invited', data: { user: user.toJSON(), inviteLink } });
 }));
