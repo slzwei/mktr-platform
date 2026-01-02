@@ -28,7 +28,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  User
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -43,13 +44,13 @@ import {
 import ProspectFilters from "@/components/prospects/ProspectFilters";
 import ProspectDetails from "@/components/prospects/ProspectDetails";
 
-const statusColors = {
-  new: "bg-blue-100 text-blue-800",
-  contacted: "bg-yellow-100 text-yellow-800",
-  meeting: "bg-purple-100 text-purple-800",
-  close_won: "bg-green-100 text-green-800",
-  close_lost: "bg-red-100 text-red-800",
-  rejected: "bg-gray-100 text-gray-800"
+const statusStyles = {
+  new: "bg-blue-50 text-blue-700 border-blue-200",
+  contacted: "bg-amber-50 text-amber-700 border-amber-200",
+  meeting: "bg-violet-50 text-violet-700 border-violet-200",
+  close_won: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  close_lost: "bg-rose-50 text-rose-700 border-rose-200",
+  rejected: "bg-slate-50 text-slate-700 border-slate-200"
 };
 
 const statusLabels = {
@@ -66,7 +67,6 @@ function normalizeProspect(p) {
   const name = [p.firstName, p.lastName].filter(Boolean).join(" ") || p.name || "";
   const status = (p.leadStatus || p.status || "new").toLowerCase();
   const createdDate = p.createdAt || p.created_date || new Date().toISOString();
-  const updatedDate = p.updatedAt || p.updated_date || createdDate;
   // Map leadSource to simplified UI values used in filters
   const source = (p.leadSource || p.source || "other").toLowerCase();
   let simplifiedSource = "other";
@@ -87,7 +87,6 @@ function normalizeProspect(p) {
     date_of_birth: p.dateOfBirth || p.date_of_birth || null,
     status,
     created_date: createdDate,
-    updated_date: updatedDate,
     source: simplifiedSource,
     assigned_agent_id: assignedAgentId,
     assigned_agent_name: assignedAgentName,
@@ -125,7 +124,6 @@ export default function AdminProspects() {
     }
   }, [location.search]);
 
-  // Reload data when filters or pagination changes
   useEffect(() => {
     loadDataWithFilters();
   }, [filters, pagination.currentPage, pagination.itemsPerPage]);
@@ -138,31 +136,13 @@ export default function AdminProspects() {
         limit: pagination.itemsPerPage
       };
 
-      // Add search param
-      if (filters.search) {
-        params.search = filters.search;
-      }
-
-      // Add status filter
-      if (filters.status !== "all") {
-        params.leadStatus = filters.status;
-      }
-
-      // Add campaign filter
-      if (filters.campaign !== "all") {
-        params.campaignId = filters.campaign;
-      }
-
-      // Add source filter
+      if (filters.search) params.search = filters.search;
+      if (filters.status !== "all") params.leadStatus = filters.status;
+      if (filters.campaign !== "all") params.campaignId = filters.campaign;
       if (filters.source !== "all") {
-        // Map UI source values back to backend values
-        if (filters.source === "qr") {
-          params.leadSource = "qr_code";
-        } else if (filters.source === "form") {
-          params.leadSource = "website";
-        } else {
-          params.leadSource = filters.source;
-        }
+        if (filters.source === "qr") params.leadSource = "qr_code";
+        else if (filters.source === "form") params.leadSource = "website";
+        else params.leadSource = filters.source;
       }
 
       const [userData, prospectsResponse, allCampaignsData] = await Promise.all([
@@ -173,11 +153,9 @@ export default function AdminProspects() {
 
       if (!user) setUser(userData);
 
-      // Filter out archived campaigns
       const campaignsResponse = Array.isArray(allCampaignsData) ? allCampaignsData : (allCampaignsData.campaigns || []);
       const campaignsData = campaignsResponse.filter(campaign => campaign.status !== 'archived');
 
-      // Handle paginated response
       const prospectsData = prospectsResponse.prospects || prospectsResponse || [];
       const paginationData = prospectsResponse.pagination || {
         currentPage: pagination.currentPage,
@@ -186,14 +164,9 @@ export default function AdminProspects() {
         itemsPerPage: pagination.itemsPerPage
       };
 
-      // Normalize prospects
       const normalized = (prospectsData || []).map(normalizeProspect);
       setProspects(normalized);
-      // Only update campaigns if we fetched them (or force update if needed)
-      // Original logic was: if (!campaigns.length) setCampaigns...
-      // But we should probably update them if we fetched them to be safe
       if (campaignsData.length > 0) setCampaigns(campaignsData);
-
       setPagination(paginationData);
     } catch (error) {
       console.error('Error loading prospects:', error);
@@ -209,42 +182,7 @@ export default function AdminProspects() {
     setPagination(prev => ({ ...prev, currentPage: 1, itemsPerPage: newSize }));
   };
 
-  const loadData = async (page = pagination.currentPage, pageSize = pagination.itemsPerPage) => {
-    try {
-      const [userData, prospectsResponse, allCampaignsData] = await Promise.all([
-        auth.getCurrentUser(),
-        Prospect.list({ page, limit: pageSize }),
-        Campaign.list()
-      ]);
-      setUser(userData);
-
-      // Filter out archived campaigns for prospect assignment
-      const campaignsList = Array.isArray(allCampaignsData) ? allCampaignsData : (allCampaignsData.campaigns || []);
-      const campaignsData = campaignsList.filter(campaign => campaign.status !== 'archived');
-
-      // Handle paginated response
-      const prospectsData = prospectsResponse.prospects || prospectsResponse || [];
-      const paginationData = prospectsResponse.pagination || {
-        currentPage: 1,
-        totalPages: 1,
-        totalItems: prospectsData.length,
-        itemsPerPage: pageSize
-      };
-
-      // Normalize prospects (they're already sorted by backend)
-      const normalized = (prospectsData || []).map(normalizeProspect);
-      setProspects(normalized);
-      setCampaigns(campaignsData || []);
-      setPagination(paginationData);
-    } catch (error) {
-      console.error('Error loading prospects:', error);
-    }
-    setLoading(false);
-  };
-
-  // Server-side filtering is now handled in loadDataWithFilters
-  // prospects already contains the filtered and paginated results
-  const filteredProspects = prospects;
+  const loadData = async () => loadDataWithFilters();
 
   const handleStatusUpdate = async (prospectId, newStatus) => {
     try {
@@ -262,40 +200,29 @@ export default function AdminProspects() {
       setDeleteConfirm(null);
     } catch (error) {
       console.error('Error deleting prospect:', error);
-      alert('Failed to delete prospect. Please try again.');
     }
   };
 
   const exportToCSV = () => {
-    // Note: This exports only the current page. For full export, we'd need a separate API endpoint
-    const filteredProspectsForExport = filteredProspects;
     const headers = [
       'Created Date',
       'Campaign',
-      'Prospect ID',
       'Name',
       'Phone',
       'Status',
       'Assigned To',
-      'Postal Code',
-      'Email',
-      'DOB',
       'Source'
     ];
 
-    const csvData = filteredProspectsForExport.map(p => {
+    const csvData = prospects.map(p => {
       const campaign = campaigns.find(c => (c.id === p.campaign_id));
       return [
         format(new Date(p.created_date), 'dd/MM/yyyy HH:mm'),
         campaign?.name || '',
-        p.id,
         p.name,
         p.phone,
         statusLabels[p.status] || p.status,
-        p.assigned_agent_id || '',
-        p.postal_code || '',
-        p.email || '',
-        p.date_of_birth ? format(new Date(p.date_of_birth), 'ddMMyyyy') : '',
+        p.assigned_agent_name || '',
         (p.source || '').toUpperCase()
       ];
     });
@@ -308,7 +235,7 @@ export default function AdminProspects() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `prospects_${format(new Date(), 'ddMMyyyy_HHmm')}_SGT.csv`);
+    link.setAttribute('download', `prospects_${format(new Date(), 'ddMMyyyy_HHmm')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -316,48 +243,50 @@ export default function AdminProspects() {
 
   if (loading) {
     return (
-      <div className="p-6 lg:p-8">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-64"></div>
-          <div className="h-96 bg-gray-200 rounded-xl"></div>
+      <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+        <div className="max-w-[1600px] mx-auto space-y-6">
+          <div className="h-8 bg-gray-200 rounded w-48 animate-pulse"></div>
+          <div className="h-96 bg-gray-200 rounded-xl animate-pulse"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
+    <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+      <div className="max-w-[1600px] mx-auto space-y-6">
+        {/* Header */}
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Admin - Prospects</h1>
-            <p className="text-gray-600 mt-1">
-              Manage and track your sales prospects
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Prospects</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Manage and track your sales prospects across all campaigns.
             </p>
           </div>
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={exportToCSV}
-              disabled={filteredProspects.length === 0}
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Export CSV
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            className="bg-white"
+            onClick={exportToCSV}
+            disabled={prospects.length === 0}
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Export CSV
+          </Button>
         </div>
 
-        <Card className="shadow-lg">
-          <CardHeader className="border-b border-gray-100">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+        {/* Main Content Card */}
+        <Card className="border-gray-200/50 shadow-sm bg-white overflow-hidden">
+          <CardHeader className="border-b border-gray-100 p-4 lg:p-6 bg-white">
+            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
+              {/* Search & Filters */}
+              <div className="flex flex-1 flex-col sm:flex-row gap-3 w-full lg:max-w-4xl">
+                <div className="relative flex-1 min-w-[240px]">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
                     placeholder="Search prospects..."
                     value={filters.search}
                     onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                    className="pl-10"
+                    className="pl-9 h-10 bg-gray-50/50 border-gray-200 focus:bg-white transition-colors"
                   />
                 </div>
                 <ProspectFilters
@@ -367,30 +296,20 @@ export default function AdminProspects() {
                 />
               </div>
 
-              {/* Pagination info and page size selector */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-sm text-gray-600">
-                <div className="flex items-center gap-2">
-                  <span>
-                    Showing <span className="font-semibold text-gray-900">{pagination.totalItems > 0 ? Math.min((pagination.currentPage - 1) * pagination.itemsPerPage + 1, pagination.totalItems) : 0}</span> to{' '}
-                    <span className="font-semibold text-gray-900">{Math.min(pagination.currentPage * pagination.itemsPerPage, pagination.totalItems)}</span> of{' '}
-                    <span className="font-semibold text-gray-900">{pagination.totalItems.toLocaleString()}</span> prospects
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-600">Show:</span>
-                  <Select value={String(pagination.itemsPerPage)} onValueChange={(value) => handlePageSizeChange(parseInt(value))}>
-                    <SelectTrigger className="w-20">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="10">10</SelectItem>
-                      <SelectItem value="25">25</SelectItem>
-                      <SelectItem value="50">50</SelectItem>
-                      <SelectItem value="100">100</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <span className="text-gray-600">per page</span>
-                </div>
+              {/* Pagination Page Size */}
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <span className="hidden sm:inline">Rows per page:</span>
+                <Select value={String(pagination.itemsPerPage)} onValueChange={(value) => handlePageSizeChange(parseInt(value))}>
+                  <SelectTrigger className="w-[70px] h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </CardHeader>
@@ -400,56 +319,75 @@ export default function AdminProspects() {
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-gray-50">
-                      <TableHead className="whitespace-nowrap">Prospect Name</TableHead>
-                      <TableHead className="whitespace-nowrap">Campaign</TableHead>
-                      <TableHead className="whitespace-nowrap">Created Date/Time</TableHead>
-                      <TableHead className="whitespace-nowrap">Source</TableHead>
-                      <TableHead className="whitespace-nowrap">Status</TableHead>
-                      <TableHead className="whitespace-nowrap w-20">Actions</TableHead>
+                    <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-gray-100">
+                      <TableHead className="py-3 px-6 font-medium text-gray-500">Prospect</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500">Campaign</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500">Status</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500">Date Added</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500">Source</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500 w-[100px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredProspects.map((prospect) => {
+                    {prospects.map((prospect) => {
                       const campaign = campaigns.find(c => c.id === prospect.campaign_id);
                       return (
                         <TableRow
                           key={prospect.id}
-                          className="hover:bg-gray-50"
+                          className="hover:bg-gray-50/50 transition-colors border-gray-100 group"
                         >
-                          <TableCell>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedProspect(prospect)}
-                              className="font-semibold text-blue-600 hover:underline truncate"
+                          <TableCell className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-xs font-semibold uppercase">
+                                {prospect.name?.charAt(0) || <User className="w-4 h-4" />}
+                              </div>
+                              <button
+                                onClick={() => setSelectedProspect(prospect)}
+                                className="font-medium text-gray-900 group-hover:text-blue-600 transition-colors text-left"
+                              >
+                                {prospect.name}
+                                {prospect.assigned_agent_name && (
+                                  <span className="block text-xs text-gray-400 font-normal mt-0.5">
+                                    Agent: {prospect.assigned_agent_name}
+                                  </span>
+                                )}
+                              </button>
+                            </div>
+                          </TableCell>
+                          <TableCell className="px-6 py-4">
+                            {campaign ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-700">{campaign.name}</span>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 text-sm italic">Unassigned</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="px-6 py-4">
+                            <Badge
+                              variant="outline"
+                              className={`font-normal ${statusStyles[prospect.status] || "bg-gray-50 text-gray-600 border-gray-200"}`}
                             >
-                              {prospect.name}
-                            </button>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="bg-blue-50 text-blue-700">
-                              {campaign?.name || 'Unknown'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-sm text-gray-700">
-                            {format(new Date(prospect.created_date), 'dd/MM/yyyy HH:mm')}
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-600">
-                              {(prospect.source || '').toUpperCase()}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={statusColors[prospect.status] + " whitespace-nowrap"}>
                               {statusLabels[prospect.status] || prospect.status}
                             </Badge>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="px-6 py-4 text-sm text-gray-500">
+                            {format(new Date(prospect.created_date), 'MMM d, yyyy')}
+                            <span className="block text-xs text-gray-400 mt-0.5">
+                              {format(new Date(prospect.created_date), 'h:mm a')}
+                            </span>
+                          </TableCell>
+                          <TableCell className="px-6 py-4">
+                            <code className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200 uppercase">
+                              {prospect.source}
+                            </code>
+                          </TableCell>
+                          <TableCell className="px-6 py-4 text-right">
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => setDeleteConfirm(prospect)}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              className="text-gray-400 hover:text-red-600 hover:bg-red-50 h-8 w-8 p-0"
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -457,235 +395,97 @@ export default function AdminProspects() {
                         </TableRow>
                       );
                     })}
+                    {prospects.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="h-64 text-center">
+                          <div className="flex flex-col items-center justify-center text-gray-500">
+                            <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-3">
+                              <Search className="w-6 h-6 text-gray-400" />
+                            </div>
+                            <p className="font-medium text-gray-900">No prospects found</p>
+                            <p className="text-sm mt-1">Try adjusting your filters or search terms</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
-
-                {filteredProspects.length === 0 && (
-                  <div className="text-center py-12">
-                    <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                      <Search className="w-6 h-6 text-gray-400" />
-                    </div>
-                    <h3 className="font-semibold text-gray-900 mb-2">No prospects found</h3>
-                    <p className="text-gray-500">Try adjusting your search or filters</p>
-                  </div>
-                )}
               </div>
             ) : (
-              <div className="divide-y">
-                {filteredProspects.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                      <Search className="w-6 h-6 text-gray-400" />
-                    </div>
-                    <h3 className="font-semibold text-gray-900 mb-2">No prospects found</h3>
-                    <p className="text-gray-500">Try adjusting your search or filters</p>
-                  </div>
+              // Mobile View
+              <div className="divide-y divide-gray-100">
+                {prospects.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">No prospects found.</div>
                 ) : (
-                  filteredProspects.map((prospect) => {
-                    const campaign = campaigns.find(c => c.id === prospect.campaign_id);
-                    return (
-                      <div
-                        key={prospect.id}
-                        className="w-full text-left p-4 hover:bg-gray-50"
-                      >
-                        <div className="flex items-center justify-between">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedProspect(prospect)}
-                            className="font-semibold text-blue-600 hover:underline truncate"
-                          >
-                            {prospect.name}
-                          </button>
-                          <div className="flex items-center gap-2">
-                            <Badge className={statusColors[prospect.status] + " ml-2"}>
-                              {statusLabels[prospect.status] || prospect.status}
-                            </Badge>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setDeleteConfirm(prospect)}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50 p-1"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                  prospects.map((prospect) => (
+                    <div key={prospect.id} className="p-4 active:bg-gray-50" onClick={() => setSelectedProspect(prospect)}>
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-bold">
+                            {prospect.name?.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-900">{prospect.name}</div>
+                            <div className="text-xs text-gray-500">
+                              {format(new Date(prospect.created_date), 'MMM d, h:mm a')}
+                            </div>
                           </div>
                         </div>
-                        <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-gray-600">
-                          <div>
-                            <span className="block text-gray-500">Campaign</span>
-                            <span className="inline-block mt-1 text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded">
-                              {campaign?.name || 'Unknown'}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="block text-gray-500">Created</span>
-                            <span className="block mt-1">{format(new Date(prospect.created_date), 'dd/MM/yyyy HH:mm')}</span>
-                          </div>
-                          <div>
-                            <span className="block text-gray-500">Source</span>
-                            <span className="inline-block mt-1 text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded">
-                              {(prospect.source || '').toUpperCase()}
-                            </span>
-                          </div>
-                        </div>
+                        <Badge
+                          variant="outline"
+                          className={statusStyles[prospect.status] || "bg-gray-100"}
+                        >
+                          {statusLabels[prospect.status] || prospect.status}
+                        </Badge>
                       </div>
-                    );
-                  })
+                      <div className="flex justify-between items-center text-sm text-gray-500 mt-3 pl-13">
+                        <span>{campaigns.find(c => c.id === prospect.campaign_id)?.name || 'Unknown Campaign'}</span>
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             )}
-          </CardContent>
 
-          {/* Pagination Controls */}
-          {pagination.totalItems > 0 && (
-            <div className="border-t border-gray-100 px-6 py-4 bg-gray-50">
-              <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
-                {/* Results info */}
-                <div className="text-sm text-gray-600 order-2 lg:order-1">
-                  Showing {Math.min((pagination.currentPage - 1) * pagination.itemsPerPage + 1, pagination.totalItems)} to {Math.min(pagination.currentPage * pagination.itemsPerPage, pagination.totalItems)} of {pagination.totalItems.toLocaleString()} prospects
-                </div>
-
-                {/* Page size selector */}
-                <div className="flex items-center gap-2 order-1 lg:order-2">
-                  <span className="text-sm text-gray-600">Show</span>
-                  <Select
-                    value={String(pagination.itemsPerPage)}
-                    onValueChange={(value) => handlePageSizeChange(parseInt(value))}
-                  >
-                    <SelectTrigger className="w-20">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="10">10</SelectItem>
-                      <SelectItem value="25">25</SelectItem>
-                      <SelectItem value="50">50</SelectItem>
-                      <SelectItem value="100">100</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <span className="text-sm text-gray-600">per page</span>
-                </div>
-
-                {/* Pagination buttons */}
-                <div className="flex items-center gap-1 order-3">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handlePageChange(1)}
-                    disabled={pagination.currentPage === 1}
-                    className="hidden sm:flex"
-                  >
-                    <ChevronsLeft className="w-4 h-4" />
-                  </Button>
+            {/* Pagination Footer */}
+            {pagination.totalPages > 1 && (
+              <div className="border-t border-gray-100 bg-gray-50/50 p-4 flex items-center justify-between">
+                <span className="text-sm text-gray-500 hidden sm:inline">
+                  Page {pagination.currentPage} of {pagination.totalPages}
+                </span>
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-center">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handlePageChange(pagination.currentPage - 1)}
                     disabled={pagination.currentPage === 1}
+                    className="h-8"
                   >
-                    <ChevronLeft className="w-4 h-4" />
-                    <span className="hidden sm:inline ml-1">Previous</span>
+                    <ChevronLeft className="w-4 h-4 mr-1" /> Previous
                   </Button>
-
-                  {/* Page numbers */}
-                  <div className="hidden sm:flex items-center gap-1 mx-2">
-                    {(() => {
-                      const pages = [];
-                      const maxVisible = 5;
-                      let startPage = Math.max(1, pagination.currentPage - Math.floor(maxVisible / 2));
-                      let endPage = Math.min(pagination.totalPages, startPage + maxVisible - 1);
-
-                      if (endPage - startPage + 1 < maxVisible) {
-                        startPage = Math.max(1, endPage - maxVisible + 1);
-                      }
-
-                      if (startPage > 1) {
-                        pages.push(
-                          <Button
-                            key={1}
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handlePageChange(1)}
-                            className="w-9"
-                          >
-                            1
-                          </Button>
-                        );
-                        if (startPage > 2) {
-                          pages.push(<span key="ellipsis1" className="px-2 text-gray-400">...</span>);
-                        }
-                      }
-
-                      for (let i = startPage; i <= endPage; i++) {
-                        pages.push(
-                          <Button
-                            key={i}
-                            variant={i === pagination.currentPage ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => handlePageChange(i)}
-                            className="w-9"
-                          >
-                            {i}
-                          </Button>
-                        );
-                      }
-
-                      if (endPage < pagination.totalPages) {
-                        if (endPage < pagination.totalPages - 1) {
-                          pages.push(<span key="ellipsis2" className="px-2 text-gray-400">...</span>);
-                        }
-                        pages.push(
-                          <Button
-                            key={pagination.totalPages}
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handlePageChange(pagination.totalPages)}
-                            className="w-9"
-                          >
-                            {pagination.totalPages}
-                          </Button>
-                        );
-                      }
-
-                      return pages;
-                    })()}
-                  </div>
-
-                  {/* Mobile page indicator */}
-                  <div className="sm:hidden px-3 py-1 text-sm text-gray-600">
-                    Page {pagination.currentPage} of {pagination.totalPages}
-                  </div>
-
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handlePageChange(pagination.currentPage + 1)}
                     disabled={pagination.currentPage === pagination.totalPages}
+                    className="h-8"
                   >
-                    <span className="hidden sm:inline mr-1">Next</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handlePageChange(pagination.totalPages)}
-                    disabled={pagination.currentPage === pagination.totalPages}
-                    className="hidden sm:flex"
-                  >
-                    <ChevronsRight className="w-4 h-4" />
+                    Next <ChevronRight className="w-4 h-4 ml-1" />
                   </Button>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </CardContent>
         </Card>
 
+        {/* Dialogs */}
         <Dialog open={!!selectedProspect} onOpenChange={() => setSelectedProspect(null)}>
-          <DialogContent className="max-w-2xl max-h-[80vh]">
-            <DialogHeader>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+            <DialogHeader className="px-6 py-4 border-b border-gray-100">
               <DialogTitle>Prospect Details</DialogTitle>
             </DialogHeader>
             {selectedProspect && (
-              <ScrollArea className="max-h-[70vh] pr-2">
+              <ScrollArea className="flex-1 p-6">
                 <ProspectDetails
                   prospect={selectedProspect}
                   campaigns={campaigns}
@@ -700,29 +500,16 @@ export default function AdminProspects() {
         </Dialog>
 
         <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-sm">
             <DialogHeader>
               <DialogTitle>Delete Prospect</DialogTitle>
             </DialogHeader>
-            <div className="py-4">
-              <p className="text-gray-600">
-                Are you sure you want to delete <strong>{deleteConfirm?.name}</strong>?
-                This action cannot be undone.
-              </p>
+            <div className="py-4 text-sm text-gray-600">
+              Are you sure you want to delete <strong>{deleteConfirm?.name}</strong>? This action cannot be undone.
             </div>
             <div className="flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setDeleteConfirm(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => handleDeleteProspect(deleteConfirm.id)}
-              >
-                Delete
-              </Button>
+              <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+              <Button variant="destructive" onClick={() => handleDeleteProspect(deleteConfirm.id)}>Delete</Button>
             </div>
           </DialogContent>
         </Dialog>

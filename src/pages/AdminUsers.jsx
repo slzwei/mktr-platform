@@ -1,685 +1,618 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState, useEffect } from "react";
+import { auth, apiClient } from "@/api/client";
 import { User } from "@/api/entities";
-import { apiClient, auth, agents as agentsAPI } from "@/api/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from "@/components/ui/dropdown-menu";
-import { 
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription
+  DialogDescription,
+  DialogFooter
 } from "@/components/ui/dialog";
-import {
-  Plus,
-  Eye,
-  Edit,
-  Search,
-  Mail,
-  Phone,
-  UserRound,
-  ChevronUp,
-  ChevronDown,
-  Grid as GridIcon,
-  List as ListIcon,
-  MoreVertical,
-  Download
-} from "lucide-react";
+import { Label } from "@/components/ui/label";
 import {
   Select,
-  SelectTrigger,
   SelectContent,
   SelectItem,
-  SelectValue
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Search,
+  Download,
+  Trash2,
+  Mail,
+  UserPlus,
+  Edit,
+  CheckCircle,
+  MoreHorizontal,
+  LayoutGrid,
+  List as ListIcon
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 
 export default function AdminUsers() {
-  const [me, setMe] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [role, setRole] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [sortBy, setSortBy] = useState("createdAt");
-  const [order, setOrder] = useState("DESC");
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [lifecycleTab, setLifecycleTab] = useState("all");
+  const [viewMode, setViewMode] = useState("list"); // 'list' or 'grid'
+
+  // Dialog states
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteData, setInviteData] = useState({ email: "", role: "user", fullName: "" });
+
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [viewMode, setViewMode] = useState('list'); // list | grid
-  const [lifecycleTab, setLifecycleTab] = useState('all'); // all | pendingApproval | pendingRegistration | active | inactive
-
-  // Edit dialog state
-  const [editOpen, setEditOpen] = useState(false);
-  const [edit, setEdit] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    role: 'agent',
-    isActive: true,
-    owed_leads_count: 0,
-    dateOfBirth: ''
-  });
-
-  // Invite form state
-  const [invite, setInvite] = useState({ email: "", full_name: "", role: "agent" });
+  const [editData, setEditData] = useState({ firstName: "", lastName: "", email: "", role: "", status: "" });
 
   useEffect(() => {
-    load();
+    loadData();
   }, []);
 
-  // Auto-load when role/status/sort/order change
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, status, sortBy, order]);
-
-  // Debounced search
-  useEffect(() => {
-    const t = setTimeout(() => { load(); }, 350);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
-
-  const load = async () => {
-    setLoading(true);
+  const loadData = async () => {
     try {
-      const current = await auth.getCurrentUser(true);
-      if (!current || current.role !== 'admin') throw new Error('Insufficient permissions');
-      setMe(current);
+      setLoading(true);
+      const [userData, usersData] = await Promise.all([
+        auth.getCurrentUser(),
+        User.list()
+      ]);
 
-      const resp = await apiClient.get('/users', normalizeQuery({ 
-        role: role === 'all' ? undefined : role, 
-        status: status === 'all' ? undefined : status, 
-        search: search || undefined,
-        sortBy,
-        order,
-        page: 1,
-        limit: 100
-      }));
-      setUsers(resp?.data?.users || []);
-    } catch (e) {
-      console.error('Failed to load users', e);
-    }
-    setLoading(false);
-  };
+      if (userData.role !== 'admin') {
+        throw new Error('Unauthorized');
+      }
 
-  const normalizeQuery = (obj) => Object.fromEntries(Object.entries(obj).filter(([,v]) => v !== undefined && v !== null && v !== ''));
-
-  const handleToggleSort = (field) => {
-    if (sortBy === field) {
-      setOrder(order === 'ASC' ? 'DESC' : 'ASC');
-    } else {
-      setSortBy(field);
-      setOrder('ASC');
+      setCurrentUser(userData);
+      // Ensure usersData is an array
+      setUsers(Array.isArray(usersData) ? usersData : (usersData.users || []));
+    } catch (error) {
+      console.error('Error loading users:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const sortedUsers = useMemo(() => {
-    // Server already sorts; this is a fallback if needed
-    const copy = [...users];
-    const dir = order === 'ASC' ? 1 : -1;
-    copy.sort((a,b) => {
-      const av = (a?.[sortBy] ?? '').toString().toLowerCase();
-      const bv = (b?.[sortBy] ?? '').toString().toLowerCase();
-      if (av < bv) return -1 * dir;
-      if (av > bv) return 1 * dir;
-      return 0;
-    });
-    return copy;
-  }, [users, sortBy, order]);
-
-  // derived groups for tabs
-  const deriveLifecycle = (u) => {
-    const pendingApproval = u.approvalStatus === 'pending' || u.status === 'pending_approval';
-    const pendingRegistration = (u?.isActive === true) && (
-      u?.status === 'pending_registration' || !!u?.invitationToken || u?.emailVerified === false
-    );
-    if (pendingApproval) return 'pendingApproval';
-    if (pendingRegistration) return 'pendingRegistration';
-    return u.isActive ? 'active' : 'inactive';
+  const handleInviteUser = async (e) => {
+    e.preventDefault();
+    setInviteLoading(true);
+    try {
+      await auth.inviteUser(inviteData.email, inviteData.role, inviteData.fullName);
+      setInviteDialogOpen(false);
+      setInviteData({ email: "", role: "user", fullName: "" });
+      await loadData();
+    } catch (error) {
+      console.error('Error inviting user:', error);
+      alert('Failed to invite user: ' + (error.message || 'Unknown error'));
+    } finally {
+      setInviteLoading(false);
+    }
   };
 
-  const lifecycleCounts = useMemo(() => {
-    const acc = { all: users.length, pendingApproval: 0, pendingRegistration: 0, active: 0, inactive: 0 };
-    users.forEach(u => { acc[deriveLifecycle(u)]++; });
-    return acc;
-  }, [users]);
-
-  const visibleUsers = useMemo(() => {
-    if (lifecycleTab === 'all') return sortedUsers;
-    return sortedUsers.filter(u => deriveLifecycle(u) === lifecycleTab);
-  }, [sortedUsers, lifecycleTab]);
-
-  const exportCsv = () => {
-    const header = ['id','fullName','email','phone','role','status','approvalStatus','createdAt'];
-    const rows = visibleUsers.map(u => [
-      u.id,
-      (u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim()),
-      u.email || '',
-      u.phone || '',
-      u.role || '',
-      u.isActive ? 'active' : 'inactive',
-      u.approvalStatus || '',
-      u.createdAt || ''
-    ]);
-    const csv = [header, ...rows].map(r => r.map(v => {
-      const s = String(v ?? '');
-      return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
-    }).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `users_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const RowActions = ({ u }) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
-          <MoreVertical className="w-4 h-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {(u.approvalStatus === 'pending' || u.status === 'pending_approval') && (
-          <>
-            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); approve(u, 'approved'); }}>Approve</DropdownMenuItem>
-            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); approve(u, 'rejected'); }}>Reject</DropdownMenuItem>
-          </>
-        )}
-        {(u.status === 'pending_registration' || !!u.invitationToken || u.emailVerified === false) && (
-          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); resendInvite(u); }}>Resend Invite</DropdownMenuItem>
-        )}
-        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDetails(u); }}>View</DropdownMenuItem>
-        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEdit(u); }}>Edit</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-
-  const statusBadge = (u) => {
-    const pendingApproval = u.approvalStatus === 'pending' || u.status === 'pending_approval';
-    const pendingRegistration = (u?.isActive === true) && (
-      u?.status === 'pending_registration' || !!u?.invitationToken || u?.emailVerified === false
-    );
-    const isActive = u.isActive && !pendingApproval && !pendingRegistration;
-    const cls = pendingApproval
-      ? 'bg-yellow-100 text-yellow-800'
-      : (isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800');
-    const label = pendingApproval
-      ? 'Pending Approval'
-      : (pendingRegistration ? 'Pending Registration' : (isActive ? 'Active' : 'Inactive'));
-    return <Badge className={cls}>{label}</Badge>;
-  };
-
-  const openDetails = (u) => { setSelectedUser(u); setDetailsOpen(true); };
-
-  const openEdit = (u) => {
-    setSelectedUser(u);
-    setEdit({
-      firstName: u.firstName || '',
-      lastName: u.lastName || '',
-      email: u.email || '',
-      phone: u.phone || '',
-      role: u.role || 'customer',
-      isActive: !!u.isActive,
-      owed_leads_count: typeof u.owed_leads_count === 'number' ? u.owed_leads_count : 0,
-      dateOfBirth: u.dateOfBirth ? String(u.dateOfBirth).slice(0, 10) : ''
-    });
-    setEditOpen(true);
-  };
-
-  const handleUpdateUser = async (e) => {
-    e?.preventDefault?.();
+  const handleEditUser = async (e) => {
+    e.preventDefault();
     if (!selectedUser) return;
+    setEditLoading(true);
     try {
-      const isGoogleLinked = !!(selectedUser?.googleSub);
-      const isAdmin = me?.role === 'admin';
       await User.update(selectedUser.id, {
-        firstName: edit.firstName || undefined,
-        lastName: edit.lastName || undefined,
-        phone: edit.phone || undefined,
-        avatar: undefined,
-        role: isAdmin ? (edit.role || undefined) : undefined,
-        isActive: isAdmin ? (typeof edit.isActive === 'boolean' ? edit.isActive : undefined) : undefined,
-        owed_leads_count: (isAdmin && selectedUser.role === 'agent')
-          ? (Number.isFinite(Number(edit.owed_leads_count)) ? Number(edit.owed_leads_count) : undefined)
-          : undefined,
-        email: (isAdmin && !isGoogleLinked) ? (edit.email || undefined) : undefined,
-        dateOfBirth: edit.dateOfBirth || undefined
+        firstName: editData.firstName,
+        lastName: editData.lastName,
+        role: editData.role,
+        isActive: editData.status === 'active'
       });
-      setEditOpen(false);
-      await load();
-    } catch (err) {
-      alert(err?.message || 'Failed to update user');
+      setEditDialogOpen(false);
+      setSelectedUser(null);
+      await loadData();
+    } catch (error) {
+      console.error('Error updating user:', error);
+      alert('Failed to update user');
+    } finally {
+      setEditLoading(false);
     }
   };
 
-  const approve = async (u, decision) => {
-    try { await User.setApprovalStatus(u.id, decision); await load(); } catch(e) { console.error(e); }
+  const openEditDialog = (user) => {
+    setSelectedUser(user);
+    setEditData({
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      email: user.email || "",
+      role: user.role || "user",
+      status: user.isActive ? "active" : "inactive"
+    });
+    setEditDialogOpen(true);
   };
 
-  const resendInvite = async (u) => {
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm("Are you sure you want to delete this user? This cannot be undone.")) return;
     try {
-      const fullName = u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim();
-      if (u.role === 'agent') {
-        await agentsAPI.invite({ email: u.email, full_name: fullName, owed_leads_count: u.owed_leads_count || 0 });
-      } else {
-        await User.invite({ email: u.email, full_name: fullName, role: u.role, owed_leads_count: u.owed_leads_count || 0 });
-      }
-      alert('Invitation email sent');
-    } catch (e) {
-      alert(e?.message || 'Failed to resend invitation');
+      await User.delete(userId);
+      await loadData();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert('Failed to delete user');
     }
   };
 
-  const handleInvite = async (e) => {
-    e?.preventDefault?.();
+  const handleResendInvite = async (email) => {
     try {
-      if (!invite.email || !invite.full_name) throw new Error('Email and full name are required');
-      if (invite.role === 'agent') {
-        await agentsAPI.invite({ email: invite.email, full_name: invite.full_name, owed_leads_count: 0 });
-      } else {
-        await User.invite(invite);
-      }
-      setInviteOpen(false);
-      setInvite({ email: '', full_name: '', role: 'agent' });
-      await load();
-    } catch (err) {
-      alert(err?.message || 'Failed to send invitation');
+      await auth.resendInvite(email);
+      alert("Invitation resent successfully");
+    } catch (error) {
+      console.error('Error resending invite:', error);
+      alert('Failed to resend invite');
     }
   };
+
+  const handleApproveUser = async (userId) => {
+    try {
+      await User.setApprovalStatus(userId, 'approved');
+      await loadData();
+    } catch (error) {
+      console.error('Error approving user:', error);
+    }
+  };
+
+  const exportToCSV = () => {
+    const headers = ['Name', 'Email', 'Role', 'Status', 'Joined Date'];
+    const csvData = filteredUsers.map(u => [
+      `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email,
+      u.email,
+      u.role,
+      u.isActive ? 'Active' : 'Inactive',
+      u.createdAt ? format(new Date(u.createdAt), 'dd/MM/yyyy') : ''
+    ]);
+
+    const csvContent = [headers, ...csvData]
+      .map(row => row.map(field => `"${field}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `users_${format(new Date(), 'ddMMyyyy')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Filtering Logic
+  const filteredUsers = users.filter(user => {
+    const matchesSearch = (
+      (user.firstName?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (user.lastName?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (user.email?.toLowerCase() || "").includes(searchTerm.toLowerCase())
+    );
+    const matchesRole = roleFilter === "all" || user.role === roleFilter;
+
+    // Status filter logic
+    let matchesStatus = true;
+    if (statusFilter !== "all") {
+      if (statusFilter === "active") matchesStatus = user.isActive;
+      else if (statusFilter === "inactive") matchesStatus = !user.isActive;
+    }
+
+    // Lifecycle tab logic
+    let matchesLifecycle = true;
+    if (lifecycleTab === "pending_approval") {
+      matchesLifecycle = user.approvalStatus === 'pending' || user.status === 'pending_approval';
+    } else if (lifecycleTab === "pending_registration") {
+      matchesLifecycle =
+        user.status === 'pending_registration' ||
+        !!user.invitationToken ||
+        (user.isActive && !user.passwordHash && !user.googleId);
+    } else if (lifecycleTab === "active") {
+      matchesLifecycle = user.isActive && user.approvalStatus !== 'pending';
+    } else if (lifecycleTab === "inactive") {
+      matchesLifecycle = !user.isActive;
+    }
+
+    return matchesSearch && matchesRole && matchesStatus && matchesLifecycle;
+  });
 
   if (loading) {
     return (
-      <div className="p-6 lg:p-8">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-64"></div>
-          <div className="h-96 bg-gray-200 rounded-xl"></div>
+      <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+        <div className="max-w-[1600px] mx-auto space-y-6">
+          <div className="h-8 bg-gray-200 rounded w-48 animate-pulse"></div>
+          <div className="h-96 bg-gray-200 rounded-xl animate-pulse"></div>
         </div>
-      </div>
-    );
-  }
-
-  if (!me || me.role !== 'admin') {
-    return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-gray-50">
-        <UserRound className="w-16 h-16 text-yellow-500 mb-4" />
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h2>
-        <p className="text-gray-600">You do not have permission to view this page.</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
+    <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+      <div className="max-w-[1600px] mx-auto space-y-6">
+
+        {/* Page Header */}
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Admin - Users</h1>
-            <p className="text-gray-600 mt-1">View, filter, and manage all users.</p>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">User Management</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Manage system access and user roles.
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={exportCsv}>
-              <Download className="w-4 h-4 mr-2" /> Export CSV
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="bg-white"
+              onClick={exportToCSV}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Export
             </Button>
-            <Button onClick={() => setInviteOpen(true)} className="bg-blue-600 hover:bg-blue-700">
-              <Plus className="w-5 h-5 mr-2" />
+            <Button onClick={() => setInviteDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700">
+              <UserPlus className="w-4 h-4 mr-2" />
               Invite User
             </Button>
           </div>
         </div>
 
-        {/* quick stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
-          <Card><CardContent className="py-3"><div className="text-sm text-gray-500">All</div><div className="text-2xl font-semibold">{lifecycleCounts.all}</div></CardContent></Card>
-          <Card><CardContent className="py-3"><div className="text-sm text-gray-500">Pending Approval</div><div className="text-2xl font-semibold">{lifecycleCounts.pendingApproval}</div></CardContent></Card>
-          <Card><CardContent className="py-3"><div className="text-sm text-gray-500">Pending Registration</div><div className="text-2xl font-semibold">{lifecycleCounts.pendingRegistration}</div></CardContent></Card>
-          <Card><CardContent className="py-3"><div className="text-sm text-gray-500">Active</div><div className="text-2xl font-semibold">{lifecycleCounts.active}</div></CardContent></Card>
-        </div>
+        {/* Filters & Tabs */}
+        <div className="flex flex-col gap-4">
+          {/* Lifecycle Tabs */}
+          <Tabs value={lifecycleTab} onValueChange={setLifecycleTab} className="w-full">
+            <TabsList className="bg-white border border-gray-200/50 p-1 h-auto flex-wrap">
+              <TabsTrigger value="all" className="data-[state=active]:bg-gray-100 data-[state=active]:text-gray-900">All Users</TabsTrigger>
+              <TabsTrigger value="pending_approval" className="data-[state=active]:bg-amber-50 data-[state=active]:text-amber-700">
+                Pending Approval
+                {users.filter(u => u.approvalStatus === 'pending' || u.status === 'pending_approval').length > 0 && (
+                  <span className="ml-2 bg-amber-100 text-amber-700 text-xs px-1.5 py-0.5 rounded-full">
+                    {users.filter(u => u.approvalStatus === 'pending' || u.status === 'pending_approval').length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="pending_registration" className="data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700">Pending Registration</TabsTrigger>
+              <TabsTrigger value="active" className="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700">Active</TabsTrigger>
+              <TabsTrigger value="inactive" className="data-[state=active]:bg-gray-100 data-[state=active]:text-gray-600">Inactive</TabsTrigger>
+            </TabsList>
+          </Tabs>
 
-        <Card className="shadow-lg">
-          <CardHeader className="border-b border-gray-100">
-            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <Input
-                  placeholder="Search users..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <div className="w-full lg:w-48">
-                <Select value={role} onValueChange={(v) => { setRole(v); }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All roles</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="agent">Agent</SelectItem>
-                    <SelectItem value="fleet_owner">Fleet Owner</SelectItem>
-                    <SelectItem value="driver_partner">Driver</SelectItem>
-                    <SelectItem value="customer">Customer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="w-full lg:w-48">
-                <Select value={status} onValueChange={(v) => { setStatus(v); }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center gap-2 ml-auto">
-                <Button variant={viewMode === 'list' ? 'default' : 'outline'} onClick={() => setViewMode('list')}>
-                  <ListIcon className="w-4 h-4 mr-2" /> List
-                </Button>
-                <Button variant={viewMode === 'grid' ? 'default' : 'outline'} onClick={() => setViewMode('grid')}>
-                  <GridIcon className="w-4 h-4 mr-2" /> Grid
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
+          <Card className="border-gray-200/50 shadow-sm bg-white overflow-hidden">
+            <CardHeader className="border-b border-gray-100 p-4 lg:p-6 bg-white">
+              <div className="flex flex-col lg:flex-row gap-4 justify-between">
+                <div className="flex flex-col sm:flex-row gap-2 flex-1">
+                  <div className="relative flex-1 min-w-[200px]">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <Input
+                      placeholder="Search users..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-9 h-9 bg-gray-50/50 border-gray-200 focus:bg-white"
+                    />
+                  </div>
+                  <Select value={roleFilter} onValueChange={setRoleFilter}>
+                    <SelectTrigger className="w-[140px] h-9">
+                      <SelectValue placeholder="All Roles" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Roles</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="user">User</SelectItem>
+                      <SelectItem value="agent">Agent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-          <CardContent className="p-4">
-            <Tabs value={lifecycleTab} onValueChange={setLifecycleTab}>
-              <TabsList>
-                <TabsTrigger value="all">All ({lifecycleCounts.all})</TabsTrigger>
-                <TabsTrigger value="pendingApproval">Pending Approval ({lifecycleCounts.pendingApproval})</TabsTrigger>
-                <TabsTrigger value="pendingRegistration">Pending Registration ({lifecycleCounts.pendingRegistration})</TabsTrigger>
-                <TabsTrigger value="active">Active ({lifecycleCounts.active})</TabsTrigger>
-                <TabsTrigger value="inactive">Inactive ({lifecycleCounts.inactive})</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value={lifecycleTab} className="mt-4">
-                {viewMode === 'list' ? (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-gray-50">
-                          <TableHead className="cursor-pointer" onClick={() => handleToggleSort('fullName')}>
-                            User {sortBy === 'fullName' ? (order === 'ASC' ? <ChevronUp className="inline w-4 h-4"/> : <ChevronDown className="inline w-4 h-4"/>) : null}
-                          </TableHead>
-                          <TableHead className="cursor-pointer" onClick={() => handleToggleSort('role')}>
-                            Role {sortBy === 'role' ? (order === 'ASC' ? <ChevronUp className="inline w-4 h-4"/> : <ChevronDown className="inline w-4 h-4"/>) : null}
-                          </TableHead>
-                          <TableHead>Contact</TableHead>
-                          <TableHead className="cursor-pointer" onClick={() => handleToggleSort('approvalStatus')}>
-                            Status {sortBy === 'approvalStatus' ? (order === 'ASC' ? <ChevronUp className="inline w-4 h-4"/> : <ChevronDown className="inline w-4 h-4"/>) : null}
-                          </TableHead>
-                          <TableHead className="cursor-pointer" onClick={() => handleToggleSort('createdAt')}>
-                            Joined {sortBy === 'createdAt' ? (order === 'ASC' ? <ChevronUp className="inline w-4 h-4"/> : <ChevronDown className="inline w-4 h-4"/>) : null}
-                          </TableHead>
-                          <TableHead>Actions</TableHead>
+                {/* View Toggle */}
+                <div className="flex items-center border rounded-md p-1 bg-gray-50/50">
+                  <Button
+                    variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => setViewMode('list')}
+                  >
+                    <ListIcon className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => setViewMode('grid')}
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {viewMode === 'list' ? (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-gray-100">
+                        <TableHead className="py-3 px-6 font-medium text-gray-500">User</TableHead>
+                        <TableHead className="py-3 px-6 font-medium text-gray-500">Role</TableHead>
+                        <TableHead className="py-3 px-6 font-medium text-gray-500">Status</TableHead>
+                        <TableHead className="py-3 px-6 font-medium text-gray-500">Joined</TableHead>
+                        <TableHead className="py-3 px-6 font-medium text-gray-500 text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredUsers.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="h-48 text-center text-gray-500">
+                            No users found matching your criteria.
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {visibleUsers.map((u) => (
-                          <TableRow key={u.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => openDetails(u)}>
-                            <TableCell>
-                              <div>
-                                <p className="font-semibold text-gray-900">{u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email}</p>
-                                <p className="text-xs text-gray-500">ID: {u.id.slice(-8)}</p>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="capitalize">{u.role?.replace('_',' ') || '-'}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="space-y-1 text-sm">
-                                <div className="flex items-center gap-1 text-gray-600">
-                                  <Mail className="w-3 h-3" />
-                                  {u.email}
+                      ) : (
+                        filteredUsers.map(user => (
+                          <TableRow key={user.id} className="hover:bg-gray-50/50 border-gray-100">
+                            <TableCell className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-medium uppercase text-xs">
+                                  {(user.firstName?.[0] || user.email?.[0] || '?')}
                                 </div>
-                                {u.phone && (
-                                  <div className="flex items-center gap-1 text-gray-500">
-                                    <Phone className="w-3 h-3" />
-                                    {u.phone}
+                                <div>
+                                  <div className="font-medium text-gray-900">
+                                    {user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.email}
                                   </div>
-                                )}
+                                  {user.firstName && <div className="text-xs text-gray-500">{user.email}</div>}
+                                </div>
                               </div>
                             </TableCell>
-                            <TableCell>{statusBadge(u)}</TableCell>
-                            <TableCell>
-                              <span className="text-sm text-gray-600">{u.createdAt ? format(new Date(u.createdAt), 'dd/MM/yyyy') : '-'}</span>
+                            <TableCell className="px-6 py-4">
+                              <Badge variant="outline" className="capitalize font-normal border-gray-200 text-gray-600 px-2 py-0.5">
+                                {user.role}
+                              </Badge>
                             </TableCell>
-                            <TableCell>
-                              <RowActions u={u} />
+                            <TableCell className="px-6 py-4">
+                              {user.approvalStatus === 'pending' || user.status === 'pending_approval' ? (
+                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Pending Approval</Badge>
+                              ) : (
+                                user.isActive ?
+                                  <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Active</Badge> :
+                                  <Badge variant="outline" className="bg-gray-100 text-gray-600 border-gray-200">Inactive</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="px-6 py-4 text-gray-500 text-sm">
+                              {user.createdAt ? format(new Date(user.createdAt), 'MMM d, yyyy') : '-'}
+                            </TableCell>
+                            <TableCell className="px-6 py-4 text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" className="h-8 w-8 p-0">
+                                    <MoreHorizontal className="h-4 w-4 text-gray-500" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                  <DropdownMenuItem onClick={() => openEditDialog(user)}>
+                                    <Edit className="mr-2 h-4 w-4" /> Edit Details
+                                  </DropdownMenuItem>
+                                  {(user.approvalStatus === 'pending' || user.status === 'pending_approval') && (
+                                    <DropdownMenuItem onClick={() => handleApproveUser(user.id)} className="text-green-600">
+                                      <CheckCircle className="mr-2 h-4 w-4" /> Approve User
+                                    </DropdownMenuItem>
+                                  )}
+                                  {(!user.isActive && (user.invitationToken || user.status === 'pending_registration')) && (
+                                    <DropdownMenuItem onClick={() => handleResendInvite(user.email)}>
+                                      <Mail className="mr-2 h-4 w-4" /> Resend Invite
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => handleDeleteUser(user.id)} className="text-red-600">
+                                    <Trash2 className="mr-2 h-4 w-4" /> Delete User
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </TableCell>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {visibleUsers.map(u => (
-                      <Card key={u.id} className="shadow-sm cursor-pointer" onClick={() => openDetails(u)}>
-                        <CardHeader className="flex flex-row items-center justify-between pb-2">
-                          <CardTitle className="text-base font-semibold truncate">{u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email}</CardTitle>
-                          {statusBadge(u)}
-                        </CardHeader>
-                        <CardContent className="space-y-2 text-sm text-gray-600">
-                          <div className="flex items-center gap-2"><Mail className="w-4 h-4" /> {u.email}</div>
-                          {u.phone && <div className="flex items-center gap-2"><Phone className="w-4 h-4" /> {u.phone}</div>}
-                          <div className="text-xs text-gray-500">Joined: {u.createdAt ? format(new Date(u.createdAt), 'dd/MM/yyyy') : '-'}</div>
-                          <div className="pt-2 flex justify-end"><RowActions u={u} /></div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                    {visibleUsers.length === 0 && (
-                      <div className="col-span-full text-center py-12 text-gray-500">
-                        <h3 className="font-semibold">No users found.</h3>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {visibleUsers.length === 0 && (
-                  <div className="text-center py-12">
-                    <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                      <Search className="w-6 h-6 text-gray-400" />
-                    </div>
-                    <h3 className="font-semibold text-gray-900 mb-2">No users found</h3>
-                    <p className="text-gray-500">Try adjusting filters or invite a new user</p>
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
+                  {filteredUsers.map(user => (
+                    <Card key={user.id} className="shadow-sm hover:shadow-md transition-shadow border-gray-200/50">
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold uppercase text-sm">
+                          {(user.firstName?.[0] || user.email?.[0] || '?')}
+                        </div>
+                        {(user.approvalStatus === 'pending' || user.status === 'pending_approval') ? (
+                          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Pending</Badge>
+                        ) : (
+                          <Badge variant="outline" className={user.isActive ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-100 text-gray-600 border-gray-200"}>
+                            {user.isActive ? 'Active' : 'Inactive'}
+                          </Badge>
+                        )}
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-lg font-semibold truncate text-gray-900" title={user.email}>
+                          {user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.email}
+                        </div>
+                        <div className="text-sm text-gray-500 mb-4 truncate">{user.email}</div>
 
-        {/* Invite dialog */}
-        <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-          <DialogContent className="sm:max-w-md">
+                        <div className="flex items-center justify-between text-sm">
+                          <Badge variant="secondary" className="font-normal capitalize bg-gray-100 text-gray-600 hover:bg-gray-200">{user.role}</Badge>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)} className="h-8 w-8 text-gray-500 hover:text-blue-600">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user.id)} className="h-8 w-8 text-gray-500 hover:text-red-600">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Invite User Dialog */}
+        <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+          <DialogContent>
             <DialogHeader>
-              <DialogTitle>Invite User</DialogTitle>
-              <DialogDescription>Send an invitation email to let the user complete registration.</DialogDescription>
+              <DialogTitle>Invite New User</DialogTitle>
+              <DialogDescription>
+                Send an invitation to a new user to join the platform.
+              </DialogDescription>
             </DialogHeader>
-            <form className="space-y-4" onSubmit={handleInvite}>
-              <div>
-                <label className="text-sm text-gray-600">Full name</label>
-                <Input value={invite.full_name} onChange={(e) => setInvite({ ...invite, full_name: e.target.value })} placeholder="Jane Doe" />
+            <form onSubmit={handleInviteUser}>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="fullName" className="text-right">Name</Label>
+                  <Input
+                    id="fullName"
+                    value={inviteData.fullName}
+                    onChange={(e) => setInviteData({ ...inviteData, fullName: e.target.value })}
+                    className="col-span-3"
+                    placeholder="John Doe"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="email" className="text-right">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={inviteData.email}
+                    onChange={(e) => setInviteData({ ...inviteData, email: e.target.value })}
+                    className="col-span-3"
+                    placeholder="john@example.com"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="role" className="text-right">Role</Label>
+                  <Select
+                    value={inviteData.role}
+                    onValueChange={(val) => setInviteData({ ...inviteData, role: val })}
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Select a role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="user">User</SelectItem>
+                      <SelectItem value="agent">Agent</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div>
-                <label className="text-sm text-gray-600">Email</label>
-                <Input type="email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} placeholder="jane@example.com" />
-              </div>
-              <div>
-                <label className="text-sm text-gray-600">Role</label>
-                <Select value={invite.role} onValueChange={(v) => setInvite({ ...invite, role: v })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="agent">Agent</SelectItem>
-                    <SelectItem value="fleet_owner">Fleet Owner</SelectItem>
-                    <SelectItem value="driver_partner">Driver</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>
-                <Button type="submit" className="bg-blue-600 hover:bg-blue-700">Send Invite</Button>
-              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setInviteDialogOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={inviteLoading}>
+                  {inviteLoading ? "Sending..." : "Send Invitation"}
+                </Button>
+              </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
 
-        {/* Details dialog */}
-        <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>User Details</DialogTitle>
-            </DialogHeader>
-            {selectedUser ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-semibold">
-                    {(selectedUser.fullName || selectedUser.email)?.charAt(0)?.toUpperCase()}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-gray-900">{selectedUser.fullName || `${selectedUser.firstName || ''} ${selectedUser.lastName || ''}`.trim() || selectedUser.email}</div>
-                    <div className="text-xs text-gray-500">{selectedUser.role}</div>
-                  </div>
-                </div>
-                <div className="text-sm text-gray-700">
-                  <div className="flex items-center gap-2"><Mail className="w-4 h-4" /> {selectedUser.email}</div>
-                  {selectedUser.phone && <div className="flex items-center gap-2"><Phone className="w-4 h-4" /> {selectedUser.phone}</div>}
-                </div>
-                <div className="pt-2">
-                  {statusBadge(selectedUser)}
-                </div>
-                <div className="pt-2 text-sm text-gray-600">
-                  <div>Joined: {selectedUser.createdAt ? format(new Date(selectedUser.createdAt), 'dd/MM/yyyy') : '-'}</div>
-                  <div>Approval: {selectedUser.approvalStatus || 'approved'}</div>
-                  {selectedUser.owed_leads_count !== undefined && (
-                    <div>Leads owed: {selectedUser.owed_leads_count}</div>
-                  )}
-                </div>
-                <div className="flex gap-2 pt-2">
-                  {(selectedUser.approvalStatus === 'pending' || selectedUser.status === 'pending_approval') && (
-                    <>
-                      <Button variant="ghost" size="sm" className="text-green-700 hover:text-green-900" onClick={() => approve(selectedUser, 'approved')}>Approve</Button>
-                      <Button variant="ghost" size="sm" className="text-red-700 hover:text-red-900" onClick={() => approve(selectedUser, 'rejected')}>Reject</Button>
-                    </>
-                  )}
-                  {(selectedUser.status === 'pending_registration' || !!selectedUser.invitationToken || selectedUser.emailVerified === false) && (
-                    <Button variant="ghost" size="sm" onClick={() => resendInvite(selectedUser)}>Resend Invite</Button>
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </DialogContent>
-        </Dialog>
-
-        {/* Edit dialog */}
-        <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent className="sm:max-w-lg">
+        {/* Edit User Dialog */}
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>Edit User</DialogTitle>
-              <DialogDescription>Update user details. Admins can also change role and status.</DialogDescription>
             </DialogHeader>
-            {selectedUser ? (
-              <form className="space-y-4" onSubmit={handleUpdateUser}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form onSubmit={handleEditUser}>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm text-gray-600">First name</label>
-                    <Input value={edit.firstName} onChange={(e) => setEdit({ ...edit, firstName: e.target.value })} placeholder="Jane" />
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-600">Last name</label>
-                    <Input value={edit.lastName} onChange={(e) => setEdit({ ...edit, lastName: e.target.value })} placeholder="Doe" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm text-gray-600">Email</label>
+                    <Label htmlFor="edit-firstname">First Name</Label>
                     <Input
-                      type="email"
-                      value={edit.email}
-                      onChange={(e) => setEdit({ ...edit, email: e.target.value })}
-                      placeholder="jane@example.com"
-                      disabled={!!selectedUser?.googleSub}
+                      id="edit-firstname"
+                      value={editData.firstName}
+                      onChange={(e) => setEditData({ ...editData, firstName: e.target.value })}
                     />
                   </div>
                   <div>
-                    <label className="text-sm text-gray-600">Phone</label>
-                    <Input value={edit.phone} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} placeholder="(555) 000-0000" />
+                    <Label htmlFor="edit-lastname">Last Name</Label>
+                    <Input
+                      id="edit-lastname"
+                      value={editData.lastName}
+                      onChange={(e) => setEditData({ ...editData, lastName: e.target.value })}
+                    />
                   </div>
                 </div>
-                {me?.role === 'admin' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm text-gray-600">Role</label>
-                      <Select value={edit.role} onValueChange={(v) => setEdit({ ...edit, role: v })}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select role" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="admin">Admin</SelectItem>
-                          <SelectItem value="agent">Agent</SelectItem>
-                          <SelectItem value="fleet_owner">Fleet Owner</SelectItem>
-                          <SelectItem value="driver_partner">Driver</SelectItem>
-                          <SelectItem value="customer">Customer</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <label className="text-sm text-gray-600">Status</label>
-                      <Select value={edit.isActive ? 'active' : 'inactive'} onValueChange={(v) => setEdit({ ...edit, isActive: v === 'active' })}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="active">Active</SelectItem>
-                          <SelectItem value="inactive">Inactive</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                )}
-                {me?.role === 'admin' && selectedUser.role === 'agent' && (
-                  <div>
-                    <label className="text-sm text-gray-600">Leads owed</label>
-                    <Input type="number" value={edit.owed_leads_count} onChange={(e) => setEdit({ ...edit, owed_leads_count: e.target.value })} />
-                  </div>
-                )}
                 <div>
-                  <label className="text-sm text-gray-600">Date of Birth</label>
-                  <Input type="date" value={edit.dateOfBirth} onChange={(e) => setEdit({ ...edit, dateOfBirth: e.target.value })} />
+                  <Label htmlFor="edit-email">Email</Label>
+                  <Input
+                    id="edit-email"
+                    value={editData.email}
+                    disabled
+                    className="bg-gray-50 text-gray-500"
+                  />
                 </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-                  <Button type="submit" className="bg-blue-600 hover:bg-blue-700">Save Changes</Button>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="edit-role">Role</Label>
+                    <Select
+                      value={editData.role}
+                      onValueChange={(val) => setEditData({ ...editData, role: val })}
+                    >
+                      <SelectTrigger id="edit-role">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="user">User</SelectItem>
+                        <SelectItem value="agent">Agent</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-status">Status</Label>
+                    <Select
+                      value={editData.status}
+                      onValueChange={(val) => setEditData({ ...editData, status: val })}
+                    >
+                      <SelectTrigger id="edit-status">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-              </form>
-            ) : null}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={editLoading}>
+                  {editLoading ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
+
       </div>
     </div>
   );
 }
-

@@ -1,8 +1,7 @@
-
 import { useState, useEffect } from "react";
 import { User, Campaign } from "@/api/entities";
 import { auth, agents as agentsAPI, apiClient } from "@/api/client";
-import { LeadPackage } from "@/api/entities"; // Assuming LeadPackage entity exists
+import { LeadPackage } from "@/api/entities";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -34,13 +33,25 @@ import {
   Edit,
   Eye,
   Search,
-  AlertTriangle,
   Phone,
   Mail,
-  Package, // Import Package icon
-  Trash2
+  Package,
+  Trash2,
+  MoreHorizontal,
+  CheckCircle,
+  XCircle,
+  ShieldAlert,
+  UserCheck
 } from "lucide-react";
 import { format } from "date-fns";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import AgentFormDialog from "../components/agents/AgentFormDialog";
 import AgentDetailsDialog from "../components/agents/AgentDetailsDialog";
@@ -52,7 +63,7 @@ export default function AdminAgents() {
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [isPackageDialogOpen, setIsPackageDialogOpen] = useState(false); // New state for package dialog
+  const [isPackageDialogOpen, setIsPackageDialogOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState('all');
@@ -70,7 +81,6 @@ export default function AdminAgents() {
 
   const loadData = async () => {
     try {
-      // Always force-refresh from backend to avoid stale cached roles
       const userData = await auth.getCurrentUser(true);
       if (!userData || userData.role !== 'admin') {
         throw new Error('Insufficient permissions');
@@ -109,7 +119,6 @@ export default function AdminAgents() {
           owed_leads_count: parseInt(formData.owed_leads_count) || 0
         });
       } else {
-        // Invite new agent via backend invite flow
         const normalizedPhone = (formData.phone || '').replace(/\D/g, '');
         await agentsAPI.invite({
           email: formData.email,
@@ -124,7 +133,6 @@ export default function AdminAgents() {
       setSelectedAgent(null);
     } catch (error) {
       console.error('Error saving agent:', error);
-      // Re-throw so the dialog can display the specific backend error message
       throw error;
     }
   };
@@ -200,7 +208,6 @@ export default function AdminAgents() {
       }
       await loadData();
       setAssignDialogOpen(false);
-      // Refresh campaigns dialog if it is open
       if (campaignsDialogOpen && selectedAgent) {
         try {
           const resp = await agentsAPI.getCampaigns(selectedAgent.id);
@@ -225,13 +232,10 @@ export default function AdminAgents() {
     if (!confirmed) return;
     try {
       if (isPending) {
-        // Soft delete → move to inactive
         await User.delete(agent.id);
       } else if (!agent.isActive) {
-        // Already inactive → permanent delete
         await apiClient.delete(`/users/${agent.id}/permanent`);
       } else {
-        // Active non-pending → soft delete first
         await User.delete(agent.id);
       }
       await loadData();
@@ -262,18 +266,15 @@ export default function AdminAgents() {
     }
   };
 
-  // New function to open lead package dialog
   const handleOpenPackageDialog = (agent) => {
     setSelectedAgent(agent);
     setIsPackageDialogOpen(true);
   };
 
-  // New function to handle lead package submission
   const handlePackageSubmit = async (packageData) => {
     try {
-      // Assuming LeadPackage.create exists and is correctly implemented
       await LeadPackage.create(packageData);
-      await loadData(); // Refresh agent data after package creation
+      await loadData();
       setIsPackageDialogOpen(false);
       setSelectedAgent(null);
     } catch (error) {
@@ -284,11 +285,24 @@ export default function AdminAgents() {
   const filteredAgents = agents.filter(agent => {
     const needle = (searchTerm || '').toLowerCase();
     const name = (agent.fullName || agent.full_name || '').toLowerCase();
-    return (
+    const matchesSearch = (
       name.includes(needle) ||
       agent.email?.toLowerCase().includes(needle) ||
       agent.phone?.includes(searchTerm)
     );
+
+    let matchesStatus = true;
+    if (statusFilter !== 'all') {
+      const isPending = agent?.isActive === true && (
+        agent?.status === 'pending_registration' ||
+        !!agent?.invitationToken ||
+        agent?.emailVerified === false
+      );
+      if (statusFilter === 'pending') matchesStatus = isPending;
+      else if (statusFilter === 'active') matchesStatus = agent.isActive && !isPending;
+      else if (statusFilter === 'inactive') matchesStatus = !agent.isActive;
+    }
+    return matchesSearch && matchesStatus;
   });
 
   const isPending = (agent) => (
@@ -299,197 +313,12 @@ export default function AdminAgents() {
     )
   );
 
-  const pendingAgents = filteredAgents.filter(isPending);
-  const activeAgents = filteredAgents.filter(a => !isPending(a) && a.isActive);
-  const inactiveAgents = filteredAgents.filter(a => !isPending(a) && !a.isActive);
-
-  const sectionMatchesFilter = (section) => {
-    if (statusFilter === 'all') return true;
-    if (statusFilter === 'pending') return section === 'pending';
-    if (statusFilter === 'active') return section === 'active';
-    if (statusFilter === 'inactive') return section === 'inactive';
-    return true;
-  };
-
-  const renderAgentsTable = (items) => (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-gray-50">
-            <TableHead>Agent</TableHead>
-            <TableHead>Contact</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Leads Owed</TableHead>
-            <TableHead>Campaigns</TableHead>
-            <TableHead>Joined</TableHead>
-            <TableHead>Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {items.map((agent) => (
-            <TableRow key={agent.id} className="hover:bg-gray-50">
-              <TableCell>
-                <div>
-                  <p className="font-semibold text-gray-900">{agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim()}</p>
-                  <p className="text-sm text-gray-500">Agent ID: {agent.id.slice(-8)}</p>
-                </div>
-              </TableCell>
-
-              <TableCell>
-                <div className="space-y-1 text-sm">
-                  <div className="flex items-center gap-1 text-gray-600">
-                    <Mail className="w-3 h-3" />
-                    {agent.email}
-                  </div>
-                  {agent.phone && (
-                    <div className="flex items-center gap-1 text-gray-500">
-                      <Phone className="w-3 h-3" />
-                      {agent.phone}
-                    </div>
-                  )}
-                </div>
-              </TableCell>
-
-              <TableCell>
-                {(() => {
-                  const pendingApproval = agent.approvalStatus === 'pending' || agent.status === 'pending_approval';
-                  const pendingRegistration = isPending(agent);
-                  const isActive = agent.isActive && !pendingApproval && !pendingRegistration;
-                  const badgeCls = pendingApproval
-                    ? 'bg-yellow-100 text-yellow-800'
-                    : (isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800');
-                  const label = pendingApproval
-                    ? 'Pending Approval'
-                    : (pendingRegistration ? 'Pending Registration' : (isActive ? 'Active' : 'Inactive'));
-                  return <Badge className={badgeCls}>{label}</Badge>;
-                })()}
-              </TableCell>
-
-              <TableCell>
-                <span className="font-semibold">{agent.owed_leads_count || 0}</span>
-              </TableCell>
-
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openCampaignsDialog(agent)}
-                  >
-                    Manage
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => openAssignDialog(agent)}
-                    className="text-blue-600 hover:text-blue-800"
-                  >
-                    Assign
-                  </Button>
-                </div>
-              </TableCell>
-
-              <TableCell>
-                <span className="text-sm text-gray-600">
-                  {agent.createdAt ? format(new Date(agent.createdAt), 'dd/MM/yyyy') : (agent.created_date ? format(new Date(agent.created_date), 'dd/MM/yyyy') : '-')}
-                </span>
-              </TableCell>
-
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  {(agent.approvalStatus === 'pending' || agent.status === 'pending_approval') && (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-green-700 hover:text-green-900"
-                        onClick={async () => { try { await User.setApprovalStatus(agent.id, 'approved'); await loadData(); } catch (e) { console.error(e); } }}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-700 hover:text-red-900"
-                        onClick={async () => { try { await User.setApprovalStatus(agent.id, 'rejected'); await loadData(); } catch (e) { console.error(e); } }}
-                      >
-                        Reject
-                      </Button>
-                    </>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleOpenDetails(agent)}
-                  >
-                    <Eye className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleOpenForm(agent)}
-                  >
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleOpenPackageDialog(agent)}
-                    className="text-blue-600 hover:text-blue-800"
-                  >
-                    <Package className="w-4 h-4" />
-                  </Button>
-                  {isPending(agent) ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleResendInvite(agent)}
-                      className="text-yellow-700 hover:text-yellow-900"
-                    >
-                      <Mail className="w-4 h-4" />
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleToggleStatus(agent)}
-                      className={agent.isActive ? 'text-gray-600 hover:text-gray-800' : 'text-green-600 hover:text-green-800'}
-                    >
-                      {agent.isActive ? 'Deactivate' : 'Activate'}
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDeleteAgent(agent)}
-                    className="text-red-600 hover:text-red-800"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      {items.length === 0 && (
-        <div className="text-center py-12">
-          <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-            <Search className="w-6 h-6 text-gray-400" />
-          </div>
-          <h3 className="font-semibold text-gray-900 mb-2">No agents found</h3>
-          <p className="text-gray-500">Try adjusting your search or add new agents</p>
-        </div>
-      )}
-    </div>
-  );
-
   if (loading) {
     return (
-      <div className="p-6 lg:p-8">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-64"></div>
-          <div className="h-96 bg-gray-200 rounded-xl"></div>
+      <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+        <div className="max-w-[1600px] mx-auto space-y-6">
+          <div className="h-8 bg-gray-200 rounded w-48 animate-pulse"></div>
+          <div className="h-96 bg-gray-200 rounded-xl animate-pulse"></div>
         </div>
       </div>
     );
@@ -497,22 +326,22 @@ export default function AdminAgents() {
 
   if (user?.role !== 'admin') {
     return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-gray-50">
-        <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h2>
-        <p className="text-gray-600">You do not have permission to view this page.</p>
+      <div className="flex flex-col items-center justify-center h-screen bg-gray-50">
+        <ShieldAlert className="w-16 h-16 text-red-500 mb-4" />
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h2>
+        <p className="text-gray-500">You do not have permission to view this page.</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
+    <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+      <div className="max-w-[1600px] mx-auto space-y-6">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Admin - Agent Management</h1>
-            <p className="text-gray-600 mt-1">
-              Manage your sales agents and their information.
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Agents</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Manage your sales agents and their performance.
             </p>
           </div>
           <Button onClick={() => handleOpenForm()} className="bg-blue-600 hover:bg-blue-700">
@@ -521,26 +350,26 @@ export default function AdminAgents() {
           </Button>
         </div>
 
-        <Card className="shadow-lg">
-          <CardHeader className="border-b border-gray-100">
+        <Card className="border-gray-200/50 shadow-sm bg-white overflow-hidden">
+          <CardHeader className="border-b border-gray-100 p-4 lg:p-6 bg-white">
             <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <div className="relative flex-1 w-full lg:max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
                   placeholder="Search agents..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="pl-9 h-9 bg-gray-50/50 border-gray-200 focus:bg-white"
                 />
               </div>
-              <div className="w-full lg:w-60">
+              <div className="w-full lg:w-[180px]">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-9 bg-white">
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All statuses</SelectItem>
-                    <SelectItem value="pending">Pending registration</SelectItem>
+                    <SelectItem value="pending">Pending Registration</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="inactive">Inactive</SelectItem>
                   </SelectContent>
@@ -549,52 +378,148 @@ export default function AdminAgents() {
             </div>
           </CardHeader>
 
-          <CardContent className="p-0"></CardContent>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-gray-100">
+                    <TableHead className="py-3 px-6 font-medium text-gray-500">Agent</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500">Contact</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500">Status</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500">Leads Owed</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500">Joined</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredAgents.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="h-48 text-center text-gray-500">
+                        No agents found matching your criteria.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredAgents.map((agent) => (
+                      <TableRow key={agent.id} className="hover:bg-gray-50/50 border-gray-100">
+                        <TableCell className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-medium uppercase text-xs">
+                              {(agent.fullName?.[0] || agent.email?.[0] || '?')}
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900">{agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim()}</p>
+                              <p className="text-xs text-gray-500">ID: {agent.id.slice(-8)}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="px-6 py-4">
+                          <div className="space-y-1 text-sm">
+                            <div className="flex items-center gap-1.5 text-gray-600">
+                              <Mail className="w-3 h-3 text-gray-400" />
+                              {agent.email}
+                            </div>
+                            {agent.phone && (
+                              <div className="flex items-center gap-1.5 text-gray-500">
+                                <Phone className="w-3 h-3 text-gray-400" />
+                                {agent.phone}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="px-6 py-4">
+                          {(() => {
+                            const pendingApproval = agent.approvalStatus === 'pending' || agent.status === 'pending_approval';
+                            const pendingRegistration = isPending(agent);
+                            const isActive = agent.isActive && !pendingApproval && !pendingRegistration;
+
+                            if (pendingApproval) return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-50">Pending Approval</Badge>;
+                            if (pendingRegistration) return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-50">Invited</Badge>;
+                            if (isActive) return <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50">Active</Badge>;
+                            return <Badge variant="outline" className="bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-100">Inactive</Badge>;
+                          })()}
+                        </TableCell>
+
+                        <TableCell className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="font-mono bg-gray-100 text-gray-700 border-gray-200">{agent.owed_leads_count || 0}</Badge>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              onClick={() => handleOpenPackageDialog(agent)}
+                            >
+                              <Plus className="w-3 h-3 mr-1" /> Add
+                            </Button>
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="px-6 py-4 text-sm text-gray-500">
+                          {agent.createdAt ? format(new Date(agent.createdAt), 'MMM d, yyyy') : (agent.created_date ? format(new Date(agent.created_date), 'MMM d, yyyy') : '-')}
+                        </TableCell>
+
+                        <TableCell className="px-6 py-4 text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-8 w-8 p-0 text-gray-500 hover:text-gray-900">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                              <DropdownMenuLabel>Manage Agent</DropdownMenuLabel>
+                              <DropdownMenuItem onClick={() => handleOpenDetails(agent)}>
+                                <Eye className="mr-2 h-4 w-4" /> View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleOpenForm(agent)}>
+                                <Edit className="mr-2 h-4 w-4" /> Edit Profile
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => openCampaignsDialog(agent)}>
+                                <UserCheck className="mr-2 h-4 w-4" /> Manage Campaigns
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleOpenPackageDialog(agent)}>
+                                <Package className="mr-2 h-4 w-4" /> Lead Package
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              {(agent.approvalStatus === 'pending' || agent.status === 'pending_approval') && (
+                                <>
+                                  <DropdownMenuItem onClick={async () => { try { await User.setApprovalStatus(agent.id, 'approved'); await loadData(); } catch (e) { console.error(e); } }} className="text-emerald-600">
+                                    <CheckCircle className="mr-2 h-4 w-4" /> Approve
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={async () => { try { await User.setApprovalStatus(agent.id, 'rejected'); await loadData(); } catch (e) { console.error(e); } }} className="text-red-600">
+                                    <XCircle className="mr-2 h-4 w-4" /> Reject
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {isPending(agent) ? (
+                                <DropdownMenuItem onClick={() => handleResendInvite(agent)}>
+                                  <Mail className="mr-2 h-4 w-4" /> Resend Invite
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem onClick={() => handleToggleStatus(agent)}>
+                                  {agent.isActive ? (
+                                    <><ShieldAlert className="mr-2 h-4 w-4" /> Deactivate</>
+                                  ) : (
+                                    <><CheckCircle className="mr-2 h-4 w-4" /> Activate</>
+                                  )}
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => handleDeleteAgent(agent)} className="text-red-600">
+                                <Trash2 className="mr-2 h-4 w-4" /> Delete Agent
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
         </Card>
-
-        <div className="space-y-6 mt-6">
-          {sectionMatchesFilter('pending') && (
-            <Card className="shadow-lg border-l-4 border-yellow-400">
-              <CardHeader className="bg-yellow-50">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-yellow-900">Pending Registration</h2>
-                  <Badge className="bg-yellow-100 text-yellow-800">{pendingAgents.length} pending</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                {renderAgentsTable(pendingAgents)}
-              </CardContent>
-            </Card>
-          )}
-
-          {sectionMatchesFilter('active') && (
-            <Card className="shadow-lg border-l-4 border-green-500">
-              <CardHeader className="bg-green-50">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-green-900">Active Agents</h2>
-                  <Badge className="bg-green-100 text-green-800">{activeAgents.length} active</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                {renderAgentsTable(activeAgents)}
-              </CardContent>
-            </Card>
-          )}
-
-          {sectionMatchesFilter('inactive') && (
-            <Card className="shadow-lg border-l-4 border-gray-400">
-              <CardHeader className="bg-gray-50">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-gray-900">Inactive Agents</h2>
-                  <Badge className="bg-gray-200 text-gray-800">{inactiveAgents.length} inactive</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                {renderAgentsTable(inactiveAgents)}
-              </CardContent>
-            </Card>
-          )}
-        </div>
 
         <AgentFormDialog
           open={isFormOpen}
@@ -609,7 +534,6 @@ export default function AdminAgents() {
           agent={selectedAgent}
         />
 
-        {/* New LeadPackageDialog component */}
         <LeadPackageDialog
           open={isPackageDialogOpen}
           onOpenChange={setIsPackageDialogOpen}
@@ -633,7 +557,7 @@ export default function AdminAgents() {
             </DialogHeader>
             <div className="max-h-[60vh] overflow-y-auto divide-y">
               {campaignsForAgent.length === 0 ? (
-                <div className="text-sm text-gray-600 p-4">No campaigns found.</div>
+                <div className="text-sm text-gray-500 p-4 text-center">No campaigns found.</div>
               ) : campaignsForAgent.map(c => (
                 <div key={c.id} className="py-3">
                   <div className="flex items-center justify-between gap-4">
@@ -668,25 +592,26 @@ export default function AdminAgents() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
-                  className="pl-9"
+                  className="pl-9 bg-white"
                   placeholder="Filter campaigns..."
                   value={campaignSearch}
                   onChange={(e) => setCampaignSearch(e.target.value)}
                 />
               </div>
-              <div className="border rounded-md max-h-60 overflow-y-auto p-2 space-y-1">
+              <div className="border rounded-md max-h-60 overflow-y-auto p-2 space-y-1 bg-gray-50">
                 {allCampaigns
                   .filter(c => (c.name || '').toLowerCase().includes(campaignSearch.toLowerCase()))
                   .map(campaign => (
                     <div
                       key={campaign.id}
-                      className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-md cursor-pointer"
+                      className="flex items-center space-x-3 p-2 hover:bg-white hover:shadow-sm rounded-md cursor-pointer transition-all"
                       onClick={() => toggleCampaignSelected(campaign.id)}
                     >
                       <Checkbox
                         id={`c-${campaign.id}`}
                         checked={selectedCampaignIds.has(campaign.id)}
                         onCheckedChange={() => toggleCampaignSelected(campaign.id)}
+                        className="border-gray-300"
                       />
                       <label
                         htmlFor={`c-${campaign.id}`}
@@ -711,7 +636,7 @@ export default function AdminAgents() {
               <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleSaveAssignments} disabled={assignLoading}>
+              <Button onClick={handleSaveAssignments} disabled={assignLoading} className="bg-blue-600 hover:bg-blue-700">
                 {assignLoading ? 'Saving...' : 'Save Assignments'}
               </Button>
             </div>
