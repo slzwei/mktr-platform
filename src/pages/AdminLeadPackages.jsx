@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, Archive, Package, Edit, MoreHorizontal, Loader2 } from "lucide-react";
+import { Plus, Search, Archive, Package, Edit, MoreHorizontal, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -75,6 +75,25 @@ const AdminLeadPackages = () => {
         } catch (error) {
             console.error("Submit error:", error);
             throw error; // Re-throw to be handled by the dialog
+        }
+    };
+
+    const handleDeletePackage = async (pkg) => {
+        if (!window.confirm(`Are you sure you want to delete "${pkg.name}"?`)) return;
+
+        try {
+            // Note: BaseEntity.delete does NOT exist on LeadPackageEntity if not inherited/overridden?
+            // BaseEntity has a delete method? Yes, viewed it earlier in client.js.
+            await LeadPackage.delete(pkg.id);
+            toast({ title: "Success", description: "Package deleted/archived successfully" });
+            loadPackages();
+        } catch (error) {
+            console.error("Delete error:", error);
+            toast({
+                title: "Error",
+                description: "Failed to delete package",
+                variant: "destructive",
+            });
         }
     };
 
@@ -164,6 +183,10 @@ const AdminLeadPackages = () => {
                                                     <DropdownMenuItem onClick={() => handleEditPackage(pkg)}>
                                                         <Edit className="w-4 h-4 mr-2" />
                                                         Edit details
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleDeletePackage(pkg)} className="text-red-600 focus:text-red-600">
+                                                        <Trash2 className="w-4 h-4 mr-2" />
+                                                        Delete
                                                     </DropdownMenuItem>
                                                     {/* Add Archive functionality later if needed */}
                                                 </DropdownMenuContent>

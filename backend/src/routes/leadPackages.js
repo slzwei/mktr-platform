@@ -156,4 +156,44 @@ router.get('/assignments/:agentId', authenticateToken, asyncHandler(async (req, 
     });
 }));
 
+/**
+ * @route DELETE /api/lead-packages/:id
+ * @desc Delete or archive a lead package
+ * @access Admin only
+ */
+router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
+    if (req.user.role !== 'admin') {
+        throw new AppError('Access denied', 403);
+    }
+
+    const { id } = req.params;
+    const pkg = await LeadPackage.findByPk(id);
+
+    if (!pkg) {
+        throw new AppError('Package not found', 404);
+    }
+
+    // Check for existing assignments
+    const assignmentCount = await LeadPackageAssignment.count({
+        where: { leadPackageId: id }
+    });
+
+    if (assignmentCount > 0) {
+        // Soft delete (archive) if used
+        await pkg.update({ status: 'archived' });
+        res.json({
+            success: true,
+            message: 'Package archived (assignments exist)',
+            data: { package: pkg }
+        });
+    } else {
+        // Hard delete if unused
+        await pkg.destroy();
+        res.json({
+            success: true,
+            message: 'Package deleted successfully'
+        });
+    }
+}));
+
 export default router;

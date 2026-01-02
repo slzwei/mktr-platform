@@ -115,6 +115,49 @@ async function verifyLeadPackageFlow() {
     } else {
         console.error('❌ Verification failed. Assignments:', JSON.stringify(assignments, null, 2));
     }
+
+    // 7. Verify Delete (Archive) Logic
+    console.log('7. Verifying Delete (Archive) Logic...');
+    const delRes = await makeRequest(`/lead-packages/${packageId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (delRes.success && delRes.data?.data?.package?.status === 'archived') {
+        console.log('✅ Package correctly archived due to assignments.');
+    } else if (delRes.success) {
+        console.log('❓ Package deleted, but expected archive? Response:', delRes.data);
+    } else {
+        console.error('❌ Failed to delete/archive package:', delRes.data);
+    }
+
+    // 8. Verify Delete (Hard) Logic
+    console.log('8. Verifying Delete (Hard) Logic...');
+    // Create temp package
+    const tempPkg = await makeRequest('/lead-packages', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+            name: 'Temp Delete Package',
+            type: 'basic',
+            price: 0,
+            leadCount: 10,
+            campaignId: campaignId
+        })
+    });
+    if (!tempPkg.success) { console.error('❌ Failed to create temp package:', tempPkg.data); return; }
+    const tempId = tempPkg.data.data.package.id;
+
+    const delRes2 = await makeRequest(`/lead-packages/${tempId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (delRes2.success && delRes2.data.message === 'Package deleted successfully') {
+        console.log('✅ Unused package correctly hard deleted.');
+    } else {
+        console.error('❌ Failed to hard delete unused package:', delRes2.data);
+    }
 }
 
 verifyLeadPackageFlow();
