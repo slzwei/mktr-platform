@@ -50,9 +50,11 @@ export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit 
 
   const loadCampaigns = async () => {
     try {
-      const campaignsData = await Campaign.list();
-      // Filter out archived campaigns and only show active ones
-      setCampaigns(campaignsData.filter(c => c.is_active && c.status !== 'archived'));
+      // Request active campaigns with a higher limit to ensure we get them all
+      const response = await Campaign.list({ status: 'active', limit: 100 });
+      // helper to handle both paginated (object with campaigns prop) and non-paginated (array) responses
+      const campaignsList = response.campaigns || (Array.isArray(response) ? response : []);
+      setCampaigns(campaignsList);
     } catch (error) {
       console.error("Failed to load campaigns:", error);
     }
@@ -61,7 +63,7 @@ export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    
+
     // Auto-calculate total amount when leads or price changes
     if (name === 'total_leads' || name === 'price_per_lead') {
       const leads = name === 'total_leads' ? parseFloat(value) || 0 : parseFloat(formData.total_leads) || 0;
@@ -124,8 +126,8 @@ export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit 
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
           <div>
             <Label htmlFor="campaign_id">Campaign *</Label>
-            <Select 
-              value={formData.campaign_id} 
+            <Select
+              value={formData.campaign_id}
               onValueChange={(value) => handleSelectChange("campaign_id", value)}
             >
               <SelectTrigger>
@@ -216,8 +218,8 @@ export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit 
 
           <div>
             <Label htmlFor="payment_status">Payment Status</Label>
-            <Select 
-              value={formData.payment_status} 
+            <Select
+              value={formData.payment_status}
               onValueChange={(value) => handleSelectChange("payment_status", value)}
             >
               <SelectTrigger>
