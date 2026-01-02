@@ -35,18 +35,9 @@ export default function MarketingConsentDialog({ open, onOpenChange }) {
           <div>
             <p className="font-semibold">3. Withdrawing Consent</p>
             <p>You may withdraw or amend your consent at any time by:</p>
-            <ul className="list-disc pl-5 space-y-1">
-              <li>Calling the MKTR Customer Support line at +65 XXXX XXXX,</li>
-              <li>
-                Logging into your My MKTR account (
-                <a href="https://portal.mktr.sg/login" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">https://portal.mktr.sg/login</a>
-                ), or
-              </li>
-              <li>
-                Submitting the withdrawal form found at {" "}
-                <a href="https://mktr.sg/personal-data-policy" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">https://mktr.sg/personal-data-policy</a>.
-              </li>
-            </ul>
+            <p className="mt-1">
+              Writing via WhatsApp to +60 11 5438 8337.
+            </p>
           </div>
 
           <div>
