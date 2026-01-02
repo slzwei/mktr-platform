@@ -43,15 +43,15 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
   const offset = (page - 1) * limit;
 
   const whereConditions = {};
-  
+
   if (role) {
     whereConditions.role = role;
   }
-  
+
   if (status) {
     whereConditions.isActive = status === 'active';
   }
-  
+
   if (search) {
     whereConditions[Op.or] = [
       { firstName: { [Op.iLike]: `%${search}%` } },
@@ -197,13 +197,13 @@ router.put('/:id', authenticateToken, asyncHandler(async (req, res) => {
   }
 
   const updateData = {};
-  
+
   if (firstName) updateData.firstName = firstName;
   if (lastName) updateData.lastName = lastName;
   if (phone) updateData.phone = phone;
   if (avatar) updateData.avatar = avatar;
   if (dateOfBirth) updateData.dateOfBirth = dateOfBirth;
-  
+
   // Only admins can update role, status, and owed_leads_count
   if (req.user.role === 'admin') {
     if (role) updateData.role = role;
@@ -269,11 +269,25 @@ router.delete('/:id/permanent', authenticateToken, requireAdmin, asyncHandler(as
     throw new AppError('Only agent accounts can be permanently deleted', 400);
   }
 
+  // Clean up dependencies to ensure successful deletion
+  // 1. Unassign prospects
+  const { Prospect, LeadPackageAssignment } = await import('../models/index.js');
+  await Prospect.update(
+    { assignedAgentId: null },
+    { where: { assignedAgentId: id } }
+  );
+
+  // 2. Remove package assignments
+  await LeadPackageAssignment.destroy({
+    where: { agentId: id }
+  });
+
+  // 3. Delete the user
   await user.destroy();
 
   res.json({
     success: true,
-    message: 'User permanently deleted'
+    message: 'User and related assignments permanently deleted'
   });
 }));
 
