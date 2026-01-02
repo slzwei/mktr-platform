@@ -56,7 +56,7 @@ router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req
     const { name, price, leadCount, campaignId, type, start_date, end_date } = req.body;
 
     // Basic validation
-    if (!name || !price || !leadCount || !campaignId) {
+    if (!name || price === undefined || price === null || !leadCount || !campaignId) {
         throw new AppError('Missing required fields', 400);
     }
 
