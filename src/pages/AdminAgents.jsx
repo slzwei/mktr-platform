@@ -5,6 +5,7 @@ import { LeadPackage } from "@/api/entities";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/use-toast";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +56,8 @@ import {
 
 import AgentFormDialog from "../components/agents/AgentFormDialog";
 import AgentDetailsDialog from "../components/agents/AgentDetailsDialog";
-import LeadPackageDialog from "../components/agents/LeadPackageDialog";
+
+import AssignPackageDialog from "../components/agents/AssignPackageDialog";
 
 export default function AdminAgents() {
   const [user, setUser] = useState(null);
@@ -73,7 +75,9 @@ export default function AdminAgents() {
   const [assignLoading, setAssignLoading] = useState(false);
   const [allCampaigns, setAllCampaigns] = useState([]);
   const [selectedCampaignIds, setSelectedCampaignIds] = useState(new Set());
+
   const [campaignSearch, setCampaignSearch] = useState("");
+  const { toast } = useToast();
 
   useEffect(() => {
     loadData();
@@ -271,14 +275,14 @@ export default function AdminAgents() {
     setIsPackageDialogOpen(true);
   };
 
-  const handlePackageSubmit = async (packageData) => {
+  const handlePackageSubmit = async () => {
     try {
-      await LeadPackage.create(packageData);
       await loadData();
       setIsPackageDialogOpen(false);
       setSelectedAgent(null);
+      toast({ title: "Success", description: "Package assigned successfully" });
     } catch (error) {
-      console.error('Error creating lead package:', error);
+      console.error('Error refreshing data:', error);
     }
   };
 
@@ -450,7 +454,7 @@ export default function AdminAgents() {
                               className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                               onClick={() => handleOpenPackageDialog(agent)}
                             >
-                              <Plus className="w-3 h-3 mr-1" /> Add
+                              <Plus className="w-3 h-3 mr-1" /> Assign Package
                             </Button>
                           </div>
                         </TableCell>
@@ -479,7 +483,7 @@ export default function AdminAgents() {
                                 <UserCheck className="mr-2 h-4 w-4" /> Manage Campaigns
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleOpenPackageDialog(agent)}>
-                                <Package className="mr-2 h-4 w-4" /> Lead Package
+                                <Package className="mr-2 h-4 w-4" /> Assign Lead Package
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               {(agent.approvalStatus === 'pending' || agent.status === 'pending_approval') && (
@@ -534,11 +538,11 @@ export default function AdminAgents() {
           agent={selectedAgent}
         />
 
-        <LeadPackageDialog
+        <AssignPackageDialog
           open={isPackageDialogOpen}
           onOpenChange={setIsPackageDialogOpen}
           agent={selectedAgent}
-          onSubmit={handlePackageSubmit}
+          onSubmitSuccess={handlePackageSubmit}
         />
 
         {/* Campaigns dialog (consistent UI) */}

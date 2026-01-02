@@ -11,6 +11,7 @@ import QrTag from './QrTag.js';
 import Commission from './Commission.js';
 import LeadPackage from './LeadPackage.js';
 import CampaignPreview from './CampaignPreview.js';
+import LeadPackageAssignment from './LeadPackageAssignment.js';
 import QrScan from './QrScan.js';
 import Attribution from './Attribution.js';
 import SessionVisit from './SessionVisit.js';
@@ -35,6 +36,7 @@ const defineAssociations = () => {
   User.hasMany(Commission, { foreignKey: 'processedBy', as: 'processedCommissions' });
   User.hasMany(Prospect, { foreignKey: 'assignedAgentId', as: 'assignedProspects' });
   User.hasMany(LeadPackage, { foreignKey: 'createdBy', as: 'createdLeadPackages' });
+  User.hasMany(LeadPackageAssignment, { foreignKey: 'agentId', as: 'assignedPackages' });
   User.hasOne(UserPayout, { foreignKey: 'userId', as: 'payout' });
 
   // FleetOwner associations (standalone entity, not linked to User)
@@ -86,6 +88,12 @@ const defineAssociations = () => {
   LeadPackage.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
   LeadPackage.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
   LeadPackage.hasMany(Commission, { foreignKey: 'leadPackageId', as: 'commissions' });
+  LeadPackage.hasMany(LeadPackageAssignment, { foreignKey: 'leadPackageId', as: 'assignments' });
+
+  // LeadPackageAssignment associations
+  LeadPackageAssignment.belongsTo(User, { foreignKey: 'agentId', as: 'agent' });
+  LeadPackageAssignment.belongsTo(LeadPackage, { foreignKey: 'leadPackageId', as: 'package' });
+
 
   // Device associations
   Device.hasMany(BeaconEvent, { foreignKey: 'deviceId', as: 'events' });
@@ -114,6 +122,7 @@ export {
   QrTag,
   Commission,
   LeadPackage,
+  LeadPackageAssignment,
   CampaignPreview,
   QrScan,
   Attribution,
@@ -140,6 +149,7 @@ export default {
   QrTag,
   Commission,
   LeadPackage,
+  LeadPackageAssignment,
   CampaignPreview,
   QrScan,
   Attribution,

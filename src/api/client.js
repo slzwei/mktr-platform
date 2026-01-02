@@ -547,7 +547,17 @@ class DriverEntity extends BaseEntity {
 // Lead Package Entity
 class LeadPackageEntity extends BaseEntity {
   constructor() {
-    super('/lead-packages'); // This endpoint needs to be implemented in backend
+    super('/lead-packages');
+  }
+
+  async assign(agentId, packageId) {
+    const response = await apiClient.post(`${this.endpoint}/assign`, { agentId, packageId });
+    return response.data;
+  }
+
+  async getAssignments(agentId) {
+    const response = await apiClient.get(`${this.endpoint}/assignments/${agentId}`);
+    return response.data?.assignments || [];
   }
 }
 

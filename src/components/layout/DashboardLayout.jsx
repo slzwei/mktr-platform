@@ -13,7 +13,8 @@ import {
   LogOut,
   Menu,
   Shield,
-  Link2
+  Link2,
+  Package
 } from "lucide-react";
 import NotificationBell from './NotificationBell.jsx';
 import {
@@ -59,6 +60,11 @@ const getNavigationItems = (user) => {
       title: "Campaigns",
       url: createPageUrl("AdminCampaigns"),
       icon: Settings
+    },
+    {
+      title: "Lead Packages",
+      url: createPageUrl("AdminLeadPackages"),
+      icon: Package
     },
     {
       title: "QR Codes",
@@ -225,9 +231,8 @@ export default function DashboardLayout({ children, user, userRole }) {
                       <SidebarMenuItem key={item.title}>
                         <SidebarMenuButton
                           asChild
-                          className={`hover:bg-blue-50 hover:text-blue-700 transition-colors rounded-lg mb-1 ${
-                            isActive ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600' : ''
-                          }`}
+                          className={`hover:bg-blue-50 hover:text-blue-700 transition-colors rounded-lg mb-1 ${isActive ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600' : ''
+                            }`}
                         >
                           <Link to={item.url} className="flex items-center gap-3 px-3 py-3">
                             <item.icon className="w-5 h-5" />
