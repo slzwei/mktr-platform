@@ -1,6 +1,6 @@
 import { ArrowUpRight, ArrowDownRight, Users, TrendingUp, DollarSign, Car } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/utils";
+import { cn } from "@/lib/utils";
 
 export default function DashboardStats({ stats, loading }) {
     if (loading) {
