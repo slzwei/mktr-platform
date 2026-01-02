@@ -228,23 +228,18 @@ export default function AdminAgents() {
 
   const handleDeleteAgent = async (agent) => {
     if (!agent) return;
-    const isPending = agent?.status === 'pending_registration' || !!agent?.invitationToken || agent?.emailVerified === false;
-    const message = isPending
-      ? `Move ${agent.fullName || agent.email} to Inactive?`
-      : `Permanently delete ${agent.fullName || agent.email}? This cannot be undone.`;
-    const confirmed = window.confirm(message);
-    if (!confirmed) return;
+
+    const message = `Permanently delete ${agent.fullName || agent.email}? This cannot be undone.`;
+
+    if (!window.confirm(message)) return;
+
     try {
-      if (isPending) {
-        await User.delete(agent.id);
-      } else if (!agent.isActive) {
-        await apiClient.delete(`/users/${agent.id}/permanent`);
-      } else {
-        await User.delete(agent.id);
-      }
+      await apiClient.delete(`/users/${agent.id}/permanent`);
       await loadData();
+      toast({ title: "Success", description: "Agent deleted successfully" });
     } catch (error) {
       console.error('Error deleting agent:', error);
+      toast({ variant: "destructive", title: "Error", description: error?.message || "Failed to delete agent" });
     }
   };
 
