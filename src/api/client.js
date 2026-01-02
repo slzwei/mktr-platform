@@ -377,27 +377,27 @@ class BaseEntity {
       return response.data;
     }
     // Otherwise return just the data array for backwards compatibility
-    return response.data?.campaigns || response.data?.prospects || response.data?.qrTags || response.data?.users || response.data?.cars || response.data?.drivers || response.data?.fleetOwners || response.data?.commissions || response.data?.agents || [];
+    return response.data?.campaigns || response.data?.prospects || response.data?.qrTags || response.data?.users || response.data?.cars || response.data?.drivers || response.data?.fleetOwners || response.data?.commissions || response.data?.agents || response.data?.packages || [];
   }
 
   async filter(params = {}) {
     const response = await apiClient.get(this.endpoint, params);
-    return response.data?.campaigns || response.data?.prospects || response.data?.qrTags || response.data?.users || response.data?.cars || response.data?.drivers || response.data?.fleetOwners || response.data?.commissions || response.data?.agents || [];
+    return response.data?.campaigns || response.data?.prospects || response.data?.qrTags || response.data?.users || response.data?.cars || response.data?.drivers || response.data?.fleetOwners || response.data?.commissions || response.data?.agents || response.data?.packages || [];
   }
 
   async create(data) {
     const response = await apiClient.post(this.endpoint, data);
-    return response.data?.campaign || response.data?.prospect || response.data?.qrTag || response.data?.user || response.data?.car || response.data?.driver || response.data?.fleetOwner || response.data?.commission || response.data;
+    return response.data?.campaign || response.data?.prospect || response.data?.qrTag || response.data?.user || response.data?.car || response.data?.driver || response.data?.fleetOwner || response.data?.commission || response.data?.package || response.data;
   }
 
   async get(id) {
     const response = await apiClient.get(`${this.endpoint}/${id}`);
-    return response.data?.campaign || response.data?.prospect || response.data?.qrTag || response.data?.user || response.data?.car || response.data?.driver || response.data?.fleetOwner || response.data?.commission || response.data;
+    return response.data?.campaign || response.data?.prospect || response.data?.qrTag || response.data?.user || response.data?.car || response.data?.driver || response.data?.fleetOwner || response.data?.commission || response.data?.package || response.data;
   }
 
   async update(id, data) {
     const response = await apiClient.put(`${this.endpoint}/${id}`, data);
-    return response.data?.campaign || response.data?.prospect || response.data?.qrTag || response.data?.user || response.data?.car || response.data?.driver || response.data?.fleetOwner || response.data?.commission || response.data;
+    return response.data?.campaign || response.data?.prospect || response.data?.qrTag || response.data?.user || response.data?.car || response.data?.driver || response.data?.fleetOwner || response.data?.commission || response.data?.package || response.data;
   }
 
   async delete(id) {
