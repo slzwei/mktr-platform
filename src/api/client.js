@@ -567,6 +567,11 @@ class UserEntity extends BaseEntity {
     super('/users');
   }
 
+  async permanentDelete(id) {
+    const response = await apiClient.delete(`${this.endpoint}/${id}/permanent`);
+    return response.data;
+  }
+
   async me() {
     const response = await apiClient.get('/auth/profile');
     return response.data?.user;

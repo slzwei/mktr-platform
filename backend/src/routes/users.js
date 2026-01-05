@@ -264,10 +264,10 @@ router.delete('/:id/permanent', authenticateToken, requireAdmin, asyncHandler(as
     throw new AppError('User not found', 404);
   }
 
-  // Only allow permanent delete for agents (safety)
-  if (user.role !== 'agent') {
-    throw new AppError('Only agent accounts can be permanently deleted', 400);
-  }
+  // Allow permanent delete for all roles
+  // if (user.role !== 'agent') {
+  //   throw new AppError('Only agent accounts can be permanently deleted', 400);
+  // }
 
   // Clean up dependencies to ensure successful deletion
   // 1. Unassign prospects

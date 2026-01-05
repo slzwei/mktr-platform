@@ -149,9 +149,9 @@ export default function AdminUsers() {
   };
 
   const handleDeleteUser = async (userId) => {
-    if (!window.confirm("Are you sure you want to delete this user? This cannot be undone.")) return;
+    if (!window.confirm("Are you sure you want to PERMANENTLY delete this user? This cannot be undone.")) return;
     try {
-      await User.delete(userId);
+      await User.permanentDelete(userId);
       await loadData();
     } catch (error) {
       console.error('Error deleting user:', error);
