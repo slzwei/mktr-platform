@@ -251,7 +251,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 countryCode: '+65'
             });
 
-            const result = response.data || response; // `result` will be the actual payload
+            const result = response;
 
             if (result.success) {
                 setOtpState('pending');
@@ -305,7 +305,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 code: otp,
                 countryCode: '+65'
             });
-            const result = response.data || response; // `result` will be the actual payload
+            const result = response;
             // Our backend returns { success: true, data: { verified: true/false, status: 'approved' } }
 
             const isVerified = result.success && (result.data?.verified === true || result.data?.status === 'approved');

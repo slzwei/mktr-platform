@@ -17,7 +17,8 @@ if (missing.length === 0) {
 }
 
 // Send verification code
-router.post('/send', authenticateToken, asyncHandler(async (req, res) => {
+// Public endpoint for lead capture / agent invite
+router.post('/send', asyncHandler(async (req, res) => {
   if (!twilioClient) throw new AppError('Verification service not configured', 500);
 
   const { phone, countryCode = '+65' } = req.body;
@@ -36,7 +37,7 @@ router.post('/send', authenticateToken, asyncHandler(async (req, res) => {
 }));
 
 // Check verification code
-router.post('/check', authenticateToken, asyncHandler(async (req, res) => {
+router.post('/check', asyncHandler(async (req, res) => {
   if (!twilioClient) throw new AppError('Verification service not configured', 500);
 
   const { phone, code, countryCode = '+65' } = req.body;
