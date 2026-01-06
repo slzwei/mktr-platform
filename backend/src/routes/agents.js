@@ -144,6 +144,12 @@ router.get('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
         include: [
           { association: 'prospects', attributes: ['id', 'leadStatus'] }
         ]
+      },
+      {
+        association: 'assignedPackages',
+        include: [
+          { association: 'package', attributes: ['id', 'name', 'price', 'type'] }
+        ]
       }
     ]
   });

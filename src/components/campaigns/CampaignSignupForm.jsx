@@ -4,18 +4,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Calendar as CalendarIcon,
-  Phone,
-  User,
-  Mail,
-  MapPin,
-  CheckCircle2,
-  ShieldCheck,
-  Loader2,
-  AlertCircle,
-  X
+    Calendar as CalendarIcon,
+    Phone,
+    User,
+    Mail,
+    MapPin,
+    CheckCircle2,
+    ShieldCheck,
+    Loader2,
+    AlertCircle,
+    X
 } from "lucide-react";
-import { sendOtp, verifyOtp } from "../lib/customFunctions";
+import { apiClient } from "@/api/client";
 import { motion } from "framer-motion";
 import MarketingConsentDialog from "@/components/legal/MarketingConsentDialog";
 
@@ -49,10 +49,10 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
     const formatDateInput = (value) => {
         // Remove all non-digits
         let digits = value.replace(/\D/g, '');
-        
+
         // Limit to 8 digits (DDMMYYYY)
         digits = digits.slice(0, 8);
-        
+
         // Add slashes at appropriate positions
         if (digits.length >= 3) {
             digits = digits.slice(0, 2) + '/' + digits.slice(2);
@@ -60,14 +60,14 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         if (digits.length >= 6) {
             digits = digits.slice(0, 5) + '/' + digits.slice(5);
         }
-        
+
         return digits;
     };
 
     // New: Calculate age from DD/MM/YYYY format
     const calculateAge = (dateString) => {
         if (!dateString || dateString.length !== 10) return null;
-        
+
         const [day, month, year] = dateString.split('/').map(Number);
         // Basic validation for numbers and reasonable year range
         if (isNaN(day) || isNaN(month) || isNaN(year) || day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > new Date().getFullYear()) {
@@ -83,11 +83,11 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         const today = new Date();
         let age = today.getFullYear() - birthDate.getFullYear();
         const monthDiff = today.getMonth() - birthDate.getMonth();
-        
+
         if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
             age--;
         }
-        
+
         return age;
     };
 
@@ -97,9 +97,9 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             setAgeError('');
             return;
         }
-        
+
         const digitsOnly = dateString.replace(/\D/g, '');
-        
+
         // Check for incomplete date format
         if (digitsOnly.length > 0 && digitsOnly.length !== 8) {
             setAgeError('Please enter full year in DDMMYYYY format');
@@ -117,13 +117,13 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             const day = parseInt(digitsOnly.slice(0, 2), 10);
             const month = parseInt(digitsOnly.slice(2, 4), 10);
             const year = parseInt(digitsOnly.slice(4, 8), 10);
-            
+
             // Basic range validation
             if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > new Date().getFullYear()) {
                 setAgeError('Please enter a valid date');
                 return;
             }
-            
+
             // Check for invalid dates (e.g., Feb 30, Apr 31)
             const testDate = new Date(year, month - 1, day);
             if (testDate.getDate() !== day || testDate.getMonth() !== month - 1 || testDate.getFullYear() !== year) {
@@ -137,12 +137,12 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             setAgeError('');
             return;
         }
-        
+
         const hasMinAge = campaign.min_age !== undefined && campaign.min_age !== null;
         const hasMaxAge = campaign.max_age !== undefined && campaign.max_age !== null;
         const minAge = hasMinAge ? campaign.min_age : 0;
         const maxAge = hasMaxAge ? campaign.max_age : 150; // Default max age if not specified
-        
+
         if (hasMinAge && age < minAge) {
             setAgeError(`Must be at least ${minAge} years old`);
             return;
@@ -151,7 +151,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             setAgeError(`Only available for ages ${hasMinAge ? `${minAge}-` : ''}${maxAge}`);
             return;
         }
-        
+
         setAgeError('');
     };
 
@@ -183,27 +183,27 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         if (key === 'phone') {
             // Remove all non-digits first
             let digits = value.replace(/\D/g, '');
-            
+
             // Handle Singapore country code removal - be more aggressive about detecting +65
             if (digits.startsWith('65') && digits.length > 8) {
                 // This is likely +65XXXXXXXX format, remove the country code
                 digits = digits.substring(2);
             }
-            
+
             // Take only the first 8 digits for Singapore mobile number
             const finalNumber = digits.slice(0, 8);
-            
+
             setFormData(prev => ({ ...prev, phone: finalNumber }));
         } else if (key === 'date_of_birth') {
             const formattedDate = formatDateInput(value);
             setFormData(prev => ({ ...prev, [key]: formattedDate }));
-            
+
             // Clear incomplete state when user continues typing beyond 6 digits
             const digitsOnly = formattedDate.replace(/\D/g, '');
             if (digitsOnly.length !== 6 && dobIncomplete) {
                 setDobIncomplete(false);
             }
-            
+
             // Validate immediately as user types
             validateAge(formattedDate);
         } else {
@@ -241,46 +241,48 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
 
         setLoading('sending');
         setError('');
-        
+
         const phoneNumber = getFullPhoneNumber();
 
         try {
             // Call sendOtp with just the phone number string
-            const response = await sendOtp(phoneNumber);
-            
+            const response = await apiClient.post('/verify/send', {
+                phone: formData.phone,
+                countryCode: '+65'
+            });
+
             const result = response.data || response; // `result` will be the actual payload
-            
+
             if (result.success) {
                 setOtpState('pending');
                 setResendCooldown(30); // Start cooldown timer
             } else {
                 // Handle non-successful responses where status is not an error that throws
-                if (response.status === 429) { 
-                    setError(result.message || "Too many attempts. Please wait before trying again.");
-                    setResendCooldown(600); // 10 minutes cooldown for rate limiting
-                } else {
-                    setError(result.message || "Failed to send verification code. Please try again.");
-                }
+                setError(result.message || "Failed to send verification code. Please try again.");
             }
         } catch (err) {
             console.error('Send OTP error:', err);
-            
+
             // Handle different error types, specifically HTTP status codes
             let errorMessage = "Unable to send verification code. Please try again.";
-            
+
+            // Axios/apiClient error structure often puts response data in err.response.data
+            // or err.data
+            const respData = err.response?.data || err.data;
+
             if (err.response?.status === 429) {
                 errorMessage = "Too many verification attempts. Please wait 10 minutes before trying again.";
                 setResendCooldown(600); // 10 minutes
-            } else if (err.response?.data?.message) {
-                errorMessage = err.response.data.message;
+            } else if (respData?.message) {
+                errorMessage = respData.message;
                 // Set cooldown if server explicitly provides a retryAfter duration
-                if (err.response.data.retryAfter) {
-                    setResendCooldown(err.response.data.retryAfter);
+                if (respData.retryAfter) {
+                    setResendCooldown(respData.retryAfter);
                 }
             } else if (err.message) {
                 errorMessage = err.message;
             }
-            
+
             setError(errorMessage);
         }
         setLoading(null);
@@ -293,15 +295,22 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         }
         setLoading('verifying');
         setError('');
-        
+
         const phoneNumber = getFullPhoneNumber();
 
         try {
             // Call verifyOtp with phoneNumber string and otp string
-            const response = await verifyOtp(phoneNumber, otp); 
+            const response = await apiClient.post('/verify/check', {
+                phone: formData.phone,
+                code: otp,
+                countryCode: '+65'
+            });
             const result = response.data || response; // `result` will be the actual payload
-            
-            if (result && result.success) {
+            // Our backend returns { success: true, data: { verified: true/false, status: 'approved' } }
+
+            const isVerified = result.success && (result.data?.verified === true || result.data?.status === 'approved');
+
+            if (isVerified) {
                 setLoading(null); // Stop spinner
                 setShowSuccessTick(true);
                 setError(''); // Clear error on successful verification
@@ -313,7 +322,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             } else {
                 let userFriendlyError = result?.message || "Verification failed. Please try again.";
                 // Provide a more helpful message for the common error
-                if (userFriendlyError.includes("incorrect")) {
+                if (userFriendlyError.includes("incorrect") || result.data?.status === 'pending') {
                     userFriendlyError = "Incorrect code. Please double-check and try again. Codes are time-sensitive.";
                 }
                 setError(userFriendlyError);
@@ -324,15 +333,17 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             console.error('Verification error:', err);
             // Handle different error structures
             let errorMessage = "Verification failed. Please try again.";
-            
-            if (err.response?.data?.message) {
-                errorMessage = err.response.data.message;
+
+            const respData = err.response?.data || err.data;
+
+            if (respData?.message) {
+                errorMessage = respData.message;
             } else if (err.message) {
                 errorMessage = err.message;
             } else if (typeof err === 'string') {
                 errorMessage = err;
             }
-            
+
             setError(errorMessage);
             setOtp(''); // Clear the OTP input on failure
             setLoading(null);
@@ -399,11 +410,11 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         const dataToSubmit = {
             ...formData,
             // Send phone number without '+' (e.g., 6591234567)
-            phone: getFullPhoneNumber().substring(1), 
+            phone: getFullPhoneNumber().substring(1),
             date_of_birth: dobFormatted,
             campaign_id: campaignId // Include campaign ID if available from props
         };
-        
+
         try {
             await onSubmit(dataToSubmit); // Call the onSubmit prop passed from parent
             // Optionally, reset form or show success message
@@ -422,7 +433,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
     return (
         <form onSubmit={handleSubmit}>
             <div className="text-center mb-4">
-                <h2 
+                <h2
                     className="font-bold text-gray-900"
                     style={{ fontSize: `${headlineSize || 20}px` }}
                 >
@@ -430,19 +441,19 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 </h2>
                 <p className="text-sm text-gray-600 mt-1">{formSubheadline}</p>
             </div>
-            
+
             <div className="space-y-3">
                 <div className="space-y-1">
                     <Label htmlFor="name" className="text-xs font-medium">Full Name</Label>
                     <div className="relative">
                         <User className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                        <Input 
-                            id="name" 
-                            placeholder="John Tan" 
-                            className="pl-7 h-8 text-sm" 
-                            value={formData.name} 
-                            onChange={(e) => handleFormChange('name', e.target.value)} 
-                            required 
+                        <Input
+                            id="name"
+                            placeholder="John Tan"
+                            className="pl-7 h-8 text-sm"
+                            value={formData.name}
+                            onChange={(e) => handleFormChange('name', e.target.value)}
+                            required
                         />
                     </div>
                 </div>
@@ -470,9 +481,9 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                             </div>
                         </div>
                         {otpState === 'idle' && (
-                            <Button 
+                            <Button
                                 type="button" // Important: Prevent form submission
-                                onClick={handleSendOtp} 
+                                onClick={handleSendOtp}
                                 disabled={loading === 'sending' || formData.phone.length !== 8}
                                 className="w-28 h-8 bg-black hover:bg-gray-800 text-white font-medium text-sm"
                             >
@@ -484,11 +495,11 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                             </Button>
                         )}
                         {otpState === 'verified' && (
-                            <motion.div 
+                            <motion.div
                                 className="flex items-center justify-center gap-2 text-white font-medium text-sm w-28 h-8 bg-green-500 rounded-md"
                                 initial={{ scale: 0, opacity: 0 }}
                                 animate={{ scale: 1, opacity: 1 }}
-                                transition={{ 
+                                transition={{
                                     type: "spring",
                                     stiffness: 500,
                                     damping: 25,
@@ -498,7 +509,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                 <motion.div
                                     initial={{ scale: 0, rotate: -180 }}
                                     animate={{ scale: 1, rotate: 0 }}
-                                    transition={{ 
+                                    transition={{
                                         delay: 0.1,
                                         type: "spring",
                                         stiffness: 600,
@@ -514,7 +525,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 </div>
 
                 {otpState === 'pending' && (
-                    <motion.div 
+                    <motion.div
                         className="space-y-2 p-3 bg-gray-50 rounded-lg border"
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -549,10 +560,10 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                     onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
                                 />
                             </div>
-                            <Button 
+                            <Button
                                 type="button"
-                                size="sm" 
-                                onClick={handleVerifyOtp} 
+                                size="sm"
+                                onClick={handleVerifyOtp}
                                 disabled={loading === 'verifying' || showSuccessTick}
                                 className={`h-9 px-4 text-sm w-28 transition-colors duration-300 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600' : ''}`}
                             >
@@ -581,11 +592,11 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                 disabled={resendCooldown > 0}
                                 className="h-auto p-0 text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:text-gray-500 disabled:no-underline"
                             >
-                                {resendCooldown > 0 ? 
-                                    (resendCooldown > 60 ? 
-                                        `Wait ${Math.ceil(resendCooldown / 60)} min` : 
+                                {resendCooldown > 0 ?
+                                    (resendCooldown > 60 ?
+                                        `Wait ${Math.ceil(resendCooldown / 60)} min` :
                                         `Resend in ${resendCooldown}s`
-                                    ) : 
+                                    ) :
                                     'Resend now'
                                 }
                             </Button>
@@ -594,7 +605,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 )}
 
                 {error && (
-                    <motion.div 
+                    <motion.div
                         className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded border"
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -609,14 +620,14 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                     <Label htmlFor="email" className="text-xs font-medium">Email</Label>
                     <div className="relative">
                         <Mail className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                        <Input 
-                            id="email" 
-                            type="email" 
-                            placeholder="you@example.com" 
-                            className="pl-7 h-8 text-sm" 
-                            value={formData.email} 
-                            onChange={(e) => handleFormChange('email', e.target.value)} 
-                            required 
+                        <Input
+                            id="email"
+                            type="email"
+                            placeholder="you@example.com"
+                            className="pl-7 h-8 text-sm"
+                            value={formData.email}
+                            onChange={(e) => handleFormChange('email', e.target.value)}
+                            required
                         />
                     </div>
                 </div>
@@ -639,7 +650,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                             />
                         </div>
                         {(ageError || dobIncomplete) && (
-                            <motion.div 
+                            <motion.div
                                 className="flex items-center gap-1 text-xs text-red-600 bg-red-50 p-1.5 rounded border"
                                 initial={{ opacity: 0, y: -10 }}
                                 animate={{ opacity: 1, y: 0 }}
@@ -658,14 +669,14 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                     <div className="space-y-1">
                         <Label htmlFor="postal" className="text-xs font-medium">Postal Code</Label>
                         <div className="relative">
-                             <MapPin className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                            <Input 
-                                id="postal" 
-                                placeholder="520230" 
-                                className="pl-7 h-8 text-sm" 
-                                maxLength={6} 
-                                value={formData.postal_code} 
-                                onChange={(e) => handleFormChange('postal_code', e.target.value.replace(/\D/g, '').slice(0, 6))} 
+                            <MapPin className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                            <Input
+                                id="postal"
+                                placeholder="520230"
+                                className="pl-7 h-8 text-sm"
+                                maxLength={6}
+                                value={formData.postal_code}
+                                onChange={(e) => handleFormChange('postal_code', e.target.value.replace(/\D/g, '').slice(0, 6))}
                             />
                         </div>
                     </div>
@@ -675,15 +686,15 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                     className="w-full text-sm py-4 font-semibold shadow-md hover:shadow-lg transition-all duration-200 mt-4"
                     style={{ backgroundColor: themeColor }}
                     disabled={
-                        otpState !== 'verified' || 
-                        loading === 'submitting' || 
-                        ageError !== '' || 
+                        otpState !== 'verified' ||
+                        loading === 'submitting' ||
+                        ageError !== '' ||
                         dobIncomplete
                     }
                 >
                     {loading === 'submitting' ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit'}
                 </Button>
-                 <p className="text-xs text-gray-500 text-center pt-1">
+                <p className="text-xs text-gray-500 text-center pt-1">
                     By signing up, you agree to our{' '}
                     <button
                         type="button"

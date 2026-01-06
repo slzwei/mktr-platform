@@ -8,13 +8,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
-import { 
-  User, 
-  Mail, 
-  Phone, 
+import {
+  User,
+  Mail,
+  Phone,
   Calendar,
   Tag,
-  TrendingUp
+  TrendingUp,
+  Package
 } from "lucide-react";
 
 const statusColors = {
@@ -115,6 +116,34 @@ export default function AgentDetailsDialog({ open, onOpenChange, agent }) {
             </CardContent>
           </Card>
         </div>
+
+        {/* Assigned Packages */}
+        {agent.assignedPackages && agent.assignedPackages.length > 0 && (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Package className="w-5 h-5" />
+                Assigned Packages
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {agent.assignedPackages.map((assignment) => (
+                  <div key={assignment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
+                    <div>
+                      <p className="font-semibold text-gray-900">{assignment.package?.name || 'Unknown Package'}</p>
+                      <p className="text-sm text-gray-500 capitalize">{assignment.package?.type || 'Standard'} • ${assignment.package?.price || 0}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">Assigned</p>
+                      <p className="text-sm font-medium">{assignment.createdAt ? format(new Date(assignment.createdAt), 'MMM d, yyyy') : '-'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="flex justify-end">
           <Button onClick={() => onOpenChange(false)}>
