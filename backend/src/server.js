@@ -69,6 +69,8 @@ const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
   : ['http://localhost:5173'];
 
+console.log('DEBUG: Configured CORS Origins:', corsOrigins);
+
 app.use(cors({
   origin: corsOrigins,
   credentials: true,
@@ -231,30 +233,30 @@ async function startServer() {
     // Targeted sync for new/changed models; avoid accidental destructive alters on sqlite
     const isSqlite = sequelize.getDialect() === 'sqlite';
     // Ensure base tables that QrTag depends on exist first
-    await User.sync({ alter: !isSqlite });
-    await FleetOwner.sync({ alter: !isSqlite });
-    await Campaign.sync({ alter: !isSqlite });
-    await Car.sync({ alter: !isSqlite });
+    await User.sync({ alter: false });
+    await FleetOwner.sync({ alter: false });
+    await Campaign.sync({ alter: false });
+    await Car.sync({ alter: false });
     // Now dependent tables
-    await QrTag.sync({ alter: !isSqlite });
+    await QrTag.sync({ alter: false });
     try {
       // Avoid aggressive alters on Postgres for qr_scans to prevent dropping non-existent FKs
       await QrScan.sync({ alter: false });
     } catch (e) {
       console.warn('⚠️ QrScan sync (alter=false) failed, continuing:', e?.message || e);
     }
-    await Attribution.sync({ alter: !isSqlite });
-    await SessionVisit.sync({ alter: !isSqlite });
-    await Prospect.sync({ alter: !isSqlite });
-    await (await import('./models/ProspectActivity.js')).default.sync({ alter: !isSqlite });
-    await (await import('./models/ShortLink.js')).default.sync({ alter: !isSqlite });
-    await (await import('./models/ShortLinkClick.js')).default.sync({ alter: !isSqlite });
-    await LeadPackage.sync({ alter: !isSqlite });
-    await LeadPackageAssignment.sync({ alter: !isSqlite });
+    await Attribution.sync({ alter: false });
+    await SessionVisit.sync({ alter: false });
+    await Prospect.sync({ alter: false });
+    await (await import('./models/ProspectActivity.js')).default.sync({ alter: false });
+    await (await import('./models/ShortLink.js')).default.sync({ alter: false });
+    await (await import('./models/ShortLinkClick.js')).default.sync({ alter: false });
+    await LeadPackage.sync({ alter: false });
+    await LeadPackageAssignment.sync({ alter: false });
 
     // Ensure name fields exist and constraints are updated
-    await FleetOwner.sync({ alter: !isSqlite });
-    await User.sync({ alter: !isSqlite });
+    await FleetOwner.sync({ alter: false });
+    await User.sync({ alter: false });
 
     // SQLite fallback: ensure new columns exist (users, campaigns)
     if (isSqlite) {

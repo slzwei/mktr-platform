@@ -50,7 +50,7 @@ router.post('/login', validate(schemas.userLogin), asyncHandler(async (req, res)
   const { email, password } = req.body;
 
   // Find user by email
-  const user = await User.findOne({ 
+  const user = await User.findOne({
     where: { email },
     attributes: { include: ['password'] }
   });
@@ -91,7 +91,7 @@ router.post('/login', validate(schemas.userLogin), asyncHandler(async (req, res)
 router.get('/profile', authenticateToken, asyncHandler(async (req, res) => {
   // Include related profiles based on role
   const includeOptions = [];
-  
+
   if (req.user.role === 'fleet_owner') {
     includeOptions.push({ association: 'fleetOwnerProfile' });
   } else if (req.user.role === 'driver') {
@@ -210,12 +210,17 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
   try {
     // Exchange authorization code for tokens
     // Determine the redirect URI that exactly matches what was used in the initial Google auth request
-    // Priority: explicit GOOGLE_REDIRECT_URI > FRONTEND_BASE_URL + path > Origin header > localhost fallback
+    // Priority: explicit GOOGLE_REDIRECT_URI > localhost origin > FRONTEND_BASE_URL > origin > localhost fallback
     const explicitRedirectUri = process.env.GOOGLE_REDIRECT_URI;
-    const derivedFrontendBaseUrl = process.env.FRONTEND_BASE_URL 
-      || req.get('origin') 
-      || 'http://localhost:5173';
-    const finalRedirectUri = explicitRedirectUri 
+    const origin = req.get('origin');
+    const isLocalhost = origin && (origin.includes('localhost') || origin.includes('127.0.0.1'));
+
+    // If we are on localhost, use the origin as base URL to match the frontend's redirect_uri
+    const derivedFrontendBaseUrl = isLocalhost
+      ? origin
+      : (process.env.FRONTEND_BASE_URL || origin || 'http://localhost:5173');
+
+    const finalRedirectUri = explicitRedirectUri
       || `${derivedFrontendBaseUrl}/auth/google/callback`;
 
     console.log('🔍 OAuth token exchange redirect_uri:', finalRedirectUri);
@@ -259,7 +264,7 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
 
     // Find or create user in our database
     let user = await User.findOne({ where: { email: googleUser.email } });
-    
+
     if (!user) {
       // Create new user
       const nameParts = (googleUser.name || '').split(' ');

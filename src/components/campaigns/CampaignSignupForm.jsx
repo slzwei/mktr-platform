@@ -20,6 +20,8 @@ import { motion } from "framer-motion";
 import MarketingConsentDialog from "@/components/legal/MarketingConsentDialog";
 
 export default function CampaignSignupForm({ themeColor, formHeadline, formSubheadline, headlineSize, campaignId, onSubmit, campaign }) {
+    const visibleFields = campaign?.design_config?.visibleFields || {};
+
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -361,30 +363,35 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         e.preventDefault();
 
         // Basic client-side validation before submission
-        if (!formData.name || !formData.email || !formData.phone) {
+        if (!formData.name || !formData.email) {
             setError('Please fill in all required fields.');
             return;
         }
 
-        if (otpState !== 'verified') {
+        if (visibleFields.phone !== false && !formData.phone) {
+            setError('Please enter your phone number.');
+            return;
+        }
+
+        if (visibleFields.phone !== false && otpState !== 'verified') {
             setError('Please verify your phone number before submitting.');
             return;
         }
 
         // Validate DOB format for full 10 characters before submission (if provided)
-        if (formData.date_of_birth && formData.date_of_birth.length > 0 && formData.date_of_birth.length !== 10) {
+        if (visibleFields.dob !== false && formData.date_of_birth && formData.date_of_birth.length > 0 && formData.date_of_birth.length !== 10) {
             setError('Please enter a complete date of birth (DD/MM/YYYY).');
             return;
         }
 
         // Check age validation error
-        if (ageError) {
+        if (visibleFields.dob !== false && ageError) {
             setError('Please correct the date of birth to meet the age requirements.');
             return;
         }
 
         // Check incomplete DOB format
-        if (dobIncomplete) {
+        if (visibleFields.dob !== false && dobIncomplete) {
             setError('Please enter a complete date of birth (DD/MM/YYYY).');
             return;
         }
@@ -409,9 +416,10 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
 
         const dataToSubmit = {
             ...formData,
-            // Send phone number without '+' (e.g., 6591234567)
-            phone: getFullPhoneNumber().substring(1),
-            date_of_birth: dobFormatted,
+            // Send phone number without '+' (e.g., 6591234567) if phone is visible, else null
+            phone: (visibleFields.phone !== false) ? getFullPhoneNumber().substring(1) : null,
+            date_of_birth: (visibleFields.dob !== false) ? dobFormatted : null,
+            postal_code: (visibleFields.postal_code !== false) ? formData.postal_code : null,
             campaign_id: campaignId // Include campaign ID if available from props
         };
 
@@ -458,163 +466,169 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                     </div>
                 </div>
 
-                <div className="space-y-1">
-                    <Label htmlFor="phone" className="text-xs font-medium">Phone Number</Label>
-                    <div className="flex items-center gap-1">
-                        <div className="flex-grow flex">
-                            <div className="flex items-center px-3 bg-gray-50 border border-r-0 rounded-l-md h-8 text-sm font-medium text-gray-700 whitespace-nowrap">
-                                🇸🇬 +65
+                {(visibleFields.phone !== false) && (
+                    <div className="space-y-1">
+                        <Label htmlFor="phone" className="text-xs font-medium">Phone Number</Label>
+                        <div className="flex items-center gap-1">
+                            <div className="flex-grow flex">
+                                <div className="flex items-center px-3 bg-gray-50 border border-r-0 rounded-l-md h-8 text-sm font-medium text-gray-700 whitespace-nowrap">
+                                    🇸🇬 +65
+                                </div>
+                                <div className="relative flex-grow">
+                                    <Phone className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                                    <Input
+                                        id="phone"
+                                        type="tel"
+                                        placeholder="9123 4567"
+                                        className="pl-7 h-8 text-sm rounded-l-none border-l-0"
+                                        value={displayPhone(formData.phone)} // Display formatted phone
+                                        onChange={(e) => handleFormChange('phone', e.target.value)} // Store raw phone digits
+                                        disabled={otpState !== 'idle'}
+                                        required
+                                        maxLength={9} // 8 digits + 1 space
+                                    />
+                                </div>
                             </div>
-                            <div className="relative flex-grow">
-                                <Phone className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                                <Input
-                                    id="phone"
-                                    type="tel"
-                                    placeholder="9123 4567"
-                                    className="pl-7 h-8 text-sm rounded-l-none border-l-0"
-                                    value={displayPhone(formData.phone)} // Display formatted phone
-                                    onChange={(e) => handleFormChange('phone', e.target.value)} // Store raw phone digits
-                                    disabled={otpState !== 'idle'}
-                                    required
-                                    maxLength={9} // 8 digits + 1 space
-                                />
-                            </div>
-                        </div>
-                        {otpState === 'idle' && (
-                            <Button
-                                type="button" // Important: Prevent form submission
-                                onClick={handleSendOtp}
-                                disabled={loading === 'sending' || formData.phone.length !== 8}
-                                className="w-28 h-8 bg-black hover:bg-gray-800 text-white font-medium text-sm"
-                            >
-                                {loading === 'sending' ? (
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                    'Verify'
-                                )}
-                            </Button>
-                        )}
-                        {otpState === 'verified' && (
-                            <motion.div
-                                className="flex items-center justify-center gap-2 text-white font-medium text-sm w-28 h-8 bg-green-500 rounded-md"
-                                initial={{ scale: 0, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                transition={{
-                                    type: "spring",
-                                    stiffness: 500,
-                                    damping: 25,
-                                    duration: 0.3
-                                }}
-                            >
+                            {otpState === 'idle' && (
+                                <Button
+                                    type="button" // Important: Prevent form submission
+                                    onClick={handleSendOtp}
+                                    disabled={loading === 'sending' || formData.phone.length !== 8}
+                                    className="w-28 h-8 bg-black hover:bg-gray-800 text-white font-medium text-sm"
+                                >
+                                    {loading === 'sending' ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        'Verify'
+                                    )}
+                                </Button>
+                            )}
+                            {otpState === 'verified' && (
                                 <motion.div
-                                    initial={{ scale: 0, rotate: -180 }}
-                                    animate={{ scale: 1, rotate: 0 }}
+                                    className="flex items-center justify-center gap-2 text-white font-medium text-sm w-28 h-8 bg-green-500 rounded-md"
+                                    initial={{ scale: 0, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
                                     transition={{
-                                        delay: 0.1,
                                         type: "spring",
-                                        stiffness: 600,
-                                        damping: 20
+                                        stiffness: 500,
+                                        damping: 25,
+                                        duration: 0.3
                                     }}
                                 >
-                                    <CheckCircle2 className="w-5 h-5" />
-                                </motion.div>
-                                <span>OK</span>
-                            </motion.div>
-                        )}
-                    </div>
-                </div>
-
-                {otpState === 'pending' && (
-                    <motion.div
-                        className="space-y-2 p-3 bg-gray-50 rounded-lg border"
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        transition={{ duration: 0.2 }}
-                    >
-                        <div className="flex items-center justify-between">
-                            <Label htmlFor="otp" className="text-sm font-medium text-gray-800">Enter Code</Label>
-                            <Button
-                                type="button" // Important: Prevent form submission
-                                variant="ghost"
-                                size="sm"
-                                onClick={handleCancelOtp}
-                                className="text-gray-500 hover:text-gray-700 h-6 px-1"
-                            >
-                                <X className="w-3 h-3" />
-                            </Button>
-                        </div>
-                        <p className="text-xs text-gray-500 !-mt-1">Sent to +65 {displayPhone(formData.phone)}</p>
-                        <div className="flex items-center gap-2">
-                            <div className="relative flex-grow">
-                                <ShieldCheck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                                <Input
-                                    id="otp"
-                                    type="tel" // Added for numeric keyboard on mobile
-                                    inputMode="numeric" // Added for numeric keyboard on mobile
-                                    autoComplete="one-time-code" // Added for OTP autofill
-                                    placeholder="123456"
-                                    className="pl-8 tracking-wider h-9 text-sm"
-                                    maxLength={6}
-                                    value={otp}
-                                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                                />
-                            </div>
-                            <Button
-                                type="button"
-                                size="sm"
-                                onClick={handleVerifyOtp}
-                                disabled={loading === 'verifying' || showSuccessTick}
-                                className={`h-9 px-4 text-sm w-28 transition-colors duration-300 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600' : ''}`}
-                            >
-                                {showSuccessTick ? (
                                     <motion.div
-                                        initial={{ scale: 0, rotate: -90 }}
+                                        initial={{ scale: 0, rotate: -180 }}
                                         animate={{ scale: 1, rotate: 0 }}
-                                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                        transition={{
+                                            delay: 0.1,
+                                            type: "spring",
+                                            stiffness: 600,
+                                            damping: 20
+                                        }}
                                     >
-                                        <CheckCircle2 className="w-5 h-5 text-white" />
+                                        <CheckCircle2 className="w-5 h-5" />
                                     </motion.div>
-                                ) : loading === 'verifying' ? (
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                    'Confirm'
-                                )}
-                            </Button>
+                                    <span>OK</span>
+                                </motion.div>
+                            )}
                         </div>
-                        <div className="text-center text-xs text-gray-500 pt-1">
-                            Didn't receive a code?{' '}
-                            <Button
-                                type="button"
-                                variant="link"
-                                size="sm"
-                                onClick={handleSendOtp}
-                                disabled={resendCooldown > 0}
-                                className="h-auto p-0 text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:text-gray-500 disabled:no-underline"
-                            >
-                                {resendCooldown > 0 ?
-                                    (resendCooldown > 60 ?
-                                        `Wait ${Math.ceil(resendCooldown / 60)} min` :
-                                        `Resend in ${resendCooldown}s`
-                                    ) :
-                                    'Resend now'
-                                }
-                            </Button>
-                        </div>
-                    </motion.div>
+                    </div>
                 )}
 
-                {error && (
-                    <motion.div
-                        className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded border"
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.2 }}
-                    >
-                        <AlertCircle className="w-3 h-3" />
-                        <span>{error}</span>
-                    </motion.div>
-                )}
+                {
+                    otpState === 'pending' && (
+                        <motion.div
+                            className="space-y-2 p-3 bg-gray-50 rounded-lg border"
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <div className="flex items-center justify-between">
+                                <Label htmlFor="otp" className="text-sm font-medium text-gray-800">Enter Code</Label>
+                                <Button
+                                    type="button" // Important: Prevent form submission
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={handleCancelOtp}
+                                    className="text-gray-500 hover:text-gray-700 h-6 px-1"
+                                >
+                                    <X className="w-3 h-3" />
+                                </Button>
+                            </div>
+                            <p className="text-xs text-gray-500 !-mt-1">Sent to +65 {displayPhone(formData.phone)}</p>
+                            <div className="flex items-center gap-2">
+                                <div className="relative flex-grow">
+                                    <ShieldCheck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                                    <Input
+                                        id="otp"
+                                        type="tel" // Added for numeric keyboard on mobile
+                                        inputMode="numeric" // Added for numeric keyboard on mobile
+                                        autoComplete="one-time-code" // Added for OTP autofill
+                                        placeholder="123456"
+                                        className="pl-8 tracking-wider h-9 text-sm"
+                                        maxLength={6}
+                                        value={otp}
+                                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                                    />
+                                </div>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={handleVerifyOtp}
+                                    disabled={loading === 'verifying' || showSuccessTick}
+                                    className={`h-9 px-4 text-sm w-28 transition-colors duration-300 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600' : ''}`}
+                                >
+                                    {showSuccessTick ? (
+                                        <motion.div
+                                            initial={{ scale: 0, rotate: -90 }}
+                                            animate={{ scale: 1, rotate: 0 }}
+                                            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                        >
+                                            <CheckCircle2 className="w-5 h-5 text-white" />
+                                        </motion.div>
+                                    ) : loading === 'verifying' ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        'Confirm'
+                                    )}
+                                </Button>
+                            </div>
+                            <div className="text-center text-xs text-gray-500 pt-1">
+                                Didn't receive a code?{' '}
+                                <Button
+                                    type="button"
+                                    variant="link"
+                                    size="sm"
+                                    onClick={handleSendOtp}
+                                    disabled={resendCooldown > 0}
+                                    className="h-auto p-0 text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:text-gray-500 disabled:no-underline"
+                                >
+                                    {resendCooldown > 0 ?
+                                        (resendCooldown > 60 ?
+                                            `Wait ${Math.ceil(resendCooldown / 60)} min` :
+                                            `Resend in ${resendCooldown}s`
+                                        ) :
+                                        'Resend now'
+                                    }
+                                </Button>
+                            </div>
+                        </motion.div>
+                    )
+                }
+
+                {
+                    error && (
+                        <motion.div
+                            className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded border"
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            <AlertCircle className="w-3 h-3" />
+                            <span>{error}</span>
+                        </motion.div>
+                    )
+                }
 
                 <div className="space-y-1">
                     <Label htmlFor="email" className="text-xs font-medium">Email</Label>
@@ -633,53 +647,57 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                        <Label htmlFor="dob" className="text-xs font-medium">Date of Birth <span className="text-gray-400 font-normal">(optional)</span></Label>
-                        <div className="relative">
-                            <CalendarIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                            <Input
-                                id="dob"
-                                type="tel" // Use tel for numeric keyboard on mobile
-                                inputMode="numeric" // Ensure numeric keyboard
-                                placeholder="DD/MM/YYYY"
-                                className={`pl-7 h-8 text-sm ${(dobIncomplete || ageError) ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-                                value={formData.date_of_birth}
-                                onChange={(e) => handleFormChange('date_of_birth', e.target.value)}
-                                onBlur={handleDobBlur} // Add this
-                                maxLength={10}
-                            />
-                        </div>
-                        {(ageError || dobIncomplete) && (
-                            <motion.div
-                                className="flex items-center gap-1 text-xs text-red-600 bg-red-50 p-1.5 rounded border"
-                                initial={{ opacity: 0, y: -10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.2 }}
-                            >
-                                <AlertCircle className="w-3 h-3" />
-                                <span>{ageError || 'Please enter full year (DDMMYYYY)'}</span>
-                            </motion.div>
-                        )}
-                        {(!ageError && !dobIncomplete && renderAgeRestrictionHint()) && (
-                            <div className="text-[11px] text-gray-500 pt-1">
-                                {renderAgeRestrictionHint()}
+                    {(visibleFields.dob !== false) && (
+                        <div className="space-y-1">
+                            <Label htmlFor="dob" className="text-xs font-medium">Date of Birth <span className="text-gray-400 font-normal">(optional)</span></Label>
+                            <div className="relative">
+                                <CalendarIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                                <Input
+                                    id="dob"
+                                    type="tel" // Use tel for numeric keyboard on mobile
+                                    inputMode="numeric" // Ensure numeric keyboard
+                                    placeholder="DD/MM/YYYY"
+                                    className={`pl-7 h-8 text-sm ${(dobIncomplete || ageError) ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                    value={formData.date_of_birth}
+                                    onChange={(e) => handleFormChange('date_of_birth', e.target.value)}
+                                    onBlur={handleDobBlur} // Add this
+                                    maxLength={10}
+                                />
                             </div>
-                        )}
-                    </div>
-                    <div className="space-y-1">
-                        <Label htmlFor="postal" className="text-xs font-medium">Postal Code <span className="text-gray-400 font-normal">(optional)</span></Label>
-                        <div className="relative">
-                            <MapPin className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                            <Input
-                                id="postal"
-                                placeholder="520230"
-                                className="pl-7 h-8 text-sm"
-                                maxLength={6}
-                                value={formData.postal_code}
-                                onChange={(e) => handleFormChange('postal_code', e.target.value.replace(/\D/g, '').slice(0, 6))}
-                            />
+                            {(ageError || dobIncomplete) && (
+                                <motion.div
+                                    className="flex items-center gap-1 text-xs text-red-600 bg-red-50 p-1.5 rounded border"
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                >
+                                    <AlertCircle className="w-3 h-3" />
+                                    <span>{ageError || 'Please enter full year (DDMMYYYY)'}</span>
+                                </motion.div>
+                            )}
+                            {(!ageError && !dobIncomplete && renderAgeRestrictionHint()) && (
+                                <div className="text-[11px] text-gray-500 pt-1">
+                                    {renderAgeRestrictionHint()}
+                                </div>
+                            )}
                         </div>
-                    </div>
+                    )}
+                    {(visibleFields.postal_code !== false) && (
+                        <div className="space-y-1">
+                            <Label htmlFor="postal" className="text-xs font-medium">Postal Code <span className="text-gray-400 font-normal">(optional)</span></Label>
+                            <div className="relative">
+                                <MapPin className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                                <Input
+                                    id="postal"
+                                    placeholder="520230"
+                                    className="pl-7 h-8 text-sm"
+                                    maxLength={6}
+                                    value={formData.postal_code}
+                                    onChange={(e) => handleFormChange('postal_code', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
                 <Button
                     type="submit"
@@ -705,8 +723,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                     </button>
                     .
                 </p>
-            </div>
+            </div >
             <MarketingConsentDialog open={consentOpen} onOpenChange={setConsentOpen} />
-        </form>
+        </form >
     );
 }
