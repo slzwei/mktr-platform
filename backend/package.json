@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.637.0",
+    "@aws-sdk/client-sns": "^3.966.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.7",
@@ -36,8 +37,8 @@
     "helmet": "^7.1.0",
     "http-proxy-middleware": "^3.0.0",
     "joi": "^17.11.0",
-    "jsonwebtoken": "^9.0.2",
     "jose": "^5.2.0",
+    "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "node-fetch": "^3.3.2",
@@ -47,7 +48,6 @@
     "qrcode": "^1.5.3",
     "sequelize": "^6.35.0",
     "sqlite3": "^5.1.7",
-    "twilio": "^5.8.2",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

@@ -23,6 +23,7 @@ import IdempotencyKey from './IdempotencyKey.js';
 import ShortLink from './ShortLink.js';
 import ShortLinkClick from './ShortLinkClick.js';
 import RoundRobinCursor from './RoundRobinCursor.js';
+import Verification from './Verification.js';
 
 // Define associations
 const defineAssociations = () => {
@@ -133,8 +134,9 @@ export {
   BeaconEvent,
   IdempotencyKey,
   ShortLink,
-  ShortLinkClick
-  , RoundRobinCursor
+  ShortLinkClick,
+  RoundRobinCursor,
+  Verification
 };
 
 // Export default object for convenience
@@ -160,6 +162,7 @@ export default {
   BeaconEvent,
   IdempotencyKey,
   ShortLink,
-  ShortLinkClick
-  , RoundRobinCursor
+  ShortLinkClick,
+  RoundRobinCursor,
+  Verification
 };
