@@ -213,8 +213,55 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
   // Fields that can be combined into 2-column rows
   const combinableFields = ['dob', 'postal_code', 'education_level', 'monthly_income'];
 
+  // State for drag preview
+  const [mergePreview, setMergePreview] = useState(null); // { activeId, overId }
+
+  const handleDragStart = (event) => {
+    setMergePreview(null);
+  };
+
+  const handleDragOver = (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      setMergePreview(null);
+      return;
+    }
+
+    const fieldOrder = currentDesign.fieldOrder;
+    const activeIndex = fieldOrder.findIndex(row => row.id === active.id);
+    const overIndex = fieldOrder.findIndex(row => row.id === over.id);
+
+    if (activeIndex === -1 || overIndex === -1) return;
+
+    const activeRow = fieldOrder[activeIndex];
+    const overRow = fieldOrder[overIndex];
+
+    // Check if valid merge target
+    const activeIsSingle = activeRow.columns.length === 1;
+    const overIsSingle = overRow.columns.length === 1;
+
+    if (activeIsSingle && overIsSingle) {
+      const activeField = activeRow.columns[0];
+      const overField = overRow.columns[0];
+      const activeIsCombinable = combinableFields.includes(activeField);
+      const overIsCombinable = combinableFields.includes(overField);
+
+      if (activeIsCombinable && overIsCombinable) {
+        setMergePreview({ activeId: active.id, overId: over.id });
+        return;
+      }
+    }
+    setMergePreview(null);
+  };
+
+  const handleDragCancel = () => {
+    setMergePreview(null);
+  };
+
   const handleDragEnd = (event) => {
     const { active, over } = event;
+    setMergePreview(null);
+
     if (!over || active.id === over.id) return;
 
     const fieldOrder = [...currentDesign.fieldOrder];
@@ -909,7 +956,10 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                     <DndContext
                       sensors={sensors}
                       collisionDetection={closestCenter}
+                      onDragStart={handleDragStart}
+                      onDragOver={handleDragOver}
                       onDragEnd={handleDragEnd}
+                      onDragCancel={handleDragCancel}
                     >
                       <SortableContext
                         items={currentDesign.fieldOrder.map(row => row.id)}
@@ -924,6 +974,10 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
 
                           if (visibleColumns.length === 0) return null;
 
+                          // Check if this row is involved in a merge preview
+                          const isMergeTarget = mergePreview &&
+                            (mergePreview.activeId === row.id || mergePreview.overId === row.id);
+
                           return (
                             <SortableItem key={row.id} id={row.id}>
                               {/* Split button for merged rows */}
@@ -937,9 +991,10 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                                   <X className="w-4 h-4" />
                                 </button>
                               )}
-                              <div className={`grid gap-3 ${visibleColumns.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                              <div className={`grid gap-3 transition-all duration-200 ${isMergeTarget || visibleColumns.length > 1 ? 'grid-cols-2' : 'grid-cols-1'
+                                }`}>
                                 {visibleColumns.map((fieldId) => (
-                                  <div key={fieldId}>
+                                  <div key={fieldId} className={isMergeTarget && row.columns.length === 1 ? 'col-span-1' : ''}>
                                     {/* Render specific field content */}
                                     {fieldId === 'name' && (
                                       <div>
