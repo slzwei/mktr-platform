@@ -167,6 +167,8 @@ export default function LeadCapture() {
                 lastName,
                 email: formData.email,
                 phone: formData.phone, // already like 65XXXXXXXX from child form
+                date_of_birth: formData.date_of_birth,
+                postal_code: formData.postal_code,
                 leadSource: isReferral ? 'referral' : (qrTag?.id ? 'qr_code' : 'website'),
                 campaignId: campaign?.id,
                 qrTagId: qrTag?.id
@@ -251,10 +253,10 @@ export default function LeadCapture() {
                 <div className="w-full" style={{ maxWidth: `${design.formWidth || 400}px` }}>
                     {design?.imageUrl && (
                         <div className="w-full h-56 lg:h-72 mb-6">
-                            <img 
-                                src={resolveImageUrl(design.imageUrl)} 
-                                alt="Campaign Header" 
-                                className="w-full h-full object-contain rounded-md" 
+                            <img
+                                src={resolveImageUrl(design.imageUrl)}
+                                alt="Campaign Header"
+                                className="w-full h-full object-contain rounded-md"
                             />
                         </div>
                     )}
@@ -327,7 +329,7 @@ export default function LeadCapture() {
                                                 await navigator.clipboard.writeText(shareUrl);
                                                 setCopied(true);
                                                 setTimeout(() => setCopied(false), 1500);
-                                            } catch (_) {}
+                                            } catch (_) { }
                                         }}
                                     >
                                         {copied ? 'Copied!' : 'Copy link'}
@@ -361,7 +363,7 @@ export default function LeadCapture() {
                                         variant="outline"
                                         onClick={async () => {
                                             const url = shortShareUrl || longShareUrl;
-                                            try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) {}
+                                            try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { }
                                         }}
                                     >
                                         {copied ? 'Copied!' : 'Copy Link'}

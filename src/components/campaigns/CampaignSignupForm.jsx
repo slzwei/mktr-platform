@@ -100,7 +100,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
 
         const digitsOnly = dateString.replace(/\D/g, '');
 
-        // Check for incomplete date format
+        // Check for incomplete date format (but allow empty)
         if (digitsOnly.length > 0 && digitsOnly.length !== 8) {
             setAgeError('Please enter full year in DDMMYYYY format');
             return;
@@ -371,8 +371,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             return;
         }
 
-        // Validate DOB format for full 10 characters before submission
-        if (formData.date_of_birth && formData.date_of_birth.length !== 10) {
+        // Validate DOB format for full 10 characters before submission (if provided)
+        if (formData.date_of_birth && formData.date_of_birth.length > 0 && formData.date_of_birth.length !== 10) {
             setError('Please enter a complete date of birth (DD/MM/YYYY).');
             return;
         }
@@ -634,7 +634,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
 
                 <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                        <Label htmlFor="dob" className="text-xs font-medium">Date of Birth</Label>
+                        <Label htmlFor="dob" className="text-xs font-medium">Date of Birth <span className="text-gray-400 font-normal">(optional)</span></Label>
                         <div className="relative">
                             <CalendarIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
                             <Input
@@ -667,7 +667,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                         )}
                     </div>
                     <div className="space-y-1">
-                        <Label htmlFor="postal" className="text-xs font-medium">Postal Code</Label>
+                        <Label htmlFor="postal" className="text-xs font-medium">Postal Code <span className="text-gray-400 font-normal">(optional)</span></Label>
                         <div className="relative">
                             <MapPin className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
                             <Input

@@ -4,13 +4,13 @@ import Joi from 'joi';
 export const validate = (schema) => {
   return (req, res, next) => {
     const { error } = schema.validate(req.body, { abortEarly: false });
-    
+
     if (error) {
       const details = error.details.map(detail => ({
         field: detail.path.join('.'),
         message: detail.message
       }));
-      
+
       return res.status(400).json({
         success: false,
         message: 'Validation Error',
@@ -18,7 +18,7 @@ export const validate = (schema) => {
         errors: details
       });
     }
-    
+
     next();
   };
 };
@@ -128,6 +128,9 @@ export const schemas = {
     interests: Joi.array().items(Joi.string()).optional(),
     budget: Joi.object().optional(),
     location: Joi.object().optional(),
+    // Added optional fields for Lead Capture
+    date_of_birth: Joi.alternatives().try(Joi.string(), Joi.date()).optional(),
+    postal_code: Joi.string().optional(),
     // Optional associations: when omitted or null, backend may still bind via session attribution
     campaignId: Joi.alternatives().try(Joi.string().uuid(), Joi.valid(null)).optional(),
     qrTagId: Joi.alternatives().try(Joi.string().uuid(), Joi.valid(null)).optional(),

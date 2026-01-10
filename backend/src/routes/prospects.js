@@ -160,6 +160,34 @@ router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res)
     incoming.phone = normalizedPhone;
   }
 
+  // Handle Date of Birth -> Age mapping
+  if (req.body.date_of_birth) {
+    const dob = new Date(req.body.date_of_birth);
+    if (!isNaN(dob.getTime())) {
+      const today = new Date();
+      let age = today.getFullYear() - dob.getFullYear();
+      const m = today.getMonth() - dob.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+        age--;
+      }
+
+      incoming.demographics = {
+        ...(incoming.demographics || {}),
+        age: age,
+        dateOfBirth: req.body.date_of_birth // Keep original string/date too if useful
+      };
+    }
+  }
+
+  // Handle Postal Code -> Location mapping
+  if (req.body.postal_code) {
+    incoming.location = {
+      ...(incoming.location || {}),
+      zipCode: req.body.postal_code,
+      postalCode: req.body.postal_code
+    };
+  }
+
   const prospect = await Prospect.create({ ...incoming, assignedAgentId });
 
   // Activity: created
