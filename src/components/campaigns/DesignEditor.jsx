@@ -150,7 +150,9 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
     phone: '',
     email: '',
     date_of_birth: '',
-    postal_code: ''
+    postal_code: '',
+    education_level: '',
+    monthly_income: ''
   });
 
   const [previewPhoneVerification, setPreviewPhoneVerification] = useState({
@@ -1016,6 +1018,58 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                           {previewErrors.postal_code && (
                             <p className="text-red-500 text-xs mt-1">{previewErrors.postal_code}</p>
                           )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Education and Income */}
+                    <div className="grid grid-cols-2 gap-3 mt-3">
+                      {(currentDesign.visibleFields?.education_level === true) && (
+                        <div>
+                          <label className="block text-gray-700 text-sm font-medium mb-2">
+                            Education
+                          </label>
+                          <div className="relative">
+                            <select
+                              value={previewFormData.education_level}
+                              onChange={(e) => setPreviewFormData(prev => ({ ...prev, education_level: e.target.value }))}
+                              className="w-full h-11 bg-gray-50 border border-gray-200 rounded-md px-3 text-gray-900 text-sm focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all appearance-none"
+                            >
+                              <option value="" disabled>Select education</option>
+                              <option value="Secondary School or below">Secondary School or below</option>
+                              <option value="O Levels">O Levels</option>
+                              <option value="Diploma">Diploma</option>
+                              <option value="Degree">Degree</option>
+                              <option value="Masters and above">Masters and above</option>
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                              <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {(currentDesign.visibleFields?.monthly_income === true) && (
+                        <div>
+                          <label className="block text-gray-700 text-sm font-medium mb-2">
+                            Income
+                          </label>
+                          <div className="relative">
+                            <select
+                              value={previewFormData.monthly_income}
+                              onChange={(e) => setPreviewFormData(prev => ({ ...prev, monthly_income: e.target.value }))}
+                              className="w-full h-11 bg-gray-50 border border-gray-200 rounded-md px-3 text-gray-900 text-sm focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all appearance-none"
+                            >
+                              <option value="" disabled>Select income</option>
+                              <option value="<$3000">&lt;$3000</option>
+                              <option value="$3000 - $4999">$3000 - $4999</option>
+                              <option value="$5000 - $7999">$5000 - $7999</option>
+                              <option value=">$8000">&gt;$8000</option>
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                              <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
