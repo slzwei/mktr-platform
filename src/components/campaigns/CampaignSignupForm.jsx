@@ -22,6 +22,7 @@ import MarketingConsentDialog from "@/components/legal/MarketingConsentDialog";
 
 export default function CampaignSignupForm({ themeColor, formHeadline, formSubheadline, headlineSize, campaignId, onSubmit, campaign }) {
     const visibleFields = campaign?.design_config?.visibleFields || {};
+    const fieldOrder = campaign?.design_config?.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income'];
 
     const [formData, setFormData] = useState({
         name: '',
@@ -443,36 +444,37 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         setLoading(null);
     };
 
-    return (
-        <form onSubmit={handleSubmit}>
-            <div className="text-center mb-4">
-                <h2
-                    className="font-bold text-gray-900"
-                    style={{ fontSize: `${headlineSize || 20}px` }}
-                >
-                    {formHeadline}
-                </h2>
-                <p className="text-sm text-gray-600 mt-1">{formSubheadline}</p>
-            </div>
+    const renderField = (fieldId) => {
+        // Skip if field is hidden via visibleFields
+        // Note: 'name' and 'email' might not be in visibleFields in historically, so default to true if missing?
+        // Or assume name/email match the logic in DesignEditor where they might be mandatory.
+        // Based on DesignEditor, logic was:
+        // const isVisible = fieldId === 'name' || fieldId === 'email' || visibleFields[fieldId] !== false;
 
-            <div className="space-y-3">
-                <div className="space-y-1">
-                    <Label htmlFor="name" className="text-xs font-medium">Full Name</Label>
-                    <div className="relative">
-                        <User className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                        <Input
-                            id="name"
-                            placeholder="John Tan"
-                            className="pl-7 h-8 text-sm"
-                            value={formData.name}
-                            onChange={(e) => handleFormChange('name', e.target.value)}
-                            required
-                        />
+        const isVisible = fieldId === 'name' || fieldId === 'email' || visibleFields[fieldId] !== false;
+        if (!isVisible) return null;
+
+        switch (fieldId) {
+            case 'name':
+                return (
+                    <div key={fieldId} className="space-y-1">
+                        <Label htmlFor="name" className="text-xs font-medium">Full Name</Label>
+                        <div className="relative">
+                            <User className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                            <Input
+                                id="name"
+                                placeholder="John Tan"
+                                className="pl-7 h-8 text-sm"
+                                value={formData.name}
+                                onChange={(e) => handleFormChange('name', e.target.value)}
+                                required
+                            />
+                        </div>
                     </div>
-                </div>
-
-                {(visibleFields.phone !== false) && (
-                    <div className="space-y-1">
+                );
+            case 'phone':
+                return (
+                    <div key={fieldId} className="space-y-1">
                         <Label htmlFor="phone" className="text-xs font-medium">Phone Number</Label>
                         <div className="flex items-center gap-1">
                             <div className="flex-grow flex">
@@ -536,177 +538,178 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                 </motion.div>
                             )}
                         </div>
-                    </div>
-                )}
-
-                {
-                    otpState === 'pending' && (
-                        <motion.div
-                            className="space-y-2 p-3 bg-gray-50 rounded-lg border"
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.2 }}
-                        >
-                            <div className="flex items-center justify-between">
-                                <Label htmlFor="otp" className="text-sm font-medium text-gray-800">Enter Code</Label>
-                                <Button
-                                    type="button" // Important: Prevent form submission
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={handleCancelOtp}
-                                    className="text-gray-500 hover:text-gray-700 h-6 px-1"
-                                >
-                                    <X className="w-3 h-3" />
-                                </Button>
-                            </div>
-                            <p className="text-xs text-gray-500 !-mt-1">Sent to +65 {displayPhone(formData.phone)}</p>
-                            <div className="flex items-center gap-2">
-                                <div className="relative flex-grow">
-                                    <ShieldCheck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                                    <Input
-                                        id="otp"
-                                        type="tel" // Added for numeric keyboard on mobile
-                                        inputMode="numeric" // Added for numeric keyboard on mobile
-                                        autoComplete="one-time-code" // Added for OTP autofill
-                                        placeholder="123456"
-                                        className="pl-8 tracking-wider h-9 text-sm"
-                                        maxLength={6}
-                                        value={otp}
-                                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                                    />
-                                </div>
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    onClick={handleVerifyOtp}
-                                    disabled={loading === 'verifying' || showSuccessTick}
-                                    className={`h-9 px-4 text-sm w-28 transition-colors duration-300 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600' : ''}`}
-                                >
-                                    {showSuccessTick ? (
-                                        <motion.div
-                                            initial={{ scale: 0, rotate: -90 }}
-                                            animate={{ scale: 1, rotate: 0 }}
-                                            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                        >
-                                            <CheckCircle2 className="w-5 h-5 text-white" />
-                                        </motion.div>
-                                    ) : loading === 'verifying' ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                    ) : (
-                                        'Confirm'
-                                    )}
-                                </Button>
-                            </div>
-                            <div className="text-center text-xs text-gray-500 pt-1">
-                                Didn't receive a code?{' '}
-                                <Button
-                                    type="button"
-                                    variant="link"
-                                    size="sm"
-                                    onClick={handleSendOtp}
-                                    disabled={resendCooldown > 0}
-                                    className="h-auto p-0 text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:text-gray-500 disabled:no-underline"
-                                >
-                                    {resendCooldown > 0 ?
-                                        (resendCooldown > 60 ?
-                                            `Wait ${Math.ceil(resendCooldown / 60)} min` :
-                                            `Resend in ${resendCooldown}s`
-                                        ) :
-                                        'Resend now'
-                                    }
-                                </Button>
-                            </div>
-                        </motion.div>
-                    )
-                }
-
-                {
-                    error && (
-                        <motion.div
-                            className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded border"
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.2 }}
-                        >
-                            <AlertCircle className="w-3 h-3" />
-                            <span>{error}</span>
-                        </motion.div>
-                    )
-                }
-
-                <div className="space-y-1">
-                    <Label htmlFor="email" className="text-xs font-medium">Email</Label>
-                    <div className="relative">
-                        <Mail className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                        <Input
-                            id="email"
-                            type="email"
-                            placeholder="you@example.com"
-                            className="pl-7 h-8 text-sm"
-                            value={formData.email}
-                            onChange={(e) => handleFormChange('email', e.target.value)}
-                            required
-                        />
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                    {(visibleFields.dob !== false) && (
-                        <div className="space-y-1">
-                            <Label htmlFor="dob" className="text-xs font-medium">Date of Birth <span className="text-gray-400 font-normal">(optional)</span></Label>
-                            <div className="relative">
-                                <CalendarIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                                <Input
-                                    id="dob"
-                                    type="tel" // Use tel for numeric keyboard on mobile
-                                    inputMode="numeric" // Ensure numeric keyboard
-                                    placeholder="DD/MM/YYYY"
-                                    className={`pl-7 h-8 text-sm ${(dobIncomplete || ageError) ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
-                                    value={formData.date_of_birth}
-                                    onChange={(e) => handleFormChange('date_of_birth', e.target.value)}
-                                    onBlur={handleDobBlur} // Add this
-                                    maxLength={10}
-                                />
-                            </div>
-                            {(ageError || dobIncomplete) && (
+                        {/* OTP Logic - Renamed 'phone' to keep consistent with block logic */}
+                        {
+                            otpState === 'pending' && (
                                 <motion.div
-                                    className="flex items-center gap-1 text-xs text-red-600 bg-red-50 p-1.5 rounded border"
+                                    className="space-y-2 p-3 bg-gray-50 rounded-lg border mt-2"
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    transition={{ duration: 0.2 }}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <Label htmlFor="otp" className="text-sm font-medium text-gray-800">Enter Code</Label>
+                                        <Button
+                                            type="button" // Important: Prevent form submission
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={handleCancelOtp}
+                                            className="text-gray-500 hover:text-gray-700 h-6 px-1"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </Button>
+                                    </div>
+                                    <p className="text-xs text-gray-500 !-mt-1">Sent to +65 {displayPhone(formData.phone)}</p>
+                                    <div className="flex items-center gap-2">
+                                        <div className="relative flex-grow">
+                                            <ShieldCheck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                                            <Input
+                                                id="otp"
+                                                type="tel" // Added for numeric keyboard on mobile
+                                                inputMode="numeric" // Added for numeric keyboard on mobile
+                                                autoComplete="one-time-code" // Added for OTP autofill
+                                                placeholder="123456"
+                                                className="pl-8 tracking-wider h-9 text-sm"
+                                                maxLength={6}
+                                                value={otp}
+                                                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                                            />
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            onClick={handleVerifyOtp}
+                                            disabled={loading === 'verifying' || showSuccessTick}
+                                            className={`h-9 px-4 text-sm w-28 transition-colors duration-300 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600' : ''}`}
+                                        >
+                                            {showSuccessTick ? (
+                                                <motion.div
+                                                    initial={{ scale: 0, rotate: -90 }}
+                                                    animate={{ scale: 1, rotate: 0 }}
+                                                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                                >
+                                                    <CheckCircle2 className="w-5 h-5 text-white" />
+                                                </motion.div>
+                                            ) : loading === 'verifying' ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                'Confirm'
+                                            )}
+                                        </Button>
+                                    </div>
+                                    <div className="text-center text-xs text-gray-500 pt-1">
+                                        Didn't receive a code?{' '}
+                                        <Button
+                                            type="button"
+                                            variant="link"
+                                            size="sm"
+                                            onClick={handleSendOtp}
+                                            disabled={resendCooldown > 0}
+                                            className="h-auto p-0 text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:text-gray-500 disabled:no-underline"
+                                        >
+                                            {resendCooldown > 0 ?
+                                                (resendCooldown > 60 ?
+                                                    `Wait ${Math.ceil(resendCooldown / 60)} min` :
+                                                    `Resend in ${resendCooldown}s`
+                                                ) :
+                                                'Resend now'
+                                            }
+                                        </Button>
+                                    </div>
+                                </motion.div>
+                            )
+                        }
+
+                        {
+                            error && (
+                                <motion.div
+                                    className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded border mt-2"
                                     initial={{ opacity: 0, y: -10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ duration: 0.2 }}
                                 >
                                     <AlertCircle className="w-3 h-3" />
-                                    <span>{ageError || 'Please enter full year (DDMMYYYY)'}</span>
+                                    <span>{error}</span>
                                 </motion.div>
-                            )}
-                            {(!ageError && !dobIncomplete && renderAgeRestrictionHint()) && (
-                                <div className="text-[11px] text-gray-500 pt-1">
-                                    {renderAgeRestrictionHint()}
-                                </div>
-                            )}
+                            )
+                        }
+                    </div>
+                );
+            case 'email':
+                return (
+                    <div key={fieldId} className="space-y-1">
+                        <Label htmlFor="email" className="text-xs font-medium">Email</Label>
+                        <div className="relative">
+                            <Mail className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                            <Input
+                                id="email"
+                                type="email"
+                                placeholder="you@example.com"
+                                className="pl-7 h-8 text-sm"
+                                value={formData.email}
+                                onChange={(e) => handleFormChange('email', e.target.value)}
+                                required
+                            />
                         </div>
-                    )}
-                    {(visibleFields.postal_code !== false) && (
-                        <div className="space-y-1">
-                            <Label htmlFor="postal" className="text-xs font-medium">Postal Code <span className="text-gray-400 font-normal">(optional)</span></Label>
-                            <div className="relative">
-                                <MapPin className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
-                                <Input
-                                    id="postal"
-                                    placeholder="520230"
-                                    className="pl-7 h-8 text-sm"
-                                    maxLength={6}
-                                    value={formData.postal_code}
-                                    onChange={(e) => handleFormChange('postal_code', e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                />
+                    </div>
+                );
+            case 'dob':
+                return (
+                    <div key={fieldId} className="space-y-1">
+                        <Label htmlFor="dob" className="text-xs font-medium">Date of Birth <span className="text-gray-400 font-normal">(optional)</span></Label>
+                        <div className="relative">
+                            <CalendarIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                            <Input
+                                id="dob"
+                                type="tel"
+                                inputMode="numeric"
+                                placeholder="DD/MM/YYYY"
+                                className={`pl-7 h-8 text-sm ${(dobIncomplete || ageError) ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                value={formData.date_of_birth}
+                                onChange={(e) => handleFormChange('date_of_birth', e.target.value)}
+                                onBlur={handleDobBlur}
+                                maxLength={10}
+                            />
+                        </div>
+                        {(ageError || dobIncomplete) && (
+                            <motion.div
+                                className="flex items-center gap-1 text-xs text-red-600 bg-red-50 p-1.5 rounded border"
+                                initial={{ opacity: 0, y: -10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.2 }}
+                            >
+                                <AlertCircle className="w-3 h-3" />
+                                <span>{ageError || 'Please enter full year (DDMMYYYY)'}</span>
+                            </motion.div>
+                        )}
+                        {(!ageError && !dobIncomplete && renderAgeRestrictionHint()) && (
+                            <div className="text-[11px] text-gray-500 pt-1">
+                                {renderAgeRestrictionHint()}
                             </div>
+                        )}
+                    </div>
+                );
+            case 'postal_code':
+                return (
+                    <div key={fieldId} className="space-y-1">
+                        <Label htmlFor="postal" className="text-xs font-medium">Postal Code <span className="text-gray-400 font-normal">(optional)</span></Label>
+                        <div className="relative">
+                            <MapPin className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                            <Input
+                                id="postal"
+                                placeholder="520230"
+                                className="pl-7 h-8 text-sm"
+                                maxLength={6}
+                                value={formData.postal_code}
+                                onChange={(e) => handleFormChange('postal_code', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                            />
                         </div>
-                    )}
-                </div>
-
-                {(visibleFields.education_level === true) && (
-                    <div className="space-y-1">
+                    </div>
+                );
+            case 'education_level':
+                return (
+                    <div key={fieldId} className="space-y-1">
                         <Label htmlFor="education" className="text-xs font-medium">Highest Education Level <span className="text-gray-400 font-normal">(optional)</span></Label>
                         <Select
                             value={formData.education_level}
@@ -724,10 +727,10 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                             </SelectContent>
                         </Select>
                     </div>
-                )}
-
-                {(visibleFields.monthly_income === true) && (
-                    <div className="space-y-1">
+                );
+            case 'monthly_income':
+                return (
+                    <div key={fieldId} className="space-y-1">
                         <Label htmlFor="income" className="text-xs font-medium">Last Drawn Monthly Salary <span className="text-gray-400 font-normal">(optional)</span></Label>
                         <Select
                             value={formData.monthly_income}
@@ -744,33 +747,53 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                             </SelectContent>
                         </Select>
                     </div>
-                )}
+                );
+            default:
+                return null;
+        }
+    };
 
-                <Button
-                    type="submit"
-                    className="w-full text-sm py-4 font-semibold shadow-md hover:shadow-lg transition-all duration-200 mt-4"
-                    style={{ backgroundColor: themeColor }}
-                    disabled={
-                        otpState !== 'verified' ||
-                        loading === 'submitting' ||
-                        ageError !== '' ||
-                        dobIncomplete
-                    }
+    return (
+        <form onSubmit={handleSubmit}>
+            <div className="text-center mb-4">
+                <h2
+                    className="font-bold text-gray-900"
+                    style={{ fontSize: `${headlineSize || 20}px` }}
                 >
-                    {loading === 'submitting' ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit'}
-                </Button>
-                <p className="text-xs text-gray-500 text-center pt-1">
-                    By signing up, you agree to our{' '}
-                    <button
-                        type="button"
-                        onClick={() => setConsentOpen(true)}
-                        className="text-blue-600 hover:underline"
-                    >
-                        Terms & Conditions
-                    </button>
-                    .
-                </p>
-            </div >
+                    {formHeadline}
+                </h2>
+                <p className="text-sm text-gray-600 mt-1">{formSubheadline}</p>
+            </div>
+
+            <div className="space-y-3">
+                {fieldOrder.map((fieldId) => renderField(fieldId))}
+            </div>
+
+            <Button
+                type="submit"
+                className="w-full text-sm py-4 font-semibold shadow-md hover:shadow-lg transition-all duration-200 mt-4"
+                style={{ backgroundColor: themeColor }}
+                disabled={
+                    otpState !== 'verified' ||
+                    loading === 'submitting' ||
+                    ageError !== '' ||
+                    dobIncomplete
+                }
+            >
+                {loading === 'submitting' ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit'}
+            </Button>
+            <p className="text-xs text-gray-500 text-center pt-1">
+                By signing up, you agree to our{' '}
+                <button
+                    type="button"
+                    onClick={() => setConsentOpen(true)}
+                    className="text-blue-600 hover:underline"
+                >
+                    Terms & Conditions
+                </button>
+                .
+            </p>
+
             <MarketingConsentDialog open={consentOpen} onOpenChange={setConsentOpen} />
         </form >
     );
