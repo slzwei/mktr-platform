@@ -128,7 +128,7 @@ export default function PublicPreview() {
               headlineSize={design.headlineSize || 20}
               campaignId={snapshot?.id}
               onSubmit={handleSubmit}
-              campaign={{ min_age: snapshot?.min_age, max_age: snapshot?.max_age }}
+              campaign={{ ...snapshot, design_config: design, min_age: snapshot?.min_age, max_age: snapshot?.max_age }}
             />
           )}
           <Dialog open={shareOpen} onOpenChange={setShareOpen}>
@@ -151,7 +151,7 @@ export default function PublicPreview() {
                     variant="outline"
                     onClick={async () => {
                       const url = shortShareUrl || longShareUrl;
-                      try { await navigator.clipboard.writeText(url); } catch (_) {}
+                      try { await navigator.clipboard.writeText(url); } catch (_) { }
                     }}
                   >
                     Copy Link
@@ -172,7 +172,7 @@ export default function PublicPreview() {
                     onClick={() => {
                       const url = shortShareUrl || longShareUrl;
                       const text = snapshot?.name ? `Join me in ${snapshot.name}!` : 'Check this out:';
-                      window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}` , '_blank');
+                      window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
                     }}
                     className="bg-blue-500 hover:bg-blue-600 text-white"
                   >
