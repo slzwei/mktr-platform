@@ -217,14 +217,60 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const fieldOrder = currentDesign.fieldOrder;
-    const oldIndex = fieldOrder.findIndex(row => row.id === active.id);
-    const newIndex = fieldOrder.findIndex(row => row.id === over.id);
+    const fieldOrder = [...currentDesign.fieldOrder];
+    const activeIndex = fieldOrder.findIndex(row => row.id === active.id);
+    const overIndex = fieldOrder.findIndex(row => row.id === over.id);
 
-    if (oldIndex !== -1 && newIndex !== -1) {
-      const newOrder = arrayMove(fieldOrder, oldIndex, newIndex);
+    if (activeIndex === -1 || overIndex === -1) return;
+
+    const activeRow = fieldOrder[activeIndex];
+    const overRow = fieldOrder[overIndex];
+
+    // Check if both are single-column rows with combinable fields
+    const activeIsSingle = activeRow.columns.length === 1;
+    const overIsSingle = overRow.columns.length === 1;
+    const activeField = activeRow.columns[0];
+    const overField = overRow.columns[0];
+    const activeIsCombinable = combinableFields.includes(activeField);
+    const overIsCombinable = combinableFields.includes(overField);
+
+    // Merge logic: if both are single AND both are combinable AND they're adjacent
+    if (activeIsSingle && overIsSingle && activeIsCombinable && overIsCombinable && Math.abs(activeIndex - overIndex) === 1) {
+      // Merge into a 2-column row
+      const mergedRow = {
+        id: generateId(),
+        columns: activeIndex < overIndex ? [activeField, overField] : [overField, activeField]
+      };
+
+      // Remove both rows and insert merged row at the lower index
+      const minIndex = Math.min(activeIndex, overIndex);
+      const newOrder = fieldOrder.filter((_, i) => i !== activeIndex && i !== overIndex);
+      newOrder.splice(minIndex, 0, mergedRow);
+
+      handleDesignChange('fieldOrder', newOrder);
+    } else {
+      // Normal reorder
+      const newOrder = arrayMove(fieldOrder, activeIndex, overIndex);
       handleDesignChange('fieldOrder', newOrder);
     }
+  };
+
+  // Split a 2-column row back into two single-column rows
+  const handleSplitRow = (rowId) => {
+    const fieldOrder = [...currentDesign.fieldOrder];
+    const rowIndex = fieldOrder.findIndex(row => row.id === rowId);
+    if (rowIndex === -1) return;
+
+    const row = fieldOrder[rowIndex];
+    if (row.columns.length !== 2) return;
+
+    // Create two separate rows
+    const row1 = { id: generateId(), columns: [row.columns[0]] };
+    const row2 = { id: generateId(), columns: [row.columns[1]] };
+
+    // Replace the merged row with two separate rows
+    fieldOrder.splice(rowIndex, 1, row1, row2);
+    handleDesignChange('fieldOrder', fieldOrder);
   };
 
   // Add state for interactive preview
@@ -880,6 +926,17 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
 
                           return (
                             <SortableItem key={row.id} id={row.id}>
+                              {/* Split button for merged rows */}
+                              {row.columns.length === 2 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSplitRow(row.id)}
+                                  className="absolute -right-8 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Split row"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              )}
                               <div className={`grid gap-3 ${visibleColumns.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
                                 {visibleColumns.map((fieldId) => (
                                   <div key={fieldId}>
