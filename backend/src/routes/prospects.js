@@ -188,6 +188,15 @@ router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res)
     };
   }
 
+  // Handle Education and Income mapping
+  if (req.body.education_level || req.body.monthly_income) {
+    incoming.demographics = {
+      ...(incoming.demographics || {}),
+    };
+    if (req.body.education_level) incoming.demographics.education = req.body.education_level;
+    if (req.body.monthly_income) incoming.demographics.income = req.body.monthly_income;
+  }
+
   const prospect = await Prospect.create({ ...incoming, assignedAgentId });
 
   // Activity: created

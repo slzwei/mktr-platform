@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     Calendar as CalendarIcon,
     Phone,
@@ -28,6 +29,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         phone: '', // Now just the 8-digit number
         postal_code: '',
         date_of_birth: '', // Now stored as string in DD/MM/YYYY format
+        education_level: '',
+        monthly_income: ''
     });
     const [otp, setOtp] = useState('');
     const [otpState, setOtpState] = useState('idle'); // 'idle', 'pending', 'verified'
@@ -420,6 +423,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             phone: (visibleFields.phone !== false) ? getFullPhoneNumber().substring(1) : null,
             date_of_birth: (visibleFields.dob !== false) ? dobFormatted : null,
             postal_code: (visibleFields.postal_code !== false) ? formData.postal_code : null,
+            education_level: (visibleFields.education_level === true) ? formData.education_level : null,
+            monthly_income: (visibleFields.monthly_income === true) ? formData.monthly_income : null,
             campaign_id: campaignId // Include campaign ID if available from props
         };
 
@@ -699,6 +704,48 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                         </div>
                     )}
                 </div>
+
+                {(visibleFields.education_level === true) && (
+                    <div className="space-y-1">
+                        <Label htmlFor="education" className="text-xs font-medium">Highest Education Level <span className="text-gray-400 font-normal">(optional)</span></Label>
+                        <Select
+                            value={formData.education_level}
+                            onValueChange={(value) => handleFormChange('education_level', value)}
+                        >
+                            <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder="Select education level" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="Secondary School or below">Secondary School or below</SelectItem>
+                                <SelectItem value="O Levels">O Levels</SelectItem>
+                                <SelectItem value="Diploma">Diploma</SelectItem>
+                                <SelectItem value="Degree">Degree</SelectItem>
+                                <SelectItem value="Masters and above">Masters and above</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
+
+                {(visibleFields.monthly_income === true) && (
+                    <div className="space-y-1">
+                        <Label htmlFor="income" className="text-xs font-medium">Last Drawn Monthly Salary <span className="text-gray-400 font-normal">(optional)</span></Label>
+                        <Select
+                            value={formData.monthly_income}
+                            onValueChange={(value) => handleFormChange('monthly_income', value)}
+                        >
+                            <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder="Select salary range" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="<$3000">&lt;$3000</SelectItem>
+                                <SelectItem value="$3000 - $4999">$3000 - $4999</SelectItem>
+                                <SelectItem value="$5000 - $7999">$5000 - $7999</SelectItem>
+                                <SelectItem value=">$8000">&gt;$8000</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
+
                 <Button
                     type="submit"
                     className="w-full text-sm py-4 font-semibold shadow-md hover:shadow-lg transition-all duration-200 mt-4"

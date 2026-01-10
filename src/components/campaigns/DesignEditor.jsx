@@ -535,6 +535,26 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                       />
                       <Label htmlFor="field_postal" className="text-sm text-gray-700 font-normal">Postal Code</Label>
                     </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="field_education"
+                        checked={currentDesign.visibleFields?.education_level === true}
+                        onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, education_level: e.target.checked })}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <Label htmlFor="field_education" className="text-sm text-gray-700 font-normal">Highest Education Level</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="field_income"
+                        checked={currentDesign.visibleFields?.monthly_income === true}
+                        onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, monthly_income: e.target.checked })}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <Label htmlFor="field_income" className="text-sm text-gray-700 font-normal">Monthly Income</Label>
+                    </div>
                   </div>
 
                 </div>

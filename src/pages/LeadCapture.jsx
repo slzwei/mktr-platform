@@ -159,7 +159,7 @@ export default function LeadCapture() {
             // Map form fields to backend schema
             const name = (formData.name || '').trim();
             const [firstName, ...rest] = name.split(/\s+/);
-            const lastName = rest.join(' ') || '-';
+            const lastName = rest.join(' ');
 
             // Build payload and omit null/undefined optional IDs to satisfy backend Joi schema
             const basePayload = {
@@ -169,6 +169,8 @@ export default function LeadCapture() {
                 phone: formData.phone, // already like 65XXXXXXXX from child form
                 date_of_birth: formData.date_of_birth,
                 postal_code: formData.postal_code,
+                education_level: formData.education_level,
+                monthly_income: formData.monthly_income,
                 leadSource: isReferral ? 'referral' : (qrTag?.id ? 'qr_code' : 'website'),
                 campaignId: campaign?.id,
                 qrTagId: qrTag?.id

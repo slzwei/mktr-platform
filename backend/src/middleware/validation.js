@@ -118,7 +118,7 @@ export const schemas = {
   // Prospect schemas
   prospectCreate: Joi.object({
     firstName: Joi.string().min(1).max(50).required(),
-    lastName: Joi.string().min(1).max(50).required(),
+    lastName: Joi.string().min(1).max(50).optional().allow(''),
     email: Joi.string().email().required(),
     phone: Joi.string().min(10).max(20).optional(),
     company: Joi.string().max(100).optional(),
@@ -131,6 +131,8 @@ export const schemas = {
     // Added optional fields for Lead Capture
     date_of_birth: Joi.alternatives().try(Joi.string(), Joi.date()).optional(),
     postal_code: Joi.string().optional(),
+    education_level: Joi.string().optional(),
+    monthly_income: Joi.string().optional(),
     // Optional associations: when omitted or null, backend may still bind via session attribution
     campaignId: Joi.alternatives().try(Joi.string().uuid(), Joi.valid(null)).optional(),
     qrTagId: Joi.alternatives().try(Joi.string().uuid(), Joi.valid(null)).optional(),
