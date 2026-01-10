@@ -766,7 +766,27 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             </div>
 
             <div className="space-y-3">
-                {fieldOrder.map((fieldId) => renderField(fieldId))}
+                {fieldOrder.map((item, index) => {
+                    // Handle legacy flat array strings
+                    if (typeof item === 'string') {
+                        return renderField(item);
+                    }
+
+                    // Handle new row object structure: { id: 'row-x', columns: ['left', 'right'] }
+                    if (item.columns && Array.isArray(item.columns)) {
+                        return (
+                            <div key={item.id || index} className={`grid gap-3 ${item.columns.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                {item.columns.map(colId => {
+                                    // If we are in a 2-col row, we need to make sure the field itself doesn't have internal margins that look bad.
+                                    // renderField returns a div with "space-y-1" or "mb-3". 
+                                    // The grid gap-3 takes care of spacing between columns.
+                                    return renderField(colId);
+                                })}
+                            </div>
+                        );
+                    }
+                    return null;
+                })}
             </div>
 
             <Button

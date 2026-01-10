@@ -77,6 +77,35 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
   // Use useMemo to prevent design object from changing on every render
   const design = useMemo(() => campaign.design_config || {}, [campaign.design_config]);
 
+  // Helper to generate IDs
+  const generateId = () => Math.random().toString(36).substr(2, 9);
+
+  // Helper to normalize fieldOrder to row structure
+  const normalizeFieldOrder = (order) => {
+    if (!order || !Array.isArray(order)) {
+      return [
+        { id: generateId(), columns: ['name'] },
+        { id: generateId(), columns: ['phone'] },
+        { id: generateId(), columns: ['email'] },
+        { id: generateId(), columns: ['dob'] },
+        { id: generateId(), columns: ['postal_code'] },
+        { id: generateId(), columns: ['education_level'] },
+        { id: generateId(), columns: ['monthly_income'] }
+      ];
+    }
+
+    // Check if already in row format (items have 'columns' prop)
+    if (order.length > 0 && typeof order[0] === 'object' && order[0].columns) {
+      return order;
+    }
+
+    // Convert legacy flat string array to rows
+    return order.map(fieldId => ({
+      id: generateId(),
+      columns: [fieldId]
+    }));
+  };
+
   const [currentDesign, setCurrentDesign] = useState({
     formHeadline: design.formHeadline || "",
     formSubheadline: design.formSubheadline || "",
@@ -87,7 +116,8 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
     formWidth: design.formWidth || 400,
     spacing: design.spacing || "normal",
     headlineSize: design.headlineSize || 20,
-    visibleFields: design.visibleFields || { phone: true, dob: true, postal_code: true }
+    visibleFields: design.visibleFields || { phone: true, dob: true, postal_code: true },
+    fieldOrder: normalizeFieldOrder(design.fieldOrder)
   });
 
   const [uploading, setUploading] = useState(false);
@@ -112,8 +142,6 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
 
   // Update design state when campaign.design_config changes (e.g., campaign prop updates)
   useEffect(() => {
-    // Sync internal state with external prop changes.
-    // 'design' will always be an object, so `if (design)` is always true and can be omitted.
     setCurrentDesign({
       formHeadline: design.formHeadline || "",
       formSubheadline: design.formSubheadline || "",
@@ -124,9 +152,8 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
       formWidth: design.formWidth || 400,
       spacing: design.spacing || "normal",
       headlineSize: design.headlineSize || 20,
-
       visibleFields: design.visibleFields || { phone: true, dob: true, postal_code: true },
-      fieldOrder: design.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income']
+      fieldOrder: normalizeFieldOrder(design.fieldOrder)
     });
     // When the external campaign design changes, assume it's the latest saved state.
     setHasUnsavedChanges(false);
@@ -183,13 +210,19 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
     })
   );
 
+  // Fields that can be combined into 2-column rows
+  const combinableFields = ['dob', 'postal_code', 'education_level', 'monthly_income'];
+
   const handleDragEnd = (event) => {
     const { active, over } = event;
+    if (!over || active.id === over.id) return;
 
-    if (active.id !== over.id) {
-      const oldIndex = currentDesign.fieldOrder.indexOf(active.id);
-      const newIndex = currentDesign.fieldOrder.indexOf(over.id);
-      const newOrder = arrayMove(currentDesign.fieldOrder, oldIndex, newIndex);
+    const fieldOrder = currentDesign.fieldOrder;
+    const oldIndex = fieldOrder.findIndex(row => row.id === active.id);
+    const newIndex = fieldOrder.findIndex(row => row.id === over.id);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(fieldOrder, oldIndex, newIndex);
       handleDesignChange('fieldOrder', newOrder);
     }
   };
@@ -833,312 +866,311 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                       onDragEnd={handleDragEnd}
                     >
                       <SortableContext
-                        items={currentDesign.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income']}
+                        items={currentDesign.fieldOrder.map(row => row.id)}
                         strategy={verticalListSortingStrategy}
                       >
-                        {(currentDesign.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income']).map((fieldId) => {
-                          // Helper to check visibility. Name and Email are usually always visible or handled separately?
-                          // Based on previous code, Name/Email didn't have toggles but let's treat them as always visible or checked against config if added.
-                          // Currently Name and Email have no 'visibleFields' toggle, so always show them unless logic changes.
-                          // Let's assume Name/Email are mandatory for now, or just part of the flow.
+                        {currentDesign.fieldOrder.map((row) => {
+                          // Check visibility for all fields in this row
+                          const visibleColumns = row.columns.filter(fieldId => {
+                            if (fieldId === 'name' || fieldId === 'email') return true;
+                            return currentDesign.visibleFields?.[fieldId] !== false;
+                          });
 
-                          const isVisible =
-                            fieldId === 'name' ||
-                            fieldId === 'email' ||
-                            currentDesign.visibleFields?.[fieldId !== 'dob' ? fieldId : 'dob'] !== false; // handle 'dob' mapping quirk if any, usually valid
-
-                          // Special mapping for 'dob' key in visibleFields is 'dob', but ID is 'dob' or 'date_of_birth'? 
-                          // In config default it uses 'dob'. Let's standardise on ID used in list: 'dob', 'postal_code' etc.
-
-                          if (!isVisible) return null;
+                          if (visibleColumns.length === 0) return null;
 
                           return (
-                            <SortableItem key={fieldId} id={fieldId}>
-                              {/* Render specific field content */}
-                              {fieldId === 'name' && (
-                                <div>
-                                  <label className="block text-gray-700 text-sm font-medium mb-2">
-                                    Full Name
-                                  </label>
-                                  <div className="relative">
-                                    <input
-                                      type="text"
-                                      value={previewFormData.name}
-                                      onChange={(e) => setPreviewFormData(prev => ({ ...prev, name: e.target.value }))}
-                                      placeholder="John Tan"
-                                      className={`w-full h-11 bg-gray-50 border border-gray-200 rounded-md px-3 text-gray-900 text-sm placeholder:text-gray-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all ${previewFormData.name.trim().length >= 2 ? 'pr-10' : ''}`}
-                                    />
-                                    {previewFormData.name.trim().length >= 2 && (
-                                      <CheckCircle2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-green-500" />
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-
-                              {fieldId === 'phone' && (
-                                <div>
-                                  <label className="block text-gray-700 text-sm font-medium mb-2">
-                                    Phone Number
-                                  </label>
-                                  <div className="grid grid-cols-12 gap-2">
-                                    <div className="col-span-8 relative">
-                                      <div className="flex h-11 bg-gray-50 rounded-md border border-gray-200 overflow-hidden focus-within:bg-white focus-within:ring-1 focus-within:ring-gray-300 transition-all">
-                                        <div className="px-3 bg-gray-100 flex items-center border-r border-gray-200 gap-1">
-                                          <span className="text-sm">🇸🇬</span>
-                                          <span className="text-gray-600 text-sm font-medium">+65</span>
+                            <SortableItem key={row.id} id={row.id}>
+                              <div className={`grid gap-3 ${visibleColumns.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                {visibleColumns.map((fieldId) => (
+                                  <div key={fieldId}>
+                                    {/* Render specific field content */}
+                                    {fieldId === 'name' && (
+                                      <div>
+                                        <label className="block text-gray-700 text-sm font-medium mb-2">
+                                          Full Name
+                                        </label>
+                                        <div className="relative">
+                                          <input
+                                            type="text"
+                                            value={previewFormData.name}
+                                            onChange={(e) => setPreviewFormData(prev => ({ ...prev, name: e.target.value }))}
+                                            placeholder="John Tan"
+                                            className={`w-full h-11 bg-gray-50 border border-gray-200 rounded-md px-3 text-gray-900 text-sm placeholder:text-gray-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all ${previewFormData.name.trim().length >= 2 ? 'pr-10' : ''}`}
+                                          />
+                                          {previewFormData.name.trim().length >= 2 && (
+                                            <CheckCircle2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-green-500" />
+                                          )}
                                         </div>
-                                        <input
-                                          type="tel"
-                                          value={formatPhoneDisplay(previewFormData.phone)}
-                                          onChange={(e) => handlePreviewPhoneChange(e.target.value)}
-                                          placeholder="9123 4567"
-                                          className="bg-transparent border-0 focus:ring-0 focus:outline-none h-full px-3 text-sm flex-1 placeholder:text-gray-400"
-                                          maxLength={9} // 8 digits + 1 space
-                                          disabled={previewPhoneVerification.isVerified}
-                                        />
-                                        {previewFormData.phone.length === 8 && previewPhoneVerification.isVerified && (
-                                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                                            <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                      </div>
+                                    )}
+
+                                    {fieldId === 'phone' && (
+                                      <div>
+                                        <label className="block text-gray-700 text-sm font-medium mb-2">
+                                          Phone Number
+                                        </label>
+                                        <div className="grid grid-cols-12 gap-2">
+                                          <div className="col-span-8 relative">
+                                            <div className="flex h-11 bg-gray-50 rounded-md border border-gray-200 overflow-hidden focus-within:bg-white focus-within:ring-1 focus-within:ring-gray-300 transition-all">
+                                              <div className="px-3 bg-gray-100 flex items-center border-r border-gray-200 gap-1">
+                                                <span className="text-sm">🇸🇬</span>
+                                                <span className="text-gray-600 text-sm font-medium">+65</span>
+                                              </div>
+                                              <input
+                                                type="tel"
+                                                value={formatPhoneDisplay(previewFormData.phone)}
+                                                onChange={(e) => handlePreviewPhoneChange(e.target.value)}
+                                                placeholder="9123 4567"
+                                                className="bg-transparent border-0 focus:ring-0 focus:outline-none h-full px-3 text-sm flex-1 placeholder:text-gray-400"
+                                                maxLength={9} // 8 digits + 1 space
+                                                disabled={previewPhoneVerification.isVerified}
+                                              />
+                                              {previewFormData.phone.length === 8 && previewPhoneVerification.isVerified && (
+                                                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                                                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                                </div>
+                                              )}
+                                            </div>
                                           </div>
+
+                                          <div className="col-span-4">
+                                            {!previewPhoneVerification.isVerified ? (
+                                              <button
+                                                type="button"
+                                                onClick={handlePreviewSendOTP}
+                                                disabled={
+                                                  previewPhoneVerification.isSending ||
+                                                  previewFormData.phone.length !== 8 ||
+                                                  previewPhoneVerification.error ||
+                                                  (previewPhoneVerification.hasSentCode && !previewPhoneVerification.canResend)
+                                                }
+                                                className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium disabled:opacity-50 rounded-md transition-colors flex items-center justify-center"
+                                              >
+                                                {previewPhoneVerification.isSending ? (
+                                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                                ) : !previewPhoneVerification.hasSentCode ? (
+                                                  'Verify'
+                                                ) : !previewPhoneVerification.canResend ? (
+                                                  `Resend (${previewPhoneVerification.resendCooldown}s)`
+                                                ) : (
+                                                  'Resend'
+                                                )}
+                                              </button>
+                                            ) : (
+                                              <div className="w-full h-11 bg-green-50 border border-green-200 rounded-md flex items-center justify-center">
+                                                <CheckCircle2 className="w-4 h-4 text-green-600" />
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                        {previewPhoneVerification.error && (
+                                          <p className="text-red-500 text-xs mt-1">{previewPhoneVerification.error}</p>
+                                        )}
+
+                                        {/* Sliding OTP Section */}
+                                        <div className={`transition-all duration-300 ease-out overflow-hidden ${previewPhoneVerification.showOtpInput ? 'max-h-48 opacity-100 mt-3' : 'max-h-0 opacity-0'
+                                          }`}>
+                                          <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
+                                            <div className="flex items-center justify-between mb-3">
+                                              <div>
+                                                <h4 className="font-medium text-gray-900 text-sm">Enter Code</h4>
+                                                <p className="text-xs text-gray-500">Sent to +65 {formatPhoneDisplay(previewFormData.phone)}</p>
+                                              </div>
+                                              <button
+                                                type="button"
+                                                className="text-gray-400 hover:text-gray-600 p-1"
+                                                onClick={() => setPreviewPhoneVerification(prev => ({ ...prev, showOtpInput: false }))}
+                                              >
+                                                <X className="w-4 h-4" />
+                                              </button>
+                                            </div>
+                                            <div className="flex gap-2">
+                                              <input
+                                                type="text"
+                                                maxLength={6}
+                                                value={previewPhoneVerification.otpCode}
+                                                onChange={(e) => setPreviewPhoneVerification(prev => ({
+                                                  ...prev,
+                                                  otpCode: e.target.value.replace(/\D/g, '')
+                                                }))}
+                                                placeholder="123456"
+                                                className="flex-1 h-11 bg-white border border-gray-200 rounded-md px-3 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 text-center tracking-widest"
+                                              />
+                                              <button
+                                                type="button"
+                                                onClick={async () => {
+                                                  if (previewPhoneVerification.otpCode.length !== 6) return;
+                                                  setPreviewPhoneVerification(prev => ({ ...prev, isVerifying: true, error: null }));
+                                                  try {
+                                                    const resp = await apiClient.post('/verify/check', {
+                                                      phone: previewFormData.phone,
+                                                      code: previewPhoneVerification.otpCode,
+                                                      countryCode: '+65'
+                                                    });
+                                                    const ok = resp?.data?.verified;
+                                                    if (ok) {
+                                                      setPreviewPhoneVerification(prev => ({
+                                                        ...prev,
+                                                        isVerified: true,
+                                                        isVerifying: false,
+                                                        showOtpInput: false,
+                                                        error: null
+                                                      }));
+                                                    } else {
+                                                      setPreviewPhoneVerification(prev => ({
+                                                        ...prev,
+                                                        isVerifying: false,
+                                                        error: 'Invalid code. Please try again.'
+                                                      }));
+                                                    }
+                                                  } catch (e) {
+                                                    console.error('Verify failed:', e);
+                                                    setPreviewPhoneVerification(prev => ({
+                                                      ...prev,
+                                                      isVerifying: false,
+                                                      error: 'Verification failed. Please try again.'
+                                                    }));
+                                                  }
+                                                }}
+                                                disabled={previewPhoneVerification.otpCode.length !== 6 || previewPhoneVerification.isVerifying}
+                                                className="h-11 px-6 bg-gray-900 hover:bg-gray-800 text-white rounded-md text-sm font-medium disabled:opacity-50 transition-colors flex items-center justify-center"
+                                              >
+                                                {previewPhoneVerification.isVerifying ? (
+                                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                                ) : (
+                                                  'Confirm'
+                                                )}
+                                              </button>
+                                            </div>
+                                            {/* Resend link removed; cooldown handled on the primary button */}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {fieldId === 'email' && (
+                                      <div>
+                                        <label className="block text-gray-700 text-sm font-medium mb-2">
+                                          Email
+                                        </label>
+                                        <div className="relative">
+                                          <input
+                                            type="email"
+                                            value={previewFormData.email}
+                                            onChange={(e) => handlePreviewInputChange('email', e.target.value)}
+                                            placeholder="you@example.com"
+                                            className={`w-full h-11 bg-gray-50 border ${previewErrors.email ? 'border-red-300' : 'border-gray-200'} rounded-md px-3 text-gray-900 text-sm placeholder:text-gray-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all ${/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(previewFormData.email) ? 'pr-10' : ''}`}
+                                          />
+                                          {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(previewFormData.email) && (
+                                            <CheckCircle2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-green-500" />
+                                          )}
+                                        </div>
+                                        {previewErrors.email && (
+                                          <p className="text-red-500 text-xs mt-1">{previewErrors.email}</p>
                                         )}
                                       </div>
-                                    </div>
+                                    )}
 
-                                    <div className="col-span-4">
-                                      {!previewPhoneVerification.isVerified ? (
-                                        <button
-                                          type="button"
-                                          onClick={handlePreviewSendOTP}
-                                          disabled={
-                                            previewPhoneVerification.isSending ||
-                                            previewFormData.phone.length !== 8 ||
-                                            previewPhoneVerification.error ||
-                                            (previewPhoneVerification.hasSentCode && !previewPhoneVerification.canResend)
-                                          }
-                                          className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium disabled:opacity-50 rounded-md transition-colors flex items-center justify-center"
-                                        >
-                                          {previewPhoneVerification.isSending ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                          ) : !previewPhoneVerification.hasSentCode ? (
-                                            'Verify'
-                                          ) : !previewPhoneVerification.canResend ? (
-                                            `Resend (${previewPhoneVerification.resendCooldown}s)`
-                                          ) : (
-                                            'Resend'
+                                    {fieldId === 'dob' && (
+                                      <div>
+                                        <label className="block text-gray-700 text-sm font-medium mb-2">
+                                          Date of Birth
+                                        </label>
+                                        <div className="relative">
+                                          <input
+                                            type="text"
+                                            value={previewFormData.date_of_birth}
+                                            onChange={(e) => handlePreviewDOBChange(e.target.value)}
+                                            placeholder="DD/MM/YYYY"
+                                            className={`w-full h-11 bg-gray-50 border ${previewErrors.date_of_birth ? 'border-red-300' : 'border-gray-200'} rounded-md px-3 text-gray-900 text-sm placeholder:text-gray-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all ${previewFormData.date_of_birth.length === 10 && !previewErrors.date_of_birth ? 'pr-10' : ''}`}
+                                            maxLength={10}
+                                          />
+                                          {previewFormData.date_of_birth.length === 10 && !previewErrors.date_of_birth && (
+                                            <CheckCircle2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-green-500" />
                                           )}
-                                        </button>
-                                      ) : (
-                                        <div className="w-full h-11 bg-green-50 border border-green-200 rounded-md flex items-center justify-center">
-                                          <CheckCircle2 className="w-4 h-4 text-green-600" />
                                         </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                  {previewPhoneVerification.error && (
-                                    <p className="text-red-500 text-xs mt-1">{previewPhoneVerification.error}</p>
-                                  )}
-
-                                  {/* Sliding OTP Section */}
-                                  <div className={`transition-all duration-300 ease-out overflow-hidden ${previewPhoneVerification.showOtpInput ? 'max-h-48 opacity-100 mt-3' : 'max-h-0 opacity-0'
-                                    }`}>
-                                    <div className="p-4 bg-gray-50 rounded-md border border-gray-200">
-                                      <div className="flex items-center justify-between mb-3">
-                                        <div>
-                                          <h4 className="font-medium text-gray-900 text-sm">Enter Code</h4>
-                                          <p className="text-xs text-gray-500">Sent to +65 {formatPhoneDisplay(previewFormData.phone)}</p>
-                                        </div>
-                                        <button
-                                          type="button"
-                                          className="text-gray-400 hover:text-gray-600 p-1"
-                                          onClick={() => setPreviewPhoneVerification(prev => ({ ...prev, showOtpInput: false }))}
-                                        >
-                                          <X className="w-4 h-4" />
-                                        </button>
+                                        {previewErrors.date_of_birth && (
+                                          <p className="text-red-500 text-xs mt-1">{previewErrors.date_of_birth}</p>
+                                        )}
                                       </div>
-                                      <div className="flex gap-2">
-                                        <input
-                                          type="text"
-                                          maxLength={6}
-                                          value={previewPhoneVerification.otpCode}
-                                          onChange={(e) => setPreviewPhoneVerification(prev => ({
-                                            ...prev,
-                                            otpCode: e.target.value.replace(/\D/g, '')
-                                          }))}
-                                          placeholder="123456"
-                                          className="flex-1 h-11 bg-white border border-gray-200 rounded-md px-3 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-300 text-center tracking-widest"
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            if (previewPhoneVerification.otpCode.length !== 6) return;
-                                            setPreviewPhoneVerification(prev => ({ ...prev, isVerifying: true, error: null }));
-                                            try {
-                                              const resp = await apiClient.post('/verify/check', {
-                                                phone: previewFormData.phone,
-                                                code: previewPhoneVerification.otpCode,
-                                                countryCode: '+65'
-                                              });
-                                              const ok = resp?.data?.verified;
-                                              if (ok) {
-                                                setPreviewPhoneVerification(prev => ({
-                                                  ...prev,
-                                                  isVerified: true,
-                                                  isVerifying: false,
-                                                  showOtpInput: false,
-                                                  error: null
-                                                }));
-                                              } else {
-                                                setPreviewPhoneVerification(prev => ({
-                                                  ...prev,
-                                                  isVerifying: false,
-                                                  error: 'Invalid code. Please try again.'
-                                                }));
-                                              }
-                                            } catch (e) {
-                                              console.error('Verify failed:', e);
-                                              setPreviewPhoneVerification(prev => ({
-                                                ...prev,
-                                                isVerifying: false,
-                                                error: 'Verification failed. Please try again.'
-                                              }));
-                                            }
-                                          }}
-                                          disabled={previewPhoneVerification.otpCode.length !== 6 || previewPhoneVerification.isVerifying}
-                                          className="h-11 px-6 bg-gray-900 hover:bg-gray-800 text-white rounded-md text-sm font-medium disabled:opacity-50 transition-colors flex items-center justify-center"
-                                        >
-                                          {previewPhoneVerification.isVerifying ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                          ) : (
-                                            'Confirm'
+                                    )}
+
+                                    {fieldId === 'postal_code' && (
+                                      <div>
+                                        <label className="block text-gray-700 text-sm font-medium mb-2">
+                                          Postal Code
+                                        </label>
+                                        <div className="relative">
+                                          <input
+                                            type="text"
+                                            maxLength={6}
+                                            value={previewFormData.postal_code}
+                                            onChange={(e) => handlePreviewInputChange('postal_code', e.target.value.replace(/\D/g, ''))}
+                                            placeholder="520230"
+                                            className={`w-full h-11 bg-gray-50 border ${previewErrors.postal_code ? 'border-red-300' : 'border-gray-200'} rounded-md px-3 text-gray-900 text-sm placeholder:text-gray-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all ${previewFormData.postal_code.length === 6 ? 'pr-10' : ''}`}
+                                          />
+                                          {previewFormData.postal_code.length === 6 && (
+                                            <CheckCircle2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-green-500" />
                                           )}
-                                        </button>
+                                        </div>
+                                        {previewErrors.postal_code && (
+                                          <p className="text-red-500 text-xs mt-1">{previewErrors.postal_code}</p>
+                                        )}
                                       </div>
-                                      {/* Resend link removed; cooldown handled on the primary button */}
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-
-                              {fieldId === 'email' && (
-                                <div>
-                                  <label className="block text-gray-700 text-sm font-medium mb-2">
-                                    Email
-                                  </label>
-                                  <div className="relative">
-                                    <input
-                                      type="email"
-                                      value={previewFormData.email}
-                                      onChange={(e) => handlePreviewInputChange('email', e.target.value)}
-                                      placeholder="you@example.com"
-                                      className={`w-full h-11 bg-gray-50 border ${previewErrors.email ? 'border-red-300' : 'border-gray-200'} rounded-md px-3 text-gray-900 text-sm placeholder:text-gray-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all ${/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(previewFormData.email) ? 'pr-10' : ''}`}
-                                    />
-                                    {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(previewFormData.email) && (
-                                      <CheckCircle2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-green-500" />
                                     )}
-                                  </div>
-                                  {previewErrors.email && (
-                                    <p className="text-red-500 text-xs mt-1">{previewErrors.email}</p>
-                                  )}
-                                </div>
-                              )}
 
-                              {fieldId === 'dob' && (
-                                <div>
-                                  <label className="block text-gray-700 text-sm font-medium mb-2">
-                                    Date of Birth
-                                  </label>
-                                  <div className="relative">
-                                    <input
-                                      type="text"
-                                      value={previewFormData.date_of_birth}
-                                      onChange={(e) => handlePreviewDOBChange(e.target.value)}
-                                      placeholder="DD/MM/YYYY"
-                                      className={`w-full h-11 bg-gray-50 border ${previewErrors.date_of_birth ? 'border-red-300' : 'border-gray-200'} rounded-md px-3 text-gray-900 text-sm placeholder:text-gray-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all ${previewFormData.date_of_birth.length === 10 && !previewErrors.date_of_birth ? 'pr-10' : ''}`}
-                                      maxLength={10}
-                                    />
-                                    {previewFormData.date_of_birth.length === 10 && !previewErrors.date_of_birth && (
-                                      <CheckCircle2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-green-500" />
+                                    {fieldId === 'education_level' && (
+                                      <div>
+                                        <label className="block text-gray-700 text-sm font-medium mb-2">
+                                          Education
+                                        </label>
+                                        <div className="relative">
+                                          <select
+                                            value={previewFormData.education_level}
+                                            onChange={(e) => setPreviewFormData(prev => ({ ...prev, education_level: e.target.value }))}
+                                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-md px-3 text-gray-900 text-sm focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all appearance-none"
+                                          >
+                                            <option value="" disabled>Select education</option>
+                                            <option value="Secondary School or below">Secondary School or below</option>
+                                            <option value="O Levels">O Levels</option>
+                                            <option value="Diploma">Diploma</option>
+                                            <option value="Degree">Degree</option>
+                                            <option value="Masters and above">Masters and above</option>
+                                          </select>
+                                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                                          </div>
+                                        </div>
+                                      </div>
                                     )}
-                                  </div>
-                                  {previewErrors.date_of_birth && (
-                                    <p className="text-red-500 text-xs mt-1">{previewErrors.date_of_birth}</p>
-                                  )}
-                                </div>
-                              )}
 
-                              {fieldId === 'postal_code' && (
-                                <div>
-                                  <label className="block text-gray-700 text-sm font-medium mb-2">
-                                    Postal Code
-                                  </label>
-                                  <div className="relative">
-                                    <input
-                                      type="text"
-                                      maxLength={6}
-                                      value={previewFormData.postal_code}
-                                      onChange={(e) => handlePreviewInputChange('postal_code', e.target.value.replace(/\D/g, ''))}
-                                      placeholder="520230"
-                                      className={`w-full h-11 bg-gray-50 border ${previewErrors.postal_code ? 'border-red-300' : 'border-gray-200'} rounded-md px-3 text-gray-900 text-sm placeholder:text-gray-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all ${previewFormData.postal_code.length === 6 ? 'pr-10' : ''}`}
-                                    />
-                                    {previewFormData.postal_code.length === 6 && (
-                                      <CheckCircle2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-green-500" />
+                                    {fieldId === 'monthly_income' && (
+                                      <div>
+                                        <label className="block text-gray-700 text-sm font-medium mb-2">
+                                          Income
+                                        </label>
+                                        <div className="relative">
+                                          <select
+                                            value={previewFormData.monthly_income}
+                                            onChange={(e) => setPreviewFormData(prev => ({ ...prev, monthly_income: e.target.value }))}
+                                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-md px-3 text-gray-900 text-sm focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all appearance-none"
+                                          >
+                                            <option value="" disabled>Select income</option>
+                                            <option value="<$3000">&lt;$3000</option>
+                                            <option value="$3000 - $4999">$3000 - $4999</option>
+                                            <option value="$5000 - $7999">$5000 - $7999</option>
+                                            <option value=">$8000">&gt;$8000</option>
+                                          </select>
+                                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                                            <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                                          </div>
+                                        </div>
+                                      </div>
                                     )}
-                                  </div>
-                                  {previewErrors.postal_code && (
-                                    <p className="text-red-500 text-xs mt-1">{previewErrors.postal_code}</p>
-                                  )}
-                                </div>
-                              )}
 
-                              {fieldId === 'education_level' && (
-                                <div>
-                                  <label className="block text-gray-700 text-sm font-medium mb-2">
-                                    Education
-                                  </label>
-                                  <div className="relative">
-                                    <select
-                                      value={previewFormData.education_level}
-                                      onChange={(e) => setPreviewFormData(prev => ({ ...prev, education_level: e.target.value }))}
-                                      className="w-full h-11 bg-gray-50 border border-gray-200 rounded-md px-3 text-gray-900 text-sm focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all appearance-none"
-                                    >
-                                      <option value="" disabled>Select education</option>
-                                      <option value="Secondary School or below">Secondary School or below</option>
-                                      <option value="O Levels">O Levels</option>
-                                      <option value="Diploma">Diploma</option>
-                                      <option value="Degree">Degree</option>
-                                      <option value="Masters and above">Masters and above</option>
-                                    </select>
-                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                                      <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
-                                    </div>
                                   </div>
-                                </div>
-                              )}
-
-                              {fieldId === 'monthly_income' && (
-                                <div>
-                                  <label className="block text-gray-700 text-sm font-medium mb-2">
-                                    Income
-                                  </label>
-                                  <div className="relative">
-                                    <select
-                                      value={previewFormData.monthly_income}
-                                      onChange={(e) => setPreviewFormData(prev => ({ ...prev, monthly_income: e.target.value }))}
-                                      className="w-full h-11 bg-gray-50 border border-gray-200 rounded-md px-3 text-gray-900 text-sm focus:outline-none focus:bg-white focus:ring-1 focus:ring-gray-300 transition-all appearance-none"
-                                    >
-                                      <option value="" disabled>Select income</option>
-                                      <option value="<$3000">&lt;$3000</option>
-                                      <option value="$3000 - $4999">$3000 - $4999</option>
-                                      <option value="$5000 - $7999">$5000 - $7999</option>
-                                      <option value=">$8000">&gt;$8000</option>
-                                    </select>
-                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                                      <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-
+                                ))}
+                              </div>
                             </SortableItem>
                           );
                         })}
