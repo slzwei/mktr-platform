@@ -71,12 +71,7 @@ export default function AdminAgents() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [managePackagesDialogOpen, setManagePackagesDialogOpen] = useState(false);
   const [packagesForAgent, setPackagesForAgent] = useState([]);
-  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
-  const [assignLoading, setAssignLoading] = useState(false);
-  const [allCampaigns, setAllCampaigns] = useState([]);
-  const [selectedCampaignIds, setSelectedCampaignIds] = useState(new Set());
 
-  const [campaignSearch, setCampaignSearch] = useState("");
   const { toast } = useToast();
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [editLeadCount, setEditLeadCount] = useState("");
@@ -209,70 +204,7 @@ export default function AdminAgents() {
     }
   };
 
-  const openAssignDialog = async (agent) => {
-    if (!agent) return;
-    setSelectedAgent(agent);
-    setAssignLoading(true);
-    try {
-      const listData = await Campaign.list({ limit: 500 });
-      const campaigns = Array.isArray(listData) ? listData : (listData.campaigns || []);
-      setAllCampaigns(campaigns);
-      const preselected = new Set(
-        campaigns
-          .filter(c => Array.isArray(c.assigned_agents) && c.assigned_agents.map(String).includes(String(agent.id)))
-          .map(c => c.id)
-      );
-      setSelectedCampaignIds(preselected);
-      setAssignDialogOpen(true);
-    } catch (e) {
-      console.error('Failed to load campaigns for assignment', e);
-      alert(e?.message || 'Failed to load campaigns');
-    } finally {
-      setAssignLoading(false);
-    }
-  };
 
-  const toggleCampaignSelected = (campaignId) => {
-    setSelectedCampaignIds(prev => {
-      const next = new Set(prev);
-      if (next.has(campaignId)) next.delete(campaignId); else next.add(campaignId);
-      return next;
-    });
-  };
-
-  const handleSaveAssignments = async () => {
-    if (!selectedAgent) return;
-    setAssignLoading(true);
-    try {
-      const agentIdStr = String(selectedAgent.id);
-      const updates = [];
-      for (const c of allCampaigns) {
-        const current = Array.isArray(c.assigned_agents) ? c.assigned_agents.map(String) : [];
-        const wantSelected = selectedCampaignIds.has(c.id);
-        const hasNow = current.includes(agentIdStr);
-        if (wantSelected && !hasNow) {
-          const nextArr = Array.from(new Set([...current, agentIdStr]));
-          updates.push(Campaign.update(c.id, { assigned_agents: nextArr }));
-        } else if (!wantSelected && hasNow) {
-          const nextArr = current.filter(id => id !== agentIdStr);
-          updates.push(Campaign.update(c.id, { assigned_agents: nextArr }));
-        }
-      }
-      if (updates.length > 0) {
-        await Promise.all(updates);
-      }
-      await loadData();
-      setAssignDialogOpen(false);
-      await loadData();
-      setAssignDialogOpen(false);
-      // Removed campaign refresh logic as we are switching to packages view
-    } catch (e) {
-      console.error('Failed to save assignments', e);
-      alert(e?.message || 'Failed to save assignments');
-    } finally {
-      setAssignLoading(false);
-    }
-  };
 
   const handleDeleteAgent = async (agent) => {
     if (!agent) return;
@@ -704,68 +636,7 @@ export default function AdminAgents() {
         </Dialog>
 
         {/* Assign Campaigns Dialog */}
-        <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Assign Campaigns</DialogTitle>
-              <DialogDescription>
-                Select campaigns to assign to {selectedAgent?.fullName || 'this agent'}.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-4 space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  className="pl-9 bg-white"
-                  placeholder="Filter campaigns..."
-                  value={campaignSearch}
-                  onChange={(e) => setCampaignSearch(e.target.value)}
-                />
-              </div>
-              <div className="border rounded-md max-h-60 overflow-y-auto p-2 space-y-1 bg-gray-50">
-                {allCampaigns
-                  .filter(c => (c.name || '').toLowerCase().includes(campaignSearch.toLowerCase()))
-                  .map(campaign => (
-                    <div
-                      key={campaign.id}
-                      className="flex items-center space-x-3 p-2 hover:bg-white hover:shadow-sm rounded-md cursor-pointer transition-all"
-                      onClick={() => toggleCampaignSelected(campaign.id)}
-                    >
-                      <Checkbox
-                        id={`c-${campaign.id}`}
-                        checked={selectedCampaignIds.has(campaign.id)}
-                        onCheckedChange={() => toggleCampaignSelected(campaign.id)}
-                        className="border-gray-300"
-                      />
-                      <label
-                        htmlFor={`c-${campaign.id}`}
-                        className="text-sm font-medium leading-none cursor-pointer flex-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {campaign.name}
-                        {campaign.status !== 'active' && (
-                          <span className="ml-2 text-xs text-gray-500 font-normal">({campaign.status})</span>
-                        )}
-                      </label>
-                    </div>
-                  ))}
-                {allCampaigns.length === 0 && (
-                  <div className="text-center text-sm text-gray-500 py-4">
-                    No campaigns available.
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleSaveAssignments} disabled={assignLoading} className="bg-blue-600 hover:bg-blue-700">
-                {assignLoading ? 'Saving...' : 'Save Assignments'}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import { User, Prospect, Commission, Campaign, sequelize } from '../models/index.js';
+import { User, Prospect, Commission, Campaign, LeadPackageAssignment, LeadPackage, sequelize } from '../models/index.js';
 import { requireAdmin, authenticateToken } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
 import { sendEmail } from '../services/mailer.js';
@@ -67,16 +67,30 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
     ]
   });
 
-  // Compute counts of campaigns where agents are assigned via assigned_agents JSON
-  const allCampaigns = await Campaign.findAll({ attributes: ['id', 'assigned_agents', 'createdBy', 'status'] });
+  // Compute counts of campaigns where agents have active lead packages
+  // We want to know: For each agent, how many unique campaigns do they have a VALID assignment for?
+  const allAssignments = await LeadPackageAssignment.findAll({
+    where: { status: 'active', leadsRemaining: { [Op.gt]: 0 } },
+    include: [{
+      model: LeadPackage,
+      as: 'package',
+      attributes: ['campaignId'],
+      required: true
+    }]
+  });
+
   const assignedCounts = {};
-  for (const c of allCampaigns) {
-    const arr = Array.isArray(c.assigned_agents) ? c.assigned_agents : [];
-    for (const agentId of arr) {
-      const key = String(agentId);
-      assignedCounts[key] = (assignedCounts[key] || 0) + 1;
+  for (const assignment of allAssignments) {
+    if (assignment.package && assignment.package.campaignId) {
+      const agentId = String(assignment.agentId);
+      if (!assignedCounts[agentId]) assignedCounts[agentId] = new Set();
+      assignedCounts[agentId].add(assignment.package.campaignId);
     }
   }
+  // Convert Sets to counts
+  Object.keys(assignedCounts).forEach(k => {
+    assignedCounts[k] = assignedCounts[k].size;
+  });
 
   // Calculate agent statistics
   const agentsWithStats = agents.map(agent => {
@@ -462,8 +476,22 @@ router.get('/:id/campaigns', authenticateToken, requireAgentOrAdmin, asyncHandle
     ]
   });
 
+  // Get campaigns where agent has any package assignments (history)
+  const agentAssignments = await LeadPackageAssignment.findAll({
+    where: { agentId: id },
+    include: [{
+      model: LeadPackage,
+      as: 'package',
+      attributes: ['campaignId'],
+      required: true
+    }]
+  });
+  const assignedCampaignIds = new Set(agentAssignments.map(a => a.package.campaignId));
+
   const campaignsFiltered = campaignsRaw.filter(c => {
-    const assigned = Array.isArray(c.assigned_agents) && c.assigned_agents.map(v => String(v)).includes(String(id));
+    // Check if agent has any package assignment (active or historical)
+    // We ignore the legacy c.assigned_agents list now
+    const assigned = assignedCampaignIds.has(c.id);
     const created = String(c.createdBy) === String(id);
     if (status && c.status !== status) return false;
     if (type && c.type !== type) return false;

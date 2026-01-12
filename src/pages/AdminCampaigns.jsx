@@ -47,7 +47,7 @@ import {
 } from "lucide-react";
 
 import CampaignFormDialog from "../components/campaigns/CampaignFormDialog";
-import ManageAgentsDialog from "../components/campaigns/ManageAgentsDialog";
+
 
 export default function AdminCampaigns() {
   const [user, setUser] = useState(null);
@@ -55,7 +55,7 @@ export default function AdminCampaigns() {
   const [archivedCampaigns, setArchivedCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [isAgentsDialogOpen, setIsAgentsDialogOpen] = useState(false);
+
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [activeTab, setActiveTab] = useState("active");
@@ -111,10 +111,7 @@ export default function AdminCampaigns() {
     }
   };
 
-  const handleOpenAgentsDialog = (campaign) => {
-    setSelectedCampaign(campaign);
-    setIsAgentsDialogOpen(true);
-  };
+
 
   const handleCopyLink = (campaignId) => {
     const baseUrl = window.location.origin;
@@ -208,10 +205,7 @@ export default function AdminCampaigns() {
             <span className="ml-2">Design</span>
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleOpenAgentsDialog(c)}>
-          <Users className="w-4 h-4" />
-          <span className="ml-2">Agents</span>
-        </DropdownMenuItem>
+
         <DropdownMenuItem onClick={() => handleOpenForm(c)}>
           <Edit className="w-4 h-4" />
           <span className="ml-2">Edit</span>
@@ -233,7 +227,7 @@ export default function AdminCampaigns() {
             {!archived && <TableHead>Status</TableHead>}
             <TableHead>Duration</TableHead>
             <TableHead>Age Range</TableHead>
-            {!archived && <TableHead>Assigned Agents</TableHead>}
+
             <TableHead>Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -278,9 +272,7 @@ export default function AdminCampaigns() {
               <TableCell>
                 {campaign.min_age} - {campaign.max_age || 'Any'}
               </TableCell>
-              {!archived && (
-                <TableCell>{campaign.assigned_agents?.length || 0}</TableCell>
-              )}
+
               <TableCell className="flex items-center gap-2">
                 {archived ? (
                   <div className="flex items-center gap-2">
@@ -341,11 +333,7 @@ export default function AdminCampaigns() {
               <div>
                 <span className="text-gray-500">Age:</span> {c.min_age} – {c.max_age || 'Any'}
               </div>
-              {!archived && (
-                <div>
-                  <span className="text-gray-500">Agents:</span> {c.assigned_agents?.length || 0}
-                </div>
-              )}
+
             </div>
             <div className="flex items-center justify-between pt-1">
               {archived ? (
@@ -506,13 +494,7 @@ export default function AdminCampaigns() {
           onSubmit={handleFormSubmit}
         />
 
-        {selectedCampaign && (
-          <ManageAgentsDialog
-            open={isAgentsDialogOpen}
-            onOpenChange={setIsAgentsDialogOpen}
-            campaign={selectedCampaign}
-          />
-        )}
+
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
-import { User, QrTag, Campaign, RoundRobinCursor, sequelize } from '../models/index.js';
+import { User, QrTag, Campaign, RoundRobinCursor, LeadPackageAssignment, LeadPackage, sequelize } from '../models/index.js';
+import { Op } from 'sequelize';
 
 // In-process queue to serialize round-robin updates per campaign (reduces SQLite lock contention)
 const rrQueues = new Map();
@@ -10,7 +11,7 @@ function enqueueCampaign(campaignId, task) {
       // Clear queue when this task finishes if it's still the last one
       if (rrQueues.get(campaignId) === chain) rrQueues.delete(campaignId);
     });
-  rrQueues.set(campaignId, chain.catch(() => {}));
+  rrQueues.set(campaignId, chain.catch(() => { }));
   return chain;
 }
 
@@ -92,15 +93,35 @@ export async function resolveAssignedAgentId({ reqUser, requestedAgentId, campai
     }
   }
 
-  // 4) Try campaign assigned_agents with round-robin rotation
+  // 4) Try active Lead Package Assignments with round-robin rotation
+  // This REPLACES the old manual 'assigned_agents' list.
+  // Agents are only in the pool if they have a purchased package for this campaign with leads remaining.
   if (campaignId) {
-    const campaign = await Campaign.findByPk(campaignId);
-    const assigned = Array.isArray(campaign?.assigned_agents) ? campaign.assigned_agents : [];
-    if (assigned.length > 0) {
-      // Filter to active agents
-      const activeAgents = (await User.findAll({ where: { id: assigned, role: 'agent', isActive: true } }))
-        .map(u => u.id)
-        .filter(id => assigned.includes(id));
+    // Find all active assignments for this campaign with credits > 0
+    const assignments = await LeadPackageAssignment.findAll({
+      where: {
+        status: 'active',
+        leadsRemaining: { [Op.gt]: 0 }
+      },
+      include: [{
+        model: LeadPackage,
+        as: 'package',
+        where: { campaignId },
+        required: true,
+        attributes: [] // Only need filtering
+      }],
+      attributes: ['agentId']
+    });
+
+    const candidateIds = [...new Set(assignments.map(a => a.agentId))];
+
+    if (candidateIds.length > 0) {
+      // Filter to active agents only
+      const activeAgents = (await User.findAll({
+        where: { id: candidateIds, role: 'agent', isActive: true },
+        attributes: ['id']
+      })).map(u => u.id);
+
       if (activeAgents.length > 0) {
         // Use transaction to avoid race under load
         // Serialize updates in-process; do a simple read-modify-write with retries
