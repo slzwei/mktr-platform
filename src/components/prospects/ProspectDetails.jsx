@@ -68,7 +68,17 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
   const handleUpdate = async () => {
     setIsUpdating(true);
     try {
-      await onStatusUpdate(prospect.id, status);
+      // Import Prospect entity to update both status and notes
+      const { Prospect } = await import("@/api/entities");
+      await Prospect.update(prospect.id, {
+        leadStatus: status,
+        notes
+      });
+
+      // Call the parent callback if provided
+      if (typeof onStatusUpdate === 'function') {
+        await onStatusUpdate(prospect.id, status);
+      }
       onClose();
     } catch (error) {
       console.error('Error updating prospect:', error);
@@ -424,7 +434,7 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
                   <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add notes about this prospect..." rows={3} />
                 </div>
                 <div className="flex gap-3">
-                  <Button onClick={handleUpdate} disabled={isUpdating || status === prospect.status} className="bg-blue-600 hover:bg-blue-700">
+                  <Button onClick={handleUpdate} disabled={isUpdating || (status === prospect.status && notes === (prospect.notes || ""))} className="bg-blue-600 hover:bg-blue-700">
                     <Save className="w-4 h-4 mr-2" />
                     {isUpdating ? 'Updating...' : 'Update'}
                   </Button>
