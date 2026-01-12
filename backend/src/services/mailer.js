@@ -44,7 +44,16 @@ export async function sendEmail({ to, subject, html, text }) {
 }
 
 export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, count = 1) {
-  if (!agent?.email) return;
+  // Validate agent object
+  if (!agent) {
+    console.error('❌ Failed to send lead assignment email: agent is null or undefined');
+    throw new Error('Agent object is required to send assignment email');
+  }
+
+  if (!agent.email) {
+    console.error(`❌ Failed to send lead assignment email: agent ${agent.id || 'unknown'} has no email address`);
+    throw new Error(`Agent ${agent.id || 'unknown'} has no email address`);
+  }
 
   const subject = isBulk
     ? `[MKTR] You have been assigned ${count} new leads`
@@ -58,27 +67,49 @@ export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, c
       <p>Hello ${agent.firstName || 'Agent'},</p>
       <p>You have been assigned <strong>${count}</strong> new leads in the MKTR platform.</p>
       <p>Please log in to your dashboard to review and contact them.</p>
-      <p><a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin/leads">View Leads</a></p>
+      <p><a href="${process.env.FRONTEND_BASE_URL || 'http://localhost:5173'}/MyProspects">View My Prospects</a></p>
     `;
   } else {
+    const campaignName = prospect.campaign?.name || prospect.campaignName || 'N/A';
+    const campaignId = prospect.campaign?.id || prospect.campaignId || null;
+
+    // Format signup date and time
+    const signupDate = new Date(prospect.createdAt);
+    const dateOptions = { year: 'numeric', month: 'short', day: 'numeric' };
+    const timeOptions = { hour: '2-digit', minute: '2-digit', hour12: true };
+    const formattedDate = signupDate.toLocaleDateString('en-US', dateOptions);
+    const formattedTime = signupDate.toLocaleTimeString('en-US', timeOptions);
+
     html = `
       <h2>New Lead Assigned</h2>
       <p>Hello ${agent.firstName || 'Agent'},</p>
       <p>A new prospect has been assigned to you:</p>
       <ul>
         <li><strong>Name:</strong> ${prospect.firstName} ${prospect.lastName}</li>
-        <li><strong>Company:</strong> ${prospect.company || 'N/A'}</li>
+        <li><strong>Campaign:</strong> ${campaignName}</li>
+        <li><strong>Signed Up:</strong> ${formattedDate} at ${formattedTime}</li>
         <li><strong>Email:</strong> ${prospect.email}</li>
         <li><strong>Phone:</strong> ${prospect.phone || 'N/A'}</li>
       </ul>
-      <p><a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/admin/leads/${prospect.id}">View Lead Details</a></p>
+      <p><a href="${process.env.FRONTEND_BASE_URL || 'http://localhost:5173'}/prospect/${prospect.id}">View Lead Details</a></p>
     `;
   }
 
-  return sendEmail({
+  console.log(`📧 Sending lead assignment email to ${agent.email} (Agent ID: ${agent.id})`);
+
+  const result = await sendEmail({
     to: agent.email,
     subject,
     html
   });
+
+  if (result.success) {
+    console.log(`✅ Lead assignment email sent successfully to ${agent.email}`);
+  } else {
+    console.warn(`⚠️  Lead assignment email not sent (mailer not configured): ${agent.email}`);
+  }
+
+  return result;
 }
+
 

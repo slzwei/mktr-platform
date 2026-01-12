@@ -472,6 +472,16 @@ class ProspectEntity extends BaseEntity {
     const response = await apiClient.get(`${this.endpoint}/stats/overview`);
     return response.data;
   }
+
+  async trackView(id) {
+    const response = await apiClient.post(`${this.endpoint}/${id}/track-view`, {});
+    return response.data;
+  }
+
+  async getById(id) {
+    const response = await apiClient.get(`${this.endpoint}/${id}`);
+    return response.data?.prospect || response.data;
+  }
 }
 
 // QR Tag Entity

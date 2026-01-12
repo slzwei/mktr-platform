@@ -248,10 +248,20 @@ router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res)
   if (assignedAgentId) {
     // Fetch full agent details if not already available
     const agent = await User.findByPk(assignedAgentId);
-    // Don't await email sending to avoid blocking response
-    sendLeadAssignmentEmail(agent, prospect).catch(err =>
-      console.error('Failed to send assignment email:', err)
-    );
+
+    if (!agent) {
+      console.error(`❌ Cannot send assignment email: Agent ${assignedAgentId} not found for prospect ${prospect.id}`);
+    } else {
+      // Reload prospect with campaign data for email
+      const prospectWithCampaign = await Prospect.findByPk(prospect.id, {
+        include: [{ association: 'campaign', attributes: ['id', 'name'] }]
+      });
+
+      // Don't await email sending to avoid blocking response
+      sendLeadAssignmentEmail(agent, prospectWithCampaign).catch(err =>
+        console.error(`❌ Failed to send assignment email to agent ${assignedAgentId} for prospect ${prospect.id}:`, err.message || err)
+      );
+    }
   }
 
   res.status(201).json({
@@ -463,10 +473,14 @@ router.patch('/:id/assign', authenticateToken, requireAgentOrAdmin, asyncHandler
   // Deduct lead credit
   await deductLeadCredit(agentId).catch(err => console.error('Failed to deduct credit:', err));
 
+  // Reload prospect with campaign data for email
+  const prospectWithCampaign = await Prospect.findByPk(prospect.id, {
+    include: [{ association: 'campaign', attributes: ['id', 'name'] }]
+  });
 
   // Notify agent
-  sendLeadAssignmentEmail(agent, prospect).catch(err =>
-    console.error('Failed to send assignment email:', err)
+  sendLeadAssignmentEmail(agent, prospectWithCampaign).catch(err =>
+    console.error(`❌ Failed to send assignment email to agent ${agentId} for prospect ${prospect.id}:`, err.message || err)
   );
 
   res.json({
@@ -529,7 +543,7 @@ router.patch('/bulk/assign', authenticateToken, requireAgentOrAdmin, asyncHandle
   // Notify agent about bulk assignment
   if (result[0] > 0) {
     sendLeadAssignmentEmail(agent, null, true, result[0]).catch(err =>
-      console.error('Failed to send bulk assignment email:', err)
+      console.error(`❌ Failed to send bulk assignment email to agent ${agentId} for ${result[0]} prospects:`, err.message || err)
     );
   }
 
@@ -679,6 +693,42 @@ router.patch('/:id/follow-up', authenticateToken, requireAgentOrAdmin, asyncHand
     success: true,
     message: 'Follow-up scheduled successfully',
     data: { prospect }
+  });
+}));
+
+// Track prospect view
+router.post('/:id/track-view', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const whereConditions = { id };
+
+  // Non-admin users can only track views for prospects assigned to them
+  if (req.user.role === 'agent') {
+    whereConditions.assignedAgentId = req.user.id;
+  }
+
+  const prospect = await Prospect.findOne({ where: whereConditions });
+
+  if (!prospect) {
+    throw new AppError('Prospect not found or access denied', 404);
+  }
+
+  // Log activity
+  await ProspectActivity.create({
+    prospectId: prospect.id,
+    type: 'viewed',
+    actorUserId: req.user.id,
+    description: `Prospect viewed by ${req.user.firstName || 'agent'} ${req.user.lastName || ''}`,
+    metadata: {
+      source: req.body.source || 'email_link',
+      viewedAt: new Date(),
+      userAgent: req.headers['user-agent']
+    }
+  });
+
+  res.json({
+    success: true,
+    message: 'View tracked successfully'
   });
 }));
 
