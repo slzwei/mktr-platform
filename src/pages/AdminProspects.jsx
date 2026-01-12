@@ -148,13 +148,14 @@ export default function AdminProspects() {
       const [userData, prospectsResponse, allCampaignsData] = await Promise.all([
         user || auth.getCurrentUser(),
         Prospect.list(params),
-        campaigns.length > 0 ? Promise.resolve(campaigns) : Campaign.list()
+        campaigns.length > 0 ? Promise.resolve(campaigns) : Campaign.list({ limit: 1000 })
       ]);
 
       if (!user) setUser(userData);
 
       const campaignsResponse = Array.isArray(allCampaignsData) ? allCampaignsData : (allCampaignsData.campaigns || []);
-      const campaignsData = campaignsResponse.filter(campaign => campaign.status !== 'archived');
+      // Keep all campaigns including archived ones for lookups - prospects may reference them
+      const campaignsData = campaignsResponse;
 
       const prospectsData = prospectsResponse.prospects || prospectsResponse || [];
       const paginationData = prospectsResponse.pagination || {
@@ -167,6 +168,7 @@ export default function AdminProspects() {
       const normalized = (prospectsData || []).map(normalizeProspect);
       setProspects(normalized);
       if (campaignsData.length > 0) setCampaigns(campaignsData);
+
       setPagination(paginationData);
     } catch (error) {
       console.error('Error loading prospects:', error);

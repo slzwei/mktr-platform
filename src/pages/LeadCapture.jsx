@@ -177,7 +177,11 @@ export default function LeadCapture() {
             };
 
             const payload = Object.fromEntries(
-                Object.entries(basePayload).filter(([_, v]) => v !== null && v !== undefined && v !== '')
+                Object.entries(basePayload).filter(([k, v]) => {
+                    // Allow empty string for lastName to support single names
+                    if (k === 'lastName' && v === '') return true;
+                    return v !== null && v !== undefined && v !== '';
+                })
             );
 
             const result = await apiClient.post('/prospects', payload);

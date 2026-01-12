@@ -66,11 +66,20 @@ export default function AgentDashboard() {
     thisMonth.setDate(1);        // This variable is not used after removing monthlyEarnings, can be removed
     thisMonth.setHours(0, 0, 0, 0); // This variable is not used after removing monthlyEarnings, can be removed
 
-    const newProspects = stats.prospects.filter(p => p.status === 'new').length;
-    const weeklyProspects = stats.prospects.filter(p =>
-      new Date(p.created_date) >= thisWeek
+    const normalizedProspects = stats.prospects.map(p => ({
+      ...p,
+      status: (p.leadStatus || p.status || 'new').toLowerCase()
+    }));
+
+    const newProspects = normalizedProspects.filter(p => p.status === 'new').length;
+    const weeklyProspects = normalizedProspects.filter(p =>
+      new Date(p.created_date || p.createdAt) >= thisWeek
     ).length;
-    const closedWon = stats.prospects.filter(p => p.status === 'close_won').length;
+
+    // Check for both 'won' and 'close_won' as backend/frontend conventions might vary
+    const closedWon = normalizedProspects.filter(p =>
+      p.status === 'won' || p.status === 'close_won'
+    ).length;
 
     return {
       totalProspects: stats.prospects.length,
@@ -161,7 +170,10 @@ export default function AgentDashboard() {
           />
           <StatsCard
             title="Active Prospects"
-            value={stats.prospects.filter(p => !['close_won', 'close_lost', 'rejected'].includes(p.status)).length}
+            value={stats.prospects.filter(p => {
+              const s = (p.leadStatus || p.status || 'new').toLowerCase();
+              return !['close_won', 'won', 'close_lost', 'lost', 'rejected'].includes(s);
+            }).length}
             icon={Clock}
             bgColor="bg-orange-500"
             trend="In pipeline"
@@ -211,7 +223,10 @@ export default function AgentDashboard() {
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">Active Prospects</span>
                     <span className="font-semibold">
-                      {stats.prospects.filter(p => !['close_won', 'close_lost', 'rejected'].includes(p.status)).length}
+                      {stats.prospects.filter(p => {
+                        const s = (p.leadStatus || p.status || 'new').toLowerCase();
+                        return !['close_won', 'won', 'close_lost', 'lost', 'rejected'].includes(s);
+                      }).length}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">

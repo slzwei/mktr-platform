@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Prospect } from "@/api/entities";
+import { Prospect, Campaign } from "@/api/entities";
 import { auth } from "@/api/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -34,12 +34,69 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import ProspectDetails from "@/components/prospects/ProspectDetails";
+
+// Normalize backend prospect to UI shape expected by shared components
+function normalizeProspect(p) {
+    const name = [p.firstName, p.lastName].filter(Boolean).join(" ") || p.name || "";
+    let status = (p.leadStatus || p.status || "new").toLowerCase();
+
+    // Normalize legacy/frontend statuses to backend Enum
+    if (status === 'close_won') status = 'won';
+    if (status === 'close_lost') status = 'lost';
+    if (status === 'rejected') status = 'lost';
+    if (status === 'meeting') status = 'negotiating';
+    const createdDate = p.createdAt || p.created_date || new Date().toISOString();
+
+    // Map leadSource to simplified UI values used in filters/display
+    const source = (p.leadSource || p.source || "other").toLowerCase();
+    let simplifiedSource = "other";
+    if (source === "qr_code") simplifiedSource = "qr";
+    else if (source === "website") simplifiedSource = "form";
+    else if (source) simplifiedSource = source;
+
+    const assignedAgentId = p.assignedAgentId || p.assigned_agent_id || "";
+    const assignedAgentName = p.assignedAgent
+        ? ([p.assignedAgent.firstName, p.assignedAgent.lastName].filter(Boolean).join(" ") || p.assignedAgent.email || "Agent")
+        : (p.assigned_agent_name || "");
+
+    return {
+        id: p.id,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        name,
+        phone: p.phone || "",
+        email: p.email || "",
+        company: p.company || "",
+        postal_code: p.location?.zipCode || p.postal_code || "",
+        date_of_birth: p.dateOfBirth || p.date_of_birth || null,
+        status,
+        leadStatus: status, // Keep both for now to be safe
+        created_date: createdDate,
+        createdAt: createdDate, // Keep both
+        source: simplifiedSource,
+        leadSource: p.leadSource || simplifiedSource,
+        assigned_agent_id: assignedAgentId,
+        assigned_agent_name: assignedAgentName,
+        campaign_id: p.campaignId || p.campaign_id || "",
+        campaign: p.campaign, // Keep original campaign object if present
+        notes: p.notes
+    };
+}
 
 export default function MyProspects() {
     const [prospects, setProspects] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const [currentUser, setCurrentUser] = useState(null);
+    const [campaigns, setCampaigns] = useState([]);
+    const [selectedProspect, setSelectedProspect] = useState(null);
 
     useEffect(() => {
         loadData();
@@ -51,25 +108,50 @@ export default function MyProspects() {
             const user = await auth.getCurrentUser();
             setCurrentUser(user);
 
-            // Fetch prospects using the entity method which calls /api/prospects
-            // The backend automatically filters by assignedAgentId for agents
+            // Fetch prospects
             const data = await Prospect.list({ limit: 100 });
-            // Note: Prospect.list usually returns { data: { prospects: [] } } or similar based on implementation
-            // Let's assume standard response structure or handle if it returns array directly
 
+            let rawProspects = [];
             if (data && Array.isArray(data.prospects)) {
-                setProspects(data.prospects);
+                rawProspects = data.prospects;
             } else if (data && data.data && Array.isArray(data.data.prospects)) {
-                setProspects(data.data.prospects);
+                rawProspects = data.data.prospects;
             } else if (Array.isArray(data)) {
-                setProspects(data);
-            } else {
-                setProspects([]);
+                rawProspects = data;
             }
+
+            const normalized = rawProspects.map(normalizeProspect);
+            setProspects(normalized);
+
+
+            // Load campaigns for filtering and context - keep all including archived for lookups
+            const allCampaignsData = await Campaign.list({ limit: 1000 });
+            const campaignsResponse = Array.isArray(allCampaignsData) ? allCampaignsData : (allCampaignsData.campaigns || []);
+            setCampaigns(campaignsResponse);
+
         } catch (error) {
             console.error("Error loading prospects:", error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleStatusUpdate = async (prospectId, newStatus) => {
+        try {
+            await Prospect.update(prospectId, { leadStatus: newStatus });
+
+            // Update local state immediately to reflect change in UI
+            if (selectedProspect && selectedProspect.id === prospectId) {
+                setSelectedProspect(prev => ({
+                    ...prev,
+                    status: newStatus,
+                    leadStatus: newStatus
+                }));
+            }
+
+            await loadData();
+        } catch (error) {
+            console.error('Error updating status:', error);
         }
     };
 
@@ -275,10 +357,8 @@ export default function MyProspects() {
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end">
                                                     <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                                    <DropdownMenuItem onClick={() => { }}>View Details</DropdownMenuItem>
-                                                    <DropdownMenuItem>Log Activity</DropdownMenuItem>
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuItem className="text-blue-600">Call Now</DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => setSelectedProspect(prospect)}>View Details</DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => setSelectedProspect(prospect)}>Log Activity</DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         </TableCell>
@@ -289,6 +369,26 @@ export default function MyProspects() {
                     </Table>
                 </div>
             </Card>
+
+            <Dialog open={!!selectedProspect} onOpenChange={() => setSelectedProspect(null)}>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+                    <DialogHeader className="px-6 py-4 border-b border-gray-100">
+                        <DialogTitle>Prospect Details</DialogTitle>
+                    </DialogHeader>
+                    {selectedProspect && (
+                        <div className="flex-1 overflow-y-auto p-6">
+                            <ProspectDetails
+                                prospect={selectedProspect}
+                                campaigns={campaigns}
+                                onStatusUpdate={handleStatusUpdate}
+                                onClose={() => setSelectedProspect(null)}
+                                userRole="agent"
+                                onEdited={loadData}
+                            />
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

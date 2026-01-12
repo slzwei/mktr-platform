@@ -18,7 +18,7 @@ const Prospect = sequelize.define('Prospect', {
     type: DataTypes.STRING,
     allowNull: true,
     validate: {
-      len: [1, 50]
+      len: [0, 50]
     }
   },
   email: {

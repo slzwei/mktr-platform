@@ -9,10 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
-import { 
-  Phone, 
-  Mail, 
-  MapPin, 
+import {
+  Phone,
+  Mail,
+  MapPin,
   Calendar,
   User,
   Tag,
@@ -24,10 +24,11 @@ import { Prospect as ProspectEntity } from "@/api/entities";
 const statusOptions = [
   { value: "new", label: "New", color: "bg-blue-100 text-blue-800" },
   { value: "contacted", label: "Contacted", color: "bg-yellow-100 text-yellow-800" },
-  { value: "meeting", label: "Meeting", color: "bg-purple-100 text-purple-800" },
-  { value: "close_won", label: "Closed Won", color: "bg-green-100 text-green-800" },
-  { value: "close_lost", label: "Closed Lost", color: "bg-red-100 text-red-800" },
-  { value: "rejected", label: "Rejected", color: "bg-gray-100 text-gray-800" }
+  { value: "qualified", label: "Qualified", color: "bg-indigo-100 text-indigo-800" },
+  { value: "negotiating", label: "Meeting / Negotiating", color: "bg-purple-100 text-purple-800" },
+  { value: "proposal_sent", label: "Proposal Sent", color: "bg-orange-100 text-orange-800" },
+  { value: "won", label: "Closed Won", color: "bg-green-100 text-green-800" },
+  { value: "lost", label: "Closed Lost", color: "bg-red-100 text-red-800" }
 ];
 
 export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, onClose, userRole, onEdited }) {
@@ -54,12 +55,14 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
         if (full?.lastName) setLastName(full.lastName);
         if (full?.email) setEmail(full.email);
         if (full?.phone) setPhone(full.phone);
-      } catch (_) {}
+      } catch (_) { }
     })();
     return () => { mounted = false; };
   }, [prospect.id]);
 
-  const campaign = campaigns.find(c => c.id === prospect.campaign_id);
+  // Prioritize campaign object from prospect data (included by backend), fall back to campaigns array
+  const campaign = prospect.campaign || campaigns.find(c => c.id === prospect.campaign_id);
+
   const currentStatus = statusOptions.find(s => s.value === status);
 
   const handleUpdate = async () => {
@@ -107,7 +110,7 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="flex items-center gap-4">
           <Avatar className="h-12 w-12">
-            <AvatarFallback>{(firstName || prospect.name || 'U').substring(0,1).toUpperCase()}</AvatarFallback>
+            <AvatarFallback>{(firstName || prospect.name || 'U').substring(0, 1).toUpperCase()}</AvatarFallback>
           </Avatar>
           <div>
             <h2 className="text-2xl font-bold text-gray-900">{[firstName, lastName].filter(Boolean).join(' ') || prospect.name}</h2>
@@ -142,79 +145,79 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {isEditing ? (
-            <>
-                  <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label className="mb-1">First Name</Label>
-                      <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-                    </div>
-                    <div>
-                      <Label className="mb-1">Last Name</Label>
-                      <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-start gap-3">
-                      <Phone className="w-5 h-5 text-gray-400 mt-2" />
-                      <div className="w-full">
-                        <Label className="mb-1">Phone</Label>
-                        <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+                  {isEditing ? (
+                    <>
+                      <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label className="mb-1">First Name</Label>
+                          <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                        </div>
+                        <div>
+                          <Label className="mb-1">Last Name</Label>
+                          <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-start gap-3">
-                      <Mail className="w-5 h-5 text-gray-400 mt-2" />
-                      <div className="w-full">
-                        <Label className="mb-1">Email</Label>
-                        <Input value={email} onChange={(e) => setEmail(e.target.value)} />
+                      <div>
+                        <div className="flex items-start gap-3">
+                          <Phone className="w-5 h-5 text-gray-400 mt-2" />
+                          <div className="w-full">
+                            <Label className="mb-1">Phone</Label>
+                            <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                  <div className="col-span-1 md:col-span-2">
-                    <Label className="mb-1">Notes</Label>
-                    <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add notes about this prospect..." rows={3} />
-                  </div>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-3">
-                <Phone className="w-5 h-5 text-gray-400" />
-                <div>
-                  <p className="text-sm text-gray-500">Phone</p>
-                  <p className="font-semibold">{prospect.phone}</p>
-                </div>
-              </div>
-              {prospect.email && (
-                <div className="flex items-center gap-3">
-                  <Mail className="w-5 h-5 text-gray-400" />
-                  <div>
-                    <p className="text-sm text-gray-500">Email</p>
-                    <p className="font-semibold">{prospect.email}</p>
-                  </div>
-                </div>
-              )}
-              {prospect.postal_code && (
-                <div className="flex items-center gap-3">
-                  <MapPin className="w-5 h-5 text-gray-400" />
-                  <div>
-                    <p className="text-sm text-gray-500">Postal Code</p>
-                    <p className="font-semibold">{prospect.postal_code}</p>
-                  </div>
-                </div>
-              )}
-              {prospect.date_of_birth && (
-                <div className="flex items-center gap-3">
-                  <Calendar className="w-5 h-5 text-gray-400" />
-                  <div>
-                    <p className="text-sm text-gray-500">Date of Birth</p>
-                    <p className="font-semibold">{format(new Date(prospect.date_of_birth), 'dd/MM/yyyy')}</p>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
+                      <div>
+                        <div className="flex items-start gap-3">
+                          <Mail className="w-5 h-5 text-gray-400 mt-2" />
+                          <div className="w-full">
+                            <Label className="mb-1">Email</Label>
+                            <Input value={email} onChange={(e) => setEmail(e.target.value)} />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-span-1 md:col-span-2">
+                        <Label className="mb-1">Notes</Label>
+                        <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add notes about this prospect..." rows={3} />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <Phone className="w-5 h-5 text-gray-400" />
+                        <div>
+                          <p className="text-sm text-gray-500">Phone</p>
+                          <p className="font-semibold">{prospect.phone}</p>
+                        </div>
+                      </div>
+                      {prospect.email && (
+                        <div className="flex items-center gap-3">
+                          <Mail className="w-5 h-5 text-gray-400" />
+                          <div>
+                            <p className="text-sm text-gray-500">Email</p>
+                            <p className="font-semibold">{prospect.email}</p>
+                          </div>
+                        </div>
+                      )}
+                      {prospect.postal_code && (
+                        <div className="flex items-center gap-3">
+                          <MapPin className="w-5 h-5 text-gray-400" />
+                          <div>
+                            <p className="text-sm text-gray-500">Postal Code</p>
+                            <p className="font-semibold">{prospect.postal_code}</p>
+                          </div>
+                        </div>
+                      )}
+                      {prospect.date_of_birth && (
+                        <div className="flex items-center gap-3">
+                          <Calendar className="w-5 h-5 text-gray-400" />
+                          <div>
+                            <p className="text-sm text-gray-500">Date of Birth</p>
+                            <p className="font-semibold">{format(new Date(prospect.date_of_birth), 'dd/MM/yyyy')}</p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </CardContent>
               </Card>
 
@@ -327,14 +330,14 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
               {campaign?.name || 'Unknown Campaign'}
             </Badge>
           </div>
-          
+
           <div>
             <p className="text-sm text-gray-500 mb-2">Source</p>
             <span className="text-sm px-2 py-1 bg-gray-100 rounded text-gray-600">
               {(prospect.source || '').toUpperCase()}
             </span>
           </div>
-          
+
           <div>
             <p className="text-sm text-gray-500 mb-2">Created</p>
             <p className="font-semibold">
@@ -360,7 +363,7 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
               )}
             </div>
           </div>
-          
+
           {prospect.campaigns_subscribed && prospect.campaigns_subscribed.length > 1 && (
             <div>
               <p className="text-sm text-gray-500 mb-2">

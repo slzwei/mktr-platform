@@ -6,6 +6,7 @@ import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { sendLeadAssignmentEmail } from '../services/mailer.js';
+import { deductLeadCredit } from '../services/leadCredits.js';
 
 const router = express.Router();
 
@@ -216,6 +217,12 @@ router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res)
     description: `Assigned to agent ${assignedAgentId}`,
     metadata: { assignedAgentId }
   });
+
+  // Deduct lead credit from agent's package
+  if (assignedAgentId) {
+    await deductLeadCredit(assignedAgentId).catch(err => console.error('Failed to deduct credit:', err));
+  }
+
 
   // If this came from a QR code, update QR tag analytics
   if (prospect.qrTagId) {
@@ -453,6 +460,10 @@ router.patch('/:id/assign', authenticateToken, requireAgentOrAdmin, asyncHandler
     metadata: { assignedAgentId: agentId }
   });
 
+  // Deduct lead credit
+  await deductLeadCredit(agentId).catch(err => console.error('Failed to deduct credit:', err));
+
+
   // Notify agent
   sendLeadAssignmentEmail(agent, prospect).catch(err =>
     console.error('Failed to send assignment email:', err)
@@ -508,6 +519,12 @@ router.patch('/bulk/assign', authenticateToken, requireAgentOrAdmin, asyncHandle
     },
     { where: whereConditions }
   );
+
+  const assignedCount = result[0];
+  if (assignedCount > 0) {
+    await deductLeadCredit(agentId, assignedCount).catch(err => console.error('Failed to deduct credits:', err));
+  }
+
 
   // Notify agent about bulk assignment
   if (result[0] > 0) {
