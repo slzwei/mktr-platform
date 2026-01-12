@@ -723,7 +723,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                         onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, education_level: e.target.checked })}
                         className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
-                      <Label htmlFor="field_education" className="text-sm text-gray-700 font-normal">Highest Education Level</Label>
+                      <Label htmlFor="field_education" className="text-sm text-gray-700 font-normal">Highest Education</Label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <input

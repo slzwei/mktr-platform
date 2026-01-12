@@ -710,7 +710,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'education_level':
                 return (
                     <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="education" className="text-xs font-medium">Highest Education Level <span className="text-gray-400 font-normal">(optional)</span></Label>
+                        <Label htmlFor="education" className="text-xs font-medium">Highest Education <span className="text-gray-400 font-normal">(optional)</span></Label>
                         <Select
                             value={formData.education_level}
                             onValueChange={(value) => handleFormChange('education_level', value)}
@@ -731,7 +731,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'monthly_income':
                 return (
                     <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="income" className="text-xs font-medium">Last Drawn Monthly Salary <span className="text-gray-400 font-normal">(optional)</span></Label>
+                        <Label htmlFor="income" className="text-xs font-medium">Last Drawn Salary <span className="text-gray-400 font-normal">(optional)</span></Label>
                         <Select
                             value={formData.monthly_income}
                             onValueChange={(value) => handleFormChange('monthly_income', value)}
