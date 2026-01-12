@@ -1,16 +1,12 @@
 
 import { useState, useEffect } from "react";
 import { LeadPackage } from "@/api/entities";
-import { Campaign } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   Package,
   Calendar,
-  DollarSign,
-  Users,
-  Clock,
   CheckCircle2
 } from "lucide-react";
 import { format } from "date-fns";
@@ -31,24 +27,37 @@ const paymentStatusColors = {
 
 export default function MyLeadPackages({ userId }) {
   const [packages, setPackages] = useState([]);
-  const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const loadData = async () => {
-      try {
-        const [assignmentsData, allCampaignsData] = await Promise.all([
-          LeadPackage.getAssignments(userId),
-          Campaign.list()
-        ]);
+      // Do not attempt fetch if userId is missing
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
 
-        // Filter out archived campaigns
-        const campaignsData = allCampaignsData.filter(campaign => campaign.status !== 'archived');
+      setLoading(true);
+      setError(null);
+
+      try {
+        // Fetch assignments
+        let assignmentsData = [];
+        try {
+          assignmentsData = await LeadPackage.getAssignments(userId);
+        } catch (e) {
+          console.error("Failed to load assignments:", e);
+          throw new Error("Failed to load package assignments");
+        }
 
         // Map assignments to component format
+        // specific campaign details are already nested in the assignment response
         const mappedPackages = assignmentsData.map(assignment => ({
           id: assignment.id,
           campaign_id: assignment.package?.campaign?.id,
+          campaign_name: assignment.package?.campaign?.name || 'Unknown Campaign',
           package_name: assignment.package?.name || 'Unknown Package',
           status: assignment.status,
           payment_status: 'paid', // Default to paid as assignments are manually created
@@ -62,11 +71,12 @@ export default function MyLeadPackages({ userId }) {
         }));
 
         setPackages(mappedPackages);
-        setCampaigns(campaignsData);
-      } catch (error) {
-        console.error('Error loading lead packages:', error);
+      } catch (err) {
+        console.error('Error loading lead packages:', err);
+        setError(err.message || 'Unable to load packages');
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     loadData();
@@ -87,6 +97,23 @@ export default function MyLeadPackages({ userId }) {
               <div key={i} className="h-32 bg-gray-200 rounded"></div>
             ))}
           </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="border-red-200 bg-red-50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-red-700">
+            <Package className="w-5 h-5" />
+            My Lead Packages
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-red-600 text-sm">Failed to load packages: {error}</p>
+          <p className="text-xs text-red-500 mt-1">Please try refreshing the page.</p>
         </CardContent>
       </Card>
     );
@@ -120,7 +147,6 @@ export default function MyLeadPackages({ userId }) {
       </CardHeader>
       <CardContent className="space-y-4">
         {packages.map((pkg) => {
-          const campaign = campaigns.find(c => c.id === pkg.campaign_id);
           const deliveryProgress = pkg.total_leads > 0 ? (pkg.leads_delivered / pkg.total_leads) * 100 : 0;
 
           return (
@@ -129,7 +155,7 @@ export default function MyLeadPackages({ userId }) {
                 <div>
                   <h3 className="font-semibold text-gray-900">{pkg.package_name}</h3>
                   <p className="text-sm text-gray-600">
-                    Campaign: {campaign?.name || 'Unknown Campaign'}
+                    Campaign: {pkg.campaign_name}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -153,32 +179,7 @@ export default function MyLeadPackages({ userId }) {
                 <Progress value={deliveryProgress} className="h-2" />
               </div>
 
-              {/* Package Details Grid */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <DollarSign className="w-4 h-4 text-gray-400" />
-                  <div>
-                    <p className="text-gray-500">Total Value</p>
-                    <p className="font-semibold">${pkg.total_amount.toFixed(2)}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4 text-gray-400" />
-                  <div>
-                    <p className="text-gray-500">Per Lead</p>
-                    <p className="font-semibold">${pkg.price_per_lead.toFixed(2)}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-gray-400" />
-                  <div>
-                    <p className="text-gray-500">Remaining</p>
-                    <p className="font-semibold text-blue-600">{pkg.leads_remaining}</p>
-                  </div>
-                </div>
-
+              <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-gray-400" />
                   <div>

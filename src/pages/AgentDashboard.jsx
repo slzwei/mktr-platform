@@ -7,8 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { 
-  Users, 
+import {
+  Users,
   Calendar,
   ArrowRight,
   Target,
@@ -67,7 +67,7 @@ export default function AgentDashboard() {
     thisMonth.setHours(0, 0, 0, 0); // This variable is not used after removing monthlyEarnings, can be removed
 
     const newProspects = stats.prospects.filter(p => p.status === 'new').length;
-    const weeklyProspects = stats.prospects.filter(p => 
+    const weeklyProspects = stats.prospects.filter(p =>
       new Date(p.created_date) >= thisWeek
     ).length;
     const closedWon = stats.prospects.filter(p => p.status === 'close_won').length;
@@ -171,15 +171,15 @@ export default function AgentDashboard() {
         {/* Main Content Grid */}
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-            <RecentActivity 
+            <RecentActivity
               prospects={stats.prospects}
               userRole="agent"
             />
           </div>
-          
+
           <div className="space-y-6">
             <MyLeadPackages userId={user?.id} />
-            
+
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Quick Actions</CardTitle>
