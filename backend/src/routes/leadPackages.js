@@ -127,9 +127,11 @@ router.post('/assign', authenticateToken, requireAgentOrAdmin, asyncHandler(asyn
  */
 router.get('/assignments/:agentId', authenticateToken, asyncHandler(async (req, res) => {
     const { agentId } = req.params;
+    console.log(`[DEBUG] GET assignments for agentId: ${agentId}, requester: ${req.user.id} (${req.user.role})`);
 
     // Authorization check
     if (req.user.role !== 'admin' && req.user.id !== agentId) {
+        console.error(`[DEBUG] Access denied. user.id ${req.user.id} !== agentId ${agentId}`);
         throw new AppError('Access denied', 403);
     }
 
@@ -149,6 +151,7 @@ router.get('/assignments/:agentId', authenticateToken, asyncHandler(async (req, 
         ],
         order: [['purchaseDate', 'DESC']]
     });
+    console.log(`[DEBUG] Found ${assignments.length} assignments`);
 
     res.json({
         success: true,
