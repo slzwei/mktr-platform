@@ -34,6 +34,7 @@ const AdminLeadPackages = lazy(() => import('./AdminLeadPackages'));
 const AgentDashboard = lazy(() => import('./AgentDashboard'));
 const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
 const DriverDashboard = lazy(() => import('./DriverDashboard'));
+const MyProspects = lazy(() => import('./MyProspects'));
 
 function PagesContent() {
   const navigate = useNavigate();
@@ -158,6 +159,13 @@ function PagesContent() {
             <ProtectedRoute requiredRole="agent">
               <DashboardLayout>
                 <AgentDashboard />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/MyProspects" element={
+            <ProtectedRoute requiredRole="agent">
+              <DashboardLayout>
+                <MyProspects />
               </DashboardLayout>
             </ProtectedRoute>
           } />

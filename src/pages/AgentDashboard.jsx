@@ -143,7 +143,7 @@ export default function AgentDashboard() {
             icon={Users}
             bgColor="bg-blue-500"
             trend={`${metrics.newProspects} new`}
-            linkTo={createPageUrl("AdminProspects")}
+            linkTo={createPageUrl("MyProspects")}
           />
           <StatsCard
             title="This Week"
@@ -185,7 +185,7 @@ export default function AgentDashboard() {
                 <CardTitle className="text-lg">Quick Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Link to={createPageUrl("AdminProspects")}>
+                <Link to={createPageUrl("MyProspects")}>
                   <Button variant="outline" className="w-full justify-between">
                     View My Prospects
                     <ArrowRight className="w-4 h-4" />

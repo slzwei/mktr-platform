@@ -96,7 +96,7 @@ const getNavigationItems = (user) => {
     },
     {
       title: "My Prospects",
-      url: createPageUrl("AdminProspects"),
+      url: createPageUrl("MyProspects"),
       icon: Users
     },
     {
