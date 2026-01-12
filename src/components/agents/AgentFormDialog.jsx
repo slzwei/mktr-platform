@@ -141,18 +141,7 @@ export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit })
             </div>
           )}
 
-          <div>
-            <Label htmlFor="owed_leads_count">Owed Leads Count</Label>
-            <Input
-              id="owed_leads_count"
-              name="owed_leads_count"
-              type="number"
-              min="0"
-              value={formData.owed_leads_count}
-              onChange={handleChange}
-              placeholder="0"
-            />
-          </div>
+
 
           {error && (
             <div className="text-red-600 text-sm bg-red-50 p-3 rounded">

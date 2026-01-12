@@ -157,6 +157,72 @@ router.get('/assignments/:agentId', authenticateToken, asyncHandler(async (req, 
 }));
 
 /**
+ * @route DELETE /api/lead-packages/assignments/:id
+ * @desc Delete a package assignment
+ * @access Admin only
+ */
+router.delete('/assignments/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
+    if (req.user.role !== 'admin') {
+        throw new AppError('Access denied', 403);
+    }
+
+    const { id } = req.params;
+    const assignment = await LeadPackageAssignment.findByPk(id);
+
+    if (!assignment) {
+        throw new AppError('Assignment not found', 404);
+    }
+
+    await assignment.destroy();
+
+    res.json({
+        success: true,
+        message: 'Assignment deleted successfully'
+    });
+}));
+
+/**
+ * @route PATCH /api/lead-packages/assignments/:id
+ * @desc Update a package assignment (e.g. leadsRemaining)
+ * @access Admin only
+ */
+router.patch('/assignments/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
+    if (req.user.role !== 'admin') {
+        throw new AppError('Access denied', 403);
+    }
+
+    const { id } = req.params;
+    const { leadsRemaining } = req.body;
+
+    const assignment = await LeadPackageAssignment.findByPk(id);
+
+    if (!assignment) {
+        throw new AppError('Assignment not found', 404);
+    }
+
+    if (leadsRemaining !== undefined) {
+        // Validation: ensures it's a number and not negative
+        const newCount = parseInt(leadsRemaining, 10);
+        if (isNaN(newCount) || newCount < 0) {
+            throw new AppError('Invalid lead count', 400);
+        }
+
+        // Update details
+        await assignment.update({
+            leadsRemaining: newCount,
+            // Auto-update status based on count
+            status: newCount === 0 ? 'exhausted' : 'active'
+        });
+    }
+
+    res.json({
+        success: true,
+        message: 'Assignment updated successfully',
+        data: { assignment }
+    });
+}));
+
+/**
  * @route DELETE /api/lead-packages/:id
  * @desc Delete or archive a lead package
  * @access Admin only

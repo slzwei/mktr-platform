@@ -69,8 +69,8 @@ export default function AdminAgents() {
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState('all');
-  const [campaignsDialogOpen, setCampaignsDialogOpen] = useState(false);
-  const [campaignsForAgent, setCampaignsForAgent] = useState([]);
+  const [managePackagesDialogOpen, setManagePackagesDialogOpen] = useState(false);
+  const [packagesForAgent, setPackagesForAgent] = useState([]);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [assignLoading, setAssignLoading] = useState(false);
   const [allCampaigns, setAllCampaigns] = useState([]);
@@ -78,6 +78,8 @@ export default function AdminAgents() {
 
   const [campaignSearch, setCampaignSearch] = useState("");
   const { toast } = useToast();
+  const [editingAssignmentId, setEditingAssignmentId] = useState(null);
+  const [editLeadCount, setEditLeadCount] = useState("");
 
   useEffect(() => {
     loadData();
@@ -119,16 +121,14 @@ export default function AdminAgents() {
           email: formData.email,
           phone: normalizedPhone || undefined,
           dateOfBirth: formData.dateOfBirth || undefined,
-          isActive,
-          owed_leads_count: parseInt(formData.owed_leads_count) || 0
+          isActive
         });
       } else {
         const normalizedPhone = (formData.phone || '').replace(/\D/g, '');
         await agentsAPI.invite({
           email: formData.email,
           full_name: name,
-          phone: normalizedPhone,
-          owed_leads_count: parseInt(formData.owed_leads_count) || 0
+          phone: normalizedPhone
         });
       }
 
@@ -146,15 +146,66 @@ export default function AdminAgents() {
     setIsDetailsOpen(true);
   };
 
-  const openCampaignsDialog = async (agent) => {
+  const openManagePackagesDialog = async (agent) => {
     if (!agent) return;
     setSelectedAgent(agent);
     try {
-      const resp = await agentsAPI.getCampaigns(agent.id);
-      setCampaignsForAgent(resp?.campaigns || []);
-      setCampaignsDialogOpen(true);
+      const assignments = await LeadPackage.getAssignments(agent.id);
+      setPackagesForAgent(assignments || []);
+      setManagePackagesDialogOpen(true);
     } catch (e) {
-      console.error('Failed to load agent campaigns', e);
+      console.error('Failed to load agent packages', e);
+      toast({ variant: "destructive", title: "Error", description: "Failed to load assigned packages" });
+    }
+  };
+
+  const handleDeleteAssignment = async (assignmentId) => {
+    if (!confirm('Are you sure you want to remove this package assignment? This cannot be undone.')) return;
+
+    try {
+      await LeadPackage.deleteAssignment(assignmentId);
+      toast({ title: "Success", description: "Package assignment removed" });
+      // Refresh list
+      const assignments = await LeadPackage.getAssignments(selectedAgent.id);
+      setPackagesForAgent(assignments || []);
+      // Also refresh main list to update owed leads count
+      await loadData();
+    } catch (e) {
+      console.error('Failed to delete assignment', e);
+      toast({ variant: "destructive", title: "Error", description: e.message || "Failed to delete assignment" });
+    }
+  };
+
+  const handleStartEdit = (assignment) => {
+    setEditingAssignmentId(assignment.id);
+    setEditLeadCount(String(assignment.leadsRemaining));
+  };
+
+  const handleCancelEdit = () => {
+    setEditingAssignmentId(null);
+    setEditLeadCount("");
+  };
+
+  const handleUpdateAssignment = async (assignmentId) => {
+    try {
+      const newCount = parseInt(editLeadCount, 10);
+      if (isNaN(newCount) || newCount < 0) {
+        toast({ variant: "destructive", title: "Error", description: "Invalid lead count" });
+        return;
+      }
+
+      await LeadPackage.updateAssignment(assignmentId, { leadsRemaining: newCount });
+
+      toast({ title: "Success", description: "Lead count updated" });
+      setEditingAssignmentId(null);
+      // Refresh list
+      const assignments = await LeadPackage.getAssignments(selectedAgent.id);
+      setPackagesForAgent(assignments || []);
+      // Also refresh main list to update owed leads count
+      await loadData();
+    } catch (e) {
+      console.error('Failed to update assignment', e);
+      toast({ variant: "destructive", title: "Error", description: e.message || "Failed to update assignment" });
     }
   };
 
@@ -212,12 +263,9 @@ export default function AdminAgents() {
       }
       await loadData();
       setAssignDialogOpen(false);
-      if (campaignsDialogOpen && selectedAgent) {
-        try {
-          const resp = await agentsAPI.getCampaigns(selectedAgent.id);
-          setCampaignsForAgent(resp?.campaigns || []);
-        } catch (_) { }
-      }
+      await loadData();
+      setAssignDialogOpen(false);
+      // Removed campaign refresh logic as we are switching to packages view
     } catch (e) {
       console.error('Failed to save assignments', e);
       alert(e?.message || 'Failed to save assignments');
@@ -257,7 +305,7 @@ export default function AdminAgents() {
     if (!agent?.email) return;
     try {
       const fullName = agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim();
-      await agentsAPI.invite({ email: agent.email, full_name: fullName, owed_leads_count: agent.owed_leads_count || 0 });
+      await agentsAPI.invite({ email: agent.email, full_name: fullName });
       alert('Invitation email sent');
     } catch (error) {
       console.error('Error resending invite:', error);
@@ -272,9 +320,27 @@ export default function AdminAgents() {
 
   const handlePackageSubmit = async () => {
     try {
+      if (selectedAgent) {
+        // Refresh the assignments list for the "Manage Packages" dialog if it's open or about to be viewed
+        const assignments = await LeadPackage.getAssignments(selectedAgent.id);
+        setPackagesForAgent(assignments || []);
+      }
+
       await loadData();
       setIsPackageDialogOpen(false);
-      setSelectedAgent(null);
+      // Do NOT clear selectedAgent here, as we might be in the Manage Packages flow which relies on it
+      // if managePackagesDialogOpen is true, we keep it. Otherwise we can clear it? 
+      // Actually, if we are in "Manage Packages", we want to stay there.
+      // If we came from the main "Assign Package" button, we might want to clear it.
+      // But clearing it breaks the "Manage Packages" dialog refetch if meaningful.
+      // The safest bet to support the user request "Packages assigned... should update immediately"
+      // implies the "Manage Packages" dialog is OPEN or we return to it.
+
+      // If we are NOT in the manage packages dialog, we can clear selected agent?
+      if (!managePackagesDialogOpen) {
+        setSelectedAgent(null);
+      }
+
       toast({ title: "Success", description: "Package assigned successfully" });
     } catch (error) {
       console.error('Error refreshing data:', error);
@@ -474,8 +540,8 @@ export default function AdminAgents() {
                                 <Edit className="mr-2 h-4 w-4" /> Edit Profile
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => openCampaignsDialog(agent)}>
-                                <UserCheck className="mr-2 h-4 w-4" /> Manage Campaigns
+                              <DropdownMenuItem onClick={() => openManagePackagesDialog(agent)}>
+                                <Package className="mr-2 h-4 w-4" /> Manage Packages
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleOpenPackageDialog(agent)}>
                                 <Package className="mr-2 h-4 w-4" /> Assign Lead Package
@@ -540,37 +606,96 @@ export default function AdminAgents() {
           onSubmitSuccess={handlePackageSubmit}
         />
 
-        {/* Campaigns dialog (consistent UI) */}
-        <Dialog open={campaignsDialogOpen} onOpenChange={setCampaignsDialogOpen}>
+        {/* Manage Packages Dialog */}
+        <Dialog open={managePackagesDialogOpen} onOpenChange={setManagePackagesDialogOpen}>
           <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <DialogTitle>Campaigns tied to {selectedAgent?.fullName || selectedAgent?.email}</DialogTitle>
-                  <DialogDescription>Click a campaign to manage or view details.</DialogDescription>
+                  <DialogTitle>Packages assigned to {selectedAgent?.fullName || selectedAgent?.email}</DialogTitle>
+                  <DialogDescription>View active lead package assignments.</DialogDescription>
                 </div>
-                <Button onClick={() => openAssignDialog(selectedAgent)} className="bg-blue-600 hover:bg-blue-700">
-                  Assign campaigns
+                <Button onClick={() => handleOpenPackageDialog(selectedAgent)} className="bg-blue-600 hover:bg-blue-700">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Assign Package
                 </Button>
               </div>
             </DialogHeader>
             <div className="max-h-[60vh] overflow-y-auto divide-y">
-              {campaignsForAgent.length === 0 ? (
-                <div className="text-sm text-gray-500 p-4 text-center">No campaigns found.</div>
-              ) : campaignsForAgent.map(c => (
-                <div key={c.id} className="py-3">
-                  <div className="flex items-center justify-between gap-4">
+              {packagesForAgent.length === 0 ? (
+                <div className="text-sm text-gray-500 p-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                  No packages assigned yet.
+                </div>
+              ) : packagesForAgent.map(assignment => (
+                <div key={assignment.id} className="py-4 first:pt-0 last:pb-0">
+                  <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <p className="font-semibold text-gray-900 truncate">{c.name}</p>
-                      <p className="text-xs text-gray-500">Status: {c.status} • Leads: {c.stats?.totalProspects ?? 0} • Scans: {c.stats?.totalScans ?? 0}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-gray-900">{assignment.package?.name || 'Unknown Package'}</p>
+                        <Badge variant="outline" className={`
+                          ${assignment.status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : ''}
+                          ${assignment.status === 'exhausted' ? 'bg-gray-100 text-gray-600 border-gray-200' : ''}
+                          ${assignment.status === 'expired' ? 'bg-amber-50 text-amber-700 border-amber-200' : ''}
+                        `}>
+                          {assignment.status}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Campaign: {assignment.package?.campaign?.name || 'N/A'}
+                      </p>
+                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                        <span>Purchased: {assignment.purchaseDate ? format(new Date(assignment.purchaseDate), 'MMM d, yyyy') : '-'}</span>
+                        <span>Price: ${assignment.priceSnapshot}</span>
+                      </div>
                     </div>
-                    <Link
-                      to={createPageUrl(`AdminCampaigns?highlight=${c.id}`)}
-                      className="text-blue-600 hover:text-blue-800 text-sm whitespace-nowrap"
-                      onClick={() => setCampaignsDialogOpen(false)}
+                    {editingAssignmentId === assignment.id ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <Input
+                          type="number"
+                          className="h-8 w-20 text-right"
+                          value={editLeadCount}
+                          onChange={(e) => setEditLeadCount(e.target.value)}
+                          min="0"
+                        />
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                            onClick={() => handleUpdateAssignment(assignment.id)}
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                            onClick={handleCancelEdit}
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-right group relative">
+                        <p className="text-sm font-medium text-gray-900 flex items-center justify-end gap-2">
+                          {assignment.leadsRemaining} / {assignment.leadsTotal}
+                          <Edit
+                            className="w-3 h-3 text-gray-400 cursor-pointer opacity-0 group-hover:opacity-100 hover:text-blue-600 transition-opacity"
+                            onClick={() => handleStartEdit(assignment)}
+                          />
+                        </p>
+                        <p className="text-xs text-gray-500">leads remaining</p>
+                      </div>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                      onClick={() => handleDeleteAssignment(assignment.id)}
                     >
-                      View
-                    </Link>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               ))}

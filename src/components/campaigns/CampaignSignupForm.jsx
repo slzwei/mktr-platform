@@ -22,6 +22,7 @@ import MarketingConsentDialog from "@/components/legal/MarketingConsentDialog";
 
 export default function CampaignSignupForm({ themeColor, formHeadline, formSubheadline, headlineSize, campaignId, onSubmit, campaign }) {
     const visibleFields = campaign?.design_config?.visibleFields || {};
+    const requiredFields = campaign?.design_config?.requiredFields || {};
     const fieldOrder = campaign?.design_config?.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income'];
 
     const [formData, setFormData] = useState({
@@ -251,10 +252,11 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         const phoneNumber = getFullPhoneNumber();
 
         try {
-            // Call sendOtp with just the phone number string
+            // Call sendOtp with just the phone number string and campaignId
             const response = await apiClient.post('/verify/send', {
                 phone: formData.phone,
-                countryCode: '+65'
+                countryCode: '+65',
+                campaignId: campaignId
             });
 
             const result = response;
@@ -397,6 +399,24 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         // Check incomplete DOB format
         if (visibleFields.dob !== false && dobIncomplete) {
             setError('Please enter a complete date of birth (DD/MM/YYYY).');
+            return;
+        }
+
+        // Validate required fields
+        if (visibleFields.dob !== false && requiredFields.dob && (!formData.date_of_birth || formData.date_of_birth.length !== 10)) {
+            setError('Date of Birth is required.');
+            return;
+        }
+        if (visibleFields.postal_code !== false && requiredFields.postal_code && !formData.postal_code) {
+            setError('Postal Code is required.');
+            return;
+        }
+        if (visibleFields.education_level === true && requiredFields.education_level && !formData.education_level) {
+            setError('Highest Education is required.');
+            return;
+        }
+        if (visibleFields.monthly_income === true && requiredFields.monthly_income && !formData.monthly_income) {
+            setError('Last Drawn Salary is required.');
             return;
         }
 
@@ -657,7 +677,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'dob':
                 return (
                     <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="dob" className="text-xs font-medium">Date of Birth <span className="text-gray-400 font-normal">(optional)</span></Label>
+                        <Label htmlFor="dob" className="text-xs font-medium">Date of Birth{!requiredFields.dob && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
                         <div className="relative">
                             <CalendarIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
                             <Input
@@ -693,7 +713,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'postal_code':
                 return (
                     <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="postal" className="text-xs font-medium">Postal Code <span className="text-gray-400 font-normal">(optional)</span></Label>
+                        <Label htmlFor="postal" className="text-xs font-medium">Postal Code{!requiredFields.postal_code && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
                         <div className="relative">
                             <MapPin className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
                             <Input
@@ -710,7 +730,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'education_level':
                 return (
                     <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="education" className="text-xs font-medium">Highest Education <span className="text-gray-400 font-normal">(optional)</span></Label>
+                        <Label htmlFor="education" className="text-xs font-medium">Highest Education{!requiredFields.education_level && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
                         <Select
                             value={formData.education_level}
                             onValueChange={(value) => handleFormChange('education_level', value)}
@@ -731,7 +751,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'monthly_income':
                 return (
                     <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="income" className="text-xs font-medium">Last Drawn Salary <span className="text-gray-400 font-normal">(optional)</span></Label>
+                        <Label htmlFor="income" className="text-xs font-medium">Last Drawn Salary{!requiredFields.monthly_income && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
                         <Select
                             value={formData.monthly_income}
                             onValueChange={(value) => handleFormChange('monthly_income', value)}

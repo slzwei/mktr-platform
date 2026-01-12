@@ -70,8 +70,7 @@ async function testAgentInvite() {
         body: JSON.stringify({
             email: agentEmail,
             full_name: 'Test Agent',
-            phone: agentPhone,
-            owed_leads_count: 5
+            phone: agentPhone
         })
     });
 

@@ -119,7 +119,9 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
     spacing: design.spacing || "normal",
     headlineSize: design.headlineSize || 20,
     visibleFields: design.visibleFields || { phone: true, dob: true, postal_code: true },
-    fieldOrder: normalizeFieldOrder(design.fieldOrder)
+    requiredFields: design.requiredFields || {},
+    fieldOrder: normalizeFieldOrder(design.fieldOrder),
+    otpChannel: design.otpChannel || "sms" // 'sms' or 'whatsapp'
   });
 
   const [uploading, setUploading] = useState(false);
@@ -155,7 +157,9 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
       spacing: design.spacing || "normal",
       headlineSize: design.headlineSize || 20,
       visibleFields: design.visibleFields || { phone: true, dob: true, postal_code: true },
-      fieldOrder: normalizeFieldOrder(design.fieldOrder)
+      requiredFields: design.requiredFields || {},
+      fieldOrder: normalizeFieldOrder(design.fieldOrder),
+      otpChannel: design.otpChannel || "sms"
     });
     // When the external campaign design changes, assume it's the latest saved state.
     setHasUnsavedChanges(false);
@@ -681,62 +685,150 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
 
 
 
+                {/* OTP Settings */}
+                <div className="space-y-3 pt-4 border-t">
+                  <Label className="text-sm font-semibold text-gray-700">Verification Method</Label>
+                  <p className="text-xs text-gray-500 -mt-1">Choose how users receive their One-Time Password (OTP)</p>
+                  <Select
+                    value={currentDesign.otpChannel || 'sms'}
+                    onValueChange={(value) => handleDesignChange('otpChannel', value)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select OTP Channel" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sms">SMS (via AWS SNS)</SelectItem>
+                      <SelectItem value="whatsapp">WhatsApp (via Meta)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {currentDesign.otpChannel === 'whatsapp' && (
+                    <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 p-2 rounded border">
+                      <AlertCircle className="w-4 h-4" />
+                      <span>Ensure your Meta credentials are configured in .env</span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Form Fields Selection */}
                 <div className="space-y-3 pt-4 border-t">
-                  <Label className="text-sm font-semibold text-gray-700">Visible Fields</Label>
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="field_phone"
-                        checked={currentDesign.visibleFields?.phone !== false}
-                        onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, phone: e.target.checked })}
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <Label htmlFor="field_phone" className="text-sm text-gray-700 font-normal">Phone Number (Required for OTP)</Label>
+                  <Label className="text-sm font-semibold text-gray-700">Form Fields</Label>
+                  <p className="text-xs text-gray-500 -mt-1">Configure which fields appear and whether they're required</p>
+                  <div className="space-y-2">
+                    {/* Phone - Always required when visible */}
+                    <div className="flex items-center justify-between py-1">
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id="field_phone"
+                          checked={currentDesign.visibleFields?.phone !== false}
+                          onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, phone: e.target.checked })}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <Label htmlFor="field_phone" className="text-sm text-gray-700 font-normal">Phone Number</Label>
+                      </div>
+                      <span className="text-xs text-gray-400">Required for OTP</span>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="field_dob"
-                        checked={currentDesign.visibleFields?.dob !== false}
-                        onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, dob: e.target.checked })}
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <Label htmlFor="field_dob" className="text-sm text-gray-700 font-normal">Date of Birth</Label>
+
+                    {/* DOB */}
+                    <div className="flex items-center justify-between py-1">
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id="field_dob"
+                          checked={currentDesign.visibleFields?.dob !== false}
+                          onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, dob: e.target.checked })}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <Label htmlFor="field_dob" className="text-sm text-gray-700 font-normal">Date of Birth</Label>
+                      </div>
+                      {currentDesign.visibleFields?.dob !== false && (
+                        <label className="flex items-center space-x-1 text-xs text-gray-500 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={currentDesign.requiredFields?.dob === true}
+                            onChange={(e) => handleDesignChange('requiredFields', { ...currentDesign.requiredFields, dob: e.target.checked })}
+                            className="h-3 w-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span>Required</span>
+                        </label>
+                      )}
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="field_postal"
-                        checked={currentDesign.visibleFields?.postal_code !== false}
-                        onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, postal_code: e.target.checked })}
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <Label htmlFor="field_postal" className="text-sm text-gray-700 font-normal">Postal Code</Label>
+
+                    {/* Postal Code */}
+                    <div className="flex items-center justify-between py-1">
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id="field_postal"
+                          checked={currentDesign.visibleFields?.postal_code !== false}
+                          onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, postal_code: e.target.checked })}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <Label htmlFor="field_postal" className="text-sm text-gray-700 font-normal">Postal Code</Label>
+                      </div>
+                      {currentDesign.visibleFields?.postal_code !== false && (
+                        <label className="flex items-center space-x-1 text-xs text-gray-500 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={currentDesign.requiredFields?.postal_code === true}
+                            onChange={(e) => handleDesignChange('requiredFields', { ...currentDesign.requiredFields, postal_code: e.target.checked })}
+                            className="h-3 w-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span>Required</span>
+                        </label>
+                      )}
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="field_education"
-                        checked={currentDesign.visibleFields?.education_level === true}
-                        onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, education_level: e.target.checked })}
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <Label htmlFor="field_education" className="text-sm text-gray-700 font-normal">Highest Education</Label>
+
+                    {/* Education */}
+                    <div className="flex items-center justify-between py-1">
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id="field_education"
+                          checked={currentDesign.visibleFields?.education_level === true}
+                          onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, education_level: e.target.checked })}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <Label htmlFor="field_education" className="text-sm text-gray-700 font-normal">Highest Education</Label>
+                      </div>
+                      {currentDesign.visibleFields?.education_level === true && (
+                        <label className="flex items-center space-x-1 text-xs text-gray-500 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={currentDesign.requiredFields?.education_level === true}
+                            onChange={(e) => handleDesignChange('requiredFields', { ...currentDesign.requiredFields, education_level: e.target.checked })}
+                            className="h-3 w-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span>Required</span>
+                        </label>
+                      )}
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id="field_income"
-                        checked={currentDesign.visibleFields?.monthly_income === true}
-                        onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, monthly_income: e.target.checked })}
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <Label htmlFor="field_income" className="text-sm text-gray-700 font-normal">Monthly Income</Label>
+
+                    {/* Income */}
+                    <div className="flex items-center justify-between py-1">
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id="field_income"
+                          checked={currentDesign.visibleFields?.monthly_income === true}
+                          onChange={(e) => handleDesignChange('visibleFields', { ...currentDesign.visibleFields, monthly_income: e.target.checked })}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <Label htmlFor="field_income" className="text-sm text-gray-700 font-normal">Monthly Income</Label>
+                      </div>
+                      {currentDesign.visibleFields?.monthly_income === true && (
+                        <label className="flex items-center space-x-1 text-xs text-gray-500 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={currentDesign.requiredFields?.monthly_income === true}
+                            onChange={(e) => handleDesignChange('requiredFields', { ...currentDesign.requiredFields, monthly_income: e.target.checked })}
+                            className="h-3 w-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span>Required</span>
+                        </label>
+                      )}
                     </div>
                   </div>
-
                 </div>
               </div>
             )}

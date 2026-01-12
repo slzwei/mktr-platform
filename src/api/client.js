@@ -559,6 +559,15 @@ class LeadPackageEntity extends BaseEntity {
     const response = await apiClient.get(`${this.endpoint}/assignments/${agentId}`);
     return response.data?.assignments || [];
   }
+
+  async deleteAssignment(assignmentId) {
+    const response = await apiClient.delete(`${this.endpoint}/assignments/${assignmentId}`);
+    return response.data;
+  }
+  async updateAssignment(id, data) {
+    const response = await apiClient.patch(`${this.endpoint}/assignments/${id}`, data);
+    return response.data;
+  }
 }
 
 // User Entity

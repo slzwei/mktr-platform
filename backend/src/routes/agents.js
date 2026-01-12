@@ -54,6 +54,12 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
         separate: true
       },
       {
+        association: 'assignedPackages',
+        where: { status: 'active' },
+        attributes: ['leadsRemaining'],
+        required: false
+      },
+      {
         association: 'createdCampaigns',
         attributes: ['id', 'name', 'status'],
         separate: true
@@ -83,8 +89,17 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
     const tiedCampaignsCount = createdCampaignsCount + assignedCampaignsCount;
     const activeCreatedCampaigns = agent.createdCampaigns.filter(c => c.status === 'active').length;
 
+    // Calculate total leads owed (manual + active packages)
+    const manualLeads = agent.owed_leads_count || 0;
+    const packageLeads = agent.assignedPackages
+      ? agent.assignedPackages.reduce((sum, pkg) => sum + (pkg.leadsRemaining || 0), 0)
+      : 0;
+    const totalLeadsOwed = manualLeads + packageLeads;
+
     return {
       ...agent.toJSON(),
+      owed_leads_count: totalLeadsOwed, // Override with aggregated total
+      owed_leads_manual_count: manualLeads, // Keep track of manual count specifically if needed
       stats: {
         totalProspects,
         convertedProspects,

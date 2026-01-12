@@ -5,11 +5,11 @@ import { Campaign } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Package, 
-  Calendar, 
-  DollarSign, 
-  Users, 
+import {
+  Package,
+  Calendar,
+  DollarSign,
+  Users,
   Clock,
   CheckCircle2
 } from "lucide-react";
@@ -37,15 +37,31 @@ export default function MyLeadPackages({ userId }) {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [packagesData, allCampaignsData] = await Promise.all([
-          LeadPackage.filter({ agent_id: userId }),
+        const [assignmentsData, allCampaignsData] = await Promise.all([
+          LeadPackage.getAssignments(userId),
           Campaign.list()
         ]);
-        
+
         // Filter out archived campaigns
         const campaignsData = allCampaignsData.filter(campaign => campaign.status !== 'archived');
-        
-        setPackages(packagesData);
+
+        // Map assignments to component format
+        const mappedPackages = assignmentsData.map(assignment => ({
+          id: assignment.id,
+          campaign_id: assignment.package?.campaign?.id,
+          package_name: assignment.package?.name || 'Unknown Package',
+          status: assignment.status,
+          payment_status: 'paid', // Default to paid as assignments are manually created
+          total_leads: assignment.leadsTotal,
+          leads_delivered: assignment.leadsTotal - assignment.leadsRemaining,
+          leads_remaining: assignment.leadsRemaining,
+          total_amount: parseFloat(assignment.priceSnapshot),
+          price_per_lead: assignment.leadsTotal > 0 ? parseFloat(assignment.priceSnapshot) / assignment.leadsTotal : 0,
+          purchase_date: assignment.purchaseDate,
+          notes: assignment.package?.description
+        }));
+
+        setPackages(mappedPackages);
         setCampaigns(campaignsData);
       } catch (error) {
         console.error('Error loading lead packages:', error);
@@ -106,7 +122,7 @@ export default function MyLeadPackages({ userId }) {
         {packages.map((pkg) => {
           const campaign = campaigns.find(c => c.id === pkg.campaign_id);
           const deliveryProgress = pkg.total_leads > 0 ? (pkg.leads_delivered / pkg.total_leads) * 100 : 0;
-          
+
           return (
             <div key={pkg.id} className="border rounded-lg p-4 bg-gray-50">
               <div className="flex justify-between items-start mb-3">
@@ -146,7 +162,7 @@ export default function MyLeadPackages({ userId }) {
                     <p className="font-semibold">${pkg.total_amount.toFixed(2)}</p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   <Users className="w-4 h-4 text-gray-400" />
                   <div>
@@ -154,7 +170,7 @@ export default function MyLeadPackages({ userId }) {
                     <p className="font-semibold">${pkg.price_per_lead.toFixed(2)}</p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-gray-400" />
                   <div>
@@ -162,7 +178,7 @@ export default function MyLeadPackages({ userId }) {
                     <p className="font-semibold text-blue-600">{pkg.leads_remaining}</p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-gray-400" />
                   <div>
