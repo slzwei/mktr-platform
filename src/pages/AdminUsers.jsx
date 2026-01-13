@@ -137,6 +137,10 @@ export default function AdminUsers() {
   };
 
   const openEditDialog = (user) => {
+    // Prevent editing System Agent
+    const isSystemAgent = user.firstName === 'System' && user.lastName === 'Agent';
+    if (isSystemAgent) return;
+
     setSelectedUser(user);
     setEditData({
       firstName: user.firstName || "",
@@ -149,6 +153,14 @@ export default function AdminUsers() {
   };
 
   const handleDeleteUser = async (userId) => {
+    const user = users.find(u => u.id === userId);
+    // Prevent deleting System Agent
+    const isSystemAgent = user && user.firstName === 'System' && user.lastName === 'Agent';
+    if (isSystemAgent) {
+      alert("Cannot delete the System Agent.");
+      return;
+    }
+
     if (!window.confirm("Are you sure you want to PERMANENTLY delete this user? This cannot be undone.")) return;
     try {
       await User.permanentDelete(userId);
@@ -418,7 +430,12 @@ export default function AdminUsers() {
                                     </DropdownMenuItem>
                                   )}
                                   <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => handleDeleteUser(user.id)} className="text-red-600">
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    onClick={() => handleDeleteUser(user.id)}
+                                    className="text-red-600"
+                                    disabled={user.firstName === 'System' && user.lastName === 'Agent'}
+                                  >
                                     <Trash2 className="mr-2 h-4 w-4" /> Delete User
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
@@ -458,7 +475,13 @@ export default function AdminUsers() {
                             <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)} className="h-8 w-8 text-gray-500 hover:text-blue-600">
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user.id)} className="h-8 w-8 text-gray-500 hover:text-red-600">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteUser(user.id)}
+                              className="h-8 w-8 text-gray-500 hover:text-red-600"
+                              disabled={user.firstName === 'System' && user.lastName === 'Agent'}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>

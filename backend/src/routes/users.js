@@ -6,6 +6,7 @@ import { authenticateToken, requireAdmin, requireAgentOrAdmin } from '../middlew
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { sendEmail } from '../services/mailer.js';
 import { getRoleInviteEmail, getRoleInviteSubject, getRoleInviteText } from '../services/emailTemplates.js';
+import { getSystemAgentId } from '../services/systemAgent.js';
 
 const router = express.Router();
 
@@ -236,6 +237,12 @@ router.delete('/:id', authenticateToken, requireAdmin, asyncHandler(async (req, 
     throw new AppError('Cannot delete your own account', 400);
   }
 
+  // Prevent deleting System Agent
+  const systemAgentId = await getSystemAgentId();
+  if (id === systemAgentId) {
+    throw new AppError('Cannot delete the System Agent', 400);
+  }
+
   const user = await User.findByPk(id);
   if (!user) {
     throw new AppError('User not found', 404);
@@ -250,6 +257,48 @@ router.delete('/:id', authenticateToken, requireAdmin, asyncHandler(async (req, 
   });
 }));
 
+// Bulk delete users (Admin only)
+router.post('/bulk-delete', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
+  const { ids } = req.body;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    throw new AppError('ids array is required', 400);
+  }
+
+  // Prevent admin from deleting themselves
+  if (ids.includes(req.user.id)) {
+    throw new AppError('Cannot delete your own account', 400);
+  }
+
+  // Prevent deleting System Agent
+  const systemAgentId = await getSystemAgentId();
+  if (ids.includes(systemAgentId)) {
+    throw new AppError('Cannot delete the System Agent', 400);
+  }
+
+  // 1. Unassign prospects
+  const { Prospect, LeadPackageAssignment } = await import('../models/index.js');
+  await Prospect.update(
+    { assignedAgentId: null },
+    { where: { assignedAgentId: { [Op.in]: ids } } }
+  );
+
+  // 2. Remove package assignments
+  await LeadPackageAssignment.destroy({
+    where: { agentId: { [Op.in]: ids } }
+  });
+
+  // 3. Delete the users
+  const deletedCount = await User.destroy({
+    where: { id: { [Op.in]: ids } }
+  });
+
+  res.json({
+    success: true,
+    message: `${deletedCount} users permanently deleted`
+  });
+}));
+
 // Permanently delete user (Admin only)
 router.delete('/:id/permanent', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -257,6 +306,12 @@ router.delete('/:id/permanent', authenticateToken, requireAdmin, asyncHandler(as
   // Prevent admin from deleting themselves
   if (req.user.id === id) {
     throw new AppError('Cannot delete your own account', 400);
+  }
+
+  // Prevent deleting System Agent
+  const systemAgentId = await getSystemAgentId();
+  if (id === systemAgentId) {
+    throw new AppError('Cannot delete the System Agent', 400);
   }
 
   const user = await User.findByPk(id);
@@ -357,6 +412,12 @@ router.patch('/:id/status', authenticateToken, requireAdmin, asyncHandler(async 
   // Prevent admin from deactivating themselves
   if (req.user.id === id && !isActive) {
     throw new AppError('Cannot deactivate your own account', 400);
+  }
+
+  // Prevent deactivating System Agent
+  const systemAgentId = await getSystemAgentId();
+  if (id === systemAgentId && !isActive) {
+    throw new AppError('Cannot deactivate the System Agent', 400);
   }
 
   const user = await User.findByPk(id);
