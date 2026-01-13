@@ -15,7 +15,8 @@ import {
   Calendar,
   Tag,
   TrendingUp,
-  Package
+  Package,
+  Cake
 } from "lucide-react";
 
 const statusColors = {
@@ -65,6 +66,18 @@ export default function AgentDetailsDialog({ open, onOpenChange, agent }) {
                   <div>
                     <p className="text-sm text-gray-500">Phone Number</p>
                     <p className="font-semibold">{agent.phone}</p>
+                  </div>
+                </div>
+              )}
+
+              {agent.dateOfBirth && (
+                <div className="flex items-center gap-3">
+                  <Cake className="w-5 h-5 text-gray-400" />
+                  <div>
+                    <p className="text-sm text-gray-500">Date of Birth</p>
+                    <p className="font-semibold">
+                      {format(new Date(agent.dateOfBirth), 'PPP')}
+                    </p>
                   </div>
                 </div>
               )}
