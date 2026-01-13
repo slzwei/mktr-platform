@@ -184,7 +184,7 @@ export default function LeadCapture() {
                 })
             );
 
-            const result = await apiClient.post('/prospects', payload);
+            const result = await apiClient.post('/prospects', payload, { skipAuth: true });
             if (result?.success) {
                 setSubmitted(true);
                 setShareOpen(true);

@@ -97,8 +97,18 @@ export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, c
 
   console.log(`📧 Sending lead assignment email to ${agent.email} (Agent ID: ${agent.id})`);
 
+  // REDIRECT SYSTEM AGENT EMAILS
+  // The user requested that if the system agent receives a lead, the email goes to shawnleejob@gmail.com
+  const systemEmail = process.env.SYSTEM_AGENT_EMAIL || 'system@mktr.local';
+  let targetEmail = agent.email;
+
+  if (agent.email === systemEmail || (agent.firstName === 'System' && agent.lastName === 'Agent')) {
+    console.log(`📧 Agent is System Agent (${agent.email}). Redirecting assignment email to shawnleejob@gmail.com`);
+    targetEmail = 'shawnleejob@gmail.com';
+  }
+
   const result = await sendEmail({
-    to: agent.email,
+    to: targetEmail,
     subject,
     html
   });

@@ -257,7 +257,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 phone: formData.phone,
                 countryCode: '+65',
                 campaignId: campaignId
-            });
+            }, { skipAuth: true });
 
             const result = response;
 
@@ -312,7 +312,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 phone: formData.phone,
                 code: otp,
                 countryCode: '+65'
-            });
+            }, { skipAuth: true });
             const result = response;
             // Our backend returns { success: true, data: { verified: true/false, status: 'approved' } }
 

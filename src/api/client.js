@@ -63,7 +63,7 @@ class APIClient {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        ...(token && { Authorization: `Bearer ${token}` }),
+        ...((token && !options.skipAuth) && { Authorization: `Bearer ${token}` }),
         ...options.headers
       },
       credentials: 'include',
@@ -149,8 +149,8 @@ class APIClient {
     return this.request(url);
   }
 
-  async post(endpoint, data = {}) {
-    return this.request(endpoint, { method: 'POST', body: data });
+  async post(endpoint, data = {}, options = {}) {
+    return this.request(endpoint, { method: 'POST', body: data, ...options });
   }
 
   async put(endpoint, data = {}) {
