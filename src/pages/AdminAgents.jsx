@@ -374,57 +374,55 @@ export default function AdminAgents() {
                 </Select>
               </div>
             </div>
-          </div>
-        </CardHeader>
+          </CardHeader>
 
-        {/* Bulk Action Bar */}
-        {selectedAgentIds.length > 0 && (
-          <div className="bg-blue-50 border-b border-blue-100 p-3 flex items-center justify-between animate-in slide-in-from-top-2">
-            <span className="text-sm text-blue-800 font-medium ml-2">
-              {selectedAgentIds.length} agents selected
-            </span>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleBulkDelete}
-              className="bg-red-600 hover:bg-red-700 h-8"
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Delete Selected
-            </Button>
-          </div>
-        )}
+          {/* Bulk Action Bar */}
+          {selectedAgentIds.length > 0 && (
+            <div className="bg-blue-50 border-b border-blue-100 p-3 flex items-center justify-between animate-in slide-in-from-top-2">
+              <span className="text-sm text-blue-800 font-medium ml-2">
+                {selectedAgentIds.length} agents selected
+              </span>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleBulkDelete}
+                className="bg-red-600 hover:bg-red-700 h-8"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete Selected
+              </Button>
+            </div>
+          )}
 
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-gray-100">
-                  <TableHead className="w-12 h-12 px-4 text-center">
-                    <Checkbox
-                      checked={filteredAgents.length > 0 && selectedAgentIds.length === filteredAgents.length}
-                      onCheckedChange={handleSelectAll}
-                      aria-label="Select all"
-                    />
-                  </TableHead>
-                  <TableHead className="py-3 px-6 font-medium text-gray-500">Agent</TableHead>
-                  <TableHead className="py-3 px-6 font-medium text-gray-500">Contact</TableHead>
-                  <TableHead className="py-3 px-6 font-medium text-gray-500">Status</TableHead>
-                  <TableHead className="py-3 px-6 font-medium text-gray-500">Leads Owed</TableHead>
-                  <TableHead className="py-3 px-6 font-medium text-gray-500">Joined</TableHead>
-                  <TableHead className="py-3 px-6 font-medium text-gray-500 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredAgents.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-48 text-center text-gray-500">
-                      No agents found matching your criteria.
-                    </TableCell>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-gray-100">
+                    <TableHead className="w-12 h-12 px-4 text-center">
+                      <Checkbox
+                        checked={filteredAgents.length > 0 && selectedAgentIds.length === filteredAgents.length}
+                        onCheckedChange={handleSelectAll}
+                        aria-label="Select all"
+                      />
+                    </TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500">Agent</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500">Contact</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500">Status</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500">Leads Owed</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500">Joined</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 text-right">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  filteredAgents.map((agent) => (
-                    <TableRow key={agent.id} className={`hover:bg-gray-50/50 border-gray-100 ${selectedAgentIds.includes(agent.id) ? 'bg-blue-50/30' : ''}`}>
+                </TableHeader>
+                <TableBody>
+                  {filteredAgents.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="h-48 text-center text-gray-500">
+                        No agents found matching your criteria.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredAgents.map((agent) => <TableRow key={agent.id} className={`hover:bg-gray-50/50 border-gray-100 ${selectedAgentIds.includes(agent.id) ? 'bg-blue-50/30' : ''}`}>
                       <TableCell className="px-4 text-center">
                         <Checkbox
                           checked={selectedAgentIds.includes(agent.id)}
@@ -444,15 +442,15 @@ export default function AdminAgents() {
                         </div>
                       </TableCell>
 
-                      <TableCell className="px-6 py-4">
+                      <TableCell className="px-6 py-4 max-w-[250px]">
                         <div className="space-y-1 text-sm">
-                          <div className="flex items-center gap-1.5 text-gray-600">
-                            <Mail className="w-3 h-3 text-gray-400" />
-                            {agent.email}
+                          <div className="flex items-start gap-1.5 text-gray-600 break-all">
+                            <Mail className="w-3 h-3 text-gray-400 shrink-0 mt-0.5" />
+                            <span className="leading-tight">{agent.email}</span>
                           </div>
                           {agent.phone && (
                             <div className="flex items-center gap-1.5 text-gray-500">
-                              <Phone className="w-3 h-3 text-gray-400" />
+                              <Phone className="w-3 h-3 text-gray-400 shrink-0" />
                               {agent.phone}
                             </div>
                           )}
@@ -544,134 +542,134 @@ export default function AdminAgents() {
                         </DropdownMenu>
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      <AgentFormDialog
-        open={isFormOpen}
-        onOpenChange={setIsFormOpen}
-        agent={selectedAgent}
-        onSubmit={handleFormSubmit}
-      />
-
-      <AgentDetailsDialog
-        open={isDetailsOpen}
-        onOpenChange={setIsDetailsOpen}
-        agent={selectedAgent}
-      />
-
-      <AssignPackageDialog
-        open={isPackageDialogOpen}
-        onOpenChange={setIsPackageDialogOpen}
-        agent={selectedAgent}
-        onSubmitSuccess={handlePackageSubmit}
-      />
-
-      {/* Manage Packages Dialog */}
-      <Dialog open={managePackagesDialogOpen} onOpenChange={setManagePackagesDialogOpen}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <DialogTitle>Packages assigned to {selectedAgent?.fullName || selectedAgent?.email}</DialogTitle>
-                <DialogDescription>View active lead package assignments.</DialogDescription>
-              </div>
-              <Button onClick={() => handleOpenPackageDialog(selectedAgent)} className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="w-4 h-4 mr-2" />
-                Assign Package
-              </Button>
+                    )
+                  )}
+                </TableBody>
+              </Table>
             </div>
-          </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto divide-y">
-            {packagesForAgent.length === 0 ? (
-              <div className="text-sm text-gray-500 p-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200">
-                No packages assigned yet.
+          </CardContent>
+        </Card>
+
+        <AgentFormDialog
+          open={isFormOpen}
+          onOpenChange={setIsFormOpen}
+          agent={selectedAgent}
+          onSubmit={handleFormSubmit}
+        />
+
+        <AgentDetailsDialog
+          open={isDetailsOpen}
+          onOpenChange={setIsDetailsOpen}
+          agent={selectedAgent}
+        />
+
+        <AssignPackageDialog
+          open={isPackageDialogOpen}
+          onOpenChange={setIsPackageDialogOpen}
+          agent={selectedAgent}
+          onSubmitSuccess={handlePackageSubmit}
+        />
+
+        {/* Manage Packages Dialog */}
+        <Dialog open={managePackagesDialogOpen} onOpenChange={setManagePackagesDialogOpen}>
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <DialogTitle>Packages assigned to {selectedAgent?.fullName || selectedAgent?.email}</DialogTitle>
+                  <DialogDescription>View active lead package assignments.</DialogDescription>
+                </div>
+                <Button onClick={() => handleOpenPackageDialog(selectedAgent)} className="bg-blue-600 hover:bg-blue-700">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Assign Package
+                </Button>
               </div>
-            ) : packagesForAgent.map(assignment => (
-              <div key={assignment.id} className="py-4 first:pt-0 last:pb-0">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-gray-900">{assignment.package?.name || 'Unknown Package'}</p>
-                      <Badge variant="outline" className={`
+            </DialogHeader>
+            <div className="max-h-[60vh] overflow-y-auto divide-y">
+              {packagesForAgent.length === 0 ? (
+                <div className="text-sm text-gray-500 p-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                  No packages assigned yet.
+                </div>
+              ) : packagesForAgent.map(assignment => (
+                <div key={assignment.id} className="py-4 first:pt-0 last:pb-0">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-gray-900">{assignment.package?.name || 'Unknown Package'}</p>
+                        <Badge variant="outline" className={`
                           ${assignment.status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : ''}
                           ${assignment.status === 'exhausted' ? 'bg-gray-100 text-gray-600 border-gray-200' : ''}
                           ${assignment.status === 'expired' ? 'bg-amber-50 text-amber-700 border-amber-200' : ''}
                         `}>
-                        {assignment.status}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-gray-500 mt-1">
-                      Campaign: {assignment.package?.campaign?.name || 'N/A'}
-                    </p>
-                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                      <span>Purchased: {assignment.purchaseDate ? format(new Date(assignment.purchaseDate), 'MMM d, yyyy') : '-'}</span>
-                      <span>Price: ${assignment.priceSnapshot}</span>
-                    </div>
-                  </div>
-                  {editingAssignmentId === assignment.id ? (
-                    <div className="flex items-center justify-end gap-2">
-                      <Input
-                        type="number"
-                        className="h-8 w-20 text-right"
-                        value={editLeadCount}
-                        onChange={(e) => setEditLeadCount(e.target.value)}
-                        min="0"
-                      />
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
-                          onClick={() => handleUpdateAssignment(assignment.id)}
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-gray-400 hover:text-gray-600 hover:bg-gray-50"
-                          onClick={handleCancelEdit}
-                        >
-                          <XCircle className="h-4 w-4" />
-                        </Button>
+                          {assignment.status}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Campaign: {assignment.package?.campaign?.name || 'N/A'}
+                      </p>
+                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                        <span>Purchased: {assignment.purchaseDate ? format(new Date(assignment.purchaseDate), 'MMM d, yyyy') : '-'}</span>
+                        <span>Price: ${assignment.priceSnapshot}</span>
                       </div>
                     </div>
-                  ) : (
-                    <div className="text-right group relative">
-                      <p className="text-sm font-medium text-gray-900 flex items-center justify-end gap-2">
-                        {assignment.leadsRemaining} / {assignment.leadsTotal}
-                        <Edit
-                          className="w-3 h-3 text-gray-400 cursor-pointer opacity-0 group-hover:opacity-100 hover:text-blue-600 transition-opacity"
-                          onClick={() => handleStartEdit(assignment)}
+                    {editingAssignmentId === assignment.id ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <Input
+                          type="number"
+                          className="h-8 w-20 text-right"
+                          value={editLeadCount}
+                          onChange={(e) => setEditLeadCount(e.target.value)}
+                          min="0"
                         />
-                      </p>
-                      <p className="text-xs text-gray-500">leads remaining</p>
-                    </div>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50"
-                    onClick={() => handleDeleteAssignment(assignment.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                            onClick={() => handleUpdateAssignment(assignment.id)}
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                            onClick={handleCancelEdit}
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-right group relative">
+                        <p className="text-sm font-medium text-gray-900 flex items-center justify-end gap-2">
+                          {assignment.leadsRemaining} / {assignment.leadsTotal}
+                          <Edit
+                            className="w-3 h-3 text-gray-400 cursor-pointer opacity-0 group-hover:opacity-100 hover:text-blue-600 transition-opacity"
+                            onClick={() => handleStartEdit(assignment)}
+                          />
+                        </p>
+                        <p className="text-xs text-gray-500">leads remaining</p>
+                      </div>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                      onClick={() => handleDeleteAssignment(assignment.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
 
-      {/* Assign Campaigns Dialog */}
+        {/* Assign Campaigns Dialog */}
 
-    </div>
+      </div>
     </div >
   );
 }
