@@ -304,8 +304,11 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         setLoading(null);
     };
 
-    const handleVerifyOtp = async () => {
-        if (otp.length < 6) {
+    const handleVerifyOtp = async (codeToVerify) => {
+        // Use the passed code if available (from auto-verify), otherwise use state
+        const code = (typeof codeToVerify === 'string' ? codeToVerify : otp);
+
+        if (!code || code.length < 6) {
             setError("Please enter the 6-digit OTP.");
             return;
         }
@@ -318,7 +321,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             // Call verifyOtp with phoneNumber string and otp string
             const response = await apiClient.post('/verify/check', {
                 phone: formData.phone,
-                code: otp,
+                code: code,
                 countryCode: '+65'
             }, { skipAuth: true });
             const result = response;
@@ -576,11 +579,11 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                     exit={{ opacity: 0, height: 0 }}
                                     transition={{ duration: 0.3, ease: "easeInOut" }}
                                 >
-                                    <div className={`p-5 rounded-xl border bg-white/50 backdrop-blur-sm shadow-sm space-y-4 ${error ? 'border-red-200 ring-4 ring-red-50' : 'border-gray-100'}`}>
+                                    <div className={`p-3 rounded-lg border bg-white/50 backdrop-blur-sm shadow-sm space-y-3 ${error ? 'border-red-200 ring-4 ring-red-50' : 'border-gray-100'}`}>
                                         <div className="flex items-center justify-between">
                                             <div>
                                                 <Label htmlFor="otp" className="text-sm font-semibold text-gray-800">Verify your number</Label>
-                                                <p className="text-xs text-gray-500 mt-0.5">Enter code sent to +65 {displayPhone(formData.phone)}</p>
+                                                <p className="text-[11px] text-gray-500 mt-0.5">Enter code sent to +65 {displayPhone(formData.phone)}</p>
                                             </div>
                                             <Button
                                                 type="button"
@@ -601,8 +604,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                                     onChange={(value) => {
                                                         setOtp(value);
                                                         if (value.length === 6) {
-                                                            // Optional: Auto-verify when full
-                                                            handleVerifyOtp();
+                                                            // Auto-verify when full, passing the value directly to avoid stale state
+                                                            handleVerifyOtp(value);
                                                         }
                                                     }}
                                                     pattern={REGEXP_ONLY_DIGITS}
@@ -710,7 +713,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                             )}
 
                         {
-                            error && (
+                            error && otpState !== 'pending' && (
                                 <motion.div
                                     className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded border mt-2"
                                     initial={{ opacity: 0, y: -10 }}
