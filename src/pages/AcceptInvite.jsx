@@ -102,6 +102,28 @@ export default function AcceptInvite() {
     );
   }
 
+  // If initial verification failed (e.g. invalid token, deleted user), show error only
+  if (error && !email && !fullName) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <Card className="w-full max-w-md border-red-100 shadow-sm">
+          <CardHeader className="p-6 text-center">
+            <div className="mx-auto w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
+              <span className="text-xl">⚠️</span>
+            </div>
+            <h1 className="text-xl font-semibold text-gray-900">Invalid Invitation</h1>
+          </CardHeader>
+          <CardContent className="p-6 pt-0 text-center">
+            <p className="text-gray-600 mb-6">{error}</p>
+            <Button onClick={() => navigate('/')} variant="outline" className="w-full">
+              Return to Home
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <Card className="w-full max-w-md">
