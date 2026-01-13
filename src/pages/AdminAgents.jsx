@@ -108,7 +108,7 @@ export default function AdminAgents() {
 
       if (selectedAgent) {
         const [firstName, ...rest] = name.split(' ');
-        const lastName = rest.join(' ').trim() || '-';
+        const lastName = rest.join(' ').trim();
         const normalizedPhone = (formData.phone || '').replace(/\D/g, '');
         await User.update(selectedAgent.id, {
           firstName,

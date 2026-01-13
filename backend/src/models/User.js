@@ -34,7 +34,7 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING,
     allowNull: true,
     validate: {
-      len: [1, 50]
+      len: [0, 50]
     }
   },
   role: {
@@ -158,7 +158,7 @@ const User = sequelize.define('User', {
 });
 
 // Instance methods
-User.prototype.comparePassword = async function(candidatePassword) {
+User.prototype.comparePassword = async function (candidatePassword) {
   // If password is not set (e.g., Google OAuth users), treat as mismatch
   if (!this.password || typeof this.password !== 'string') {
     return false;
@@ -169,7 +169,7 @@ User.prototype.comparePassword = async function(candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-User.prototype.toJSON = function() {
+User.prototype.toJSON = function () {
   const values = Object.assign({}, this.get());
   delete values.password;
   delete values.emailVerificationToken;
