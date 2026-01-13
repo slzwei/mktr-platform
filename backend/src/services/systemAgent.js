@@ -119,7 +119,8 @@ export async function resolveAssignedAgentId({ reqUser, requestedAgentId, campai
       // Filter to active agents only
       const activeAgents = (await User.findAll({
         where: { id: candidateIds, role: 'agent', isActive: true },
-        attributes: ['id']
+        attributes: ['id'],
+        order: [['createdAt', 'ASC']]
       })).map(u => u.id);
 
       if (activeAgents.length > 0) {
