@@ -14,11 +14,19 @@ import {
     ShieldCheck,
     Loader2,
     AlertCircle,
-    X
+    X,
+    ChevronRight
 } from "lucide-react";
 import { apiClient } from "@/api/client";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import MarketingConsentDialog from "@/components/legal/MarketingConsentDialog";
+import {
+    InputOTP,
+    InputOTPGroup,
+    InputOTPSlot,
+    InputOTPSeparator,
+} from "@/components/ui/input-otp";
+import { REGEXP_ONLY_DIGITS } from "input-otp";
 
 export default function CampaignSignupForm({ themeColor, formHeadline, formSubheadline, headlineSize, campaignId, onSubmit, campaign }) {
     const visibleFields = campaign?.design_config?.visibleFields || {};
@@ -501,8 +509,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                 <div className="flex items-center px-3 bg-gray-50 border border-r-0 rounded-l-md h-8 text-sm font-medium text-gray-700 whitespace-nowrap">
                                     🇸🇬 +65
                                 </div>
-                                <div className="relative flex-grow">
-                                    <Phone className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                                <div className="relative flex-grow group">
+                                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
                                     <Input
                                         id="phone"
                                         type="tel"
@@ -562,84 +570,144 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                         {
                             otpState === 'pending' && (
                                 <motion.div
-                                    className="space-y-2 p-3 bg-gray-50 rounded-lg border mt-2"
-                                    initial={{ opacity: 0, y: -10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -10 }}
-                                    transition={{ duration: 0.2 }}
+                                    className="pt-4 pb-2"
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.3, ease: "easeInOut" }}
                                 >
-                                    <div className="flex items-center justify-between">
-                                        <Label htmlFor="otp" className="text-sm font-medium text-gray-800">Enter Code</Label>
-                                        <Button
-                                            type="button" // Important: Prevent form submission
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={handleCancelOtp}
-                                            className="text-gray-500 hover:text-gray-700 h-6 px-1"
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </Button>
-                                    </div>
-                                    <p className="text-xs text-gray-500 !-mt-1">Sent to +65 {displayPhone(formData.phone)}</p>
-                                    <div className="flex items-center gap-2">
-                                        <div className="relative flex-grow">
-                                            <ShieldCheck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                                            <Input
-                                                id="otp"
-                                                type="tel" // Added for numeric keyboard on mobile
-                                                inputMode="numeric" // Added for numeric keyboard on mobile
-                                                autoComplete="one-time-code" // Added for OTP autofill
-                                                placeholder="123456"
-                                                className="pl-8 tracking-wider h-9 text-sm"
-                                                maxLength={6}
-                                                value={otp}
-                                                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                                            />
+                                    <div className={`p-5 rounded-xl border bg-white/50 backdrop-blur-sm shadow-sm space-y-4 ${error ? 'border-red-200 ring-4 ring-red-50' : 'border-gray-100'}`}>
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <Label htmlFor="otp" className="text-sm font-semibold text-gray-800">Verify your number</Label>
+                                                <p className="text-xs text-gray-500 mt-0.5">Enter code sent to +65 {displayPhone(formData.phone)}</p>
+                                            </div>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={handleCancelOtp}
+                                                className="h-8 w-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </Button>
                                         </div>
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            onClick={handleVerifyOtp}
-                                            disabled={loading === 'verifying' || showSuccessTick}
-                                            className={`h-9 px-4 text-sm w-28 transition-colors duration-300 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600' : ''}`}
-                                        >
-                                            {showSuccessTick ? (
-                                                <motion.div
-                                                    initial={{ scale: 0, rotate: -90 }}
-                                                    animate={{ scale: 1, rotate: 0 }}
-                                                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+
+                                        <div className="flex flex-col items-center justify-center space-y-4 py-2">
+                                            <div className="relative">
+                                                <InputOTP
+                                                    maxLength={6}
+                                                    value={otp}
+                                                    onChange={(value) => {
+                                                        setOtp(value);
+                                                        if (value.length === 6) {
+                                                            // Optional: Auto-verify when full
+                                                            handleVerifyOtp();
+                                                        }
+                                                    }}
+                                                    pattern={REGEXP_ONLY_DIGITS}
+                                                    disabled={loading === 'verifying' || showSuccessTick}
                                                 >
-                                                    <CheckCircle2 className="w-5 h-5 text-white" />
+                                                    <InputOTPGroup>
+                                                        <InputOTPSlot index={0} className="h-10 w-9 sm:h-12 sm:w-10 bg-white" />
+                                                        <InputOTPSlot index={1} className="h-10 w-9 sm:h-12 sm:w-10 bg-white" />
+                                                        <InputOTPSlot index={2} className="h-10 w-9 sm:h-12 sm:w-10 bg-white" />
+                                                    </InputOTPGroup>
+                                                    <InputOTPSeparator />
+                                                    <InputOTPGroup>
+                                                        <InputOTPSlot index={3} className="h-10 w-9 sm:h-12 sm:w-10 bg-white" />
+                                                        <InputOTPSlot index={4} className="h-10 w-9 sm:h-12 sm:w-10 bg-white" />
+                                                        <InputOTPSlot index={5} className="h-10 w-9 sm:h-12 sm:w-10 bg-white" />
+                                                    </InputOTPGroup>
+                                                </InputOTP>
+
+                                                {/* Success Overlay Animation */}
+                                                <AnimatePresence>
+                                                    {showSuccessTick && (
+                                                        <motion.div
+                                                            className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-[1px] rounded-md z-10"
+                                                            initial={{ opacity: 0 }}
+                                                            animate={{ opacity: 1 }}
+                                                            exit={{ opacity: 0 }}
+                                                        >
+                                                            <motion.div
+                                                                initial={{ scale: 0.5, opacity: 0 }}
+                                                                animate={{ scale: 1, opacity: 1 }}
+                                                                transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                                                            >
+                                                                <div className="bg-green-500 rounded-full p-2 shadow-lg">
+                                                                    <CheckCircle2 className="w-6 h-6 text-white" />
+                                                                </div>
+                                                            </motion.div>
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                            </div>
+
+                                            <Button
+                                                type="button"
+                                                onClick={handleVerifyOtp}
+                                                disabled={loading === 'verifying' || showSuccessTick || otp.length < 6}
+                                                className={`w-full max-w-[200px] h-10 font-medium transition-all duration-300 ${showSuccessTick
+                                                    ? 'bg-green-500 hover:bg-green-600 text-white shadow-green-200'
+                                                    : 'bg-black hover:bg-gray-800 text-white shadow-lg shadow-gray-200'
+                                                    }`}
+                                            >
+                                                {loading === 'verifying' ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                        <span>Verifying...</span>
+                                                    </div>
+                                                ) : showSuccessTick ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <CheckCircle2 className="w-4 h-4" />
+                                                        <span>Verified</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2">
+                                                        <span>Verify Code</span>
+                                                        <ChevronRight className="w-4 h-4 opacity-50" />
+                                                    </div>
+                                                )}
+                                            </Button>
+                                        </div>
+
+                                        <div className="text-center">
+                                            <p className="text-xs text-gray-500">
+                                                Didn't receive code?{' '}
+                                                <button
+                                                    type="button"
+                                                    onClick={handleSendOtp}
+                                                    disabled={resendCooldown > 0 || loading === 'sending'}
+                                                    className="font-semibold text-blue-600 hover:text-blue-700 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+                                                >
+                                                    {resendCooldown > 0 ? (
+                                                        resendCooldown > 60 ?
+                                                            `Wait ${Math.ceil(resendCooldown / 60)}m` :
+                                                            `Resend in ${resendCooldown}s`
+                                                    ) : (
+                                                        loading === 'sending' ? 'Sending...' : 'Resend now'
+                                                    )}
+                                                </button>
+                                            </p>
+                                        </div>
+
+                                        <AnimatePresence>
+                                            {error && (
+                                                <motion.div
+                                                    className="flex items-start gap-3 p-3 text-sm text-red-600 bg-red-50 rounded-lg border border-red-100"
+                                                    initial={{ opacity: 0, y: -5, height: 0 }}
+                                                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+                                                    exit={{ opacity: 0, y: -5, height: 0 }}
+                                                >
+                                                    <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                                                    <span className="leading-snug">{error}</span>
                                                 </motion.div>
-                                            ) : loading === 'verifying' ? (
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                            ) : (
-                                                'Confirm'
                                             )}
-                                        </Button>
-                                    </div>
-                                    <div className="text-center text-xs text-gray-500 pt-1">
-                                        Didn't receive a code?{' '}
-                                        <Button
-                                            type="button"
-                                            variant="link"
-                                            size="sm"
-                                            onClick={handleSendOtp}
-                                            disabled={resendCooldown > 0}
-                                            className="h-auto p-0 text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:text-gray-500 disabled:no-underline"
-                                        >
-                                            {resendCooldown > 0 ?
-                                                (resendCooldown > 60 ?
-                                                    `Wait ${Math.ceil(resendCooldown / 60)} min` :
-                                                    `Resend in ${resendCooldown}s`
-                                                ) :
-                                                'Resend now'
-                                            }
-                                        </Button>
+                                        </AnimatePresence>
                                     </div>
                                 </motion.div>
-                            )
-                        }
+                            )}
 
                         {
                             error && (
