@@ -550,6 +550,33 @@ router.post('/reset-password/:token', asyncHandler(async (req, res) => {
   });
 }));
 
+// Get invite info
+router.get('/invite-info/:token', asyncHandler(async (req, res) => {
+  const { token } = req.params;
+
+  const user = await User.findOne({
+    where: { invitationToken: token },
+    attributes: ['email', 'firstName', 'lastName', 'fullName', 'phone', 'invitationExpires']
+  });
+
+  if (!user) {
+    throw new AppError('Invalid invitation token', 400);
+  }
+
+  if (user.invitationExpires && new Date(user.invitationExpires).getTime() < Date.now()) {
+    throw new AppError('Invitation has expired', 400);
+  }
+
+  res.json({
+    success: true,
+    data: {
+      email: user.email,
+      fullName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      phone: user.phone
+    }
+  });
+}));
+
 // Accept invite: set password and mark as verified
 router.post('/accept-invite', asyncHandler(async (req, res) => {
   const { token, email, password, full_name } = req.body;
@@ -580,6 +607,8 @@ router.post('/accept-invite', asyncHandler(async (req, res) => {
     password,
     firstName,
     lastName,
+    // phone (read-only from invite, not updated here unless we want to allow it? Spec says read-only UI)
+    dateOfBirth: req.body.dateOfBirth || user.dateOfBirth,
     emailVerified: true,
     invitationToken: null,
     invitationExpires: null

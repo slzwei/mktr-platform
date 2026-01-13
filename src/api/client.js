@@ -254,8 +254,10 @@ export const auth = {
   },
 
   // Accept agent invite
-  async acceptInvite({ token, email, password, full_name }) {
-    const response = await apiClient.post('/auth/accept-invite', { token, email, password, full_name });
+  async acceptInvite({ token, email, password, full_name, dateOfBirth, phone }) {
+    const response = await apiClient.post('/auth/accept-invite', {
+      token, email, password, full_name, dateOfBirth, phone
+    });
     if (response.success && response.data?.token) {
       apiClient.setToken(response.data.token);
       currentUser = response.data.user;
@@ -263,6 +265,12 @@ export const auth = {
       localStorage.setItem(STORAGE_KEYS.TOKEN, response.data.token);
     }
     return response;
+  },
+
+  // Get invite info
+  async getInviteInfo(token) {
+    const response = await apiClient.get(`/auth/invite-info/${token}`);
+    return response.data;
   },
 
   // Get current user
