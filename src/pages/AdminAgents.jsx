@@ -121,7 +121,6 @@ export default function AdminAgents() {
         });
       } else {
         const normalizedPhone = (formData.phone || '').replace(/\D/g, '');
-        console.log('🚀 [DEBUG] AdminAgents calling invite with:', { ...formData, normalizedPhone });
         await agentsAPI.invite({
           email: formData.email,
           full_name: name,

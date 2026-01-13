@@ -736,7 +736,6 @@ export const agents = {
   },
 
   async invite({ email, full_name, phone, owed_leads_count }) {
-    console.log('🚀 [DEBUG] api/client.js sending invite:', { email, full_name, phone, owed_leads_count });
     const response = await apiClient.post('/agents/invite', { email, full_name, phone, owed_leads_count });
     return response.data;
   },

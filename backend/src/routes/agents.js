@@ -731,7 +731,6 @@ router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req,
     throw new AppError('email and full_name are required', 400);
   }
 
-  console.log('📝 [DEBUG] Agent Invite Payload:', { email, full_name, phone, owed_leads_count }); // Debug Log
 
   // Disallow inviting emails that already exist (prevents accidental role changes)
   if (req.user?.email && String(req.user.email).toLowerCase() === String(email).toLowerCase()) {
