@@ -647,32 +647,12 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                                 </AnimatePresence>
                                             </div>
 
-                                            <Button
-                                                type="button"
-                                                onClick={handleVerifyOtp}
-                                                disabled={loading === 'verifying' || showSuccessTick || otp.length < 6}
-                                                className={`w-full max-w-[200px] h-10 font-medium transition-all duration-300 ${showSuccessTick
-                                                    ? 'bg-green-500 hover:bg-green-600 text-white shadow-green-200'
-                                                    : 'bg-black hover:bg-gray-800 text-white shadow-lg shadow-gray-200'
-                                                    }`}
-                                            >
-                                                {loading === 'verifying' ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                                        <span>Verifying...</span>
-                                                    </div>
-                                                ) : showSuccessTick ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <CheckCircle2 className="w-4 h-4" />
-                                                        <span>Verified</span>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex items-center gap-2">
-                                                        <span>Verify Code</span>
-                                                        <ChevronRight className="w-4 h-4 opacity-50" />
-                                                    </div>
-                                                )}
-                                            </Button>
+                                            {loading === 'verifying' && (
+                                                <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-1">
+                                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                                    <span>Verifying...</span>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="text-center">
