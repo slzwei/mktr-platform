@@ -439,12 +439,12 @@ export default function AdminAgents() {
                         aria-label="Select all"
                       />
                     </TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500">Agent</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500">Contact</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500">Status</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500">Leads Owed</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500">Joined</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 text-right">Actions</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 min-w-[200px]">Agent</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 min-w-[250px]">Contact</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 min-w-[140px]">Status</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 min-w-[160px]">Leads Owed</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 min-w-[140px]">Joined</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 text-right w-[80px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -509,15 +509,15 @@ export default function AdminAgents() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 whitespace-nowrap"
                             onClick={() => handleOpenPackageDialog(agent)}
                           >
-                            <Plus className="w-3 h-3 mr-1" /> Assign Package
+                            <Plus className="w-3 h-3 mr-1" /> Assign
                           </Button>
                         </div>
                       </TableCell>
 
-                      <TableCell className="px-6 py-4 text-sm text-gray-500">
+                      <TableCell className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
                         {agent.createdAt ? format(new Date(agent.createdAt), 'MMM d, yyyy') : (agent.created_date ? format(new Date(agent.created_date), 'MMM d, yyyy') : '-')}
                       </TableCell>
 
