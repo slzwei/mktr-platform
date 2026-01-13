@@ -205,6 +205,39 @@ export default function AdminAgents() {
     }
   };
 
+  // Bulk Delete Handler
+  const handleBulkDelete = async () => {
+    if (selectedAgentIds.length === 0) return;
+
+    if (!confirm(`Are you sure you want to permanently delete ${selectedAgentIds.length} agents? This cannot be undone.`)) return;
+
+    try {
+      await apiClient.post('/users/bulk-delete', { ids: selectedAgentIds });
+      toast({ title: "Success", description: `${selectedAgentIds.length} agents deleted successfully` });
+      setSelectedAgentIds([]); // Clear selection
+      await loadData();
+    } catch (error) {
+      console.error('Error deleting agents:', error);
+      toast({ variant: "destructive", title: "Error", description: error?.message || "Failed to delete agents" });
+    }
+  };
+
+  const handleSelectAll = (checked) => {
+    if (checked) {
+      const allIds = filteredAgents.map(a => a.id);
+      setSelectedAgentIds(allIds);
+    } else {
+      setSelectedAgentIds([]);
+    }
+  };
+
+  const handleSelectAgent = (agentId, checked) => {
+    if (checked) {
+      setSelectedAgentIds(prev => [...prev, agentId]);
+    } else {
+      setSelectedAgentIds(prev => prev.filter(id => id !== agentId));
+    }
+  };
 
 
   const handleDeleteAgent = async (agent) => {
