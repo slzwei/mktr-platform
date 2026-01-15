@@ -70,6 +70,11 @@ router.post('/login', validate(schemas.userLogin), asyncHandler(async (req, res)
     throw new AppError('Account is deactivated', 401);
   }
 
+  // Check if agent has accepted invitation
+  if (user.role === 'agent' && user.invitationToken) {
+    throw new AppError('Please accept your invitation via the email link before logging in.', 403);
+  }
+
   // Update last login
   user.lastLogin = new Date();
   await user.save();
@@ -295,6 +300,11 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
     } else {
       // Existing user found
       console.log('✅ User found via Google Login:', user.email);
+
+      // Check if agent has accepted invitation
+      if (user.role === 'agent' && user.invitationToken) {
+        throw new AppError('Please accept your invitation via the email link before logging in.', 403);
+      }
 
       // Harden: If existing user matches by email but has no googleSub, link it now
       if (!user.googleSub) {
