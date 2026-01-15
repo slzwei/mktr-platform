@@ -511,7 +511,7 @@ export default function AdminQRCodes() {
                             <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
                           ) : (
                             <Link
-                              to={`/admin/prospects?campaign=${qr.campaignId}&qrTagId=${qr.id}`}
+                              to={`/AdminProspects?campaign=${qr.campaignId}&qrTagId=${qr.id}`}
                               className="font-semibold text-lg text-blue-600 hover:text-blue-800 hover:underline"
                             >
                               {scanTotals[qr.id]?.leads || 0}
