@@ -607,7 +607,8 @@ router.post('/accept-invite', asyncHandler(async (req, res) => {
     password,
     firstName,
     lastName,
-    // phone (read-only from invite, not updated here unless we want to allow it? Spec says read-only UI)
+    lastName,
+    phone: req.body.phone || user.phone, // Update phone if provided (verified in frontend), otherwise keep existing
     dateOfBirth: req.body.dateOfBirth || user.dateOfBirth,
     emailVerified: true,
     invitationToken: null,
