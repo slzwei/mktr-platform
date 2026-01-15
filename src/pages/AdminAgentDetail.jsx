@@ -58,13 +58,14 @@ const statusLabels = {
     new: "New",
     contacted: "Contacted",
     meeting: "Meeting",
-    close_won: "Won",
-    won: "Won",
-    close_lost: "Lost",
-    lost: "Lost",
+    won: "Won", // Unified standard
+    lost: "Lost", // Unified standard
     rejected: "Rejected",
     negotiating: "Negotiating",
-    qualified: "Qualified"
+    qualified: "Qualified",
+    // Legacy mapping support for display if needed, but removed from dropdown options
+    close_won: "Won",
+    close_lost: "Lost"
 };
 
 function normalizeProspect(p) {
@@ -289,9 +290,11 @@ export default function AdminAgentDetail() {
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="all">All Statuses</SelectItem>
-                                        {Object.entries(statusLabels).map(([key, label]) => (
-                                            <SelectItem key={key} value={key}>{label}</SelectItem>
-                                        ))}
+                                        {Object.entries(statusLabels)
+                                            .filter(([key]) => !['close_won', 'close_lost'].includes(key))
+                                            .map(([key, label]) => (
+                                                <SelectItem key={key} value={key}>{label}</SelectItem>
+                                            ))}
                                     </SelectContent>
                                 </Select>
                             </div>
