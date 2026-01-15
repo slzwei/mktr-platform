@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { auth } from '@/api/client';
 import Loader2 from 'lucide-react/icons/loader-2';
 import { getDefaultRouteForRole } from '@/lib/utils';
@@ -9,28 +9,29 @@ export default function ProtectedRoute({ children, requiredRole = null }) {
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const checkAuth = async () => {
       console.log('🔍 PROTECTED ROUTE: Checking authentication...');
       console.log('🔍 PROTECTED ROUTE: Required role:', requiredRole);
-      
+
       try {
         // CRITICAL FIX: Check localStorage first to avoid unnecessary API calls
         const token = localStorage.getItem('mktr_auth_token');
         const storedUser = localStorage.getItem('mktr_user');
-        
+
         console.log('🔍 PROTECTED ROUTE: Token present:', !!token);
         console.log('🔍 PROTECTED ROUTE: Stored user present:', !!storedUser);
-        
+
         if (token && storedUser) {
           // Fast path: Use cached data directly
           const currentUser = JSON.parse(storedUser);
           console.log('🔍 PROTECTED ROUTE: Using cached user:', currentUser);
-          
+
           // Ensure API client has the token
           auth.setCurrentUser(currentUser);
-          
+
           setUser(currentUser);
           setIsAuthenticated(true);
 
@@ -41,7 +42,7 @@ export default function ProtectedRoute({ children, requiredRole = null }) {
             navigate('/PendingApproval');
             return;
           }
-          
+
           // Check role requirement if specified
           if (requiredRole && currentUser.role !== requiredRole) {
             console.log('🚫 PROTECTED ROUTE: Role mismatch! Required:', requiredRole, 'Actual:', currentUser.role);
@@ -55,12 +56,12 @@ export default function ProtectedRoute({ children, requiredRole = null }) {
         } else {
           // No token and no stored user; don't call backend, redirect immediately
           console.log('🔍 PROTECTED ROUTE: No cached token/user; redirecting to login without backend check...');
-          navigate('/CustomerLogin');
+          navigate('/CustomerLogin', { state: { from: location } }); // Updated navigate call
           return;
         }
       } catch (error) {
         console.error('❌ PROTECTED ROUTE: Authentication check failed:', error);
-        navigate('/CustomerLogin');
+        navigate('/CustomerLogin', { state: { from: location } }); // Updated navigate call
         return;
       } finally {
         setIsLoading(false);
@@ -68,7 +69,7 @@ export default function ProtectedRoute({ children, requiredRole = null }) {
     };
 
     checkAuth();
-  }, [navigate, requiredRole]);
+  }, [navigate, requiredRole, location]); // Added location to dependency array
 
   if (isLoading) {
     return (

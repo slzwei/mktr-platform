@@ -49,9 +49,9 @@ export default function GoogleCallback() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             code: code,
-            state: state 
+            state: state
           }),
         });
 
@@ -72,13 +72,13 @@ export default function GoogleCallback() {
           if (result.data.token) {
             localStorage.setItem('mktr_auth_token', result.data.token);
             localStorage.setItem('mktr_user', JSON.stringify(user));
-            
+
             // CRITICAL: Update the API client with the new token
             apiClient.setToken(result.data.token);
-            
+
             // CRITICAL: Set the current user in the auth module
             auth.setCurrentUser(user);
-            
+
             console.log('✅ API client updated with authentication token');
             console.log('✅ Current user set in auth module:', user);
           }
@@ -87,7 +87,21 @@ export default function GoogleCallback() {
           setMessage('Authentication successful! Redirecting...');
 
           // Unified redirect (client-side navigation to avoid conflicts)
-          const targetUrl = getPostAuthRedirectPath(user);
+          let targetUrl = getPostAuthRedirectPath(user);
+
+          // Check session storage for return URL
+          const storedReturnUrl = sessionStorage.getItem('mktr_auth_return_url');
+          if (storedReturnUrl) {
+            try {
+              console.log('🔄 Found stored return URL in session storage');
+              const { pathname, search } = JSON.parse(storedReturnUrl);
+              targetUrl = `${pathname}${search}`;
+              sessionStorage.removeItem('mktr_auth_return_url'); // Clear it
+            } catch (e) {
+              console.error('❌ Error parsing stored return URL:', e);
+            }
+          }
+
           console.log('🔄 Redirecting to:', targetUrl);
           navigate(targetUrl);
 
@@ -140,7 +154,7 @@ export default function GoogleCallback() {
               </div>
               <p className="text-red-600">{message}</p>
               <div className="pt-4">
-                <button 
+                <button
                   onClick={() => navigate('/CustomerLogin')}
                   className="text-blue-600 hover:text-blue-700 underline"
                 >
