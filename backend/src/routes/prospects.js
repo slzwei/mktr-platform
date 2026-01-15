@@ -201,11 +201,22 @@ router.post('/', validate(schemas.prospectCreate), asyncHandler(async (req, res)
   const prospect = await Prospect.create({ ...incoming, assignedAgentId });
 
   // Activity: created
+  // Activity: created
+  // Fetch names for rich activity log
+  const [sourceCampaign, sourceQrTag] = await Promise.all([
+    incoming.campaignId ? Campaign.findByPk(incoming.campaignId) : null,
+    incoming.qrTagId ? QrTag.findByPk(incoming.qrTagId) : null
+  ]);
+
+  const campaignName = sourceCampaign?.name || 'Unknown Campaign';
+  const qrTagName = sourceQrTag?.name || 'Unknown QR';
+  const activityDescription = `Prospect signed up for ${campaignName} campaign via ${qrTagName} QR code`;
+
   await ProspectActivity.create({
     prospectId: prospect.id,
     type: 'created',
     actorUserId: req.user?.id || null,
-    description: `Prospect created via ${incoming.leadSource || 'unknown'} for campaign ${prospect.campaignId || 'N/A'}`,
+    description: activityDescription,
     metadata: { leadSource: incoming.leadSource, campaignId: prospect.campaignId, qrTagId: prospect.qrTagId }
   });
 

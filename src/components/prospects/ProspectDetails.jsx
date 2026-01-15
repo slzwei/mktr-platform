@@ -346,7 +346,12 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
                         text = "Assigned to agent";
                         icon = <User className="w-3 h-3 text-purple-600" />;
                       } else if (a.type === 'created') {
-                        text = "Prospect created";
+                        // Use backend description if it's the new rich format, otherwise fallback
+                        if (a.description && a.description.includes('Prospect signed up')) {
+                          text = a.description;
+                        } else {
+                          text = "Prospect created";
+                        }
                         icon = <CheckCircle2 className="w-3 h-3 text-emerald-600" />;
                       } else if (a.type === 'lead_status_updated') {
                         text = `Status updated to ${a.description || 'new status'}`;
