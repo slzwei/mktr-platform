@@ -104,16 +104,18 @@ export default function AdminProspects() {
   const [loading, setLoading] = useState(true);
   const [selectedProspect, setSelectedProspect] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [filters, setFilters] = useState({
-    search: "",
-    status: "all",
-    campaign: "all",
-    search: "",
-    status: "all",
-    campaign: "all",
-    qrTagId: "all",
-    source: "all"
+  // Initialize filters from URL or defaults
+  const [filters, setFilters] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return {
+      search: "",
+      status: "all",
+      campaign: params.get('campaign') || "all",
+      qrTagId: params.get('qrTagId') || "all",
+      source: "all"
+    };
   });
+
   const [pagination, setPagination] = useState({
     currentPage: 1,
     totalPages: 1,
@@ -122,16 +124,17 @@ export default function AdminProspects() {
   });
   const isMobile = useIsMobile();
 
+  // Listen for URL changes (popstate or navigation) and update filters
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const campaignId = params.get('campaign');
-    const qrTagId = params.get('qrTagId');
-    if (campaignId) {
-      setFilters(prevFilters => ({ ...prevFilters, campaign: campaignId }));
-    }
-    if (qrTagId) {
-      setFilters(prevFilters => ({ ...prevFilters, qrTagId: qrTagId }));
-    }
+    const campaignId = params.get('campaign') || "all";
+    const qrTagId = params.get('qrTagId') || "all";
+
+    setFilters(prev => {
+      // Only update if changed to avoid loops
+      if (prev.campaign === campaignId && prev.qrTagId === qrTagId) return prev;
+      return { ...prev, campaign: campaignId, qrTagId: qrTagId };
+    });
   }, [location.search]);
 
   useEffect(() => {
