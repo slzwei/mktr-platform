@@ -120,11 +120,9 @@ export default function AdminAgents() {
           isActive
         });
       } else {
-        const normalizedPhone = (formData.phone || '').replace(/\D/g, '');
         await agentsAPI.invite({
           email: formData.email,
-          full_name: name,
-          phone: normalizedPhone
+          full_name: name
         });
       }
 

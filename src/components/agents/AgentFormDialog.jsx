@@ -116,17 +116,19 @@ export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit })
             />
           </div>
 
-          <div>
-            <Label htmlFor="phone">Phone Number</Label>
-            <Input
-              id="phone"
-              name="phone"
-              type="tel"
-              value={formData.phone}
-              onChange={handleChange}
-              placeholder="9123 4567"
-            />
-          </div>
+          {agent && (
+            <div>
+              <Label htmlFor="phone">Phone Number</Label>
+              <Input
+                id="phone"
+                name="phone"
+                type="tel"
+                value={formData.phone}
+                onChange={handleChange}
+                placeholder="9123 4567"
+              />
+            </div>
+          )}
 
           {agent && (
             <div>

@@ -725,7 +725,7 @@ export default router;
 
 // Invite new agent (Admin only)
 router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
-  const { email, full_name, phone, owed_leads_count = 0 } = req.body;
+  const { email, full_name, owed_leads_count = 0 } = req.body;
 
   if (!email || !full_name) {
     throw new AppError('email and full_name are required', 400);
@@ -755,7 +755,6 @@ router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req,
     email,
     firstName,
     lastName,
-    phone,
     role: 'agent',
     isActive: true,
     emailVerified: false,
