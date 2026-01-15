@@ -49,6 +49,10 @@ export default function AdminQRCodes() {
   const [carSearch, setCarSearch] = useState("");
 
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [scanTotals, setScanTotals] = useState({});
+  const [copiedLink, setCopiedLink] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -67,10 +71,6 @@ export default function AdminQRCodes() {
 
         // Filter out archived campaigns - only show active campaigns for QR management
         const activeCampaigns = campaignsList.filter(campaign => campaign.status !== 'archived');
-        setCampaigns(activeCampaigns);
-        setAllQrTags(qrTagsList || []);
-
-
         setCampaigns(activeCampaigns);
         setAllQrTags(qrTagsList || []);
       } catch (e) {
@@ -97,9 +97,6 @@ export default function AdminQRCodes() {
         });
 
         const results = await Promise.all(analyticsPromises);
-        results.forEach(({ id, data }) => {
-          totals[id] = data;
-        });
         results.forEach(({ id, data }) => {
           totals[id] = data;
         });
