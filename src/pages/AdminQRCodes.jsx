@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Link } from "react-router-dom";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,12 +48,6 @@ export default function AdminQRCodes() {
   const [promoSearch, setPromoSearch] = useState("");
   const [carSearch, setCarSearch] = useState("");
 
-  const [copiedLink, setCopiedLink] = useState(null);
-  const [deleting, setDeleting] = useState(false);
-  const [prospectCounts, setProspectCounts] = useState({});
-  const [loadingProspects, setLoadingProspects] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [scanTotals, setScanTotals] = useState({});
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
 
   useEffect(() => {
@@ -76,22 +71,8 @@ export default function AdminQRCodes() {
         setAllQrTags(qrTagsList || []);
 
 
-        // Load prospect counts for all tags
-        try {
-          const counts = {};
-          const prospectsResp = await Prospect.list({ limit: 1000 });
-          const allProspects = Array.isArray(prospectsResp) ? prospectsResp : (prospectsResp.prospects || []);
-
-          (qrTagsList || []).forEach(qrTag => {
-            const count = allProspects.filter(p => p.qr_tag_id === qrTag.id || p.qrTagId === qrTag.id).length;
-            counts[qrTag.id] = count;
-          });
-          setProspectCounts(counts);
-        } catch (e) {
-          // non-fatal
-        } finally {
-          setLoadingProspects(false);
-        }
+        setCampaigns(activeCampaigns);
+        setAllQrTags(qrTagsList || []);
       } catch (e) {
         // ignore
       }
@@ -116,6 +97,9 @@ export default function AdminQRCodes() {
         });
 
         const results = await Promise.all(analyticsPromises);
+        results.forEach(({ id, data }) => {
+          totals[id] = data;
+        });
         results.forEach(({ id, data }) => {
           totals[id] = data;
         });
@@ -183,19 +167,7 @@ export default function AdminQRCodes() {
       const qrTagsData = await QrTag.list({ sort: "-created_date", limit: 500 });
       const qrTagsList = Array.isArray(qrTagsData) ? qrTagsData : (qrTagsData.qrTags || []);
       setAllQrTags(qrTagsList || []);
-      try {
-        const counts = {};
-        const prospectsResp = await Prospect.list({ limit: 1000 });
-        const allProspects = Array.isArray(prospectsResp) ? prospectsResp : (prospectsResp.prospects || []);
-
-        (qrTagsList || []).forEach(qrTag => {
-          const count = allProspects.filter(p => p.qr_tag_id === qrTag.id || p.qrTagId === qrTag.id).length;
-          counts[qrTag.id] = count;
-        });
-        setProspectCounts(counts);
-      } catch (e) {
-        // ignore
-      }
+      setAllQrTags(qrTagsList || []);
     } catch (e) {
       console.error('Failed to refresh QR data:', e);
     }
@@ -399,10 +371,15 @@ export default function AdminQRCodes() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Users className="w-4 h-4 text-blue-500" />
-                          {loadingProspects ? (
+                          {loadingAnalytics ? (
                             <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
                           ) : (
-                            <span className="font-semibold text-lg text-blue-600">{prospectCounts[qr.id] || 0}</span>
+                            <Link
+                              to={`/admin/prospects?campaign=${qr.campaignId}&qrTagId=${qr.id}`}
+                              className="font-semibold text-lg text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              {scanTotals[qr.id]?.leads || 0}
+                            </Link>
                           )}
                         </div>
                       </TableCell>
@@ -533,10 +510,15 @@ export default function AdminQRCodes() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Users className="w-4 h-4 text-blue-500" />
-                          {loadingProspects ? (
+                          {loadingAnalytics ? (
                             <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
                           ) : (
-                            <span className="font-semibold text-lg text-blue-600">{prospectCounts[qr.id] || 0}</span>
+                            <Link
+                              to={`/admin/prospects?campaign=${qr.campaignId}&qrTagId=${qr.id}`}
+                              className="font-semibold text-lg text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              {scanTotals[qr.id]?.leads || 0}
+                            </Link>
                           )}
                         </div>
                       </TableCell>

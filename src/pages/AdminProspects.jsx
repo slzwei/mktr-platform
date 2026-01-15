@@ -108,6 +108,10 @@ export default function AdminProspects() {
     search: "",
     status: "all",
     campaign: "all",
+    search: "",
+    status: "all",
+    campaign: "all",
+    qrTagId: "all",
     source: "all"
   });
   const [pagination, setPagination] = useState({
@@ -121,8 +125,12 @@ export default function AdminProspects() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const campaignId = params.get('campaign');
+    const qrTagId = params.get('qrTagId');
     if (campaignId) {
       setFilters(prevFilters => ({ ...prevFilters, campaign: campaignId }));
+    }
+    if (qrTagId) {
+      setFilters(prevFilters => ({ ...prevFilters, qrTagId: qrTagId }));
     }
   }, [location.search]);
 
@@ -140,7 +148,9 @@ export default function AdminProspects() {
 
       if (filters.search) params.search = filters.search;
       if (filters.status !== "all") params.leadStatus = filters.status;
+      if (filters.status !== "all") params.leadStatus = filters.status;
       if (filters.campaign !== "all") params.campaignId = filters.campaign;
+      if (filters.qrTagId !== "all") params.qrTagId = filters.qrTagId;
       if (filters.source !== "all") {
         if (filters.source === "qr") params.leadSource = "qr_code";
         else if (filters.source === "form") params.leadSource = "website";
