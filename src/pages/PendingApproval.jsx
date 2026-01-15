@@ -5,7 +5,7 @@ import { Loader2, ArrowRight, ShieldCheck, Clock } from 'lucide-react';
 import { auth } from '@/api/client';
 import { getPostAuthRedirectPath } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import SiteHeader from '@/components/layout/SiteHeader';
+
 
 export default function PendingApproval() {
   const navigate = useNavigate();
@@ -62,7 +62,7 @@ export default function PendingApproval() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] font-sans">
-      <SiteHeader />
+
 
       <div className="container max-w-lg mx-auto px-4 pt-24 md:pt-32 pb-12">
         <motion.div
