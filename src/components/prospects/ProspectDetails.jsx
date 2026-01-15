@@ -225,10 +225,22 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
                     <Separator />
                     <div className="group flex items-center gap-3">
                       <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                        <Calendar className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-500">Date of Birth</p>
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {prospect.date_of_birth ? format(new Date(prospect.date_of_birth), 'MMM d, yyyy') : '—'}
+                        </p>
+                      </div>
+                    </div>
+                    <Separator />
+                    <div className="group flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
                         <MapPin className="w-4 h-4 text-blue-600" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-500">Location</p>
+                        <p className="text-xs font-medium text-gray-500">Postal Code</p>
                         <p className="text-sm font-medium text-gray-900 truncate">{prospect.postal_code || '—'}</p>
                       </div>
                     </div>
