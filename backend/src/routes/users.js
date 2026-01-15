@@ -1,7 +1,7 @@
 import express from 'express';
 import { Op } from 'sequelize';
 import { v4 as uuidv4 } from 'uuid';
-import { User, sequelize } from '../models/index.js';
+import { User, sequelize, Prospect, LeadPackageAssignment, ProspectActivity } from '../models/index.js';
 import { authenticateToken, requireAdmin, requireAgentOrAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { sendEmail } from '../services/mailer.js';
@@ -276,26 +276,67 @@ router.post('/bulk-delete', authenticateToken, requireAdmin, asyncHandler(async 
     throw new AppError('Cannot delete the System Agent', 400);
   }
 
-  // 1. Unassign prospects
-  const { Prospect, LeadPackageAssignment } = await import('../models/index.js');
-  await Prospect.update(
-    { assignedAgentId: null },
-    { where: { assignedAgentId: { [Op.in]: ids } } }
-  );
+  await sequelize.transaction(async (t) => {
+    // 0. Fetch agents to get their names for activity logs
+    const agents = await User.findAll({
+      where: { id: { [Op.in]: ids } },
+      attributes: ['id', 'firstName', 'lastName', 'email'],
+      transaction: t
+    });
+    const agentMap = agents.reduce((acc, agent) => {
+      acc[agent.id] = agent;
+      return acc;
+    }, {});
 
-  // 2. Remove package assignments
-  await LeadPackageAssignment.destroy({
-    where: { agentId: { [Op.in]: ids } }
-  });
+    // 0.5 Find prospects assigned to these agents to log activity
+    const assignedProspects = await Prospect.findAll({
+      where: { assignedAgentId: { [Op.in]: ids } },
+      attributes: ['id', 'assignedAgentId'],
+      transaction: t
+    });
 
-  // 3. Delete the users
-  const deletedCount = await User.destroy({
-    where: { id: { [Op.in]: ids } }
-  });
+    if (assignedProspects.length > 0) {
+      const activityRecords = assignedProspects.map(p => {
+        const agent = agentMap[p.assignedAgentId];
+        const agentName = agent ? `${agent.firstName} ${agent.lastName}`.trim() : (agent?.email || 'Unknown Agent');
+        return {
+          prospectId: p.id,
+          type: 'updated',
+          actorUserId: req.user.id,
+          description: `Lead unassigned because agent ${agentName} was deleted`,
+          metadata: {
+            previousAssignedAgentId: p.assignedAgentId,
+            reason: 'agent_deleted_bulk'
+          }
+        };
+      });
 
-  res.json({
-    success: true,
-    message: `${deletedCount} users permanently deleted`
+      // Use bulkCreate for performance
+      await ProspectActivity.bulkCreate(activityRecords, { transaction: t });
+    }
+
+    // 1. Unassign prospects
+    await Prospect.update(
+      { assignedAgentId: null },
+      { where: { assignedAgentId: { [Op.in]: ids } }, transaction: t }
+    );
+
+    // 2. Remove package assignments
+    await LeadPackageAssignment.destroy({
+      where: { agentId: { [Op.in]: ids } },
+      transaction: t
+    });
+
+    // 3. Delete the users
+    const deletedCount = await User.destroy({
+      where: { id: { [Op.in]: ids } },
+      transaction: t
+    });
+
+    res.json({
+      success: true,
+      message: `${deletedCount} users permanently deleted`
+    });
   });
 }));
 
@@ -319,30 +360,49 @@ router.delete('/:id/permanent', authenticateToken, requireAdmin, asyncHandler(as
     throw new AppError('User not found', 404);
   }
 
-  // Allow permanent delete for all roles
-  // if (user.role !== 'agent') {
-  //   throw new AppError('Only agent accounts can be permanently deleted', 400);
-  // }
+  await sequelize.transaction(async (t) => {
+    // 0. Find prospects assigned to this agent to log activity
+    const assignedProspects = await Prospect.findAll({
+      where: { assignedAgentId: id },
+      attributes: ['id'],
+      transaction: t
+    });
 
-  // Clean up dependencies to ensure successful deletion
-  // 1. Unassign prospects
-  const { Prospect, LeadPackageAssignment } = await import('../models/index.js');
-  await Prospect.update(
-    { assignedAgentId: null },
-    { where: { assignedAgentId: id } }
-  );
+    if (assignedProspects.length > 0) {
+      const agentName = `${user.firstName} ${user.lastName}`.trim() || user.email;
+      const activityRecords = assignedProspects.map(p => ({
+        prospectId: p.id,
+        type: 'updated',
+        actorUserId: req.user.id,
+        description: `Lead unassigned because agent ${agentName} was deleted`,
+        metadata: {
+          previousAssignedAgentId: id,
+          reason: 'agent_deleted'
+        }
+      }));
 
-  // 2. Remove package assignments
-  await LeadPackageAssignment.destroy({
-    where: { agentId: id }
-  });
+      await ProspectActivity.bulkCreate(activityRecords, { transaction: t });
+    }
 
-  // 3. Delete the user
-  await user.destroy();
+    // Clean up dependencies to ensure successful deletion
+    // 1. Unassign prospects
+    await Prospect.update(
+      { assignedAgentId: null },
+      { where: { assignedAgentId: id }, transaction: t }
+    );
 
-  res.json({
-    success: true,
-    message: 'User and related assignments permanently deleted'
+    // 2. Remove package assignments
+    await LeadPackageAssignment.destroy({
+      where: { agentId: id }, transaction: t
+    });
+
+    // 3. Delete the user
+    await user.destroy({ transaction: t });
+
+    res.json({
+      success: true,
+      message: 'User and related assignments permanently deleted'
+    });
   });
 }));
 

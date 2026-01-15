@@ -22,11 +22,16 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
     campaignId,
     search,
     dateFrom,
-    dateTo
+    dateTo,
+    qrTagId
   } = req.query;
 
   const offset = (page - 1) * limit;
   const whereConditions = {};
+
+  if (qrTagId) {
+    whereConditions.qrTagId = qrTagId;
+  }
 
   // Non-admin users can only see prospects assigned to them (agents) or from their campaigns (others)
   if (req.user.role === 'agent') {
@@ -355,14 +360,39 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
     whereConditions.campaignId = { [Op.in]: campaignIds };
   }
 
-  const prospect = await Prospect.findOne({ where: whereConditions });
+  // Include assignedAgent to get name if unassigning
+  const prospect = await Prospect.findOne({
+    where: whereConditions,
+    include: [{ association: 'assignedAgent', attributes: ['firstName', 'lastName', 'email'] }]
+  });
 
   if (!prospect) {
     throw new AppError('Prospect not found or access denied', 404);
   }
 
   const oldStatus = prospect.leadStatus;
+  const oldAssignedAgentId = prospect.assignedAgentId;
+  const oldAssignedAgent = prospect.assignedAgent;
+
   await prospect.update(req.body);
+
+  // Check for manual unassignment
+  if (oldAssignedAgentId && req.body.assignedAgentId === null) {
+    const agentName = oldAssignedAgent
+      ? `${oldAssignedAgent.firstName} ${oldAssignedAgent.lastName}`.trim() || oldAssignedAgent.email
+      : 'Unknown Agent';
+
+    await ProspectActivity.create({
+      prospectId: prospect.id,
+      type: 'updated',
+      actorUserId: req.user.id,
+      description: `Lead manually unassigned from ${agentName} by ${req.user.firstName || 'Admin'}`,
+      metadata: {
+        previousAssignedAgentId: oldAssignedAgentId,
+        reason: 'manual_unassignment'
+      }
+    });
+  }
 
   // If status changed to 'won', create commission and update metrics
   if (oldStatus !== 'won' && req.body.leadStatus === 'won') {
