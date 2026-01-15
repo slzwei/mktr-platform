@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import {
   Phone,
@@ -17,18 +18,23 @@ import {
   User,
   Tag,
   FileText,
-  Save
+  Save,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Edit2,
+  X
 } from "lucide-react";
 import { Prospect as ProspectEntity } from "@/api/entities";
 
 const statusOptions = [
-  { value: "new", label: "New", color: "bg-blue-100 text-blue-800" },
-  { value: "contacted", label: "Contacted", color: "bg-yellow-100 text-yellow-800" },
-  { value: "qualified", label: "Qualified", color: "bg-indigo-100 text-indigo-800" },
-  { value: "negotiating", label: "Meeting / Negotiating", color: "bg-purple-100 text-purple-800" },
-  { value: "proposal_sent", label: "Proposal Sent", color: "bg-orange-100 text-orange-800" },
-  { value: "won", label: "Closed Won", color: "bg-green-100 text-green-800" },
-  { value: "lost", label: "Closed Lost", color: "bg-red-100 text-red-800" }
+  { value: "new", label: "New", color: "bg-blue-100 text-blue-800 border-blue-200" },
+  { value: "contacted", label: "Contacted", color: "bg-yellow-100 text-yellow-800 border-yellow-200" },
+  { value: "qualified", label: "Qualified", color: "bg-indigo-100 text-indigo-800 border-indigo-200" },
+  { value: "negotiating", label: "Negotiating", color: "bg-purple-100 text-purple-800 border-purple-200" },
+  { value: "proposal_sent", label: "Proposal Sent", color: "bg-orange-100 text-orange-800 border-orange-200" },
+  { value: "won", label: "Won", color: "bg-emerald-100 text-emerald-800 border-emerald-200" },
+  { value: "lost", label: "Lost", color: "bg-red-100 text-red-800 border-red-200" }
 ];
 
 export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, onClose, userRole, onEdited }) {
@@ -36,10 +42,13 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
   const [notes, setNotes] = useState(prospect.notes || "");
   const [isUpdating, setIsUpdating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+
+  // Edit form state
   const [firstName, setFirstName] = useState((prospect.name || '').split(' ').slice(0, -1).join(' ') || prospect.firstName || "");
   const [lastName, setLastName] = useState((prospect.name || '').split(' ').slice(-1).join(' ') || prospect.lastName || "");
   const [email, setEmail] = useState(prospect.email || "");
   const [phone, setPhone] = useState(prospect.phone || "");
+
   const [details, setDetails] = useState(null);
 
   useEffect(() => {
@@ -60,22 +69,18 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
     return () => { mounted = false; };
   }, [prospect.id]);
 
-  // Prioritize campaign object from prospect data (included by backend), fall back to campaigns array
   const campaign = prospect.campaign || campaigns.find(c => c.id === prospect.campaign_id);
-
-  const currentStatus = statusOptions.find(s => s.value === status);
+  const currentStatus = statusOptions.find(s => s.value === status) || statusOptions[0];
 
   const handleUpdate = async () => {
     setIsUpdating(true);
     try {
-      // Import Prospect entity to update both status and notes
       const { Prospect } = await import("@/api/entities");
       await Prospect.update(prospect.id, {
         leadStatus: status,
         notes
       });
 
-      // Call the parent callback if provided
       if (typeof onStatusUpdate === 'function') {
         await onStatusUpdate(prospect.id, status);
       }
@@ -89,12 +94,6 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
   const handleSaveEdits = async () => {
     setIsUpdating(true);
     try {
-      // Update via entities API directly to persist changes
-      const { Prospect: ProspectEntity } = (await import("@/api/entities")).default || (await import("@/api/entities"));
-    } catch (e) {
-      // noop - dynamic import fallback handled below
-    }
-    try {
       const { Prospect } = await import("@/api/entities");
       await Prospect.update(prospect.id, {
         firstName: firstName || prospect.firstName,
@@ -107,7 +106,9 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
       if (typeof onEdited === 'function') {
         await onEdited();
       }
-      onClose();
+      // Refresh details
+      const full = await ProspectEntity.get(prospect.id);
+      setDetails(full);
     } catch (error) {
       console.error('Error saving prospect edits:', error);
     }
@@ -115,339 +116,282 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col h-[calc(100vh-100px)] max-h-[800px]">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      <div className="flex items-start justify-between px-6 py-5 border-b bg-white shrink-0">
         <div className="flex items-center gap-4">
-          <Avatar className="h-12 w-12">
-            <AvatarFallback>{(firstName || prospect.name || 'U').substring(0, 1).toUpperCase()}</AvatarFallback>
+          <Avatar className="h-14 w-14 border-2 border-gray-100">
+            <AvatarFallback className="bg-blue-50 text-blue-700 text-lg font-semibold">
+              {(firstName || prospect.name || 'U').substring(0, 1).toUpperCase()}
+            </AvatarFallback>
           </Avatar>
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">{[firstName, lastName].filter(Boolean).join(' ') || prospect.name}</h2>
-            <div className="flex flex-wrap gap-2 mt-1 text-sm text-gray-600">
-              {email && <span>{email}</span>}
-              {phone && <span>• {phone}</span>}
-              <span>• Assigned to {(details?.assignedAgent ? [details.assignedAgent.firstName, details.assignedAgent.lastName].filter(Boolean).join(' ') || details.assignedAgent.email : (prospect.assigned_agent_name || 'System'))}</span>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-gray-900">
+                {[firstName, lastName].filter(Boolean).join(' ') || prospect.name}
+              </h2>
+              <Badge variant="secondary" className={`${currentStatus.color} px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize border`}>
+                {currentStatus.label}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+              <div className="flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                <span>Created {format(new Date(prospect.created_date), 'MMM d, yyyy')}</span>
+              </div>
+              <span className="text-gray-300">|</span>
+              <div className="flex items-center gap-1">
+                <User className="w-3.5 h-3.5" />
+                <span>{(details?.assignedAgent ? [details.assignedAgent.firstName, details.assignedAgent.lastName].filter(Boolean).join(' ') || details.assignedAgent.email : (prospect.assigned_agent_name || 'Unassigned'))}</span>
+              </div>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Badge className={currentStatus?.color}>
-            {currentStatus?.label}
-          </Badge>
+        <div className="flex items-center gap-2">
+          {!isEditing && (userRole === 'admin' || userRole === 'agent') && (
+            <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+              <Edit2 className="w-4 h-4 mr-2" />
+              Edit details
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8 hover:bg-gray-100">
+            <X className="w-5 h-5 text-gray-500" />
+          </Button>
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
-        </TabsList>
+      <div className="flex-1 overflow-hidden">
+        <div className="grid grid-cols-1 md:grid-cols-3 h-full divide-x">
 
-        <TabsContent value="overview">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <User className="w-5 h-5" />
-                    Contact & Details
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {isEditing ? (
-                    <>
-                      <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <Label className="mb-1">First Name</Label>
-                          <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-                        </div>
-                        <div>
-                          <Label className="mb-1">Last Name</Label>
-                          <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
-                        </div>
+          {/* Left Sidebar - Details */}
+          <ScrollArea className="md:col-span-1 bg-gray-50/50">
+            <div className="p-6 space-y-6">
+              {/* Contact Info */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                  <User className="w-4 h-4 text-gray-500" />
+                  Contact Info
+                </h3>
+                {isEditing ? (
+                  <div className="space-y-3 bg-white p-3 rounded-lg border shadow-sm">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-xs">First Name</Label>
+                        <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} className="h-8" />
                       </div>
                       <div>
-                        <div className="flex items-start gap-3">
-                          <Phone className="w-5 h-5 text-gray-400 mt-2" />
-                          <div className="w-full">
-                            <Label className="mb-1">Phone</Label>
-                            <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
-                          </div>
-                        </div>
+                        <Label className="text-xs">Last Name</Label>
+                        <Input value={lastName} onChange={(e) => setLastName(e.target.value)} className="h-8" />
                       </div>
-                      <div>
-                        <div className="flex items-start gap-3">
-                          <Mail className="w-5 h-5 text-gray-400 mt-2" />
-                          <div className="w-full">
-                            <Label className="mb-1">Email</Label>
-                            <Input value={email} onChange={(e) => setEmail(e.target.value)} />
-                          </div>
-                        </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Email</Label>
+                      <Input value={email} onChange={(e) => setEmail(e.target.value)} className="h-8" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Phone</Label>
+                      <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="h-8" />
+                    </div>
+                    <div className="pt-2 flex gap-2">
+                      <Button size="sm" onClick={handleSaveEdits} disabled={isUpdating} className="w-full">
+                        Save
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setIsEditing(false)} className="w-full">
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-lg border shadow-sm p-4 space-y-3">
+                    <div className="group flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                        <Phone className="w-4 h-4 text-blue-600" />
                       </div>
-                      <div className="col-span-1 md:col-span-2">
-                        <Label className="mb-1">Notes</Label>
-                        <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add notes about this prospect..." rows={3} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-500">Phone</p>
+                        <p className="text-sm font-medium text-gray-900 truncate">{phone || '—'}</p>
                       </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <Phone className="w-5 h-5 text-gray-400" />
-                        <div>
-                          <p className="text-sm text-gray-500">Phone</p>
-                          <p className="font-semibold">{prospect.phone}</p>
-                        </div>
+                    </div>
+                    <Separator />
+                    <div className="group flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                        <Mail className="w-4 h-4 text-blue-600" />
                       </div>
-                      {prospect.email && (
-                        <div className="flex items-center gap-3">
-                          <Mail className="w-5 h-5 text-gray-400" />
-                          <div>
-                            <p className="text-sm text-gray-500">Email</p>
-                            <p className="font-semibold">{prospect.email}</p>
-                          </div>
-                        </div>
-                      )}
-                      {prospect.postal_code && (
-                        <div className="flex items-center gap-3">
-                          <MapPin className="w-5 h-5 text-gray-400" />
-                          <div>
-                            <p className="text-sm text-gray-500">Postal Code</p>
-                            <p className="font-semibold">{prospect.postal_code}</p>
-                          </div>
-                        </div>
-                      )}
-                      {prospect.date_of_birth && (
-                        <div className="flex items-center gap-3">
-                          <Calendar className="w-5 h-5 text-gray-400" />
-                          <div>
-                            <p className="text-sm text-gray-500">Date of Birth</p>
-                            <p className="font-semibold">{format(new Date(prospect.date_of_birth), 'dd/MM/yyyy')}</p>
-                          </div>
-                        </div>
-                      )}
-                    </>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-500">Email</p>
+                        <p className="text-sm font-medium text-gray-900 truncate" title={email}>{email || '—'}</p>
+                      </div>
+                    </div>
+                    <Separator />
+                    <div className="group flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                        <MapPin className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-500">Location</p>
+                        <p className="text-sm font-medium text-gray-900 truncate">{prospect.postal_code || '—'}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Campaign Info */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-gray-500" />
+                  Campaign
+                </h3>
+                <div className="bg-white rounded-lg border shadow-sm p-4 space-y-3">
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-1">Campaign Name</p>
+                    <Badge variant="outline" className="font-normal text-gray-900 border-gray-300">
+                      {campaign?.name || 'Unknown Campaign'}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-1">Lead Source</p>
+                    <div className="inline-flex items-center px-2 py-1 rounded bg-gray-100 text-gray-700 text-xs font-medium uppercase tracking-wide">
+                      {prospect.source || 'Unknown'}
+                    </div>
+                  </div>
+                  {prospect.campaigns_subscribed && prospect.campaigns_subscribed.length > 1 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-1">Subscriptions</p>
+                      <div className="flex flex-wrap gap-1">
+                        {prospect.campaigns_subscribed.map((cid) => (
+                          <span key={cid} className="text-[10px] px-1.5 py-0.5 bg-gray-50 border rounded text-gray-600">{cid}</span>
+                        ))}
+                      </div>
+                    </div>
                   )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Tag className="w-5 h-5" />
-                    Campaign & Source
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-500 mb-2">Campaign</p>
-                    <Badge variant="outline" className="bg-blue-50 text-blue-700">{campaign?.name || 'Unknown Campaign'}</Badge>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500 mb-2">Source</p>
-                    <span className="text-sm px-2 py-1 bg-gray-100 rounded text-gray-600">{(prospect.source || '').toUpperCase()}</span>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500 mb-2">Created</p>
-                    <p className="font-semibold">{format(new Date(prospect.created_date), 'PPp')}</p>
-                  </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </div>
+          </ScrollArea>
 
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="w-5 h-5" />
-                    Quick Info
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-500">Assigned To</span>
-                    <span className="px-2 py-1 rounded bg-gray-100 text-gray-700">{(details?.assignedAgent ? [details.assignedAgent.firstName, details.assignedAgent.lastName].filter(Boolean).join(' ') || details.assignedAgent.email : (prospect.assigned_agent_name || 'System'))}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-gray-500">Status</span>
-                    <span className="px-2 py-1 rounded bg-gray-100 text-gray-700">{currentStatus?.label}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </TabsContent>
+          {/* Right Content - Activity & Notes */}
+          <ScrollArea className="md:col-span-2 bg-white">
+            <div className="p-6 space-y-8">
 
-        <TabsContent value="activity">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                Activity Timeline
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {!details?.activities?.length ? (
-                <p className="text-sm text-gray-500">No activity yet.</p>
-              ) : (
-                <div className="relative pl-6">
-                  <div className="absolute left-2 top-0 bottom-0 w-px bg-gray-200" />
-                  <div className="space-y-5">
-                    {details.activities.map((a, idx) => {
-                      const when = a.createdAt ? format(new Date(a.createdAt), 'PPpp') : '';
+              {/* Update Status & Notes Section */}
+              <section>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Prospect Management</h3>
+                </div>
+                <Card className="border shadow-sm">
+                  <CardContent className="p-5 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                      <div className="sm:col-span-1">
+                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5 block">Stage</Label>
+                        <Select value={status} onValueChange={setStatus}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {statusOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value} className="focus:bg-gray-50">
+                                <div className="flex items-center gap-2">
+                                  <div className={`w-2 h-2 rounded-full ${option.color.split(' ')[0]}`} />
+                                  {option.label}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="sm:col-span-3">
+                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5 block">Notes</Label>
+                        <Textarea
+                          value={notes}
+                          onChange={(e) => setNotes(e.target.value)}
+                          placeholder="Add internal notes, meeting summaries, or next steps..."
+                          className="min-h-[100px] resize-none text-sm placeholder:text-gray-400"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end pt-2">
+                      <Button
+                        onClick={handleUpdate}
+                        disabled={isUpdating || (status === prospect.status && notes === (prospect.notes || ""))}
+                        className="bg-gray-900 hover:bg-gray-800 text-white shadow-sm"
+                      >
+                        {isUpdating ? 'Saving...' : 'Update Prospect'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </section>
+
+              {/* Timeline Section */}
+              <section>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Activity History</h3>
+                <div className="relative pl-6 space-y-6">
+                  <div className="absolute left-[11px] top-2 bottom-4 w-px bg-gray-200" />
+
+                  {(!details?.activities || details.activities.length === 0) ? (
+                    <div className="relative flex items-center gap-3">
+                      <div className="h-6 w-6 rounded-full bg-gray-100 border-2 border-white ring-1 ring-gray-200 flex items-center justify-center z-10">
+                        <Clock className="w-3 h-3 text-gray-400" />
+                      </div>
+                      <p className="text-sm text-gray-500">No activity recorded yet.</p>
+                    </div>
+                  ) : (
+                    details.activities.map((a, idx) => {
+                      const when = a.createdAt ? format(new Date(a.createdAt), 'MMM d, h:mm a') : '';
                       let text = a.description || a.type;
+                      let icon = <FileText className="w-3 h-3 text-gray-500" />;
+
                       if (a.type === 'assigned') {
-                        const metaId = a.metadata?.assignedAgentId;
-                        const agentName = (details?.assignedAgent && details.assignedAgent.id === metaId)
-                          ? ([details.assignedAgent.firstName, details.assignedAgent.lastName].filter(Boolean).join(' ') || details.assignedAgent.email)
-                          : (prospect.assigned_agent_name || (metaId ? metaId : 'System'));
-                        text = `Assigned to ${agentName}`;
+                        text = "Assigned to agent";
+                        icon = <User className="w-3 h-3 text-purple-600" />;
                       } else if (a.type === 'created') {
-                        text = `Signed up via ${(prospect.source || '').toUpperCase()} for ${campaign?.name || 'campaign'}`;
-                      } else if (a.type === 'updated') {
-                        text = `Prospect modified by admin`;
+                        text = "Prospect created";
+                        icon = <CheckCircle2 className="w-3 h-3 text-emerald-600" />;
+                      } else if (a.type === 'lead_status_updated') {
+                        text = `Status updated to ${a.description || 'new status'}`;
+                        icon = <Edit2 className="w-3 h-3 text-blue-600" />;
                       }
+
                       return (
-                        <div key={a.id || idx} className="relative">
-                          <div className="absolute -left-[9px] top-1.5 w-2 h-2 rounded-full bg-blue-500" />
-                          <div className="ml-2">
-                            <p className="text-sm font-medium text-gray-900">{text}</p>
-                            <p className="text-xs text-gray-500">{when}</p>
+                        <div key={idx} className="relative group">
+                          <div className="flex items-start gap-4">
+                            <div className="absolute -left-[24px] mt-0.5">
+                              <div className="h-6 w-6 rounded-full bg-white border-2 border-gray-100 ring-1 ring-gray-200 flex items-center justify-center z-10 shadow-sm">
+                                {icon}
+                              </div>
+                            </div>
+                            <div className="flex-1 bg-gray-50/50 rounded-lg p-3 border border-gray-100">
+                              <p className="text-sm font-medium text-gray-900">{text}</p>
+                              {a.type === 'assigned' && <p className="text-xs text-gray-500 mt-0.5">{a.description || 'System assignment'}</p>}
+                              {a.type === 'created' && <p className="text-xs text-gray-500 mt-0.5">via {prospect.source}, campaign: {campaign?.name}</p>}
+                              <p className="text-xs text-gray-400 mt-2">{when}</p>
+                            </div>
                           </div>
                         </div>
                       );
-                    })}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {/* Campaign & Source */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Tag className="w-5 h-5" />
-            Campaign & Source
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <p className="text-sm text-gray-500 mb-2">Campaign</p>
-            <Badge variant="outline" className="bg-blue-50 text-blue-700">
-              {campaign?.name || 'Unknown Campaign'}
-            </Badge>
-          </div>
-
-          <div>
-            <p className="text-sm text-gray-500 mb-2">Source</p>
-            <span className="text-sm px-2 py-1 bg-gray-100 rounded text-gray-600">
-              {(prospect.source || '').toUpperCase()}
-            </span>
-          </div>
-
-          <div>
-            <p className="text-sm text-gray-500 mb-2">Created</p>
-            <p className="font-semibold">
-              {format(new Date(prospect.created_date), 'PPp')}
-            </p>
-          </div>
-
-          {/* Timeline */}
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-3">Timeline</p>
-            <div className="relative pl-4 border-l border-gray-200 space-y-4">
-              <div className="text-sm">
-                <p className="font-medium text-gray-900">Signed up</p>
-                <p className="text-gray-600">{format(new Date(prospect.created_date), 'PPpp')}</p>
-                <p className="text-gray-500 mt-1">via {(prospect.source || '').toUpperCase()} for {campaign?.name || 'Unknown Campaign'}</p>
-              </div>
-              {prospect.assigned_agent_name && (
-                <div className="text-sm">
-                  <p className="font-medium text-gray-900">Assigned to agent</p>
-                  <p className="text-gray-600">{prospect.assigned_agent_name}</p>
-                  <p className="text-gray-500 mt-1">on {format(new Date(prospect.updated_date || prospect.created_date), 'PPpp')}</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {prospect.campaigns_subscribed && prospect.campaigns_subscribed.length > 1 && (
-            <div>
-              <p className="text-sm text-gray-500 mb-2">
-                Subscribed Campaigns ({prospect.campaigns_subscribed.length})
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {prospect.campaigns_subscribed.map((campaignId) => {
-                  const camp = campaigns.find(c => c.id === campaignId);
-                  return (
-                    <Badge key={campaignId} variant="outline" size="sm">
-                      {camp?.name || campaignId}
-                    </Badge>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Status Update & Edit */}
-      {(userRole === 'admin' || userRole === 'agent') && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              {isEditing ? 'Edit Prospect' : 'Update Status'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {isEditing ? (
-              <div className="flex gap-3">
-                <Button onClick={handleSaveEdits} disabled={isUpdating} className="bg-blue-600 hover:bg-blue-700">
-                  <Save className="w-4 h-4 mr-2" />
-                  {isUpdating ? 'Saving...' : 'Save Changes'}
-                </Button>
-                <Button variant="outline" onClick={() => setIsEditing(false)}>Cancel</Button>
-              </div>
-            ) : (
-              <>
-                <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Status</label>
-                  <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {statusOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Notes</label>
-                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add notes about this prospect..." rows={3} />
-                </div>
-                <div className="flex gap-3">
-                  <Button onClick={handleUpdate} disabled={isUpdating || (status === prospect.status && notes === (prospect.notes || ""))} className="bg-blue-600 hover:bg-blue-700">
-                    <Save className="w-4 h-4 mr-2" />
-                    {isUpdating ? 'Updating...' : 'Update'}
-                  </Button>
-                  {userRole === 'admin' && (
-                    <Button variant="outline" onClick={() => setIsEditing(true)}>Edit Details</Button>
+                    })
                   )}
-                  <Button variant="outline" onClick={onClose}>Close</Button>
+
+                  {/* Origin Marker */}
+                  <div className="relative flex items-center gap-4">
+                    <div className="absolute -left-[24px]">
+                      <div className="h-6 w-6 rounded-full bg-gray-100 border-2 border-white ring-1 ring-gray-200 flex items-center justify-center z-10">
+                        <div className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Start of History</span>
+                    </div>
+                  </div>
+
                 </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
+              </section>
+
+            </div>
+          </ScrollArea>
+        </div>
+      </div>
     </div>
   );
 }
