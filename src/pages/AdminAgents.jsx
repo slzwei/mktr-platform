@@ -469,7 +469,9 @@ export default function AdminAgents() {
                             {(agent.fullName?.[0] || agent.email?.[0] || '?')}
                           </div>
                           <div>
-                            <p className="font-medium text-gray-900">{agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim()}</p>
+                            <Link to={`/AdminAgents/${agent.id}`} className="font-medium text-gray-900 hover:text-blue-600 transition-colors">
+                              {agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim()}
+                            </Link>
                             <p className="text-xs text-gray-500">ID: {agent.id.slice(-8)}</p>
                           </div>
                         </div>
@@ -531,7 +533,12 @@ export default function AdminAgents() {
                           <DropdownMenuContent align="end" className="w-48">
                             <DropdownMenuLabel>Manage Agent</DropdownMenuLabel>
                             <DropdownMenuItem onClick={() => handleOpenDetails(agent)}>
-                              <Eye className="mr-2 h-4 w-4" /> View Details
+                              <Eye className="mr-2 h-4 w-4" /> View Profile
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link to={`/AdminAgents/${agent.id}`} className="w-full cursor-pointer">
+                                <UserCheck className="mr-2 h-4 w-4" /> View Assigned Leads
+                              </Link>
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleOpenForm(agent)}>
                               <Edit className="mr-2 h-4 w-4" /> Edit Profile
