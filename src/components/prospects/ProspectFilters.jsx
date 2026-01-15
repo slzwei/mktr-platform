@@ -10,8 +10,8 @@ export default function ProspectFilters({ filters, onFilterChange, campaigns }) 
     <div className="flex flex-wrap gap-3">
       <div className="flex items-center gap-2">
         <Filter className="w-4 h-4 text-gray-500" />
-        <Select 
-          value={filters.status} 
+        <Select
+          value={filters.status}
           onValueChange={(value) => handleFilterChange('status', value)}
         >
           <SelectTrigger className="w-32">
@@ -22,15 +22,15 @@ export default function ProspectFilters({ filters, onFilterChange, campaigns }) 
             <SelectItem value="new">New</SelectItem>
             <SelectItem value="contacted">Contacted</SelectItem>
             <SelectItem value="meeting">Meeting</SelectItem>
-            <SelectItem value="close_won">Won</SelectItem>
-            <SelectItem value="close_lost">Lost</SelectItem>
+            <SelectItem value="won">Won</SelectItem>
+            <SelectItem value="lost">Lost</SelectItem>
             <SelectItem value="rejected">Rejected</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      <Select 
-        value={filters.campaign} 
+      <Select
+        value={filters.campaign}
         onValueChange={(value) => handleFilterChange('campaign', value)}
       >
         <SelectTrigger className="w-40">
@@ -46,8 +46,8 @@ export default function ProspectFilters({ filters, onFilterChange, campaigns }) 
         </SelectContent>
       </Select>
 
-      <Select 
-        value={filters.source} 
+      <Select
+        value={filters.source}
         onValueChange={(value) => handleFilterChange('source', value)}
       >
         <SelectTrigger className="w-32">

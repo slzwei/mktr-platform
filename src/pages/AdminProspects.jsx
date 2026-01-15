@@ -48,8 +48,8 @@ const statusStyles = {
   new: "bg-blue-50 text-blue-700 border-blue-200",
   contacted: "bg-amber-50 text-amber-700 border-amber-200",
   meeting: "bg-violet-50 text-violet-700 border-violet-200",
-  close_won: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  close_lost: "bg-rose-50 text-rose-700 border-rose-200",
+  won: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  lost: "bg-rose-50 text-rose-700 border-rose-200",
   rejected: "bg-slate-50 text-slate-700 border-slate-200"
 };
 
@@ -57,9 +57,11 @@ const statusLabels = {
   new: "New",
   contacted: "Contacted",
   meeting: "Meeting",
-  close_won: "Won",
-  close_lost: "Lost",
-  rejected: "Rejected"
+  won: "Won",
+  lost: "Lost",
+  rejected: "Rejected",
+  negotiating: "Negotiating",
+  qualified: "Qualified"
 };
 
 // Normalize backend prospect to UI shape expected by this page

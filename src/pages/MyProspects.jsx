@@ -48,9 +48,6 @@ function normalizeProspect(p) {
     let status = (p.leadStatus || p.status || "new").toLowerCase();
 
     // Normalize legacy/frontend statuses to backend Enum
-    if (status === 'close_won') status = 'won';
-    if (status === 'close_lost') status = 'lost';
-    if (status === 'rejected') status = 'lost';
     if (status === 'meeting') status = 'negotiating';
     const createdDate = p.createdAt || p.created_date || new Date().toISOString();
 
@@ -172,10 +169,8 @@ export default function MyProspects() {
             case 'qualified': return 'bg-indigo-100 text-indigo-700 border-indigo-200';
             case 'proposal': return 'bg-purple-100 text-purple-700 border-purple-200';
             case 'negotiation': return 'bg-pink-100 text-pink-700 border-pink-200';
-            case 'won': return 'bg-green-100 text-green-700 border-green-200'; // Renamed from close_won for consistency if needed, but display usually maps
-            case 'close_won': return 'bg-green-100 text-green-700 border-green-200';
+            case 'won': return 'bg-green-100 text-green-700 border-green-200';
             case 'lost': return 'bg-red-100 text-red-700 border-red-200';
-            case 'close_lost': return 'bg-red-100 text-red-700 border-red-200';
             default: return 'bg-gray-100 text-gray-700 border-gray-200';
         }
     };
@@ -221,7 +216,7 @@ export default function MyProspects() {
                         <div>
                             <p className="text-sm font-medium text-gray-500">Active Leads</p>
                             <h3 className="text-2xl font-bold text-gray-900 mt-1">
-                                {prospects.filter(p => !['close_won', 'close_lost', 'rejected'].includes(p.status || p.leadStatus)).length}
+                                {prospects.filter(p => !['won', 'lost', 'rejected'].includes(p.status || p.leadStatus)).length}
                             </h3>
                         </div>
                         <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center">
@@ -235,7 +230,7 @@ export default function MyProspects() {
                             <p className="text-sm font-medium text-gray-500">Conversion Rate</p>
                             <h3 className="text-2xl font-bold text-gray-900 mt-1">
                                 {prospects.length > 0
-                                    ? Math.round((prospects.filter(p => (p.status || p.leadStatus) === 'close_won').length / prospects.length) * 100)
+                                    ? Math.round((prospects.filter(p => (p.status || p.leadStatus) === 'won').length / prospects.length) * 100)
                                     : 0}%
                             </h3>
                         </div>
