@@ -488,14 +488,15 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
         switch (fieldId) {
             case 'name':
                 return (
-                    <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="name" className="text-xs font-medium">Full Name</Label>
-                        <div className="relative">
-                            <User className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                    <div key={fieldId} className="space-y-1.5">
+                        <Label htmlFor="name" className="text-sm font-medium text-gray-700">Full Name</Label>
+                        <div className="relative group">
+                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-gray-800 transition-colors" />
                             <Input
                                 id="name"
                                 placeholder="John Tan"
-                                className="pl-7 h-8 text-sm"
+                                className="pl-10 h-11 text-base bg-gray-50/50 border-gray-200 focus:bg-white focus:border-gray-300 focus:ring-2 focus:ring-offset-0 transition-all rounded-xl"
+                                style={{ '--tw-ring-color': themeColor + '33' }}
                                 value={formData.name}
                                 onChange={(e) => handleFormChange('name', e.target.value)}
                                 required
@@ -505,20 +506,20 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 );
             case 'phone':
                 return (
-                    <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="phone" className="text-xs font-medium">Phone Number</Label>
-                        <div className="flex items-center gap-1">
-                            <div className="flex-grow flex">
-                                <div className="flex items-center px-3 bg-gray-50 border border-r-0 rounded-l-md h-8 text-sm font-medium text-gray-700 whitespace-nowrap">
+                    <div key={fieldId} className="space-y-1.5">
+                        <Label htmlFor="phone" className="text-sm font-medium text-gray-700">Phone Number</Label>
+                        <div className="flex items-center gap-2">
+                            <div className="flex-grow flex shadow-sm rounded-xl overflow-hidden active-ring focus-within:ring-2 focus-within:ring-offset-0 transition-all" style={{ '--tw-ring-color': themeColor + '33' }}>
+                                <div className="flex items-center px-3.5 bg-gray-50 border border-r-0 border-gray-200 text-sm font-medium text-gray-600 whitespace-nowrap">
                                     🇸🇬 +65
                                 </div>
                                 <div className="relative flex-grow group">
-                                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+                                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-gray-800 transition-colors" />
                                     <Input
                                         id="phone"
                                         type="tel"
                                         placeholder="9123 4567"
-                                        className="pl-7 h-8 text-sm rounded-l-none border-l-0"
+                                        className="pl-10 h-11 text-base rounded-l-none border-l-0 border-gray-200 focus:ring-0 bg-white"
                                         value={displayPhone(formData.phone)} // Display formatted phone
                                         onChange={(e) => handleFormChange('phone', e.target.value)} // Store raw phone digits
                                         disabled={otpState !== 'idle'}
@@ -532,7 +533,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                     type="button" // Important: Prevent form submission
                                     onClick={handleSendOtp}
                                     disabled={loading === 'sending' || formData.phone.length !== 8}
-                                    className="w-28 h-8 bg-black hover:bg-gray-800 text-white font-medium text-sm"
+                                    className="h-11 px-6 font-semibold shadow-sm hover:shadow transition-all rounded-xl min-w-[100px]"
+                                    style={{ backgroundColor: formData.phone.length === 8 ? '#111827' : '#E5E7EB', color: formData.phone.length === 8 ? '#fff' : '#9CA3AF' }}
                                 >
                                     {loading === 'sending' ? (
                                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -543,60 +545,43 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                             )}
                             {otpState === 'verified' && (
                                 <motion.div
-                                    className="flex items-center justify-center gap-2 text-white font-medium text-sm w-28 h-8 bg-green-500 rounded-md"
-                                    initial={{ scale: 0, opacity: 0 }}
+                                    className="flex items-center justify-center gap-2 text-white font-medium text-sm px-4 h-11 bg-green-500 rounded-xl shadow-sm min-w-[100px]"
+                                    initial={{ scale: 0.9, opacity: 0 }}
                                     animate={{ scale: 1, opacity: 1 }}
-                                    transition={{
-                                        type: "spring",
-                                        stiffness: 500,
-                                        damping: 25,
-                                        duration: 0.3
-                                    }}
                                 >
-                                    <motion.div
-                                        initial={{ scale: 0, rotate: -180 }}
-                                        animate={{ scale: 1, rotate: 0 }}
-                                        transition={{
-                                            delay: 0.1,
-                                            type: "spring",
-                                            stiffness: 600,
-                                            damping: 20
-                                        }}
-                                    >
-                                        <CheckCircle2 className="w-5 h-5" />
-                                    </motion.div>
-                                    <span>OK</span>
+                                    <CheckCircle2 className="w-5 h-5" />
+                                    <span>Verified</span>
                                 </motion.div>
                             )}
                         </div>
-                        {/* OTP Logic - Renamed 'phone' to keep consistent with block logic */}
-                        {
-                            otpState === 'pending' && (
+                        {/* OTP Logic */}
+                        <AnimatePresence>
+                            {otpState === 'pending' && (
                                 <motion.div
-                                    className="pt-4 pb-2"
+                                    className="overflow-hidden"
                                     initial={{ opacity: 0, height: 0 }}
                                     animate={{ opacity: 1, height: 'auto' }}
                                     exit={{ opacity: 0, height: 0 }}
-                                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                                    transition={{ duration: 0.3, ease: "circOut" }}
                                 >
-                                    <div className={`p-3 rounded-lg border bg-white/50 backdrop-blur-sm shadow-sm space-y-3 ${error ? 'border-red-200 ring-4 ring-red-50' : 'border-gray-100'}`}>
+                                    <div className={`mt-3 p-5 rounded-2xl border bg-gray-50/80 backdrop-blur-sm space-y-4 ${error ? 'border-red-200 ring-4 ring-red-50' : 'border-gray-200 shadow-inner'}`}>
                                         <div className="flex items-center justify-between">
                                             <div>
-                                                <Label htmlFor="otp" className="text-sm font-semibold text-gray-800">Verify your number</Label>
-                                                <p className="text-[11px] text-gray-500 mt-0.5">Enter code sent to +65 {displayPhone(formData.phone)}</p>
+                                                <Label htmlFor="otp" className="text-sm font-bold text-gray-900">Enter Verification Code</Label>
+                                                <p className="text-xs text-gray-500 mt-0.5">Sent to +65 {displayPhone(formData.phone)}</p>
                                             </div>
                                             <Button
                                                 type="button"
                                                 variant="ghost"
-                                                size="icon"
+                                                size="sm"
                                                 onClick={handleCancelOtp}
-                                                className="h-8 w-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full"
+                                                className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600 hover:bg-gray-200/50 rounded-full"
                                             >
                                                 <X className="w-4 h-4" />
                                             </Button>
                                         </div>
 
-                                        <div className="flex flex-col items-center justify-center space-y-4 py-2">
+                                        <div className="flex flex-col items-center justify-center py-2">
                                             <div className="relative">
                                                 <InputOTP
                                                     maxLength={6}
@@ -604,72 +589,64 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                                     onChange={(value) => {
                                                         setOtp(value);
                                                         if (value.length === 6) {
-                                                            // Auto-verify when full, passing the value directly to avoid stale state
                                                             handleVerifyOtp(value);
                                                         }
                                                     }}
                                                     pattern={REGEXP_ONLY_DIGITS}
                                                     disabled={loading === 'verifying' || showSuccessTick}
                                                 >
-                                                    <InputOTPGroup>
-                                                        <InputOTPSlot index={0} className="h-10 w-9 sm:h-12 sm:w-10 bg-white" />
-                                                        <InputOTPSlot index={1} className="h-10 w-9 sm:h-12 sm:w-10 bg-white" />
-                                                        <InputOTPSlot index={2} className="h-10 w-9 sm:h-12 sm:w-10 bg-white" />
+                                                    <InputOTPGroup className="gap-2">
+                                                        <InputOTPSlot index={0} className="h-12 w-10 sm:h-14 sm:w-12 text-lg bg-white border-gray-200 rounded-lg shadow-sm focus:border-gray-400 focus:ring-1 focus:ring-gray-400 transition-all" />
+                                                        <InputOTPSlot index={1} className="h-12 w-10 sm:h-14 sm:w-12 text-lg bg-white border-gray-200 rounded-lg shadow-sm focus:border-gray-400 focus:ring-1 focus:ring-gray-400 transition-all" />
+                                                        <InputOTPSlot index={2} className="h-12 w-10 sm:h-14 sm:w-12 text-lg bg-white border-gray-200 rounded-lg shadow-sm focus:border-gray-400 focus:ring-1 focus:ring-gray-400 transition-all" />
                                                     </InputOTPGroup>
-                                                    <InputOTPSeparator />
-                                                    <InputOTPGroup>
-                                                        <InputOTPSlot index={3} className="h-10 w-9 sm:h-12 sm:w-10 bg-white" />
-                                                        <InputOTPSlot index={4} className="h-10 w-9 sm:h-12 sm:w-10 bg-white" />
-                                                        <InputOTPSlot index={5} className="h-10 w-9 sm:h-12 sm:w-10 bg-white" />
+                                                    <div className="w-2" />
+                                                    <InputOTPGroup className="gap-2">
+                                                        <InputOTPSlot index={3} className="h-12 w-10 sm:h-14 sm:w-12 text-lg bg-white border-gray-200 rounded-lg shadow-sm focus:border-gray-400 focus:ring-1 focus:ring-gray-400 transition-all" />
+                                                        <InputOTPSlot index={4} className="h-12 w-10 sm:h-14 sm:w-12 text-lg bg-white border-gray-200 rounded-lg shadow-sm focus:border-gray-400 focus:ring-1 focus:ring-gray-400 transition-all" />
+                                                        <InputOTPSlot index={5} className="h-12 w-10 sm:h-14 sm:w-12 text-lg bg-white border-gray-200 rounded-lg shadow-sm focus:border-gray-400 focus:ring-1 focus:ring-gray-400 transition-all" />
                                                     </InputOTPGroup>
                                                 </InputOTP>
 
-                                                {/* Success Overlay Animation */}
                                                 <AnimatePresence>
                                                     {showSuccessTick && (
                                                         <motion.div
-                                                            className="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-[1px] rounded-md z-10"
+                                                            className="absolute inset-0 flex items-center justify-center bg-white/90 backdrop-blur-[1px] rounded-xl z-10"
                                                             initial={{ opacity: 0 }}
                                                             animate={{ opacity: 1 }}
                                                             exit={{ opacity: 0 }}
                                                         >
-                                                            <motion.div
-                                                                initial={{ scale: 0.5, opacity: 0 }}
-                                                                animate={{ scale: 1, opacity: 1 }}
-                                                                transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                                                            >
-                                                                <div className="bg-green-500 rounded-full p-2 shadow-lg">
-                                                                    <CheckCircle2 className="w-6 h-6 text-white" />
-                                                                </div>
-                                                            </motion.div>
+                                                            <div className="bg-green-100 rounded-full p-3 shadow-lg scale-110">
+                                                                <CheckCircle2 className="w-8 h-8 text-green-600" />
+                                                            </div>
                                                         </motion.div>
                                                     )}
                                                 </AnimatePresence>
                                             </div>
 
                                             {loading === 'verifying' && (
-                                                <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-1">
-                                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                                    <span>Verifying...</span>
+                                                <div className="flex items-center justify-center gap-2 text-sm text-gray-500 mt-4 animate-pulse">
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    <span>Verifying secure code...</span>
                                                 </div>
                                             )}
                                         </div>
 
-                                        <div className="text-center">
+                                        <div className="text-center pt-1">
                                             <p className="text-xs text-gray-500">
-                                                Didn't receive code?{' '}
+                                                Didn't receive it?{' '}
                                                 <button
                                                     type="button"
                                                     onClick={handleSendOtp}
                                                     disabled={resendCooldown > 0 || loading === 'sending'}
-                                                    className="font-semibold text-blue-600 hover:text-blue-700 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+                                                    className="font-semibold text-gray-900 hover:text-black underline decoration-gray-300 hover:decoration-gray-900 disabled:text-gray-400 disabled:no-underline disabled:cursor-not-allowed transition-all"
                                                 >
                                                     {resendCooldown > 0 ? (
                                                         resendCooldown > 60 ?
                                                             `Wait ${Math.ceil(resendCooldown / 60)}m` :
                                                             `Resend in ${resendCooldown}s`
                                                     ) : (
-                                                        loading === 'sending' ? 'Sending...' : 'Resend now'
+                                                        loading === 'sending' ? 'Sending...' : 'Result Code'
                                                     )}
                                                 </button>
                                             </p>
@@ -678,46 +655,49 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                         <AnimatePresence>
                                             {error && (
                                                 <motion.div
-                                                    className="flex items-start gap-3 p-3 text-sm text-red-600 bg-red-50 rounded-lg border border-red-100"
-                                                    initial={{ opacity: 0, y: -5, height: 0 }}
-                                                    animate={{ opacity: 1, y: 0, height: 'auto' }}
-                                                    exit={{ opacity: 0, y: -5, height: 0 }}
+                                                    className="flex items-start gap-3 p-3 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100"
+                                                    initial={{ opacity: 0, scale: 0.95 }}
+                                                    animate={{ opacity: 1, scale: 1 }}
+                                                    exit={{ opacity: 0, scale: 0.95 }}
                                                 >
                                                     <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                                                    <span className="leading-snug">{error}</span>
+                                                    <span className="leading-snug font-medium">{error}</span>
                                                 </motion.div>
                                             )}
                                         </AnimatePresence>
                                     </div>
                                 </motion.div>
                             )}
+                        </AnimatePresence>
 
-                        {
-                            error && otpState !== 'pending' && (
+                        <AnimatePresence>
+                            {/* Error display for when OTP is not expanded but there is an error (e.g. failed send) */}
+                            {error && otpState !== 'pending' && (
                                 <motion.div
-                                    className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded border mt-2"
-                                    initial={{ opacity: 0, y: -10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ duration: 0.2 }}
+                                    className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-3 rounded-xl border border-red-100 mt-2"
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    exit={{ opacity: 0, height: 0 }}
                                 >
-                                    <AlertCircle className="w-3 h-3" />
+                                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
                                     <span>{error}</span>
                                 </motion.div>
-                            )
-                        }
+                            )}
+                        </AnimatePresence>
                     </div>
                 );
             case 'email':
                 return (
-                    <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="email" className="text-xs font-medium">Email</Label>
-                        <div className="relative">
-                            <Mail className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                    <div key={fieldId} className="space-y-1.5">
+                        <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email Address</Label>
+                        <div className="relative group">
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-gray-800 transition-colors" />
                             <Input
                                 id="email"
                                 type="email"
                                 placeholder="you@example.com"
-                                className="pl-7 h-8 text-sm"
+                                className="pl-10 h-11 text-base bg-gray-50/50 border-gray-200 focus:bg-white focus:border-gray-300 focus:ring-2 focus:ring-offset-0 transition-all rounded-xl"
+                                style={{ '--tw-ring-color': themeColor + '33' }}
                                 value={formData.email}
                                 onChange={(e) => handleFormChange('email', e.target.value)}
                                 required
@@ -727,35 +707,37 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 );
             case 'dob':
                 return (
-                    <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="dob" className="text-xs font-medium">Date of Birth{!requiredFields.dob && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
-                        <div className="relative">
-                            <CalendarIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                    <div key={fieldId} className="space-y-1.5">
+                        <Label htmlFor="dob" className="text-sm font-medium text-gray-700">Date of Birth{!requiredFields.dob && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
+                        <div className="relative group">
+                            <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-gray-800 transition-colors" />
                             <Input
                                 id="dob"
                                 type="tel"
                                 inputMode="numeric"
                                 placeholder="DD/MM/YYYY"
-                                className={`pl-7 h-8 text-sm ${(dobIncomplete || ageError) ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
+                                className={`pl-10 h-11 text-base bg-gray-50/50 border-gray-200 focus:bg-white focus:border-gray-300 focus:ring-2 focus:ring-offset-0 transition-all rounded-xl ${(dobIncomplete || ageError) ? 'border-red-300 ring-2 ring-red-100' : ''}`}
+                                style={!(dobIncomplete || ageError) ? { '--tw-ring-color': themeColor + '33' } : {}}
                                 value={formData.date_of_birth}
                                 onChange={(e) => handleFormChange('date_of_birth', e.target.value)}
                                 onBlur={handleDobBlur}
                                 maxLength={10}
                             />
                         </div>
-                        {(ageError || dobIncomplete) && (
-                            <motion.div
-                                className="flex items-center gap-1 text-xs text-red-600 bg-red-50 p-1.5 rounded border"
-                                initial={{ opacity: 0, y: -10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.2 }}
-                            >
-                                <AlertCircle className="w-3 h-3" />
-                                <span>{ageError || 'Please enter full year (DDMMYYYY)'}</span>
-                            </motion.div>
-                        )}
+                        <AnimatePresence>
+                            {(ageError || dobIncomplete) && (
+                                <motion.div
+                                    className="flex items-center gap-1.5 text-xs text-red-600 font-medium ml-1"
+                                    initial={{ opacity: 0, y: -5 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                >
+                                    <AlertCircle className="w-3.5 h-3.5" />
+                                    <span>{ageError || 'Please enter full year (DDMMYYYY)'}</span>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                         {(!ageError && !dobIncomplete && renderAgeRestrictionHint()) && (
-                            <div className="text-[11px] text-gray-500 pt-1">
+                            <div className="text-[11px] text-gray-400 pt-0.5 ml-1">
                                 {renderAgeRestrictionHint()}
                             </div>
                         )}
@@ -763,14 +745,15 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 );
             case 'postal_code':
                 return (
-                    <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="postal" className="text-xs font-medium">Postal Code{!requiredFields.postal_code && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
-                        <div className="relative">
-                            <MapPin className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                    <div key={fieldId} className="space-y-1.5">
+                        <Label htmlFor="postal" className="text-sm font-medium text-gray-700">Postal Code{!requiredFields.postal_code && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
+                        <div className="relative group">
+                            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-gray-800 transition-colors" />
                             <Input
                                 id="postal"
                                 placeholder="520230"
-                                className="pl-7 h-8 text-sm"
+                                className="pl-10 h-11 text-base bg-gray-50/50 border-gray-200 focus:bg-white focus:border-gray-300 focus:ring-2 focus:ring-offset-0 transition-all rounded-xl"
+                                style={{ '--tw-ring-color': themeColor + '33' }}
                                 maxLength={6}
                                 value={formData.postal_code}
                                 onChange={(e) => handleFormChange('postal_code', e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -780,13 +763,13 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 );
             case 'education_level':
                 return (
-                    <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="education" className="text-xs font-medium">Highest Education{!requiredFields.education_level && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
+                    <div key={fieldId} className="space-y-1.5">
+                        <Label htmlFor="education" className="text-sm font-medium text-gray-700">Highest Education{!requiredFields.education_level && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
                         <Select
                             value={formData.education_level}
                             onValueChange={(value) => handleFormChange('education_level', value)}
                         >
-                            <SelectTrigger className="h-8 text-sm">
+                            <SelectTrigger className="h-11 text-base bg-gray-50/50 border-gray-200 focus:ring-2 focus:ring-offset-0 rounded-xl" style={{ '--tw-ring-color': themeColor + '33' }}>
                                 <SelectValue placeholder="Select education level" />
                             </SelectTrigger>
                             <SelectContent>
@@ -801,13 +784,13 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 );
             case 'monthly_income':
                 return (
-                    <div key={fieldId} className="space-y-1">
-                        <Label htmlFor="income" className="text-xs font-medium">Last Drawn Salary{!requiredFields.monthly_income && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
+                    <div key={fieldId} className="space-y-1.5">
+                        <Label htmlFor="income" className="text-sm font-medium text-gray-700">Last Drawn Salary{!requiredFields.monthly_income && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
                         <Select
                             value={formData.monthly_income}
                             onValueChange={(value) => handleFormChange('monthly_income', value)}
                         >
-                            <SelectTrigger className="h-8 text-sm">
+                            <SelectTrigger className="h-11 text-base bg-gray-50/50 border-gray-200 focus:ring-2 focus:ring-offset-0 rounded-xl" style={{ '--tw-ring-color': themeColor + '33' }}>
                                 <SelectValue placeholder="Select salary range" />
                             </SelectTrigger>
                             <SelectContent>
@@ -825,18 +808,18 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
     };
 
     return (
-        <form onSubmit={handleSubmit}>
-            <div className="text-center mb-4">
+        <form onSubmit={handleSubmit} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="text-center mb-6">
                 <h2
-                    className="font-bold text-gray-900"
-                    style={{ fontSize: `${headlineSize || 20}px` }}
+                    className="font-bold text-gray-900 leading-tight"
+                    style={{ fontSize: `${headlineSize || 24}px` }}
                 >
                     {formHeadline}
                 </h2>
-                <p className="text-sm text-gray-600 mt-1">{formSubheadline}</p>
+                <p className="text-base text-gray-500 mt-2">{formSubheadline}</p>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4">
                 {fieldOrder.map((item, index) => {
                     // Handle legacy flat array strings
                     if (typeof item === 'string') {
@@ -846,11 +829,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                     // Handle new row object structure: { id: 'row-x', columns: ['left', 'right'] }
                     if (item.columns && Array.isArray(item.columns)) {
                         return (
-                            <div key={item.id || index} className={`grid gap-3 ${item.columns.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                            <div key={item.id || index} className={`grid gap-4 ${item.columns.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
                                 {item.columns.map(colId => {
-                                    // If we are in a 2-col row, we need to make sure the field itself doesn't have internal margins that look bad.
-                                    // renderField returns a div with "space-y-1" or "mb-3". 
-                                    // The grid gap-3 takes care of spacing between columns.
                                     return renderField(colId);
                                 })}
                             </div>
@@ -862,7 +842,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
 
             <Button
                 type="submit"
-                className="w-full text-sm py-4 font-semibold shadow-md hover:shadow-lg transition-all duration-200 mt-4"
+                className="w-full h-12 text-base font-semibold shadow-lg hover:shadow-xl hover:scale-[1.01] active:scale-[0.98] transition-all duration-200 mt-8 rounded-xl"
                 style={{ backgroundColor: themeColor }}
                 disabled={
                     otpState !== 'verified' ||
@@ -871,18 +851,18 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                     dobIncomplete
                 }
             >
-                {loading === 'submitting' ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit'}
+                {loading === 'submitting' ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit Application'}
+                {!loading && <ChevronRight className="w-4 h-4 ml-2 opacity-80" />}
             </Button>
-            <p className="text-xs text-gray-500 text-center pt-1">
+            <p className="text-[11px] text-gray-400 text-center mt-3 mb-1">
                 By signing up, you agree to our{' '}
                 <button
                     type="button"
                     onClick={() => setConsentOpen(true)}
-                    className="text-blue-600 hover:underline"
+                    className="text-gray-600 font-medium hover:underline hover:text-gray-900 transition-colors"
                 >
                     Terms & Conditions
                 </button>
-                .
             </p>
 
             <MarketingConsentDialog open={consentOpen} onOpenChange={setConsentOpen} />

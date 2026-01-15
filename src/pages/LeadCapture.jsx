@@ -16,24 +16,18 @@ const getBackgroundClass = (design) => {
     if (!design) return 'bg-gray-50';
     switch (design.backgroundStyle) {
         case 'gradient':
-            return 'bg-gradient-to-br from-gray-50 to-white';
+            return 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-50 via-white to-gray-50';
         case 'solid':
             return 'bg-gray-50';
         case 'pattern':
-            return 'bg-gray-100 bg-opacity-75';
+            return 'bg-gray-50 bg-[url("https://www.transparenttextures.com/patterns/cubes.png")]';
         default:
-            return 'bg-gray-50';
+            return 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-50 via-gray-50 to-gray-100';
     }
 };
 
-const getSpacingClass = (design) => {
-    if (!design) return 'py-12 px-6';
-    switch (design.spacing) {
-        case 'tight': return 'py-6 px-4';
-        case 'normal': return 'py-8 px-6';
-        case 'relaxed': return 'py-12 px-8';
-        default: return 'py-8 px-6';
-    }
+const getCardClass = (design) => {
+    return 'bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 rounded-2xl overflow-hidden';
 };
 
 export default function LeadCapture() {
@@ -254,135 +248,164 @@ export default function LeadCapture() {
     }, [duplicateDetected]);
 
     return (
-        <div className={`min-h-screen ${getBackgroundClass(design)}`}>
-            <div className={`flex items-center justify-center ${getSpacingClass(design)}`}>
-                <div className="w-full" style={{ maxWidth: `${design.formWidth || 400}px` }}>
-                    {design?.imageUrl && (
-                        <div className="w-full h-56 lg:h-72 mb-6">
-                            <img
-                                src={resolveImageUrl(design.imageUrl)}
-                                alt="Campaign Header"
-                                className="w-full h-full object-contain rounded-md"
-                            />
-                        </div>
-                    )}
+        <div className={`min-h-screen py-8 px-4 sm:px-6 lg:px-8 flex flex-col justify-center items-center ${getBackgroundClass(design)}`}>
+
+            <div className={`w-full max-w-md ${getCardClass(design)}`}>
+                {design?.imageUrl && (
+                    <div className="w-full relative h-48 sm:h-56 bg-gray-100 border-b border-gray-100/50">
+                        <img
+                            src={resolveImageUrl(design.imageUrl)}
+                            alt="Campaign Header"
+                            className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
+                    </div>
+                )}
+
+                <div className="p-6 sm:p-8">
                     {submitted ? (
-                        <div className="bg-white p-8 rounded-lg shadow-xl text-center border">
-                            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                            <h2 className="text-2xl font-bold text-gray-900">Thank You!</h2>
-                            <p className="text-gray-600 mt-2">Your submission has been received. We will be in touch shortly.</p>
+                        <div className="text-center py-8">
+                            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 mb-4 animate-in zoom-in duration-300">
+                                <CheckCircle className="h-8 w-8 text-green-600" />
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Success!</h2>
+                            <p className="text-gray-500 mt-2 mb-6">Your details have been received securely.</p>
+                            <Button className="w-full" variant="outline" onClick={() => setShareOpen(true)}>
+                                Share with Friends
+                            </Button>
                         </div>
                     ) : error ? (
-                        <div className="bg-white p-8 rounded-lg shadow-xl text-center border">
-                            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                        <div className="text-center py-6">
+                            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100 mb-4 animate-in zoom-in duration-300">
+                                <AlertTriangle className="h-7 w-7 text-red-600" />
+                            </div>
                             {duplicateDetected ? (
                                 <>
-                                    <h2 className="text-2xl font-bold text-gray-900">Unsuccessful</h2>
-                                    <p className="text-gray-600 mt-2">{error}</p>
-                                    <p className="text-gray-500 mt-1">Redirecting to share options in {duplicateCountdown}s…</p>
-                                    <div className="mt-6 flex items-center justify-center gap-3">
-                                        <Button onClick={() => setShareOpen(true)}>Share Now</Button>
+                                    <h2 className="text-xl font-bold text-gray-900">Already Registered</h2>
+                                    <p className="text-gray-500 mt-2 text-sm">{error}</p>
+                                    <div className="mt-6">
+                                        <p className="text-xs text-gray-400 mb-2">Redirecting in {duplicateCountdown}s...</p>
+                                        <Button className="w-full" onClick={() => setShareOpen(true)}>Share Now</Button>
                                     </div>
                                 </>
                             ) : (
                                 <>
-                                    <h2 className="text-2xl font-bold text-gray-900">An Error Occurred</h2>
-                                    <p className="text-gray-600 mt-2">{error}</p>
-                                    <Link to={createPageUrl("Dashboard")}>
-                                        <Button variant="outline" className="mt-6">
-                                            <ArrowLeft className="w-4 h-4 mr-2" />
-                                            Go Back
-                                        </Button>
-                                    </Link>
+                                    <h2 className="text-xl font-bold text-gray-900">Something went wrong</h2>
+                                    <p className="text-gray-500 mt-2 text-sm max-w-xs mx-auto">{error}</p>
+                                    <div className="mt-8">
+                                        <Link to={createPageUrl("Dashboard")}>
+                                            <Button variant="ghost" className="text-gray-600">
+                                                <ArrowLeft className="w-4 h-4 mr-2" />
+                                                Back to Safe Zone
+                                            </Button>
+                                        </Link>
+                                    </div>
                                 </>
                             )}
                         </div>
                     ) : campaign ? (
                         <CampaignSignupForm
-                            themeColor={design.themeColor || '#3B82F6'}
-                            formHeadline={design.formHeadline || 'Sign Up Now'}
-                            formSubheadline={design.formSubheadline || 'Fill out the form to get started.'}
-                            headlineSize={design.headlineSize || 20}
+                            themeColor={design.themeColor || '#111827'} // Default to a neutral dark/black if not set, for a premium feel
+                            formHeadline={design.formHeadline || 'Get Started'}
+                            formSubheadline={design.formSubheadline || 'Enter your details below to continue.'}
+                            headlineSize={design.headlineSize || 24}
                             campaignId={campaign.id}
                             campaign={campaign}
                             onSubmit={handleSubmit}
                         />
-                    ) : null}
-                    <Dialog open={shareOpen} onOpenChange={(v) => { setShareOpen(v); if (!v) setCopied(false); }}>
-                        <DialogContent className="sm:max-w-md">
-                            <DialogHeader>
-                                <DialogTitle className="text-lg">
-                                    {`Share ${campaign?.name ? campaign.name : 'this campaign'} with your friends and family`}
-                                </DialogTitle>
-                                <DialogDescription>Invite friends and family to participate.</DialogDescription>
-                            </DialogHeader>
-                            <div className="space-y-4">
-                                <div className="p-3 bg-gray-50 rounded-lg border flex items-center gap-3">
-                                    <div className="flex-1">
-                                        <div className="text-[11px] sm:text-sm break-all text-gray-800 leading-snug">
-                                            {shortening ? 'Generating short link…' : (shortShareUrl || longShareUrl)}
-                                        </div>
-                                        {shortShareUrl && (
-                                            <div className="text-[10px] text-gray-500 mt-1">Shortened for sharing</div>
-                                        )}
-                                    </div>
-                                    <Button
-                                        variant={copied ? 'default' : 'outline'}
-                                        className={`shrink-0 transition-all ${copied ? 'bg-green-500 hover:bg-green-600 text-white scale-105' : 'hover:scale-105'}`}
-                                        onClick={async () => {
-                                            const shareUrl = shortShareUrl || longShareUrl;
-                                            try {
-                                                await navigator.clipboard.writeText(shareUrl);
-                                                setCopied(true);
-                                                setTimeout(() => setCopied(false), 1500);
-                                            } catch (_) { }
-                                        }}
-                                    >
-                                        {copied ? 'Copied!' : 'Copy link'}
-                                    </Button>
-                                </div>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                    <Button
-                                        onClick={() => {
-                                            const url = shortShareUrl || longShareUrl;
-                                            const text = campaign?.name ? `Join me in ${campaign.name}! ${url}` : `Check this out: ${url}`;
-                                            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-                                        }}
-                                        className="bg-green-600 hover:bg-green-700 text-white flex items-center justify-center gap-2"
-                                    >
-                                        <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg" alt="WhatsApp" className="w-4 h-4 invert" />
-                                        WhatsApp
-                                    </Button>
-                                    <Button
-                                        onClick={() => {
-                                            const url = shortShareUrl || longShareUrl;
-                                            const text = campaign?.name ? `Join me in ${campaign.name}!` : 'Check this out:';
-                                            window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
-                                        }}
-                                        className="bg-blue-500 hover:bg-blue-600 text-white flex items-center justify-center gap-2"
-                                    >
-                                        <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/telegram.svg" alt="Telegram" className="w-4 h-4 invert" />
-                                        Telegram
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        onClick={async () => {
-                                            const url = shortShareUrl || longShareUrl;
-                                            try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { }
-                                        }}
-                                    >
-                                        {copied ? 'Copied!' : 'Copy Link'}
-                                    </Button>
-                                </div>
-                            </div>
-                            <DialogFooter className="mt-2">
-                                <Button variant="secondary" onClick={() => setShareOpen(false)}>Close</Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
+                    ) : (
+                        <div className="py-20 text-center">
+                            <TypingLoader className="mx-auto" />
+                            <p className="text-xs text-gray-400 mt-4 animate-pulse">Loading secure experience...</p>
+                        </div>
+                    )}
                 </div>
             </div>
+
+            {/* Trust Footer */}
+            <div className="mt-8 text-center sm:mx-auto sm:w-full sm:max-w-md">
+                <div className="flex items-center justify-center gap-4 opacity-60 grayscale transition-all hover:grayscale-0 hover:opacity-100">
+                    <div className="flex items-center gap-1.5 text-[10px] text-gray-500 font-medium bg-white/50 backdrop-blur-sm px-2 py-1 rounded-full border border-gray-100">
+                        <svg className="w-3 h-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                        SSL Secure Connection
+                    </div>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-4">
+                    &copy; {new Date().getFullYear()} MKTR Platform. All rights reserved. <br />
+                    By submitting this form, you agree to our Terms of Service and Privacy Policy.
+                </p>
+            </div>
+
+            <Dialog open={shareOpen} onOpenChange={(v) => { setShareOpen(v); if (!v) setCopied(false); }}>
+                <DialogContent className="sm:max-w-md rounded-2xl overflow-hidden border-0 shadow-2xl">
+                    <DialogHeader className="bg-gray-50 p-6 border-b border-gray-100">
+                        <DialogTitle className="text-xl font-bold text-center">
+                            {`Invite Others`}
+                        </DialogTitle>
+                        <DialogDescription className="text-center text-gray-500 mt-1.5">
+                            Use the link below to share "{campaign?.name}" with friends.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="p-6 space-y-6">
+                        <div className="bg-gray-50 rounded-xl p-4 border border-gray-200/60 flex items-center gap-3 shadow-inner">
+                            <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-gray-900 truncate">
+                                    {shortening ? 'Creating link...' : (shortShareUrl || longShareUrl)}
+                                </div>
+                                <div className="text-[10px] text-gray-500 mt-0.5">Unique referral link</div>
+                            </div>
+                            <Button
+                                size="sm"
+                                variant={copied ? 'default' : 'secondary'}
+                                className={`shrink-0 transition-all ${copied ? 'bg-green-600 hover:bg-green-700 text-white shadow-md' : 'shadow-sm text-gray-700 bg-white hover:bg-gray-50 border border-gray-200'}`}
+                                onClick={async () => {
+                                    const shareUrl = shortShareUrl || longShareUrl;
+                                    try {
+                                        await navigator.clipboard.writeText(shareUrl);
+                                        setCopied(true);
+                                        setTimeout(() => setCopied(false), 2000);
+                                    } catch (_) { }
+                                }}
+                            >
+                                {copied ? <CheckCircle className="w-3.5 h-3.5 mr-1" /> : null}
+                                {copied ? 'Copied' : 'Copy'}
+                            </Button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <Button
+                                onClick={() => {
+                                    const url = shortShareUrl || longShareUrl;
+                                    const text = campaign?.name ? `Join me in ${campaign.name}! ${url}` : `Check this out: ${url}`;
+                                    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                                }}
+                                className="bg-[#25D366] hover:bg-[#20bd5a] text-white border-0 shadow-md transition-transform active:scale-95"
+                            >
+                                <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg" alt="" className="w-4 h-4 invert mr-2" />
+                                WhatsApp
+                            </Button>
+                            <Button
+                                onClick={() => {
+                                    const url = shortShareUrl || longShareUrl;
+                                    const text = campaign?.name ? `Join me in ${campaign.name}!` : 'Check this out:';
+                                    window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
+                                }}
+                                className="bg-[#229ED9] hover:bg-[#1f8dbf] text-white border-0 shadow-md transition-transform active:scale-95"
+                            >
+                                <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/telegram.svg" alt="" className="w-4 h-4 invert mr-2" />
+                                Telegram
+                            </Button>
+                        </div>
+                    </div>
+                    <DialogFooter className="p-4 bg-gray-50 border-t border-gray-100 flex justify-center sm:justify-center">
+                        <Button variant="ghost" size="sm" onClick={() => setShareOpen(false)} className="text-gray-500 hover:text-gray-900">
+                            Close
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
