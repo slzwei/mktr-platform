@@ -339,7 +339,6 @@ export default function AcceptInvite() {
                       <Input
                         id="phone"
                         type="tel"
-                        placeholder="9123 4567"
                         value={displayPhone(phone)}
                         onChange={handlePhoneChange}
                         disabled={otpState !== 'idle'}
