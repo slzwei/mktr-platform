@@ -181,6 +181,32 @@ async function verifyUnassignmentLogs() {
             }
         }
 
+        // --- TEST 4: Soft Delete (Deactivation with Unassignment) ---
+        console.log('\n--- TEST 4: Soft Delete (Deactivation) ---');
+        const agentE = await createAgent('AgentE');
+        const prospect5 = await createProspect(campaign.id, agentE.id);
+
+        const softDeleteRes = await request(app)
+            .delete(`/api/users/${agentE.id}`)
+            .set('Authorization', `Bearer ${adminToken}`);
+
+        if (softDeleteRes.status !== 200) {
+            console.error('❌ Soft Delete failed:', softDeleteRes.body);
+        } else {
+            const logsRes = await request(app)
+                .get(`/api/prospects/${prospect5.id}`)
+                .set('Authorization', `Bearer ${adminToken}`);
+
+            const activities = logsRes.body.data.prospect.activities;
+            const log = activities.find(a => a.description.includes('was deactivated'));
+
+            if (log && logsRes.body.data.prospect.assignedAgentId === null) {
+                console.log('✅ Soft Delete Log Verified:', log.description);
+            } else {
+                console.error('❌ Soft Delete Log Missing/Incorrect:', activities.map(a => a.description));
+            }
+        }
+
     } catch (error) {
         console.error('❌ Unexpected Error:', error);
     } finally {

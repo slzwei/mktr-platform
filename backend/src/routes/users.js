@@ -249,11 +249,48 @@ router.delete('/:id', authenticateToken, requireAdmin, asyncHandler(async (req, 
   }
 
   // Soft delete by deactivating
-  await user.update({ isActive: false });
+  await sequelize.transaction(async (t) => {
+    // 0. Find prospects assigned to this agent to log activity
+    const assignedProspects = await Prospect.findAll({
+      where: { assignedAgentId: id },
+      attributes: ['id'],
+      transaction: t
+    });
 
-  res.json({
-    success: true,
-    message: 'User deactivated successfully'
+    if (assignedProspects.length > 0) {
+      const agentName = `${user.firstName} ${user.lastName}`.trim() || user.email;
+      const activityRecords = assignedProspects.map(p => ({
+        prospectId: p.id,
+        type: 'updated',
+        actorUserId: req.user.id,
+        description: `Lead unassigned because agent ${agentName} was deactivated`,
+        metadata: {
+          previousAssignedAgentId: id,
+          reason: 'agent_deactivated'
+        }
+      }));
+
+      await ProspectActivity.bulkCreate(activityRecords, { transaction: t });
+    }
+
+    // 1. Unassign prospects
+    await Prospect.update(
+      { assignedAgentId: null },
+      { where: { assignedAgentId: id }, transaction: t }
+    );
+
+    // 2. Remove package assignments
+    await LeadPackageAssignment.destroy({
+      where: { agentId: id }, transaction: t
+    });
+
+    // 3. Deactivate the user
+    await user.update({ isActive: false }, { transaction: t });
+
+    res.json({
+      success: true,
+      message: 'User deactivated and assignments removed'
+    });
   });
 }));
 
