@@ -97,7 +97,18 @@ router.post('/send', asyncHandler(async (req, res) => {
   const { phone, countryCode = '+65', campaignId } = req.body;
   if (!phone) throw new AppError('Phone is required', 400);
 
+  // STRICT VALIDATION: Only allow Singapore numbers (+65)
+  if (countryCode !== '+65') {
+    throw new AppError('Only Singapore (+65) phone numbers are supported.', 400);
+  }
+
   const fullPhone = `${countryCode}${phone}`;
+
+  // Double safety check on the formatted string
+  if (!fullPhone.startsWith('+65')) {
+    throw new AppError('Invalid Singapore phone number format.', 400);
+  }
+
   const code = generateCode();
 
   // Determine Channel
@@ -132,15 +143,26 @@ router.post('/send', asyncHandler(async (req, res) => {
       console.log(`✅ WhatsApp sent to ${fullPhone}, MessageId: ${messageId}`);
     } else {
       // SMS (SNS)
+      // Prepare message attributes
+      const messageAttributes = {
+        'AWS.SNS.SMS.SMSType': {
+          DataType: 'String',
+          StringValue: 'Transactional' // Critical for delivery speed
+        }
+      };
+
+      // Add Sender ID if configured (optional)
+      if (process.env.AWS_SNS_SENDER_ID) {
+        messageAttributes['AWS.SNS.SMS.SenderID'] = {
+          DataType: 'String',
+          StringValue: process.env.AWS_SNS_SENDER_ID
+        };
+      }
+
       const command = new PublishCommand({
         PhoneNumber: fullPhone,
         Message: `Your verification code is: ${code}`,
-        MessageAttributes: {
-          'AWS.SNS.SMS.SMSType': {
-            DataType: 'String',
-            StringValue: 'Transactional' // Critical for delivery speed
-          }
-        }
+        MessageAttributes: messageAttributes
       });
       const response = await snsClient.send(command);
       messageId = response.MessageId;
