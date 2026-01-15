@@ -34,7 +34,8 @@ export default function AcceptInvite() {
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(''); // Form submission errors
+  const [tokenError, setTokenError] = useState(''); // Blocking load errors
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(!!token);
 
@@ -73,14 +74,15 @@ export default function AcceptInvite() {
           }
         } catch (err) {
           console.error("Failed to verify invite token:", err);
-          setError(err.message || "Invalid or expired invitation link.");
+          setTokenError(err.message || "Invalid or expired invitation link.");
         } finally {
           setVerifying(false);
         }
       };
       fetchInviteInfo();
     } else {
-      setVerifying(false);
+      setVerifying(false); // No token provided
+      setTokenError("Missing invitation token.");
     }
   }, [token]);
 
@@ -240,7 +242,7 @@ export default function AcceptInvite() {
     );
   }
 
-  if (error && !email && !fullName) {
+  if (tokenError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <motion.div
@@ -253,7 +255,7 @@ export default function AcceptInvite() {
               <AlertCircle className="w-8 h-8 text-red-500" />
             </div>
             <h1 className="text-xl font-semibold text-gray-900">Invalid Invitation</h1>
-            <p className="text-gray-500">{error}</p>
+            <p className="text-gray-500">{tokenError}</p>
           </div>
           <div className="p-6 bg-gray-50 border-t border-gray-100">
             <Button onClick={() => navigate('/')} variant="outline" className="w-full h-11">
