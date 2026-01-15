@@ -366,21 +366,16 @@ export default function MyProspects() {
             </Card>
 
             <Dialog open={!!selectedProspect} onOpenChange={() => setSelectedProspect(null)}>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-                    <DialogHeader className="px-6 py-4 border-b border-gray-100">
-                        <DialogTitle>Prospect Details</DialogTitle>
-                    </DialogHeader>
+                <DialogContent className="max-w-4xl max-h-[90vh] p-0 flex flex-col gap-0 overflow-hidden text-clip">
                     {selectedProspect && (
-                        <div className="flex-1 overflow-y-auto p-6">
-                            <ProspectDetails
-                                prospect={selectedProspect}
-                                campaigns={campaigns}
-                                onStatusUpdate={handleStatusUpdate}
-                                onClose={() => setSelectedProspect(null)}
-                                userRole="agent"
-                                onEdited={loadData}
-                            />
-                        </div>
+                        <ProspectDetails
+                            prospect={selectedProspect}
+                            campaigns={campaigns}
+                            onStatusUpdate={handleStatusUpdate}
+                            onClose={() => setSelectedProspect(null)}
+                            userRole="agent"
+                            onEdited={loadData}
+                        />
                     )}
                 </DialogContent>
             </Dialog>
