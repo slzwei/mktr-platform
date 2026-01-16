@@ -434,11 +434,11 @@ export default function AdminUsers() {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-gray-100 text-xs uppercase tracking-wider">
-                      <TableHead className="py-3 px-6 font-medium text-gray-500">User</TableHead>
-                      <TableHead className="py-3 px-6 font-medium text-gray-500 whitespace-nowrap">Role</TableHead>
-                      <TableHead className="py-3 px-6 font-medium text-gray-500 whitespace-nowrap">Status</TableHead>
-                      <TableHead className="py-3 px-6 font-medium text-gray-500 whitespace-nowrap">Joined</TableHead>
-                      <TableHead className="py-3 px-6 font-medium text-gray-500 w-[100px] text-right">Actions</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500 whitespace-nowrap w-[1%]">User</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500 whitespace-nowrap w-[1%]">Role</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500 whitespace-nowrap w-[1%]">Status</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500 whitespace-nowrap w-[1%]">Joined</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500 text-right whitespace-nowrap w-[1%]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
