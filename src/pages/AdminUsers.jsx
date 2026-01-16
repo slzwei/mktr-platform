@@ -471,16 +471,16 @@ export default function AdminUsers() {
 
                         return (
                           <TableRow key={user.id} className="hover:bg-gray-50/50 border-gray-100 transition-colors">
-                            <TableCell className="px-6 py-4">
+                            <TableCell className="px-6 py-4 whitespace-nowrap w-[1%]">
                               <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-bold uppercase ring-2 ring-white shadow-sm flex-shrink-0">
                                   {(user.firstName?.[0] || user.email?.[0] || '?')}
                                 </div>
-                                <div className="min-w-0 max-w-[200px] sm:max-w-[300px] lg:max-w-[400px]">
-                                  <div className="font-medium text-gray-900 truncate" title={user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.email}>
+                                <div className="min-w-0">
+                                  <div className="font-medium text-gray-900" title={user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.email}>
                                     {user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.email}
                                   </div>
-                                  <div className="text-xs text-gray-500 font-normal truncate" title={user.email}>{user.email}</div>
+                                  <div className="text-xs text-gray-500 font-normal" title={user.email}>{user.email}</div>
                                 </div>
                               </div>
                             </TableCell>
