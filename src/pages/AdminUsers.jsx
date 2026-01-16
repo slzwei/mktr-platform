@@ -484,12 +484,12 @@ export default function AdminUsers() {
                                 </div>
                               </div>
                             </TableCell>
-                            <TableCell className="px-6 py-4 whitespace-nowrap w-[1%]">
+                            <TableCell className="px-6 py-4 whitespace-nowrap">
                               <Badge variant="outline" className="capitalize font-medium border-gray-200 text-gray-700 px-2.5 py-0.5 bg-gray-50">
                                 {user.role}
                               </Badge>
                             </TableCell>
-                            <TableCell className="px-6 py-4 whitespace-nowrap w-[1%]">
+                            <TableCell className="px-6 py-4 whitespace-nowrap">
                               <Badge variant="outline" className={`font-normal ${statusStyles[statusKey]}`}>
                                 {statusLabel}
                               </Badge>
