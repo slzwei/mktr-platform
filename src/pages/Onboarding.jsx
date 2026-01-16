@@ -28,8 +28,8 @@ const makesToModels = Object.keys(makeModelsRaw || {}).reduce((acc, make) => {
 }, {});
 
 // Allowed SG series prefixes per business rules
-const LETTERS_NO_IO = ['A','B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z'];
-const SERIES_SECOND_LETTERS = ['B','C','D','F','G','J','K','L','M','N']; // SB, SC, SD, SF, SG, SJ, SK, SL, SM, SN
+const LETTERS_NO_IO = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+const SERIES_SECOND_LETTERS = ['B', 'C', 'D', 'F', 'G', 'J', 'K', 'L', 'M', 'N']; // SB, SC, SD, SF, SG, SJ, SK, SL, SM, SN
 const ALLOWED_PREFIXES = new Set([
   // E-series: EA, EB, ..., EZ (excluding I, O)
   ...LETTERS_NO_IO.map((l) => `E${l}`),
@@ -135,7 +135,7 @@ export default function Onboarding() {
   // Live per-row validation for format and duplicates
   useEffect(() => {
     const normalizedPlates = carsRows.map(r => formatPlateInputToStrict(r.plate_number));
-    const counts = normalizedPlates.reduce((acc, p) => { if (p) acc[p] = (acc[p]||0)+1; return acc; }, {});
+    const counts = normalizedPlates.reduce((acc, p) => { if (p) acc[p] = (acc[p] || 0) + 1; return acc; }, {});
     const nextErrors = carsRows.map((r, idx) => {
       const plate = normalizedPlates[idx];
       if (!plate) return '';
@@ -392,7 +392,7 @@ export default function Onboarding() {
       if (dob && dob.length === 10 && (role === 'agent' || role === 'driver_partner')) {
         const [d, m, y] = dob.split('/');
         const parsed = new Date(Number(y), Number(m) - 1, Number(d));
-        if (!isNaN(parsed.getTime())) dobIso = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        if (!isNaN(parsed.getTime())) dobIso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       }
       const profilePayload = {
         firstName,
@@ -410,7 +410,7 @@ export default function Onboarding() {
         if (refreshed) {
           // no-op, just ensuring local cache is updated
         }
-      } catch (_) {}
+      } catch (_) { }
       next();
     } catch (e) {
       // Surface server-side validation errors, if present
@@ -427,7 +427,7 @@ export default function Onboarding() {
       const newErrors = {};
       if (payoutMethod === 'PayNow') {
         if (paynowType === 'mobile') {
-          let digits = String(paynowId || '').replace(/\D/g,'');
+          let digits = String(paynowId || '').replace(/\D/g, '');
           if (digits.startsWith('65')) digits = digits.slice(2);
           if (!digits) newErrors.paynowId = 'PayNow mobile is required';
           else if (!/^[3689]/.test(digits)) newErrors.paynowId = 'Must start with 3, 6, 8, or 9';
@@ -454,7 +454,7 @@ export default function Onboarding() {
       let finalPaynowId = undefined;
       if (payoutMethod === 'PayNow') {
         if (paynowType === 'mobile') {
-          let digits = String(paynowId || '').replace(/\D/g,'');
+          let digits = String(paynowId || '').replace(/\D/g, '');
           if (digits.startsWith('65')) digits = digits.slice(2);
           finalPaynowId = `+65${digits}`;
         } else {
@@ -504,7 +504,7 @@ export default function Onboarding() {
       // After submitting, move all roles to PendingApproval for review
       navigate('/PendingApproval');
     } catch (e) {
-      setErrors((prev)=>({ ...prev, _server: e?.message || 'Failed to create car' }));
+      setErrors((prev) => ({ ...prev, _server: e?.message || 'Failed to create car' }));
     } finally {
       setLoading(false);
     }
@@ -631,7 +631,7 @@ export default function Onboarding() {
     return Array.from(dups.values());
   }
 
-  
+
 
   async function validateAndStageCars() {
     // Build from grid rows
@@ -649,7 +649,7 @@ export default function Onboarding() {
     // Strict format validation per allowed prefixes and 1–4 digits
     const invalid = cars.filter(c => !isValidAllowedPlateFormat(c.plate_number));
     if (invalid.length > 0) {
-      alert(`Invalid car plates (format failed): ${invalid.map(i=>i.plate_number).join(', ')}`);
+      alert(`Invalid car plates (format failed): ${invalid.map(i => i.plate_number).join(', ')}`);
       return;
     }
     setSavedCars(cars);
@@ -767,17 +767,17 @@ export default function Onboarding() {
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">I am signing up as</label>
                   <div className="grid grid-cols-3 gap-2">
-                    <button onClick={() => changeRole('agent')} className={`rounded p-3 flex flex-col items-center ${role==='agent'?'border-2 border-black bg-orange-300':'border border-gray-200 bg-orange-100'}`}>
+                    <button onClick={() => changeRole('agent')} className={`rounded p-3 flex flex-col items-center ${role === 'agent' ? 'border-2 border-black bg-orange-300' : 'border border-gray-200 bg-orange-100'}`}>
                       <UserIcon className="h-5 w-5" />
-                      <span className={`text-xs mt-1 ${role==='agent' ? 'font-bold' : ''}`}>Salesperson</span>
+                      <span className={`text-xs mt-1 ${role === 'agent' ? 'font-bold' : ''}`}>Salesperson</span>
                     </button>
-                    <button onClick={() => changeRole('driver_partner')} className={`rounded p-3 flex flex-col items-center ${role==='driver_partner'?'border-2 border-black bg-blue-300':'border border-gray-200 bg-blue-100'}`}>
+                    <button onClick={() => changeRole('driver_partner')} className={`rounded p-3 flex flex-col items-center ${role === 'driver_partner' ? 'border-2 border-black bg-blue-300' : 'border border-gray-200 bg-blue-100'}`}>
                       <CarIcon className="h-5 w-5" />
-                      <span className={`text-xs mt-1 ${role==='driver_partner' ? 'font-bold' : ''}`}>Driver</span>
+                      <span className={`text-xs mt-1 ${role === 'driver_partner' ? 'font-bold' : ''}`}>Driver</span>
                     </button>
-                    <button onClick={() => changeRole('fleet_owner')} className={`rounded p-3 flex flex-col items-center ${role==='fleet_owner'?'border-2 border-black bg-green-300':'border border-gray-200 bg-green-100'}`}>
+                    <button onClick={() => changeRole('fleet_owner')} className={`rounded p-3 flex flex-col items-center ${role === 'fleet_owner' ? 'border-2 border-black bg-green-300' : 'border border-gray-200 bg-green-100'}`}>
                       <BuildingIcon className="h-5 w-5" />
-                      <span className={`text-xs mt-1 ${role==='fleet_owner' ? 'font-bold' : ''}`}>Fleet Owner</span>
+                      <span className={`text-xs mt-1 ${role === 'fleet_owner' ? 'font-bold' : ''}`}>Fleet Owner</span>
                     </button>
                   </div>
                 </div>
@@ -801,7 +801,7 @@ export default function Onboarding() {
                             <input
                               className={`w-full border rounded p-2 ${errors.firstName ? 'border-red-500' : ''}`}
                               value={firstName}
-                              onChange={e=>{ setFirstName(e.target.value); if (errors.firstName) setErrors(prev=>({ ...prev, firstName: undefined })); }}
+                              onChange={e => { setFirstName(e.target.value); if (errors.firstName) setErrors(prev => ({ ...prev, firstName: undefined })); }}
                               placeholder="First name"
                               name="given-name"
                               autoComplete="given-name"
@@ -813,7 +813,7 @@ export default function Onboarding() {
                             <input
                               className={`w-full border rounded p-2 ${errors.lastName ? 'border-red-500' : ''}`}
                               value={lastName}
-                              onChange={e=>{ setLastName(e.target.value); if (errors.lastName) setErrors(prev=>({ ...prev, lastName: undefined })); }}
+                              onChange={e => { setLastName(e.target.value); if (errors.lastName) setErrors(prev => ({ ...prev, lastName: undefined })); }}
                               placeholder="Last name"
                               name="family-name"
                               autoComplete="family-name"
@@ -844,10 +844,10 @@ export default function Onboarding() {
                               <Input
                                 type="tel"
                                 inputMode="numeric"
-                                placeholder="9123 4567"
+                                placeholder=""
                                 className={`pl-8 h-9 text-sm rounded-l-none border-l-0 ${errors.phone ? 'border-red-500' : ''}`}
-                                value={phone.length <= 4 ? phone : `${phone.slice(0,4)} ${phone.slice(4)}`}
-                                onChange={(e)=>{
+                                value={phone.length <= 4 ? phone : `${phone.slice(0, 4)} ${phone.slice(4)}`}
+                                onChange={(e) => {
                                   const v = sanitizePhoneInput(e.target.value);
                                   setPhone(v);
                                   let msg;
@@ -860,7 +860,7 @@ export default function Onboarding() {
                                   } else if (!isValidSgMobile(v)) {
                                     msg = 'Invalid Singapore mobile number';
                                   }
-                                  setErrors(prev=>({ ...prev, phone: msg }));
+                                  setErrors(prev => ({ ...prev, phone: msg }));
                                 }}
                                 disabled={otpState !== 'idle'}
                                 maxLength={9}
@@ -874,10 +874,10 @@ export default function Onboarding() {
                             <Button
                               type="button"
                               onClick={handleSendOtp}
-                              disabled={loadingPhase==='sending' || !isValidSgMobile(phone)}
+                              disabled={loadingPhase === 'sending' || !isValidSgMobile(phone)}
                               className="w-28 h-9 bg-black hover:bg-gray-800 text-white text-sm"
                             >
-                              {loadingPhase==='sending' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify'}
+                              {loadingPhase === 'sending' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify'}
                             </Button>
                           )}
                           {otpState === 'verified' && (
@@ -910,14 +910,14 @@ export default function Onboarding() {
                               transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                               style={{ overflow: 'hidden' }}
                               className="space-y-2 p-3 bg-gray-50 rounded-lg border mt-2"
-                           >
+                            >
                               <div className="flex items-center justify-between">
                                 <Label className="text-sm font-medium text-gray-800">Enter Code</Label>
                                 <Button type="button" variant="ghost" size="sm" onClick={handleCancelOtp} className="text-gray-500 hover:text-gray-700 h-6 px-1">
                                   <X className="w-3 h-3" />
                                 </Button>
                               </div>
-                              <p className="text-xs text-gray-500 !-mt-1">Sent to +65 {phone.length<=4?phone:`${phone.slice(0,4)} ${phone.slice(4)}`}</p>
+                              <p className="text-xs text-gray-500 !-mt-1">Sent to +65 {phone.length <= 4 ? phone : `${phone.slice(0, 4)} ${phone.slice(4)}`}</p>
                               <div className="flex items-center gap-2">
                                 <div className="relative flex-grow">
                                   <ShieldCheck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -929,23 +929,23 @@ export default function Onboarding() {
                                     className="pl-8 tracking-wider h-9 text-sm"
                                     maxLength={6}
                                     value={otp}
-                                    onChange={(e)=>setOtp(e.target.value.replace(/\D/g,'').slice(0,6))}
+                                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                                   />
                                 </div>
-                                <Button type="button" size="sm" onClick={handleVerifyOtp} disabled={loadingPhase==='verifying' || showSuccessTick} className={`h-9 px-4 text-sm w-28 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600 text-white' : ''}`}>
-                                  {showSuccessTick ? <CheckCircle2 className="w-5 h-5" /> : (loadingPhase==='verifying' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm')}
+                                <Button type="button" size="sm" onClick={handleVerifyOtp} disabled={loadingPhase === 'verifying' || showSuccessTick} className={`h-9 px-4 text-sm w-28 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600 text-white' : ''}`}>
+                                  {showSuccessTick ? <CheckCircle2 className="w-5 h-5" /> : (loadingPhase === 'verifying' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm')}
                                 </Button>
                               </div>
                               <div className="text-center text-xs text-gray-500 pt-1">
                                 Didn't receive a code?{' '}
-                                <Button type="button" variant="link" size="sm" onClick={handleSendOtp} disabled={resendCooldown>0} className="h-auto p-0 text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:text-gray-500 disabled:no-underline">
-                                  {resendCooldown>0 ? (resendCooldown>60 ? `Wait ${Math.ceil(resendCooldown/60)} min` : `Resend in ${resendCooldown}s`) : 'Resend now'}
+                                <Button type="button" variant="link" size="sm" onClick={handleSendOtp} disabled={resendCooldown > 0} className="h-auto p-0 text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:text-gray-500 disabled:no-underline">
+                                  {resendCooldown > 0 ? (resendCooldown > 60 ? `Wait ${Math.ceil(resendCooldown / 60)} min` : `Resend in ${resendCooldown}s`) : 'Resend now'}
                                 </Button>
                               </div>
                             </motion.div>
                           )}
                         </AnimatePresence>
-                        {(role==='agent' || role==='driver_partner') && (
+                        {(role === 'agent' || role === 'driver_partner') && (
                           <>
                             <label className="block text-sm text-gray-600">Date of birth</label>
                             <Input
@@ -954,10 +954,10 @@ export default function Onboarding() {
                               placeholder="DD/MM/YYYY"
                               className={`w-full border rounded p-2 ${errors.dob || dobIncomplete ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
                               value={dob}
-                              onChange={e=>handleDobChange(e.target.value)}
-                              onBlur={()=>{
-                                const digits = dob.replace(/\D/g,'');
-                                setDobIncomplete(digits.length>0 && digits.length!==8);
+                              onChange={e => handleDobChange(e.target.value)}
+                              onBlur={() => {
+                                const digits = dob.replace(/\D/g, '');
+                                setDobIncomplete(digits.length > 0 && digits.length !== 8);
                               }}
                               maxLength={10}
                               name="bday"
@@ -972,10 +972,10 @@ export default function Onboarding() {
                             )}
                           </>
                         )}
-                        {(role==='agent' || role==='fleet_owner') && (
+                        {(role === 'agent' || role === 'fleet_owner') && (
                           <>
                             <label className="block text-sm text-gray-600">Company Name (optional)</label>
-                            <input className="w-full border rounded p-2" value={companyName} onChange={e=>setCompanyName(e.target.value)} placeholder="Company" name="organization" autoComplete="organization" />
+                            <input className="w-full border rounded p-2" value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Company" name="organization" autoComplete="organization" />
                           </>
                         )}
                       </div>
@@ -992,17 +992,17 @@ export default function Onboarding() {
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">Commission payout method</label>
                   <div className="grid grid-cols-2 gap-2">
-                    <button onClick={()=>setPayoutMethod('PayNow')} className={`border rounded p-3 ${payoutMethod==='PayNow'?'border-black':'border-gray-200'}`}>PayNow</button>
-                    <button onClick={()=>setPayoutMethod('Bank Transfer')} className={`border rounded p-3 ${payoutMethod==='Bank Transfer'?'border-black':'border-gray-200'}`}>Bank Transfer</button>
+                    <button onClick={() => setPayoutMethod('PayNow')} className={`border rounded p-3 ${payoutMethod === 'PayNow' ? 'border-black' : 'border-gray-200'}`}>PayNow</button>
+                    <button onClick={() => setPayoutMethod('Bank Transfer')} className={`border rounded p-3 ${payoutMethod === 'Bank Transfer' ? 'border-black' : 'border-gray-200'}`}>Bank Transfer</button>
                   </div>
                 </div>
-                {payoutMethod==='PayNow' && (
+                {payoutMethod === 'PayNow' && (
                   <div className="space-y-2">
                     <label className="block text-sm text-gray-600">PayNow ID</label>
                     <div className="grid grid-cols-3 gap-2">
-                      <button type="button" onClick={()=>{ setPaynowType('mobile'); if (isValidSgMobile(phone)) setPaynowId(`+65${phone}`); else setPaynowId(''); setErrors(prev=>({ ...prev, paynowId: undefined })); }} className={`border rounded p-2 text-sm ${paynowType==='mobile'?'border-black':'border-gray-200'}`}>Mobile</button>
-                      <button type="button" onClick={()=>{ setPaynowType('nric'); setPaynowId(''); setErrors(prev=>({ ...prev, paynowId: undefined })); }} className={`border rounded p-2 text-sm ${paynowType==='nric'?'border-black':'border-gray-200'}`}>NRIC/FIN</button>
-                      <button type="button" onClick={()=>{ setPaynowType('uen'); setPaynowId(''); setErrors(prev=>({ ...prev, paynowId: undefined })); }} className={`border rounded p-2 text-sm ${paynowType==='uen'?'border-black':'border-gray-200'}`}>UEN</button>
+                      <button type="button" onClick={() => { setPaynowType('mobile'); if (isValidSgMobile(phone)) setPaynowId(`+65${phone}`); else setPaynowId(''); setErrors(prev => ({ ...prev, paynowId: undefined })); }} className={`border rounded p-2 text-sm ${paynowType === 'mobile' ? 'border-black' : 'border-gray-200'}`}>Mobile</button>
+                      <button type="button" onClick={() => { setPaynowType('nric'); setPaynowId(''); setErrors(prev => ({ ...prev, paynowId: undefined })); }} className={`border rounded p-2 text-sm ${paynowType === 'nric' ? 'border-black' : 'border-gray-200'}`}>NRIC/FIN</button>
+                      <button type="button" onClick={() => { setPaynowType('uen'); setPaynowId(''); setErrors(prev => ({ ...prev, paynowId: undefined })); }} className={`border rounded p-2 text-sm ${paynowType === 'uen' ? 'border-black' : 'border-gray-200'}`}>UEN</button>
                     </div>
 
                     {paynowType === 'mobile' && (
@@ -1014,17 +1014,17 @@ export default function Onboarding() {
                             <Input
                               type="tel"
                               inputMode="numeric"
-                              placeholder="9123 4567"
+                              placeholder=""
                               className={`pl-8 h-9 text-sm rounded-l-none border-l-0 ${errors.paynowId ? 'border-red-500' : ''}`}
-                              value={(function(){
-                                const digits = String(paynowId || '').replace(/\D/g,'').replace(/^65/, '').slice(0,8);
-                                return digits.length <= 4 ? digits : `${digits.slice(0,4)} ${digits.slice(4)}`;
+                              value={(function () {
+                                const digits = String(paynowId || '').replace(/\D/g, '').replace(/^65/, '').slice(0, 8);
+                                return digits.length <= 4 ? digits : `${digits.slice(0, 4)} ${digits.slice(4)}`;
                               })()}
-                              onChange={(e)=>{
+                              onChange={(e) => {
                                 const raw = e.target.value;
-                                let digits = String(raw || '').replace(/\D/g,'');
+                                let digits = String(raw || '').replace(/\D/g, '');
                                 if (digits.startsWith('65')) digits = digits.slice(2);
-                                digits = digits.slice(0,8);
+                                digits = digits.slice(0, 8);
                                 const nextVal = digits ? `+65${digits}` : '';
                                 setPaynowId(nextVal);
                                 let msg;
@@ -1037,7 +1037,7 @@ export default function Onboarding() {
                                 } else if (!isValidSgMobile(digits)) {
                                   msg = 'Invalid Singapore mobile number';
                                 }
-                                setErrors(prev=>({ ...prev, paynowId: msg }));
+                                setErrors(prev => ({ ...prev, paynowId: msg }));
                               }}
                               maxLength={9}
                               aria-invalid={!!errors.paynowId}
@@ -1053,11 +1053,11 @@ export default function Onboarding() {
                         placeholder="e.g. S1234567A"
                         className={`${errors.paynowId ? 'border-red-500' : ''}`}
                         value={paynowId}
-                        onChange={(e)=>{
-                          const v = String(e.target.value || '').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,9);
+                        onChange={(e) => {
+                          const v = String(e.target.value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 9);
                           setPaynowId(v);
                           const valid = isValidNricFin(v);
-                          setErrors(prev=>({ ...prev, paynowId: v ? (valid? undefined : 'Enter valid NRIC/FIN (e.g., S1234567A)') : 'NRIC/FIN is required' }));
+                          setErrors(prev => ({ ...prev, paynowId: v ? (valid ? undefined : 'Enter valid NRIC/FIN (e.g., S1234567A)') : 'NRIC/FIN is required' }));
                         }}
                         aria-invalid={!!errors.paynowId}
                       />
@@ -1069,11 +1069,11 @@ export default function Onboarding() {
                         placeholder="e.g. 201912345A"
                         className={`${errors.paynowId ? 'border-red-500' : ''}`}
                         value={paynowId}
-                        onChange={(e)=>{
-                          const v = String(e.target.value || '').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,10);
+                        onChange={(e) => {
+                          const v = String(e.target.value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
                           setPaynowId(v);
                           const valid = (/^\d{8}[A-Z]$/.test(v)) || (/^\d{9}[A-Z]$/.test(v)) || (/^[ST]\d{2}[A-Z]\d{4}[A-Z]$/.test(v));
-                          setErrors(prev=>({ ...prev, paynowId: v ? (valid? undefined : 'Enter valid UEN (9 or 10 chars, ends with letter)') : 'UEN is required' }));
+                          setErrors(prev => ({ ...prev, paynowId: v ? (valid ? undefined : 'Enter valid UEN (9 or 10 chars, ends with letter)') : 'UEN is required' }));
                         }}
                         aria-invalid={!!errors.paynowId}
                       />
@@ -1082,14 +1082,14 @@ export default function Onboarding() {
                     {errors.paynowId && <div className="text-red-600 text-xs">{errors.paynowId}</div>}
                   </div>
                 )}
-                {payoutMethod==='Bank Transfer' && (
+                {payoutMethod === 'Bank Transfer' && (
                   <div className="grid grid-cols-1 gap-2">
                     <div>
                       <label className="block text-sm text-gray-600">Bank name</label>
                       <select
                         className={`w-full border rounded p-2 ${errors.bankName ? 'border-red-500' : ''}`}
                         value={bankName}
-                        onChange={e=>{ setBankName(e.target.value); if (errors.bankName) setErrors(prev=>({ ...prev, bankName: undefined })); }}
+                        onChange={e => { setBankName(e.target.value); if (errors.bankName) setErrors(prev => ({ ...prev, bankName: undefined })); }}
                         aria-invalid={!!errors.bankName}
                       >
                         <option value="" disabled>Select Bank</option>
@@ -1116,10 +1116,10 @@ export default function Onboarding() {
                         value={bankAccount}
                         inputMode="numeric"
                         maxLength={20}
-                        onChange={e=>{
-                          const digits = String(e.target.value || '').replace(/\D/g,'').slice(0,20);
+                        onChange={e => {
+                          const digits = String(e.target.value || '').replace(/\D/g, '').slice(0, 20);
                           setBankAccount(digits);
-                          if (errors.bankAccount) setErrors(prev=>({ ...prev, bankAccount: undefined }));
+                          if (errors.bankAccount) setErrors(prev => ({ ...prev, bankAccount: undefined }));
                         }}
                         placeholder="Account number (digits only)"
                         aria-invalid={!!errors.bankAccount}
@@ -1145,39 +1145,39 @@ export default function Onboarding() {
                       )}
                       <div>
                         <label className="block text-sm text-gray-600">Car plate number</label>
-                        <input className={`w-full border rounded p-2 ${errors.plate ? 'border-red-500' : ''}`} value={plate} onChange={e=>{ setPlate(e.target.value.toUpperCase()); if (errors.plate) setErrors(prev=>({ ...prev, plate: undefined })); }} placeholder="e.g. SGP1234A" />
+                        <input className={`w-full border rounded p-2 ${errors.plate ? 'border-red-500' : ''}`} value={plate} onChange={e => { setPlate(e.target.value.toUpperCase()); if (errors.plate) setErrors(prev => ({ ...prev, plate: undefined })); }} placeholder="e.g. SGP1234A" />
                         {errors.plate && <div className="text-red-600 text-xs mt-1">{errors.plate}</div>}
                       </div>
                       <div>
                         <label className="block text-sm text-gray-600">Make</label>
-                        <select className={`w-full border rounded p-2 ${errors.make ? 'border-red-500' : ''}`} value={make} onChange={e=>{ const val=e.target.value; setMake(val); setErrors(prev=>({ ...prev, make: undefined, customMake: undefined, model: undefined, customModel: undefined })); if (val!=='Other') { setModel(''); setCustomMake(''); } }}>
+                        <select className={`w-full border rounded p-2 ${errors.make ? 'border-red-500' : ''}`} value={make} onChange={e => { const val = e.target.value; setMake(val); setErrors(prev => ({ ...prev, make: undefined, customMake: undefined, model: undefined, customModel: undefined })); if (val !== 'Other') { setModel(''); setCustomMake(''); } }}>
                           <option value="" disabled>Select Make</option>
                           {Object.keys(makesToModels).sort().map(m => <option key={m} value={m}>{m}</option>)}
                           <option value="Other">Other</option>
                         </select>
                         {errors.make && <div className="text-red-600 text-xs mt-1">{errors.make}</div>}
-                        {make==='Other' && (
-                          <input className={`w-full border rounded p-2 mt-2 ${errors.customMake ? 'border-red-500' : ''}`} placeholder="Enter make" value={customMake} onChange={(e)=>{ setCustomMake(e.target.value); if (errors.customMake) setErrors(prev=>({ ...prev, customMake: undefined })); }} />
+                        {make === 'Other' && (
+                          <input className={`w-full border rounded p-2 mt-2 ${errors.customMake ? 'border-red-500' : ''}`} placeholder="Enter make" value={customMake} onChange={(e) => { setCustomMake(e.target.value); if (errors.customMake) setErrors(prev => ({ ...prev, customMake: undefined })); }} />
                         )}
                         {errors.customMake && <div className="text-red-600 text-xs mt-1">{errors.customMake}</div>}
                       </div>
                       <div>
                         <label className="block text-sm text-gray-600">Model</label>
-                        {make==='Other' ? (
+                        {make === 'Other' ? (
                           <>
-                            <input className={`w-full border rounded p-2 ${errors.customModel ? 'border-red-500' : ''}`} placeholder="Enter model" value={customModel} onChange={(e)=>{ setCustomModel(e.target.value); if (errors.customModel) setErrors(prev=>({ ...prev, customModel: undefined })); }} />
+                            <input className={`w-full border rounded p-2 ${errors.customModel ? 'border-red-500' : ''}`} placeholder="Enter model" value={customModel} onChange={(e) => { setCustomModel(e.target.value); if (errors.customModel) setErrors(prev => ({ ...prev, customModel: undefined })); }} />
                             {errors.customModel && <div className="text-red-600 text-xs mt-1">{errors.customModel}</div>}
                           </>
                         ) : (
                           <>
-                            <select className={`w-full border rounded p-2 ${errors.model ? 'border-red-500' : ''}`} value={model} onChange={e=>{ setModel(e.target.value); if (errors.model) setErrors(prev=>({ ...prev, model: undefined })); }}>
+                            <select className={`w-full border rounded p-2 ${errors.model ? 'border-red-500' : ''}`} value={model} onChange={e => { setModel(e.target.value); if (errors.model) setErrors(prev => ({ ...prev, model: undefined })); }}>
                               <option value="" disabled>Select Model</option>
                               {models.slice().sort().map(mo => <option key={mo} value={mo}>{mo}</option>)}
                               <option value="Other">Other</option>
                             </select>
                             {errors.model && <div className="text-red-600 text-xs mt-1">{errors.model}</div>}
-                            {model==='Other' && (
-                              <input className={`w-full border rounded p-2 mt-2 ${errors.customModel ? 'border-red-500' : ''}`} placeholder="Enter model" value={customModel} onChange={(e)=>{ setCustomModel(e.target.value); if (errors.customModel) setErrors(prev=>({ ...prev, customModel: undefined })); }} />
+                            {model === 'Other' && (
+                              <input className={`w-full border rounded p-2 mt-2 ${errors.customModel ? 'border-red-500' : ''}`} placeholder="Enter model" value={customModel} onChange={(e) => { setCustomModel(e.target.value); if (errors.customModel) setErrors(prev => ({ ...prev, customModel: undefined })); }} />
                             )}
                             {errors.customModel && <div className="text-red-600 text-xs mt-1">{errors.customModel}</div>}
                           </>
@@ -1204,77 +1204,77 @@ export default function Onboarding() {
                           <>
                             <div className="text-sm font-medium text-gray-800 mb-2">Edit cars</div>
                             <div ref={gridRef} className="relative border rounded max-h-64 overflow-auto">
-                          <table className="min-w-full text-sm">
-                            <thead className="bg-gray-50">
-                              <tr>
-                                <th className="text-left px-3 py-2 border-b">Plate number</th>
-                                <th className="text-left px-3 py-2 border-b">Make</th>
-                                <th className="text-left px-3 py-2 border-b">Model</th>
-                                <th className="text-left px-3 py-2 border-b w-20">Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {carsRows.map((r, idx) => (
-                                <tr key={idx} className="odd:bg-white even:bg-gray-50">
-                                  <td className="px-3 py-1.5 border-b align-top">
-                                    <input
-                                      className={`w-full border rounded p-1 ${rowErrors[idx] ? 'border-red-500' : ''}`}
-                                      value={r.plate_number}
-                                      onChange={e=>{
-                                        const v = e.target.value.toUpperCase();
-                                        setCarsRows(rows=>rows.map((row,i)=> i===idx? { ...row, plate_number: v } : row));
-                                      }}
-                                      placeholder="SGP1234A"
-                                    />
-                                    {rowErrors[idx] && <div className="text-[11px] text-red-600 mt-1">{rowErrors[idx]}</div>}
-                                  </td>
-                                  <td className="px-3 py-1.5 border-b">
-                                    <input
-                                      className="w-full border rounded p-1"
-                                      value={r.make}
-                                      onChange={e=>{
-                                        const v = e.target.value;
-                                        setCarsRows(rows=>rows.map((row,i)=> i===idx? { ...row, make: v } : row));
-                                      }}
-                                      placeholder="Toyota"
-                                    />
-                                  </td>
-                                  <td className="px-3 py-1.5 border-b">
-                                    <input
-                                      className="w-full border rounded p-1"
-                                      value={r.model}
-                                      onChange={e=>{
-                                        const v = e.target.value;
-                                        setCarsRows(rows=>rows.map((row,i)=> i===idx? { ...row, model: v } : row));
-                                      }}
-                                      placeholder="Corolla"
-                                    />
-                                  </td>
-                                  <td className="px-3 py-1.5 border-b">
-                                    <button type="button" className="text-xs text-red-600 underline" onClick={()=> setCarsRows(rows => rows.filter((_,i)=> i!==idx))}>Remove</button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          {gridShowUpHint && (
-                            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white">
-                              <div className="flex justify-center items-end h-full">
-                                <ChevronsUp className="w-5 h-5 text-gray-400 mb-1" />
-                              </div>
-                            </div>
-                          )}
-                          {gridShowDownHint && (
-                            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white">
-                              <div className="flex justify-center items-end h-full">
-                                <ChevronsDown className="w-5 h-5 text-gray-400 mb-1" />
-                              </div>
-                            </div>
-                          )}
+                              <table className="min-w-full text-sm">
+                                <thead className="bg-gray-50">
+                                  <tr>
+                                    <th className="text-left px-3 py-2 border-b">Plate number</th>
+                                    <th className="text-left px-3 py-2 border-b">Make</th>
+                                    <th className="text-left px-3 py-2 border-b">Model</th>
+                                    <th className="text-left px-3 py-2 border-b w-20">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {carsRows.map((r, idx) => (
+                                    <tr key={idx} className="odd:bg-white even:bg-gray-50">
+                                      <td className="px-3 py-1.5 border-b align-top">
+                                        <input
+                                          className={`w-full border rounded p-1 ${rowErrors[idx] ? 'border-red-500' : ''}`}
+                                          value={r.plate_number}
+                                          onChange={e => {
+                                            const v = e.target.value.toUpperCase();
+                                            setCarsRows(rows => rows.map((row, i) => i === idx ? { ...row, plate_number: v } : row));
+                                          }}
+                                          placeholder="SGP1234A"
+                                        />
+                                        {rowErrors[idx] && <div className="text-[11px] text-red-600 mt-1">{rowErrors[idx]}</div>}
+                                      </td>
+                                      <td className="px-3 py-1.5 border-b">
+                                        <input
+                                          className="w-full border rounded p-1"
+                                          value={r.make}
+                                          onChange={e => {
+                                            const v = e.target.value;
+                                            setCarsRows(rows => rows.map((row, i) => i === idx ? { ...row, make: v } : row));
+                                          }}
+                                          placeholder="Toyota"
+                                        />
+                                      </td>
+                                      <td className="px-3 py-1.5 border-b">
+                                        <input
+                                          className="w-full border rounded p-1"
+                                          value={r.model}
+                                          onChange={e => {
+                                            const v = e.target.value;
+                                            setCarsRows(rows => rows.map((row, i) => i === idx ? { ...row, model: v } : row));
+                                          }}
+                                          placeholder="Corolla"
+                                        />
+                                      </td>
+                                      <td className="px-3 py-1.5 border-b">
+                                        <button type="button" className="text-xs text-red-600 underline" onClick={() => setCarsRows(rows => rows.filter((_, i) => i !== idx))}>Remove</button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              {gridShowUpHint && (
+                                <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white">
+                                  <div className="flex justify-center items-end h-full">
+                                    <ChevronsUp className="w-5 h-5 text-gray-400 mb-1" />
+                                  </div>
+                                </div>
+                              )}
+                              {gridShowDownHint && (
+                                <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white">
+                                  <div className="flex justify-center items-end h-full">
+                                    <ChevronsDown className="w-5 h-5 text-gray-400 mb-1" />
+                                  </div>
+                                </div>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 mt-2">
-                              <Button type="button" variant="outline" onClick={()=> setCarsRows(rows=> [...rows, { plate_number: '', make: '', model: '' }])}>Add row</Button>
-                              <Button type="button" variant="ghost" className="bg-gray-100 text-gray-800 hover:bg-gray-200" onClick={()=> setCarsRows([{ plate_number: '', make: '', model: '' }])}>Clear</Button>
+                              <Button type="button" variant="outline" onClick={() => setCarsRows(rows => [...rows, { plate_number: '', make: '', model: '' }])}>Add row</Button>
+                              <Button type="button" variant="ghost" className="bg-gray-100 text-gray-800 hover:bg-gray-200" onClick={() => setCarsRows([{ plate_number: '', make: '', model: '' }])}>Clear</Button>
                               <span className="ml-auto" />
                               <a className="text-blue-600 underline text-sm inline-block" href={`data:text/csv,plate_number,make,model%0ASGP1234A,Toyota,Corolla%0ASLK1234B,Honda,Civic`} download="cars-template.csv">Download CSV template</a>
                             </div>
@@ -1289,7 +1289,7 @@ export default function Onboarding() {
                               ))}
                             </ul>
                             <div className="flex justify-end mt-2">
-                              <Button variant="outline" onClick={()=> setCarsSaved(false)}>Edit</Button>
+                              <Button variant="outline" onClick={() => setCarsSaved(false)}>Edit</Button>
                             </div>
                           </div>
                         )}
@@ -1307,7 +1307,7 @@ export default function Onboarding() {
 
                     <div className="flex justify-between">
                       <Button variant="ghost" className="bg-gray-100 text-gray-800 hover:bg-gray-200" onClick={back}>Back</Button>
-                      <Button onClick={()=>navigate('/PendingApproval')}>Finish</Button>
+                      <Button onClick={() => navigate('/PendingApproval')}>Finish</Button>
                     </div>
                   </>
                 )}
@@ -1317,7 +1317,7 @@ export default function Onboarding() {
                     <div className="text-gray-700">You’re all set. You can start using your dashboard.</div>
                     <div className="flex justify-between">
                       <Button variant="ghost" className="bg-gray-100 text-gray-800 hover:bg-gray-200" onClick={back}>Back</Button>
-                      <Button onClick={()=>navigate('/PendingApproval')}>Finish</Button>
+                      <Button onClick={() => navigate('/PendingApproval')}>Finish</Button>
                     </div>
                   </div>
                 )}

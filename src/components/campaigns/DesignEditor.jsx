@@ -20,7 +20,8 @@ import {
   Trash2,
   CheckCircle2, // Added CheckCircle2 for verification status
   X, // Added X for OTP section close button
-  GripVertical
+  GripVertical,
+  AlertCircle // Added for WhatsApp warning
 } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';

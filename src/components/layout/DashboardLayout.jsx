@@ -98,11 +98,6 @@ const getNavigationItems = (user) => {
       title: "My Prospects",
       url: createPageUrl("MyProspects"),
       icon: Users
-    },
-    {
-      title: "My Commissions",
-      url: createPageUrl("AdminCommissions"),
-      icon: DollarSign
     }
   ];
 
