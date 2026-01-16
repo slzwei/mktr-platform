@@ -37,6 +37,7 @@ const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
 const DriverDashboard = lazy(() => import('./DriverDashboard'));
 const MyProspects = lazy(() => import('./MyProspects'));
 const ProspectDetailPage = lazy(() => import('./ProspectDetailPage'));
+const AgentProfile = lazy(() => import('./AgentProfile'));
 
 function PagesContent() {
   const navigate = useNavigate();
@@ -208,7 +209,7 @@ function PagesContent() {
           <Route path="/profile" element={
             <ProtectedRoute>
               <DashboardLayout>
-                <div className="p-6"><h1>Profile Page</h1><p>Profile settings coming soon...</p></div>
+                <AgentProfile />
               </DashboardLayout>
             </ProtectedRoute>
           } />

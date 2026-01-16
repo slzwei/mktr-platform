@@ -98,6 +98,11 @@ const getNavigationItems = (user) => {
       title: "My Prospects",
       url: createPageUrl("MyProspects"),
       icon: Users
+    },
+    {
+      title: "Edit Profile",
+      url: "/profile",
+      icon: Settings
     }
   ];
 

@@ -80,6 +80,8 @@ router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req
     });
 }));
 
+import { sendPackageAssignmentEmail } from '../services/mailer.js';
+
 /**
  * @route POST /api/lead-packages/assign
  * @desc Assign a package to an agent
@@ -99,7 +101,13 @@ router.post('/assign', authenticateToken, requireAgentOrAdmin, asyncHandler(asyn
     const agent = await User.findByPk(agentId);
     if (!agent) throw new AppError('Agent not found', 404);
 
-    const pkg = await LeadPackage.findByPk(packageId);
+    const pkg = await LeadPackage.findByPk(packageId, {
+        include: [{
+            model: Campaign,
+            as: 'campaign',
+            attributes: ['name']
+        }]
+    });
     if (!pkg) throw new AppError('Package not found', 404);
 
     // Snapshot values
@@ -112,6 +120,13 @@ router.post('/assign', authenticateToken, requireAgentOrAdmin, asyncHandler(asyn
         status: 'active',
         purchaseDate: new Date()
     });
+
+    // Send email notification (async, don't block response)
+    sendPackageAssignmentEmail(agent, {
+        name: pkg.name,
+        campaignName: pkg.campaign ? pkg.campaign.name : 'N/A',
+        leadCount: pkg.leadCount
+    }).catch(err => console.error('Failed to send package assignment email:', err));
 
     res.status(201).json({
         success: true,

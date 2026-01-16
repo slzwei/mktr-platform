@@ -123,3 +123,102 @@ export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, c
 }
 
 
+
+// --- Modern Email Template Helper ---
+function getModernTemplate(title, content, action) {
+  const actionButton = action
+    ? `<div style="margin-top: 32px;"><a href="${action.url}" class="action-btn">${action.text}</a></div>`
+    : '';
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { margin: 0; padding: 0; background-color: #F3F4F6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        .container { max-width: 600px; margin: 40px auto; background: #FFFFFF; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        .header { background: #111827; padding: 32px; text-align: center; }
+        .header h1 { color: #FFFFFF; margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.025em; }
+        .content { padding: 40px 32px; color: #374151; line-height: 1.6; }
+        .content h2 { margin-top: 0; color: #111827; font-size: 20px; font-weight: 600; }
+        .content p { margin-bottom: 24px; }
+        .details-box { background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 24px; margin-bottom: 24px; }
+        .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #E5E7EB; }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-label { color: #6B7280; font-weight: 500; }
+        .detail-value { color: #111827; font-weight: 600; }
+        .action-btn { display: inline-block; background: #2563EB; color: #FFFFFF; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; text-align: center; width: 100%; box-sizing: border-box; }
+        .action-btn:hover { background: #1D4ED8; }
+        .footer { background: #F9FAFB; padding: 24px; text-align: center; color: #6B7280; font-size: 14px; border-top: 1px solid #E5E7EB; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>MKTR Platform</h1>
+        </div>
+        <div class="content">
+          <h2>${title}</h2>
+          ${content}
+          ${actionButton}
+        </div>
+        <div class="footer">
+          <p>&copy; ${new Date().getFullYear()} MKTR Platform. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+export async function sendPackageAssignmentEmail(agent, packageDetails) {
+  if (!agent || !agent.email) {
+    console.warn('⚠️ Cannot send package assignment email: Missing agent email');
+    return { success: false };
+  }
+
+  const subject = `[MKTR] New Package Assigned: ${packageDetails.name}`;
+
+  const detailsHtml = `
+    <div class="details-box">
+      <div class="detail-row">
+        <div class="detail-label">Package Name</div>
+        <div class="detail-value">${packageDetails.name}</div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">Campaign</div>
+        <div class="detail-value">${packageDetails.campaignName || 'N/A'}</div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">Leads Included</div>
+        <div class="detail-value">${packageDetails.leadCount}</div>
+      </div>
+      <div class="detail-row">
+        <div class="detail-label">Assigned Date</div>
+        <div class="detail-value">${new Date().toLocaleDateString()}</div>
+      </div>
+    </div>
+  `;
+
+  const content = `
+    <p>Hello ${agent.firstName || 'Agent'},</p>
+    <p>A new lead package has been assigned to your account. You can now access these leads from your dashboard.</p>
+    ${detailsHtml}
+    <p>This package is now active and leads will be distributed according to the allocation rules.</p>
+  `;
+
+  const html = getModernTemplate('New Lead Package Assigned', content, {
+    text: 'View My Packages',
+    url: `${process.env.FRONTEND_BASE_URL || 'http://localhost:5173'}/MyPackages`
+  });
+
+  console.log(`📧 Sending package assignment email to ${agent.email}`);
+
+  return sendEmail({
+    to: agent.email,
+    subject,
+    html
+  });
+}
