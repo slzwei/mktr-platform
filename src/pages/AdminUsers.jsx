@@ -471,8 +471,8 @@ export default function AdminUsers() {
 
                         return (
                           <TableRow key={user.id} className="hover:bg-gray-50/50 border-gray-100 transition-colors">
-                            <TableCell className="px-6 py-4 max-w-[250px]">
-                              <div className="flex items-center gap-3">
+                            <TableCell className="px-6 py-4">
+                              <div className="flex items-center gap-3 max-w-[220px] sm:max-w-[250px]">
                                 <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-bold uppercase ring-2 ring-white shadow-sm flex-shrink-0">
                                   {(user.firstName?.[0] || user.email?.[0] || '?')}
                                 </div>
