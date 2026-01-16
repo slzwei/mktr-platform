@@ -471,7 +471,7 @@ export default function AdminUsers() {
 
                         return (
                           <TableRow key={user.id} className="hover:bg-gray-50/50 border-gray-100 transition-colors">
-                            <TableCell className="px-6 py-4 w-full">
+                            <TableCell className="px-6 py-4">
                               <div className="flex items-center gap-3 max-w-[300px] sm:max-w-[500px] md:max-w-[600px]">
                                 <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-bold uppercase ring-2 ring-white shadow-sm flex-shrink-0">
                                   {(user.firstName?.[0] || user.email?.[0] || '?')}
@@ -484,21 +484,21 @@ export default function AdminUsers() {
                                 </div>
                               </div>
                             </TableCell>
-                            <TableCell className="px-6 py-4 whitespace-nowrap">
+                            <TableCell className="px-6 py-4 whitespace-nowrap w-[1%]">
                               <Badge variant="outline" className="capitalize font-medium border-gray-200 text-gray-700 px-2.5 py-0.5 bg-gray-50">
                                 {user.role}
                               </Badge>
                             </TableCell>
-                            <TableCell className="px-6 py-4 whitespace-nowrap">
+                            <TableCell className="px-6 py-4 whitespace-nowrap w-[1%]">
                               <Badge variant="outline" className={`font-normal ${statusStyles[statusKey]}`}>
                                 {statusLabel}
                               </Badge>
                             </TableCell>
-                            <TableCell className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                            <TableCell className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap w-[1%]">
                               {user.createdAt ? format(new Date(user.createdAt), 'MMM d, yyyy') : '-'}
                               {user.createdAt && <div className="text-xs text-gray-400 mt-0.5">{format(new Date(user.createdAt), 'h:mm a')}</div>}
                             </TableCell>
-                            <TableCell className="px-6 py-4 text-right whitespace-nowrap">
+                            <TableCell className="px-6 py-4 text-right whitespace-nowrap w-[1%]">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600">
