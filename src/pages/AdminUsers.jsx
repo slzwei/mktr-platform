@@ -484,21 +484,21 @@ export default function AdminUsers() {
                                 </div>
                               </div>
                             </TableCell>
-                            <TableCell className="px-6 py-4 whitespace-nowrap">
+                            <TableCell className="px-6 py-4">
                               <Badge variant="outline" className="capitalize font-medium border-gray-200 text-gray-700 px-2.5 py-0.5 bg-gray-50">
                                 {user.role}
                               </Badge>
                             </TableCell>
-                            <TableCell className="px-6 py-4 whitespace-nowrap">
+                            <TableCell className="px-6 py-4">
                               <Badge variant="outline" className={`font-normal ${statusStyles[statusKey]}`}>
                                 {statusLabel}
                               </Badge>
                             </TableCell>
-                            <TableCell className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                            <TableCell className="px-6 py-4 text-sm text-gray-500">
                               {user.createdAt ? format(new Date(user.createdAt), 'MMM d, yyyy') : '-'}
                               {user.createdAt && <div className="text-xs text-gray-400 mt-0.5">{format(new Date(user.createdAt), 'h:mm a')}</div>}
                             </TableCell>
-                            <TableCell className="px-6 py-4 text-right whitespace-nowrap">
+                            <TableCell className="px-6 py-4 text-right">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600">
