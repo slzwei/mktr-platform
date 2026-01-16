@@ -494,11 +494,11 @@ export default function AdminUsers() {
                                 {statusLabel}
                               </Badge>
                             </TableCell>
-                            <TableCell className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap w-[1%]">
+                            <TableCell className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
                               {user.createdAt ? format(new Date(user.createdAt), 'MMM d, yyyy') : '-'}
                               {user.createdAt && <div className="text-xs text-gray-400 mt-0.5">{format(new Date(user.createdAt), 'h:mm a')}</div>}
                             </TableCell>
-                            <TableCell className="px-6 py-4 text-right whitespace-nowrap w-[1%]">
+                            <TableCell className="px-6 py-4 text-right whitespace-nowrap">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600">
