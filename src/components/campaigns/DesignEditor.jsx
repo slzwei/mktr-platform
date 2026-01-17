@@ -204,7 +204,9 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
     requiredFields: design.requiredFields || {},
     fieldOrder: normalizeFieldOrder(design.fieldOrder),
     layoutTemplate: design.layoutTemplate || 'modern', // 'modern', 'corporate', 'simple'
-    otpChannel: design.otpChannel || "sms" // 'sms' or 'whatsapp'
+    otpChannel: design.otpChannel || "sms", // 'sms' or 'whatsapp'
+    backgroundType: design.backgroundType || 'preset',
+    backgroundColor: design.backgroundColor || '#ffffff'
   });
 
   const [uploading, setUploading] = useState(false);
