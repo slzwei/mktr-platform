@@ -18,6 +18,7 @@ const AcceptInvite = lazy(() => import('./AcceptInvite'));
 const Onboarding = lazy(() => import('./Onboarding'));
 const PendingApproval = lazy(() => import('./PendingApproval'));
 const ForgotPassword = lazy(() => import('./ForgotPassword'));
+const PersonalDataPolicy = lazy(() => import('./PersonalDataPolicy'));
 const DevRoutes = lazy(() => import('../dev/DevRoutes'));
 
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
@@ -72,6 +73,7 @@ function PagesContent() {
           <Route path="/auth/accept-invite" element={<AcceptInvite />} />
           <Route path="/Onboarding" element={<Onboarding />} />
           <Route path="/PendingApproval" element={<PendingApproval />} />
+          <Route path="/personal-data-policy" element={<PersonalDataPolicy />} />
 
           {/* Development routes */}
           {import.meta.env.DEV && (
