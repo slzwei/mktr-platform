@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/input-otp";
 import { REGEXP_ONLY_DIGITS } from "input-otp";
 
-export default function CampaignSignupForm({ themeColor, formHeadline, formSubheadline, headlineSize, campaignId, onSubmit, campaign, alignment }) {
+export default function CampaignSignupForm({ themeColor, formHeadline, formSubheadline, headlineSize, campaignId, onSubmit, campaign, alignment, textColor }) {
     const visibleFields = campaign?.design_config?.visibleFields || {};
     const requiredFields = campaign?.design_config?.requiredFields || {};
     const fieldOrder = campaign?.design_config?.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income'];
@@ -51,6 +51,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
     const [resendCooldown, setResendCooldown] = useState(0);
     const [showSuccessTick, setShowSuccessTick] = useState(false);
     const [consentOpen, setConsentOpen] = useState(false);
+
+    const textStyle = textColor ? { color: textColor } : {};
 
     useEffect(() => {
         let timer;
@@ -489,7 +491,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'name':
                 return (
                     <div key={fieldId} className="space-y-1.5">
-                        <Label htmlFor="name" className="text-sm font-medium text-gray-700">Full Name</Label>
+                        <Label htmlFor="name" style={textStyle}>Full Name {requiredFields.name !== false && '*'}</Label>
                         <div className="relative group">
                             <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-gray-800 transition-colors" />
                             <Input
@@ -507,7 +509,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'phone':
                 return (
                     <div key={fieldId} className="space-y-1.5">
-                        <Label htmlFor="phone" className="text-sm font-medium text-gray-700">Phone Number</Label>
+                        <Label htmlFor="phone" style={textStyle}>Phone Number {requiredFields.phone !== false && '*'}</Label>
                         <div className="flex items-center gap-2">
                             <div className="flex-grow flex shadow-sm rounded-xl overflow-hidden active-ring focus-within:ring-2 focus-within:ring-offset-0 transition-all" style={{ '--tw-ring-color': themeColor + '33' }}>
                                 <div className="flex items-center px-3.5 bg-gray-50 border border-r-0 border-gray-200 text-sm font-medium text-gray-600 whitespace-nowrap">
@@ -567,8 +569,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                     <div className={`mt-3 p-5 rounded-2xl border bg-gray-50/80 backdrop-blur-sm space-y-4 ${error ? 'border-red-200 ring-4 ring-red-50' : 'border-gray-200 shadow-inner'}`}>
                                         <div className="flex items-center justify-between">
                                             <div>
-                                                <Label htmlFor="otp" className="text-sm font-bold text-gray-900">Enter Verification Code</Label>
-                                                <p className="text-xs text-gray-500 mt-0.5">Sent to +65 {displayPhone(formData.phone)}</p>
+                                                <Label htmlFor="otp" className="text-sm font-bold text-gray-900" style={textStyle}>Enter Verification Code</Label>
+                                                <p className="text-xs text-gray-500 mt-0.5" style={textStyle}>Sent to +65 {displayPhone(formData.phone)}</p>
                                             </div>
                                             <Button
                                                 type="button"
@@ -625,7 +627,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                             </div>
 
                                             {loading === 'verifying' && (
-                                                <div className="flex items-center justify-center gap-2 text-sm text-gray-500 mt-4 animate-pulse">
+                                                <div className="flex items-center justify-center gap-2 text-sm text-gray-500 mt-4 animate-pulse" style={textStyle}>
                                                     <Loader2 className="w-4 h-4 animate-spin" />
                                                     <span>Verifying secure code...</span>
                                                 </div>
@@ -633,7 +635,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                         </div>
 
                                         <div className="text-center pt-1">
-                                            <p className="text-xs text-gray-500">
+                                            <p className="text-xs text-gray-500" style={textStyle}>
                                                 Didn't receive it?{' '}
                                                 <button
                                                     type="button"
@@ -661,7 +663,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                                     exit={{ opacity: 0, scale: 0.95 }}
                                                 >
                                                     <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                                                    <span className="leading-snug font-medium">{error}</span>
+                                                    <span className="leading-snug font-medium" style={textStyle}>{error}</span>
                                                 </motion.div>
                                             )}
                                         </AnimatePresence>
@@ -680,7 +682,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                     exit={{ opacity: 0, height: 0 }}
                                 >
                                     <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                                    <span>{error}</span>
+                                    <span style={textStyle}>{error}</span>
                                 </motion.div>
                             )}
                         </AnimatePresence>
@@ -689,7 +691,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'email':
                 return (
                     <div key={fieldId} className="space-y-1.5">
-                        <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email Address</Label>
+                        <Label htmlFor="email" style={textStyle}>Email Address {requiredFields.email !== false && '*'}</Label>
                         <div className="relative group">
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-gray-800 transition-colors" />
                             <Input
@@ -708,7 +710,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'dob':
                 return (
                     <div key={fieldId} className="space-y-1.5">
-                        <Label htmlFor="dob" className="text-sm font-medium text-gray-700">Date of Birth{!requiredFields.dob && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
+                        <Label htmlFor="dob" style={textStyle}>Date of Birth {requiredFields.dob !== false && (requiredFields.dob === 'optional' ? '(optional)' : '*')}</Label>
                         <div className="relative group">
                             <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-gray-800 transition-colors" />
                             <Input
@@ -732,12 +734,12 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                     animate={{ opacity: 1, y: 0 }}
                                 >
                                     <AlertCircle className="w-3.5 h-3.5" />
-                                    <span>{ageError || 'Please enter full year (DDMMYYYY)'}</span>
+                                    <span style={textStyle}>{ageError || 'Please enter full year (DDMMYYYY)'}</span>
                                 </motion.div>
                             )}
                         </AnimatePresence>
                         {(!ageError && !dobIncomplete && renderAgeRestrictionHint()) && (
-                            <div className="text-[11px] text-gray-400 pt-0.5 ml-1">
+                            <div className="text-[11px] text-gray-400 pt-0.5 ml-1" style={textStyle}>
                                 {renderAgeRestrictionHint()}
                             </div>
                         )}
@@ -746,7 +748,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'postal_code':
                 return (
                     <div key={fieldId} className="space-y-1.5">
-                        <Label htmlFor="postal" className="text-sm font-medium text-gray-700">Postal Code{!requiredFields.postal_code && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
+                        <Label htmlFor="postal_code" style={textStyle}>Postal Code {requiredFields.postal_code !== false && (requiredFields.postal_code === 'optional' ? '(optional)' : '*')}</Label>
                         <div className="relative group">
                             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-gray-800 transition-colors" />
                             <Input
@@ -764,7 +766,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'education_level':
                 return (
                     <div key={fieldId} className="space-y-1.5">
-                        <Label htmlFor="education" className="text-sm font-medium text-gray-700">Highest Education{!requiredFields.education_level && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
+                        <Label htmlFor="education_level" style={textStyle}>Highest Education {requiredFields.education_level !== false && (requiredFields.education_level === 'optional' ? '(optional)' : '*')}</Label>
                         <Select
                             value={formData.education_level}
                             onValueChange={(value) => handleFormChange('education_level', value)}
@@ -785,7 +787,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             case 'monthly_income':
                 return (
                     <div key={fieldId} className="space-y-1.5">
-                        <Label htmlFor="income" className="text-sm font-medium text-gray-700">Last Drawn Salary{!requiredFields.monthly_income && <span className="text-gray-400 font-normal"> (optional)</span>}</Label>
+                        <Label htmlFor="monthly_income" style={textStyle}>Last Drawn Salary {requiredFields.monthly_income !== false && (requiredFields.monthly_income === 'optional' ? '(optional)' : '*')}</Label>
                         <Select
                             value={formData.monthly_income}
                             onValueChange={(value) => handleFormChange('monthly_income', value)}
@@ -812,11 +814,11 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
             <div className={`mb-6 text-${alignment || 'center'}`}>
                 <h2
                     className="font-bold text-gray-900 leading-tight"
-                    style={{ fontSize: `${headlineSize || 24}px` }}
+                    style={{ fontSize: `${headlineSize || 24}px`, ...textStyle }}
                 >
                     {formHeadline}
                 </h2>
-                <p className="text-base text-gray-500 mt-2">{formSubheadline}</p>
+                <p className="text-base text-gray-500 mt-2" style={textStyle}>{formSubheadline}</p>
             </div>
 
             <div className="space-y-4">

@@ -1046,6 +1046,52 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                     </div>
                   </div>
 
+                  {/* Card Background Color */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-semibold text-gray-700">Card Background</Label>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        type="color"
+                        value={currentDesign.cardBackgroundColor || '#ffffff'}
+                        onChange={(e) => handleDesignChange('cardBackgroundColor', e.target.value)}
+                        className="w-full h-10 p-1 rounded-lg border cursor-pointer"
+                      />
+                      {currentDesign.cardBackgroundColor && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDesignChange('cardBackgroundColor', '')}
+                          title="Reset to default"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Text Color */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-semibold text-gray-700">Text Color</Label>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        type="color"
+                        value={currentDesign.textColor || '#111827'}
+                        onChange={(e) => handleDesignChange('textColor', e.target.value)}
+                        className="w-full h-10 p-1 rounded-lg border cursor-pointer"
+                      />
+                      {currentDesign.textColor && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDesignChange('textColor', '')}
+                          title="Reset to default"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="space-y-3">
                     <Label className="text-sm font-semibold text-gray-700">Headline Text Size</Label>
                     <div className="space-y-4">
@@ -1195,7 +1241,10 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                 <div className="min-h-full py-8 px-4 flex flex-col items-center">
 
                   {/* Content Card */}
-                  <div className={`w-full max-w-[375px] ${getCardClass(currentDesign)} transform transition-all duration-300`}>
+                  <div
+                    className={`w-full max-w-[375px] ${getCardClass(currentDesign)} transform transition-all duration-300`}
+                    style={{ backgroundColor: currentDesign.cardBackgroundColor }}
+                  >
 
                     {/* Header Image */}
                     {currentDesign.imageUrl && (
@@ -1220,11 +1269,11 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
 
                     {/* Form Content */}
                     <div className="p-6">
-                      <div className={`mb-6 text-${currentDesign.alignment || 'center'}`}>
+                      <div className={`mb-6 text-${currentDesign.alignment || 'center'}`} style={{ color: currentDesign.textColor }}>
                         {currentDesign.formHeadline ? (
                           <h1
                             className="font-bold text-gray-900 mb-2 leading-tight tracking-tight"
-                            style={{ fontSize: `${(currentDesign.headlineSize || 24)}px` }}
+                            style={{ fontSize: `${(currentDesign.headlineSize || 24)}px`, color: currentDesign.textColor }}
                           >
                             {currentDesign.formHeadline}
                           </h1>
@@ -1235,7 +1284,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                         )}
 
                         {currentDesign.formSubheadline ? (
-                          <p className="text-gray-500 text-sm">
+                          <p className="text-gray-500 text-sm" style={{ color: currentDesign.textColor, opacity: 0.8 }}>
                             {currentDesign.formSubheadline}
                           </p>
                         ) : (
@@ -1291,7 +1340,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                                         {/* Render specific field content */}
                                         {fieldId === 'name' && (
                                           <div>
-                                            <label className="block text-gray-700 text-sm font-medium mb-1.5">
+                                            <label className="block text-gray-700 text-sm font-medium mb-1.5" style={{ color: currentDesign.textColor }}>
                                               Full Name
                                             </label>
                                             <div className="relative">
@@ -1311,7 +1360,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
 
                                         {fieldId === 'phone' && (
                                           <div>
-                                            <label className="block text-gray-700 text-sm font-medium mb-1.5">
+                                            <label className="block text-gray-700 text-sm font-medium mb-1.5" style={{ color: currentDesign.textColor }}>
                                               Phone Number
                                             </label>
                                             <div className="grid grid-cols-12 gap-2">

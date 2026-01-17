@@ -281,7 +281,7 @@ export default function LeadCapture() {
     return (
         <div className={`min-h-screen py-8 px-4 sm:px-6 lg:px-8 flex flex-col justify-center items-center ${background.className}`} style={background.style}>
 
-            <div className={`w-full max-w-md ${getCardClass(design)}`}>
+            <div className={`w-full max-w-md ${getCardClass(design)}`} style={design.cardBackgroundColor ? { backgroundColor: design.cardBackgroundColor } : {}}>
                 {design?.imageUrl && (
                     <div className="w-full relative h-48 sm:h-56 bg-gray-100 border-b border-gray-100/50">
                         <img

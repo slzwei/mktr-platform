@@ -158,7 +158,13 @@ export default function PublicPreview() {
       {/* Title update */}
       <Title title={`Preview • ${snapshot?.name || 'Campaign'}`} />
       <div className="flex items-center justify-center py-12 px-6">
-        <div className={`w-full ${getCardClass(design)}`} style={{ maxWidth: `${design.formWidth || 400}px` }}>
+        <div
+          className={`w-full ${getCardClass(design)}`}
+          style={{
+            maxWidth: `${design.formWidth || 400}px`,
+            ...(design.cardBackgroundColor ? { backgroundColor: design.cardBackgroundColor } : {})
+          }}
+        >
           {design?.imageUrl && (
             <div className="w-full relative h-48 sm:h-56 bg-gray-100 border-b border-gray-100/50">
               <img
@@ -189,6 +195,7 @@ export default function PublicPreview() {
                 onSubmit={handleSubmit}
                 campaign={{ ...snapshot, design_config: design, min_age: snapshot?.min_age, max_age: snapshot?.max_age }}
                 alignment={design.alignment}
+                textColor={design.textColor}
               />
             )}
           </div>
