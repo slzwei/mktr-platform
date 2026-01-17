@@ -567,7 +567,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
   const tabs = [
     { id: 'content', label: 'Content', icon: Type },
     { id: 'design', label: 'Design', icon: Palette },
-    { id: 'layout', label: 'Layout', icon: Layout }
+    { id: 'layout', label: 'Layout', icon: LayoutTemplate }
   ];
 
   const calculateAge = (dobString) => {
