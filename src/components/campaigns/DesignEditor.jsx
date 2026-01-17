@@ -978,8 +978,8 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                         value={currentDesign.termsContent || ''}
                         onChange={(e) => handleDesignChange('termsContent', e.target.value)}
                         placeholder="<div>...</div>"
-                        className="font-mono text-xs h-32"
-                        maxLength={2000}
+                        className="font-mono text-xs h-64"
+                        maxLength={10000}
                       />
                     </div>
                   </div>
