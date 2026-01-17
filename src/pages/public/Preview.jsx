@@ -160,28 +160,38 @@ export default function PublicPreview() {
       <div className="flex items-center justify-center py-12 px-6">
         <div className={`w-full ${getCardClass(design)}`} style={{ maxWidth: `${design.formWidth || 400}px` }}>
           {design?.imageUrl && (
-            <div className="w-full h-56 lg:h-72 mb-6">
-              <img src={resolveImageUrl(design.imageUrl)} alt="Header" className="w-full h-full object-contain rounded-md" />
+            <div className="w-full relative h-48 sm:h-56 bg-gray-100 border-b border-gray-100/50">
+              <img
+                src={resolveImageUrl(design.imageUrl)}
+                alt="Campaign Header"
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
             </div>
           )}
-          {submitted ? (
-            <div className="bg-white p-8 rounded-lg shadow-xl text-center border">
-              <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-gray-900">Thank You!</h2>
-              <p className="text-gray-600 mt-2">Your submission has been received.</p>
-            </div>
-          ) : (
-            <CampaignSignupForm
-              themeColor={design.themeColor || '#3B82F6'}
-              formHeadline={design.formHeadline || 'Sign Up Now'}
-              formSubheadline={design.formSubheadline || 'Fill out the form to get started.'}
-              headlineSize={design.headlineSize || 20}
-              campaignId={snapshot?.id}
-              onSubmit={handleSubmit}
-              campaign={{ ...snapshot, design_config: design, min_age: snapshot?.min_age, max_age: snapshot?.max_age }}
-              alignment={design.alignment}
-            />
-          )}
+
+          <div className="p-6 sm:p-8">
+            {submitted ? (
+              <div className="text-center py-8">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 mb-4 animate-in zoom-in duration-300">
+                  <CheckCircle className="h-8 w-8 text-green-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Thank You!</h2>
+                <p className="text-gray-600">Your submission has been received.</p>
+              </div>
+            ) : (
+              <CampaignSignupForm
+                themeColor={design.themeColor || '#3B82F6'}
+                formHeadline={design.formHeadline || 'Sign Up Now'}
+                formSubheadline={design.formSubheadline || 'Fill out the form to get started.'}
+                headlineSize={design.headlineSize || 20}
+                campaignId={snapshot?.id}
+                onSubmit={handleSubmit}
+                campaign={{ ...snapshot, design_config: design, min_age: snapshot?.min_age, max_age: snapshot?.max_age }}
+                alignment={design.alignment}
+              />
+            )}
+          </div>
           <Dialog open={shareOpen} onOpenChange={setShareOpen}>
             <DialogContent>
               <DialogHeader>
