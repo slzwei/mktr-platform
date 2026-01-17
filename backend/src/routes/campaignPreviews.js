@@ -67,7 +67,24 @@ router.get('/slug/:slug', asyncHandler(async (req, res) => {
     throw new AppError('Preview not found', 404);
   }
 
-  res.json({ success: true, data: { snapshot: preview.snapshot, campaignId: preview.campaignId } });
+  // Fetch the latest campaign data to ensure design is up-to-date
+  // This solves the issue where users save in Designer but don't click "Preview" to refresh the snapshot
+  const campaign = await Campaign.findByPk(preview.campaignId);
+
+  let snapshot = preview.snapshot;
+  if (campaign) {
+    snapshot = {
+      ...snapshot,
+      // Create a specific preview snapshot that ALWAYS uses the latest design
+      design_config: campaign.design_config || {},
+      name: campaign.name,
+      min_age: campaign.min_age,
+      max_age: campaign.max_age,
+      is_active: true
+    };
+  }
+
+  res.json({ success: true, data: { snapshot, campaignId: preview.campaignId } });
 }));
 
 export default router;
