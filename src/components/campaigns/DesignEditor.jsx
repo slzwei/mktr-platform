@@ -233,14 +233,11 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
   };
 
   const handleDesignChange = (key, value) => {
-    const newDesign = {
-      ...currentDesign,
+    setCurrentDesign(prev => ({
+      ...prev,
       [key]: value
-    };
-    setCurrentDesign(newDesign);
+    }));
     setHasUnsavedChanges(true); // Mark that there are unsaved changes
-
-    // Auto-save logic removed.
   };
 
   const handleManualSave = () => {
