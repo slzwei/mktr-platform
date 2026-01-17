@@ -445,6 +445,33 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
     }
   };
 
+  const handleVerifyOtp = async () => {
+    if (previewPhoneVerification.otpCode.length !== 6) return;
+
+    setPreviewPhoneVerification(prev => ({ ...prev, isVerifying: true, error: null }));
+
+    try {
+      // 🚨 MOCK ONLY - DO NOT COPY TO PRODUCTION 🚨
+      // Simulate verification delay
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      // For preview, accept any 6-digit code
+      setPreviewPhoneVerification(prev => ({
+        ...prev,
+        isVerifying: false,
+        isVerified: true,
+        showOtpInput: false,
+        error: null
+      }));
+    } catch (error) {
+      setPreviewPhoneVerification(prev => ({
+        ...prev,
+        isVerifying: false,
+        error: "Invalid code"
+      }));
+    }
+  };
+
   const tabs = [
     { id: 'content', label: 'Content', icon: Type },
     { id: 'design', label: 'Design', icon: Palette },
