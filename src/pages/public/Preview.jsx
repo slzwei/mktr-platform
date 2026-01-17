@@ -12,6 +12,9 @@ import { Button } from '@/components/ui/button';
 const getBackgroundClass = (design) => {
   if (!design) return { className: 'bg-gray-50', style: {} };
 
+  // Debug log
+  console.log('Preview: getBackgroundClass design:', design);
+
   const type = design.backgroundType || 'preset'; // 'preset' | 'custom'
 
   if (type === 'custom') {
