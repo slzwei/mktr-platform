@@ -534,7 +534,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                                     onClick={handleSendOtp}
                                     disabled={loading === 'sending' || formData.phone.length !== 8}
                                     className="h-11 px-6 font-semibold shadow-sm hover:shadow transition-all rounded-xl min-w-[100px]"
-                                    style={{ backgroundColor: formData.phone.length === 8 ? '#111827' : '#E5E7EB', color: formData.phone.length === 8 ? '#fff' : '#9CA3AF' }}
+                                    style={{ backgroundColor: formData.phone.length === 8 ? themeColor : '#E5E7EB', color: formData.phone.length === 8 ? '#fff' : '#9CA3AF' }}
                                 >
                                     {loading === 'sending' ? (
                                         <Loader2 className="w-4 h-4 animate-spin" />

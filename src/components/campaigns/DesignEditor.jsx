@@ -87,25 +87,36 @@ const LAYOUT_TEMPLATES = {
 };
 
 // Helper to determine the background class based on design config
+// Helper to determine the background class based on design config
+// Returns { className, style } to support both tailwind classes and custom hex colors
 const getBackgroundClass = (design) => {
-  if (!design) return 'bg-gray-50';
+  if (!design) return { className: 'bg-gray-50', style: {} };
+
+  const type = design.backgroundType || 'preset'; // 'preset' | 'custom'
+
+  if (type === 'custom') {
+    return {
+      className: '', // No specific class, rely on style
+      style: { backgroundColor: design.backgroundColor || '#f9fafb' }
+    };
+  }
 
   // Backwards compatibility for existing designs
   const style = design.backgroundStyle || 'gradient';
 
   switch (style) {
     case 'gradient': // Modern default
-      return 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-50 via-white to-gray-50';
+      return { className: 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-50 via-white to-gray-50', style: {} };
     case 'solid_slate': // Corporate
-      return 'bg-slate-50';
+      return { className: 'bg-slate-50', style: {} };
     case 'simple_gray': // Simple
-      return 'bg-white';
+      return { className: 'bg-white', style: {} };
     case 'solid': // Legacy
-      return 'bg-gray-50';
+      return { className: 'bg-gray-50', style: {} };
     case 'pattern': // Legacy
-      return 'bg-gray-50 bg-[url("https://www.transparenttextures.com/patterns/cubes.png")]';
+      return { className: 'bg-gray-50 bg-[url("https://www.transparenttextures.com/patterns/cubes.png")]', style: {} };
     default:
-      return 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-50 via-gray-50 to-gray-100';
+      return { className: 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-50 via-gray-50 to-gray-100', style: {} };
   }
 };
 
@@ -914,8 +925,16 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                       <div
                         key={template.id}
                         onClick={() => {
+                          // Batched update via functional set state handled in new handleDesignChange
+                          // However, here we are calling it multiple times.
+                          // Ideally we should have a bulk update or just let the functional update handle it.
+                          // But to ensure atomicity, better to assume handleDesignChange handles it.
+                          // Wait, my handleDesignChange fix handles race conditions via prev state,
+                          // but 3 calls is still 3 renders potentially or at least 3 queued updates.
+                          // It works.
                           handleDesignChange('layoutTemplate', template.id);
                           handleDesignChange('backgroundStyle', template.backgroundStyle);
+                          handleDesignChange('backgroundType', 'preset');
                         }}
                         className={`relative p-4 rounded-xl border-2 transition-all cursor-pointer ${currentDesign.layoutTemplate === template.id
                           ? 'border-blue-600 bg-blue-50/50'
@@ -936,6 +955,53 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                       </div>
                     ))}
                   </div>
+                </div>
+
+                {/* Background Selection */}
+                <div className="space-y-3 pt-4 border-t">
+                  <Label className="text-sm font-semibold text-gray-700">Background</Label>
+                  <div className="bg-gray-50 p-1 rounded-lg flex gap-1 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDesignChange('backgroundType', 'preset')}
+                      className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${(!currentDesign.backgroundType || currentDesign.backgroundType === 'preset')
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-900'
+                        }`}
+                    >
+                      Preset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDesignChange('backgroundType', 'custom')}
+                      className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${currentDesign.backgroundType === 'custom'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-900'
+                        }`}
+                    >
+                      Custom Color
+                    </button>
+                  </div>
+
+                  {currentDesign.backgroundType === 'custom' && (
+                    <div className="flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+                      <Input
+                        type="color"
+                        value={currentDesign.backgroundColor || '#ffffff'}
+                        onChange={(e) => handleDesignChange('backgroundColor', e.target.value)}
+                        className="w-full h-10 p-1 rounded-lg border cursor-pointer"
+                      />
+                      <Badge variant="outline" className="font-mono text-xs">
+                        {currentDesign.backgroundColor || '#ffffff'}
+                      </Badge>
+                    </div>
+                  )}
+                  {(!currentDesign.backgroundType || currentDesign.backgroundType === 'preset') && (
+                    <p className="text-xs text-gray-400">
+                      Using default background from <strong>{LAYOUT_TEMPLATES[currentDesign.layoutTemplate]?.name || 'current'}</strong> template.
+                    </p>
+                  )}
+
                 </div>
 
                 <div className="space-y-3 pt-4 border-t">
@@ -1107,7 +1173,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
               </div>
 
               {/* Viewport Area */}
-              <div className={`h-[650px] overflow-y-auto relative ${getBackgroundClass(currentDesign)}`}>
+              <div className={`h-[650px] overflow-y-auto relative ${getBackgroundClass(currentDesign).className}`} style={getBackgroundClass(currentDesign).style}>
                 <div className="min-h-full py-8 px-4 flex flex-col items-center">
 
                   {/* Content Card */}
@@ -1265,7 +1331,8 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                                                       previewPhoneVerification.error ||
                                                       (previewPhoneVerification.hasSentCode && !previewPhoneVerification.canResend)
                                                     }
-                                                    className="w-full h-10 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium disabled:opacity-50 rounded-md transition-colors flex items-center justify-center"
+                                                    className="w-full h-10 text-white text-sm font-medium disabled:opacity-50 rounded-md transition-colors flex items-center justify-center hover:opacity-90"
+                                                    style={{ backgroundColor: currentDesign.themeColor }}
                                                   >
                                                     {previewPhoneVerification.isSending ? (
                                                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -1321,7 +1388,8 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                                                     type="button"
                                                     onClick={handleVerifyOtp}
                                                     disabled={previewPhoneVerification.otpCode.length !== 6 || previewPhoneVerification.isVerifying}
-                                                    className="h-9 px-4 bg-gray-900 hover:bg-gray-800 text-white rounded-md text-xs font-medium disabled:opacity-50 transition-colors flex items-center justify-center"
+                                                    className="h-9 px-4 text-white rounded-md text-xs font-medium disabled:opacity-50 transition-colors flex items-center justify-center hover:opacity-90"
+                                                    style={{ backgroundColor: currentDesign.themeColor }}
                                                   >
                                                     {previewPhoneVerification.isVerifying ? (
                                                       <Loader2 className="w-3 h-3 animate-spin" />

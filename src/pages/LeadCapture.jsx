@@ -13,24 +13,33 @@ import TypingLoader from "../components/ui/TypingLoader";
 import { apiClient } from "@/api/client";
 
 const getBackgroundClass = (design) => {
-    if (!design) return 'bg-gray-50';
+    if (!design) return { className: 'bg-gray-50', style: {} };
+
+    const type = design.backgroundType || 'preset'; // 'preset' | 'custom'
+
+    if (type === 'custom') {
+        return {
+            className: '', // No specific class, rely on style
+            style: { backgroundColor: design.backgroundColor || '#f9fafb' }
+        };
+    }
 
     // Backwards compatibility for existing designs
     const style = design.backgroundStyle || 'gradient';
 
     switch (style) {
         case 'gradient': // Modern default
-            return 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-50 via-white to-gray-50';
+            return { className: 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-50 via-white to-gray-50', style: {} };
         case 'solid_slate': // Corporate
-            return 'bg-slate-50';
+            return { className: 'bg-slate-50', style: {} };
         case 'simple_gray': // Simple
-            return 'bg-white';
+            return { className: 'bg-white', style: {} };
         case 'solid': // Legacy
-            return 'bg-gray-50';
+            return { className: 'bg-gray-50', style: {} };
         case 'pattern': // Legacy
-            return 'bg-gray-50 bg-[url("https://www.transparenttextures.com/patterns/cubes.png")]';
+            return { className: 'bg-gray-50 bg-[url("https://www.transparenttextures.com/patterns/cubes.png")]', style: {} };
         default:
-            return 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-50 via-gray-50 to-gray-100';
+            return { className: 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-50 via-gray-50 to-gray-100', style: {} };
     }
 };
 
@@ -267,8 +276,10 @@ export default function LeadCapture() {
         return () => clearInterval(interval);
     }, [duplicateDetected]);
 
+    const background = getBackgroundClass(design);
+
     return (
-        <div className={`min-h-screen py-8 px-4 sm:px-6 lg:px-8 flex flex-col justify-center items-center ${getBackgroundClass(design)}`}>
+        <div className={`min-h-screen py-8 px-4 sm:px-6 lg:px-8 flex flex-col justify-center items-center ${background.className}`} style={background.style}>
 
             <div className={`w-full max-w-md ${getCardClass(design)}`}>
                 {design?.imageUrl && (
