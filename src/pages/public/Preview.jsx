@@ -179,6 +179,7 @@ export default function PublicPreview() {
               campaignId={snapshot?.id}
               onSubmit={handleSubmit}
               campaign={{ ...snapshot, design_config: design, min_age: snapshot?.min_age, max_age: snapshot?.max_age }}
+              alignment={design.alignment}
             />
           )}
           <Dialog open={shareOpen} onOpenChange={setShareOpen}>

@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/input-otp";
 import { REGEXP_ONLY_DIGITS } from "input-otp";
 
-export default function CampaignSignupForm({ themeColor, formHeadline, formSubheadline, headlineSize, campaignId, onSubmit, campaign }) {
+export default function CampaignSignupForm({ themeColor, formHeadline, formSubheadline, headlineSize, campaignId, onSubmit, campaign, alignment }) {
     const visibleFields = campaign?.design_config?.visibleFields || {};
     const requiredFields = campaign?.design_config?.requiredFields || {};
     const fieldOrder = campaign?.design_config?.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income'];
@@ -809,7 +809,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
 
     return (
         <form onSubmit={handleSubmit} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="text-center mb-6">
+            <div className={`mb-6 text-${alignment || 'center'}`}>
                 <h2
                     className="font-bold text-gray-900 leading-tight"
                     style={{ fontSize: `${headlineSize || 24}px` }}

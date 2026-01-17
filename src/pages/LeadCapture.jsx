@@ -343,6 +343,7 @@ export default function LeadCapture() {
                             campaignId={campaign.id}
                             campaign={campaign}
                             onSubmit={handleSubmit}
+                            alignment={design.alignment}
                         />
                     ) : (
                         <div className="py-20 text-center">

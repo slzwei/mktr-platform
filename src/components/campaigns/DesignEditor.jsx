@@ -1204,7 +1204,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
 
                     {/* Form Content */}
                     <div className="p-6">
-                      <div className="text-center mb-6">
+                      <div className={`mb-6 text-${currentDesign.alignment || 'center'}`}>
                         {currentDesign.formHeadline ? (
                           <h1
                             className="font-bold text-gray-900 mb-2 leading-tight tracking-tight"
