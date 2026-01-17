@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/input-otp";
 import { REGEXP_ONLY_DIGITS } from "input-otp";
 
-export default function CampaignSignupForm({ themeColor, formHeadline, formSubheadline, headlineSize, campaignId, onSubmit, campaign, alignment, textColor }) {
+export default function CampaignSignupForm({ themeColor, formHeadline, formSubheadline, headlineSize, campaignId, onSubmit, campaign, alignment, textColor, termsContent }) {
     const visibleFields = campaign?.design_config?.visibleFields || {};
     const requiredFields = campaign?.design_config?.requiredFields || {};
     const fieldOrder = campaign?.design_config?.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income'];
@@ -867,7 +867,7 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                 </button>
             </p>
 
-            <MarketingConsentDialog open={consentOpen} onOpenChange={setConsentOpen} />
+            <MarketingConsentDialog open={consentOpen} onOpenChange={setConsentOpen} content={termsContent} />
         </form >
     );
 }

@@ -12,21 +12,55 @@ import { apiClient } from "@/api/client";
 import {
   Upload,
   Loader2,
-  Image as ImageIcon,
   Type,
   Palette,
-  Layout,
-  Eye,
+  LayoutTemplate,
+  CheckCircle2,
+  Image as ImageIcon,
   Trash2,
-  CheckCircle2, // Added CheckCircle2 for verification status
-  X, // Added X for OTP section close button
-  GripVertical,
-  AlertCircle // Added for WhatsApp warning
+  AlertCircle,
+  Eye,
+  Smartphone,
+  X,
+  GripVertical
 } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import MarketingConsentDialog from "@/components/legal/MarketingConsentDialog";
+
+const PRESET_BACKGROUNDS = {
+  gradient: 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-50 via-white to-gray-50',
+  solid_slate: 'bg-slate-50',
+  simple_gray: 'bg-white',
+};
+
+const TC_TEMPLATES = {
+  default: {
+    id: 'default',
+    name: 'Default (MKTR Standard)',
+    content: '' // Empty means use component default
+  },
+  generic: {
+    id: 'generic',
+    name: 'Generic Privacy Policy',
+    content: `<p><strong>Privacy Policy</strong></p>
+<p>By submitting this form, you consent to the collection and use of your personal data for the purpose of processing your application and contacting you regarding our services.</p>
+<p>We respect your privacy and will not share your information with third parties without your consent, except as required by law.</p>`
+  },
+  detailed: {
+    id: 'detailed',
+    name: 'Detailed Marketing Consent',
+    content: `<p><strong>Marketing Consent</strong></p>
+<p>I hereby agree that my personal data may be collected, used, disclosed and processed by the Company for the following purposes:</p>
+<ul class="list-disc pl-5">
+  <li>To send me marketing and promotional information via email, SMS, and phone calls;</li>
+  <li>To conduct market research and analysis;</li>
+  <li>To better understand my preferences and improve services.</li>
+</ul>
+<p>I may withdraw my consent at any time by contacting the Data Protection Officer.</p>`
+  }
+};
 
 // Sortable Item Component
 function SortableItem(props) {
@@ -913,6 +947,43 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                     </div>
                   </div>
                 </div>
+
+                {/* Terms and Conditions */}
+                <div className="space-y-3 pt-4 border-t">
+                  <Label className="text-sm font-semibold text-gray-700">Terms & Conditions</Label>
+                  <p className="text-xs text-gray-500 -mt-1">Customize the legal text displayed in the consent dialog.</p>
+
+                  <div className="space-y-3">
+                    <Select
+                      onValueChange={(value) => {
+                        const template = TC_TEMPLATES[value];
+                        if (template && template.content !== undefined) {
+                          handleDesignChange('termsContent', template.content);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select a template..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.values(TC_TEMPLATES).map(t => (
+                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs text-gray-500">Custom Content (HTML supported)</Label>
+                      <Textarea
+                        value={currentDesign.termsContent || ''}
+                        onChange={(e) => handleDesignChange('termsContent', e.target.value)}
+                        placeholder="<div>...</div>"
+                        className="font-mono text-xs h-32"
+                        maxLength={2000}
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1646,7 +1717,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
           </CardContent>
         </Card>
       </div >
-      <MarketingConsentDialog open={consentOpen} onOpenChange={setConsentOpen} />
+      <MarketingConsentDialog open={consentOpen} onOpenChange={setConsentOpen} content={currentDesign.termsContent} />
     </div >
   );
 }

@@ -196,6 +196,7 @@ export default function PublicPreview() {
                 campaign={{ ...snapshot, design_config: design, min_age: snapshot?.min_age, max_age: snapshot?.max_age }}
                 alignment={design.alignment}
                 textColor={design.textColor}
+                termsContent={design.termsContent}
               />
             )}
           </div>

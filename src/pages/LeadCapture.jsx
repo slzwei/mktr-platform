@@ -344,6 +344,8 @@ export default function LeadCapture() {
                             campaign={campaign}
                             onSubmit={handleSubmit}
                             alignment={design.alignment}
+                            textColor={design.textColor}
+                            termsContent={design.termsContent}
                         />
                     ) : (
                         <div className="py-20 text-center">
