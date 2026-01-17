@@ -1064,6 +1064,22 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                       </div>
                     </div>
                   </div>
+
+                  <div className="space-y-3">
+                    <Label className="text-sm font-semibold text-gray-700">Text Alignment</Label>
+                    <Select
+                      value={currentDesign.alignment || 'center'}
+                      onValueChange={(value) => handleDesignChange('alignment', value)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="left">Left Aligned</SelectItem>
+                        <SelectItem value="center">Centered</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
             )}
