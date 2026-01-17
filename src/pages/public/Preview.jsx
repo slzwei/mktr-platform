@@ -8,6 +8,54 @@ import AlertTriangle from 'lucide-react/icons/alert-triangle';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
+
+const getBackgroundClass = (design) => {
+  if (!design) return { className: 'bg-gray-50', style: {} };
+
+  const type = design.backgroundType || 'preset'; // 'preset' | 'custom'
+
+  if (type === 'custom') {
+    return {
+      className: '', // No specific class, rely on style
+      style: { backgroundColor: design.backgroundColor || '#f9fafb' }
+    };
+  }
+
+  // Backwards compatibility for existing designs
+  const style = design.backgroundStyle || 'gradient';
+
+  switch (style) {
+    case 'gradient': // Modern default
+      return { className: 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-50 via-white to-gray-50', style: {} };
+    case 'solid_slate': // Corporate
+      return { className: 'bg-slate-50', style: {} };
+    case 'simple_gray': // Simple
+      return { className: 'bg-white', style: {} };
+    case 'solid': // Legacy
+      return { className: 'bg-gray-50', style: {} };
+    case 'pattern': // Legacy
+      return { className: 'bg-gray-50 bg-[url("https://www.transparenttextures.com/patterns/cubes.png")]', style: {} };
+    default:
+      return { className: 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-50 via-gray-50 to-gray-100', style: {} };
+  }
+};
+
+const getCardClass = (design) => {
+  // If specific template is selected, enforce its card style
+  // Otherwise default to modern rounded
+  const template = design?.layoutTemplate || 'modern';
+
+  switch (template) {
+    case 'corporate':
+      return 'bg-white shadow-md border border-gray-200 rounded-lg overflow-hidden';
+    case 'simple':
+      return 'bg-transparent border-none shadow-none rounded-none overflow-visible';
+    case 'modern':
+    default:
+      return 'bg-white/80 backdrop-blur-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/50 rounded-3xl overflow-hidden';
+  }
+};
+
 export default function PublicPreview() {
   const { slug } = useParams();
   const [snapshot, setSnapshot] = useState(null);
