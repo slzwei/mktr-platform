@@ -14,12 +14,20 @@ import { apiClient } from "@/api/client";
 
 const getBackgroundClass = (design) => {
     if (!design) return 'bg-gray-50';
-    switch (design.backgroundStyle) {
-        case 'gradient':
+
+    // Backwards compatibility for existing designs
+    const style = design.backgroundStyle || 'gradient';
+
+    switch (style) {
+        case 'gradient': // Modern default
             return 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-50 via-white to-gray-50';
-        case 'solid':
+        case 'solid_slate': // Corporate
+            return 'bg-slate-50';
+        case 'simple_gray': // Simple
+            return 'bg-white';
+        case 'solid': // Legacy
             return 'bg-gray-50';
-        case 'pattern':
+        case 'pattern': // Legacy
             return 'bg-gray-50 bg-[url("https://www.transparenttextures.com/patterns/cubes.png")]';
         default:
             return 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-50 via-gray-50 to-gray-100';
@@ -27,7 +35,19 @@ const getBackgroundClass = (design) => {
 };
 
 const getCardClass = (design) => {
-    return 'bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 rounded-2xl overflow-hidden';
+    // If specific template is selected, enforce its card style
+    // Otherwise default to modern rounded
+    const template = design?.layoutTemplate || 'modern';
+
+    switch (template) {
+        case 'corporate':
+            return 'bg-white shadow-md border border-gray-200 rounded-lg overflow-hidden';
+        case 'simple':
+            return 'bg-transparent border-none shadow-none rounded-none overflow-visible';
+        case 'modern':
+        default:
+            return 'bg-white/80 backdrop-blur-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/50 rounded-3xl overflow-hidden';
+    }
 };
 
 export default function LeadCapture() {

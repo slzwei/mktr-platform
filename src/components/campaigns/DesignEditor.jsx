@@ -59,15 +59,50 @@ function SortableItem(props) {
 const COMBINABLE_FIELDS = ['dob', 'postal_code', 'education_level', 'monthly_income'];
 const SG_PHONE_PREFIXES = ['9', '8', '6', '3'];
 
+const LAYOUT_TEMPLATES = {
+  modern: {
+    id: 'modern',
+    name: 'Vibrant Modern',
+    description: 'Colorful gradients, glassmorphism, and rounded aesthetics.',
+    backgroundStyle: 'gradient',
+    themeColor: '#3B82F6',
+    cardStyle: 'glass'
+  },
+  corporate: {
+    id: 'corporate',
+    name: 'Corporate Clean',
+    description: 'Professional solid colors, boxier layout, and subtle shadows.',
+    backgroundStyle: 'solid_slate',
+    themeColor: '#0F172A',
+    cardStyle: 'solid'
+  },
+  simple: {
+    id: 'simple',
+    name: 'Clean & Simple',
+    description: 'Minimalist flat design with maximum readability.',
+    backgroundStyle: 'simple_gray',
+    themeColor: '#2563EB',
+    cardStyle: 'flat'
+  }
+};
+
 // Helper to determine the background class based on design config
 const getBackgroundClass = (design) => {
   if (!design) return 'bg-gray-50';
-  switch (design.backgroundStyle) {
-    case 'gradient':
+
+  // Backwards compatibility for existing designs
+  const style = design.backgroundStyle || 'gradient';
+
+  switch (style) {
+    case 'gradient': // Modern default
       return 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-50 via-white to-gray-50';
-    case 'solid':
+    case 'solid_slate': // Corporate
+      return 'bg-slate-50';
+    case 'simple_gray': // Simple
+      return 'bg-white';
+    case 'solid': // Legacy
       return 'bg-gray-50';
-    case 'pattern':
+    case 'pattern': // Legacy
       return 'bg-gray-50 bg-[url("https://www.transparenttextures.com/patterns/cubes.png")]';
     default:
       return 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-gray-50 via-gray-50 to-gray-100';
@@ -75,7 +110,19 @@ const getBackgroundClass = (design) => {
 };
 
 const getCardClass = (design) => {
-  return 'bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 rounded-2xl overflow-hidden';
+  // If specific template is selected, enforce its card style
+  // Otherwise default to modern rounded
+  const template = design?.layoutTemplate || 'modern';
+
+  switch (template) {
+    case 'corporate':
+      return 'bg-white shadow-md border border-gray-200 rounded-lg overflow-hidden';
+    case 'simple':
+      return 'bg-transparent border-none shadow-none rounded-none overflow-visible';
+    case 'modern':
+    default:
+      return 'bg-white/80 backdrop-blur-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/50 rounded-3xl overflow-hidden';
+  }
 };
 
 const colorPresets = [
@@ -145,6 +192,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
     visibleFields: design.visibleFields || { phone: true, dob: true, postal_code: true },
     requiredFields: design.requiredFields || {},
     fieldOrder: normalizeFieldOrder(design.fieldOrder),
+    layoutTemplate: design.layoutTemplate || 'modern', // 'modern', 'corporate', 'simple'
     otpChannel: design.otpChannel || "sms" // 'sms' or 'whatsapp'
   });
 
@@ -861,60 +909,94 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
 
             {activeTab === 'design' && (
               <div className="space-y-6">
+                {/* Layout Template Selection */}
                 <div className="space-y-3">
-                  <Label className="text-sm font-semibold text-gray-700">Theme Color</Label>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-4 gap-3">
-                      {colorPresets.map((preset) => (
-                        <button
-                          key={preset.name}
-                          onClick={() => handleDesignChange('themeColor', preset.color)}
-                          className={`relative w-full h-12 rounded-lg border-2 transition-all ${currentDesign.themeColor === preset.color
-                            ? 'border-gray-400 shadow-md'
-                            : 'border-gray-200 hover:border-gray-300'
-                            }`}
-                          style={{ backgroundColor: preset.color }}
-                        >
-                          {currentDesign.themeColor === preset.color && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center">
-                                <div className="w-2 h-2 bg-gray-800 rounded-full"></div>
-                              </div>
+                  <Label className="text-sm font-semibold text-gray-700">Layout Style</Label>
+                  <div className="grid grid-cols-1 gap-3">
+                    {Object.values(LAYOUT_TEMPLATES).map((template) => (
+                      <div
+                        key={template.id}
+                        onClick={() => {
+                          handleDesignChange('layoutTemplate', template.id);
+                          handleDesignChange('backgroundStyle', template.backgroundStyle);
+                        }}
+                        className={`relative p-4 rounded-xl border-2 transition-all cursor-pointer ${currentDesign.layoutTemplate === template.id
+                          ? 'border-blue-600 bg-blue-50/50'
+                          : 'border-gray-100 hover:border-blue-200 hover:bg-gray-50'
+                          }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h4 className="font-semibold text-gray-900">{template.name}</h4>
+                            <p className="text-xs text-gray-500 mt-1">{template.description}</p>
+                          </div>
+                          {currentDesign.layoutTemplate === template.id && (
+                            <div className="h-5 w-5 rounded-full bg-blue-600 flex items-center justify-center">
+                              <CheckCircle2 className="w-3 h-3 text-white" />
                             </div>
                           )}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-3 pt-2 border-t">
-                      <Label className="text-sm">Custom:</Label>
-                      <Input
-                        type="color"
-                        value={currentDesign.themeColor}
-                        onChange={(e) => handleDesignChange('themeColor', e.target.value)}
-                        className="w-16 h-10 p-1 rounded-lg border"
-                      />
-                      <Badge variant="outline" className="font-mono text-xs">
-                        {currentDesign.themeColor}
-                      </Badge>
-                    </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <Label className="text-sm font-semibold text-gray-700">Headline Text Size</Label>
-                  <div className="space-y-4">
-                    <Slider
-                      value={[currentDesign.headlineSize || 20]}
-                      onValueChange={(value) => handleDesignChange('headlineSize', value[0])}
-                      max={36}
-                      min={16}
-                      step={2}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-sm text-gray-500">
-                      <span>Small (16px)</span>
-                      <span className="font-medium">{currentDesign.headlineSize || 20}px</span>
-                      <span>Large (36px)</span>
+                <div className="space-y-3 pt-4 border-t">
+                  <div className="space-y-3">
+                    <Label className="text-sm font-semibold text-gray-700">Theme Color</Label>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-4 gap-3">
+                        {colorPresets.map((preset) => (
+                          <button
+                            key={preset.name}
+                            onClick={() => handleDesignChange('themeColor', preset.color)}
+                            className={`relative w-full h-12 rounded-lg border-2 transition-all ${currentDesign.themeColor === preset.color
+                              ? 'border-gray-400 shadow-md'
+                              : 'border-gray-200 hover:border-gray-300'
+                              }`}
+                            style={{ backgroundColor: preset.color }}
+                          >
+                            {currentDesign.themeColor === preset.color && (
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center">
+                                  <div className="w-2 h-2 bg-gray-800 rounded-full"></div>
+                                </div>
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-3 pt-2 border-t">
+                        <Label className="text-sm">Custom:</Label>
+                        <Input
+                          type="color"
+                          value={currentDesign.themeColor}
+                          onChange={(e) => handleDesignChange('themeColor', e.target.value)}
+                          className="w-16 h-10 p-1 rounded-lg border"
+                        />
+                        <Badge variant="outline" className="font-mono text-xs">
+                          {currentDesign.themeColor}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="text-sm font-semibold text-gray-700">Headline Text Size</Label>
+                    <div className="space-y-4">
+                      <Slider
+                        value={[currentDesign.headlineSize || 20]}
+                        onValueChange={(value) => handleDesignChange('headlineSize', value[0])}
+                        max={36}
+                        min={16}
+                        step={2}
+                        className="w-full"
+                      />
+                      <div className="flex justify-between text-sm text-gray-500">
+                        <span>Small (16px)</span>
+                        <span className="font-medium">{currentDesign.headlineSize || 20}px</span>
+                        <span>Large (36px)</span>
+                      </div>
                     </div>
                   </div>
                 </div>
