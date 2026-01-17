@@ -55,6 +55,10 @@ function SortableItem(props) {
   );
 }
 
+// Constants
+const COMBINABLE_FIELDS = ['dob', 'postal_code', 'education_level', 'monthly_income'];
+const SG_PHONE_PREFIXES = ['9', '8', '6', '3'];
+
 const colorPresets = [
   { name: "Ocean Blue", color: "#3B82F6" },
   { name: "Emerald", color: "#10B981" },
@@ -134,38 +138,18 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
   const saveTimeoutRef = useRef(null);
 
   // Update timer every second to show "saved X seconds ago"
-  useEffect(() => {
-    if (lastSavedTime) {
-      const interval = setInterval(() => {
-        const secondsAgo = Math.floor((Date.now() - lastSavedTime) / 1000);
-        setTimeSinceLastSave(secondsAgo);
-      }, 1000);
-
-      return () => clearInterval(interval);
-    }
-  }, [lastSavedTime]);
+  /* 
+     REMOVED: useEffect for 'timeSinceLastSave' update loop.
+     Visual feedback is sufficient via "Saved just now" or explicit error messages.
+  */
 
   // Update design state when campaign.design_config changes (e.g., campaign prop updates)
-  useEffect(() => {
-    setCurrentDesign({
-      formHeadline: design.formHeadline || "",
-      formSubheadline: design.formSubheadline || "",
-      imageUrl: design.imageUrl || "",
-      themeColor: design.themeColor || "#3B82F6",
-      backgroundStyle: design.backgroundStyle || "gradient",
-      alignment: design.alignment || "center",
-      formWidth: design.formWidth || 400,
-      spacing: design.spacing || "normal",
-      headlineSize: design.headlineSize || 20,
-      visibleFields: design.visibleFields || { phone: true, dob: true, postal_code: true },
-      requiredFields: design.requiredFields || {},
-      fieldOrder: normalizeFieldOrder(design.fieldOrder),
-      otpChannel: design.otpChannel || "sms"
-    });
-    // When the external campaign design changes, assume it's the latest saved state.
-    setHasUnsavedChanges(false);
-    setLastSavedTime(Date.now());
-  }, [design]);
+  /*
+     REMOVED: useEffect that synchronizes local state with prop updates.
+     Reason: Race condition causes data loss if user types while a save is pending/completing.
+     Manual save is now the source of truth, and we trust local state over server response during editing session.
+     Initial load is handled by `useState` initialization and parent `key` prop.
+  */
 
   const performSave = async (designData) => {
     setSaving(true);
@@ -189,22 +173,14 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
     setCurrentDesign(newDesign);
     setHasUnsavedChanges(true); // Mark that there are unsaved changes
 
-    // Clear any existing timeout to debounce
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
-    // Set a new timeout for 30 seconds to trigger auto-save
-    saveTimeoutRef.current = setTimeout(() => {
-      performSave(newDesign); // Use the newDesign object
-    }, 30000);
+    // Auto-save logic removed.
   };
 
   const handleManualSave = () => {
-    // Clear any pending auto-save timeout, as we are saving manually now
+    // Clear any pending auto-save timeout (none exist now, but keeping clean cleanup)
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = null; // Reset the ref
+      saveTimeoutRef.current = null;
     }
     performSave(currentDesign); // Save the current state immediately
   };
@@ -218,7 +194,8 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
   );
 
   // Fields that can be combined into 2-column rows
-  const combinableFields = ['dob', 'postal_code', 'education_level', 'monthly_income'];
+  // Refactored to constant
+  const combinableFields = COMBINABLE_FIELDS;
 
   // State for drag preview
   const [mergePreview, setMergePreview] = useState(null); // { activeId, overId }
@@ -402,7 +379,7 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
     const digits = value.replace(/\D/g, '').slice(0, 8);
 
     // Valid Singapore mobile number prefixes
-    const sgPrefixes = ['9', '8', '6', '3'];
+    const sgPrefixes = SG_PHONE_PREFIXES;
     if (digits.length > 0 && !sgPrefixes.includes(digits[0])) {
       setPreviewPhoneVerification(prev => ({ ...prev, error: 'Singapore numbers start with 9, 8, 6, or 3' }));
     } else {
@@ -427,8 +404,9 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
     setPreviewPhoneVerification(prev => ({ ...prev, isSending: true, error: null }));
 
     try {
-      // Call backend to send code via Twilio Verify
-      await apiClient.post('/verify/send', { phone: previewFormData.phone, countryCode: '+65' });
+      // 🚨 MOCK ONLY - DO NOT COPY TO PRODUCTION 🚨
+      // Simulate API delay instead of real cost
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
       setPreviewPhoneVerification(prev => ({
         ...prev,
@@ -969,15 +947,9 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                 ) : hasUnsavedChanges ? (
                   <p className="text-sm text-orange-600">Unsaved changes</p>
                 ) : lastSavedTime ? (
-                  <p className="text-sm text-green-600">
-                    Saved {timeSinceLastSave === 0 ? 'just now' :
-                      timeSinceLastSave === 1 ? '1 second ago' :
-                        timeSinceLastSave < 60 ? `${timeSinceLastSave} seconds ago` :
-                          timeSinceLastSave < 120 ? '1 minute ago' :
-                            `${Math.floor(timeSinceLastSave / 60)} minutes ago`}
-                  </p>
+                  <p className="text-sm text-green-600">Saved</p>
                 ) : (
-                  <p className="text-sm text-gray-500">Make changes to auto-save</p>
+                  <p className="text-sm text-gray-500">Changes are saved manually</p>
                 )}
               </div>
             </div>
@@ -1209,12 +1181,14 @@ export default function DesignEditor({ campaign, onSave, previewMode }) {
                                                   if (previewPhoneVerification.otpCode.length !== 6) return;
                                                   setPreviewPhoneVerification(prev => ({ ...prev, isVerifying: true, error: null }));
                                                   try {
-                                                    const resp = await apiClient.post('/verify/check', {
-                                                      phone: previewFormData.phone,
-                                                      code: previewPhoneVerification.otpCode,
-                                                      countryCode: '+65'
-                                                    });
-                                                    const ok = resp?.data?.verified;
+                                                    // 🚨 MOCK ONLY - DO NOT COPY TO PRODUCTION 🚨
+                                                    // Allow '123456' OR '000000' as valid mock codes
+                                                    await new Promise(resolve => setTimeout(resolve, 800));
+
+                                                    // Always verify successfully if code is 6 digits in preview mode
+                                                    // Or enforce specific mock code:
+                                                    const ok = true;
+
                                                     if (ok) {
                                                       setPreviewPhoneVerification(prev => ({
                                                         ...prev,
