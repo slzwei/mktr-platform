@@ -12,9 +12,6 @@ import { Button } from '@/components/ui/button';
 const getBackgroundClass = (design) => {
   if (!design) return { className: 'bg-gray-50', style: {} };
 
-  // Debug log
-  console.log('Preview: getBackgroundClass design:', design);
-
   const type = design.backgroundType || 'preset'; // 'preset' | 'custom'
 
   if (type === 'custom') {
@@ -154,12 +151,14 @@ export default function PublicPreview() {
     );
   }
 
+  const background = getBackgroundClass(design);
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className={`min-h-screen ${background.className}`} style={background.style}>
       {/* Title update */}
       <Title title={`Preview • ${snapshot?.name || 'Campaign'}`} />
       <div className="flex items-center justify-center py-12 px-6">
-        <div className="w-full" style={{ maxWidth: `${design.formWidth || 400}px` }}>
+        <div className={`w-full ${getCardClass(design)}`} style={{ maxWidth: `${design.formWidth || 400}px` }}>
           {design?.imageUrl && (
             <div className="w-full h-56 lg:h-72 mb-6">
               <img src={resolveImageUrl(design.imageUrl)} alt="Header" className="w-full h-full object-contain rounded-md" />
