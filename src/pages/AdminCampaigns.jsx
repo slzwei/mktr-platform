@@ -43,8 +43,13 @@ import {
   MoreVertical,
   Grid as GridIcon,
   List as ListIcon,
-  Search
+  Search,
+  Car,
+  QrCode
 } from "lucide-react";
+
+import CampaignTypeSelectionDialog from "../components/campaigns/CampaignTypeSelectionDialog";
+
 
 import { useNavigate } from "react-router-dom";
 
@@ -62,6 +67,8 @@ export default function AdminCampaigns() {
   const [viewMode, setViewMode] = useState("list"); // list | grid
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // all | active | inactive
+  const [isTypeSelectionOpen, setIsTypeSelectionOpen] = useState(false);
+
 
   useEffect(() => {
     loadData();
@@ -204,13 +211,21 @@ export default function AdminCampaigns() {
     </DropdownMenu>
   );
 
+  // helper for type icon
+  const getTypeIcon = (type) => {
+    if (type === 'brand_awareness') return <Car className="w-4 h-4 text-blue-600" />;
+    return <QrCode className="w-4 h-4 text-green-600" />;
+  };
+
   const renderListTable = (list, archived = false) => (
+
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow className="bg-gray-50">
             <TableHead>Campaign Name</TableHead>
             {!archived && <TableHead>Status</TableHead>}
+            <TableHead>Type</TableHead>
             <TableHead>Duration</TableHead>
             <TableHead>Age Range</TableHead>
 
@@ -246,6 +261,14 @@ export default function AdminCampaigns() {
                   </Badge>
                 </TableCell>
               )}
+              <TableCell>
+                <div className="flex items-center gap-2" title={campaign.type === 'brand_awareness' ? 'PHV Campaign' : 'Regular Campaign'}>
+                  {getTypeIcon(campaign.type)}
+                  <span className="text-sm text-gray-600 capitalize">
+                    {campaign.type === 'brand_awareness' ? 'PHV' : 'Regular'}
+                  </span>
+                </div>
+              </TableCell>
               <TableCell>
                 {campaign.start_date && campaign.end_date ? (
                   <>
@@ -321,6 +344,10 @@ export default function AdminCampaigns() {
               </div>
 
             </div>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              {getTypeIcon(c.type)}
+              <span>{c.type === 'brand_awareness' ? 'PHV Campaign' : 'Regular Campaign'}</span>
+            </div>
             <div className="flex items-center justify-between pt-1">
               {archived ? (
                 <div className="flex gap-2">
@@ -362,7 +389,7 @@ export default function AdminCampaigns() {
             <h1 className="text-3xl font-bold text-gray-900">Admin - Campaign Management</h1>
             <p className="text-gray-600 mt-1">Create and manage your marketing campaigns.</p>
           </div>
-          <Button onClick={() => navigate("/admin/campaigns/new")} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={() => setIsTypeSelectionOpen(true)} className="bg-blue-600 hover:bg-blue-700">
             <Plus className="w-5 h-5 mr-2" />
             Create Campaign
           </Button>
@@ -472,6 +499,13 @@ export default function AdminCampaigns() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        <CampaignTypeSelectionDialog
+          open={isTypeSelectionOpen}
+          onOpenChange={setIsTypeSelectionOpen}
+          onSelect={handleCreateCampaign}
+        />
+
 
 
 

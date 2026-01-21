@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Campaign } from "@/api/entities";
 import { integrations } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -27,10 +27,17 @@ export default function AdminCampaignForm() {
     const { id } = useParams();
     const navigate = useNavigate();
     const { toast } = useToast();
+    const [searchParams] = useSearchParams();
+    const typeParam = searchParams.get("type");
     const isEditMode = !!id;
+
+    // Default to type param if creating, else lead_generation. 
+    // If editing, this will be overwritten by loadCampaign data.
+    const initialType = typeParam || "lead_generation";
 
     const [formData, setFormData] = useState({
         name: "",
+        type: initialType,
         min_age: 18,
         max_age: 65,
         start_date: new Date(),
@@ -57,6 +64,7 @@ export default function AdminCampaignForm() {
             if (campaign) {
                 setFormData({
                     name: campaign.name || "",
+                    type: campaign.type || "lead_generation",
                     min_age: campaign.min_age || 18,
                     max_age: campaign.max_age || 65,
                     start_date: campaign.start_date ? parseISO(campaign.start_date) : new Date(),
@@ -129,6 +137,7 @@ export default function AdminCampaignForm() {
         try {
             const formattedData = {
                 name: formData.name,
+                type: formData.type,
                 min_age: formData.min_age,
                 max_age: formData.max_age,
                 is_active: formData.is_active,
@@ -163,6 +172,10 @@ export default function AdminCampaignForm() {
         );
     }
 
+    // Helper to determine display text for type
+    const isPHV = formData.type === 'brand_awareness';
+    const typeLabel = isPHV ? 'PHV' : 'Regular';
+
     return (
         <div className="p-6 lg:p-8 max-w-5xl mx-auto">
             <div className="mb-6 flex items-center gap-4">
@@ -172,7 +185,9 @@ export default function AdminCampaignForm() {
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">{isEditMode ? "Edit Campaign" : "Create New Campaign"}</h1>
                     <p className="text-muted-foreground">
-                        {isEditMode ? "Update campaign details and settings." : "Configure a new marketing campaign."}
+                        {isEditMode
+                            ? "Update campaign details and settings."
+                            : `Configure a new ${typeLabel} campaign.`}
                     </p>
                 </div>
             </div>
@@ -324,68 +339,76 @@ export default function AdminCampaignForm() {
                             </CardContent>
                         </Card>
 
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Ad Media</CardTitle>
-                                <CardDescription>Required for tablet assignment.</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                {formData.ad_playlist && formData.ad_playlist.length > 0 ? (
-                                    <div className="relative group rounded-lg overflow-hidden border bg-black/5 aspect-video w-full">
-                                        {formData.ad_playlist[0].type === "video" ? (
-                                            <div className="w-full h-full flex items-center justify-center bg-black">
-                                                <video src={formData.ad_playlist[0].url} className="w-full h-full object-contain" controls />
+                        {/* Conditionally render Ad Media for PHV Campaigns */}
+                        {isPHV && (
+                            <Card className="border-blue-200 bg-blue-50/20">
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2 text-blue-700">
+                                        <Video className="w-5 h-5" />
+                                        Ad Media (Tablet Display)
+                                    </CardTitle>
+                                    <CardDescription className="text-blue-600/80">
+                                        Required for PHV campaigns. Upload a video or image to display on tablets.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    {formData.ad_playlist && formData.ad_playlist.length > 0 ? (
+                                        <div className="relative group rounded-lg overflow-hidden border bg-black/5 aspect-video w-full">
+                                            {formData.ad_playlist[0].type === "video" ? (
+                                                <div className="w-full h-full flex items-center justify-center bg-black">
+                                                    <video src={formData.ad_playlist[0].url} className="w-full h-full object-contain" controls />
+                                                </div>
+                                            ) : (
+                                                <img
+                                                    src={formData.ad_playlist[0].url}
+                                                    alt="Ad Asset"
+                                                    className="w-full h-full object-contain"
+                                                />
+                                            )}
+
+                                            <div className="absolute top-2 right-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="destructive"
+                                                    size="icon"
+                                                    className="h-8 w-8 shadow-sm"
+                                                    onClick={removeMedia}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
                                             </div>
-                                        ) : (
-                                            <img
-                                                src={formData.ad_playlist[0].url}
-                                                alt="Ad Asset"
-                                                className="w-full h-full object-contain"
+
+                                            <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded flex items-center">
+                                                {formData.ad_playlist[0].type === "video" ? <Video className="h-3 w-3 mr-1" /> : <ImageIcon className="h-3 w-3 mr-1" />}
+                                                {formData.ad_playlist[0].type === "video" ? "Video" : "Image (10s)"}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center border-2 border-dashed border-blue-200 rounded-lg p-6 hover:bg-blue-50 transition-colors cursor-pointer text-center bg-white" onClick={() => document.getElementById('media-upload-page').click()}>
+                                            <input
+                                                id="media-upload-page"
+                                                type="file"
+                                                accept="image/*,video/*"
+                                                className="hidden"
+                                                onChange={handleFileUpload}
+                                                disabled={uploading}
                                             />
-                                        )}
-
-                                        <div className="absolute top-2 right-2">
-                                            <Button
-                                                type="button"
-                                                variant="destructive"
-                                                size="icon"
-                                                className="h-8 w-8 shadow-sm"
-                                                onClick={removeMedia}
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
+                                            {uploading ? (
+                                                <Loader2 className="h-8 w-8 text-blue-500 animate-spin mb-2" />
+                                            ) : (
+                                                <Upload className="h-8 w-8 text-blue-400 mb-2" />
+                                            )}
+                                            <div className="text-sm font-medium text-blue-900">
+                                                {uploading ? "Uploading..." : "Click to upload"}
+                                            </div>
+                                            <p className="text-xs text-blue-600 mt-1">
+                                                Images/Videos (Max 10MB)
+                                            </p>
                                         </div>
-
-                                        <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded flex items-center">
-                                            {formData.ad_playlist[0].type === "video" ? <Video className="h-3 w-3 mr-1" /> : <ImageIcon className="h-3 w-3 mr-1" />}
-                                            {formData.ad_playlist[0].type === "video" ? "Video" : "Image (10s)"}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 hover:bg-slate-50 transition-colors cursor-pointer text-center" onClick={() => document.getElementById('media-upload-page').click()}>
-                                        <input
-                                            id="media-upload-page"
-                                            type="file"
-                                            accept="image/*,video/*"
-                                            className="hidden"
-                                            onChange={handleFileUpload}
-                                            disabled={uploading}
-                                        />
-                                        {uploading ? (
-                                            <Loader2 className="h-8 w-8 text-blue-500 animate-spin mb-2" />
-                                        ) : (
-                                            <Upload className="h-8 w-8 text-slate-400 mb-2" />
-                                        )}
-                                        <div className="text-sm font-medium">
-                                            {uploading ? "Uploading..." : "Click to upload"}
-                                        </div>
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                            Images/Videos (Max 10MB)
-                                        </p>
-                                    </div>
-                                )}
-                            </CardContent>
-                        </Card>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        )}
 
                         <div className="flex gap-4">
                             <Button type="button" variant="outline" className="w-full" onClick={() => navigate("/AdminCampaigns")}>
