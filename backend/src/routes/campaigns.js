@@ -102,7 +102,7 @@ router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req
     ad_playlist: ad_playlist || [],
     createdBy: req.user.id,
     status: is_active ? 'active' : 'draft',
-    type: 'lead_generation'
+    type: req.body.type || 'lead_generation'
   };
   if (commission_amount_driver !== undefined) campaignData.commission_amount_driver = commission_amount_driver;
   if (commission_amount_fleet !== undefined) campaignData.commission_amount_fleet = commission_amount_fleet;
