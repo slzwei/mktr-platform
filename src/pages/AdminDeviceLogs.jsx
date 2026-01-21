@@ -122,18 +122,26 @@ export default function AdminDeviceLogs() {
                                                 <TableCell>
                                                     {log.type === 'HEARTBEAT' ? (
                                                         <div className="flex gap-4 text-xs font-mono text-muted-foreground">
-                                                            <span className="flex items-center gap-1.5">
-                                                                <Activity className="h-3 w-3 text-blue-500" />
-                                                                Status: <span className="text-foreground">{log.payload?.status}</span>
-                                                            </span>
-                                                            <span className="flex items-center gap-1.5">
-                                                                <Battery className="h-3 w-3 text-green-500" />
-                                                                {log.payload?.batteryLevel ? `${(log.payload.batteryLevel * 100).toFixed(0)}%` : 'N/A'}
-                                                            </span>
-                                                            <span className="flex items-center gap-1.5">
-                                                                <HardDrive className="h-3 w-3 text-orange-500" />
-                                                                {log.payload?.storageUsed || 'N/A'}
-                                                            </span>
+                                                            {log.payload?.source === 'manifest_fetch' ? (
+                                                                <span className="flex items-center gap-1.5 text-blue-600">
+                                                                    <RefreshCcw className="h-3 w-3" /> Manifest Refresh (Manual)
+                                                                </span>
+                                                            ) : (
+                                                                <>
+                                                                    <span className="flex items-center gap-1.5">
+                                                                        <Activity className="h-3 w-3 text-blue-500" />
+                                                                        Status: <span className="text-foreground">{log.payload?.status}</span>
+                                                                    </span>
+                                                                    <span className="flex items-center gap-1.5">
+                                                                        <Battery className="h-3 w-3 text-green-500" />
+                                                                        {log.payload?.batteryLevel ? `${(log.payload.batteryLevel * 100).toFixed(0)}%` : 'N/A'}
+                                                                    </span>
+                                                                    <span className="flex items-center gap-1.5">
+                                                                        <HardDrive className="h-3 w-3 text-orange-500" />
+                                                                        {log.payload?.storageUsed || 'N/A'}
+                                                                    </span>
+                                                                </>
+                                                            )}
                                                         </div>
                                                     ) : (
                                                         <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap max-w-[600px] overflow-hidden">

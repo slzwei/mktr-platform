@@ -19,7 +19,8 @@ import {
     ChevronUp,
     ExternalLink,
     Battery,
-    HardDrive
+    HardDrive,
+    RefreshCcw
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -209,10 +210,16 @@ export default function AdminDevices() {
                                                                                 </Badge>
                                                                                 <div className="truncate text-muted-foreground font-mono">
                                                                                     {log.type === 'HEARTBEAT' ? (
-                                                                                        <span className="flex gap-3">
-                                                                                            <span className="flex items-center gap-1"><Battery className="h-3 w-3" /> {(log.payload?.batteryLevel * 100).toFixed(0)}%</span>
-                                                                                            <span className="flex items-center gap-1"><HardDrive className="h-3 w-3" /> {log.payload?.storageUsed}</span>
-                                                                                        </span>
+                                                                                        log.payload?.source === 'manifest_fetch' ? (
+                                                                                            <span className="flex items-center gap-1.5 text-blue-600">
+                                                                                                <RefreshCcw className="h-3 w-3" /> Manifest Refresh (Manual)
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            <span className="flex gap-3">
+                                                                                                <span className="flex items-center gap-1"><Battery className="h-3 w-3" /> {(log.payload?.batteryLevel * 100).toFixed(0)}%</span>
+                                                                                                <span className="flex items-center gap-1"><HardDrive className="h-3 w-3" /> {log.payload?.storageUsed}</span>
+                                                                                            </span>
+                                                                                        )
                                                                                     ) : (
                                                                                         JSON.stringify(log.payload)
                                                                                     )}
