@@ -108,6 +108,8 @@ class PlayerViewModel @Inject constructor(
                 currentIndex = (currentIndex + 1) % currentPlaylist.size
                 playNextItem()
             }
+        } else {
+            Log.e("PlayerVM", "Missing asset for item ${item.id} (assetId=${item.assetId}). Skipping.")
+            currentIndex = (currentIndex + 1) % currentPlaylist.size
+            playNextItem()
         }
-    }
-}
