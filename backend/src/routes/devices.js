@@ -82,6 +82,11 @@ router.patch('/:id', async (req, res) => {
             if (!campaign) {
                 return res.status(400).json({ message: 'Campaign not found' });
             }
+
+            // Enforce Usage Rule: Campaign MUST have media to be assigned to a PHV Tablet
+            if (!campaign.ad_playlist || !Array.isArray(campaign.ad_playlist) || campaign.ad_playlist.length === 0) {
+                return res.status(400).json({ message: 'Campaign must have media (video or image) to be assigned to a PHV tablet' });
+            }
         }
 
         // Whitelist updates: Only allow specific fields

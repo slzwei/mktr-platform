@@ -16,6 +16,8 @@ import { Calendar } from "@/components/ui/calendar";
 import CalendarIcon from "lucide-react/icons/calendar";
 import Save from "lucide-react/icons/save";
 import { format, parseISO } from "date-fns";
+import { Upload, X, Image as ImageIcon, Video, Trash2, Loader2, Play } from "lucide-react";
+import { integrations } from "@/api/client";
 
 export default function CampaignFormDialog({ open, onOpenChange, campaign, onSubmit }) {
   const [formData, setFormData] = useState({
@@ -29,6 +31,7 @@ export default function CampaignFormDialog({ open, onOpenChange, campaign, onSub
     commission_amount_fleet: "",
   });
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (campaign) {
@@ -41,6 +44,7 @@ export default function CampaignFormDialog({ open, onOpenChange, campaign, onSub
         is_active: campaign.is_active !== undefined ? campaign.is_active : true,
         commission_amount_driver: campaign.commission_amount_driver ?? "",
         commission_amount_fleet: campaign.commission_amount_fleet ?? "",
+        ad_playlist: campaign.ad_playlist || [],
       });
     } else {
       // Reset to default for new campaign
@@ -53,6 +57,7 @@ export default function CampaignFormDialog({ open, onOpenChange, campaign, onSub
         is_active: true,
         commission_amount_driver: "",
         commission_amount_fleet: "",
+        ad_playlist: [],
       });
     }
   }, [campaign, open]);
@@ -70,6 +75,42 @@ export default function CampaignFormDialog({ open, onOpenChange, campaign, onSub
     setFormData((prev) => ({ ...prev, is_active: checked }));
   };
 
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const type = file.type.startsWith("video/") ? "video" : "image";
+      // Use 'campaign_media' folder type
+      const response = await integrations.Core.UploadFile(file, "campaign_media");
+
+      // Response structure from UploadFile is response.data, which is { file: ... }
+      const fileData = response.file;
+
+      const newMedia = {
+        id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+        type: type,
+        url: fileData.url,
+        duration: type === "image" ? 10000 : 0 // Default 10s for image
+      };
+
+      // Enforce single media item: replace existing
+      setFormData((prev) => ({ ...prev, ad_playlist: [newMedia] }));
+    } catch (error) {
+      console.error("Upload failed", error);
+      alert("Upload failed: " + (error.message || "Unknown error"));
+    } finally {
+      setUploading(false);
+      // Reset input value to allow re-uploading same file if needed
+      e.target.value = "";
+    }
+  };
+
+  const removeMedia = () => {
+    setFormData((prev) => ({ ...prev, ad_playlist: [] }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -82,6 +123,7 @@ export default function CampaignFormDialog({ open, onOpenChange, campaign, onSub
         is_active: formData.is_active,
         start_date: formData.start_date.toISOString(),
         end_date: formData.end_date.toISOString(),
+        ad_playlist: formData.ad_playlist,
       };
       // If empty string, send null to clear value; otherwise send number
       formattedData.commission_amount_driver = formData.commission_amount_driver === "" ? null : Number(formData.commission_amount_driver);
@@ -207,6 +249,69 @@ export default function CampaignFormDialog({ open, onOpenChange, campaign, onSub
               </Popover>
             </div>
           </div>
+
+          <div className="space-y-4 border rounded-md p-4 bg-slate-50">
+            <div className="flex justify-between items-center">
+              <Label className="text-base font-semibold">Ad Media (Tablet Display)</Label>
+              <span className="text-xs text-slate-500">Required for PHV assignment</span>
+            </div>
+
+            {formData.ad_playlist && formData.ad_playlist.length > 0 ? (
+              <div className="relative group rounded-lg overflow-hidden border bg-black/5 aspect-video w-full max-w-sm mx-auto">
+                {formData.ad_playlist[0].type === "video" ? (
+                  <div className="w-full h-full flex items-center justify-center bg-black">
+                    <video src={formData.ad_playlist[0].url} className="w-full h-full object-contain" controls />
+                  </div>
+                ) : (
+                  <img
+                    src={formData.ad_playlist[0].url}
+                    alt="Ad Asset"
+                    className="w-full h-full object-contain"
+                  />
+                )}
+
+                <div className="absolute top-2 right-2 flex gap-2">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="icon"
+                    className="h-8 w-8 shadow-sm"
+                    onClick={removeMedia}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded flex items-center">
+                  {formData.ad_playlist[0].type === "video" ? <Video className="h-3 w-3 mr-1" /> : <ImageIcon className="h-3 w-3 mr-1" />}
+                  {formData.ad_playlist[0].type === "video" ? "Video" : "Image (10s)"}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 hover:bg-slate-100 transition-colors cursor-pointer" onClick={() => document.getElementById('media-upload').click()}>
+                <input
+                  id="media-upload"
+                  type="file"
+                  accept="image/*,video/*"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={uploading}
+                />
+                {uploading ? (
+                  <Loader2 className="h-8 w-8 text-blue-500 animate-spin mb-2" />
+                ) : (
+                  <Upload className="h-8 w-8 text-slate-400 mb-2" />
+                )}
+                <div className="text-sm font-medium text-slate-900">
+                  {uploading ? "Uploading..." : "Click to upload media"}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Supports Images/Videos (Max 10MB)
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center space-x-2">
             <Switch
               id="is_active"

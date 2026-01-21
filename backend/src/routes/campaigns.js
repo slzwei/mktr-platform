@@ -23,7 +23,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   } catch (_) {
     // Best-effort guard; skip tenant condition in dev
   }
-  
+
   // Non-admin users can only see their own campaigns or public ones
   if (req.user.role !== 'admin') {
     whereConditions[Op.or] = [
@@ -31,19 +31,19 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
       { isPublic: true }
     ];
   }
-  
+
   if (status) {
     whereConditions.status = status;
   }
-  
+
   if (type) {
     whereConditions.type = type;
   }
-  
+
   if (createdBy && req.user.role === 'admin') {
     whereConditions.createdBy = createdBy;
   }
-  
+
   if (search) {
     whereConditions[Op.or] = [
       { name: { [Op.iLike]: `%${search}%` } },
@@ -89,7 +89,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
 // Create new campaign
 router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
   console.log('📦 Create Campaign request by user:', req.user?.id, 'role:', req.user?.role, 'body:', req.body);
-  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, commission_amount_driver, commission_amount_fleet } = req.body;
+  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, commission_amount_driver, commission_amount_fleet, ad_playlist } = req.body;
 
   const campaignData = {
     name,
@@ -99,6 +99,7 @@ router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req
     end_date,
     is_active: is_active !== undefined ? is_active : true,
     assigned_agents: assigned_agents || [],
+    ad_playlist: ad_playlist || [],
     createdBy: req.user.id,
     status: is_active ? 'active' : 'draft',
     type: 'lead_generation'
@@ -126,8 +127,8 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
     if (dialect === 'postgres') {
       whereConditions.tenant_id = getTenantId(req);
     }
-  } catch (_) {}
-  
+  } catch (_) { }
+
   // Non-admin users can only see their own campaigns or public ones
   if (req.user.role !== 'admin') {
     whereConditions[Op.or] = [
@@ -181,7 +182,7 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
 // Update campaign
 router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, commission_amount_driver, commission_amount_fleet } = req.body;
+  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, commission_amount_driver, commission_amount_fleet, ad_playlist } = req.body;
 
   const whereConditions = { id };
   try {
@@ -189,15 +190,15 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
     if (dialect === 'postgres') {
       whereConditions.tenant_id = getTenantId(req);
     }
-  } catch (_) {}
-  
+  } catch (_) { }
+
   // Non-admin users can only update their own campaigns
   if (req.user.role !== 'admin') {
     whereConditions.createdBy = req.user.id;
   }
 
   const campaign = await Campaign.findOne({ where: whereConditions });
-  
+
   if (!campaign) {
     throw new AppError('Campaign not found or access denied', 404);
   }
@@ -213,6 +214,7 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
     updateData.status = is_active ? 'active' : 'draft';
   }
   if (assigned_agents !== undefined) updateData.assigned_agents = assigned_agents;
+  if (ad_playlist !== undefined) updateData.ad_playlist = ad_playlist;
   if (design_config !== undefined) updateData.design_config = design_config;
   if (commission_amount_driver !== undefined) updateData.commission_amount_driver = commission_amount_driver;
   if (commission_amount_fleet !== undefined) updateData.commission_amount_fleet = commission_amount_fleet;
@@ -236,15 +238,15 @@ router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async
     if (dialect === 'postgres') {
       whereConditions.tenant_id = getTenantId(req);
     }
-  } catch (_) {}
-  
+  } catch (_) { }
+
   // Non-admin users can only delete their own campaigns
   if (req.user.role !== 'admin') {
     whereConditions.createdBy = req.user.id;
   }
 
   const campaign = await Campaign.findOne({ where: whereConditions });
-  
+
   if (!campaign) {
     throw new AppError('Campaign not found or access denied', 404);
   }
@@ -278,8 +280,8 @@ router.get('/:id/analytics', authenticateToken, asyncHandler(async (req, res) =>
     if (dialect === 'postgres') {
       whereConditions.tenant_id = getTenantId(req);
     }
-  } catch (_) {}
-  
+  } catch (_) { }
+
   // Non-admin users can only see analytics for their own campaigns or public ones
   if (req.user.role !== 'admin') {
     whereConditions[Op.or] = [
@@ -289,7 +291,7 @@ router.get('/:id/analytics', authenticateToken, asyncHandler(async (req, res) =>
   }
 
   const campaign = await Campaign.findOne({ where: whereConditions });
-  
+
   if (!campaign) {
     throw new AppError('Campaign not found or access denied', 404);
   }
@@ -345,7 +347,7 @@ router.get('/:id/analytics', authenticateToken, asyncHandler(async (req, res) =>
       scanCount: tag.scanCount,
       uniqueScanCount: tag.uniqueScanCount,
       lastScanned: tag.lastScanned,
-      conversionRate: tag.scanCount > 0 ? 
+      conversionRate: tag.scanCount > 0 ?
         ((tag.analytics?.conversions || 0) / tag.scanCount * 100).toFixed(2) : 0
     }))
   };
@@ -362,14 +364,14 @@ router.patch('/:id/metrics', authenticateToken, requireAgentOrAdmin, asyncHandle
   const { metrics } = req.body;
 
   const whereConditions = { id };
-  
+
   // Non-admin users can only update their own campaigns
   if (req.user.role !== 'admin') {
     whereConditions.createdBy = req.user.id;
   }
 
   const campaign = await Campaign.findOne({ where: whereConditions });
-  
+
   if (!campaign) {
     throw new AppError('Campaign not found or access denied', 404);
   }
@@ -390,7 +392,7 @@ router.post('/:id/duplicate', authenticateToken, requireAgentOrAdmin, asyncHandl
   const { name } = req.body;
 
   const whereConditions = { id };
-  
+
   // Non-admin users can only duplicate their own campaigns or public ones
   if (req.user.role !== 'admin') {
     whereConditions[Op.or] = [
@@ -400,7 +402,7 @@ router.post('/:id/duplicate', authenticateToken, requireAgentOrAdmin, asyncHandl
   }
 
   const originalCampaign = await Campaign.findOne({ where: whereConditions });
-  
+
   if (!originalCampaign) {
     throw new AppError('Campaign not found or access denied', 404);
   }
@@ -433,16 +435,16 @@ router.post('/:id/duplicate', authenticateToken, requireAgentOrAdmin, asyncHandl
 // Archive campaign
 router.patch('/:id/archive', authenticateToken, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  
+
   const whereConditions = { id };
-  
+
   // Non-admin users can only archive their own campaigns
   if (req.user.role !== 'admin') {
     whereConditions.createdBy = req.user.id;
   }
 
   const campaign = await Campaign.findOne({ where: whereConditions });
-  
+
   if (!campaign) {
     throw new AppError('Campaign not found or access denied', 404);
   }
@@ -474,16 +476,16 @@ router.patch('/:id/archive', authenticateToken, asyncHandler(async (req, res) =>
 // Restore campaign from archive
 router.patch('/:id/restore', authenticateToken, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  
+
   const whereConditions = { id };
-  
+
   // Non-admin users can only restore their own campaigns
   if (req.user.role !== 'admin') {
     whereConditions.createdBy = req.user.id;
   }
 
   const campaign = await Campaign.findOne({ where: whereConditions });
-  
+
   if (!campaign) {
     throw new AppError('Campaign not found or access denied', 404);
   }
@@ -505,16 +507,16 @@ router.patch('/:id/restore', authenticateToken, asyncHandler(async (req, res) =>
 // Permanently delete campaign
 router.delete('/:id/permanent', authenticateToken, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  
+
   const whereConditions = { id };
-  
+
   // Non-admin users can only delete their own campaigns
   if (req.user.role !== 'admin') {
     whereConditions.createdBy = req.user.id;
   }
 
   const campaign = await Campaign.findOne({ where: whereConditions });
-  
+
   if (!campaign) {
     throw new AppError('Campaign not found or access denied', 404);
   }
