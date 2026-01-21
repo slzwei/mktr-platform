@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { apiClient as api } from '../api/client';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
 import { AssignCampaignDialog } from '../components/devices/AssignCampaignDialog';
 import { Badge } from '../components/ui/badge';
 import {
@@ -13,18 +13,26 @@ import {
     TableHeader,
     TableRow,
 } from "../components/ui/table";
-import { DeviceLogsSheet } from '../components/devices/DeviceLogsSheet';
-import { Activity } from 'lucide-react';
+import {
+    Activity,
+    ChevronDown,
+    ChevronUp,
+    ExternalLink,
+    Battery,
+    HardDrive
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function AdminDevices() {
+    const navigate = useNavigate();
     const [devices, setDevices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedDevice, setSelectedDevice] = useState(null);
 
-    // Logs State
-    const [viewLogsDevice, setViewLogsDevice] = useState(null);
-    const [logs, setLogs] = useState([]);
-    const [logsLoading, setLogsLoading] = useState(false);
+    // Logs Preview State
+    const [expandedDeviceId, setExpandedDeviceId] = useState(null);
+    const [previewLogs, setPreviewLogs] = useState([]);
+    const [previewLoading, setPreviewLoading] = useState(false);
 
     useEffect(() => {
         loadDevices();
@@ -42,44 +50,26 @@ export default function AdminDevices() {
         }
     };
 
-    const fetchLogs = async (deviceId) => {
+    const toggleExpandLogs = async (deviceId) => {
+        if (expandedDeviceId === deviceId) {
+            setExpandedDeviceId(null);
+            setPreviewLogs([]);
+            return;
+        }
+
+        setExpandedDeviceId(deviceId);
+        setPreviewLoading(true);
         try {
-            setLogsLoading(true);
-            const res = await api.get(`/devices/${deviceId}/logs`);
-            setLogs(res.data);
+            // Fetch only last 5 logs for preview
+            const res = await api.get(`/devices/${deviceId}/logs?limit=5`);
+            setPreviewLogs(res.data);
         } catch (err) {
             console.error(err);
         } finally {
-            setLogsLoading(false);
+            setPreviewLoading(false);
         }
     };
 
-    const handleViewLogs = (device) => {
-        setViewLogsDevice(device);
-        fetchLogs(device.id);
-    };
-
-    const getStatusColor = (status, lastSeen) => {
-        if (status !== 'active') return 'destructive'; // Offline/Disabled
-
-        // Check if seen recently (e.g., 5 mins)
-        if (!lastSeen) return 'destructive';
-
-        const lastSeenDate = new Date(lastSeen);
-        const diff = Date.now() - lastSeenDate.getTime();
-        // 5 minutes threshold
-        if (diff > 5 * 60 * 1000) return 'warning';
-
-        return 'success'; // "default" variant in Badge usually maps to primary, but we'll use specific colors if needed
-        // Since shadcn badge variants are: default, secondary, destructive, outline.
-        // We might need to map 'success' to 'default' or a custom style. 
-        // For now, let's stick to standard variants:
-        // 'active' + recent -> 'default' (black/primary)
-        // 'active' + stale -> 'secondary' (gray/yellowish)
-        // 'inactive' -> 'destructive'
-    };
-
-    // Helper for Badge Variant
     const getBadgeVariant = (status, lastSeen) => {
         if (status !== 'active') return 'destructive';
         if (!lastSeen) return 'destructive';
@@ -115,6 +105,7 @@ export default function AdminDevices() {
                                 <Table>
                                     <TableHeader>
                                         <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-gray-100">
+                                            <TableHead className="w-[50px]"></TableHead> {/* Expand Trigger */}
                                             <TableHead className="py-3 px-6 font-medium text-gray-500">Device Details</TableHead>
                                             <TableHead className="py-3 px-6 font-medium text-gray-500">Status</TableHead>
                                             <TableHead className="py-3 px-6 font-medium text-gray-500">Assigned Campaign</TableHead>
@@ -124,61 +115,53 @@ export default function AdminDevices() {
                                     </TableHeader>
                                     <TableBody>
                                         {devices.map(device => (
-                                            <TableRow key={device.id} className="hover:bg-gray-50/50 transition-colors border-gray-100">
-                                                <TableCell className="px-6 py-4 font-medium">
-                                                    <div className="flex flex-col gap-1">
-                                                        <span className="text-base font-semibold text-gray-900">{device.model || 'Generic Device'}</span>
-
-                                                        {/* External ID (e.g. Asset Tag) */}
-                                                        {device.externalId && (
-                                                            <div className="flex items-center gap-1.5 text-xs text-gray-500 font-mono bg-gray-100 px-1.5 py-0.5 rounded w-fit">
-                                                                <span className="font-semibold text-gray-400">TAG:</span>
-                                                                {device.externalId}
-                                                            </div>
-                                                        )}
-
-                                                        {/* Internal UUID */}
-                                                        <div
-                                                            className="flex items-center gap-1.5 text-xs text-blue-600/80 font-mono cursor-pointer hover:text-blue-700 hover:underline w-fit"
-                                                            onClick={() => {
-                                                                navigator.clipboard.writeText(device.id);
-                                                            }}
-                                                            title="Click to copy full UUID"
-                                                        >
-                                                            <span className="font-semibold text-gray-400 select-none">ID:</span>
-                                                            {device.id.substring(0, 8)}...
-                                                        </div>
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="px-6 py-4">
-                                                    <Badge variant={getBadgeVariant(device.status, device.lastSeenAt)}>
-                                                        {device.status}
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell className="px-6 py-4">
-                                                    {device.campaign ? (
-                                                        <span className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded text-sm">
-                                                            {device.campaign.name}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-gray-400 italic text-sm">Unassigned</span>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="px-6 py-4 text-sm text-gray-500">
-                                                    {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : 'Never'}
-                                                </TableCell>
-                                                <TableCell className="px-6 py-4 text-right">
-                                                    <div className="flex justify-end gap-2">
+                                            <React.Fragment key={device.id}>
+                                                {/* Main Row */}
+                                                <TableRow className={`hover:bg-gray-50/50 transition-colors border-gray-100 ${expandedDeviceId === device.id ? 'bg-muted/30' : ''}`}>
+                                                    <TableCell>
                                                         <Button
                                                             variant="ghost"
-                                                            size="sm"
-                                                            className="h-8 gap-2"
-                                                            onClick={() => handleViewLogs(device)}
+                                                            size="icon"
+                                                            className="h-8 w-8"
+                                                            onClick={() => toggleExpandLogs(device.id)}
                                                         >
-                                                            <Activity className="h-4 w-4" />
-                                                            <span className="sr-only sm:not-sr-only">Logs</span>
+                                                            {expandedDeviceId === device.id ? (
+                                                                <ChevronUp className="h-4 w-4" />
+                                                            ) : (
+                                                                <ChevronDown className="h-4 w-4" />
+                                                            )}
                                                         </Button>
-
+                                                    </TableCell>
+                                                    <TableCell className="px-6 py-4 font-medium">
+                                                        <div className="flex flex-col gap-1">
+                                                            <span className="text-base font-semibold text-gray-900">{device.model || 'Generic Device'}</span>
+                                                            <div
+                                                                className="flex items-center gap-1.5 text-xs text-blue-600/80 font-mono cursor-pointer hover:underline w-fit"
+                                                                onClick={() => navigator.clipboard.writeText(device.id)}
+                                                                title="Click to copy ID"
+                                                            >
+                                                                ID: {device.id.substring(0, 8)}...
+                                                            </div>
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell className="px-6 py-4">
+                                                        <Badge variant={getBadgeVariant(device.status, device.lastSeenAt)}>
+                                                            {device.status}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell className="px-6 py-4">
+                                                        {device.campaign ? (
+                                                            <span className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded text-sm">
+                                                                {device.campaign.name}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-gray-400 italic text-sm">Unassigned</span>
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell className="px-6 py-4 text-sm text-gray-500">
+                                                        {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : 'Never'}
+                                                    </TableCell>
+                                                    <TableCell className="px-6 py-4 text-right">
                                                         <Button
                                                             variant="outline"
                                                             size="sm"
@@ -187,9 +170,62 @@ export default function AdminDevices() {
                                                         >
                                                             Assign Campaign
                                                         </Button>
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
+                                                    </TableCell>
+                                                </TableRow>
+
+                                                {/* Expanded Row (Logs Preview) */}
+                                                {expandedDeviceId === device.id && (
+                                                    <TableRow className="bg-muted/10">
+                                                        <TableCell colSpan={6} className="p-0">
+                                                            <div className="p-4 border-b border-gray-100 bg-slate-50/50">
+                                                                <div className="flex justify-between items-center mb-3 px-2">
+                                                                    <h4 className="text-sm font-semibold flex items-center gap-2">
+                                                                        <Activity className="h-4 w-4 text-primary" />
+                                                                        Recent Logs (Last 5)
+                                                                    </h4>
+                                                                    <Button
+                                                                        variant="link"
+                                                                        size="sm"
+                                                                        className="h-auto p-0 text-blue-600"
+                                                                        onClick={() => navigate(`/admin/devices/${device.id}/logs`)}
+                                                                    >
+                                                                        See Full History <ExternalLink className="ml-1 h-3 w-3" />
+                                                                    </Button>
+                                                                </div>
+
+                                                                {previewLoading ? (
+                                                                    <div className="text-xs text-muted-foreground p-4">Loading logs...</div>
+                                                                ) : previewLogs.length === 0 ? (
+                                                                    <div className="text-xs text-muted-foreground p-4">No logs found.</div>
+                                                                ) : (
+                                                                    <div className="space-y-2">
+                                                                        {previewLogs.map((log) => (
+                                                                            <div key={log.id} className="grid grid-cols-[140px_100px_1fr] gap-4 text-xs p-2 rounded bg-white border border-gray-100 items-center">
+                                                                                <span className="text-muted-foreground">
+                                                                                    {format(new Date(log.createdAt), 'MMM d, HH:mm:ss')}
+                                                                                </span>
+                                                                                <Badge variant="outline" className="w-fit text-[10px] h-5">
+                                                                                    {log.type}
+                                                                                </Badge>
+                                                                                <div className="truncate text-muted-foreground font-mono">
+                                                                                    {log.type === 'HEARTBEAT' ? (
+                                                                                        <span className="flex gap-3">
+                                                                                            <span className="flex items-center gap-1"><Battery className="h-3 w-3" /> {(log.payload?.batteryLevel * 100).toFixed(0)}%</span>
+                                                                                            <span className="flex items-center gap-1"><HardDrive className="h-3 w-3" /> {log.payload?.storageUsed}</span>
+                                                                                        </span>
+                                                                                    ) : (
+                                                                                        JSON.stringify(log.payload)
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                )}
+                                            </React.Fragment>
                                         ))}
                                     </TableBody>
                                 </Table>
@@ -204,20 +240,6 @@ export default function AdminDevices() {
                         device={selectedDevice}
                         onClose={() => setSelectedDevice(null)}
                         onAssign={loadDevices}
-                    />
-                )}
-
-                {/* Logs Sheet */}
-                {viewLogsDevice && (
-                    <DeviceLogsSheet
-                        open={!!viewLogsDevice}
-                        device={viewLogsDevice}
-                        logs={logs}
-                        loading={logsLoading}
-                        onClose={() => {
-                            setViewLogsDevice(null);
-                            setLogs([]);
-                        }}
                     />
                 )}
             </div>

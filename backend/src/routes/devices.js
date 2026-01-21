@@ -32,21 +32,33 @@ router.get('/', async (req, res) => {
 
 // GET /api/devices/:id/logs
 // Fetch recent history for debugging
+// GET /api/devices/:id/logs
+// Fetch history with pagination
 router.get('/:id/logs', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 100;
+        const offset = (page - 1) * limit;
 
-        // FMEA Mitigation: Hard Limit to prevent browser crash
-        const limit = 100;
-
-        const logs = await BeaconEvent.findAll({
+        const { count, rows } = await BeaconEvent.findAndCountAll({
             where: { deviceId: id },
             order: [['createdAt', 'DESC']],
             limit: limit,
+            offset: offset,
             attributes: ['id', 'type', 'createdAt', 'payload']
         });
 
-        res.json({ success: true, data: logs });
+        res.json({
+            success: true,
+            data: rows,
+            pagination: {
+                total: count,
+                page: page,
+                limit: limit,
+                pages: Math.ceil(count / limit)
+            }
+        });
     } catch (err) {
         console.error('Error fetching device logs:', err);
         res.status(500).json({ success: false, message: 'Server Error' });
