@@ -254,7 +254,10 @@ async function startServer() {
     await (await import('./models/ShortLink.js')).default.sync({ alter: false });
     await (await import('./models/ShortLinkClick.js')).default.sync({ alter: false });
     await LeadPackage.sync({ alter: false });
+    await LeadPackage.sync({ alter: false });
     await LeadPackageAssignment.sync({ alter: false });
+    await (await import('./models/BeaconEvent.js')).default.sync({ alter: false });
+    await (await import('./models/Impression.js')).default.sync({ alter: false });
 
     // Ensure name fields exist and constraints are updated
     await FleetOwner.sync({ alter: false });
@@ -299,6 +302,17 @@ async function startServer() {
         }
       } catch (e) {
         console.warn('⚠️ Could not ensure commission columns on SQLite:', e.message);
+      }
+
+      try {
+        const [deviceColumns] = await sequelize.query('PRAGMA table_info(devices)');
+        const hasCampaignId = Array.isArray(deviceColumns) && deviceColumns.some(c => c.name === 'campaignId');
+        if (!hasCampaignId) {
+          await sequelize.query('ALTER TABLE devices ADD COLUMN campaignId TEXT');
+          console.log('✅ Added campaignId column to devices');
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not ensure device columns on SQLite:', e.message);
       }
     }
 
