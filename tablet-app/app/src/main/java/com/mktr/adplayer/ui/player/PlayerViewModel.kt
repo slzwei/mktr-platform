@@ -30,7 +30,8 @@ sealed class PlayerState {
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
-    private val assetManager: AssetManager
+    private val assetManager: AssetManager,
+    private val impressionManager: com.mktr.adplayer.data.manager.ImpressionManager
 ) : ViewModel() {
 
     private val _playerState = MutableStateFlow<PlayerState>(PlayerState.Initializing)
@@ -52,7 +53,6 @@ class PlayerViewModel @Inject constructor(
 
         viewModelScope.launch {
             // First, ensure all assets are downloaded (Blocking strategy for MVP)
-            // Ideally we'd stream/download-ahead, but for simplicity: download first.
             _playerState.value = PlayerState.Initializing
             try {
                 // Determine missing assets first if needed, but for now we just verify/download next item just-in-time OR look ahead.
@@ -80,6 +80,14 @@ class PlayerViewModel @Inject constructor(
                     fileUri = Uri.fromFile(file),
                     index = currentIndex,
                     total = currentPlaylist.size
+                )
+
+                // Track Impression
+                impressionManager.trackImpression(
+                    adId = item.assetId,
+                    campaignId = null, // TODO: Manifest should include campaign ID if needed, or backend infers it
+                    mediaType = item.type,
+                    durationMs = item.durationMs
                 )
 
                 // Wait for duration (if image) or let video finish?

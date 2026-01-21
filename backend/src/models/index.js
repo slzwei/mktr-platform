@@ -19,6 +19,7 @@ import ProspectActivity from './ProspectActivity.js';
 import UserPayout from './UserPayout.js';
 import Device from './Device.js';
 import BeaconEvent from './BeaconEvent.js';
+import Impression from './Impression.js'; // Added
 import IdempotencyKey from './IdempotencyKey.js';
 import ShortLink from './ShortLink.js';
 import ShortLinkClick from './ShortLinkClick.js';
@@ -55,6 +56,7 @@ const defineAssociations = () => {
   Campaign.hasMany(Commission, { foreignKey: 'campaignId', as: 'commissions' });
   Campaign.hasMany(LeadPackage, { foreignKey: 'campaignId', as: 'leadPackages' });
   Campaign.hasOne(CampaignPreview, { foreignKey: 'campaignId', as: 'preview' });
+  Campaign.hasMany(Impression, { foreignKey: 'campaignId', as: 'impressions' }); // Added
 
   // QrTag associations
   QrTag.belongsTo(User, { foreignKey: 'ownerUserId', as: 'owner' });
@@ -98,8 +100,11 @@ const defineAssociations = () => {
 
   // Device associations
   Device.hasMany(BeaconEvent, { foreignKey: 'deviceId', as: 'events' });
-  Device.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' }); // Added for Tablet App
+  Device.hasMany(Impression, { foreignKey: 'deviceId', as: 'impressions' }); // Added
+  Device.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
   BeaconEvent.belongsTo(Device, { foreignKey: 'deviceId', as: 'device' });
+  Impression.belongsTo(Device, { foreignKey: 'deviceId', as: 'device' }); // Added
+  Impression.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' }); // Added
 
   // ShortLink associations
   ShortLink.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
@@ -133,6 +138,7 @@ export {
   UserPayout,
   Device,
   BeaconEvent,
+  Impression, // Added
   IdempotencyKey,
   ShortLink,
   ShortLinkClick,
@@ -161,6 +167,7 @@ export default {
   UserPayout,
   Device,
   BeaconEvent,
+  Impression, // Added
   IdempotencyKey,
   ShortLink,
   ShortLinkClick,

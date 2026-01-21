@@ -36,13 +36,14 @@ data class BeaconHeartbeatRequest(
 
 @Serializable
 data class BeaconImpressionRequest(
-    val items: List<ImpressionItem>
+    val impressions: List<ImpressionItem>
 )
 
 @Serializable
 data class ImpressionItem(
-    @SerialName("asset_id") val assetId: String,
-    @SerialName("campaign_id") val campaignId: String?,
-    @SerialName("started_at") val startedAt: String, // ISO8601
-    @SerialName("duration_ms") val durationMs: Long
+    @SerialName("adId") val adId: String,
+    @SerialName("campaignId") val campaignId: String?,
+    @SerialName("mediaType") val mediaType: String,
+    @SerialName("occurredAt") val occurredAt: String, // ISO8601
+    @SerialName("durationMs") val durationMs: Long
 )

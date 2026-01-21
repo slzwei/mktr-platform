@@ -1,5 +1,5 @@
 import express from 'express';
-import { Device, Campaign } from '../models/index.js';
+import { Device, Campaign, BeaconEvent } from '../models/index.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -27,6 +27,29 @@ router.get('/', async (req, res) => {
     } catch (error) {
         console.error('Error fetching devices:', error);
         res.status(500).json({ message: 'Error fetching devices' });
+    }
+});
+
+// GET /api/devices/:id/logs
+// Fetch recent history for debugging
+router.get('/:id/logs', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // FMEA Mitigation: Hard Limit to prevent browser crash
+        const limit = 100;
+
+        const logs = await BeaconEvent.findAll({
+            where: { deviceId: id },
+            order: [['createdAt', 'DESC']],
+            limit: limit,
+            attributes: ['id', 'type', 'createdAt', 'payload']
+        });
+
+        res.json({ success: true, data: logs });
+    } catch (err) {
+        console.error('Error fetching device logs:', err);
+        res.status(500).json({ success: false, message: 'Server Error' });
     }
 });
 

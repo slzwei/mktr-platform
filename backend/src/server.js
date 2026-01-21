@@ -34,7 +34,7 @@ import verifyRoutes from './routes/verify.js';
 import analyticsRoutes from './routes/analytics.js';
 import leadgenProxyShim from './middleware/leadgenProxyShim.js';
 import adtechManifestRoutes from './routes/adtechManifest.js';
-import adtechBeaconsRoutes from './routes/adtechBeacons.js';
+import adtechBeaconRoutes from './routes/adtechBeacons.js';
 import contactRoutes from './routes/contact.js';
 import shortLinkRoutes from './routes/shortlinks.js';
 import leadPackageRoutes from './routes/leadPackages.js';
@@ -160,7 +160,7 @@ if (String(process.env.MANIFEST_ENABLED || 'false').toLowerCase() === 'true') {
   app.use('/api/adtech', adtechManifestRoutes);
 }
 if (String(process.env.BEACONS_ENABLED || 'false').toLowerCase() === 'true') {
-  app.use('/api/adtech', adtechBeaconsRoutes);
+  app.use('/api/adtech', adtechBeaconRoutes);
 }
 
 
