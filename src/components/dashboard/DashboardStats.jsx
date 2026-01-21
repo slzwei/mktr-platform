@@ -1,4 +1,4 @@
-import { ArrowUpRight, ArrowDownRight, Users, TrendingUp, DollarSign, Car } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Users, TrendingUp, DollarSign, Car, Eye } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -74,6 +74,17 @@ export default function DashboardStats({ stats, loading }) {
             color: "text-orange-600",
             bg: "bg-orange-50",
             iconColor: "text-orange-600"
+        },
+        {
+            title: "Ad Impressions",
+            value: (overview.impressionsToday || 0).toLocaleString(),
+            icon: Eye,
+            trend: "Today",
+            trendUp: true,
+            description: "views delivered",
+            color: "text-pink-600",
+            bg: "bg-pink-50",
+            iconColor: "text-pink-600"
         }
     ];
 

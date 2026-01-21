@@ -74,7 +74,8 @@ export default function AdminDashboard() {
         newProspects: overview?.stats?.prospects?.new || 0,
         campaignsTotal: overview?.stats?.campaigns?.total || 0,
         campaignsActive: overview?.stats?.campaigns?.active || 0,
-        commissionsTotal: Number(overview?.stats?.commissions?.total || 0)
+        commissionsTotal: Number(overview?.stats?.commissions?.total || 0),
+        impressionsToday: overview?.stats?.impressions?.today || 0 // Added
       };
 
       setStats({ prospects, campaigns, commissions, cars, overview: overviewStats });

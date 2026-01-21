@@ -1,16 +1,19 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import { 
-  User, 
-  Campaign, 
-  Prospect, 
-  QrTag, 
-  Commission, 
-  Car, 
-  Driver, 
+import {
+  User,
+  Campaign,
+  Prospect,
+  QrTag,
+  Commission,
+  Car,
+  Driver,
   FleetOwner,
+  Impression, // Added
   sequelize
 } from '../models/index.js';
+
+
 import { authenticateToken, requireAgentOrAdmin, requireRole } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
@@ -72,6 +75,9 @@ async function getAdminStats(startDate, endDate) {
     }
   };
 
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
   const [
     totalUsers,
     activeUsers,
@@ -84,7 +90,8 @@ async function getAdminStats(startDate, endDate) {
     totalQrTags,
     totalScans,
     totalCars,
-    activeCars
+    activeCars,
+    impressionsToday // Added
   ] = await Promise.all([
     safeCount(User),
     safeCount(User, { where: { isActive: true } }),
@@ -99,12 +106,13 @@ async function getAdminStats(startDate, endDate) {
     safeCount(QrTag),
     safeSum(QrTag, 'scanCount'),
     safeCount(Car),
-    safeCount(Car, { where: { status: 'active' } })
+    safeCount(Car, { where: { status: 'active' } }),
+    safeCount(Impression, { where: { occurredAt: { [Op.gte]: todayStart } } }) // Added
   ]);
 
   // User growth trend
   const userGrowth = await getUserGrowthTrend(startDate, endDate);
-  
+
   // Recent activities
   const recentActivities = await getRecentActivities(10);
 
@@ -134,6 +142,9 @@ async function getAdminStats(startDate, endDate) {
       totalCars,
       activeCars
     },
+    impressions: { // Added
+      today: impressionsToday
+    },
     recentActivities
   };
 }
@@ -151,34 +162,34 @@ async function getAgentStats(userId, startDate, endDate) {
     activeCampaigns
   ] = await Promise.all([
     Prospect.count({ where: { assignedAgentId: userId } }),
-    Prospect.count({ 
-      where: { 
+    Prospect.count({
+      where: {
         assignedAgentId: userId,
         createdAt: { [Op.gte]: startDate }
       }
     }),
-    Prospect.count({ 
-      where: { 
+    Prospect.count({
+      where: {
         assignedAgentId: userId,
         leadStatus: 'won'
       }
     }),
     Commission.sum('amount', { where: { agentId: userId } }) || 0,
-    Commission.sum('amount', { 
-      where: { 
+    Commission.sum('amount', {
+      where: {
         agentId: userId,
         status: 'pending'
       }
     }) || 0,
-    Commission.sum('amount', { 
-      where: { 
+    Commission.sum('amount', {
+      where: {
         agentId: userId,
         status: 'paid'
       }
     }) || 0,
     Campaign.count({ where: { createdBy: userId } }),
-    Campaign.count({ 
-      where: { 
+    Campaign.count({
+      where: {
         createdBy: userId,
         status: 'active'
       }
@@ -186,7 +197,7 @@ async function getAgentStats(userId, startDate, endDate) {
   ]);
 
   // Conversion rate
-  const conversionRate = assignedProspects > 0 ? 
+  const conversionRate = assignedProspects > 0 ?
     (convertedProspects / assignedProspects * 100).toFixed(2) : 0;
 
   // Recent prospects
@@ -244,20 +255,20 @@ async function getFleetOwnerStats(userId, startDate, endDate) {
     totalScans
   ] = await Promise.all([
     Car.count({ where: { fleetOwnerId: fleetOwner.id } }),
-    Car.count({ 
-      where: { 
+    Car.count({
+      where: {
         fleetOwnerId: fleetOwner.id,
         status: 'active'
       }
     }),
     Driver.count({ where: { fleetOwnerId: fleetOwner.id } }),
-    Driver.count({ 
-      where: { 
+    Driver.count({
+      where: {
         fleetOwnerId: fleetOwner.id,
         status: 'active'
       }
     }),
-    QrTag.count({ 
+    QrTag.count({
       include: [{
         association: 'car',
         where: { fleetOwnerId: fleetOwner.id }
@@ -272,7 +283,7 @@ async function getFleetOwnerStats(userId, startDate, endDate) {
   ]);
 
   // Fleet utilization rate
-  const utilizationRate = totalCars > 0 ? 
+  const utilizationRate = totalCars > 0 ?
     (activeCars / totalCars * 100).toFixed(2) : 0;
 
   // Recent car activities (QR scans, assignments)
@@ -317,8 +328,8 @@ async function getCustomerStats(userId, startDate, endDate) {
     myProspectRequests,
     myInteractions
   ] = await Promise.all([
-    Prospect.count({ 
-      where: { 
+    Prospect.count({
+      where: {
         email: req.user.email // Assuming customer might have submitted leads
       }
     }),
@@ -341,7 +352,7 @@ async function getUserGrowthTrend(startDate, endDate) {
   for (let i = 0; i < days; i++) {
     const date = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
     const nextDate = new Date(date.getTime() + 24 * 60 * 60 * 1000);
-    
+
     const count = await User.count({
       where: {
         createdAt: {
@@ -368,7 +379,7 @@ async function getCommissionTrend(userId, startDate, endDate) {
   for (let i = 0; i < days; i++) {
     const date = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
     const nextDate = new Date(date.getTime() + 24 * 60 * 60 * 1000);
-    
+
     const amount = await Commission.sum('amount', {
       where: {
         agentId: userId,
@@ -449,7 +460,7 @@ async function getFleetActivities(fleetOwnerId, limit) {
 
   // Recent car assignments
   const recentAssignments = await Car.findAll({
-    where: { 
+    where: {
       fleetOwnerId,
       currentDriverId: { [Op.not]: null }
     },
