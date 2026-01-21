@@ -25,7 +25,8 @@ export const AssignCampaignDialog = ({ device, open, onClose, onAssign }) => {
         try {
             setLoading(true);
             const res = await api.get('/campaigns'); // Re-using existing campaigns endpoint
-            setCampaigns(res.data.filter(c => c.status === 'active')); // Only active campaigns
+            const campaignsList = res.data?.campaigns || [];
+            setCampaigns(campaignsList.filter(c => c.status === 'active')); // Only active campaigns
         } catch (err) {
             console.error(err);
             toast({
