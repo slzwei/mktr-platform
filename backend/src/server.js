@@ -38,6 +38,7 @@ import adtechBeaconsRoutes from './routes/adtechBeacons.js';
 import contactRoutes from './routes/contact.js';
 import shortLinkRoutes from './routes/shortlinks.js';
 import leadPackageRoutes from './routes/leadPackages.js';
+import deviceRoutes from './routes/devices.js';
 import { validateGoogleOAuthConfig } from './controllers/authController.js';
 import { optionalAuth } from './middleware/auth.js';
 import { initSystemAgent } from './services/systemAgent.js';
@@ -152,6 +153,7 @@ app.use('/api/contact', contactRoutes);
 app.use('/api/shortlinks', shortLinkRoutes);
 app.use('/share', shortLinkRoutes);
 app.use('/api/lead-packages', leadPackageRoutes);
+app.use('/api/devices', deviceRoutes);
 
 // Phase C: Adtech Manifest + Beacons (behind flags)
 if (String(process.env.MANIFEST_ENABLED || 'false').toLowerCase() === 'true') {

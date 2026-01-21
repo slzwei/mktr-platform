@@ -82,6 +82,11 @@ const getNavigationItems = (user) => {
       icon: Car
     },
     {
+      title: "Tablet Devices",
+      url: createPageUrl("AdminDevices"),
+      icon: Settings
+    },
+    {
       title: "Commissions",
       url: createPageUrl("AdminCommissions"),
       icon: DollarSign

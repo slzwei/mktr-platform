@@ -1,7 +1,7 @@
 import { DataTypes, Model, Op } from 'sequelize';
 import { sequelize } from '../database/connection.js';
 
-class Device extends Model {}
+class Device extends Model { }
 
 Device.init({
   id: {
@@ -12,6 +12,14 @@ Device.init({
   tenantId: {
     type: DataTypes.UUID,
     allowNull: true
+  },
+  campaignId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'campaigns',
+      key: 'id'
+    }
   },
   externalId: {
     // OEM-provided identifier, optional

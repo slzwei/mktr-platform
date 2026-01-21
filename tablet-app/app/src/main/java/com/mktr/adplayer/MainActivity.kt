@@ -25,6 +25,14 @@ class MainActivity : ComponentActivity() {
 
         // Keep Screen On
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        
+        // Kiosk Mode: Attempt to lock task (requires Device Owner or Screen Pinning)
+        try {
+            startLockTask()
+        } catch (e: Exception) {
+            // Fails if not whitelisted device owner or user hasn't approved pinning
+            // We ignore for now; user must run adb command or pin manually
+        }
 
         setContent {
             MaterialTheme {

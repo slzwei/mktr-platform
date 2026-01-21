@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 import { authenticateDevice, guardFlags } from '../middleware/deviceAuth.js';
 import { incCounter, logEvent, timeMs } from '../services/observability.js';
+import { Campaign } from '../models/index.js';
 
 const router = express.Router();
 
@@ -78,25 +79,74 @@ const manifestLimiter = rateLimit({
 
 router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, manifestLimiter, async (req, res) => {
   const started = Date.now();
-  const manifest = buildManifestForDevice(req.device);
-  const etag = computeEtagFromJson(manifest);
+
+  // Reload device with Campaign data (since middleware might not fetch relations)
+  const device = await req.device.reload({
+    include: [{ model: Campaign, as: 'campaign' }]
+  });
+
+  const refreshSec = parseInt(process.env.MANIFEST_REFRESH_SECONDS || '300');
+  const baseManifest = {
+    version: 1,
+    device_id: device.id,
+    refresh_seconds: refreshSec,
+    assets: [],
+    playlist: []
+  };
+
+  if (device.campaign && device.campaign.ad_playlist) {
+    // Logic to extract unique assets from the playlist
+    const playlist = device.campaign.ad_playlist; // Assumed structure: [{ type, url, duration, id }]
+
+    // 1. Build Playlist linked to Assets
+    // We assume the DB 'ad_playlist' stores the URL directly.
+    // We need to deduplicate URLs to create the 'assets' list.
+    const uniqueAssets = new Map();
+
+    const manifestPlaylist = playlist.map((item, index) => {
+      const assetId = `asset_${crypto.createHash('md5').update(item.url).digest('hex').substring(0, 8)}`;
+
+      if (!uniqueAssets.has(assetId)) {
+        uniqueAssets.set(assetId, {
+          id: assetId,
+          url: item.url,
+          sha256: "skip_check", // TODO: Real hash
+          size_bytes: 0        // TODO: Real size
+        });
+      }
+
+      return {
+        id: `pl_${index}`,
+        asset_id: assetId,
+        duration_ms: (item.duration || 10) * 1000,
+        type: item.type
+      };
+    });
+
+    baseManifest.assets = Array.from(uniqueAssets.values());
+    baseManifest.playlist = manifestPlaylist;
+  } else {
+    // Fallback/Default: Show a 'Wait for Assignment' placeholder or empty
+    // For now, we return empty so the screen stays blank or shows default logo
+  }
+
+  const etag = computeEtagFromJson(baseManifest);
   res.set('ETag', etag);
   res.set('Cache-Control', 'private, max-age=0, must-revalidate');
-  // Expose current bucket state on 200s too when standard headers enabled
+
   const limit = parseInt(process.env.MANIFEST_RPS_PER_DEVICE || '2');
   res.set('RateLimit-Limit', String(limit));
-  // Remaining and reset are not tracked here; keep limit for probe discovery
 
   const inm = req.headers['if-none-match'];
   if (inm && inm === etag) {
     incCounter('manifest_not_modified_count');
-    logEvent('manifest_304', { device_id: req.device.id });
+    logEvent('manifest_304', { device_id: device.id });
     return res.status(304).end();
   }
 
   incCounter('manifest_200_count');
-  logEvent('manifest_200', { device_id: req.device.id, latency_ms: timeMs(started) });
-  return res.status(200).json(manifest);
+  logEvent('manifest_200', { device_id: device.id, latency_ms: timeMs(started) });
+  return res.status(200).json(baseManifest);
 });
 
 export default router;

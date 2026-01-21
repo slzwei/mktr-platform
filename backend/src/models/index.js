@@ -98,6 +98,7 @@ const defineAssociations = () => {
 
   // Device associations
   Device.hasMany(BeaconEvent, { foreignKey: 'deviceId', as: 'events' });
+  Device.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' }); // Added for Tablet App
   BeaconEvent.belongsTo(Device, { foreignKey: 'deviceId', as: 'device' });
 
   // ShortLink associations

@@ -107,6 +107,11 @@ const Campaign = sequelize.define('Campaign', {
       len: [1, 200]
     }
   },
+  ad_playlist: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: [] // [{type, url, duration, id}]
+  },
   designAssets: {
     type: DataTypes.JSON,
     allowNull: true,
