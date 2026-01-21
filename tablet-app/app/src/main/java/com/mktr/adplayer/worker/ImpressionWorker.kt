@@ -25,6 +25,18 @@ class ImpressionWorker @AssistedInject constructor(
 
         if (pendingImpressions.isEmpty()) {
             Log.d("ImpressionWorker", "No impressions to sync.")
+            
+            // Keep the loop alive even if empty
+            val nextRequest = androidx.work.OneTimeWorkRequestBuilder<ImpressionWorker>()
+                .setInitialDelay(2, java.util.concurrent.TimeUnit.MINUTES)
+                .build()
+                
+            androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                "ImpressionWorker",
+                androidx.work.ExistingWorkPolicy.REPLACE,
+                nextRequest
+            )
+            
             return Result.success()
         }
 
@@ -36,6 +48,19 @@ class ImpressionWorker @AssistedInject constructor(
 
             if (response.isSuccessful) {
                 Log.d("ImpressionWorker", "Sync success for ${pendingImpressions.size} items")
+                
+                // Reschedule next sync (2 mins)
+                // Recursive OneTimeWork pattern since powered by cable
+                val nextRequest = androidx.work.OneTimeWorkRequestBuilder<ImpressionWorker>()
+                    .setInitialDelay(2, java.util.concurrent.TimeUnit.MINUTES)
+                    .build()
+                    
+                androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                    "ImpressionWorker",
+                    androidx.work.ExistingWorkPolicy.REPLACE,
+                    nextRequest
+                )
+
                 Result.success()
             } else {
                 Log.e("ImpressionWorker", "Sync failed: ${response.code()}. Re-queuing items.")

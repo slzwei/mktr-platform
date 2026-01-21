@@ -24,27 +24,25 @@ class AdPlayerApp : Application(), Configuration.Provider {
     private fun scheduleWorkers() {
         val workManager = androidx.work.WorkManager.getInstance(this)
         
-        // 1. Heartbeat (Every 15 mins - Android Min)
-        val heartbeatRequest = androidx.work.PeriodicWorkRequestBuilder<com.mktr.adplayer.worker.HeartbeatWorker>(
-            15, java.util.concurrent.TimeUnit.MINUTES
-        ).build()
+        // 1. Heartbeat (Every 2 mins - using recursive OneTimeWork)
+        // Note: PeriodicWorkRequest has 15m min, so we chain OneTimeWork requests in the worker itself.
+        val heartbeatRequest = androidx.work.OneTimeWorkRequestBuilder<com.mktr.adplayer.worker.HeartbeatWorker>()
+            .build()
         
-        workManager.enqueueUniquePeriodicWork(
+        workManager.enqueueUniqueWork(
             "HeartbeatWorker",
-            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            androidx.work.ExistingWorkPolicy.REPLACE,
             heartbeatRequest
         )
         
-        // 2. Impression Sync (Every 15 mins - Android Min)
-        // For lower latency, we'd need a different mechanism (e.g. self-scheduling OneTimeWork), 
-        // but 15m is fine for MVP analytics.
-        val impressionRequest = androidx.work.PeriodicWorkRequestBuilder<com.mktr.adplayer.worker.ImpressionWorker>(
-            15, java.util.concurrent.TimeUnit.MINUTES
-        ).build()
+        // 2. Impression Sync (Every 2 mins - using recursive OneTimeWork)
+        // High frequency sync since device is cable powered.
+        val impressionRequest = androidx.work.OneTimeWorkRequestBuilder<com.mktr.adplayer.worker.ImpressionWorker>()
+            .build()
         
-        workManager.enqueueUniquePeriodicWork(
+        workManager.enqueueUniqueWork(
             "ImpressionWorker",
-            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            androidx.work.ExistingWorkPolicy.REPLACE,
             impressionRequest
         )
     }

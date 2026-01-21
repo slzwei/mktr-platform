@@ -45,6 +45,12 @@ export default function AdminDevices() {
             setLoading(true);
             const res = await api.get('/devices');
             setDevices(res.data);
+
+            // Refetch logs if a row is open
+            if (expandedDeviceId) {
+                const logsRes = await api.get(`/devices/${expandedDeviceId}/logs?limit=5`);
+                setPreviewLogs(logsRes.data);
+            }
         } catch (err) {
             console.error(err);
         } finally {

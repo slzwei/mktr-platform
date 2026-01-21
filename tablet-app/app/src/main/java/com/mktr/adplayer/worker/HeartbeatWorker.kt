@@ -30,6 +30,19 @@ class HeartbeatWorker @AssistedInject constructor(
 
             if (response.isSuccessful) {
                 Log.d("HeartbeatWorker", "Heartbeat success")
+                
+                // Reschedule next heartbeat (2 mins)
+                // Recursive OneTimeWork pattern to bypass 15m Periodic minimum
+                val nextRequest = androidx.work.OneTimeWorkRequestBuilder<HeartbeatWorker>()
+                    .setInitialDelay(2, java.util.concurrent.TimeUnit.MINUTES)
+                    .build()
+                    
+                androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                    "HeartbeatWorker",
+                    androidx.work.ExistingWorkPolicy.REPLACE,
+                    nextRequest
+                )
+
                 Result.success()
             } else {
                 Log.e("HeartbeatWorker", "Heartbeat failed: ${response.code()}")
