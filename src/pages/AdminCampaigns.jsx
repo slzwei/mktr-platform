@@ -104,6 +104,11 @@ export default function AdminCampaigns() {
 
 
 
+  const handleCreateCampaign = (type) => {
+    setIsTypeSelectionOpen(false);
+    navigate(`/admin/campaigns/new?type=${type}`);
+  };
+
   const handleCopyLink = (campaignId) => {
     const baseUrl = window.location.origin;
     const campaignUrl = `${baseUrl}${createPageUrl(`LeadCapture?campaign_id=${campaignId}`)}`;
