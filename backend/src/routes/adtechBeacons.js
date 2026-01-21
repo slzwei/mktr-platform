@@ -76,6 +76,20 @@ router.post('/v1/beacons/impressions', authenticateDevice, beaconLimiter, async 
     // Also touch heartbeat
     await req.device.update({ lastSeenAt: new Date() });
 
+    // Log the batch event for visibility
+    await import('../models/index.js').then(({ BeaconEvent }) => {
+      return BeaconEvent.create({
+        deviceId: req.device.id,
+        type: 'IMPRESSIONS',
+        eventHash: `IMP-${Date.now()}-${validImpressions.length}`,
+        payload: {
+          count: validImpressions.length,
+          source: 'batch_upload',
+          timestamp: Date.now()
+        }
+      });
+    });
+
     res.json({ success: true, count: validImpressions.length });
   } catch (err) {
     console.error('[Impressions] Error:', err);

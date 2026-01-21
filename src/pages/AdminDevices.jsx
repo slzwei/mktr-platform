@@ -20,7 +20,8 @@ import {
     ExternalLink,
     Battery,
     HardDrive,
-    RefreshCcw
+    RefreshCcw,
+    Eye
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -220,6 +221,10 @@ export default function AdminDevices() {
                                                                                                 <span className="flex items-center gap-1"><HardDrive className="h-3 w-3" /> {log.payload?.storageUsed}</span>
                                                                                             </span>
                                                                                         )
+                                                                                    ) : log.type === 'IMPRESSIONS' ? (
+                                                                                        <span className="flex items-center gap-1.5 text-purple-600">
+                                                                                            <Eye className="h-3 w-3" /> Uploaded {log.payload?.count} Impressions
+                                                                                        </span>
                                                                                     ) : (
                                                                                         JSON.stringify(log.payload)
                                                                                     )}

@@ -17,7 +17,8 @@ import {
     RefreshCcw,
     Battery,
     HardDrive,
-    Activity
+    Activity,
+    Eye
 } from 'lucide-react';
 import { format } from 'date-fns';
 import {
@@ -143,6 +144,10 @@ export default function AdminDeviceLogs() {
                                                                 </>
                                                             )}
                                                         </div>
+                                                    ) : log.type === 'IMPRESSIONS' ? (
+                                                        <span className="flex items-center gap-1.5 text-purple-600 text-xs font-mono">
+                                                            <Eye className="h-3 w-3" /> Uploaded {log.payload?.count} Impressions
+                                                        </span>
                                                     ) : (
                                                         <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap max-w-[600px] overflow-hidden">
                                                             {JSON.stringify(log.payload)}
