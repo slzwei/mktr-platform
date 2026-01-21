@@ -20,7 +20,10 @@ router.get('/', async (req, res) => {
                 }
             ]
         });
-        res.json(devices);
+        res.json({
+            success: true,
+            data: devices
+        });
     } catch (error) {
         console.error('Error fetching devices:', error);
         res.status(500).json({ message: 'Error fetching devices' });
@@ -60,7 +63,10 @@ router.patch('/:id', async (req, res) => {
             include: [{ model: Campaign, as: 'campaign', attributes: ['id', 'name'] }]
         });
 
-        res.json(device);
+        res.json({
+            success: true,
+            data: device
+        });
     } catch (error) {
         console.error('Error updating device:', error);
         res.status(500).json({ message: 'Error updating device' });
