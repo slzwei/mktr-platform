@@ -135,11 +135,13 @@ export default function AdminDeviceLogs() {
                                                                     </span>
                                                                     <span className="flex items-center gap-1.5">
                                                                         <Battery className="h-3 w-3 text-green-500" />
-                                                                        {log.payload?.batteryLevel ? `${(log.payload.batteryLevel * 100).toFixed(0)}%` : 'N/A'}
+                                                                        {typeof log.payload?.batteryLevel === 'number'
+                                                                            ? `${(log.payload.batteryLevel * 100).toFixed(0)}%`
+                                                                            : '--%'}
                                                                     </span>
                                                                     <span className="flex items-center gap-1.5">
                                                                         <HardDrive className="h-3 w-3 text-orange-500" />
-                                                                        {log.payload?.storageUsed || 'N/A'}
+                                                                        {log.payload?.storageUsed || '--'}
                                                                     </span>
                                                                 </>
                                                             )}

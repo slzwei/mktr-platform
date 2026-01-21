@@ -217,8 +217,16 @@ export default function AdminDevices() {
                                                                                             </span>
                                                                                         ) : (
                                                                                             <span className="flex gap-3">
-                                                                                                <span className="flex items-center gap-1"><Battery className="h-3 w-3" /> {(log.payload?.batteryLevel * 100).toFixed(0)}%</span>
-                                                                                                <span className="flex items-center gap-1"><HardDrive className="h-3 w-3" /> {log.payload?.storageUsed}</span>
+                                                                                                <span className="flex items-center gap-1">
+                                                                                                    <Battery className="h-3 w-3" />
+                                                                                                    {typeof log.payload?.batteryLevel === 'number'
+                                                                                                        ? `${(log.payload.batteryLevel * 100).toFixed(0)}%`
+                                                                                                        : '--%'}
+                                                                                                </span>
+                                                                                                <span className="flex items-center gap-1">
+                                                                                                    <HardDrive className="h-3 w-3" />
+                                                                                                    {log.payload?.storageUsed || '--'}
+                                                                                                </span>
                                                                                             </span>
                                                                                         )
                                                                                     ) : log.type === 'IMPRESSIONS' ? (
