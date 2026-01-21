@@ -70,8 +70,32 @@ router.get('/', async (req, res) => {
     }
 });
 
-// GET /api/devices/:id/logs ... (Unchanged)
-// ...
+// GET /api/devices/:id/logs - Get device logs/events
+router.get('/:id/logs', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const limit = parseInt(req.query.limit) || 50;
+
+        const device = await Device.findByPk(id);
+        if (!device) {
+            return res.status(404).json({ message: 'Device not found' });
+        }
+
+        const logs = await BeaconEvent.findAll({
+            where: { deviceId: id },
+            order: [['createdAt', 'DESC']],
+            limit: limit
+        });
+
+        res.json({
+            success: true,
+            data: logs
+        });
+    } catch (error) {
+        console.error('Error fetching device logs:', error);
+        res.status(500).json({ message: 'Error fetching device logs' });
+    }
+});
 
 // PATCH /api/devices/:id - Update device (Assign Campaign)
 router.patch('/:id', async (req, res) => {
@@ -123,6 +147,16 @@ router.patch('/:id', async (req, res) => {
         if (status !== undefined) updates.status = status;
 
         await device.update(updates);
+
+        // [PUSH] Trigger Real-time Manifest Refresh
+        if (campaignIds !== undefined) {
+            // Dynamically import to avoid circular dependency issues if any, though regular import is fine here
+            const { pushService } = await import('../services/pushService.js');
+            pushService.sendEvent(id, 'REFRESH_MANIFEST', {
+                timestamp: Date.now(),
+                reason: 'campaign_assignment'
+            });
+        }
 
         // Fetch fresh names for response
         const finalCampaignIds = updates.campaignIds || device.campaignIds || [];

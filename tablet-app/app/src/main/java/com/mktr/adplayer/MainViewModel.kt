@@ -23,7 +23,8 @@ sealed class UiState {
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val repository: ManifestRepository,
-    private val devicePrefs: DevicePrefs
+    private val devicePrefs: DevicePrefs,
+    private val sseService: com.mktr.adplayer.api.service.SseService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<UiState>(UiState.Loading)
@@ -57,6 +58,17 @@ class MainViewModel @Inject constructor(
                 } else {
                     _uiState.value = UiState.Connected(null, "Manifest not modified (304) - Using Cache")
                 }
+                
+                // [PUSH] Start SSE Listening
+                devicePrefs.deviceKey?.let { key ->
+                    sseService.start(key) { type, _ ->
+                        if (type == "REFRESH_MANIFEST" || type == "CONNECTED") {
+                            android.util.Log.d("MainViewModel", "Push/Connect received ($type)! Refreshing...")
+                            fetchManifest()
+                        }
+                    }
+                }
+
             }.onFailure { e ->
                 Log.e("MainVM", "Error", e)
                 if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
@@ -69,8 +81,14 @@ class MainViewModel @Inject constructor(
     }
     
     fun clearKey() {
+        sseService.stop()
         devicePrefs.deviceKey = null
         devicePrefs.lastManifestEtag = null
         checkProvisioning()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        sseService.stop()
     }
 }

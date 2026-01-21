@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Device } from '../models/index.js';
 
 export async function authenticateDevice(req, res, next) {
+  // console.log('Heads:', req.headers); 
   try {
     const deviceKey = req.headers['x-device-key'];
     // DEBUG LOG

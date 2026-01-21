@@ -19,6 +19,7 @@ import { notFound } from './middleware/notFound.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import campaignRoutes from './routes/campaigns.js';
+import deviceEventsRouter from './routes/deviceEvents.js';
 import campaignPreviewRoutes from './routes/campaignPreviews.js';
 import agentRoutes from './routes/agents.js';
 import fleetRoutes from './routes/fleet.js';
@@ -153,6 +154,7 @@ app.use('/api/contact', contactRoutes);
 app.use('/api/shortlinks', shortLinkRoutes);
 app.use('/share', shortLinkRoutes);
 app.use('/api/lead-packages', leadPackageRoutes);
+app.use('/api/devices/events', deviceEventsRouter);
 app.use('/api/devices', deviceRoutes);
 
 // Phase C: Adtech Manifest + Beacons (behind flags)
