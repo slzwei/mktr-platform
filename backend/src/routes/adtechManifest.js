@@ -28,8 +28,34 @@ function buildManifestForDevice(device) {
     version: 1,
     device_id: device.id,
     refresh_seconds: refreshSec,
-    assets: [],
-    playlist: []
+    assets: [
+      {
+        id: "asset_001",
+        url: "https://picsum.photos/seed/ad1/1920/1080", // Random reliable image
+        sha256: "mock_hash_1", // We'll skip real hash checks for now in the client or mock them
+        size_bytes: 1024
+      },
+      {
+        id: "asset_002",
+        url: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", // Reliable Google sample video
+        sha256: "mock_hash_2",
+        size_bytes: 1024
+      }
+    ],
+    playlist: [
+      {
+        id: "pl_001",
+        asset_id: "asset_001",
+        duration_ms: 10000,
+        type: "image"
+      },
+      {
+        id: "pl_002",
+        asset_id: "asset_002",
+        duration_ms: 15000,
+        type: "video"
+      }
+    ]
   };
 }
 
@@ -70,7 +96,7 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
 
   incCounter('manifest_200_count');
   logEvent('manifest_200', { device_id: req.device.id, latency_ms: timeMs(started) });
-  return res.status(200).json({ success: true, data: manifest });
+  return res.status(200).json(manifest);
 });
 
 export default router;
