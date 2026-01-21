@@ -4,6 +4,7 @@ import { Campaign, QrTag, Prospect, sequelize } from '../models/index.js';
 import { getTenantId } from '../middleware/tenant.js';
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import { storageService } from '../services/storage.js';
 
 const router = express.Router();
 
@@ -534,6 +535,32 @@ router.delete('/:id/permanent', authenticateToken, asyncHandler(async (req, res)
     );
   } catch (e) {
     // non-fatal
+  }
+
+  // Delete media files from storage
+  if (storageService.isEnabled() && campaign.ad_playlist && Array.isArray(campaign.ad_playlist)) {
+    console.log(`🗑️ Cleaning up ${campaign.ad_playlist.length} files for campaign ${id}`);
+    const deletePromises = campaign.ad_playlist.map(async (item) => {
+      if (!item.url) return;
+      try {
+        // Extract key from URL
+        // Handles both CDN (https://cdn.com/key) and Direct (https://bucket.region.com/key)
+        const urlObj = new URL(item.url);
+        const key = urlObj.pathname.substring(1); // remove leading slash
+
+        // Safety check: ensure we don't try to delete something empty or root
+        if (key && key.length > 1) {
+          await storageService.deleteObject(key);
+          console.log(`   - Deleted: ${key}`);
+        }
+      } catch (err) {
+        console.warn(`   ! Failed to delete file ${item.url}:`, err.message);
+        // Continue deleting others even if one fails
+      }
+    });
+
+    // Wait for all deletions (best effort)
+    await Promise.allSettled(deletePromises);
   }
 
   await campaign.destroy();
