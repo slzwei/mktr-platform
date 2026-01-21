@@ -85,6 +85,11 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
     include: [{ model: Campaign, as: 'campaign' }]
   });
 
+  // [HEARTBEAT] Update lastSeenAt (async, don't block response)
+  device.update({ lastSeenAt: new Date() }).catch(err =>
+    console.error(`[Manifest] Failed to update heartbeat for ${device.id}`, err)
+  );
+
   const refreshSec = parseInt(process.env.MANIFEST_REFRESH_SECONDS || '300');
   const baseManifest = {
     version: 1,
