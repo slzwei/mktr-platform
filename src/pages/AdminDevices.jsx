@@ -70,7 +70,7 @@ export default function AdminDevices() {
                                 <Table>
                                     <TableHeader>
                                         <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-gray-100">
-                                            <TableHead className="py-3 px-6 font-medium text-gray-500">Model / ID</TableHead>
+                                            <TableHead className="py-3 px-6 font-medium text-gray-500">Device Details</TableHead>
                                             <TableHead className="py-3 px-6 font-medium text-gray-500">Status</TableHead>
                                             <TableHead className="py-3 px-6 font-medium text-gray-500">Assigned Campaign</TableHead>
                                             <TableHead className="py-3 px-6 font-medium text-gray-500">Last Seen</TableHead>
@@ -81,8 +81,30 @@ export default function AdminDevices() {
                                         {devices.map(device => (
                                             <TableRow key={device.id} className="hover:bg-gray-50/50 transition-colors border-gray-100">
                                                 <TableCell className="px-6 py-4 font-medium">
-                                                    <div className="text-base font-semibold text-gray-900">{device.model || 'Unknown Device'}</div>
-                                                    <div className="text-xs text-gray-500 font-mono mt-0.5">{device.externalId || device.id.substring(0, 8)}...</div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="text-base font-semibold text-gray-900">{device.model || 'Generic Device'}</span>
+
+                                                        {/* External ID (e.g. Asset Tag) */}
+                                                        {device.externalId && (
+                                                            <div className="flex items-center gap-1.5 text-xs text-gray-500 font-mono bg-gray-100 px-1.5 py-0.5 rounded w-fit">
+                                                                <span className="font-semibold text-gray-400">TAG:</span>
+                                                                {device.externalId}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Internal UUID */}
+                                                        <div
+                                                            className="flex items-center gap-1.5 text-xs text-blue-600/80 font-mono cursor-pointer hover:text-blue-700 hover:underline w-fit"
+                                                            onClick={() => {
+                                                                navigator.clipboard.writeText(device.id);
+                                                                // Ideally show a toast here, but for simplicity we skip custom toast logic inline
+                                                            }}
+                                                            title="Click to copy full UUID"
+                                                        >
+                                                            <span className="font-semibold text-gray-400 select-none">ID:</span>
+                                                            {device.id.substring(0, 8)}...
+                                                        </div>
+                                                    </div>
                                                 </TableCell>
                                                 <TableCell className="px-6 py-4">
                                                     <Badge variant={getStatusColor(device.status, device.lastSeenAt)}>
