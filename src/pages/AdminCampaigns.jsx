@@ -46,7 +46,7 @@ import {
   Search
 } from "lucide-react";
 
-import CampaignFormDialog from "../components/campaigns/CampaignFormDialog";
+import { useNavigate } from "react-router-dom";
 
 
 export default function AdminCampaigns() {
@@ -54,7 +54,7 @@ export default function AdminCampaigns() {
   const [campaigns, setCampaigns] = useState([]);
   const [archivedCampaigns, setArchivedCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isFormOpen, setIsFormOpen] = useState(false);
+  const navigate = useNavigate();
 
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
@@ -91,25 +91,9 @@ export default function AdminCampaigns() {
     setLoading(false);
   };
 
-  const handleOpenForm = (campaign = null) => {
-    setSelectedCampaign(campaign);
-    setIsFormOpen(true);
-  };
 
-  const handleFormSubmit = async (formData) => {
-    try {
-      if (selectedCampaign) {
-        await Campaign.update(selectedCampaign.id, formData);
-      } else {
-        await Campaign.create(formData);
-      }
-      await loadData();
-      setIsFormOpen(false);
-      setSelectedCampaign(null);
-    } catch (error) {
-      console.error('Error saving campaign:', error);
-    }
-  };
+
+
 
 
 
@@ -206,9 +190,11 @@ export default function AdminCampaigns() {
           </Link>
         </DropdownMenuItem>
 
-        <DropdownMenuItem onClick={() => handleOpenForm(c)}>
-          <Edit className="w-4 h-4" />
-          <span className="ml-2">Edit</span>
+        <DropdownMenuItem asChild>
+          <Link to={`/admin/campaigns/${c.id}/edit`}>
+            <Edit className="w-4 h-4" />
+            <span className="ml-2">Edit</span>
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => handleArchiveCampaign(c.id)} className="text-orange-600">
           <Archive className="w-4 h-4" />
@@ -376,7 +362,7 @@ export default function AdminCampaigns() {
             <h1 className="text-3xl font-bold text-gray-900">Admin - Campaign Management</h1>
             <p className="text-gray-600 mt-1">Create and manage your marketing campaigns.</p>
           </div>
-          <Button onClick={() => handleOpenForm()} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={() => navigate("/admin/campaigns/new")} className="bg-blue-600 hover:bg-blue-700">
             <Plus className="w-5 h-5 mr-2" />
             Create Campaign
           </Button>
@@ -487,12 +473,7 @@ export default function AdminCampaigns() {
           </TabsContent>
         </Tabs>
 
-        <CampaignFormDialog
-          open={isFormOpen}
-          onOpenChange={setIsFormOpen}
-          campaign={selectedCampaign}
-          onSubmit={handleFormSubmit}
-        />
+
 
 
       </div>

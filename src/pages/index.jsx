@@ -24,6 +24,7 @@ const DevRoutes = lazy(() => import('../dev/DevRoutes'));
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const AdminProspects = lazy(() => import('./AdminProspects'));
 const AdminCampaigns = lazy(() => import('./AdminCampaigns'));
+const AdminCampaignForm = lazy(() => import('./AdminCampaignForm'));
 const AdminQRCodes = lazy(() => import('./AdminQRCodes'));
 const AdminAgents = lazy(() => import('./AdminAgents'));
 const AdminAgentDetail = lazy(() => import('./AdminAgentDetail'));
@@ -108,6 +109,20 @@ function PagesContent() {
             <ProtectedRoute requiredRole="admin">
               <DashboardLayout>
                 <AdminCampaigns />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/campaigns/new" element={
+            <ProtectedRoute requiredRole="admin">
+              <DashboardLayout>
+                <AdminCampaignForm />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/campaigns/:id/edit" element={
+            <ProtectedRoute requiredRole="admin">
+              <DashboardLayout>
+                <AdminCampaignForm />
               </DashboardLayout>
             </ProtectedRoute>
           } />
