@@ -113,3 +113,5 @@ class PlayerViewModel @Inject constructor(
             currentIndex = (currentIndex + 1) % currentPlaylist.size
             playNextItem()
         }
+    }
+}
