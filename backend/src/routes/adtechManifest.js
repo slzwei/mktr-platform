@@ -90,6 +90,18 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
     console.error(`[Manifest] Failed to update heartbeat for ${device.id}`, err)
   );
 
+  // [LOG] Log this fetch as a visible event for debugging
+  const { BeaconEvent } = await import('../models/index.js');
+  BeaconEvent.create({
+    deviceId: device.id,
+    type: 'HEARTBEAT', // We categorize manifest fetch as a heartbeat for visibility
+    payload: {
+      source: 'manifest_fetch',
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    }
+  }).catch(err => console.error('[Manifest] Failed to log event', err));
+
   const refreshSec = parseInt(process.env.MANIFEST_REFRESH_SECONDS || '300');
   const baseManifest = {
     version: 1,
