@@ -402,7 +402,7 @@ export default function AdminCampaignForm() {
                                                 {uploading ? "Uploading..." : "Click to upload"}
                                             </div>
                                             <p className="text-xs text-blue-600 mt-1">
-                                                Images/Videos (Max 10MB)
+                                                Images/Videos (Max 50MB)
                                             </p>
                                         </div>
                                     )}

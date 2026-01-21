@@ -20,12 +20,12 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const { type = 'general' } = req.query;
     const uploadPath = path.join(uploadsDir, type);
-    
+
     // Create directory if it doesn't exist
     if (!fs.existsSync(uploadPath)) {
       fs.mkdirSync(uploadPath, { recursive: true });
     }
-    
+
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
@@ -43,7 +43,8 @@ const fileFilter = (req, file, cb) => {
     document: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
     spreadsheet: ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
     video: ['video/mp4', 'video/mpeg', 'video/quicktime'],
-    audio: ['audio/mpeg', 'audio/wav', 'audio/ogg']
+    audio: ['audio/mpeg', 'audio/wav', 'audio/ogg'],
+    campaign_media: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/mpeg', 'video/quicktime']
   };
 
   const { type = 'image' } = req.query;
@@ -61,7 +62,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024, // 10MB default
+    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024, // 50MB default for videos
     files: 5 // Max 5 files at once
   }
 });
@@ -228,7 +229,7 @@ router.post('/documents', authenticateToken, upload.array('documents', 5), async
   }
 
   const { entityType, entityId } = req.body; // 'fleet_owner', 'driver', etc.
-  
+
   if (!entityType || !entityId) {
     throw new AppError('Entity type and ID are required', 400);
   }
@@ -244,7 +245,7 @@ router.post('/documents', authenticateToken, upload.array('documents', 5), async
   for (const file of req.files) {
     const newPath = path.join(entityDir, file.filename);
     fs.renameSync(file.path, newPath);
-    
+
     documents.push({
       id: uuidv4(),
       originalName: file.originalname,
@@ -275,7 +276,7 @@ router.delete('/:type/:filename', authenticateToken, asyncHandler(async (req, re
   // Security check - ensure file is within uploads directory
   const resolvedPath = path.resolve(filePath);
   const uploadsPath = path.resolve(uploadsDir);
-  
+
   if (!resolvedPath.startsWith(uploadsPath)) {
     throw new AppError('Invalid file path', 400);
   }
@@ -305,7 +306,7 @@ router.get('/info/:type/:filename', authenticateToken, asyncHandler(async (req, 
   // Security check
   const resolvedPath = path.resolve(filePath);
   const uploadsPath = path.resolve(uploadsDir);
-  
+
   if (!resolvedPath.startsWith(uploadsPath)) {
     throw new AppError('Invalid file path', 400);
   }
@@ -336,9 +337,9 @@ router.get('/info/:type/:filename', authenticateToken, asyncHandler(async (req, 
 router.get('/list/:type', authenticateToken, asyncHandler(async (req, res) => {
   const { type } = req.params;
   const { page = 1, limit = 20 } = req.query;
-  
+
   const dirPath = path.join(uploadsDir, type);
-  
+
   if (!fs.existsSync(dirPath)) {
     return res.json({
       success: true,
@@ -351,7 +352,7 @@ router.get('/list/:type', authenticateToken, asyncHandler(async (req, res) => {
     .map(filename => {
       const filePath = path.join(dirPath, filename);
       const stats = fs.statSync(filePath);
-      
+
       return {
         filename,
         type,
@@ -385,21 +386,21 @@ router.get('/list/:type', authenticateToken, asyncHandler(async (req, res) => {
 router.get('/stats/usage', authenticateToken, asyncHandler(async (req, res) => {
   const getDirectorySize = (dirPath) => {
     if (!fs.existsSync(dirPath)) return 0;
-    
+
     let totalSize = 0;
     const files = fs.readdirSync(dirPath);
-    
+
     for (const file of files) {
       const filePath = path.join(dirPath, file);
       const stats = fs.statSync(filePath);
-      
+
       if (stats.isDirectory()) {
         totalSize += getDirectorySize(filePath);
       } else {
         totalSize += stats.size;
       }
     }
-    
+
     return totalSize;
   };
 
