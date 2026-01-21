@@ -6,6 +6,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.mktr.adplayer.api.model.BeaconHeartbeatRequest
+import com.mktr.adplayer.data.manager.ImpressionManager
 import com.mktr.adplayer.api.service.AdTechService
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -14,15 +15,19 @@ import dagger.assisted.AssistedInject
 class HeartbeatWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
-    private val api: AdTechService
+    private val api: AdTechService,
+    private val impressionManager: ImpressionManager
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
         return try {
-            // TODO: Retrieve actual battery level if permissible
+            // Report Buffer Size for Debugging
+            val bufferSize = impressionManager.getBufferSize()
+            
             val request = BeaconHeartbeatRequest(
                 status = "active",
-                batteryLevel = null
+                batteryLevel = null,
+                storageUsed = "Buffer: $bufferSize"
             )
             
             Log.d("HeartbeatWorker", "Sending heartbeat...")

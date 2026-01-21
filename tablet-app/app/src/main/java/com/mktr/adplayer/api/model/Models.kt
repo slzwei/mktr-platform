@@ -31,7 +31,8 @@ data class PlaylistItem(
 @Serializable
 data class BeaconHeartbeatRequest(
     val status: String,
-    @SerialName("battery_level") val batteryLevel: Float? = null
+    @SerialName("battery_level") val batteryLevel: Float? = null,
+    @SerialName("storage_used") val storageUsed: String? = null
 )
 
 @Serializable

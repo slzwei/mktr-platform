@@ -36,4 +36,8 @@ class ImpressionManager @Inject constructor() {
     fun requeue(items: List<ImpressionItem>) {
         buffer.addAll(items)
     }
+
+    fun getBufferSize(): Int {
+        return buffer.size
+    }
 }
