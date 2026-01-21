@@ -80,10 +80,9 @@ const manifestLimiter = rateLimit({
 router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, manifestLimiter, async (req, res) => {
   const started = Date.now();
 
-  // Reload device with Campaign data (since middleware might not fetch relations)
-  const device = await req.device.reload({
-    include: [{ model: Campaign, as: 'campaign' }]
-  });
+  // Reload device data (fresh from DB to get latest campaignIds)
+  await req.device.reload();
+  const device = req.device;
 
   // [HEARTBEAT] Update lastSeenAt (async, don't block response)
   device.update({ lastSeenAt: new Date() }).catch(err =>
@@ -117,16 +116,49 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
     playlist: []
   };
 
-  if (device.campaign && device.campaign.ad_playlist) {
-    // Logic to extract unique assets from the playlist
-    const playlist = device.campaign.ad_playlist; // Assumed structure: [{ type, url, duration, id }]
+  // Logic to fetch multiple campaigns
+  let assignedCampaigns = [];
+  const campaignIds = device.campaignIds || []; // JSON array of UUIDs
+
+  // Backward compatibility: If campaignIds is empty but legacy campaignId exists
+  if (campaignIds.length === 0 && device.campaignId) {
+    campaignIds.push(device.campaignId);
+  }
+
+  if (campaignIds.length > 0) {
+    assignedCampaigns = await Campaign.findAll({
+      where: {
+        id: campaignIds,
+        status: 'active', // Only show active campaigns
+        type: 'brand_awareness' // Double check type safety
+      }
+    });
+  }
+
+  if (assignedCampaigns.length > 0) {
+    // Collect all playlist items from all campaigns
+    // We simply concatenate them in the order of campaigns returned (usually sorted by ID or creation if not specified)
+    // To respect assignment order, we should map based on campaignIds index, but findAll doesn't guarantee order.
+    // For now, simple concatenation is sufficient.
+
+    // Sort campaigns by the order they appear in campaignIds for consistent playback order
+    assignedCampaigns.sort((a, b) => {
+      return campaignIds.indexOf(a.id) - campaignIds.indexOf(b.id);
+    });
+
+    const combinedPlaylist = [];
+    assignedCampaigns.forEach(c => {
+      if (c.ad_playlist && Array.isArray(c.ad_playlist)) {
+        combinedPlaylist.push(...c.ad_playlist);
+      }
+    });
 
     // 1. Build Playlist linked to Assets
     // We assume the DB 'ad_playlist' stores the URL directly.
     // We need to deduplicate URLs to create the 'assets' list.
     const uniqueAssets = new Map();
 
-    const manifestPlaylist = playlist.map((item, index) => {
+    const manifestPlaylist = combinedPlaylist.map((item, index) => {
       const assetId = `asset_${crypto.createHash('md5').update(item.url).digest('hex').substring(0, 8)}`;
 
       if (!uniqueAssets.has(assetId)) {

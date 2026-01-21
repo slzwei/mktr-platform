@@ -169,10 +169,14 @@ export default function AdminDevices() {
                                                         </Badge>
                                                     </TableCell>
                                                     <TableCell className="px-6 py-4">
-                                                        {device.campaign ? (
-                                                            <span className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded text-sm">
-                                                                {device.campaign.name}
-                                                            </span>
+                                                        {device.campaigns && device.campaigns.length > 0 ? (
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {device.campaigns.map(c => (
+                                                                    <span key={c.id} className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded text-sm whitespace-nowrap">
+                                                                        {c.name}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
                                                         ) : (
                                                             <span className="text-gray-400 italic text-sm">Unassigned</span>
                                                         )}

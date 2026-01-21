@@ -13,13 +13,15 @@ Device.init({
     type: DataTypes.UUID,
     allowNull: true
   },
+  campaignIds: {
+    type: DataTypes.JSON, // Array of UUIDs
+    allowNull: false,
+    defaultValue: []
+  },
+  // Deprecated: Kept for backward compatibility until migration is verified
   campaignId: {
     type: DataTypes.UUID,
-    allowNull: true,
-    references: {
-      model: 'campaigns',
-      key: 'id'
-    }
+    allowNull: true
   },
   externalId: {
     // OEM-provided identifier, optional

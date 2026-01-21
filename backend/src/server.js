@@ -311,6 +311,21 @@ async function startServer() {
           await sequelize.query('ALTER TABLE devices ADD COLUMN campaignId TEXT');
           console.log('✅ Added campaignId column to devices');
         }
+
+        const hasCampaignIds = Array.isArray(deviceColumns) && deviceColumns.some(c => c.name === 'campaignIds');
+        if (!hasCampaignIds) {
+          await sequelize.query('ALTER TABLE devices ADD COLUMN campaignIds TEXT DEFAULT "[]"');
+          console.log('✅ Added campaignIds column to devices');
+
+          // Migration: Copy singleton campaignId to array
+          // SQLite JSON array format is just a string
+          await sequelize.query(`
+            UPDATE devices 
+            SET campaignIds = '[' || '"' || campaignId || '"' || ']'
+            WHERE campaignId IS NOT NULL AND (campaignIds IS NULL OR campaignIds = '[]')
+          `);
+          console.log('✅ Migrated existing device assignments to multi-campaign format');
+        }
       } catch (e) {
         console.warn('⚠️ Could not ensure device columns on SQLite:', e.message);
       }
