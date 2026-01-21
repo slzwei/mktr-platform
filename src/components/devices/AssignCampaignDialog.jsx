@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { apiClient as api } from '../../api/client';
-import toast from 'react-hot-toast';
+import { useToast } from '../ui/use-toast';
 
 export const AssignCampaignDialog = ({ device, open, onClose, onAssign }) => {
+    const { toast } = useToast();
     const [campaigns, setCampaigns] = useState([]);
     const [loading, setLoading] = useState(false);
     const [selectedId, setSelectedId] = useState(device?.campaignId || '');
@@ -27,7 +28,11 @@ export const AssignCampaignDialog = ({ device, open, onClose, onAssign }) => {
             setCampaigns(res.data.filter(c => c.status === 'active')); // Only active campaigns
         } catch (err) {
             console.error(err);
-            toast.error('Failed to load campaigns');
+            toast({
+                variant: "destructive",
+                title: "Error",
+                description: "Failed to load campaigns",
+            });
         } finally {
             setLoading(false);
         }
@@ -40,12 +45,19 @@ export const AssignCampaignDialog = ({ device, open, onClose, onAssign }) => {
             await api.patch(`/devices/${device.id}`, {
                 campaignId: selectedId || null // Send null to unassign
             });
-            toast.success('Device assignment updated');
+            toast({
+                title: "Success",
+                description: "Device assignment updated",
+            });
             onAssign(); // Refresh parent
             onClose();
         } catch (err) {
             console.error(err);
-            toast.error('Failed to assign campaign');
+            toast({
+                variant: "destructive",
+                title: "Error",
+                description: "Failed to assign campaign",
+            });
         } finally {
             setLoading(false);
         }
