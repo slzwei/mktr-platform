@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
-import { api } from '../../lib/api';
+import { apiClient as api } from '../../api/client';
 import toast from 'react-hot-toast';
 
 export const AssignCampaignDialog = ({ device, open, onClose, onAssign }) => {

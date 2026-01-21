@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { api } from '../lib/api';
+import { apiClient as api } from '../api/client';
 import { formatDistanceToNow } from 'date-fns';
 import { AssignCampaignDialog } from '../components/devices/AssignCampaignDialog';
 import { Badge } from '../components/ui/badge';
