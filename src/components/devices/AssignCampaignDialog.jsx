@@ -25,14 +25,35 @@ export const AssignCampaignDialog = ({ device, open, onClose, onAssign }) => {
         try {
             setLoading(true);
             const res = await api.get('/campaigns'); // Re-using existing campaigns endpoint
-            const campaignsList = res.data?.campaigns || [];
+            console.log('📦 AssignCampaignDialog: Loaded campaigns payload:', res);
+
+            // Defensive check: Ensure we have the campaigns array
+            // The backend usually returns { data: { campaigns: [] } } or similar
+            // So res.data might be { campaigns: [] }
+            let campaignsList = [];
+
+            if (res.data && Array.isArray(res.data.campaigns)) {
+                campaignsList = res.data.campaigns;
+            } else if (res.data && Array.isArray(res.data)) {
+                // Fallback if backend response structure changes to just array
+                campaignsList = res.data;
+            } else {
+                console.warn('⚠️ AssignCampaignDialog: Unexpected response structure:', res);
+            }
+
+            if (!Array.isArray(campaignsList)) {
+                console.error('❌ AssignCampaignDialog: campaignsList is not an array!', campaignsList);
+                setCampaigns([]);
+                return;
+            }
+
             setCampaigns(campaignsList.filter(c => c.status === 'active')); // Only active campaigns
         } catch (err) {
-            console.error(err);
+            console.error('❌ AssignCampaignDialog: Error loading campaigns:', err);
             toast({
                 variant: "destructive",
                 title: "Error",
-                description: "Failed to load campaigns",
+                description: "Failed to load campaigns. Check console.",
             });
         } finally {
             setLoading(false);

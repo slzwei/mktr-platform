@@ -44,7 +44,18 @@ export default function AdminDevices() {
         try {
             setLoading(true);
             const res = await api.get('/devices');
-            setDevices(res.data);
+
+            // Defensive check for devices array
+            let devicesList = [];
+            if (Array.isArray(res.data)) {
+                devicesList = res.data;
+            } else if (res.data && Array.isArray(res.data.devices)) {
+                devicesList = res.data.devices;
+            } else {
+                console.warn('⚠️ AdminDevices: Unexpected response, defaulting to empty array', res);
+            }
+
+            setDevices(devicesList);
 
             // Refetch logs if a row is open
             if (expandedDeviceId) {
