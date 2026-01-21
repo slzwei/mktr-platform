@@ -23,7 +23,8 @@ sealed class PlayerState {
         val item: PlaylistItem,
         val fileUri: Uri,
         val index: Int,
-        val total: Int
+        val total: Int,
+        val playId: Long = System.currentTimeMillis()
     ) : PlayerState()
     data class Error(val message: String) : PlayerState()
 }

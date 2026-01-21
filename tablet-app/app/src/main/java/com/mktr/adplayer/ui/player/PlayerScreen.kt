@@ -65,7 +65,7 @@ fun PlayerOrchestrator(
 fun PlayerContent(state: PlayerState.Playing) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (state.item.type == "video") {
-            VideoPlayer(uri = state.fileUri)
+            VideoPlayer(uri = state.fileUri, playId = state.playId)
         } else {
             ImagePlayer(uri = state.fileUri)
         }
@@ -92,7 +92,7 @@ fun ImagePlayer(uri: Uri) {
 
 @kotlin.OptIn(UnstableApi::class)
 @Composable
-fun VideoPlayer(uri: Uri) {
+fun VideoPlayer(uri: Uri, playId: Long) {
     val context = LocalContext.current
     
     // Remember ExoPlayer instance to survive recompositions but NOT config changes (VM handles that usually, 
@@ -104,11 +104,12 @@ fun VideoPlayer(uri: Uri) {
         }
     }
 
-    // Update media item when URI changes
-    LaunchedEffect(uri) {
+    // Update media item when URI or playId changes
+    LaunchedEffect(uri, playId) {
         val mediaItem = MediaItem.fromUri(uri)
         exoPlayer.setMediaItem(mediaItem)
         exoPlayer.prepare()
+        exoPlayer.play()
     }
 
     DisposableEffect(Unit) {
