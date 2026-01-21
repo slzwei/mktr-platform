@@ -331,6 +331,36 @@ async function startServer() {
       }
     }
 
+    // Postgres Migration: Ensure new columns exist
+    if (!isSqlite) {
+      try {
+        // Check for campaignIds column on devices
+        const [results] = await sequelize.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'devices' AND column_name = 'campaignIds'
+        `);
+
+        if (results.length === 0) {
+          console.log('🔄 Applying Postgres migration: Adding campaignIds...');
+          // Add column
+          await sequelize.query('ALTER TABLE devices ADD COLUMN "campaignIds" JSONB DEFAULT \'[]\'::jsonb');
+          console.log('✅ Added campaignIds column to devices (Postgres)');
+
+          // Migrate data
+          await sequelize.query(`
+            UPDATE devices 
+            SET "campaignIds" = jsonb_build_array("campaignId") 
+            WHERE "campaignId" IS NOT NULL 
+              AND ("campaignIds" IS NULL OR jsonb_array_length("campaignIds") = 0)
+          `);
+          console.log('✅ Migrated existing device assignments to multi-campaign format (Postgres)');
+        }
+      } catch (e) {
+        console.warn('⚠️ Postgres migration failed:', e.message);
+      }
+    }
+
     // Sync remaining models
     await sequelize.sync({ alter: false });
     console.log('✅ Database models synchronized.');
