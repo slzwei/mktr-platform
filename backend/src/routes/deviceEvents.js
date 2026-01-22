@@ -2,7 +2,7 @@ import express from 'express';
 import { authenticateDevice, guardFlags } from '../middleware/deviceAuth.js';
 import { pushService } from '../services/pushService.js';
 
-import { authenticateUser, authorize } from '../middleware/auth.js';
+import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -31,7 +31,7 @@ router.get('/', guardFlags('MANIFEST_ENABLED'), authenticateDevice, (req, res) =
 
 // GET /api/devices/events/:id/logs/stream
 // SSE Stream Endpoint for Admins (User Auth)
-router.get('/:id/logs/stream', allowQueryToken, authenticateUser, authorize('admin'), (req, res) => {
+router.get('/:id/logs/stream', allowQueryToken, authenticateToken, requireAdmin, (req, res) => {
     const deviceId = req.params.id;
 
     // SSE Headers
