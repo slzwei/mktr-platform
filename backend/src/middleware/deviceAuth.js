@@ -20,7 +20,8 @@ export async function authenticateDevice(req, res, next) {
       console.warn(`[AdTech Auth] Device not found for key hash: ${secretHash.substring(0, 8)}...`);
       return res.status(401).json({ success: false, message: 'Unauthorized device' });
     }
-    if (device.status !== 'active') {
+    const allowedStatuses = ['active', 'playing', 'idle'];
+    if (!allowedStatuses.includes(device.status)) {
       return res.status(403).json({ success: false, message: 'Device disabled' });
     }
     req.device = device;
