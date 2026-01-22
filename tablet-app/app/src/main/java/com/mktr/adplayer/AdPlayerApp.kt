@@ -36,8 +36,10 @@ class AdPlayerApp : Application(), Configuration.Provider, androidx.lifecycle.Li
                 scheduleWorkers()
             }
             androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
-                android.util.Log.d("AdPlayerApp", "App Background: Cancelling Heartbeat")
-                androidx.work.WorkManager.getInstance(this).cancelUniqueWork("HeartbeatWorker")
+                android.util.Log.d("AdPlayerApp", "App Background: Cancelling Workers")
+                val workManager = androidx.work.WorkManager.getInstance(this)
+                workManager.cancelUniqueWork("HeartbeatWorker")
+                workManager.cancelUniqueWork("ImpressionWorker")
             }
             else -> {}
         }

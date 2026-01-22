@@ -20,22 +20,30 @@ class ImpressionWorker @AssistedInject constructor(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
+        // Defense in Depth: Check status first
+        val prefs = applicationContext.getSharedPreferences("adplayer_prefs", Context.MODE_PRIVATE)
+        val appStatus = prefs.getString("app_status", "active") ?: "active"
+
         // Drain the in-memory buffer
         val pendingImpressions = impressionManager.drainBuffer()
 
         if (pendingImpressions.isEmpty()) {
             Log.d("ImpressionWorker", "No impressions to sync.")
             
-            // Keep the loop alive even if empty
-            val nextRequest = androidx.work.OneTimeWorkRequestBuilder<ImpressionWorker>()
-                .setInitialDelay(2, java.util.concurrent.TimeUnit.MINUTES)
-                .build()
-                
-            androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-                "ImpressionWorker",
-                androidx.work.ExistingWorkPolicy.REPLACE,
-                nextRequest
-            )
+            // Keep the loop alive even if empty - BUT ONLY IF ACTIVE
+            if (appStatus != "background" && appStatus != "offline") {
+                val nextRequest = androidx.work.OneTimeWorkRequestBuilder<ImpressionWorker>()
+                    .setInitialDelay(2, java.util.concurrent.TimeUnit.MINUTES)
+                    .build()
+                    
+                androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                    "ImpressionWorker",
+                    androidx.work.ExistingWorkPolicy.REPLACE,
+                    nextRequest
+                )
+            } else {
+                Log.d("ImpressionWorker", "App is $appStatus - stopping recursive sync.")
+            }
             
             return Result.success()
         }
@@ -49,17 +57,21 @@ class ImpressionWorker @AssistedInject constructor(
             if (response.isSuccessful) {
                 Log.d("ImpressionWorker", "Sync success for ${pendingImpressions.size} items")
                 
-                // Reschedule next sync (2 mins)
-                // Recursive OneTimeWork pattern since powered by cable
-                val nextRequest = androidx.work.OneTimeWorkRequestBuilder<ImpressionWorker>()
-                    .setInitialDelay(2, java.util.concurrent.TimeUnit.MINUTES)
-                    .build()
-                    
-                androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-                    "ImpressionWorker",
-                    androidx.work.ExistingWorkPolicy.REPLACE,
-                    nextRequest
-                )
+                // Reschedule next sync (2 mins) - ONLY IF ACTIVE
+                if (appStatus != "background" && appStatus != "offline") {
+                    // Recursive OneTimeWork pattern since powered by cable
+                    val nextRequest = androidx.work.OneTimeWorkRequestBuilder<ImpressionWorker>()
+                        .setInitialDelay(2, java.util.concurrent.TimeUnit.MINUTES)
+                        .build()
+                        
+                    androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                        "ImpressionWorker",
+                        androidx.work.ExistingWorkPolicy.REPLACE,
+                        nextRequest
+                    )
+                } else {
+                    Log.d("ImpressionWorker", "App is $appStatus - stopping recursive sync.")
+                }
 
                 Result.success()
             } else {

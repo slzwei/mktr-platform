@@ -34,7 +34,43 @@ class PlayerViewModel @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val assetManager: AssetManager,
     private val impressionManager: com.mktr.adplayer.data.manager.ImpressionManager
-) : ViewModel() {
+) : ViewModel(), androidx.lifecycle.LifecycleEventObserver {
+
+    init {
+        // Observe Process Lifecycle for Foreground/Background detection
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+    }
+
+    override fun onStateChanged(source: androidx.lifecycle.LifecycleOwner, event: androidx.lifecycle.Lifecycle.Event) {
+        when (event) {
+            androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                Log.d("PlayerVM", "App Backgrounded: Stopping Playback")
+                stopPlaybackLoop() // Cancel job
+                updateStatus("background")
+            }
+            androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                Log.d("PlayerVM", "App Foregrounded: Checking state")
+                // If we have a playlist, we could auto-resume, but effectively we just report "idle"
+                // until the user (or auto-logic) starts it.
+                // However, to be "nice", if we were playing, we might want to resume.
+                // For now, consistent with the plan: Update status to idle/ready.
+                updateStatus("idle")
+                
+                // If we have a playlist loaded, we can restart the loop if desired.
+                // But simplified approach: just ensure status is correct so backend knows.
+                if (currentPlaylist.isNotEmpty()) {
+                     startPlaybackLoop()
+                }
+            }
+            else -> {}
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
+        stopPlaybackLoop()
+    }
 
     private val _playerState = MutableStateFlow<PlayerState>(PlayerState.Initializing)
     val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
@@ -59,7 +95,17 @@ class PlayerViewModel @Inject constructor(
         startPlaybackLoop()
     }
 
+    private fun stopPlaybackLoop() {
+        playbackJob?.cancel()
+        playbackJob = null
+        // Reset state to non-playing if beneficial, but keeping last state might be better for UI?
+        // Let's just ensure we stop the loop.
+    }
+
     private fun startPlaybackLoop() {
+        // Don't start if no playlist
+        if (currentPlaylist.isEmpty()) return
+
         playbackJob?.cancel()
         playbackJob = viewModelScope.launch {
             _playerState.value = PlayerState.Initializing

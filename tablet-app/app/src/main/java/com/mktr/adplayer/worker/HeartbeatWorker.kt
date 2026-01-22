@@ -38,17 +38,21 @@ class HeartbeatWorker @AssistedInject constructor(
             if (response.isSuccessful) {
                 Log.d("HeartbeatWorker", "Heartbeat success")
                 
-                // Reschedule next heartbeat (2 mins)
-                // Recursive OneTimeWork pattern to bypass 15m Periodic minimum
-                val nextRequest = androidx.work.OneTimeWorkRequestBuilder<HeartbeatWorker>()
-                    .setInitialDelay(2, java.util.concurrent.TimeUnit.MINUTES)
-                    .build()
-                    
-                androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-                    "HeartbeatWorker",
-                    androidx.work.ExistingWorkPolicy.REPLACE,
-                    nextRequest
-                )
+                // Reschedule next heartbeat (2 mins) ONLY if app is active
+                if (appStatus != "background" && appStatus != "offline") {
+                    // Recursive OneTimeWork pattern to bypass 15m Periodic minimum
+                    val nextRequest = androidx.work.OneTimeWorkRequestBuilder<HeartbeatWorker>()
+                        .setInitialDelay(2, java.util.concurrent.TimeUnit.MINUTES)
+                        .build()
+                        
+                    androidx.work.WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                        "HeartbeatWorker",
+                        androidx.work.ExistingWorkPolicy.REPLACE,
+                        nextRequest
+                    )
+                } else {
+                    Log.d("HeartbeatWorker", "App is $appStatus - stopping recursive heartbeat.")
+                }
 
                 Result.success()
             } else {
