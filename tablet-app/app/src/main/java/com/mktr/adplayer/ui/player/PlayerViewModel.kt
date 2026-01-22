@@ -31,6 +31,7 @@ sealed class PlayerState {
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val assetManager: AssetManager,
     private val impressionManager: com.mktr.adplayer.data.manager.ImpressionManager
 ) : ViewModel() {
@@ -51,6 +52,7 @@ class PlayerViewModel @Inject constructor(
         
         if (currentPlaylist.isEmpty()) {
             _playerState.value = PlayerState.Error("Empty Playlist")
+            updateStatus("idle")
             return
         }
 
@@ -61,6 +63,7 @@ class PlayerViewModel @Inject constructor(
         playbackJob?.cancel()
         playbackJob = viewModelScope.launch {
             _playerState.value = PlayerState.Initializing
+            updateStatus("playing")
             
             // Initial delay to allow UI to settle? Not strictly needed but safe.
             // delay(500) 
@@ -96,6 +99,21 @@ class PlayerViewModel @Inject constructor(
                                 durationMs = item.durationMs
                             )
 
+                            // [MODIFIED] Trigger Upload Immediately
+                            try {
+                                val uploadRequest = androidx.work.OneTimeWorkRequestBuilder<com.mktr.adplayer.worker.ImpressionWorker>()
+                                    .build()
+                                
+                                androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                                    "ImpressionWorker",
+                                    androidx.work.ExistingWorkPolicy.REPLACE,
+                                    uploadRequest
+                                )
+                                Log.d("PlayerVM", "Triggered immediate upload for ${item.assetId}")
+                            } catch (e: Exception) {
+                                Log.e("PlayerVM", "Failed to trigger upload worker", e)
+                            }
+
                             durationToWait = item.durationMs.coerceAtLeast(3000L).coerceAtMost(60000L) // Ensure 3s-60s range
                         } else {
                             Log.e("PlayerVM", "File not found for asset: ${asset.id} at path: ${file.absolutePath}")
@@ -118,6 +136,14 @@ class PlayerViewModel @Inject constructor(
                 // Advance index
                 currentIndex = (currentIndex + 1) % currentPlaylist.size
             }
+            // Loop ended (shouldn't happen unless cancelled)
+            updateStatus("idle")
         }
     }
-}
+
+    private fun updateStatus(status: String) {
+        context.getSharedPreferences("adplayer_prefs", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putString("app_status", status)
+            .apply()
+    }

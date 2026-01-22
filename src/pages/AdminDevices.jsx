@@ -91,14 +91,20 @@ export default function AdminDevices() {
     };
 
     const getBadgeVariant = (status, lastSeen) => {
-        if (status !== 'active') return 'destructive';
         if (!lastSeen) return 'destructive';
 
         const lastSeenDate = new Date(lastSeen);
         const diff = Date.now() - lastSeenDate.getTime();
-        if (diff > 5 * 60 * 1000) return 'secondary'; // Warning/Stale
 
-        return 'default'; // Healthy
+        // Offline / Stale check (5 mins)
+        if (diff > 5 * 60 * 1000) return 'destructive';
+
+        // Status checks
+        if (status === 'playing') return 'default'; // Healthy & Active
+        if (status === 'active') return 'default';  // Healthy (Legacy)
+        if (status === 'idle') return 'secondary';  // Healthy but Idle (Yellow/Gray)
+
+        return 'destructive'; // Unknown/Error
     };
 
     return (

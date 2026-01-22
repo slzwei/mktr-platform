@@ -21,11 +21,13 @@ class HeartbeatWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         return try {
-            // Report Buffer Size for Debugging
+            // Report Buffer Size and Status
             val bufferSize = impressionManager.getBufferSize()
+            val prefs = applicationContext.getSharedPreferences("adplayer_prefs", Context.MODE_PRIVATE)
+            val appStatus = prefs.getString("app_status", "active") ?: "active"
             
             val request = BeaconHeartbeatRequest(
-                status = "active",
+                status = appStatus,
                 batteryLevel = null,
                 storageUsed = "Buffer: $bufferSize"
             )

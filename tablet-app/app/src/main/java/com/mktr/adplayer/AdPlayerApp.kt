@@ -7,7 +7,7 @@ import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
 @HiltAndroidApp
-class AdPlayerApp : Application(), Configuration.Provider {
+class AdPlayerApp : Application(), Configuration.Provider, androidx.lifecycle.LifecycleEventObserver {
     
     @Inject lateinit var workerFactory: HiltWorkerFactory
 
@@ -18,7 +18,29 @@ class AdPlayerApp : Application(), Configuration.Provider {
             
     override fun onCreate() {
         super.onCreate()
-        scheduleWorkers()
+        
+        // Reset status to IDLE on fresh launch
+        getSharedPreferences("adplayer_prefs", MODE_PRIVATE)
+            .edit()
+            .putString("app_status", "idle")
+            .apply()
+
+        // Observe process lifecycle (Foreground/Background)
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+    }
+
+    override fun onStateChanged(source: androidx.lifecycle.LifecycleOwner, event: androidx.lifecycle.Lifecycle.Event) {
+        when (event) {
+            androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                android.util.Log.d("AdPlayerApp", "App Foreground: Scheduling Workers")
+                scheduleWorkers()
+            }
+            androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                android.util.Log.d("AdPlayerApp", "App Background: Cancelling Heartbeat")
+                androidx.work.WorkManager.getInstance(this).cancelUniqueWork("HeartbeatWorker")
+            }
+            else -> {}
+        }
     }
     
     private fun scheduleWorkers() {
