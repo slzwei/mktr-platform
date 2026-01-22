@@ -31,11 +31,26 @@ class PushService extends EventEmitter {
         this.clients.set(deviceId, client);
         console.log(`[Push] Client connected: ${deviceId} (${connectionId}) | Total: ${this.clients.size}`);
 
-        // 1. Update DB to Standby (Connected but waiting for player start)
-        this.updateDeviceStatus(deviceId, 'standby');
+        // 1. Determine Status (Preserve "Playing" if reconnecting quickly)
+        let newStatus = 'standby';
+        try {
+            const { Device } = await import('../models/index.js');
+            const currentDevice = await Device.findByPk(deviceId);
+            if (currentDevice &&
+                (currentDevice.status === 'playing' || currentDevice.status === 'active') &&
+                currentDevice.lastSeenAt &&
+                (Date.now() - new Date(currentDevice.lastSeenAt).getTime() < 2 * 60 * 1000)) {
 
-        // 2. Broadcast Status Change (to Log View & Fleet View)
-        this.broadcastStatusChange(deviceId, 'standby');
+                newStatus = currentDevice.status;
+                console.log(`[Push] Preserving status '${newStatus}' for ${deviceId}`);
+            }
+        } catch (e) {
+            console.error(`[Push] Error checking status for ${deviceId}`, e);
+        }
+
+        // 2. Update DB & Broadcast
+        this.updateDeviceStatus(deviceId, newStatus);
+        this.broadcastStatusChange(deviceId, newStatus);
 
         // 3. Send confirmation to tablet
         this.sendEvent(deviceId, 'CONNECTED', { connectionId });
