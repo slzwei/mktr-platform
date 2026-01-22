@@ -42,6 +42,8 @@ class PlayerViewModel @Inject constructor(
     private var assetsMap: Map<String, com.mktr.adplayer.api.model.Asset> = emptyMap()
     private var currentIndex = 0
 
+    private var playbackJob: kotlinx.coroutines.Job? = null
+
     fun startPlaylist(manifest: ManifestResponse) {
         currentPlaylist = manifest.playlist
         assetsMap = manifest.assets.associateBy { it.id }
@@ -52,66 +54,70 @@ class PlayerViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
-            // First, ensure all assets are downloaded (Blocking strategy for MVP)
-            _playerState.value = PlayerState.Initializing
-            try {
-                // Determine missing assets first if needed, but for now we just verify/download next item just-in-time OR look ahead.
-                // Let's do a quick loop to start playback.
-                playNextItem()
-            } catch (e: Exception) {
-                Log.e("PlayerVM", "Playback failed", e)
-                _playerState.value = PlayerState.Error(e.message ?: "Unknown error")
-            }
-        }
+        startPlaybackLoop()
     }
 
-    private suspend fun playNextItem() {
-        if (!viewModelScope.isActive) return
+    private fun startPlaybackLoop() {
+        playbackJob?.cancel()
+        playbackJob = viewModelScope.launch {
+            _playerState.value = PlayerState.Initializing
+            
+            // Initial delay to allow UI to settle? Not strictly needed but safe.
+            // delay(500) 
 
-        val item = currentPlaylist[currentIndex]
-        val asset = assetsMap[item.assetId]
+            while (isActive) {
+                val item = currentPlaylist.getOrNull(currentIndex)
+                if (item == null) {
+                    // Safety check if playlist changed or index invalid
+                    currentIndex = 0
+                    continue
+                }
 
-        if (asset != null) {
-            try {
-                // Ensure file exists
-                val file = assetManager.getAssetFile(asset)
-                _playerState.value = PlayerState.Playing(
-                    item = item,
-                    fileUri = Uri.fromFile(file),
-                    index = currentIndex,
-                    total = currentPlaylist.size
-                )
+                val asset = assetsMap[item.assetId]
+                var durationToWait = 5000L // Default fallback
 
-                // Track Impression
-                impressionManager.trackImpression(
-                    adId = item.assetId,
-                    campaignId = null, // TODO: Manifest should include campaign ID if needed, or backend infers it
-                    mediaType = item.type,
-                    durationMs = item.durationMs
-                )
+                if (asset != null) {
+                    try {
+                        val file = assetManager.getAssetFile(asset)
+                        if (file.exists()) {
+                            // Valid Asset - Play it
+                             _playerState.value = PlayerState.Playing(
+                                item = item,
+                                fileUri = Uri.fromFile(file),
+                                index = currentIndex,
+                                total = currentPlaylist.size
+                            )
 
-                // Wait for duration (if image) or let video finish?
-                // For MVP, we treat video duration as the truth from manifest, 
-                // OR we can listen to player events. 
-                // The manifest says `duration_ms`. We will respect that for now to keep logic simple.
-                delay(item.durationMs)
+                            // Track Impression
+                            impressionManager.trackImpression(
+                                adId = item.assetId,
+                                campaignId = null,
+                                mediaType = item.type,
+                                durationMs = item.durationMs
+                            )
 
-                // Move to next
+                            durationToWait = item.durationMs.coerceAtLeast(3000L) // Ensure at least 3s
+                        } else {
+                            Log.e("PlayerVM", "File not found for asset: ${asset.id} at path: ${file.absolutePath}")
+                            // Skip quickly but not instantly
+                            durationToWait = 2000L
+                        }
+                    } catch (e: Exception) {
+                        Log.e("PlayerVM", "Error playback item ${item.id}", e)
+                        durationToWait = 2000L
+                    }
+                } else {
+                     Log.e("PlayerVM", "Missing asset definition for item ${item.id}")
+                     durationToWait = 2000L
+                }
+
+                // Wait for the duration of the content (or the error backoff)
+                Log.d("PlayerVM", "Playing index $currentIndex for ${durationToWait}ms")
+                delay(durationToWait)
+
+                // Advance index
                 currentIndex = (currentIndex + 1) % currentPlaylist.size
-                playNextItem()
-
-            } catch (e: Exception) {
-                Log.e("PlayerVM", "Failed to play item ${item.id}", e)
-                // Skip item?
-                delay(2000)
-                currentIndex = (currentIndex + 1) % currentPlaylist.size
-                playNextItem()
             }
-        } else {
-            Log.e("PlayerVM", "Missing asset for item ${item.id} (assetId=${item.assetId}). Skipping.")
-            currentIndex = (currentIndex + 1) % currentPlaylist.size
-            playNextItem()
         }
     }
 }

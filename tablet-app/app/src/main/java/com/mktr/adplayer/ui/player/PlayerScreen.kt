@@ -72,10 +72,13 @@ fun PlayerContent(state: PlayerState.Playing) {
         
         // Debug Overlay
         Text(
-            text = "${state.index + 1}/${state.total} | ${state.item.type}",
-            color = Color.Yellow,
-            modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
-            style = MaterialTheme.typography.labelSmall
+            text = "Idx: ${state.index + 1}/${state.total} | Type: ${state.item.type} | ID: ${state.item.id}",
+            color = Color.White,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .background(Color.Red.copy(alpha = 0.7f))
+                .padding(8.dp),
+            style = MaterialTheme.typography.labelMedium
         )
     }
 }
@@ -100,7 +103,7 @@ fun VideoPlayer(uri: Uri, playId: Long) {
     val exoPlayer = remember {
         ExoPlayer.Builder(context).build().apply {
             playWhenReady = true
-            repeatMode = Player.REPEAT_MODE_OFF // VM controls loop
+            repeatMode = Player.REPEAT_MODE_OFF // VM controls loop via playlist logic
         }
     }
 
