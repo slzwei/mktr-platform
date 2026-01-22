@@ -57,6 +57,9 @@ class PushService extends EventEmitter {
         res.write(`event: connected\n`);
         res.write(`data: "Listening for logs..."\n\n`);
 
+        // Force flush proxy buffers (some require 2KB+ of data to start streaming)
+        res.write(`: ${' '.repeat(2048)}\n\n`);
+
         res.on('close', () => {
             console.log(`[Push] Observer removed for ${deviceId} (${connectionId})`);
             const set = this.observers.get(deviceId);

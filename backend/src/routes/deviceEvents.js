@@ -41,6 +41,7 @@ router.get('/:id/logs/stream', allowQueryToken, authenticateToken, requireAdmin,
         'Connection': 'keep-alive',
         'X-Accel-Buffering': 'no'
     });
+    res.flushHeaders(); // Ensure headers are sent immediately
 
     pushService.addObserver(deviceId, res);
 });
