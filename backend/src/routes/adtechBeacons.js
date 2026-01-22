@@ -127,8 +127,11 @@ router.post('/v1/beacons/impressions', authenticateDevice, beaconLimiter, async 
     // Bulk insert
     await Impression.bulkCreate(validImpressions);
 
-    // Also touch heartbeat
-    await req.device.update({ lastSeenAt: new Date() });
+    // Also touch heartbeat & Update Status to PLAYING (Proof of Life)
+    await req.device.update({
+      lastSeenAt: new Date(),
+      status: 'playing'
+    });
 
     // Log the batch event for visibility
     await import('../models/index.js').then(({ BeaconEvent }) => {
@@ -144,7 +147,12 @@ router.post('/v1/beacons/impressions', authenticateDevice, beaconLimiter, async 
       });
     });
 
-    // Broadcast
+    // Broadcast (Imported service)
+    // FORCE STATUS UPDATE: If we are receiving impressions, the device is definitely PLAYING.
+    // This fixes the "Stuck in READY" issue if the specific Heartbeat packet was missed or generic.
+    pushService.updateDeviceStatus(req.device.id, 'playing');
+    pushService.broadcastStatusChange(req.device.id, 'playing');
+
     pushService.broadcastLog(req.device.id, {
       type: 'IMPRESSIONS',
       createdAt: new Date(),
