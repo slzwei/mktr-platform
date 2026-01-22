@@ -41,31 +41,20 @@ class PushService extends EventEmitter {
         console.log(`[Push] Client connected: ${deviceId} (${connectionId}) | Total: ${this.clients.size}`);
 
         // 1. Determine Status (Preserve "Playing" if reconnecting quickly)
-        // Improved: Check in-memory history first (Atomic handoff), then DB
+        // Improved: Check in-memory history first (Atomic handoff)
+        // SIMPLIFICATION: Removed DB fallback. We do not trust DB state for fresh connections.
+        // If it's a fresh start, it starts as 'standby' until the first heartbeat confirms 'playing'.
         let newStatus = 'standby';
 
-        // Check Disconnect History (Best for flickering connections)
+        // Check Disconnect History (Only for network flickers < 15s)
         const recent = this.disconnectHistory.get(deviceId);
         if (recent && (Date.now() - recent.timestamp < 15000) && (recent.status === 'playing' || recent.status === 'active')) {
             newStatus = recent.status;
             console.log(`[Push] Restored status '${newStatus}' from history for ${deviceId}`);
-        } else {
-            // Fallback to DB check (slower but persistent)
-            try {
-                const { Device } = await import('../models/index.js');
-                const currentDevice = await Device.findByPk(deviceId);
-                if (currentDevice &&
-                    (currentDevice.status === 'playing' || currentDevice.status === 'active') &&
-                    currentDevice.lastSeenAt &&
-                    (Date.now() - new Date(currentDevice.lastSeenAt).getTime() < 2 * 60 * 1000)) {
-
-                    newStatus = currentDevice.status;
-                    console.log(`[Push] Preserving status '${newStatus}' for ${deviceId}`);
-                }
-            } catch (e) {
-                console.error(`[Push] Error checking status for ${deviceId}`, e);
-            }
         }
+
+        client.status = newStatus;
+        this.clients.set(deviceId, client);
 
         // 2. Update DB & Broadcast
         this.updateDeviceStatus(deviceId, newStatus);
