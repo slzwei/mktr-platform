@@ -63,7 +63,13 @@ router.post('/v1/beacons/heartbeat', authenticateDevice, beaconLimiter, async (r
     // CRITICAL: Ensure status changes (e.g. Inactive -> Active) are reflected in real-time
     // The SSE connection (addClient) handles 'standby', but the Heartbeat handles 'playing'/'idle'.
     if (status) {
-      pushService.broadcastStatusChange(req.device.id, status);
+      // ANTI-ZOMBIE: Only broadcast/update status if SSE is actually connected.
+      if (pushService && pushService.clients && pushService.clients.has(req.device.id)) {
+        pushService.broadcastStatusChange(req.device.id, status);
+        pushService.updateDeviceStatus(req.device.id, status);
+      } else {
+        console.warn(`[Heartbeat] Zombie heartbeat from ${req.device.id} (Status: ${status}). Ignoring status update because SSE is disconnected.`);
+      }
     }
 
     res.json({ success: true, timestamp: Date.now() });

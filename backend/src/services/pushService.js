@@ -3,15 +3,24 @@ import { EventEmitter } from 'events';
 class PushService extends EventEmitter {
     constructor() {
         super();
-        this.clients = new Map(); // deviceId -> { id, res, connectedAt }
+        this.clients = new Map(); // deviceId -> { id, res, connectedAt, status }
         this.observers = new Map(); // deviceId -> Set<{ id, res }>
         this.fleetObservers = new Set(); // Set<{ id, res }> - For the main device list
+        this.disconnectHistory = new Map(); // deviceId -> { status, timestamp }
 
         // Start heartbeat loop to keep connections alive and detect zombies
         setInterval(() => this.broadcastHeartbeat(), 30000);
+        setInterval(() => this.cleanupHistory(), 60000);
     }
 
     // Register a tablet client
+    cleanupHistory() {
+        const now = Date.now();
+        for (const [key, val] of this.disconnectHistory.entries()) {
+            if (now - val.timestamp > 30000) this.disconnectHistory.delete(key);
+        }
+    }
+
     async addClient(deviceId, res) {
         // Generate a quick random connection ID
         const connectionId = Math.random().toString(36).substring(7);
@@ -32,20 +41,30 @@ class PushService extends EventEmitter {
         console.log(`[Push] Client connected: ${deviceId} (${connectionId}) | Total: ${this.clients.size}`);
 
         // 1. Determine Status (Preserve "Playing" if reconnecting quickly)
+        // Improved: Check in-memory history first (Atomic handoff), then DB
         let newStatus = 'standby';
-        try {
-            const { Device } = await import('../models/index.js');
-            const currentDevice = await Device.findByPk(deviceId);
-            if (currentDevice &&
-                (currentDevice.status === 'playing' || currentDevice.status === 'active') &&
-                currentDevice.lastSeenAt &&
-                (Date.now() - new Date(currentDevice.lastSeenAt).getTime() < 2 * 60 * 1000)) {
 
-                newStatus = currentDevice.status;
-                console.log(`[Push] Preserving status '${newStatus}' for ${deviceId}`);
+        // Check Disconnect History (Best for flickering connections)
+        const recent = this.disconnectHistory.get(deviceId);
+        if (recent && (Date.now() - recent.timestamp < 15000) && (recent.status === 'playing' || recent.status === 'active')) {
+            newStatus = recent.status;
+            console.log(`[Push] Restored status '${newStatus}' from history for ${deviceId}`);
+        } else {
+            // Fallback to DB check (slower but persistent)
+            try {
+                const { Device } = await import('../models/index.js');
+                const currentDevice = await Device.findByPk(deviceId);
+                if (currentDevice &&
+                    (currentDevice.status === 'playing' || currentDevice.status === 'active') &&
+                    currentDevice.lastSeenAt &&
+                    (Date.now() - new Date(currentDevice.lastSeenAt).getTime() < 2 * 60 * 1000)) {
+
+                    newStatus = currentDevice.status;
+                    console.log(`[Push] Preserving status '${newStatus}' for ${deviceId}`);
+                }
+            } catch (e) {
+                console.error(`[Push] Error checking status for ${deviceId}`, e);
             }
-        } catch (e) {
-            console.error(`[Push] Error checking status for ${deviceId}`, e);
         }
 
         // 2. Update DB & Broadcast
@@ -102,6 +121,12 @@ class PushService extends EventEmitter {
         // If the tablet reconnected quickly, clients.get(id).id will be different.
         if (currentClient && (!closingConnectionId || currentClient.id === closingConnectionId)) {
             console.log(`[Push] Client disconnected: ${deviceId} (${closingConnectionId || 'unknown'}) -> Marking Inactive`);
+
+            this.disconnectHistory.set(deviceId, {
+                status: currentClient.status || 'active',
+                timestamp: Date.now()
+            });
+
             this.clients.delete(deviceId);
 
             // Update DB & Broadcast
@@ -113,6 +138,8 @@ class PushService extends EventEmitter {
     }
 
     async updateDeviceStatus(deviceId, status) {
+        const client = this.clients.get(deviceId);
+        if (client) client.status = status;
         try {
             // lazy import to avoid circular dependency issues if any
             const { Device } = await import('../models/index.js');
