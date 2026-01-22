@@ -41,6 +41,40 @@ export default function AdminDevices() {
         loadDevices();
     }, []);
 
+    // Fleet Status Stream (SSE)
+    useEffect(() => {
+        const token = localStorage.getItem('mktr_auth_token');
+        if (!token) return;
+
+        const url = `${import.meta.env.VITE_API_URL}/devices/events/fleet/stream?token=${token}`;
+        const sse = new EventSource(url);
+
+        sse.onopen = () => console.log('✅ Connected to Fleet Stream');
+
+        sse.addEventListener('status_change', (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                // Update local state for immediate feedback
+                setDevices(prev => prev.map(d => {
+                    if (d.id === data.deviceId) {
+                        return { ...d, status: data.status, lastSeenAt: data.lastSeenAt };
+                    }
+                    return d;
+                }));
+            } catch (err) {
+                console.error('Failed to parse status_change', err);
+            }
+        });
+
+        sse.onerror = (err) => {
+            // EventSource auto-retries, but we logs silent error
+            // console.error('Fleet Stream Error', err);
+            sse.close();
+        };
+
+        return () => sse.close();
+    }, []);
+
     const loadDevices = async () => {
         try {
             setLoading(true);

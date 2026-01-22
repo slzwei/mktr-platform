@@ -46,4 +46,19 @@ router.get('/:id/logs/stream', allowQueryToken, authenticateToken, requireAdmin,
     pushService.addObserver(deviceId, res);
 });
 
+// GET /api/devices/events/fleet/stream
+// SSE Stream Endpoint for Fleet Status Updates (Admin Auth)
+router.get('/fleet/stream', allowQueryToken, authenticateToken, requireAdmin, (req, res) => {
+    // SSE Headers
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+    });
+    res.flushHeaders();
+
+    pushService.addFleetObserver(res);
+});
+
 export default router;

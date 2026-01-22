@@ -3,21 +3,23 @@ import { EventEmitter } from 'events';
 class PushService extends EventEmitter {
     constructor() {
         super();
-        this.clients = new Map(); // deviceId -> { id, res }
+        this.clients = new Map(); // deviceId -> { id, res, connectedAt }
         this.observers = new Map(); // deviceId -> Set<{ id, res }>
+        this.fleetObservers = new Set(); // Set<{ id, res }> - For the main device list
 
         // Start heartbeat loop to keep connections alive and detect zombies
         setInterval(() => this.broadcastHeartbeat(), 30000);
     }
 
-    addClient(deviceId, res) {
-        // If client already exists, we might want to close the old one or just overwrite
+    // Register a tablet client
+    async addClient(deviceId, res) {
+        // Generate a quick random connection ID
+        const connectionId = Math.random().toString(36).substring(7);
+
+        // If client already exists, log it. We overwrite it below.
         if (this.clients.has(deviceId)) {
             console.log(`[Push] Replacing existing client for ${deviceId}`);
         }
-
-        // Generate a quick random connection ID for debugging
-        const connectionId = Math.random().toString(36).substring(7);
 
         const client = {
             id: connectionId,
@@ -29,16 +31,18 @@ class PushService extends EventEmitter {
         this.clients.set(deviceId, client);
         console.log(`[Push] Client connected: ${deviceId} (${connectionId}) | Total: ${this.clients.size}`);
 
-        // Send initial connection confirmed event
+        // 1. Update DB to Active
+        this.updateDeviceStatus(deviceId, 'active');
+
+        // 2. Broadcast Status Change (to Log View & Fleet View)
+        this.broadcastStatusChange(deviceId, 'active');
+
+        // 3. Send confirmation to tablet
         this.sendEvent(deviceId, 'CONNECTED', { connectionId });
 
-        // Handle close (client disconnect)
+        // Handle disconnect
         res.on('close', () => {
-            console.log(`[Push] Client disconnected: ${deviceId} (${connectionId})`);
-            // Only remove if it matches the current connection (handling race conditions)
-            if (this.clients.get(deviceId)?.id === connectionId) {
-                this.clients.delete(deviceId);
-            }
+            this.removeClient(deviceId, connectionId);
         });
     }
 
@@ -75,12 +79,76 @@ class PushService extends EventEmitter {
         });
     }
 
-    removeClient(deviceId) {
-        const client = this.clients.get(deviceId);
-        if (client) {
-            client.res.end();
+    // Handle tablet disconnect with Race Condition Protection
+    removeClient(deviceId, closingConnectionId) {
+        const currentClient = this.clients.get(deviceId);
+
+        // CRITICAL: Only mark inactive if the closing connection is the CURRENT one.
+        // If the tablet reconnected quickly, clients.get(id).id will be different.
+        if (currentClient && (!closingConnectionId || currentClient.id === closingConnectionId)) {
+            console.log(`[Push] Client disconnected: ${deviceId} (${closingConnectionId || 'unknown'}) -> Marking Inactive`);
             this.clients.delete(deviceId);
+
+            // Update DB & Broadcast
+            this.updateDeviceStatus(deviceId, 'inactive');
+            this.broadcastStatusChange(deviceId, 'inactive');
+        } else {
+            console.log(`[Push] Stale disconnect ignored for ${deviceId} (${closingConnectionId}). Current: ${currentClient?.id}`);
         }
+    }
+
+    async updateDeviceStatus(deviceId, status) {
+        try {
+            // lazy import to avoid circular dependency issues if any
+            const { Device } = await import('../models/index.js');
+            await Device.update({ status, lastSeenAt: new Date() }, { where: { id: deviceId } });
+        } catch (err) {
+            console.error(`[Push] Failed to update device status ${deviceId}`, err);
+        }
+    }
+
+    broadcastStatusChange(deviceId, status) {
+        const payload = JSON.stringify({ status, lastSeenAt: new Date() });
+
+        // 1. Notify Fleet Observers (AdminDevices list)
+        for (const obs of this.fleetObservers) {
+            try {
+                obs.res.write(`event: status_change\n`);
+                obs.res.write(`data: ${JSON.stringify({ deviceId, status, lastSeenAt: new Date() })}\n\n`);
+            } catch (e) { /* clean up on close */ }
+        }
+
+        // 2. Notify Individual Device Log Observers (AdminDeviceLogs)
+        const deviceObservers = this.observers.get(deviceId);
+        if (deviceObservers) {
+            for (const obs of deviceObservers) {
+                try {
+                    obs.res.write(`event: status_change\n`);
+                    obs.res.write(`data: ${payload}\n\n`);
+                } catch (e) { /* clean up on close */ }
+            }
+        }
+    }
+
+    addFleetObserver(res) {
+        const connectionId = Math.random().toString(36).substring(7);
+        const observer = { id: connectionId, res };
+        this.fleetObservers.add(observer);
+
+        console.log(`[Push] Fleet Observer added (${connectionId}). Total: ${this.fleetObservers.size}`);
+
+        // Initial Event
+        res.write(`event: connected\n`);
+        res.write(`data: "Listening for fleet updates..."\n\n`);
+
+        // Padding
+        res.write(`: ${' '.repeat(2048)}\n\n`);
+        if (res.flushHeaders) res.flushHeaders();
+
+        res.on('close', () => {
+            this.fleetObservers.delete(observer);
+            console.log(`[Push] Fleet Observer removed (${connectionId})`);
+        });
     }
 
     sendEvent(deviceId, type, data = {}) {
@@ -132,8 +200,7 @@ class PushService extends EventEmitter {
                 try {
                     client.res.write(': keep-alive\n\n');
                 } catch (err) {
-                    console.error(`[Push] Heartbeat failed for ${deviceId}, removing.`);
-                    this.clients.delete(deviceId);
+                    this.removeClient(deviceId, client.id);
                 }
             }
         }
@@ -150,6 +217,13 @@ class PushService extends EventEmitter {
                     }
                 }
             }
+        }
+
+        // Heartbeat for Fleet Observers
+        for (const obs of this.fleetObservers) {
+            try {
+                obs.res.write(': keep-alive\n\n');
+            } catch (e) { }
         }
     }
 }

@@ -40,6 +40,7 @@ export default function AdminDeviceLogs() {
     const [loading, setLoading] = useState(true);
 
     const [streamStatus, setStreamStatus] = useState('disconnected');
+    const [deviceStatus, setDeviceStatus] = useState('unknown'); // active vs inactive
 
     useEffect(() => {
         fetchLogs(1);
@@ -60,6 +61,14 @@ export default function AdminDeviceLogs() {
             console.log('[Logs] Connected to live stream');
             setStreamStatus('connected');
         };
+
+        eventSource.addEventListener('status_change', (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                console.log('[Logs] status_change:', data);
+                setDeviceStatus(data.status);
+            } catch (err) { console.error(err); }
+        });
 
         eventSource.addEventListener('log', (e) => {
             try {
@@ -106,6 +115,10 @@ export default function AdminDeviceLogs() {
             if (res.pagination) {
                 setPagination(res.pagination);
             }
+            // Also try to get current status
+            const devRes = await api.get(`/devices/${id}`);
+            if (devRes.data?.status) setDeviceStatus(devRes.data.status);
+
         } catch (err) {
             console.error(err);
         } finally {
@@ -128,10 +141,17 @@ export default function AdminDeviceLogs() {
                                 {id}
                             </span>
                             {streamStatus === 'connected' && (
-                                <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200 animate-pulse">
-                                    <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
-                                    LIVE
-                                </Badge>
+                                deviceStatus === 'inactive' ? (
+                                    <Badge variant="outline" className="ml-2 bg-gray-100 text-gray-500 border-gray-200">
+                                        <span className="w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
+                                        OFFLINE
+                                    </Badge>
+                                ) : (
+                                    <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200 animate-pulse">
+                                        <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+                                        LIVE
+                                    </Badge>
+                                )
                             )}
                             {streamStatus === 'connecting' && (
                                 <Badge variant="outline" className="ml-2 bg-yellow-50 text-yellow-700 border-yellow-200">
