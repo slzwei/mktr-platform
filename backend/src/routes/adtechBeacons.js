@@ -60,6 +60,12 @@ router.post('/v1/beacons/heartbeat', authenticateDevice, beaconLimiter, async (r
       payload: { status, batteryLevel, storageUsed }
     });
 
+    // CRITICAL: Ensure status changes (e.g. Inactive -> Active) are reflected in real-time
+    // The SSE connection (addClient) handles 'standby', but the Heartbeat handles 'playing'/'idle'.
+    if (status) {
+      pushService.broadcastStatusChange(req.device.id, status);
+    }
+
     res.json({ success: true, timestamp: Date.now() });
   } catch (err) {
     console.error('[Heartbeat] Error:', err);
