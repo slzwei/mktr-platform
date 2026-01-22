@@ -36,10 +36,7 @@ class PlayerViewModel @Inject constructor(
     private val impressionManager: com.mktr.adplayer.data.manager.ImpressionManager
 ) : ViewModel(), androidx.lifecycle.LifecycleEventObserver {
 
-    init {
-        // Observe Process Lifecycle for Foreground/Background detection
-        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(this)
-    }
+
 
     override fun onStateChanged(source: androidx.lifecycle.LifecycleOwner, event: androidx.lifecycle.Lifecycle.Event) {
         when (event) {
@@ -80,6 +77,11 @@ class PlayerViewModel @Inject constructor(
     private var currentIndex = 0
 
     private var playbackJob: kotlinx.coroutines.Job? = null
+
+    init {
+        // Observe Process Lifecycle for Foreground/Background detection
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+    }
 
     fun startPlaylist(manifest: ManifestResponse) {
         currentPlaylist = manifest.playlist
