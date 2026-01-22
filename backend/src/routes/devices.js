@@ -70,6 +70,26 @@ router.get('/', async (req, res) => {
     }
 });
 
+// GET /api/devices/:id - Get single device details
+router.get('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const device = await Device.findByPk(id);
+
+        if (!device) {
+            return res.status(404).json({ message: 'Device not found' });
+        }
+
+        res.json({
+            success: true,
+            data: device
+        });
+    } catch (error) {
+        console.error('Error fetching device:', error);
+        res.status(500).json({ message: 'Error fetching device' });
+    }
+});
+
 // GET /api/devices/:id/logs - Get device logs/events (Merged History)
 router.get('/:id/logs', async (req, res) => {
     try {
