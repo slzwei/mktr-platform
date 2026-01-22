@@ -72,7 +72,7 @@ fun PlayerContent(state: PlayerState.Playing) {
         
         // Debug Overlay
         Text(
-            text = "Idx: ${state.index + 1}/${state.total} | Type: ${state.item.type} | ID: ${state.item.id}",
+            text = "Idx: ${state.index + 1}/${state.total} | Type: ${state.item.type} | ID: ${state.item.id}\nDur: ${state.item.durationMs}ms",
             color = Color.White,
             modifier = Modifier
                 .align(Alignment.TopStart)
