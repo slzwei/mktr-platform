@@ -24,6 +24,7 @@ data class Asset(
 data class PlaylistItem(
     val id: String,
     @SerialName("asset_id") val assetId: String,
+    @SerialName("campaign_id") val campaignId: String? = null,
     @SerialName("duration_ms") val durationMs: Long,
     val type: String // "image" | "video"
 )

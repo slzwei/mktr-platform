@@ -149,7 +149,12 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
     const combinedPlaylist = [];
     assignedCampaigns.forEach(c => {
       if (c.ad_playlist && Array.isArray(c.ad_playlist)) {
-        combinedPlaylist.push(...c.ad_playlist);
+        // Inject campaign_id into each item so we can track it
+        const itemsWithCampaign = c.ad_playlist.map(item => ({
+          ...item,
+          campaign_id: c.id
+        }));
+        combinedPlaylist.push(...itemsWithCampaign);
       }
     });
 
@@ -173,6 +178,7 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
       return {
         id: `pl_${index}`,
         asset_id: assetId,
+        campaign_id: item.campaign_id,
         duration_ms: (item.duration > 1000) ? item.duration : (item.duration || 10) * 1000,
         type: item.type
       };

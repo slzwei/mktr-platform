@@ -94,7 +94,7 @@ class PlayerViewModel @Inject constructor(
                             // Track Impression
                             impressionManager.trackImpression(
                                 adId = item.assetId,
-                                campaignId = null,
+                                campaignId = item.campaignId,
                                 mediaType = item.type,
                                 durationMs = item.durationMs
                             )
