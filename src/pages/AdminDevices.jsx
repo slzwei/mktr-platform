@@ -190,156 +190,154 @@ export default function AdminDevices() {
                                                         </div>
                                                     </TableCell>
                                                     <TableCell className="px-6 py-4">
-                                                        <TableCell className="px-6 py-4">
-                                                            {(() => {
-                                                                // Logic unified with AdminDeviceLogs.jsx
-                                                                const isStale = !device.lastSeenAt || (Date.now() - new Date(device.lastSeenAt).getTime() > 5 * 60 * 1000);
-                                                                const status = device.status;
+                                                        {(() => {
+                                                            // Logic unified with AdminDeviceLogs.jsx
+                                                            const isStale = !device.lastSeenAt || (Date.now() - new Date(device.lastSeenAt).getTime() > 5 * 60 * 1000);
+                                                            const status = device.status;
 
-                                                                if (status === 'inactive' || isStale) {
-                                                                    return (
-                                                                        <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-200">
-                                                                            <span className="w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
-                                                                            OFFLINE
-                                                                        </Badge>
-                                                                    );
-                                                                }
-                                                                if (status === 'standby' || status === 'idle') {
-                                                                    return (
-                                                                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                                                                            <span className="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
-                                                                            READY
-                                                                        </Badge>
-                                                                    );
-                                                                }
-                                                                if (status === 'playing' || status === 'active') {
-                                                                    return (
-                                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 animate-pulse">
-                                                                            <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
-                                                                            LIVE
-                                                                        </Badge>
-                                                                    );
-                                                                }
-                                                                // Fallback
-                                                                return <Badge variant="outline">{status}</Badge>;
-                                                            })()}
-                                                        </TableCell>
-                                                        <TableCell className="px-6 py-4">
-                                                            {device.campaigns && device.campaigns.length > 0 ? (
-                                                                <div className="flex flex-wrap gap-1">
-                                                                    {device.campaigns.map(c => (
-                                                                        <span key={c.id} className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded text-sm whitespace-nowrap">
-                                                                            {c.name}
-                                                                        </span>
-                                                                    ))}
-                                                                </div>
+                                                            if (status === 'inactive' || isStale) {
+                                                                return (
+                                                                    <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-200">
+                                                                        <span className="w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
+                                                                        OFFLINE
+                                                                    </Badge>
+                                                                );
+                                                            }
+                                                            if (status === 'standby' || status === 'idle') {
+                                                                return (
+                                                                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                                                                        <span className="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
+                                                                        READY
+                                                                    </Badge>
+                                                                );
+                                                            }
+                                                            if (status === 'playing' || status === 'active') {
+                                                                return (
+                                                                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 animate-pulse">
+                                                                        <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+                                                                        LIVE
+                                                                    </Badge>
+                                                                );
+                                                            }
+                                                            // Fallback
+                                                            return <Badge variant="outline">{status}</Badge>;
+                                                        })()}
+                                                    </TableCell>
+                                                    {device.campaigns && device.campaigns.length > 0 ? (
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {device.campaigns.map(c => (
+                                                                <span key={c.id} className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded text-sm whitespace-nowrap">
+                                                                    {c.name}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-gray-400 italic text-sm">Unassigned</span>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell className="px-6 py-4 text-sm text-gray-500">
+                                                    {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : 'Never'}
+                                                </TableCell>
+                                                <TableCell className="px-6 py-4 text-right">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => setSelectedDevice(device)}
+                                                        className="h-8"
+                                                    >
+                                                        Assign Campaign
+                                                    </Button>
+                                                </TableCell>
+                                            </TableRow>
+
+                                                {/* Expanded Row (Logs Preview) */ }
+                                                { expandedDeviceId === device.id && (
+                                                <TableRow className="bg-muted/10">
+                                                    <TableCell colSpan={6} className="p-0">
+                                                        <div className="p-4 border-b border-gray-100 bg-slate-50/50">
+                                                            <div className="flex justify-between items-center mb-3 px-2">
+                                                                <h4 className="text-sm font-semibold flex items-center gap-2">
+                                                                    <Activity className="h-4 w-4 text-primary" />
+                                                                    Recent Logs (Last 5)
+                                                                </h4>
+                                                                <Button
+                                                                    variant="link"
+                                                                    size="sm"
+                                                                    className="h-auto p-0 text-blue-600"
+                                                                    onClick={() => navigate(`/admin/devices/${device.id}/logs`)}
+                                                                >
+                                                                    See Full History <ExternalLink className="ml-1 h-3 w-3" />
+                                                                </Button>
+                                                            </div>
+
+                                                            {previewLoading ? (
+                                                                <div className="text-xs text-muted-foreground p-4">Loading logs...</div>
+                                                            ) : previewLogs.length === 0 ? (
+                                                                <div className="text-xs text-muted-foreground p-4">No logs found.</div>
                                                             ) : (
-                                                                <span className="text-gray-400 italic text-sm">Unassigned</span>
-                                                            )}
-                                                        </TableCell>
-                                                        <TableCell className="px-6 py-4 text-sm text-gray-500">
-                                                            {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : 'Never'}
-                                                        </TableCell>
-                                                        <TableCell className="px-6 py-4 text-right">
-                                                            <Button
-                                                                variant="outline"
-                                                                size="sm"
-                                                                onClick={() => setSelectedDevice(device)}
-                                                                className="h-8"
-                                                            >
-                                                                Assign Campaign
-                                                            </Button>
-                                                        </TableCell>
-                                                </TableRow>
-
-                                                {/* Expanded Row (Logs Preview) */}
-                                                {expandedDeviceId === device.id && (
-                                                    <TableRow className="bg-muted/10">
-                                                        <TableCell colSpan={6} className="p-0">
-                                                            <div className="p-4 border-b border-gray-100 bg-slate-50/50">
-                                                                <div className="flex justify-between items-center mb-3 px-2">
-                                                                    <h4 className="text-sm font-semibold flex items-center gap-2">
-                                                                        <Activity className="h-4 w-4 text-primary" />
-                                                                        Recent Logs (Last 5)
-                                                                    </h4>
-                                                                    <Button
-                                                                        variant="link"
-                                                                        size="sm"
-                                                                        className="h-auto p-0 text-blue-600"
-                                                                        onClick={() => navigate(`/admin/devices/${device.id}/logs`)}
-                                                                    >
-                                                                        See Full History <ExternalLink className="ml-1 h-3 w-3" />
-                                                                    </Button>
-                                                                </div>
-
-                                                                {previewLoading ? (
-                                                                    <div className="text-xs text-muted-foreground p-4">Loading logs...</div>
-                                                                ) : previewLogs.length === 0 ? (
-                                                                    <div className="text-xs text-muted-foreground p-4">No logs found.</div>
-                                                                ) : (
-                                                                    <div className="space-y-2">
-                                                                        {previewLogs.map((log) => (
-                                                                            <div key={log.id} className="grid grid-cols-[140px_100px_1fr] gap-4 text-xs p-2 rounded bg-white border border-gray-100 items-center">
-                                                                                <span className="text-muted-foreground">
-                                                                                    {format(new Date(log.createdAt), 'MMM d, HH:mm:ss')}
-                                                                                </span>
-                                                                                <Badge variant="outline" className="w-fit text-[10px] h-5">
-                                                                                    {log.type}
-                                                                                </Badge>
-                                                                                <div className="truncate text-muted-foreground font-mono">
-                                                                                    {log.type === 'HEARTBEAT' ? (
-                                                                                        log.payload?.source === 'manifest_fetch' ? (
-                                                                                            <span className="flex items-center gap-1.5 text-blue-600">
-                                                                                                <RefreshCcw className="h-3 w-3" /> Manifest Refresh (Manual)
-                                                                                            </span>
-                                                                                        ) : (
-                                                                                            <span className="flex gap-3">
-                                                                                                <span className="flex items-center gap-1">
-                                                                                                    <Battery className="h-3 w-3" />
-                                                                                                    {typeof log.payload?.batteryLevel === 'number'
-                                                                                                        ? `${(log.payload.batteryLevel * 100).toFixed(0)}%`
-                                                                                                        : '--%'}
-                                                                                                </span>
-                                                                                                <span className="flex items-center gap-1">
-                                                                                                    <HardDrive className="h-3 w-3" />
-                                                                                                    {log.payload?.storageUsed || '--'}
-                                                                                                </span>
-                                                                                            </span>
-                                                                                        )
-                                                                                    ) : log.type === 'IMPRESSIONS' ? (
-                                                                                        <span className="flex items-center gap-1.5 text-purple-600">
-                                                                                            <Eye className="h-3 w-3" /> Uploaded {log.payload?.count} Impressions
+                                                                <div className="space-y-2">
+                                                                    {previewLogs.map((log) => (
+                                                                        <div key={log.id} className="grid grid-cols-[140px_100px_1fr] gap-4 text-xs p-2 rounded bg-white border border-gray-100 items-center">
+                                                                            <span className="text-muted-foreground">
+                                                                                {format(new Date(log.createdAt), 'MMM d, HH:mm:ss')}
+                                                                            </span>
+                                                                            <Badge variant="outline" className="w-fit text-[10px] h-5">
+                                                                                {log.type}
+                                                                            </Badge>
+                                                                            <div className="truncate text-muted-foreground font-mono">
+                                                                                {log.type === 'HEARTBEAT' ? (
+                                                                                    log.payload?.source === 'manifest_fetch' ? (
+                                                                                        <span className="flex items-center gap-1.5 text-blue-600">
+                                                                                            <RefreshCcw className="h-3 w-3" /> Manifest Refresh (Manual)
                                                                                         </span>
                                                                                     ) : (
-                                                                                        JSON.stringify(log.payload)
-                                                                                    )}
-                                                                                </div>
+                                                                                        <span className="flex gap-3">
+                                                                                            <span className="flex items-center gap-1">
+                                                                                                <Battery className="h-3 w-3" />
+                                                                                                {typeof log.payload?.batteryLevel === 'number'
+                                                                                                    ? `${(log.payload.batteryLevel * 100).toFixed(0)}%`
+                                                                                                    : '--%'}
+                                                                                            </span>
+                                                                                            <span className="flex items-center gap-1">
+                                                                                                <HardDrive className="h-3 w-3" />
+                                                                                                {log.payload?.storageUsed || '--'}
+                                                                                            </span>
+                                                                                        </span>
+                                                                                    )
+                                                                                ) : log.type === 'IMPRESSIONS' ? (
+                                                                                    <span className="flex items-center gap-1.5 text-purple-600">
+                                                                                        <Eye className="h-3 w-3" /> Uploaded {log.payload?.count} Impressions
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    JSON.stringify(log.payload)
+                                                                                )}
                                                                             </div>
-                                                                        ))}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                )}
-                                            </React.Fragment>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                    </React.Fragment>
                                         ))}
-                                    </TableBody>
-                                </Table>
+                                </TableBody>
+                            </Table>
                             </div>
                         )}
-                    </CardContent>
-                </Card>
+                </CardContent>
+            </Card>
 
-                {selectedDevice && (
-                    <AssignCampaignDialog
-                        open={!!selectedDevice}
-                        device={selectedDevice}
-                        onClose={() => setSelectedDevice(null)}
-                        onAssign={loadDevices}
-                    />
-                )}
-            </div>
+            {selectedDevice && (
+                <AssignCampaignDialog
+                    open={!!selectedDevice}
+                    device={selectedDevice}
+                    onClose={() => setSelectedDevice(null)}
+                    onAssign={loadDevices}
+                />
+            )}
         </div>
+        </div >
     );
 }
