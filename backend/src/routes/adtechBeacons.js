@@ -29,25 +29,29 @@ router.post('/v1/beacons/heartbeat', authenticateDevice, beaconLimiter, async (r
     // 2. Log immutable event for debugging
     // FMEA Mitigation: We perform this write async/await but could fire-and-forget if perf becomes an issue.
     // For now, we await it to ensure data integrity.
-    await import('../models/index.js').then(({ BeaconEvent }) => {
-      const payload = {
-        batteryLevel,
-        storageUsed,
-        status
-      };
 
-      // Broadcast to live observers
-      if (global.pushService) { // Accessed via global for simplicity or imported
-        // Check import method
-      }
-
-      return BeaconEvent.create({
-        deviceId: req.device.id,
-        type: 'HEARTBEAT',
-        eventHash: `HB-${Date.now()}`,
-        payload
-      });
-    });
+    // OPTIMIZATION: Do not persist "Keep-Alive" heartbeats to DB to save space.
+    // Only persist if there is a distinct state change or error (future).
+    // For now, simple heartbeats are purely for 'lastSeenAt' and live stream.
+    // await import('../models/index.js').then(({ BeaconEvent }) => {
+    //   const payload = {
+    //     batteryLevel,
+    //     storageUsed,
+    //     status
+    //   };
+    //
+    //   // Broadcast to live observers
+    //   if (global.pushService) { // Accessed via global for simplicity or imported
+    //     // Check import method
+    //   }
+    //
+    //   return BeaconEvent.create({
+    //     deviceId: req.device.id,
+    //     type: 'HEARTBEAT',
+    //     eventHash: `HB-${Date.now()}`,
+    //     payload
+    //   });
+    // });
 
     // Broadcast (Imported service)
     pushService.broadcastLog(req.device.id, {

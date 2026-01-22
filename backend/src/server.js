@@ -449,6 +449,22 @@ async function startServer() {
       console.log(`💚 Health Check: http://localhost:${PORT}/health`);
       // Echo adtech rate-limit envs for CI auditing
       console.log(`[monolith] RPS env: MANIFEST_RPS_PER_DEVICE=${process.env.MANIFEST_RPS_PER_DEVICE || '2'} BEACON_RPS_PER_DEVICE=${process.env.BEACON_RPS_PER_DEVICE || '5'} BEACON_IDEMP_WINDOW_MIN=${process.env.BEACON_IDEMP_WINDOW_MIN || '10'}`);
+
+      // Schedule Log Cleanup (Every 24 hours)
+      // Run once on startup after 1 min, then every 24h
+      setTimeout(async () => {
+        try {
+          const { cleanupLogs } = await import('./scripts/cleanup_logs.js');
+          await cleanupLogs();
+        } catch (e) { console.error('Startup cleanup failed:', e); }
+      }, 60000);
+
+      setInterval(async () => {
+        try {
+          const { cleanupLogs } = await import('./scripts/cleanup_logs.js');
+          await cleanupLogs();
+        } catch (e) { console.error('Daily cleanup failed:', e); }
+      }, 24 * 60 * 60 * 1000);
     });
 
   } catch (error) {
