@@ -124,24 +124,7 @@ export default function AdminDevices() {
         }
     };
 
-    const getBadgeColor = (status, lastSeen) => {
-        if (!lastSeen) return 'bg-red-50 text-red-700 border-red-200'; // No data
 
-        const lastSeenDate = new Date(lastSeen);
-        const diff = Date.now() - lastSeenDate.getTime();
-
-        // Offline / Stale check (5 mins)
-        if (diff > 5 * 60 * 1000) return 'bg-red-50 text-red-700 border-red-200';
-
-        // Status checks
-        // Status checks
-        if (status === 'playing') return 'bg-green-50 text-green-700 border-green-200';
-        if (status === 'active') return 'bg-blue-50 text-blue-700 border-blue-200'; // Generic Active
-        if (status === 'standby') return 'bg-blue-50 text-blue-700 border-blue-200'; // Connected, waiting for player
-        if (status === 'idle') return 'bg-yellow-50 text-yellow-700 border-yellow-200';
-
-        return 'bg-red-50 text-red-700 border-red-200'; // Unknown
-    };
 
     return (
         <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
@@ -207,40 +190,66 @@ export default function AdminDevices() {
                                                         </div>
                                                     </TableCell>
                                                     <TableCell className="px-6 py-4">
-                                                        <Badge
-                                                            variant="outline"
-                                                            className={`${getBadgeColor(device.status, device.lastSeenAt)} border`}
-                                                        >
-                                                            {device.status === 'playing' && <PlayCircle className="w-3 h-3 mr-1 inline" />}
-                                                            {device.status}
-                                                        </Badge>
-                                                    </TableCell>
-                                                    <TableCell className="px-6 py-4">
-                                                        {device.campaigns && device.campaigns.length > 0 ? (
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {device.campaigns.map(c => (
-                                                                    <span key={c.id} className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded text-sm whitespace-nowrap">
-                                                                        {c.name}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        ) : (
-                                                            <span className="text-gray-400 italic text-sm">Unassigned</span>
-                                                        )}
-                                                    </TableCell>
-                                                    <TableCell className="px-6 py-4 text-sm text-gray-500">
-                                                        {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : 'Never'}
-                                                    </TableCell>
-                                                    <TableCell className="px-6 py-4 text-right">
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => setSelectedDevice(device)}
-                                                            className="h-8"
-                                                        >
-                                                            Assign Campaign
-                                                        </Button>
-                                                    </TableCell>
+                                                        <TableCell className="px-6 py-4">
+                                                            {(() => {
+                                                                // Logic unified with AdminDeviceLogs.jsx
+                                                                const isStale = !device.lastSeenAt || (Date.now() - new Date(device.lastSeenAt).getTime() > 5 * 60 * 1000);
+                                                                const status = device.status;
+
+                                                                if (status === 'inactive' || isStale) {
+                                                                    return (
+                                                                        <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-200">
+                                                                            <span className="w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
+                                                                            OFFLINE
+                                                                        </Badge>
+                                                                    );
+                                                                }
+                                                                if (status === 'standby' || status === 'idle') {
+                                                                    return (
+                                                                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                                                                            <span className="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
+                                                                            READY
+                                                                        </Badge>
+                                                                    );
+                                                                }
+                                                                if (status === 'playing' || status === 'active') {
+                                                                    return (
+                                                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 animate-pulse">
+                                                                            <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+                                                                            LIVE
+                                                                        </Badge>
+                                                                    );
+                                                                }
+                                                                // Fallback
+                                                                return <Badge variant="outline">{status}</Badge>;
+                                                            })()}
+                                                        </TableCell>
+                                                        <TableCell className="px-6 py-4">
+                                                            {device.campaigns && device.campaigns.length > 0 ? (
+                                                                <div className="flex flex-wrap gap-1">
+                                                                    {device.campaigns.map(c => (
+                                                                        <span key={c.id} className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded text-sm whitespace-nowrap">
+                                                                            {c.name}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-gray-400 italic text-sm">Unassigned</span>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell className="px-6 py-4 text-sm text-gray-500">
+                                                            {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : 'Never'}
+                                                        </TableCell>
+                                                        <TableCell className="px-6 py-4 text-right">
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={() => setSelectedDevice(device)}
+                                                                className="h-8"
+                                                            >
+                                                                Assign Campaign
+                                                            </Button>
+                                                        </TableCell>
                                                 </TableRow>
 
                                                 {/* Expanded Row (Logs Preview) */}
