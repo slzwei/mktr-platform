@@ -51,7 +51,8 @@ export default function AdminDeviceLogs() {
 
         // Use standard EventSource with token in Query
         // (Backend has middleware to promote this to Header)
-        const url = `${api.baseURL}/devices/${id}/logs/stream?token=${token}`;
+        // Path matches server.js mount: /api/devices/events + /:id/logs/stream
+        const url = `${api.baseURL}/devices/events/${id}/logs/stream?token=${token}`;
         const eventSource = new EventSource(url);
 
         eventSource.onopen = () => {
