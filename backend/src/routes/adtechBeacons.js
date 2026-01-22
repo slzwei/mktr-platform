@@ -21,10 +21,19 @@ router.post('/v1/beacons/heartbeat', authenticateDevice, beaconLimiter, async (r
     const { status, batteryLevel, storageUsed } = req.body;
 
     // 1. Update device metadata
-    await req.device.update({
-      lastSeenAt: new Date(),
-      status: status || 'active'
-    });
+    const updates = { lastSeenAt: new Date() };
+
+    // ANTI-ZOMBIE FIX: Only update status if the device is actually connected via SSE.
+    // If not, this is a "Zombie Packet" arriving after the socket closed.
+    // We update 'lastSeenAt' to show it pinged, but we DO NOT revive the status to 'Active'.
+    const isConnected = pushService && pushService.clients && pushService.clients.has(req.device.id);
+    if (isConnected) {
+      updates.status = status || 'active';
+    } else {
+      if (status) console.warn(`[Heartbeat] Zombie heartbeat from ${req.device.id}. DB Status Update Blocked.`);
+    }
+
+    await req.device.update(updates);
 
     // 2. Log immutable event for debugging
     // FMEA Mitigation: We perform this write async/await but could fire-and-forget if perf becomes an issue.
