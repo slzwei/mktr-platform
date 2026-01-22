@@ -31,11 +31,11 @@ class PushService extends EventEmitter {
         this.clients.set(deviceId, client);
         console.log(`[Push] Client connected: ${deviceId} (${connectionId}) | Total: ${this.clients.size}`);
 
-        // 1. Update DB to Active
-        this.updateDeviceStatus(deviceId, 'active');
+        // 1. Update DB to Standby (Connected but waiting for player start)
+        this.updateDeviceStatus(deviceId, 'standby');
 
         // 2. Broadcast Status Change (to Log View & Fleet View)
-        this.broadcastStatusChange(deviceId, 'active');
+        this.broadcastStatusChange(deviceId, 'standby');
 
         // 3. Send confirmation to tablet
         this.sendEvent(deviceId, 'CONNECTED', { connectionId });

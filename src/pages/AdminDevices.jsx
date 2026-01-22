@@ -134,8 +134,10 @@ export default function AdminDevices() {
         if (diff > 5 * 60 * 1000) return 'bg-red-50 text-red-700 border-red-200';
 
         // Status checks
+        // Status checks
         if (status === 'playing') return 'bg-green-50 text-green-700 border-green-200';
-        if (status === 'active') return 'bg-green-50 text-green-700 border-green-200';
+        if (status === 'active') return 'bg-blue-50 text-blue-700 border-blue-200'; // Generic Active
+        if (status === 'standby') return 'bg-blue-50 text-blue-700 border-blue-200'; // Connected, waiting for player
         if (status === 'idle') return 'bg-yellow-50 text-yellow-700 border-yellow-200';
 
         return 'bg-red-50 text-red-700 border-red-200'; // Unknown
