@@ -126,10 +126,22 @@ export default function AdminDeviceLogs() {
                             <span className="text-sm font-mono font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded">
                                 {id}
                             </span>
-                            {isLive && (
+                            {streamStatus === 'connected' && (
                                 <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200 animate-pulse">
                                     <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
                                     LIVE
+                                </Badge>
+                            )}
+                            {streamStatus === 'connecting' && (
+                                <Badge variant="outline" className="ml-2 bg-yellow-50 text-yellow-700 border-yellow-200">
+                                    <span className="w-2 h-2 rounded-full bg-yellow-500 mr-2 animate-bounce"></span>
+                                    Connecting...
+                                </Badge>
+                            )}
+                            {streamStatus === 'error' && (
+                                <Badge variant="outline" className="ml-2 bg-red-50 text-red-700 border-red-200">
+                                    <span className="w-2 h-2 rounded-full bg-red-500 mr-2"></span>
+                                    Stream Error
                                 </Badge>
                             )}
                         </h1>
