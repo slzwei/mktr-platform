@@ -18,7 +18,8 @@ import {
     Battery,
     HardDrive,
     Activity,
-    Eye
+    Eye,
+    PlayCircle
 } from 'lucide-react';
 import { format } from 'date-fns';
 import {
@@ -149,6 +150,17 @@ export default function AdminDeviceLogs() {
                                                     ) : log.type === 'IMPRESSIONS' ? (
                                                         <span className="flex items-center gap-1.5 text-purple-600 text-xs font-mono">
                                                             <Eye className="h-3 w-3" /> Uploaded {log.payload?.count} Impressions
+                                                        </span>
+                                                    ) : log.type === 'PLAYBACK' ? (
+                                                        <span className="flex items-center gap-1.5 text-teal-600 font-medium text-xs font-mono">
+                                                            <PlayCircle className="h-3 w-3" />
+                                                            Played {log.payload?.assetId}
+                                                            <span className="text-muted-foreground ml-2">
+                                                                ({log.payload?.campaignName})
+                                                            </span>
+                                                            <span className="text-xs text-gray-400 ml-auto">
+                                                                {log.payload?.durationMs ? `${(log.payload.durationMs / 1000).toFixed(1)}s` : ''}
+                                                            </span>
                                                         </span>
                                                     ) : (
                                                         <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap max-w-[600px] overflow-hidden">

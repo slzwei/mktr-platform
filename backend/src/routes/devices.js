@@ -70,26 +70,84 @@ router.get('/', async (req, res) => {
     }
 });
 
-// GET /api/devices/:id/logs - Get device logs/events
+// GET /api/devices/:id/logs - Get device logs/events (Merged History)
 router.get('/:id/logs', async (req, res) => {
     try {
         const { id } = req.params;
+        const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 50;
+
+        // Guardrails: Cap max history to prevent memory explosion
+        // We fetch (page * limit) from BOTH tables to ensure correct interleaving
+        // So page 10 (500 items) means fetching 500 + 500 = 1000 items, merging, sorting, then slicing.
+        if (page > 20) {
+            return res.status(400).json({ message: 'Log history depth exceeded. Please filter by date (future feature).' });
+        }
 
         const device = await Device.findByPk(id);
         if (!device) {
             return res.status(404).json({ message: 'Device not found' });
         }
 
-        const logs = await BeaconEvent.findAll({
+        const fetchLimit = page * limit;
+
+        // 1. Fetch Standard Logs (BeaconEvents)
+        const beaconLogsPromise = BeaconEvent.findAll({
             where: { deviceId: id },
             order: [['createdAt', 'DESC']],
-            limit: limit
+            limit: fetchLimit
         });
+
+        // 2. Fetch Playback Logs (Impressions)
+        const impressionsPromise = Impression.findAll({
+            where: { deviceId: id },
+            order: [['occurredAt', 'DESC']],
+            limit: fetchLimit,
+            include: [{
+                model: Campaign,
+                attributes: ['name']
+            }]
+        });
+
+        const [beaconLogs, impressions] = await Promise.all([beaconLogsPromise, impressionsPromise]);
+
+        // 3. Transform Impressions to "Log" format
+        const playbackLogs = impressions.map(imp => ({
+            id: `imp_${imp.id}`,
+            type: 'PLAYBACK', // Special type for frontend
+            createdAt: imp.occurredAt,
+            deviceId: imp.deviceId,
+            payload: {
+                assetId: imp.adId,
+                mediaType: imp.mediaType,
+                durationMs: imp.durationMs,
+                campaignId: imp.campaignId,
+                campaignName: imp.Campaign?.name || 'Unknown Campaign'
+            }
+        }));
+
+        // 4. Merge
+        const allLogs = [...beaconLogs.map(l => l.toJSON()), ...playbackLogs];
+
+        // 5. Sort Descending
+        allLogs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        // 6. Paginate (Slice)
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + limit;
+        const paginatedLogs = allLogs.slice(startIndex, endIndex);
 
         res.json({
             success: true,
-            data: logs
+            data: paginatedLogs,
+            pagination: {
+                page,
+                limit,
+                // Approximate total since we are not doing a full COUNT(*) on both tables for speed
+                // We just say "plenty more" if we hit the limit, otherwise (page * limit) + remaining
+                total: (page * limit) + (allLogs.length > fetchLimit ? 100 : 0),
+                pages: 20 // Hard cap visualization
+            }
         });
     } catch (error) {
         console.error('Error fetching device logs:', error);

@@ -21,7 +21,8 @@ import {
     Battery,
     HardDrive,
     RefreshCcw,
-    Eye
+    Eye,
+    PlayCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
