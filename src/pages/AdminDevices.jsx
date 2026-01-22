@@ -104,6 +104,41 @@ export default function AdminDevices() {
         }
     };
 
+    // Live Logs Stream (Ephemeral) for Expanded Row
+    useEffect(() => {
+        if (!expandedDeviceId) return;
+
+        console.log(`[Preview] Connecting to stream for ${expandedDeviceId}`);
+        const token = localStorage.getItem('mktr_auth_token');
+        const url = `${import.meta.env.VITE_API_URL}/devices/events/${expandedDeviceId}/logs/stream?token=${token}`;
+        const sse = new EventSource(url);
+
+        sse.onopen = () => console.log(`[Preview] Connected to ${expandedDeviceId}`);
+
+        sse.addEventListener('log', (e) => {
+            try {
+                const newLog = JSON.parse(e.data);
+                // Prepend and keep top 5
+                setPreviewLogs(prev => [newLog, ...prev].slice(0, 5));
+            } catch (err) {
+                console.error('[Preview] Parse error', err);
+            }
+        });
+
+        // We don't need status_change here (Fleet Stream handles it), 
+        // but no harm if we ignore it. The backend sends it on this channel too.
+
+        sse.onerror = (e) => {
+            // console.warn('[Preview] Stream error', e);
+            sse.close();
+        };
+
+        return () => {
+            console.log(`[Preview] Closing stream for ${expandedDeviceId}`);
+            sse.close();
+        };
+    }, [expandedDeviceId]);
+
     const toggleExpandLogs = async (deviceId) => {
         if (expandedDeviceId === deviceId) {
             setExpandedDeviceId(null);
