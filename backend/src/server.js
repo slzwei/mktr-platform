@@ -161,7 +161,7 @@ app.use('/api/devices', deviceRoutes);
 if (String(process.env.MANIFEST_ENABLED || 'false').toLowerCase() === 'true') {
   app.use('/api/adtech', adtechManifestRoutes);
 }
-if (String(process.env.BEACONS_ENABLED || 'false').toLowerCase() === 'true') {
+if (String(process.env.BEACONS_ENABLED || 'true').toLowerCase() === 'true') {
   app.use('/api/adtech', adtechBeaconRoutes);
 }
 
