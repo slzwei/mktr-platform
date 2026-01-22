@@ -36,10 +36,30 @@ class AdPlayerApp : Application(), Configuration.Provider, androidx.lifecycle.Li
                 scheduleWorkers()
             }
             androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
-                android.util.Log.d("AdPlayerApp", "App Background: Cancelling Workers")
+                android.util.Log.d("AdPlayerApp", "App Background: Sending Goodbye Heartbeat")
+
+                // 1. Explicitly Force "Background" Status (Prevents Race Condition)
+                getSharedPreferences("adplayer_prefs", MODE_PRIVATE)
+                    .edit()
+                    .putString("app_status", "background")
+                    .commit() // Use commit() for synchronous write to be safe before worker runs
+
                 val workManager = androidx.work.WorkManager.getInstance(this)
+                
+                // 2. Cancel Recursive Loop
                 workManager.cancelUniqueWork("HeartbeatWorker")
                 workManager.cancelUniqueWork("ImpressionWorker")
+
+                // 3. Fire "Goodbye" Heartbeat
+                // Re-uses HeartbeatWorker logic: it reads "background" status -> sends it -> DOES NOT RESCHEDULE
+                val goodbyeRequest = androidx.work.OneTimeWorkRequestBuilder<com.mktr.adplayer.worker.HeartbeatWorker>()
+                    .build()
+
+                workManager.enqueueUniqueWork(
+                    "GoodbyeHeartbeat",
+                    androidx.work.ExistingWorkPolicy.REPLACE,
+                    goodbyeRequest
+                )
             }
             else -> {}
         }
