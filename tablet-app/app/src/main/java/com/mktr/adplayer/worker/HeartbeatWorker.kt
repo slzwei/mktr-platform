@@ -39,7 +39,7 @@ class HeartbeatWorker @AssistedInject constructor(
                 Log.d("HeartbeatWorker", "Heartbeat success")
                 
                 // Reschedule next heartbeat (2 mins) ONLY if app is active
-                if (appStatus != "background" && appStatus != "offline") {
+                if (appStatus != "offline") {
                     // Recursive OneTimeWork pattern to bypass 15m Periodic minimum
                     val nextRequest = androidx.work.OneTimeWorkRequestBuilder<HeartbeatWorker>()
                         .setInitialDelay(2, java.util.concurrent.TimeUnit.MINUTES)

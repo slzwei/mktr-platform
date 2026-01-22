@@ -31,7 +31,7 @@ class ImpressionWorker @AssistedInject constructor(
             Log.d("ImpressionWorker", "No impressions to sync.")
             
             // Keep the loop alive even if empty - BUT ONLY IF ACTIVE
-            if (appStatus != "background" && appStatus != "offline") {
+            if (appStatus != "offline") {
                 val nextRequest = androidx.work.OneTimeWorkRequestBuilder<ImpressionWorker>()
                     .setInitialDelay(2, java.util.concurrent.TimeUnit.MINUTES)
                     .build()
@@ -58,7 +58,7 @@ class ImpressionWorker @AssistedInject constructor(
                 Log.d("ImpressionWorker", "Sync success for ${pendingImpressions.size} items")
                 
                 // Reschedule next sync (2 mins) - ONLY IF ACTIVE
-                if (appStatus != "background" && appStatus != "offline") {
+                if (appStatus != "offline") {
                     // Recursive OneTimeWork pattern since powered by cable
                     val nextRequest = androidx.work.OneTimeWorkRequestBuilder<ImpressionWorker>()
                         .setInitialDelay(2, java.util.concurrent.TimeUnit.MINUTES)

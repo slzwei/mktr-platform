@@ -43,7 +43,7 @@ class PlayerViewModel @Inject constructor(
             androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
                 Log.d("PlayerVM", "App Backgrounded: Stopping Playback")
                 stopPlaybackLoop() // Cancel job
-                updateStatus("background")
+                updateStatus("offline")
             }
             androidx.lifecycle.Lifecycle.Event.ON_START -> {
                 Log.d("PlayerVM", "App Foregrounded: Checking state")

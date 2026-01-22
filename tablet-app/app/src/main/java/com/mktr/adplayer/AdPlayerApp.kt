@@ -41,7 +41,7 @@ class AdPlayerApp : Application(), Configuration.Provider, androidx.lifecycle.Li
                 // 1. Explicitly Force "Background" Status (Prevents Race Condition)
                 getSharedPreferences("adplayer_prefs", MODE_PRIVATE)
                     .edit()
-                    .putString("app_status", "background")
+                    .putString("app_status", "offline")
                     .commit() // Use commit() for synchronous write to be safe before worker runs
 
                 val workManager = androidx.work.WorkManager.getInstance(this)
