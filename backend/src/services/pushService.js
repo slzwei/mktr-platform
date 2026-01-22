@@ -43,6 +43,7 @@ class PushService extends EventEmitter {
     }
 
     addObserver(deviceId, res) {
+        console.log(`[Push] addObserver called for ID: ${deviceId} (Type: ${typeof deviceId})`);
         if (!this.observers.has(deviceId)) {
             this.observers.set(deviceId, new Set());
         }
@@ -103,8 +104,15 @@ class PushService extends EventEmitter {
     }
 
     broadcastLog(deviceId, log) {
+        console.log(`[Push] broadcastLog called for ID: ${deviceId} (Type: ${typeof deviceId})`);
         const set = this.observers.get(deviceId);
-        if (!set || set.size === 0) return;
+
+        // DEBUG: Print keys if not found
+        if (!set || set.size === 0) {
+            console.log(`[Push] No observers found for ${deviceId}. Observers Map Size: ${this.observers.size}`);
+            // Limit spam, but could dump keys: console.log([...this.observers.keys()])
+            return;
+        }
 
         const payload = JSON.stringify(log);
         for (const obs of set) {
