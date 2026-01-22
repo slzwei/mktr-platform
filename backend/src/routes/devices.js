@@ -1,5 +1,5 @@
 import express from 'express';
-import { Device, Campaign, BeaconEvent } from '../models/index.js';
+import { Device, Campaign, BeaconEvent, Impression } from '../models/index.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -105,6 +105,7 @@ router.get('/:id/logs', async (req, res) => {
             limit: fetchLimit,
             include: [{
                 model: Campaign,
+                as: 'campaign',
                 attributes: ['name']
             }]
         });
@@ -122,7 +123,7 @@ router.get('/:id/logs', async (req, res) => {
                 mediaType: imp.mediaType,
                 durationMs: imp.durationMs,
                 campaignId: imp.campaignId,
-                campaignName: imp.Campaign?.name || 'Unknown Campaign'
+                campaignName: imp.campaign?.name || 'Unknown Campaign'
             }
         }));
 
