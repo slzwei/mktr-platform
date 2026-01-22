@@ -39,7 +39,7 @@ export default function AdminDeviceLogs() {
     const [pagination, setPagination] = useState({ page: 1, total: 0, pages: 1 });
     const [loading, setLoading] = useState(true);
 
-    const [isLive, setIsLive] = useState(false);
+    const [streamStatus, setStreamStatus] = useState('disconnected');
 
     useEffect(() => {
         fetchLogs(1);
@@ -52,12 +52,13 @@ export default function AdminDeviceLogs() {
         // Use standard EventSource with token in Query
         // (Backend has middleware to promote this to Header)
         // Path matches server.js mount: /api/devices/events + /:id/logs/stream
+        setStreamStatus('connecting');
         const url = `${api.baseURL}/devices/events/${id}/logs/stream?token=${token}`;
         const eventSource = new EventSource(url);
 
         eventSource.onopen = () => {
             console.log('[Logs] Connected to live stream');
-            setIsLive(true);
+            setStreamStatus('connected');
         };
 
         eventSource.addEventListener('log', (e) => {
@@ -68,8 +69,6 @@ export default function AdminDeviceLogs() {
                     const updated = [newLog, ...prev];
                     return updated.slice(0, 100); // Keep memory sane
                 });
-
-                // Also update stats if needed (pagination total info might drift)
             } catch (err) {
                 console.error('[Logs] Parse error', err);
             }
@@ -77,11 +76,12 @@ export default function AdminDeviceLogs() {
 
         eventSource.addEventListener('connected', (e) => {
             console.log('[Logs] Stream confirmed:', e.data);
+            setStreamStatus('connected');
         });
 
         eventSource.onerror = (err) => {
             // console.warn('[Logs] Stream disconnected', err);
-            setIsLive(false);
+            setStreamStatus('error');
             eventSource.close();
 
             // Auto-reconnect happens natively for network errors, 
@@ -94,6 +94,7 @@ export default function AdminDeviceLogs() {
         return () => {
             console.log('[Logs] Closing stream');
             eventSource.close();
+            setStreamStatus('disconnected');
         };
     }, [id]);
 
