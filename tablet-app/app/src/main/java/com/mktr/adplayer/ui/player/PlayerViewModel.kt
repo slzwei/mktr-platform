@@ -147,3 +147,4 @@ class PlayerViewModel @Inject constructor(
             .putString("app_status", status)
             .apply()
     }
+}
