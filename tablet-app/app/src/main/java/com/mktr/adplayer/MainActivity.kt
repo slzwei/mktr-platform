@@ -47,11 +47,11 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsState()
-    var showPlayer by remember { mutableStateOf(false) }
+    var showPlayer by remember { mutableStateOf(true) }
 
     if (showPlayer && state is UiState.Connected) {
         val manifest = (state as UiState.Connected).manifest
-        if (manifest != null) {
+        if (manifest != null && manifest.playlist.isNotEmpty()) {
             com.mktr.adplayer.ui.player.PlayerOrchestrator(manifest = manifest)
              // Back button to exit? For kiosk mode usually no back.
              // We can simulate a hidden exit for development.
