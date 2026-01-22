@@ -96,7 +96,7 @@ class PlayerViewModel @Inject constructor(
                                 durationMs = item.durationMs
                             )
 
-                            durationToWait = item.durationMs.coerceAtLeast(3000L) // Ensure at least 3s
+                            durationToWait = item.durationMs.coerceAtLeast(3000L).coerceAtMost(60000L) // Ensure 3s-60s range
                         } else {
                             Log.e("PlayerVM", "File not found for asset: ${asset.id} at path: ${file.absolutePath}")
                             // Skip quickly but not instantly

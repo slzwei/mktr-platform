@@ -173,7 +173,7 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
       return {
         id: `pl_${index}`,
         asset_id: assetId,
-        duration_ms: (item.duration || 10) * 1000,
+        duration_ms: (item.duration > 1000) ? item.duration : (item.duration || 10) * 1000,
         type: item.type
       };
     });
