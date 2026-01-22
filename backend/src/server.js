@@ -59,7 +59,18 @@ app.use(helmet({
   // Allow images and other static assets to be embedded from another origin (frontend at 5173)
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
-app.use(compression());
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    // Don't compress support SSE endpoints
+    if (req.path.includes('/stream') || req.path.includes('/events')) {
+      return false;
+    }
+    return compression.filter(req, res);
+  }
+}));
 
 // Trust proxy (for accurate req.ip behind reverse proxies)
 if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === 'true') {
