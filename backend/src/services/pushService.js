@@ -4,6 +4,7 @@ class PushService extends EventEmitter {
     constructor() {
         super();
         this.clients = new Map(); // deviceId -> { id, res }
+        this.observers = new Map(); // deviceId -> Set<{ id, res }>
 
         // Start heartbeat loop to keep connections alive and detect zombies
         setInterval(() => this.broadcastHeartbeat(), 30000);
@@ -41,6 +42,35 @@ class PushService extends EventEmitter {
         });
     }
 
+    addObserver(deviceId, res) {
+        if (!this.observers.has(deviceId)) {
+            this.observers.set(deviceId, new Set());
+        }
+
+        const connectionId = Math.random().toString(36).substring(7);
+        const observer = { id: connectionId, res };
+
+        this.observers.get(deviceId).add(observer);
+        console.log(`[Push] Observer added for ${deviceId} (${connectionId}). Total: ${this.observers.get(deviceId).size}`);
+
+        // Initial Event
+        res.write(`event: connected\n`);
+        res.write(`data: "Listening for logs..."\n\n`);
+
+        res.on('close', () => {
+            console.log(`[Push] Observer removed for ${deviceId} (${connectionId})`);
+            const set = this.observers.get(deviceId);
+            if (set) {
+                // We have to iterate to find the object reference unless we store it specifically
+                // Actually Set.delete requires the exact object reference.
+                set.delete(observer);
+                if (set.size === 0) {
+                    this.observers.delete(deviceId);
+                }
+            }
+        });
+    }
+
     removeClient(deviceId) {
         const client = this.clients.get(deviceId);
         if (client) {
@@ -69,17 +99,45 @@ class PushService extends EventEmitter {
         }
     }
 
-    broadcastHeartbeat() {
-        if (this.clients.size === 0) return;
+    broadcastLog(deviceId, log) {
+        const set = this.observers.get(deviceId);
+        if (!set || set.size === 0) return;
 
-        // console.debug(`[Push] Sending heartbeat to ${this.clients.size} clients`);
-        for (const [deviceId, client] of this.clients.entries()) {
+        const payload = JSON.stringify(log);
+        for (const obs of set) {
             try {
-                // SSE Comment (starts with :) keeps connection alive but ignored by client
-                client.res.write(': keep-alive\n\n');
+                obs.res.write(`event: log\n`);
+                obs.res.write(`data: ${payload}\n\n`);
             } catch (err) {
-                console.error(`[Push] Heartbeat failed for ${deviceId}, removing.`);
-                this.clients.delete(deviceId);
+                console.error(`[Push] Failed to send log to observer`, err);
+            }
+        }
+    }
+
+    broadcastHeartbeat() {
+        // Heartbeat for Clients (Tablets)
+        if (this.clients.size > 0) {
+            for (const [deviceId, client] of this.clients.entries()) {
+                try {
+                    client.res.write(': keep-alive\n\n');
+                } catch (err) {
+                    console.error(`[Push] Heartbeat failed for ${deviceId}, removing.`);
+                    this.clients.delete(deviceId);
+                }
+            }
+        }
+
+        // Heartbeat for Observers (Admins)
+        // Keep them alive too to prevent timeouts
+        if (this.observers.size > 0) {
+            for (const [deviceId, set] of this.observers.entries()) {
+                for (const obs of set) {
+                    try {
+                        obs.res.write(': keep-alive\n\n');
+                    } catch (e) {
+                        // Cleanup happens on 'close' event
+                    }
+                }
             }
         }
     }

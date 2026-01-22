@@ -1,6 +1,8 @@
 import express from 'express';
 import { authenticateDevice } from '../middleware/deviceAuth.js';
+import { pushService } from '../services/pushService.js';
 import { Impression, Device } from '../models/index.js';
+import { pushService } from '../services/pushService.js';
 import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
@@ -29,16 +31,30 @@ router.post('/v1/beacons/heartbeat', authenticateDevice, beaconLimiter, async (r
     // FMEA Mitigation: We perform this write async/await but could fire-and-forget if perf becomes an issue.
     // For now, we await it to ensure data integrity.
     await import('../models/index.js').then(({ BeaconEvent }) => {
+      const payload = {
+        batteryLevel,
+        storageUsed,
+        status
+      };
+
+      // Broadcast to live observers
+      if (global.pushService) { // Accessed via global for simplicity or imported
+        // Check import method
+      }
+
       return BeaconEvent.create({
         deviceId: req.device.id,
         type: 'HEARTBEAT',
-        eventHash: `HB-${Date.now()}`, // Simple unique marker
-        payload: {
-          batteryLevel,
-          storageUsed,
-          status
-        }
+        eventHash: `HB-${Date.now()}`,
+        payload
       });
+    });
+
+    // Broadcast (Imported service)
+    pushService.broadcastLog(req.device.id, {
+      type: 'HEARTBEAT',
+      createdAt: new Date(),
+      payload: { status, batteryLevel, storageUsed }
     });
 
     res.json({ success: true, timestamp: Date.now() });
@@ -88,6 +104,16 @@ router.post('/v1/beacons/impressions', authenticateDevice, beaconLimiter, async 
           timestamp: Date.now()
         }
       });
+    });
+
+    // Broadcast
+    pushService.broadcastLog(req.device.id, {
+      type: 'IMPRESSIONS',
+      createdAt: new Date(),
+      payload: {
+        count: validImpressions.length,
+        source: 'live_stream'
+      }
     });
 
     res.json({ success: true, count: validImpressions.length });

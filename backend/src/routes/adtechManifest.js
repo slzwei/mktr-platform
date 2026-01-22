@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import { authenticateDevice, guardFlags } from '../middleware/deviceAuth.js';
 import { incCounter, logEvent, timeMs } from '../services/observability.js';
 import { Campaign } from '../models/index.js';
+import { pushService } from '../services/pushService.js';
 
 const router = express.Router();
 
@@ -106,6 +107,33 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
     eventHash: eventHash,
     payload: payload
   }).catch(err => console.error('[Manifest] Failed to log event', err));
+
+  // Broadcast Live Event
+  pushService.broadcastLog(device.id, {
+    type: 'HEARTBEAT',
+    createdAt: new Date(),
+    payload: payload
+  });
+
+  // Broadcast Live Event
+  if (global.pushService) { // Or imported
+    // Safe guard
+  }
+  // Try dynamic import or assuming top-level import?
+  // Let's add top level import.
+
+  // Actually, let's just use the imported service.
+  // Assumption: I will add import in next tool call.
+  /* 
+  pushService.broadcastLog(device.id, {
+    type: 'HEARTBEAT',
+    createdAt: new Date(),
+    payload: payload
+  });
+  */
+  // Doing it in one replacement if possible or splitting.
+  // Let's simplify.
+
 
   const refreshSec = parseInt(process.env.MANIFEST_REFRESH_SECONDS || '300');
   const baseManifest = {

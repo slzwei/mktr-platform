@@ -39,8 +39,61 @@ export default function AdminDeviceLogs() {
     const [pagination, setPagination] = useState({ page: 1, total: 0, pages: 1 });
     const [loading, setLoading] = useState(true);
 
+    const [isLive, setIsLive] = useState(false);
+
     useEffect(() => {
         fetchLogs(1);
+    }, [id]);
+
+    useEffect(() => {
+        const token = localStorage.getItem('mktr_auth_token');
+        if (!token) return;
+
+        // Use standard EventSource with token in Query
+        // (Backend has middleware to promote this to Header)
+        const url = `${api.baseURL}/devices/${id}/logs/stream?token=${token}`;
+        const eventSource = new EventSource(url);
+
+        eventSource.onopen = () => {
+            console.log('[Logs] Connected to live stream');
+            setIsLive(true);
+        };
+
+        eventSource.addEventListener('log', (e) => {
+            try {
+                const newLog = JSON.parse(e.data);
+                // Prepend new log and keep limit (e.g. 50 + buffer)
+                setLogs(prev => {
+                    const updated = [newLog, ...prev];
+                    return updated.slice(0, 100); // Keep memory sane
+                });
+
+                // Also update stats if needed (pagination total info might drift)
+            } catch (err) {
+                console.error('[Logs] Parse error', err);
+            }
+        });
+
+        eventSource.addEventListener('connected', (e) => {
+            console.log('[Logs] Stream confirmed:', e.data);
+        });
+
+        eventSource.onerror = (err) => {
+            // console.warn('[Logs] Stream disconnected', err);
+            setIsLive(false);
+            eventSource.close();
+
+            // Auto-reconnect happens natively for network errors, 
+            // but for explicit close/auth fail, we might need manual retry logic
+            // simple exponential backoff?
+            // For now, let's just let user refresh if it dies hard.
+            // Native EventSource retries automatically.
+        };
+
+        return () => {
+            console.log('[Logs] Closing stream');
+            eventSource.close();
+        };
     }, [id]);
 
     const fetchLogs = async (page) => {
@@ -72,6 +125,12 @@ export default function AdminDeviceLogs() {
                             <span className="text-sm font-mono font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded">
                                 {id}
                             </span>
+                            {isLive && (
+                                <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200 animate-pulse">
+                                    <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
+                                    LIVE
+                                </Badge>
+                            )}
                         </h1>
                         <p className="text-sm text-muted-foreground">
                             Full history of heartbeats and beacon events.
