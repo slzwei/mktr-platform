@@ -90,21 +90,21 @@ export default function AdminDevices() {
         }
     };
 
-    const getBadgeVariant = (status, lastSeen) => {
-        if (!lastSeen) return 'destructive';
+    const getBadgeColor = (status, lastSeen) => {
+        if (!lastSeen) return 'bg-red-50 text-red-700 border-red-200'; // No data
 
         const lastSeenDate = new Date(lastSeen);
         const diff = Date.now() - lastSeenDate.getTime();
 
         // Offline / Stale check (5 mins)
-        if (diff > 5 * 60 * 1000) return 'destructive';
+        if (diff > 5 * 60 * 1000) return 'bg-red-50 text-red-700 border-red-200';
 
         // Status checks
-        if (status === 'playing') return 'default'; // Healthy & Active
-        if (status === 'active') return 'default';  // Healthy (Legacy)
-        if (status === 'idle') return 'secondary';  // Healthy but Idle (Yellow/Gray)
+        if (status === 'playing') return 'bg-green-50 text-green-700 border-green-200';
+        if (status === 'active') return 'bg-green-50 text-green-700 border-green-200';
+        if (status === 'idle') return 'bg-yellow-50 text-yellow-700 border-yellow-200';
 
-        return 'destructive'; // Unknown/Error
+        return 'bg-red-50 text-red-700 border-red-200'; // Unknown
     };
 
     return (
@@ -171,7 +171,11 @@ export default function AdminDevices() {
                                                         </div>
                                                     </TableCell>
                                                     <TableCell className="px-6 py-4">
-                                                        <Badge variant={getBadgeVariant(device.status, device.lastSeenAt)}>
+                                                        <Badge
+                                                            variant="outline"
+                                                            className={`${getBadgeColor(device.status, device.lastSeenAt)} border`}
+                                                        >
+                                                            {device.status === 'playing' && <PlayCircle className="w-3 h-3 mr-1 inline" />}
                                                             {device.status}
                                                         </Badge>
                                                     </TableCell>
