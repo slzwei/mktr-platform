@@ -1,7 +1,7 @@
 import express from 'express';
 import { authenticateDevice } from '../middleware/deviceAuth.js';
 import { pushService } from '../services/pushService.js';
-import { Impression, Device } from '../models/index.js';
+import { Impression, Device, Campaign } from '../models/index.js';
 import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
@@ -114,6 +114,39 @@ router.post('/v1/beacons/impressions', authenticateDevice, beaconLimiter, async 
         source: 'live_stream'
       }
     });
+
+    // 🚀 RESTORED: Broadcast granular PLAYBACK events for "Real-Time" feel
+    // Fetch campaign names for context
+    try {
+      const uniqueCampaignIds = [...new Set(validImpressions.map(i => i.campaignId))].filter(Boolean);
+      let campaignMap = {};
+
+      if (uniqueCampaignIds.length > 0) {
+        const campaigns = await Campaign.findAll({
+          where: { id: uniqueCampaignIds },
+          attributes: ['id', 'name']
+        });
+        campaignMap = campaigns.reduce((acc, c) => {
+          acc[c.id] = c.name;
+          return acc;
+        }, {});
+      }
+
+      validImpressions.forEach(imp => {
+        pushService.broadcastLog(req.device.id, {
+          type: 'PLAYBACK',
+          // Use the actual occurrence time so order is correct-ish
+          createdAt: imp.occurredAt,
+          payload: {
+            assetId: imp.adId,
+            campaignName: campaignMap[imp.campaignId] || 'Unknown Campaign',
+            durationMs: imp.durationMs
+          }
+        });
+      });
+    } catch (err) {
+      console.error('[Impressions] Failed to broadcast playback events', err);
+    }
 
     res.json({ success: true, count: validImpressions.length });
   } catch (err) {
