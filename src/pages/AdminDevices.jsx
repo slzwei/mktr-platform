@@ -229,8 +229,8 @@ export default function AdminDevices() {
                                                             // Logic unified with AdminDeviceLogs.jsx
                                                             const isStale = !device.lastSeenAt || (Date.now() - new Date(device.lastSeenAt).getTime() > 5 * 60 * 1000);
                                                             const status = device.status;
-
-                                                            if (status === 'inactive' || isStale) {
+                                                            // Normalize 'offline' from Android app or 'inactive' from backend
+                                                            if (status === 'inactive' || status === 'offline' || isStale) {
                                                                 return (
                                                                     <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-200">
                                                                         <span className="w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
@@ -255,7 +255,7 @@ export default function AdminDevices() {
                                                                 );
                                                             }
                                                             // Fallback
-                                                            return <Badge variant="outline">{status}</Badge>;
+                                                            return <Badge variant="outline">{status?.toUpperCase() || 'UNKNOWN'}</Badge>;
                                                         })()}
                                                     </TableCell>
                                                     <TableCell className="px-6 py-4">

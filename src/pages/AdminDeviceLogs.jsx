@@ -141,7 +141,7 @@ export default function AdminDeviceLogs() {
                                 {id}
                             </span>
                             {streamStatus === 'connected' && (
-                                deviceStatus === 'inactive' ? (
+                                (deviceStatus === 'inactive' || deviceStatus === 'offline') ? (
                                     <Badge variant="outline" className="ml-2 bg-gray-100 text-gray-500 border-gray-200">
                                         <span className="w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
                                         OFFLINE
@@ -230,7 +230,7 @@ export default function AdminDeviceLogs() {
                                                                 <>
                                                                     <span className="flex items-center gap-1.5">
                                                                         <Activity className="h-3 w-3 text-blue-500" />
-                                                                        Status: <span className="text-foreground">{log.payload?.status}</span>
+                                                                        Status: <span className="text-foreground">{log.payload?.status?.toUpperCase()}</span>
                                                                     </span>
                                                                     <span className="flex items-center gap-1.5">
                                                                         <Battery className="h-3 w-3 text-green-500" />
