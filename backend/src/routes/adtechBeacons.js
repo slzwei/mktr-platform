@@ -23,14 +23,22 @@ router.post('/v1/beacons/heartbeat', authenticateDevice, beaconLimiter, async (r
     // 1. Update device metadata
     const updates = { lastSeenAt: new Date() };
 
-    // ANTI-ZOMBIE FIX: Only update status if the device is actually connected via SSE.
-    // If not, this is a "Zombie Packet" arriving after the socket closed.
-    // We update 'lastSeenAt' to show it pinged, but we DO NOT revive the status to 'Active'.
+    // ANTI-ZOMBIE FIX 2.0:
+    // We only want to block heartbeats that are delayed packets from a RECENT disconnect (Zombies).
+    // But we MUST ALLOW heartbeats from "Fresh Starts" where the Heartbeat arrives before the SSE connection (Race Condition).
+
+    // Check 1: Is it fully connected?
     const isConnected = pushService && pushService.clients && pushService.clients.has(req.device.id);
-    if (isConnected) {
+
+    // Check 2: Was it recently disconnected? (Zombie Indicator)
+    const isZombie = !isConnected && pushService && pushService.disconnectHistory && pushService.disconnectHistory.has(req.device.id);
+
+    if (isConnected || !isZombie) {
+      // Allowed: active connection OR fresh start (no disconnect history)
       updates.status = status || 'active';
     } else {
-      if (status) console.warn(`[Heartbeat] Zombie heartbeat from ${req.device.id}. DB Status Update Blocked.`);
+      // Blocked: Not connected AND in disconnect history -> Zombie Packet.
+      if (status) console.warn(`[Heartbeat] Zombie heartbeat from ${req.device.id}. DB Status Update Blocked (History found).`);
     }
 
     await req.device.update(updates);
@@ -72,12 +80,18 @@ router.post('/v1/beacons/heartbeat', authenticateDevice, beaconLimiter, async (r
     // CRITICAL: Ensure status changes (e.g. Inactive -> Active) are reflected in real-time
     // The SSE connection (addClient) handles 'standby', but the Heartbeat handles 'playing'/'idle'.
     if (status) {
-      // ANTI-ZOMBIE: Only broadcast/update status if SSE is actually connected.
-      if (pushService && pushService.clients && pushService.clients.has(req.device.id)) {
+      // ANTI-ZOMBIE: Only broadcast/update status if SSE or Fresh Start.
+      // Logic mirrors the DB update above.
+      const isConnected = pushService && pushService.clients && pushService.clients.has(req.device.id);
+      const isZombie = !isConnected && pushService && pushService.disconnectHistory && pushService.disconnectHistory.has(req.device.id);
+
+      if (isConnected || !isZombie) {
+        // PushService broadcast handles the "send only if observers exist" logic internally mostly,
+        // but updateDeviceStatus updates memory cache.
         pushService.broadcastStatusChange(req.device.id, status);
         pushService.updateDeviceStatus(req.device.id, status);
       } else {
-        console.warn(`[Heartbeat] Zombie heartbeat from ${req.device.id} (Status: ${status}). Ignoring status update because SSE is disconnected.`);
+        console.warn(`[Heartbeat] Zombie heartbeat from ${req.device.id} (Status: ${status}). Ignoring broadcast because SSE is disconnected & history found.`);
       }
     }
 
