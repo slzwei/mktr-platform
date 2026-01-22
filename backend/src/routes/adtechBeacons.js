@@ -2,7 +2,6 @@ import express from 'express';
 import { authenticateDevice } from '../middleware/deviceAuth.js';
 import { pushService } from '../services/pushService.js';
 import { Impression, Device } from '../models/index.js';
-import { pushService } from '../services/pushService.js';
 import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
