@@ -48,7 +48,7 @@ class MainViewModel @Inject constructor(
         provisioningJob?.cancel()
         provisioningJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val sessionCode = existingCode ?: java.util.UUID.randomUUID().toString()
-            val url = "https://platform.mktr.sg/provision/$sessionCode"
+            val url = "${BuildConfig.PROVISIONING_BASE_URL}/provision/$sessionCode"
             
             _uiState.value = UiState.Provisioning(sessionCode, url, "Generating QR Code...")
 

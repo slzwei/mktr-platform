@@ -32,10 +32,12 @@ android {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             buildConfigField("String", "API_BASE_URL", "\"https://mktr-backend-jo6r.onrender.com/api/\"")
+            buildConfigField("String", "PROVISIONING_BASE_URL", "\"https://mktr.sg\"")
         }
         debug {
             // Using Production URL for easier testing on Real Device
             buildConfigField("String", "API_BASE_URL", "\"https://mktr-backend-jo6r.onrender.com/api/\"")
+            buildConfigField("String", "PROVISIONING_BASE_URL", "\"https://mktr.sg\"")
         }
 
 
