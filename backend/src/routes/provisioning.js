@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import { ProvisioningSession, Device } from '../models/index.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { Op } from 'sequelize';
@@ -94,11 +95,13 @@ router.post('/fulfill', authenticateToken, requireAdmin, async (req, res) => {
             return res.status(400).json({ message: 'Session already fulfilled' });
         }
 
-        // Verify device key exists? Optional but good practice.
-        // We hash it to check if a device exists with this key? 
-        // Or we just trust the admin knows the key. 
-        // Implementation Plan says "Form to input Device Key".
-        // Let's assume Admin inputs the raw key.
+        // Validate Key Exists
+        const secretHash = crypto.createHash('sha256').update(deviceKey).digest('hex');
+        const device = await Device.findOne({ where: { secretHash } });
+
+        if (!device) {
+            return res.status(400).json({ message: 'Invalid Device Key. Device must be registered first.' });
+        }
 
         await session.update({
             status: 'fulfilled',
