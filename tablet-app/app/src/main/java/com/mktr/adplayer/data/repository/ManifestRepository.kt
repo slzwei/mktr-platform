@@ -81,4 +81,36 @@ class ManifestRepository @Inject constructor(
             }
         }
     }
+    suspend fun startProvisioning(sessionCode: String): Result<com.mktr.adplayer.api.model.ProvisioningSessionResponse> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val response = api.createProvisioningSession(
+                    com.mktr.adplayer.api.model.ProvisioningSessionRequest(sessionCode)
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    Result.failure(Exception("Provisioning start failed: ${response.code()}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun checkProvisioning(sessionCode: String): Result<com.mktr.adplayer.api.model.ProvisioningCheckResponse> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val response = api.checkProvisioningStatus(sessionCode)
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    Result.failure(Exception("Check failed: ${response.code()}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
 }
+

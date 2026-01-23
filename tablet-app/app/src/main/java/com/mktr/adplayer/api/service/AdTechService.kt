@@ -25,4 +25,15 @@ interface AdTechService {
     suspend fun sendImpressions(
         @Body body: BeaconImpressionRequest
     ): Response<Unit>
+
+    @POST("provision/session")
+    suspend fun createProvisioningSession(
+        @Body body: com.mktr.adplayer.api.model.ProvisioningSessionRequest
+    ): Response<com.mktr.adplayer.api.model.ProvisioningSessionResponse>
+
+    @GET("provision/check/{code}")
+    suspend fun checkProvisioningStatus(
+        @retrofit2.http.Path("code") code: String
+    ): Response<com.mktr.adplayer.api.model.ProvisioningCheckResponse>
 }
+

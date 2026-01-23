@@ -39,23 +39,51 @@ fun PlayerOrchestrator(
     }
 
     val state by viewModel.playerState.collectAsState()
+    val isDownloading by viewModel.isDownloading.collectAsState()
 
-    when (val s = state) {
-        is PlayerState.Initializing -> {
-            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Color.White)
-                    Spacer(Modifier.height(16.dp))
-                    Text("Downloading Assets...", color = Color.White)
+    Box(Modifier.fillMaxSize()) {
+        when (val s = state) {
+            is PlayerState.Initializing -> {
+                Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = Color.White)
+                        Spacer(Modifier.height(16.dp))
+                        Text("Downloading Assets...", color = Color.White)
+                    }
+                }
+            }
+            is PlayerState.Playing -> {
+                PlayerContent(state = s)
+            }
+            is PlayerState.Error -> {
+                Box(Modifier.fillMaxSize().background(Color.Red), contentAlignment = Alignment.Center) {
+                    Text("Playback Error: ${s.message}", color = Color.White)
                 }
             }
         }
-        is PlayerState.Playing -> {
-            PlayerContent(state = s)
-        }
-        is PlayerState.Error -> {
-            Box(Modifier.fillMaxSize().background(Color.Red), contentAlignment = Alignment.Center) {
-                Text("Playback Error: ${s.message}", color = Color.White)
+
+        // Overlay Indicator (Top Right)
+        if (isDownloading && state is PlayerState.Playing) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), shape = MaterialTheme.shapes.small)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Updating Content...",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
             }
         }
     }

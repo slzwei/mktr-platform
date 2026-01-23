@@ -25,6 +25,8 @@ import ShortLink from './ShortLink.js';
 import ShortLinkClick from './ShortLinkClick.js';
 import RoundRobinCursor from './RoundRobinCursor.js';
 import Verification from './Verification.js';
+import ProvisioningSession from './ProvisioningSession.js'; // Added
+
 
 // Define associations
 const defineAssociations = () => {
@@ -143,8 +145,10 @@ export {
   ShortLink,
   ShortLinkClick,
   RoundRobinCursor,
-  Verification
+  Verification,
+  ProvisioningSession // Added
 };
+
 
 // Export default object for convenience
 export default {
@@ -172,5 +176,7 @@ export default {
   ShortLink,
   ShortLinkClick,
   RoundRobinCursor,
-  Verification
+  Verification,
+  ProvisioningSession // Added
 };
+

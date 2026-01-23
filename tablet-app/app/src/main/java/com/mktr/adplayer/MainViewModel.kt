@@ -15,7 +15,7 @@ import javax.inject.Inject
 
 sealed class UiState {
     object Loading : UiState()
-    object Provisioning : UiState() // Needs Key
+    data class Provisioning(val sessionCode: String? = null, val provisionUrl: String? = null, val status: String = "Initializing...") : UiState()
     data class Connected(val manifest: ManifestResponse?, val message: String) : UiState()
     data class Error(val error: String) : UiState()
 }
@@ -36,11 +36,57 @@ class MainViewModel @Inject constructor(
 
     private fun checkProvisioning() {
         if (devicePrefs.deviceKey.isNullOrEmpty()) {
-            _uiState.value = UiState.Provisioning
+            startQrProvisioning()
         } else {
             fetchManifest()
         }
     }
+
+    private var provisioningJob: kotlinx.coroutines.Job? = null
+
+    private fun startQrProvisioning(existingCode: String? = null) {
+        provisioningJob?.cancel()
+        provisioningJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val sessionCode = existingCode ?: java.util.UUID.randomUUID().toString()
+            val url = "https://platform.mktr.sg/provision/$sessionCode"
+            
+            _uiState.value = UiState.Provisioning(sessionCode, url, "Generating QR Code...")
+
+            // Start Session API (only if new session or significant retry needed? Actually we should perhaps retry creation if it failed)
+            // If we are retrying a network error, we should probably try to create the session again just in case it didn't reach server.
+            // The server handles duplicates gracefully (returns success), so it is safe to call create again.
+            
+            val startResult = repository.startProvisioning(sessionCode)
+            if (startResult.isFailure) {
+                _uiState.value = UiState.Provisioning(sessionCode, url, "Network Error: Retrying...")
+                kotlinx.coroutines.delay(3000)
+                startQrProvisioning(sessionCode) // Retry with SAME code
+                return@launch
+            }
+
+            _uiState.value = UiState.Provisioning(sessionCode, url, "Waiting for Admin to Scan...")
+
+            // Poll Loop
+            while (true) {
+                val check = repository.checkProvisioning(sessionCode)
+                check.onSuccess { res ->
+                    if (res.status == "fulfilled" && !res.deviceKey.isNullOrEmpty()) {
+                        // Success!
+                        saveDeviceKey(res.deviceKey)
+                        return@launch
+                    } else if (res.status == "expired") {
+                         // Restart with NEW code
+                         startQrProvisioning(null)
+                         return@launch
+                    }
+                }
+                
+                kotlinx.coroutines.delay(3000) // Poll every 3s
+            }
+        }
+    }
+
+
 
     fun saveDeviceKey(key: String) {
         devicePrefs.deviceKey = key

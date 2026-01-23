@@ -23,14 +23,22 @@ android {
         }
         
         // Build config fields for API URLs (can be overridden)
-        buildConfigField("String", "API_BASE_URL", "\"https://api.mktr.sg/api/\"") // Production Render URL
+        // API URL moved to buildTypes for separation of concerns
+
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            buildConfigField("String", "API_BASE_URL", "\"https://api.mktr.sg/api/\"")
         }
+        debug {
+            // Emulator localhost: 10.0.2.2
+            // Real Device: Change this to your computer's local IP (e.g., "http://192.168.1.5:3001/api/")
+            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:3001/api/\"")
+        }
+
     }
     
     compileOptions {
@@ -88,7 +96,11 @@ dependencies {
     // Image Loading (Coil)
     implementation("io.coil-kt:coil-compose:2.5.0")
     
+    // QR Code Generation
+    implementation("com.google.zxing:core:3.5.3")
+    
     // Video (Media3)
+
     implementation("androidx.media3:media3-exoplayer:1.2.1")
     implementation("androidx.media3:media3-ui:1.2.1")
     implementation("androidx.media3:media3-common:1.2.1")

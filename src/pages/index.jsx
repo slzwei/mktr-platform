@@ -35,8 +35,11 @@ const AdminCommissions = lazy(() => import('./AdminCommissions'));
 const AdminShortLinks = lazy(() => import('./AdminShortLinks'));
 const AdminLeadPackages = lazy(() => import('./AdminLeadPackages'));
 const AdminDevices = lazy(() => import('./AdminDevices'));
+
 const AdminDeviceLogs = lazy(() => import('./AdminDeviceLogs'));
+const ProvisionDevice = lazy(() => import('./ProvisionDevice')); // Added
 const AgentDashboard = lazy(() => import('./AgentDashboard'));
+
 const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
 const DriverDashboard = lazy(() => import('./DriverDashboard'));
 const MyProspects = lazy(() => import('./MyProspects'));
@@ -196,8 +199,14 @@ function PagesContent() {
               </DashboardLayout>
             </ProtectedRoute>
           } />
+          <Route path="/provision/:code" element={
+            <ProtectedRoute requiredRole="admin">
+              <ProvisionDevice />
+            </ProtectedRoute>
+          } />
 
           {/* Protected Agent routes */}
+
           <Route path="/AgentDashboard" element={
             <ProtectedRoute requiredRole="agent">
               <DashboardLayout>

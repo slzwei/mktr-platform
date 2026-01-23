@@ -72,6 +72,9 @@ class PlayerViewModel @Inject constructor(
     private val _playerState = MutableStateFlow<PlayerState>(PlayerState.Initializing)
     val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
 
+    private val _isDownloading = MutableStateFlow(false)
+    val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
+
     private var currentPlaylist: List<PlaylistItem> = emptyList()
     private var assetsMap: Map<String, com.mktr.adplayer.api.model.Asset> = emptyMap()
     private var currentIndex = 0
@@ -83,18 +86,61 @@ class PlayerViewModel @Inject constructor(
         androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 
-    fun startPlaylist(manifest: ManifestResponse) {
-        currentPlaylist = manifest.playlist
-        assetsMap = manifest.assets.associateBy { it.id }
-        currentIndex = 0
-        
-        if (currentPlaylist.isEmpty()) {
-            _playerState.value = PlayerState.Error("Empty Playlist")
-            updateStatus("idle")
-            return
-        }
+    private var updateJob: kotlinx.coroutines.Job? = null
 
-        startPlaybackLoop()
+    fun startPlaylist(manifest: ManifestResponse) {
+        // Cancel any pending update (Race Condition #1)
+        updateJob?.cancel()
+        
+        updateJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isDownloading.value = true // Start Indicator
+            // 1. Show loading ONLY if we strictly have nothing to play
+            if (currentPlaylist.isEmpty()) {
+                _playerState.value = PlayerState.Initializing
+            }
+
+            // 2. DOWNLOAD PHASE (Background)
+            try {
+                // Returns true only if ALL files are ready. 
+                // If false (e.g. disk full), we abort switch.
+                val success = assetManager.prepareAssets(manifest.assets)
+                
+                if (!success) {
+                   Log.e("PlayerVM", "Download Failed: Aborting playlist switch.")
+                   _isDownloading.value = false
+                   return@launch // Stay on old playlist (Safety #2)
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                Log.d("PlayerVM", "Update Cancelled (Newer manifest arrived)")
+                throw e
+            } catch (e: Exception) {
+                Log.e("PlayerVM", "Download Error", e)
+                _isDownloading.value = false
+                return@launch // Stay on old playlist
+            }
+
+            // 3. SWITCH PHASE (Main Thread)
+            // Ensure we are still active and not cancelled
+            if (!isActive) return@launch
+
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                _isDownloading.value = false // Stop Indicator
+                currentPlaylist = manifest.playlist
+                assetsMap = manifest.assets.associateBy { it.id }
+                currentIndex = 0 // Reset index to start fresh with new campaign
+                
+                // Restart Loop with new content
+                startPlaybackLoop() 
+                
+                Log.i("PlayerVM", "Switched to new playlist (Version ${manifest.version})")
+                
+                // 4. CLEANUP PHASE (Background, Low Priority)
+                launch(kotlinx.coroutines.Dispatchers.IO) {
+                    delay(5000) // Debounce cleanups / wait for player to let go of old files
+                    assetManager.cleanupAssets(manifest.assets)
+                }
+            }
+        }
     }
 
     private fun stopPlaybackLoop() {

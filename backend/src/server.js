@@ -40,7 +40,9 @@ import contactRoutes from './routes/contact.js';
 import shortLinkRoutes from './routes/shortlinks.js';
 import leadPackageRoutes from './routes/leadPackages.js';
 import deviceRoutes from './routes/devices.js';
+import provisioningRoutes from './routes/provisioning.js'; // Added
 import { validateGoogleOAuthConfig } from './controllers/authController.js';
+
 import { optionalAuth } from './middleware/auth.js';
 import { initSystemAgent } from './services/systemAgent.js';
 import ensureTenantPlumbing from './database/tenantMigration.js';
@@ -167,6 +169,8 @@ app.use('/share', shortLinkRoutes);
 app.use('/api/lead-packages', leadPackageRoutes);
 app.use('/api/devices/events', deviceEventsRouter);
 app.use('/api/devices', deviceRoutes);
+app.use('/api/provision', provisioningRoutes); // Added
+
 
 // Phase C: Adtech Manifest + Beacons (behind flags)
 if (String(process.env.MANIFEST_ENABLED || 'false').toLowerCase() === 'true') {
@@ -271,8 +275,10 @@ async function startServer() {
     await LeadPackageAssignment.sync({ alter: false });
     await (await import('./models/BeaconEvent.js')).default.sync({ alter: false });
     await (await import('./models/Impression.js')).default.sync({ alter: false });
+    await (await import('./models/ProvisioningSession.js')).default.sync({ alter: false }); // Added
 
     // Ensure name fields exist and constraints are updated
+
     await FleetOwner.sync({ alter: false });
     await User.sync({ alter: false });
 
