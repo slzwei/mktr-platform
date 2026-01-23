@@ -6,13 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { useAuth } from '@/services/auth-service';
+
 import { api } from '@/api/client';
 
 export default function ProvisionDevice() {
     const { code } = useParams();
     const navigate = useNavigate();
-    const { user } = useAuth();
+
 
     // State
     const [status, setStatus] = useState('checking'); // checking, valid, expired, fulfilled, not_found

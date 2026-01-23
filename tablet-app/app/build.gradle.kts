@@ -31,13 +31,13 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            buildConfigField("String", "API_BASE_URL", "\"https://api.mktr.sg/api/\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://mktr-backend-jo6r.onrender.com/api/\"")
         }
         debug {
-            // Emulator localhost: 10.0.2.2
-            // Real Device: Change this to your computer's local IP (e.g., "http://192.168.1.5:3001/api/")
-            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:3001/api/\"")
+            // Using Production URL for easier testing on Real Device
+            buildConfigField("String", "API_BASE_URL", "\"https://mktr-backend-jo6r.onrender.com/api/\"")
         }
+
 
     }
     
