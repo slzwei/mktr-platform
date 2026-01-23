@@ -7,7 +7,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import DashboardLayout from '@/components/layout/DashboardLayout';
 
-import { api } from '@/api/client';
+import { apiClient as api } from '@/api/client';
+
 
 export default function ProvisionDevice() {
     const { code } = useParams();
