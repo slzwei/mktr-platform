@@ -198,6 +198,13 @@ class PushService extends EventEmitter {
             const payload = JSON.stringify(data);
             client.res.write(`event: ${type}\n`);
             client.res.write(`data: ${payload}\n\n`);
+
+            // [FIX] Force flush to bypass any buffering in Node.js or reverse proxies (Render, Nginx, Cloudflare)
+            // Without this, events may be buffered and never reach the client
+            if (client.res.flush) {
+                client.res.flush();
+            }
+
             console.log(`[Push] SENT: ${type} to device ${deviceId}`);
             return true;
         } catch (err) {
