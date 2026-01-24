@@ -259,10 +259,15 @@ export default function AdminDevices() {
                                                             // Normalize 'offline' from Android app or 'inactive' from backend
                                                             if (status === 'inactive' || status === 'offline' || isStale) {
                                                                 return (
-                                                                    <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-200">
-                                                                        <span className="w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
-                                                                        OFFLINE
-                                                                    </Badge>
+                                                                    <div className="flex flex-col gap-1">
+                                                                        <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-200 w-fit">
+                                                                            <span className="w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
+                                                                            OFFLINE
+                                                                        </Badge>
+                                                                        <span className="text-xs text-gray-400">
+                                                                            {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : 'Never seen'}
+                                                                        </span>
+                                                                    </div>
                                                                 );
                                                             }
                                                             if (status === 'standby' || status === 'idle') {
@@ -299,20 +304,19 @@ export default function AdminDevices() {
                                                         )}
                                                     </TableCell>
                                                     <TableCell className="px-6 py-4 text-sm text-gray-500">
-                                                        <div className="flex items-center gap-2">
-                                                            <span>{device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : 'Never'}</span>
-                                                            {device.latitude && device.longitude && (
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700"
-                                                                    onClick={() => setMapDevice(device)}
-                                                                >
-                                                                    <MapPin className="h-3 w-3 mr-1" />
-                                                                    Map
-                                                                </Button>
-                                                            )}
-                                                        </div>
+                                                        {device.latitude && device.longitude ? (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700"
+                                                                onClick={() => setMapDevice(device)}
+                                                            >
+                                                                <MapPin className="h-3 w-3 mr-1" />
+                                                                View Map
+                                                            </Button>
+                                                        ) : (
+                                                            <span className="text-gray-400 text-xs">No GPS</span>
+                                                        )}
                                                     </TableCell>
                                                     <TableCell className="px-6 py-4 text-right">
                                                         <Button
