@@ -41,9 +41,8 @@ class SseService @Inject constructor(
         private val BASE_URL = "${BuildConfig.API_BASE_URL}devices/events".replace("api//", "api/") 
         private const val MAX_RETRY_DELAY_MS = 30000L
         
-        // If no data received in 60 seconds, force reconnect
-        // Render proxy timeout is ~60-90s, so this catches stale connections
-        private const val ACTIVITY_TIMEOUT_MS = 60000L
+        // [FIX] 45s timeout detects stale connections before Render's ~60s proxy kills them
+        private const val ACTIVITY_TIMEOUT_MS = 45000L
         private const val WATCHDOG_CHECK_INTERVAL_MS = 15000L
     }
 
@@ -88,7 +87,12 @@ class SseService @Inject constructor(
             }
 
             override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
-                Log.d(TAG, "SSE Event: $type")
+                // Heartbeats are frequent - log at verbose only to reduce noise
+                if (type == "heartbeat") {
+                    Log.v(TAG, "SSE Heartbeat received")
+                } else {
+                    Log.d(TAG, "SSE Event: $type")
+                }
                 lastActivityTimestamp = System.currentTimeMillis()
                 if (type != null) {
                     onMessageCallback?.invoke(type, data)

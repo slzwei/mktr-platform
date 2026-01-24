@@ -9,7 +9,8 @@ class PushService extends EventEmitter {
         this.disconnectHistory = new Map(); // deviceId -> { status, timestamp }
 
         // Start heartbeat loop to keep connections alive and detect zombies
-        setInterval(() => this.broadcastHeartbeat(), 30000);
+        // [FIX] 20s interval stays well under Render's ~60s proxy idle timeout
+        setInterval(() => this.broadcastHeartbeat(), 20000);
         setInterval(() => this.cleanupHistory(), 60000);
     }
 
@@ -252,10 +253,13 @@ class PushService extends EventEmitter {
 
     broadcastHeartbeat() {
         // Heartbeat for Clients (Tablets)
+        // [FIX] Send as actual SSE event, not comment. Some proxies strip comments.
         if (this.clients.size > 0) {
             for (const [deviceId, client] of this.clients.entries()) {
                 try {
-                    client.res.write(': keep-alive\n\n');
+                    client.res.write(`event: heartbeat\n`);
+                    client.res.write(`data: ${Date.now()}\n\n`);
+                    if (client.res.flush) client.res.flush();
                 } catch (err) {
                     this.removeClient(deviceId, client.id);
                 }
