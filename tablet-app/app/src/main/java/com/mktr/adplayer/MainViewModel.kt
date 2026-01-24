@@ -124,10 +124,14 @@ class MainViewModel @Inject constructor(
                 // [PUSH] Start SSE Listening (Idempotent call in SseService usually, but safe to call)
                 devicePrefs.deviceKey?.let { key ->
                     sseService.start(key) { type, _ ->
-                        android.util.Log.d("MainViewModel", "SSE Event Received: $type")
-                        if (type == "REFRESH_MANIFEST" || type == "CONNECTED") {
-                            android.util.Log.i("MainViewModel", "Triggering Hot-Swap Refresh due to SSE ($type)")
-                            fetchManifest()
+                        // [FIX] SSE callback runs on OkHttp's background thread.
+                        // Must dispatch to viewModelScope for proper StateFlow updates.
+                        viewModelScope.launch {
+                            android.util.Log.d("MainViewModel", "SSE Event Received: $type")
+                            if (type == "REFRESH_MANIFEST" || type == "CONNECTED") {
+                                android.util.Log.i("MainViewModel", "Triggering Hot-Swap Refresh due to SSE ($type)")
+                                fetchManifest()
+                            }
                         }
                     }
                 }
