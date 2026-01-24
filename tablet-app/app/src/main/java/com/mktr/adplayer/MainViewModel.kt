@@ -94,7 +94,15 @@ class MainViewModel @Inject constructor(
     }
 
     fun fetchManifest() {
-        _uiState.value = UiState.Loading
+        // [FIX] Hot-Swap: Only show full-screen "Loading" if we aren't already playing content.
+        // If we are Connected, we stay Connected while the background refresh happens.
+        val currentState = _uiState.value
+        if (currentState !is UiState.Connected) {
+            _uiState.value = UiState.Loading
+        } else {
+            android.util.Log.d("MainVM", "Refreshing manifest in background (Hot Swap)...")
+        }
+
         viewModelScope.launch {
             val result = repository.refreshManifest()
             
@@ -102,10 +110,16 @@ class MainViewModel @Inject constructor(
                 if (manifest != null) {
                     _uiState.value = UiState.Connected(manifest, "Manifest Loaded (v${manifest.version})")
                 } else {
-                    _uiState.value = UiState.Connected(null, "Manifest not modified (304) - Using Cache")
+                    // 304 Not Modified
+                    if (currentState !is UiState.Connected) {
+                        _uiState.value = UiState.Connected(null, "Manifest not modified (304) - Using Cache")
+                    } else {
+                        // If already connected, no-op (keep existing manifest)
+                        android.util.Log.d("MainVM", "Manifest 304 (Hot Swap) - No change.")
+                    }
                 }
                 
-                // [PUSH] Start SSE Listening
+                // [PUSH] Start SSE Listening (Idempotent call in SseService usually, but safe to call)
                 devicePrefs.deviceKey?.let { key ->
                     sseService.start(key) { type, _ ->
                         if (type == "REFRESH_MANIFEST" || type == "CONNECTED") {
@@ -120,7 +134,13 @@ class MainViewModel @Inject constructor(
                 if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
                     _uiState.value = UiState.Error("Auth Failed: ${e.message}. Check Key.")
                 } else {
-                    _uiState.value = UiState.Error("Network Error: ${e.message}")
+                    // [FIX] Resilience: If background refresh fails, DON'T kill the player with an Error screen.
+                    // Just log it and keep playing the old playlist.
+                    if (currentState !is UiState.Connected) {
+                        _uiState.value = UiState.Error("Network Error: ${e.message}")
+                    } else {
+                        android.util.Log.w("MainVM", "Background refresh failed. Keeping old playlist. Error: ${e.message}")
+                    }
                 }
             }
         }
