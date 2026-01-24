@@ -188,9 +188,7 @@ class PushService extends EventEmitter {
     sendEvent(deviceId, type, data = {}) {
         const client = this.clients.get(deviceId);
         if (!client) {
-            // [DEBUG] Log dropped events to diagnose SSE connectivity issues
-            console.warn(`[Push] DROPPED EVENT: ${type} for device ${deviceId} - No active SSE connection`);
-            console.warn(`[Push] Currently connected devices: [${Array.from(this.clients.keys()).join(', ')}]`);
+            // Device not connected - safe to silently ignore for most cases
             return false;
         }
 
@@ -199,17 +197,15 @@ class PushService extends EventEmitter {
             client.res.write(`event: ${type}\n`);
             client.res.write(`data: ${payload}\n\n`);
 
-            // [FIX] Force flush to bypass any buffering in Node.js or reverse proxies (Render, Nginx, Cloudflare)
-            // Without this, events may be buffered and never reach the client
+            // [CRITICAL] Force flush to bypass buffering in reverse proxies (Render, Nginx, Cloudflare)
             if (client.res.flush) {
                 client.res.flush();
             }
 
-            console.log(`[Push] SENT: ${type} to device ${deviceId}`);
             return true;
         } catch (err) {
             console.error(`[Push] Failed to send event to ${deviceId}`, err);
-            this.removeClient(deviceId); // Assume broken pipe
+            this.removeClient(deviceId);
             return false;
         }
     }

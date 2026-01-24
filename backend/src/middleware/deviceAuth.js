@@ -4,8 +4,7 @@ import { Device } from '../models/index.js';
 export async function authenticateDevice(req, res, next) {
   try {
     const deviceKey = req.headers['x-device-key'];
-    // DEBUG LOG - Log ALL device auth attempts (including SSE)
-    console.log(`[AdTech Auth] ${req.method} ${req.originalUrl} - Key: ${deviceKey ? (deviceKey.substring(0, 4) + '...') : 'MISSING'}`);
+
 
     if (!deviceKey) {
       console.warn('[AdTech Auth] Missing X-Device-Key');
