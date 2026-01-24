@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { apiClient as api } from '../api/client';
@@ -14,6 +14,12 @@ import {
     TableRow,
 } from "../components/ui/table";
 import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "../components/ui/dialog";
+import {
     Activity,
     ChevronDown,
     ChevronUp,
@@ -22,7 +28,8 @@ import {
     HardDrive,
     RefreshCcw,
     Eye,
-    PlayCircle
+    PlayCircle,
+    MapPin
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -36,6 +43,12 @@ export default function AdminDevices() {
     const [expandedDeviceId, setExpandedDeviceId] = useState(null);
     const [previewLogs, setPreviewLogs] = useState([]);
     const [previewLoading, setPreviewLoading] = useState(false);
+
+    // Location Map Dialog State
+    const [mapDevice, setMapDevice] = useState(null);
+    const mapRef = useRef(null);
+    const googleMapRef = useRef(null);
+    const markerRef = useRef(null);
 
     useEffect(() => {
         loadDevices();
@@ -63,6 +76,21 @@ export default function AdminDevices() {
                 }));
             } catch (err) {
                 console.error('Failed to parse status_change', err);
+            }
+        });
+
+        // Listen for location updates
+        sse.addEventListener('location_update', (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                setDevices(prev => prev.map(d => {
+                    if (d.id === data.deviceId) {
+                        return { ...d, latitude: data.latitude, longitude: data.longitude, locationUpdatedAt: data.timestamp };
+                    }
+                    return d;
+                }));
+            } catch (err) {
+                console.error('Failed to parse location_update', err);
             }
         });
 
@@ -271,7 +299,20 @@ export default function AdminDevices() {
                                                         )}
                                                     </TableCell>
                                                     <TableCell className="px-6 py-4 text-sm text-gray-500">
-                                                        {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : 'Never'}
+                                                        <div className="flex items-center gap-2">
+                                                            <span>{device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : 'Never'}</span>
+                                                            {device.latitude && device.longitude && (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700"
+                                                                    onClick={() => setMapDevice(device)}
+                                                                >
+                                                                    <MapPin className="h-3 w-3 mr-1" />
+                                                                    Map
+                                                                </Button>
+                                                            )}
+                                                        </div>
                                                     </TableCell>
                                                     <TableCell className="px-6 py-4 text-right">
                                                         <Button
@@ -372,6 +413,37 @@ export default function AdminDevices() {
                         onAssign={loadDevices}
                     />
                 )}
+
+                {/* Location Map Dialog */}
+                <Dialog open={!!mapDevice} onOpenChange={(open) => !open && setMapDevice(null)}>
+                    <DialogContent className="max-w-2xl">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <MapPin className="h-5 w-5 text-blue-600" />
+                                Device Location - {mapDevice?.model || 'Device'}
+                            </DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-3">
+                            <div className="text-sm text-muted-foreground">
+                                <p>📍 Coordinates: {mapDevice?.latitude?.toFixed(6)}, {mapDevice?.longitude?.toFixed(6)}</p>
+                                <p>🕐 Last updated: {mapDevice?.locationUpdatedAt ? formatDistanceToNow(new Date(mapDevice.locationUpdatedAt), { addSuffix: true }) : 'Unknown'}</p>
+                            </div>
+                            {mapDevice?.latitude && mapDevice?.longitude && (
+                                <div className="h-[400px] rounded-lg overflow-hidden border">
+                                    <iframe
+                                        width="100%"
+                                        height="100%"
+                                        style={{ border: 0 }}
+                                        loading="lazy"
+                                        allowFullScreen
+                                        referrerPolicy="no-referrer-when-downgrade"
+                                        src={`https://www.google.com/maps/embed/v1/place?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}&q=${mapDevice.latitude},${mapDevice.longitude}&zoom=16`}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    </DialogContent>
+                </Dialog>
             </div>
         </div >
     );
