@@ -21,7 +21,7 @@ import com.mktr.adplayer.BuildConfig
 
 @Singleton
 class SseService @Inject constructor(
-    private val okHttpClient: OkHttpClient
+    @javax.inject.Named("SseClient") private val okHttpClient: OkHttpClient
 ) {
     private var eventSource: EventSource? = null
     private var isConnected = false

@@ -57,4 +57,22 @@ object NetworkModule {
     fun provideAdTechService(retrofit: Retrofit): AdTechService {
         return retrofit.create(AdTechService::class.java)
     }
+
+    @Provides
+    @Singleton
+    @javax.inject.Named("SseClient")
+    fun provideSseOkHttpClient(authInterceptor: AuthInterceptor): OkHttpClient {
+        val logging = HttpLoggingInterceptor().apply {
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC else HttpLoggingInterceptor.Level.NONE
+        }
+
+        // [FIX] SSE needs a very long or infinite read timeout because it's an open stream.
+        // Standard 30s timeout causes 'SSE Failure: timeout' if heartbeat jitter exceeds 30s.
+        return OkHttpClient.Builder()
+            .addInterceptor(logging)
+            .addInterceptor(authInterceptor)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.SECONDS) // 0 = No Timeout / Infinite for SSE
+            .build()
+    }
 }
