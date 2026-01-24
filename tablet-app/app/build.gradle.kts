@@ -101,6 +101,11 @@ dependencies {
     // QR Code Generation
     implementation("com.google.zxing:core:3.5.3")
     
+    // Google Play Services Location (GPS Tracking)
+    implementation("com.google.android.gms:play-services-location:21.1.0")
+    // Coroutines support for Play Services (await() extension)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    
     // Video (Media3)
 
     implementation("androidx.media3:media3-exoplayer:1.2.1")

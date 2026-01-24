@@ -7,6 +7,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.mktr.adplayer.api.model.BeaconHeartbeatRequest
 import com.mktr.adplayer.data.manager.ImpressionManager
+import com.mktr.adplayer.data.manager.LocationManager
 import com.mktr.adplayer.api.service.AdTechService
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -16,7 +17,8 @@ class HeartbeatWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
     private val api: AdTechService,
-    private val impressionManager: ImpressionManager
+    private val impressionManager: ImpressionManager,
+    private val locationManager: LocationManager
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
@@ -26,10 +28,15 @@ class HeartbeatWorker @AssistedInject constructor(
             val prefs = applicationContext.getSharedPreferences("adplayer_prefs", Context.MODE_PRIVATE)
             val appStatus = prefs.getString("app_status", "active") ?: "active"
             
+            // Get GPS Location (null if permission denied or unavailable)
+            val location = locationManager.getLastLocation()
+            
             val request = BeaconHeartbeatRequest(
                 status = appStatus,
                 batteryLevel = null,
-                storageUsed = "Buffer: $bufferSize"
+                storageUsed = "Buffer: $bufferSize",
+                latitude = location?.latitude,
+                longitude = location?.longitude
             )
             
             Log.d("HeartbeatWorker", "Sending heartbeat...")

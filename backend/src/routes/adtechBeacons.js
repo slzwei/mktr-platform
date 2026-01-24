@@ -18,10 +18,17 @@ const beaconLimiter = rateLimit({
 // Lightweight ping to update "Last Seen" and Status
 router.post('/v1/beacons/heartbeat', authenticateDevice, beaconLimiter, async (req, res) => {
   try {
-    const { status, batteryLevel, storageUsed } = req.body;
+    const { status, batteryLevel, storageUsed, latitude, longitude } = req.body;
 
     // 1. Update device metadata
     const updates = { lastSeenAt: new Date() };
+
+    // GPS Location Update (if provided)
+    if (latitude != null && longitude != null) {
+      updates.latitude = latitude;
+      updates.longitude = longitude;
+      updates.locationUpdatedAt = new Date();
+    }
 
     // ANTI-ZOMBIE FIX 2.0:
     // We only want to block heartbeats that are delayed packets from a RECENT disconnect (Zombies).
@@ -74,8 +81,13 @@ router.post('/v1/beacons/heartbeat', authenticateDevice, beaconLimiter, async (r
     pushService.broadcastLog(req.device.id, {
       type: 'HEARTBEAT',
       createdAt: new Date(),
-      payload: { status, batteryLevel, storageUsed }
+      payload: { status, batteryLevel, storageUsed, latitude, longitude }
     });
+
+    // Broadcast location update for fleet map (separate event for efficiency)
+    if (latitude != null && longitude != null) {
+      pushService.broadcastLocationUpdate(req.device.id, latitude, longitude);
+    }
 
     // CRITICAL: Ensure status changes (e.g. Inactive -> Active) are reflected in real-time
     // The SSE connection (addClient) handles 'standby', but the Heartbeat handles 'playing'/'idle'.

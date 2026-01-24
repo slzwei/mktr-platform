@@ -164,6 +164,24 @@ class PushService extends EventEmitter {
         }
     }
 
+    // GPS Location Updates for Fleet Map
+    broadcastLocationUpdate(deviceId, latitude, longitude) {
+        const payload = JSON.stringify({
+            deviceId,
+            latitude,
+            longitude,
+            timestamp: new Date()
+        });
+
+        // Notify Fleet Observers (AdminFleetMap)
+        for (const obs of this.fleetObservers) {
+            try {
+                obs.res.write(`event: location_update\n`);
+                obs.res.write(`data: ${payload}\n\n`);
+            } catch (e) { /* clean up on close */ }
+        }
+    }
+
     addFleetObserver(res) {
         const connectionId = Math.random().toString(36).substring(7);
         const observer = { id: connectionId, res };

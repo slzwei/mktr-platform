@@ -20,9 +20,6 @@ import com.mktr.adplayer.worker.WatchdogService
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    companion object {
-        private const val TAG = "AdPlayer.MainActivity"
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,6 +39,8 @@ class MainActivity : ComponentActivity() {
         // Kiosk Mode: Attempt to lock task (requires Device Owner or Screen Pinning)
         // REMOVED: startLockTask() calls to allow standard navigation.
 
+        // Auto-request Location Permission for Fleet Tracking
+        requestLocationPermission()
 
         setContent {
             MaterialTheme {
@@ -64,6 +63,28 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start WatchdogService: ${e.message}")
         }
+    }
+
+    private fun requestLocationPermission() {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.d(TAG, "Requesting location permission for fleet tracking")
+            androidx.core.app.ActivityCompat.requestPermissions(
+                this,
+                arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION),
+                LOCATION_PERMISSION_REQUEST_CODE
+            )
+        } else {
+            Log.d(TAG, "Location permission already granted")
+        }
+    }
+
+    companion object {
+        private const val TAG = "AdPlayer.MainActivity"
+        private const val LOCATION_PERMISSION_REQUEST_CODE = 1001
     }
 }
 

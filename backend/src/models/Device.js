@@ -45,6 +45,19 @@ Device.init({
   lastSeenAt: {
     type: DataTypes.DATE,
     allowNull: true
+  },
+  // GPS Location Tracking
+  latitude: {
+    type: DataTypes.FLOAT,
+    allowNull: true
+  },
+  longitude: {
+    type: DataTypes.FLOAT,
+    allowNull: true
+  },
+  locationUpdatedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
   }
 }, {
   sequelize,

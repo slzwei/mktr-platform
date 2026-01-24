@@ -33,7 +33,9 @@ data class PlaylistItem(
 data class BeaconHeartbeatRequest(
     val status: String,
     @SerialName("battery_level") val batteryLevel: Float? = null,
-    @SerialName("storage_used") val storageUsed: String? = null
+    @SerialName("storage_used") val storageUsed: String? = null,
+    @SerialName("latitude") val latitude: Double? = null,
+    @SerialName("longitude") val longitude: Double? = null
 )
 
 @Serializable
