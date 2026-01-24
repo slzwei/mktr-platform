@@ -61,6 +61,9 @@ class PushService extends EventEmitter {
         this.broadcastStatusChange(deviceId, newStatus);
 
         // 3. Send confirmation to tablet
+        // [FIX] Send 2KB of padding to force flush any proxy buffers (Nginx default is often 1KB-4KB)
+        res.write(`: ${' '.repeat(2048)}\n\n`);
+
         this.sendEvent(deviceId, 'CONNECTED', { connectionId });
 
         // Handle disconnect

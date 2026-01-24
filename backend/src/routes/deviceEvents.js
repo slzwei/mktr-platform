@@ -25,6 +25,10 @@ router.get('/', guardFlags('MANIFEST_ENABLED'), authenticateDevice, (req, res) =
         'X-Accel-Buffering': 'no' // Important for Nginx proxying
     });
 
+    // CRITICAL: Flush headers immediately to bypass proxy buffering
+    // Without this, clients behind Nginx/Cloudflare may hang in "pending" state
+    if (res.flushHeaders) res.flushHeaders();
+
     const deviceId = req.device.id;
     pushService.addClient(deviceId, res);
 });
