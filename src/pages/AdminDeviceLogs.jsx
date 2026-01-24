@@ -151,12 +151,12 @@ export default function AdminDeviceLogs() {
                                         <span className="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
                                         READY
                                     </Badge>
-                                ) : (
+                                ) : deviceStatus === 'active' ? (
                                     <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200 animate-pulse">
                                         <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
                                         LIVE
                                     </Badge>
-                                )
+                                ) : null
                             )}
                             {streamStatus === 'connecting' && (
                                 <Badge variant="outline" className="ml-2 bg-yellow-50 text-yellow-700 border-yellow-200">
