@@ -67,9 +67,8 @@ export default function AdminDevices() {
         });
 
         sse.onerror = (err) => {
-            // EventSource auto-retries, but we logs silent error
-            // console.error('Fleet Stream Error', err);
-            sse.close();
+            // Let EventSource auto-reconnect - don't close the connection!
+            console.warn('⚠️ Fleet Stream error - auto-reconnecting...', err);
         };
 
         return () => sse.close();
