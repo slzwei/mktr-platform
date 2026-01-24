@@ -2,13 +2,10 @@ import crypto from 'crypto';
 import { Device } from '../models/index.js';
 
 export async function authenticateDevice(req, res, next) {
-  // console.log('Heads:', req.headers); 
   try {
     const deviceKey = req.headers['x-device-key'];
-    // DEBUG LOG
-    if (req.originalUrl.includes('/api/adtech')) {
-      console.log(`[AdTech Auth] ${req.method} ${req.originalUrl} - Key: ${deviceKey ? (deviceKey.substring(0, 4) + '...') : 'MISSING'}`);
-    }
+    // DEBUG LOG - Log ALL device auth attempts (including SSE)
+    console.log(`[AdTech Auth] ${req.method} ${req.originalUrl} - Key: ${deviceKey ? (deviceKey.substring(0, 4) + '...') : 'MISSING'}`);
 
     if (!deviceKey) {
       console.warn('[AdTech Auth] Missing X-Device-Key');
@@ -40,5 +37,3 @@ export function guardFlags(flagName) {
     return next();
   };
 }
-
-

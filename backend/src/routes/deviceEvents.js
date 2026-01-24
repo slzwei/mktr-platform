@@ -17,6 +17,8 @@ const allowQueryToken = (req, res, next) => {
 // GET /api/devices/events
 // SSE Stream Endpoint for Tablets (Device Auth)
 router.get('/', guardFlags('MANIFEST_ENABLED'), authenticateDevice, (req, res) => {
+    console.log(`[SSE] Device ${req.device.id} connecting to SSE stream...`);
+
     // SSE Headers
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
