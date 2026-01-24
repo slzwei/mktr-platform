@@ -188,8 +188,9 @@ class PushService extends EventEmitter {
     sendEvent(deviceId, type, data = {}) {
         const client = this.clients.get(deviceId);
         if (!client) {
-            // Safe to ignore, tablet just might not be online
-            // console.debug(`[Push] No active client for ${deviceId}, skipping ${type}`);
+            // [DEBUG] Log dropped events to diagnose SSE connectivity issues
+            console.warn(`[Push] DROPPED EVENT: ${type} for device ${deviceId} - No active SSE connection`);
+            console.warn(`[Push] Currently connected devices: [${Array.from(this.clients.keys()).join(', ')}]`);
             return false;
         }
 
@@ -197,6 +198,7 @@ class PushService extends EventEmitter {
             const payload = JSON.stringify(data);
             client.res.write(`event: ${type}\n`);
             client.res.write(`data: ${payload}\n\n`);
+            console.log(`[Push] SENT: ${type} to device ${deviceId}`);
             return true;
         } catch (err) {
             console.error(`[Push] Failed to send event to ${deviceId}`, err);

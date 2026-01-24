@@ -108,29 +108,32 @@ class MainViewModel @Inject constructor(
             
             result.onSuccess { manifest ->
                 if (manifest != null) {
+                    android.util.Log.i("MainVM", "Manifest Updated! v${manifest.version} with ${manifest.playlist.size} items")
                     _uiState.value = UiState.Connected(manifest, "Manifest Loaded (v${manifest.version})")
                 } else {
                     // 304 Not Modified
+                    android.util.Log.i("MainVM", "Manifest 304 Not Modified. ETag matched.")
                     if (currentState !is UiState.Connected) {
                         _uiState.value = UiState.Connected(null, "Manifest not modified (304) - Using Cache")
                     } else {
                         // If already connected, no-op (keep existing manifest)
-                        android.util.Log.d("MainVM", "Manifest 304 (Hot Swap) - No change.")
+                        android.util.Log.d("MainVM", "Hot Swap: Skipping update because server returned 304.")
                     }
                 }
                 
                 // [PUSH] Start SSE Listening (Idempotent call in SseService usually, but safe to call)
                 devicePrefs.deviceKey?.let { key ->
                     sseService.start(key) { type, _ ->
+                        android.util.Log.d("MainViewModel", "SSE Event Received: $type")
                         if (type == "REFRESH_MANIFEST" || type == "CONNECTED") {
-                            android.util.Log.d("MainViewModel", "Push/Connect received ($type)! Refreshing...")
+                            android.util.Log.i("MainViewModel", "Triggering Hot-Swap Refresh due to SSE ($type)")
                             fetchManifest()
                         }
                     }
                 }
 
             }.onFailure { e ->
-                Log.e("MainVM", "Error", e)
+                Log.e("MainVM", "Manifest Fetch Error", e)
                 if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
                     _uiState.value = UiState.Error("Auth Failed: ${e.message}. Check Key.")
                 } else {
@@ -139,7 +142,7 @@ class MainViewModel @Inject constructor(
                     if (currentState !is UiState.Connected) {
                         _uiState.value = UiState.Error("Network Error: ${e.message}")
                     } else {
-                        android.util.Log.w("MainVM", "Background refresh failed. Keeping old playlist. Error: ${e.message}")
+                        android.util.Log.w("MainVM", "Hot Swap Failed. Errors suppressed to keep playback alive. Error: ${e.message}")
                     }
                 }
             }
