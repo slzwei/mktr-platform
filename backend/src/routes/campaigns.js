@@ -222,6 +222,43 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
 
   await campaign.update(updateData);
 
+  // [PUSH] Fan-out Trigger: Notify all devices assigned to this campaign
+  // We need to check both legacy 'campaignId' and modern 'campaignIds' (JSON array)
+  try {
+    // Dynamic import to avoid circular dep
+    const { pushService } = await import('../services/pushService.js');
+    const { Device } = await import('../models/index.js');
+    const { Op } = await import('sequelize');
+
+    // Find devices that have this campaign assigned
+    const affectedDevices = await Device.findAll({
+      where: {
+        [Op.or]: [
+          { campaignId: id }, // Legacy
+          // PostgreSQL JSON/JSONB containment check. 
+          // For SQLite (dev), this might be tricky, so we might need a fallback or just accept it's prod-only feature.
+          // However, safe robust way for JSON arrays in SQL is using Op.contains if supported or string search if text.
+          // Assuming standard Postgres here as per env.
+          { campaignIds: { [Op.contains]: [id] } }
+        ]
+      },
+      attributes: ['id']
+    });
+
+    if (affectedDevices.length > 0) {
+      console.log(`[Campaign] Notifying ${affectedDevices.length} devices of campaign update: ${id}`);
+      affectedDevices.forEach(d => {
+        pushService.sendEvent(d.id, 'REFRESH_MANIFEST', {
+          timestamp: Date.now(),
+          reason: 'campaign_content_update'
+        });
+      });
+    }
+  } catch (err) {
+    console.error('[Campaign] Failed to trigger fan-out update', err);
+    // Don't fail the request, just log it
+  }
+
   res.json({
     success: true,
     message: 'Campaign updated successfully',
