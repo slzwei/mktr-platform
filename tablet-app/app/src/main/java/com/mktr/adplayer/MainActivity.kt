@@ -1,6 +1,9 @@
 package com.mktr.adplayer
 
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -12,12 +15,20 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.graphics.asImageBitmap
 import dagger.hilt.android.AndroidEntryPoint
+import com.mktr.adplayer.worker.WatchdogService
 
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    companion object {
+        private const val TAG = "AdPlayer.MainActivity"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Start WatchdogService to ensure app restarts if it crashes
+        startWatchdogService()
         
         // Hide System Bars (Immersive Sticky Mode)
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -38,6 +49,20 @@ class MainActivity : ComponentActivity() {
                     MainScreen()
                 }
             }
+        }
+    }
+
+    private fun startWatchdogService() {
+        try {
+            val serviceIntent = Intent(this, WatchdogService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            Log.d(TAG, "WatchdogService started from MainActivity")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start WatchdogService: ${e.message}")
         }
     }
 }
