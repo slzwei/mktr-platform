@@ -228,13 +228,22 @@ router.patch('/:id', async (req, res) => {
         await device.update(updates);
 
         // [PUSH] Trigger Real-time Manifest Refresh
+        // [FIX] Add 500ms "Integrity Delay" to allow DB transaction to fully propagate/commit
+        // before the tablet tries to fetch the new manifest. Prevents "Stale Read" race conditions.
         if (campaignIds !== undefined) {
-            // Dynamically import to avoid circular dependency issues if any, though regular import is fine here
-            const { pushService } = await import('../services/pushService.js');
-            pushService.sendEvent(id, 'REFRESH_MANIFEST', {
-                timestamp: Date.now(),
-                reason: 'campaign_assignment'
-            });
+            setTimeout(async () => {
+                try {
+                    // Dynamically import to avoid circular dependency issues if any, though regular import is fine here
+                    const { pushService } = await import('../services/pushService.js');
+                    pushService.sendEvent(id, 'REFRESH_MANIFEST', {
+                        timestamp: Date.now(),
+                        reason: 'campaign_assignment'
+                    });
+                    console.log(`[Device] Sent delayed refresh signal to ${id}`);
+                } catch (e) {
+                    console.error('[Device] Failed to send delayed refresh', e);
+                }
+            }, 500);
         }
 
         // Fetch fresh names for response
