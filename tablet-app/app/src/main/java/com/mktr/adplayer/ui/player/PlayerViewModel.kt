@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
@@ -74,6 +75,13 @@ class PlayerViewModel @Inject constructor(
 
     private val _isDownloading = MutableStateFlow(false)
     val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
+
+    // Signal from UI when video playback completes
+    private val _videoEnded = MutableStateFlow(0L) // timestamp to ensure unique events
+    
+    fun onVideoEnded() {
+        _videoEnded.value = System.currentTimeMillis()
+    }
 
     private var currentPlaylist: List<PlaylistItem> = emptyList()
     private var assetsMap: Map<String, com.mktr.adplayer.api.model.Asset> = emptyMap()
@@ -181,7 +189,7 @@ class PlayerViewModel @Inject constructor(
                 }
 
                 val asset = assetsMap[item.assetId]
-                var durationToWait = 5000L // Default fallback
+                val isVideo = item.type == "video"
 
                 if (asset != null) {
                     try {
@@ -195,15 +203,16 @@ class PlayerViewModel @Inject constructor(
                                 total = currentPlaylist.size
                             )
 
-                            // Track Impression
+                            // Track Impression (use actual duration for tracking)
+                            val actualDuration = if (isVideo) item.durationMs else 10000L
                             impressionManager.trackImpression(
                                 adId = item.assetId,
                                 campaignId = item.campaignId,
                                 mediaType = item.type,
-                                durationMs = item.durationMs
+                                durationMs = actualDuration
                             )
 
-                            // [MODIFIED] Trigger Upload Immediately
+                            // Trigger Upload Immediately
                             try {
                                 val uploadRequest = androidx.work.OneTimeWorkRequestBuilder<com.mktr.adplayer.worker.ImpressionWorker>()
                                     .build()
@@ -218,26 +227,38 @@ class PlayerViewModel @Inject constructor(
                                 Log.e("PlayerVM", "Failed to trigger upload worker", e)
                             }
 
-                            durationToWait = item.durationMs.coerceAtLeast(3000L).coerceAtMost(60000L) // Ensure 3s-60s range
+                            if (isVideo) {
+                                // For videos: wait for ExoPlayer to signal completion
+                                Log.d("PlayerVM", "Playing VIDEO, waiting for completion...")
+                                val startTimestamp = _videoEnded.value
+                                // Wait for the video to end (with safety timeout of 5 minutes)
+                                kotlinx.coroutines.withTimeoutOrNull(300_000L) {
+                                    _videoEnded.first { it > startTimestamp }
+                                }
+                                Log.d("PlayerVM", "Video playback completed")
+                                // Advance to next item immediately
+                                currentIndex = (currentIndex + 1) % currentPlaylist.size
+                                continue
+                            } else {
+                                // For images: display for exactly 10 seconds
+                                Log.d("PlayerVM", "Playing IMAGE for 10s")
+                                delay(10_000L)
+                                currentIndex = (currentIndex + 1) % currentPlaylist.size
+                                continue
+                            }
                         } else {
                             Log.e("PlayerVM", "File not found for asset: ${asset.id} at path: ${file.absolutePath}")
-                            // Skip quickly but not instantly
-                            durationToWait = 2000L
                         }
                     } catch (e: Exception) {
                         Log.e("PlayerVM", "Error playback item ${item.id}", e)
-                        durationToWait = 2000L
                     }
                 } else {
                      Log.e("PlayerVM", "Missing asset definition for item ${item.id}")
-                     durationToWait = 2000L
                 }
 
-                // Wait for the duration of the content (or the error backoff)
-                Log.d("PlayerVM", "Playing index $currentIndex for ${durationToWait}ms")
-                delay(durationToWait)
-
-                // Advance index
+                // Error case: wait a bit before advancing
+                Log.d("PlayerVM", "Error state, waiting 2s before advancing")
+                delay(2000L)
                 currentIndex = (currentIndex + 1) % currentPlaylist.size
             }
             // Loop ended (shouldn't happen unless cancelled)

@@ -53,7 +53,7 @@ fun PlayerOrchestrator(
                 }
             }
             is PlayerState.Playing -> {
-                PlayerContent(state = s)
+                PlayerContent(state = s, onVideoEnded = viewModel::onVideoEnded)
             }
             is PlayerState.Error -> {
                 Box(Modifier.fillMaxSize().background(Color.Red), contentAlignment = Alignment.Center) {
@@ -90,10 +90,10 @@ fun PlayerOrchestrator(
 }
 
 @Composable
-fun PlayerContent(state: PlayerState.Playing) {
+fun PlayerContent(state: PlayerState.Playing, onVideoEnded: () -> Unit = {}) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (state.item.type == "video") {
-            VideoPlayer(uri = state.fileUri, playId = state.playId)
+            VideoPlayer(uri = state.fileUri, playId = state.playId, onVideoEnded = onVideoEnded)
         } else {
             ImagePlayer(uri = state.fileUri)
         }
@@ -123,7 +123,7 @@ fun ImagePlayer(uri: Uri) {
 
 @kotlin.OptIn(UnstableApi::class)
 @Composable
-fun VideoPlayer(uri: Uri, playId: Long) {
+fun VideoPlayer(uri: Uri, playId: Long, onVideoEnded: () -> Unit = {}) {
     val context = LocalContext.current
     
     // Remember ExoPlayer instance to survive recompositions but NOT config changes (VM handles that usually, 
@@ -132,6 +132,22 @@ fun VideoPlayer(uri: Uri, playId: Long) {
         ExoPlayer.Builder(context).build().apply {
             playWhenReady = true
             repeatMode = Player.REPEAT_MODE_OFF // VM controls loop via playlist logic
+        }
+    }
+
+    // Add listener to detect video end
+    DisposableEffect(exoPlayer, onVideoEnded) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) {
+                    android.util.Log.d("VideoPlayer", "Video ended, signaling ViewModel")
+                    onVideoEnded()
+                }
+            }
+        }
+        exoPlayer.addListener(listener)
+        onDispose {
+            exoPlayer.removeListener(listener)
         }
     }
 
