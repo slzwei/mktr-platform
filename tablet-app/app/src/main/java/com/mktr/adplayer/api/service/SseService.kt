@@ -36,7 +36,12 @@ class SseService @Inject constructor(
     }
 
     fun start(key: String, onMessage: (type: String, data: String) -> Unit) {
-        if (isConnected && deviceKey == key) return
+        Log.i("SseService", ">>> start() called with key: ${key.take(8)}... | isConnected=$isConnected | deviceKey=${deviceKey?.take(8) ?: "null"}")
+        
+        if (isConnected && deviceKey == key) {
+            Log.d("SseService", "Already connected with same key - skipping")
+            return
+        }
         
         Log.d("SseService", "Starting SSE connection...")
         deviceKey = key
@@ -54,7 +59,12 @@ class SseService @Inject constructor(
     }
 
     private fun connect() {
-        if (deviceKey == null) return
+        if (deviceKey == null) {
+            Log.e("SseService", "connect() called but deviceKey is null!")
+            return
+        }
+
+        Log.i("SseService", ">>> connect() - URL: $BASE_URL | Key: ${deviceKey?.take(8)}...")
 
         val request = Request.Builder()
             .url(BASE_URL)
@@ -66,28 +76,30 @@ class SseService @Inject constructor(
         
         eventSource = factory.newEventSource(request, object : EventSourceListener() {
             override fun onOpen(eventSource: EventSource, response: Response) {
-                Log.d("SseService", "SSE Connected")
+                Log.i("SseService", ">>> SSE CONNECTED! Response: ${response.code}")
                 isConnected = true
                 reconnectAttempts = 0
                 // Force refresh on any new connection (covers app start and reconnection)
+                Log.d("SseService", "Invoking CONNECTED callback...")
                 onMessageCallback?.invoke("CONNECTED", "{}")
             }
 
             override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
-                Log.d("SseService", "Received SSE Event: $type")
+                Log.i("SseService", ">>> SSE EVENT RECEIVED: type=$type")
                 if (type != null) {
+                    Log.d("SseService", "Invoking callback with type=$type")
                     onMessageCallback?.invoke(type, data)
                 }
             }
 
             override fun onClosed(eventSource: EventSource) {
-                Log.d("SseService", "SSE Closed")
+                Log.w("SseService", ">>> SSE CLOSED")
                 isConnected = false
                 scheduleReconnect()
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                Log.e("SseService", "SSE Failure: ${t?.message}")
+                Log.e("SseService", ">>> SSE FAILURE: ${t?.message} | Response: ${response?.code}")
                 isConnected = false
                 scheduleReconnect()
             }
