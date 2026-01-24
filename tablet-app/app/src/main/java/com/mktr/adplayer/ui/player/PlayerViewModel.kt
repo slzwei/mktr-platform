@@ -93,10 +93,14 @@ class PlayerViewModel @Inject constructor(
         updateJob?.cancel()
         
         updateJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val startTime = System.currentTimeMillis()
             _isDownloading.value = true // Start Indicator
-            // 1. Show loading ONLY if we strictly have nothing to play
+            
+            // 1. Show loading ONLY if we strictly have nothing to play (Cold Start)
             if (currentPlaylist.isEmpty()) {
                 _playerState.value = PlayerState.Initializing
+            } else {
+                Log.d("PlayerVM", "Hot-Swap started. Spinner should be visible now.")
             }
 
             // 2. DOWNLOAD PHASE (Background)
@@ -117,6 +121,12 @@ class PlayerViewModel @Inject constructor(
                 Log.e("PlayerVM", "Download Error", e)
                 _isDownloading.value = false
                 return@launch // Stay on old playlist
+            }
+
+            // [VISUAL FEEDBACK] Enforce minimum spinner duration (2s) so user sees the update happening
+            val elapsed = System.currentTimeMillis() - startTime
+            if (elapsed < 2000) {
+                delay(2000 - elapsed)
             }
 
             // 3. SWITCH PHASE (Main Thread)
