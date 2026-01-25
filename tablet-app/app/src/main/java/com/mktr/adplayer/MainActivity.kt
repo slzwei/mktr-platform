@@ -176,6 +176,37 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
         }
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var hasPermissions by remember {
+        mutableStateOf(checkPermissions(context))
+    }
+    
+    // Check again on resume
+    DisposableEffect(Unit) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                 hasPermissions = checkPermissions(context)
+             }
+        }
+        (context as? androidx.lifecycle.LifecycleOwner)?.lifecycle?.addObserver(observer)
+        onDispose { (context as? androidx.lifecycle.LifecycleOwner)?.lifecycle?.removeObserver(observer) }
+    }
+
+    if (!hasPermissions) {
+        PermissionScreen(
+            onGrantClick = { 
+                (context as? android.app.Activity)?.let { activity ->
+                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = android.net.Uri.fromParts("package", context.packageName, null)
+                    }
+                    context.startActivity(intent)
+                }
+            },
+            onCheckAgain = { hasPermissions = checkPermissions(context) }
+        )
+        return
+    }
+
     when (val s = state) {
         is UiState.Loading -> {
              Box(contentAlignment = Alignment.Center) {
@@ -196,7 +227,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 onRefresh = { viewModel.fetchManifest() },
                 onReset = { viewModel.clearKey() },
                 onPlay = { showPlayer = true }
-            )
+             )
         }
         is UiState.Error -> {
             ErrorScreen(
@@ -204,6 +235,45 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 onRetry = { viewModel.fetchManifest() },
                 onReset = { viewModel.clearKey() }
             )
+        }
+    }
+}
+
+fun checkPermissions(context: android.content.Context): Boolean {
+    val location = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    
+    val nearby = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.NEARBY_WIFI_DEVICES) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    } else {
+        true
+    }
+    
+    return location && nearby
+}
+
+@Composable
+fun PermissionScreen(onGrantClick: () -> Unit, onCheckAgain: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("Permissions Required", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.error)
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            "To pair this tablet and use vehicle features, you must grant the following permissions:\n\n" +
+            "• Location (Set to 'Allow all the time' or 'Allow while using app')\n" +
+            "• Nearby Devices (For vehicle hotspot)",
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(32.dp))
+        Button(onClick = onGrantClick) {
+            Text("Open Settings")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedButton(onClick = onCheckAgain) {
+            Text("I have granted them")
         }
     }
 }
