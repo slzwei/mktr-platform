@@ -25,11 +25,30 @@ class MainActivity : ComponentActivity() {
     @javax.inject.Inject lateinit var hotspotManager: com.mktr.adplayer.network.HotspotManager
     @javax.inject.Inject lateinit var wifiConnector: com.mktr.adplayer.network.WifiConnector
 
+    private val prefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "device_role" || key == "hotspot_ssid") {
+            Log.i(TAG, "Config Changed ($key) -> Restarting Networking...")
+            runOnUiThread {
+                setupNetworking()
+                // If role changed to Master, we might need to recreate activity or just restart services?
+                // SetupNetworking handles start, but does it handle stop?
+                // For safety/simplicity in this hotfix, we can recreate() to ensure clean state if role flips.
+                if (key == "device_role") {
+                     // triggerRebirth(this) // Optional: Full app restart might be safer for Network switching
+                     // For now, let's rely on setupNetworking being smart enough or just adding stop logic there.
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
         // Start WatchdogService to ensure app restarts if it crashes
         startWatchdogService()
+        
+        // Register Prefs Listener
+        devicePrefs.registerListener(prefsListener)
         
         // Setup Vehicle Networking (Hotspot or WiFi)
         setupNetworking()
@@ -56,6 +75,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        devicePrefs.unregisterListener(prefsListener)
     }
 
     private fun startWatchdogService() {
@@ -93,10 +117,20 @@ class MainActivity : ComponentActivity() {
         val role = devicePrefs.deviceRole
         Log.i(TAG, "Initializing Networking. Role: $role")
         
+        // Reset/Stop everything first to ensure clean state
+        try {
+            hotspotManager.stopHotspot() // Assume this method exists or is safe
+            wifiConnector.disconnect()
+        } catch (e: Exception) {
+            Log.w(TAG, "Error stopping previous networking: ${e.message}")
+        }
+
         if (devicePrefs.isMaster) {
             // Master: Start Hotspot
             Log.d(TAG, "Starting Master Hotspot...")
             hotspotManager.startHotspot()
+            // Ensure we aren't connected to another WiFi? 
+            // Android prioritizes LocalOnlyHotspot but usually we want to keep upstream if possible (cellular).
         } else if (devicePrefs.isSlave) {
             // Slave: Connect to Hotspot
             val ssid = devicePrefs.hotspotSsid

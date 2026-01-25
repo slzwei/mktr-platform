@@ -9,7 +9,16 @@ data class ManifestResponse(
     @SerialName("device_id") val deviceId: String,
     @SerialName("refresh_seconds") val refreshSeconds: Long = 300,
     val assets: List<Asset> = emptyList(),
-    val playlist: List<PlaylistItem> = emptyList()
+    val playlist: List<PlaylistItem> = emptyList(),
+    val role: String = "standalone", // master, slave, standalone
+    @SerialName("vehicle_id") val vehicleId: String? = null,
+    @SerialName("vehicle_wifi") val vehicleWifi: WifiCredentials? = null
+)
+
+@Serializable
+data class WifiCredentials(
+    val ssid: String? = null,
+    val password: String? = null
 )
 
 @Serializable

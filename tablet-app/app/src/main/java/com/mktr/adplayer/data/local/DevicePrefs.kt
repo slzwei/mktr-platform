@@ -12,6 +12,14 @@ class DevicePrefs @Inject constructor(
 ) {
     private val prefs: SharedPreferences = context.getSharedPreferences("adplayer_prefs", Context.MODE_PRIVATE)
 
+    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun unregisterListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
+    }
+
     var deviceKey: String?
         get() = prefs.getString(KEY_DEVICE_KEY, null)
         set(value) = prefs.edit().putString(KEY_DEVICE_KEY, value).apply()

@@ -109,6 +109,17 @@ class MainViewModel @Inject constructor(
             result.onSuccess { manifest ->
                 if (manifest != null) {
                     android.util.Log.i("MainVM", "Manifest Updated! v${manifest.version} with ${manifest.playlist.size} items")
+                    
+                    // [SYNC] Update Device Configuration (Role & WiFi)
+                    devicePrefs.role = manifest.role
+                    devicePrefs.vehicleId = manifest.vehicleId
+                    manifest.vehicleWifi?.let {
+                        devicePrefs.hotspotSsid = it.ssid
+                        devicePrefs.hotspotPassword = it.password
+                    }
+                    
+                    android.util.Log.i("MainVM", "Config Updated -> Role: ${manifest.role}, Vehicle: ${manifest.vehicleId}")
+
                     _uiState.value = UiState.Connected(manifest, "Manifest Loaded (v${manifest.version})")
                 } else {
                     // 304 Not Modified
