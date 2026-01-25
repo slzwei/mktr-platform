@@ -111,7 +111,7 @@ class MainViewModel @Inject constructor(
                     android.util.Log.i("MainVM", "Manifest Updated! v${manifest.version} with ${manifest.playlist.size} items")
                     
                     // [SYNC] Update Device Configuration (Role & WiFi)
-                    devicePrefs.role = manifest.role
+                    devicePrefs.deviceRole = manifest.role
                     devicePrefs.vehicleId = manifest.vehicleId
                     manifest.vehicleWifi?.let {
                         devicePrefs.hotspotSsid = it.ssid
