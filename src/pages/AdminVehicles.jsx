@@ -60,9 +60,8 @@ export default function AdminVehicles() {
             const [vehiclesRes, devicesRes, campaignsRes] = await Promise.all([
                 api.get('/vehicles'),
                 api.get('/devices'),
-                api.get('/campaigns')
+                api.get('/campaigns?limit=100')
             ]);
-
             setVehicles(vehiclesRes.data?.data || vehiclesRes.data || []);
 
             // Filter unpaired devices
@@ -73,16 +72,19 @@ export default function AdminVehicles() {
                 devicesList = devicesRes.data.data;
             }
             setDevices(devicesList);
-
-            // Get PHV campaigns
+            // Get PHV campaigns - INCREASE LIMIT to ensure visualization
             let campaignsList = [];
-            if (campaignsRes.data?.data?.campaigns && Array.isArray(campaignsRes.data.data.campaigns)) {
-                campaignsList = campaignsRes.data.data.campaigns;
-            } else if (Array.isArray(campaignsRes.data?.data)) {
-                campaignsList = campaignsRes.data.data;
+            // API returns { data: { campaigns: [], pagination: {} } }
+            // client.js returns the body directly, so campaignsRes IS the body
+            console.log('Campaigns Response:', campaignsRes);
+
+            if (campaignsRes.data?.campaigns && Array.isArray(campaignsRes.data.campaigns)) {
+                campaignsList = campaignsRes.data.campaigns;
             } else if (Array.isArray(campaignsRes.data)) {
                 campaignsList = campaignsRes.data;
             }
+
+            console.log('Extracted Campaigns List:', campaignsList);
             setCampaigns(campaignsList.filter(c => ['brand_awareness', 'lead_generation', 'video_ad'].includes(c.type) || !c.type));
         } catch (err) {
             console.error('Failed to load data:', err);
