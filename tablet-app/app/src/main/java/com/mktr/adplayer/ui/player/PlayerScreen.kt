@@ -38,6 +38,12 @@ fun PlayerOrchestrator(
         viewModel.startPlaylist(manifest)
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.stopPlayback()
+        }
+    }
+
     val state by viewModel.playerState.collectAsState()
     val isDownloading by viewModel.isDownloading.collectAsState()
 
