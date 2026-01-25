@@ -26,6 +26,7 @@ import ShortLinkClick from './ShortLinkClick.js';
 import RoundRobinCursor from './RoundRobinCursor.js';
 import Verification from './Verification.js';
 import ProvisioningSession from './ProvisioningSession.js'; // Added
+import Vehicle from './Vehicle.js'; // Added for tablet pairing
 
 
 // Define associations
@@ -114,6 +115,11 @@ const defineAssociations = () => {
   ShortLink.hasMany(ShortLinkClick, { foreignKey: 'shortLinkId', as: 'clicks' });
   ShortLinkClick.belongsTo(ShortLink, { foreignKey: 'shortLinkId', as: 'shortLink' });
   // RoundRobinCursor has implicit relation to Campaign via campaignId
+
+  // Vehicle associations
+  Vehicle.belongsTo(Device, { foreignKey: 'masterDeviceId', as: 'masterDevice' });
+  Vehicle.belongsTo(Device, { foreignKey: 'slaveDeviceId', as: 'slaveDevice' });
+  Device.belongsTo(Vehicle, { foreignKey: 'vehicleId', as: 'vehicle' });
 };
 
 // Initialize associations
@@ -146,7 +152,8 @@ export {
   ShortLinkClick,
   RoundRobinCursor,
   Verification,
-  ProvisioningSession // Added
+  ProvisioningSession, // Added
+  Vehicle // Added for tablet pairing
 };
 
 
@@ -177,6 +184,7 @@ export default {
   ShortLinkClick,
   RoundRobinCursor,
   Verification,
-  ProvisioningSession // Added
+  ProvisioningSession, // Added
+  Vehicle // Added for tablet pairing
 };
 

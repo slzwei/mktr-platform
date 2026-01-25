@@ -21,11 +21,18 @@ import com.mktr.adplayer.worker.WatchdogService
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    @javax.inject.Inject lateinit var devicePrefs: com.mktr.adplayer.data.local.DevicePrefs
+    @javax.inject.Inject lateinit var hotspotManager: com.mktr.adplayer.network.HotspotManager
+    @javax.inject.Inject lateinit var wifiConnector: com.mktr.adplayer.network.WifiConnector
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
         // Start WatchdogService to ensure app restarts if it crashes
         startWatchdogService()
+        
+        // Setup Vehicle Networking (Hotspot or WiFi)
+        setupNetworking()
         
         // Hide System Bars (Immersive Sticky Mode)
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -79,6 +86,28 @@ class MainActivity : ComponentActivity() {
             )
         } else {
             Log.d(TAG, "Location permission already granted")
+        }
+    }
+
+    private fun setupNetworking() {
+        val role = devicePrefs.deviceRole
+        Log.i(TAG, "Initializing Networking. Role: $role")
+        
+        if (devicePrefs.isMaster) {
+            // Master: Start Hotspot
+            Log.d(TAG, "Starting Master Hotspot...")
+            hotspotManager.startHotspot()
+        } else if (devicePrefs.isSlave) {
+            // Slave: Connect to Hotspot
+            val ssid = devicePrefs.hotspotSsid
+            val password = devicePrefs.hotspotPassword
+            
+            if (!ssid.isNullOrEmpty() && !password.isNullOrEmpty()) {
+                Log.d(TAG, "Connecting to Master Hotspot: $ssid")
+                wifiConnector.connectToHotspot(ssid, password)
+            } else {
+                Log.w(TAG, "Slave mode but no hotspot credentials found.")
+            }
         }
     }
 

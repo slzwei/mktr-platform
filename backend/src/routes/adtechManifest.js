@@ -146,11 +146,26 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
 
   // Logic to fetch multiple campaigns
   let assignedCampaigns = [];
-  const campaignIds = device.campaignIds || []; // JSON array of UUIDs
+  let campaignIds = device.campaignIds || []; // JSON array of UUIDs
 
   // Backward compatibility: If campaignIds is empty but legacy campaignId exists
   if (campaignIds.length === 0 && device.campaignId) {
     campaignIds.push(device.campaignId);
+  }
+
+  // Vehicle-level campaign inheritance (for paired devices)
+  // If device is paired to a vehicle, use vehicle's campaigns instead
+  if (device.vehicleId && campaignIds.length === 0) {
+    try {
+      const { Vehicle } = await import('../models/index.js');
+      const vehicle = await Vehicle.findByPk(device.vehicleId);
+      if (vehicle && vehicle.campaignIds && vehicle.campaignIds.length > 0) {
+        campaignIds = vehicle.campaignIds;
+        console.log(`[Manifest] Using vehicle ${vehicle.carplate} campaigns for device ${device.id}`);
+      }
+    } catch (e) {
+      console.error('[Manifest] Failed to load vehicle campaigns:', e);
+    }
   }
 
   if (campaignIds.length > 0) {

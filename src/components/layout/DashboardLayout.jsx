@@ -87,6 +87,11 @@ const getNavigationItems = (user) => {
       icon: Settings
     },
     {
+      title: "Vehicle Fleet",
+      url: createPageUrl("AdminVehicles"),
+      icon: Car
+    },
+    {
       title: "Fleet Map",
       url: createPageUrl("AdminFleetMap"),
       icon: Car

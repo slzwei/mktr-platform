@@ -58,6 +58,17 @@ Device.init({
   locationUpdatedAt: {
     type: DataTypes.DATE,
     allowNull: true
+  },
+  // Vehicle Pairing
+  vehicleId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: { model: 'vehicles', key: 'id' }
+  },
+  role: {
+    type: DataTypes.ENUM('master', 'slave'),
+    allowNull: true,
+    defaultValue: null
   }
 }, {
   sequelize,

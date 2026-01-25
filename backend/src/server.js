@@ -41,6 +41,7 @@ import shortLinkRoutes from './routes/shortlinks.js';
 import leadPackageRoutes from './routes/leadPackages.js';
 import deviceRoutes from './routes/devices.js';
 import provisioningRoutes from './routes/provisioning.js'; // Added
+import vehicleRoutes from './routes/vehicles.js'; // Added for tablet pairing
 import { validateGoogleOAuthConfig } from './controllers/authController.js';
 
 import { optionalAuth } from './middleware/auth.js';
@@ -170,6 +171,7 @@ app.use('/api/lead-packages', leadPackageRoutes);
 app.use('/api/devices/events', deviceEventsRouter);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/provision', provisioningRoutes); // Added
+app.use('/api/vehicles', vehicleRoutes); // Added for tablet pairing
 
 
 // Phase C: Adtech Manifest + Beacons (behind flags)

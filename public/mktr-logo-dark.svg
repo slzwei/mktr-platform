@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 80" width="200" height="80">
+  <!-- Dark background version - for light backgrounds -->
+  <rect x="4" y="4" width="192" height="72" rx="24" ry="24" fill="none" stroke="#111827" stroke-width="4"/>
+  <text x="100" y="52" 
+        font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" 
+        font-size="42" 
+        font-weight="900" 
+        fill="#111827" 
+        text-anchor="middle">
+    MKTR
+  </text>
+</svg>

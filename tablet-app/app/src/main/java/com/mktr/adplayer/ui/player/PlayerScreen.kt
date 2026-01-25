@@ -53,7 +53,7 @@ fun PlayerOrchestrator(
                 }
             }
             is PlayerState.Playing -> {
-                PlayerContent(state = s, onVideoEnded = viewModel::onVideoEnded)
+                PlayerContent(state = s)
             }
             is PlayerState.Error -> {
                 Box(Modifier.fillMaxSize().background(Color.Red), contentAlignment = Alignment.Center) {
@@ -90,10 +90,10 @@ fun PlayerOrchestrator(
 }
 
 @Composable
-fun PlayerContent(state: PlayerState.Playing, onVideoEnded: () -> Unit = {}) {
+fun PlayerContent(state: PlayerState.Playing) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (state.item.type == "video") {
-            VideoPlayer(uri = state.fileUri, playId = state.playId, onVideoEnded = onVideoEnded)
+            VideoPlayer(uri = state.fileUri, playId = state.playId)
         } else {
             ImagePlayer(uri = state.fileUri)
         }
@@ -123,46 +123,21 @@ fun ImagePlayer(uri: Uri) {
 
 @kotlin.OptIn(UnstableApi::class)
 @Composable
-fun VideoPlayer(uri: Uri, playId: Long, onVideoEnded: () -> Unit = {}) {
+fun VideoPlayer(uri: Uri, playId: Long) {
     val context = LocalContext.current
     
-    // Remember ExoPlayer instance to survive recompositions but NOT config changes (VM handles that usually, 
-    // but here we want simple lifecycle). Dispose on exit.
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            playWhenReady = true
-            repeatMode = Player.REPEAT_MODE_OFF // VM controls loop via playlist logic
-        }
-    }
+    // Use the Shared Player from ViewModel (accessed via Hilt/Parent)
+    val viewModel: PlayerViewModel = hiltViewModel() 
+    val exoPlayer = viewModel.exoPlayer
 
-    // Add listener to detect video end
-    DisposableEffect(exoPlayer, onVideoEnded) {
-        val listener = object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_ENDED) {
-                    android.util.Log.d("VideoPlayer", "Video ended, signaling ViewModel")
-                    onVideoEnded()
-                }
-            }
-        }
-        exoPlayer.addListener(listener)
-        onDispose {
-            exoPlayer.removeListener(listener)
-        }
-    }
-
-    // Update media item when URI or playId changes
+    // Setup Media Item
     LaunchedEffect(uri, playId) {
         val mediaItem = MediaItem.fromUri(uri)
-        exoPlayer.setMediaItem(mediaItem)
-        exoPlayer.prepare()
-        exoPlayer.play()
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            exoPlayer.release()
+        if (exoPlayer.currentMediaItem?.localConfiguration?.uri != uri) {
+            exoPlayer.setMediaItem(mediaItem)
+            exoPlayer.prepare()
         }
+        exoPlayer.play()
     }
 
     AndroidView(
