@@ -377,7 +377,7 @@ fun DashboardScreen(
                         true // Not applicable
                     }
                     
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
                     Text("Permissions:", style = MaterialTheme.typography.labelLarge)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                          Text("Location: ", style = MaterialTheme.typography.bodyMedium)
