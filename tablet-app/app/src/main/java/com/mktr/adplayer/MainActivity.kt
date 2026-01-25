@@ -367,6 +367,30 @@ fun DashboardScreen(
                     Text("Playlist: ${manifest.playlist.size} items")
                     
                     Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Permission Status
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val locGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    val nearbyGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.NEARBY_WIFI_DEVICES) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    } else {
+                        true // Not applicable
+                    }
+                    
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Permissions:", style = MaterialTheme.typography.labelLarge)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                         Text("Location: ", style = MaterialTheme.typography.bodyMedium)
+                         Text(if (locGranted) "GRANTED" else "MISSING", color = if (locGranted) androidx.compose.ui.graphics.Color(0xFF4CAF50) else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                             Text("Nearby Devices: ", style = MaterialTheme.typography.bodyMedium)
+                             Text(if (nearbyGranted) "GRANTED" else "MISSING", color = if (nearbyGranted) androidx.compose.ui.graphics.Color(0xFF4CAF50) else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = onPlay,
                         modifier = Modifier.fillMaxWidth(),
