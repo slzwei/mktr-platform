@@ -110,15 +110,8 @@ class MainViewModel @Inject constructor(
                 if (manifest != null) {
                     android.util.Log.i("MainVM", "Manifest Updated! v${manifest.version} with ${manifest.playlist.size} items")
                     
-                    // [SYNC] Update Device Configuration (Role & WiFi)
-                    devicePrefs.deviceRole = manifest.role
-                    devicePrefs.vehicleId = manifest.vehicleId
-                    manifest.vehicleWifi?.let {
-                        devicePrefs.hotspotSsid = it.ssid
-                        devicePrefs.hotspotPassword = it.password
-                    }
-                    
-                    android.util.Log.i("MainVM", "Config Updated -> Role: ${manifest.role}, Vehicle: ${manifest.vehicleId}")
+                    // [SYNC] Config Updated (Role/Hotspot logic removed for Virtual Sync)
+                    // We only care about the playlist content now.
 
                     _uiState.value = UiState.Connected(manifest, "Manifest Loaded (v${manifest.version})")
                 } else {

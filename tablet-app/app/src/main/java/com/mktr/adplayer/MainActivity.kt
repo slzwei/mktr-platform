@@ -22,23 +22,10 @@ import com.mktr.adplayer.worker.WatchdogService
 class MainActivity : ComponentActivity() {
 
     @javax.inject.Inject lateinit var devicePrefs: com.mktr.adplayer.data.local.DevicePrefs
-    @javax.inject.Inject lateinit var hotspotManager: com.mktr.adplayer.network.HotspotManager
-    @javax.inject.Inject lateinit var wifiConnector: com.mktr.adplayer.network.WifiConnector
 
+    // Prefs listener not needed for networking anymore as we are stateless
     private val prefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "device_role" || key == "hotspot_ssid") {
-            Log.i(TAG, "Config Changed ($key) -> Restarting Networking...")
-            runOnUiThread {
-                setupNetworking()
-                // If role changed to Master, we might need to recreate activity or just restart services?
-                // SetupNetworking handles start, but does it handle stop?
-                // For safety/simplicity in this hotfix, we can recreate() to ensure clean state if role flips.
-                if (key == "device_role") {
-                     // triggerRebirth(this) // Optional: Full app restart might be safer for Network switching
-                     // For now, let's rely on setupNetworking being smart enough or just adding stop logic there.
-                }
-            }
-        }
+        // No-op for now
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,9 +37,6 @@ class MainActivity : ComponentActivity() {
         // Register Prefs Listener
         devicePrefs.registerListener(prefsListener)
         
-        // Setup Vehicle Networking (Hotspot or WiFi)
-        setupNetworking()
-        
         // Hide System Bars (Immersive Sticky Mode)
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
@@ -62,10 +46,7 @@ class MainActivity : ComponentActivity() {
         // Keep Screen On
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         
-        // Kiosk Mode: Attempt to lock task (requires Device Owner or Screen Pinning)
-        // REMOVED: startLockTask() calls to allow standard navigation.
-
-        // Auto-request Permissions (Location, Nearby Devices)
+        // Auto-request Permissions (Location only)
         requestAllPermissions()
 
         setContent {
@@ -99,17 +80,12 @@ class MainActivity : ComponentActivity() {
     private fun requestAllPermissions() {
         val permissions = mutableListOf<String>()
         
-        // Location (Always required for WiFi scanning/Hotspot legacy)
+        // Location (Required for Geo features)
         if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             permissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
         }
         
-        // Nearby Devices (Android 13+ required for Hotspot/P2P)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.NEARBY_WIFI_DEVICES) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                permissions.add(android.Manifest.permission.NEARBY_WIFI_DEVICES)
-            }
-        }
+        // Nearby Devices REMOVED (No longer needed for Hotspot)
 
         if (permissions.isNotEmpty()) {
             Log.d(TAG, "Requesting permissions: $permissions")
@@ -120,38 +96,6 @@ class MainActivity : ComponentActivity() {
             )
         } else {
             Log.d(TAG, "All required permissions already granted")
-        }
-    }
-
-    private fun setupNetworking() {
-        val role = devicePrefs.deviceRole
-        Log.i(TAG, "Initializing Networking. Role: $role")
-        
-        // Reset/Stop everything first to ensure clean state
-        try {
-            hotspotManager.stopHotspot() // Assume this method exists or is safe
-            wifiConnector.disconnect()
-        } catch (e: Exception) {
-            Log.w(TAG, "Error stopping previous networking: ${e.message}")
-        }
-
-        if (devicePrefs.isMaster) {
-            // Master: Start Hotspot
-            Log.d(TAG, "Starting Master Hotspot...")
-            hotspotManager.startHotspot()
-            // Ensure we aren't connected to another WiFi? 
-            // Android prioritizes LocalOnlyHotspot but usually we want to keep upstream if possible (cellular).
-        } else if (devicePrefs.isSlave) {
-            // Slave: Connect to Hotspot
-            val ssid = devicePrefs.hotspotSsid
-            val password = devicePrefs.hotspotPassword
-            
-            if (!ssid.isNullOrEmpty() && !password.isNullOrEmpty()) {
-                Log.d(TAG, "Connecting to Master Hotspot: $ssid")
-                wifiConnector.connectToHotspot(ssid, password)
-            } else {
-                Log.w(TAG, "Slave mode but no hotspot credentials found.")
-            }
         }
     }
 
@@ -241,14 +185,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
 
 fun checkPermissions(context: android.content.Context): Boolean {
     val location = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
-    
-    val nearby = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.NEARBY_WIFI_DEVICES) == android.content.pm.PackageManager.PERMISSION_GRANTED
-    } else {
-        true
-    }
-    
-    return location && nearby
+    return location
 }
 
 @Composable
@@ -262,8 +199,7 @@ fun PermissionScreen(onGrantClick: () -> Unit, onCheckAgain: () -> Unit) {
         Spacer(modifier = Modifier.height(24.dp))
         Text(
             "To pair this tablet and use vehicle features, you must grant the following permissions:\n\n" +
-            "• Location (Set to 'Allow all the time' or 'Allow while using app')\n" +
-            "• Nearby Devices (For vehicle hotspot)",
+            "• Location (Set to 'Allow all the time' or 'Allow while using app')",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
@@ -371,23 +307,12 @@ fun DashboardScreen(
                     // Permission Status
                     val context = androidx.compose.ui.platform.LocalContext.current
                     val locGranted = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    val nearbyGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.NEARBY_WIFI_DEVICES) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    } else {
-                        true // Not applicable
-                    }
                     
                     Divider(modifier = Modifier.padding(vertical = 8.dp))
                     Text("Permissions:", style = MaterialTheme.typography.labelLarge)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                          Text("Location: ", style = MaterialTheme.typography.bodyMedium)
                          Text(if (locGranted) "GRANTED" else "MISSING", color = if (locGranted) androidx.compose.ui.graphics.Color(0xFF4CAF50) else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                             Text("Nearby Devices: ", style = MaterialTheme.typography.bodyMedium)
-                             Text(if (nearbyGranted) "GRANTED" else "MISSING", color = if (nearbyGranted) androidx.compose.ui.graphics.Color(0xFF4CAF50) else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                        }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))

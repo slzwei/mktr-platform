@@ -35,7 +35,7 @@ class PlayerViewModel @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val assetManager: AssetManager,
     private val impressionManager: com.mktr.adplayer.data.manager.ImpressionManager,
-    private val playbackSynchronizer: com.mktr.adplayer.sync.PlaybackSynchronizer,
+    private val wallClockSynchronizer: com.mktr.adplayer.sync.WallClockSynchronizer,
     private val devicePrefs: com.mktr.adplayer.data.local.DevicePrefs
 ) : ViewModel(), androidx.lifecycle.LifecycleEventObserver {
 
@@ -72,7 +72,6 @@ class PlayerViewModel @Inject constructor(
         super.onCleared()
         androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
         stopPlaybackLoop()
-        playbackSynchronizer.stop()
         exoPlayer.release()
     }
 
@@ -82,29 +81,22 @@ class PlayerViewModel @Inject constructor(
     private val _isDownloading = MutableStateFlow(false)
     val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
 
-    // Signal from UI when video playback completes (Now handled via ExoPlayer listener internally)
-    // We keep this for external signaling if needed, but primary logic moves to loop
-    
     private var currentPlaylist: List<PlaylistItem> = emptyList()
     private var assetsMap: Map<String, com.mktr.adplayer.api.model.Asset> = emptyMap()
-    private var currentIndex = 0
+    // currentIndex is now derived from WallClock, but we keep track of what we are currently *playing* to detect changes
+    private var activeMediaIndex = -1
+    private var playlistVersion = ""
 
     private var playbackJob: kotlinx.coroutines.Job? = null
 
     init {
         // Observe Process Lifecycle for Foreground/Background detection
         androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(this)
-        
-        // Initialize Synchronizer
-        playbackSynchronizer.initialize(devicePrefs.deviceRole, exoPlayer)
     }
 
     private var updateJob: kotlinx.coroutines.Job? = null
 
     fun startPlaylist(manifest: ManifestResponse) {
-        // Update Sync Version
-        playbackSynchronizer.updatePlaylistVersion(manifest.version.toString())
-        
         // Cancel any pending update (Race Condition #1)
         updateJob?.cancel()
         
@@ -155,7 +147,8 @@ class PlayerViewModel @Inject constructor(
                 
                 currentPlaylist = manifest.playlist
                 assetsMap = manifest.assets.associateBy { it.id }
-                currentIndex = 0 // Reset index
+                playlistVersion = manifest.version.toString()
+                activeMediaIndex = -1 // Force refresh
                 
                 // Restart Loop with new content
                 startPlaybackLoop() 
@@ -193,108 +186,113 @@ class PlayerViewModel @Inject constructor(
         playbackJob?.cancel()
         playbackJob = viewModelScope.launch {
             try {
-                // [FIX] Double-check permission inside the coroutine before starting
                 if (!isPlaybackAllowed) {
                      Log.w("PlayerVM", "Playback blocked because isPlaybackAllowed=false")
                      updateStatus("idle")
                      return@launch
                 }
 
-                _playerState.value = PlayerState.Initializing
                 updateStatus("playing")
                 
+                // Sync Loop (10Hz)
                 while (isActive) {
-                    val item = currentPlaylist.getOrNull(currentIndex)
+                    val syncState = wallClockSynchronizer.getTargetState(currentPlaylist, playlistVersion)
+                    val targetIndex = syncState.mediaIndex
+                    val targetPos = syncState.seekPositionMs
+                    
+                    val item = currentPlaylist.getOrNull(targetIndex)
                     if (item == null) {
-                        currentIndex = 0
+                        delay(100)
                         continue
                     }
 
                     val asset = assetsMap[item.assetId]
                     val isVideo = item.type == "video"
-
-                    if (asset != null) {
-                        try {
-                            val file = assetManager.getAssetFile(asset)
-                            if (file.exists()) {
-                                 _playerState.value = PlayerState.Playing(
-                                    item = item,
-                                    fileUri = Uri.fromFile(file),
-                                    index = currentIndex,
-                                    total = currentPlaylist.size
-                                )
-
-                                // Track Impression
-                                impressionManager.trackImpression(
-                                    adId = item.assetId,
-                                    campaignId = item.campaignId,
-                                    mediaType = item.type,
-                                    durationMs = if (isVideo) item.durationMs else 10000L
-                                )
-
-                                // Trigger Upload
-                                try {
-                                    val uploadRequest = androidx.work.OneTimeWorkRequestBuilder<com.mktr.adplayer.worker.ImpressionWorker>().build()
-                                    androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
-                                        "ImpressionWorker",
-                                        androidx.work.ExistingWorkPolicy.REPLACE,
-                                        uploadRequest
-                                    )
-                                } catch (e: Exception) { Log.e("PlayerVM", "Worker failed", e) }
-
-                                if (isVideo) {
-                                    // Prepare Video in ExoPlayer
-                                    val mediaItem = androidx.media3.common.MediaItem.fromUri(Uri.fromFile(file))
-                                    exoPlayer.setMediaItem(mediaItem)
-                                    exoPlayer.prepare()
-                                    exoPlayer.play()
-                                    
-                                    Log.d("PlayerVM", "Playing VIDEO: ${item.assetId}")
-                                    
-                                    // Wait for completion
-                                    var videoEnded = false
-                                    val listener = object : androidx.media3.common.Player.Listener {
-                                        override fun onPlaybackStateChanged(state: Int) {
-                                            if (state == androidx.media3.common.Player.STATE_ENDED) {
-                                                videoEnded = true
-                                            }
-                                        }
-                                    }
-                                    exoPlayer.addListener(listener)
-                                    
-                                    // Wait loop
-                                    while (!videoEnded && isActive && exoPlayer.playbackState != androidx.media3.common.Player.STATE_ENDED) {
-                                        delay(200)
-                                    }
-                                    exoPlayer.removeListener(listener)
-                                    
-                                    currentIndex = (currentIndex + 1) % currentPlaylist.size
-                                } else {
-                                    // For images: Still using Image composable, but maybe we should pause ExoPlayer?
-                                    exoPlayer.stop() 
-                                    Log.d("PlayerVM", "Playing IMAGE for 10s")
-                                    delay(10_000L)
-                                    currentIndex = (currentIndex + 1) % currentPlaylist.size
-                                }
-                            } else {
-                                Log.e("PlayerVM", "File missing: ${file.absolutePath}")
-                                delay(2000)
-                                currentIndex = (currentIndex + 1) % currentPlaylist.size
-                            }
-                        } catch (e: Exception) {
-                            Log.e("PlayerVM", "Error playback", e)
-                            delay(2000)
-                        }
-                    } else {
-                         delay(2000)
-                         currentIndex = (currentIndex + 1) % currentPlaylist.size
+                    
+                    if (asset == null) {
+                         // Missing asset, skip? Or wait? 
+                         // WallClock says we SHOULD be here. If we skip, we are ahead of time.
+                         // Just show error/loading placeholder for this segment.
+                         delay(100)
+                         continue
                     }
+
+                    val file = assetManager.getAssetFile(asset)
+                    if (!file.exists()) {
+                         delay(100)
+                         continue
+                    }
+
+                    // CHECK: Do we need to switch media?
+                    if (activeMediaIndex != targetIndex) {
+                        Log.i("PlayerVM", "Sync: Switching to Item #$targetIndex (${item.type}) at ${targetPos}ms")
+                        
+                        // Update UI State
+                        _playerState.value = PlayerState.Playing(
+                            item = item,
+                            fileUri = Uri.fromFile(file),
+                            index = targetIndex,
+                            total = currentPlaylist.size
+                        )
+                        
+                        // Handle Media Switch
+                        if (isVideo) {
+                            val mediaItem = androidx.media3.common.MediaItem.fromUri(Uri.fromFile(file))
+                            exoPlayer.setMediaItem(mediaItem)
+                            exoPlayer.prepare()
+                            exoPlayer.seekTo(targetPos) // Seek to wall-clock offset
+                            exoPlayer.play()
+                        } else {
+                            exoPlayer.stop() // Stop video player for images
+                        }
+                        
+                        activeMediaIndex = targetIndex
+                        
+                        // Track Impression (On Start)
+                        trackImpression(item)
+
+                    } else {
+                        // WE ARE ON THE SAME ITEM.
+                        // CHECK: Do we need to correct drift (Video only)?
+                        if (isVideo && exoPlayer.isPlaying) {
+                            val currentPos = exoPlayer.currentPosition
+                            val drift = kotlin.math.abs(currentPos - targetPos)
+                            
+                            // Tolerance: 2 seconds (Generous to prevent stuttering)
+                            if (drift > 2000) {
+                                Log.w("PlayerVM", "Sync: Drift detected (${drift}ms). Seek to ${targetPos}ms")
+                                exoPlayer.seekTo(targetPos)
+                            }
+                        }
+                        // For Images, we just wait.
+                    }
+                    
+                    delay(100) // 10Hz tick
                 }
             } finally {
-                // Ensure we reset status even if cancelled
                 updateStatus("idle")
             }
         }
+    }
+
+    private fun trackImpression(item: PlaylistItem) {
+        // Track Impression
+        impressionManager.trackImpression(
+            adId = item.assetId,
+            campaignId = item.campaignId,
+            mediaType = item.type,
+            durationMs = item.durationMs
+        )
+
+        // Trigger Upload
+        try {
+            val uploadRequest = androidx.work.OneTimeWorkRequestBuilder<com.mktr.adplayer.worker.ImpressionWorker>().build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                "ImpressionWorker",
+                androidx.work.ExistingWorkPolicy.REPLACE,
+                uploadRequest
+            )
+        } catch (e: Exception) { Log.e("PlayerVM", "Worker failed", e) }
     }
 
     private fun updateStatus(status: String) {
