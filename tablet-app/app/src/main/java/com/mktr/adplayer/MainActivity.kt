@@ -65,8 +65,8 @@ class MainActivity : ComponentActivity() {
         // Kiosk Mode: Attempt to lock task (requires Device Owner or Screen Pinning)
         // REMOVED: startLockTask() calls to allow standard navigation.
 
-        // Auto-request Location Permission for Fleet Tracking
-        requestLocationPermission()
+        // Auto-request Permissions (Location, Nearby Devices)
+        requestAllPermissions()
 
         setContent {
             MaterialTheme {
@@ -96,20 +96,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestLocationPermission() {
-        if (androidx.core.content.ContextCompat.checkSelfPermission(
-                this,
-                android.Manifest.permission.ACCESS_FINE_LOCATION
-            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            Log.d(TAG, "Requesting location permission for fleet tracking")
+    private fun requestAllPermissions() {
+        val permissions = mutableListOf<String>()
+        
+        // Location (Always required for WiFi scanning/Hotspot legacy)
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            permissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        
+        // Nearby Devices (Android 13+ required for Hotspot/P2P)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.NEARBY_WIFI_DEVICES) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                permissions.add(android.Manifest.permission.NEARBY_WIFI_DEVICES)
+            }
+        }
+
+        if (permissions.isNotEmpty()) {
+            Log.d(TAG, "Requesting permissions: $permissions")
             androidx.core.app.ActivityCompat.requestPermissions(
                 this,
-                arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION),
-                LOCATION_PERMISSION_REQUEST_CODE
+                permissions.toTypedArray(),
+                PERMISSION_REQUEST_CODE
             )
         } else {
-            Log.d(TAG, "Location permission already granted")
+            Log.d(TAG, "All required permissions already granted")
         }
     }
 
@@ -147,7 +157,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "AdPlayer.MainActivity"
-        private const val LOCATION_PERMISSION_REQUEST_CODE = 1001
+        private const val PERMISSION_REQUEST_CODE = 1001
     }
 }
 
