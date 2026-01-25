@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -28,11 +29,13 @@ import {
     Trash2,
     MapPin,
     RefreshCcw,
-    MonitorSmartphone
+    MonitorSmartphone,
+    Pencil
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function AdminVehicles() {
+    const navigate = useNavigate();
     const [vehicles, setVehicles] = useState([]);
     const [devices, setDevices] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -565,51 +568,62 @@ export default function AdminVehicles() {
                                     const typeLabel = typeLabels[campaign.type] || campaign.type;
 
                                     return (
-                                        <label
+                                        <div
                                             key={campaign.id}
-                                            className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${selectedCampaignIds.includes(campaign.id)
+                                            className={`flex items-center gap-2 p-3 border rounded-lg transition-colors ${selectedCampaignIds.includes(campaign.id)
                                                 ? 'bg-blue-50 border-blue-300'
                                                 : 'hover:bg-gray-50 border-gray-200'
                                                 }`}
                                         >
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedCampaignIds.includes(campaign.id)}
-                                                onChange={(e) => {
-                                                    if (e.target.checked) {
-                                                        setSelectedCampaignIds([...selectedCampaignIds, campaign.id]);
-                                                    } else {
-                                                        setSelectedCampaignIds(selectedCampaignIds.filter(id => id !== campaign.id));
-                                                    }
-                                                }}
-                                                className="h-4 w-4 rounded border-gray-300 mt-0.5"
-                                            />
-                                            <div className="flex-1">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <p className="font-medium text-sm">{campaign.name}</p>
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="text-xs bg-purple-50 text-purple-700 border-purple-200"
-                                                    >
-                                                        {typeLabel}
-                                                    </Badge>
-                                                </div>
-                                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                                    <span className="flex items-center gap-1">
-                                                        <MonitorSmartphone className="h-3 w-3" />
-                                                        {mediaCount} media
-                                                    </span>
-                                                    {totalDuration > 0 && (
+                                            <label className="flex items-start gap-3 flex-1 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedCampaignIds.includes(campaign.id)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setSelectedCampaignIds([...selectedCampaignIds, campaign.id]);
+                                                        } else {
+                                                            setSelectedCampaignIds(selectedCampaignIds.filter(id => id !== campaign.id));
+                                                        }
+                                                    }}
+                                                    className="h-4 w-4 rounded border-gray-300 mt-0.5"
+                                                />
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <p className="font-medium text-sm">{campaign.name}</p>
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="text-xs bg-purple-50 text-purple-700 border-purple-200"
+                                                        >
+                                                            {typeLabel}
+                                                        </Badge>
+                                                    </div>
+                                                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
                                                         <span className="flex items-center gap-1">
-                                                            ⏱️ {totalDuration}s loop
+                                                            <MonitorSmartphone className="h-3 w-3" />
+                                                            {mediaCount} media
                                                         </span>
-                                                    )}
-                                                    <span className={`${campaign.status === 'active' ? 'text-green-600' : 'text-gray-500'}`}>
-                                                        {campaign.status}
-                                                    </span>
+                                                        {totalDuration > 0 && (
+                                                            <span className="flex items-center gap-1">
+                                                                ⏱️ {totalDuration}s loop
+                                                            </span>
+                                                        )}
+                                                        <span className={`${campaign.status === 'active' ? 'text-green-600' : 'text-gray-500'}`}>
+                                                            {campaign.status}
+                                                        </span>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        </label>
+                                            </label>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 w-8 p-0"
+                                                onClick={() => navigate(`/admin/campaigns/${campaign.id}/edit`)}
+                                                title="Edit Campaign"
+                                            >
+                                                <Pencil className="h-4 w-4 text-muted-foreground hover:text-primary" />
+                                            </Button>
+                                        </div>
                                     );
                                 })
                             )}
