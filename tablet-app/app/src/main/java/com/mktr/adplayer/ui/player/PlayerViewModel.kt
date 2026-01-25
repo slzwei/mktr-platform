@@ -176,6 +176,9 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun stopPlayback() {
+        Log.d("PlayerVM", "Stopping Playback (Unmounting)")
+        isPlaybackAllowed = false
+        updateJob?.cancel() // [FIX] Cancel any pending playlist update/download
         stopPlaybackLoop()
         exoPlayer.pause()
         updateStatus("idle")
@@ -189,6 +192,13 @@ class PlayerViewModel @Inject constructor(
         playbackJob?.cancel()
         playbackJob = viewModelScope.launch {
             try {
+                // [FIX] Double-check permission inside the coroutine before starting
+                if (!isPlaybackAllowed) {
+                     Log.w("PlayerVM", "Playback blocked because isPlaybackAllowed=false")
+                     updateStatus("idle")
+                     return@launch
+                }
+
                 _playerState.value = PlayerState.Initializing
                 updateStatus("playing")
                 
