@@ -539,34 +539,77 @@ export default function AdminVehicles() {
                                     No PHV campaigns available
                                 </p>
                             ) : (
-                                campaigns.map(campaign => (
-                                    <label
-                                        key={campaign.id}
-                                        className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${selectedCampaignIds.includes(campaign.id)
-                                            ? 'bg-blue-50 border-blue-200'
-                                            : 'hover:bg-gray-50'
-                                            }`}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedCampaignIds.includes(campaign.id)}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setSelectedCampaignIds([...selectedCampaignIds, campaign.id]);
-                                                } else {
-                                                    setSelectedCampaignIds(selectedCampaignIds.filter(id => id !== campaign.id));
-                                                }
-                                            }}
-                                            className="h-4 w-4 rounded border-gray-300"
-                                        />
-                                        <div className="flex-1">
-                                            <p className="font-medium text-sm">{campaign.name}</p>
-                                            <p className="text-xs text-muted-foreground">
-                                                {campaign.status}
-                                            </p>
-                                        </div>
-                                    </label>
-                                ))
+                                campaigns.map(campaign => {
+                                    // Calculate total media duration
+                                    const playlist = campaign.ad_playlist || [];
+                                    let totalDuration = 0;
+                                    let mediaCount = 0;
+
+                                    playlist.forEach(item => {
+                                        mediaCount++;
+                                        if (item.type === 'image') {
+                                            totalDuration += 10; // Default 10s for images
+                                        } else if (item.type === 'video' && item.duration) {
+                                            totalDuration += item.duration;
+                                        }
+                                    });
+
+                                    // Format campaign type for display
+                                    const typeLabels = {
+                                        'brand_awareness': 'Brand Awareness',
+                                        'lead_generation': 'Lead Gen',
+                                        'video_ad': 'Video Ad'
+                                    };
+                                    const typeLabel = typeLabels[campaign.type] || campaign.type;
+
+                                    return (
+                                        <label
+                                            key={campaign.id}
+                                            className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${selectedCampaignIds.includes(campaign.id)
+                                                ? 'bg-blue-50 border-blue-300'
+                                                : 'hover:bg-gray-50 border-gray-200'
+                                                }`}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedCampaignIds.includes(campaign.id)}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setSelectedCampaignIds([...selectedCampaignIds, campaign.id]);
+                                                    } else {
+                                                        setSelectedCampaignIds(selectedCampaignIds.filter(id => id !== campaign.id));
+                                                    }
+                                                }}
+                                                className="h-4 w-4 rounded border-gray-300 mt-0.5"
+                                            />
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <p className="font-medium text-sm">{campaign.name}</p>
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="text-xs bg-purple-50 text-purple-700 border-purple-200"
+                                                    >
+                                                        {typeLabel}
+                                                    </Badge>
+                                                </div>
+                                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                                    <span className="flex items-center gap-1">
+                                                        <MonitorSmartphone className="h-3 w-3" />
+                                                        {mediaCount} media
+                                                    </span>
+                                                    {totalDuration > 0 && (
+                                                        <span className="flex items-center gap-1">
+                                                            ⏱️ {totalDuration}s loop
+                                                        </span>
+                                                    )}
+                                                    <span className={`${campaign.status === 'active' ? 'text-green-600' : 'text-gray-500'}`}>
+                                                        {campaign.status}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </label>
+                                    );
+                                })
                             )}
                         </div>
                     </div>
