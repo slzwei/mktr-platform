@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { apiClient as api } from '../api/client';
 import { formatDistanceToNow, format } from 'date-fns';
-import { AssignCampaignDialog } from '../components/devices/AssignCampaignDialog';
+// import { AssignCampaignDialog } from '../components/devices/AssignCampaignDialog'; // Moved to Vehicle level
 import { Badge } from '../components/ui/badge';
 import {
     Table,
@@ -322,10 +322,10 @@ export default function AdminDevices() {
                                                         <Button
                                                             variant="outline"
                                                             size="sm"
-                                                            onClick={() => setSelectedDevice(device)}
+                                                            onClick={() => navigate('/admin/vehicles')}
                                                             className="h-8"
                                                         >
-                                                            Assign Campaign
+                                                            Manage
                                                         </Button>
                                                     </TableCell>
                                                 </TableRow>
@@ -409,14 +409,9 @@ export default function AdminDevices() {
                     </CardContent>
                 </Card>
 
-                {selectedDevice && (
-                    <AssignCampaignDialog
-                        open={!!selectedDevice}
-                        device={selectedDevice}
-                        onClose={() => setSelectedDevice(null)}
-                        onAssign={loadDevices}
-                    />
-                )}
+                {/* Campaign Assignment moved to AdminVehicles */}
+
+                {/* Location Map Dialog */}
 
                 {/* Location Map Dialog */}
                 <Dialog open={!!mapDevice} onOpenChange={(open) => !open && setMapDevice(null)}>
