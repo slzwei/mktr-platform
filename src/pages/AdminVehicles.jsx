@@ -72,19 +72,15 @@ export default function AdminVehicles() {
                 devicesList = devicesRes.data.data;
             }
             setDevices(devicesList);
-            // Get PHV campaigns - INCREASE LIMIT to ensure visualization
-            let campaignsList = [];
-            // API returns { data: { campaigns: [], pagination: {} } }
-            // client.js returns the body directly, so campaignsRes IS the body
-            console.log('Campaigns Response:', campaignsRes);
 
+            // Get PHV campaigns
+            let campaignsList = [];
             if (campaignsRes.data?.campaigns && Array.isArray(campaignsRes.data.campaigns)) {
                 campaignsList = campaignsRes.data.campaigns;
             } else if (Array.isArray(campaignsRes.data)) {
                 campaignsList = campaignsRes.data;
             }
 
-            console.log('Extracted Campaigns List:', campaignsList);
             setCampaigns(campaignsList.filter(c => ['brand_awareness', 'lead_generation', 'video_ad'].includes(c.type) || !c.type));
         } catch (err) {
             console.error('Failed to load data:', err);
