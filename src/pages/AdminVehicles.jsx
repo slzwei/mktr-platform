@@ -76,12 +76,14 @@ export default function AdminVehicles() {
 
             // Get PHV campaigns
             let campaignsList = [];
-            if (Array.isArray(campaignsRes.data)) {
-                campaignsList = campaignsRes.data;
-            } else if (campaignsRes.data?.data) {
+            if (campaignsRes.data?.data?.campaigns && Array.isArray(campaignsRes.data.data.campaigns)) {
+                campaignsList = campaignsRes.data.data.campaigns;
+            } else if (Array.isArray(campaignsRes.data?.data)) {
                 campaignsList = campaignsRes.data.data;
+            } else if (Array.isArray(campaignsRes.data)) {
+                campaignsList = campaignsRes.data;
             }
-            setCampaigns(campaignsList.filter(c => c.type === 'brand_awareness'));
+            setCampaigns(campaignsList.filter(c => ['brand_awareness', 'lead_generation', 'video_ad'].includes(c.type) || !c.type));
         } catch (err) {
             console.error('Failed to load data:', err);
             toast.error('Failed to load vehicles');
