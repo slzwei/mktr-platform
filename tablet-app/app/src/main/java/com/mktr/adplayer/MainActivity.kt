@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         // Start WatchdogService to ensure app restarts if it crashes
-        startWatchdogService()
+        // startWatchdogService() // DISABLED per user request
         
         // Register Prefs Listener
         devicePrefs.registerListener(prefsListener)
