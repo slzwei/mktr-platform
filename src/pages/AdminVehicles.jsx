@@ -65,9 +65,8 @@ export default function AdminVehicles() {
                 api.get('/devices'),
                 api.get('/campaigns?limit=100')
             ]);
-            setVehicles(vehiclesRes.data?.data || vehiclesRes.data || []);
 
-            // Filter unpaired devices
+            // Extract devices list
             let devicesList = [];
             if (Array.isArray(devicesRes.data)) {
                 devicesList = devicesRes.data;
@@ -75,6 +74,22 @@ export default function AdminVehicles() {
                 devicesList = devicesRes.data.data;
             }
             setDevices(devicesList);
+
+            // Merge live device data into vehicles
+            const vehiclesData = vehiclesRes.data?.data || vehiclesRes.data || [];
+
+            // Map the latest device status to the vehicle's devices
+            const updatedVehicles = vehiclesData.map(v => {
+                const master = devicesList.find(d => d.id === v.masterDeviceId);
+                const slave = devicesList.find(d => d.id === v.slaveDeviceId);
+                return {
+                    ...v,
+                    masterDevice: master || v.masterDevice,
+                    slaveDevice: slave || v.slaveDevice
+                };
+            });
+
+            setVehicles(updatedVehicles);
 
             // Get PHV campaigns
             let campaignsList = [];
@@ -94,6 +109,61 @@ export default function AdminVehicles() {
             setLoading(false);
         }
     };
+
+    // Live Fleet Status Stream (SSE)
+    useEffect(() => {
+        const token = localStorage.getItem('mktr_auth_token');
+        if (!token) return;
+
+        const url = `${import.meta.env.VITE_API_URL}/devices/events/fleet/stream?token=${token}`;
+        const sse = new EventSource(url);
+
+        sse.onopen = () => console.log('✅ Connected to Fleet Stream (Vehicles View)');
+
+        sse.addEventListener('status_change', (e) => {
+            try {
+                const data = JSON.parse(e.data);
+
+                // Update devices state
+                setDevices(prevDevices => prevDevices.map(d => {
+                    if (d.id === data.deviceId) {
+                        return { ...d, status: data.status, lastSeenAt: data.lastSeenAt };
+                    }
+                    return d;
+                }));
+
+                // Update vehicles state (nested devices)
+                setVehicles(prevVehicles => prevVehicles.map(v => {
+                    let updated = false;
+                    let newMaster = v.masterDevice;
+                    let newSlave = v.slaveDevice;
+
+                    if (v.masterDeviceId === data.deviceId) {
+                        newMaster = { ...v.masterDevice, status: data.status, lastSeenAt: data.lastSeenAt };
+                        updated = true;
+                    }
+                    if (v.slaveDeviceId === data.deviceId) {
+                        newSlave = { ...v.slaveDevice, status: data.status, lastSeenAt: data.lastSeenAt };
+                        updated = true;
+                    }
+
+                    if (updated) {
+                        return { ...v, masterDevice: newMaster, slaveDevice: newSlave };
+                    }
+                    return v;
+                }));
+
+            } catch (err) {
+                console.error('Failed to parse status_change', err);
+            }
+        });
+
+        sse.onerror = (err) => {
+            console.warn('⚠️ Fleet Stream error - auto-reconnecting...', err);
+        };
+
+        return () => sse.close();
+    }, []);
 
     const handleCreateVehicle = async () => {
         if (!newCarplate.trim()) {
