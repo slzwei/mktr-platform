@@ -83,7 +83,7 @@ class WallClockSynchronizer @Inject constructor() {
             mediaIndex = targetIndex,
             seekPositionMs = seekPos,
             shouldBePlaying = true,
-            version = version
+            playlistVersion = version
         )
     }
 }
