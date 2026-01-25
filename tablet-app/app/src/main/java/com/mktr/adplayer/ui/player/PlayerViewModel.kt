@@ -137,6 +137,39 @@ class PlayerViewModel @Inject constructor(
                 delay(2000 - elapsed)
             }
 
+            // 2.5 INSPECTION PHASE (IO)
+            // Fix 10s truncation bug: The backend might send 0 or default durations.
+            // We MUST inspect the actual files to get the true duration for Sync to work correctly.
+            val correctedPlaylist = manifest.playlist.map { item ->
+                if (item.type == "video") {
+                    val asset = manifest.assets.find { it.id == item.assetId }
+                    if (asset != null) {
+                        try {
+                            val file = assetManager.getAssetFile(asset)
+                            if (file.exists()) {
+                                val mmr = android.media.MediaMetadataRetriever()
+                                try {
+                                    mmr.setDataSource(file.absolutePath)
+                                    val durationStr = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                                    val realDuration = durationStr?.toLongOrNull()
+                                    if (realDuration != null && realDuration > 0) {
+                                         Log.d("PlayerVM", "Corrected duration for ${item.assetId}: ${item.durationMs} -> ${realDuration}ms")
+                                         return@map item.copy(durationMs = realDuration)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("PlayerVM", "Failed to read duration for ${item.assetId}", e)
+                                } finally {
+                                    mmr.release()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("PlayerVM", "Error resolving file for ${item.assetId}", e)
+                        }
+                    }
+                }
+                item // Fallback to original if not video or failed
+            }
+
             // 3. SWITCH PHASE (Main Thread)
             // Ensure we are still active and not cancelled
             if (!isActive) return@launch
@@ -145,7 +178,7 @@ class PlayerViewModel @Inject constructor(
                 _isDownloading.value = false // Stop Indicator
                 isPlaybackAllowed = true // Allow Playback (Serialized on Main Thread)
                 
-                currentPlaylist = manifest.playlist
+                currentPlaylist = correctedPlaylist // Use corrected list
                 assetsMap = manifest.assets.associateBy { it.id }
                 playlistVersion = manifest.version.toString()
                 activeMediaIndex = -1 // Force refresh
