@@ -476,12 +476,12 @@ export default function AdminVehicles() {
                     <div className="space-y-4 py-4">
                         <div>
                             <label className="text-sm font-medium">Master Device (Left Screen)</label>
-                            <Select value={pairMasterId} onValueChange={setPairMasterId}>
+                            <Select value={pairMasterId || '_none'} onValueChange={(val) => setPairMasterId(val === '_none' ? '' : val)}>
                                 <SelectTrigger className="mt-1">
                                     <SelectValue placeholder="Select master device" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="">None</SelectItem>
+                                    <SelectItem value="_none">None</SelectItem>
                                     {unpairedDevices
                                         .filter(d => d.id !== pairSlaveId)
                                         .map(device => (
@@ -494,12 +494,12 @@ export default function AdminVehicles() {
                         </div>
                         <div>
                             <label className="text-sm font-medium">Slave Device (Right Screen)</label>
-                            <Select value={pairSlaveId} onValueChange={setPairSlaveId}>
+                            <Select value={pairSlaveId || '_none'} onValueChange={(val) => setPairSlaveId(val === '_none' ? '' : val)}>
                                 <SelectTrigger className="mt-1">
                                     <SelectValue placeholder="Select slave device" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="">None</SelectItem>
+                                    <SelectItem value="_none">None</SelectItem>
                                     {unpairedDevices
                                         .filter(d => d.id !== pairMasterId)
                                         .map(device => (
@@ -543,8 +543,8 @@ export default function AdminVehicles() {
                                     <label
                                         key={campaign.id}
                                         className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${selectedCampaignIds.includes(campaign.id)
-                                                ? 'bg-blue-50 border-blue-200'
-                                                : 'hover:bg-gray-50'
+                                            ? 'bg-blue-50 border-blue-200'
+                                            : 'hover:bg-gray-50'
                                             }`}
                                     >
                                         <input
