@@ -81,7 +81,9 @@ export default function AdminVehicles() {
                 campaignsList = campaignsRes.data;
             }
 
-            setCampaigns(campaignsList.filter(c => ['brand_awareness', 'lead_generation', 'video_ad'].includes(c.type) || !c.type));
+            // Filter for PHV campaigns only (brand_awareness or video_ad)
+            // Exclude 'lead_generation' which are regular agent campaigns
+            setCampaigns(campaignsList.filter(c => ['brand_awareness', 'video_ad'].includes(c.type)));
         } catch (err) {
             console.error('Failed to load data:', err);
             toast.error('Failed to load vehicles');
