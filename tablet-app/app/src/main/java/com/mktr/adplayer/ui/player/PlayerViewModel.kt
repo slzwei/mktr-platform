@@ -47,6 +47,8 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    private var isPlaybackAllowed = false
+
     override fun onStateChanged(source: androidx.lifecycle.LifecycleOwner, event: androidx.lifecycle.Lifecycle.Event) {
         when (event) {
             androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
@@ -58,7 +60,7 @@ class PlayerViewModel @Inject constructor(
             androidx.lifecycle.Lifecycle.Event.ON_START -> {
                 Log.d("PlayerVM", "App Foregrounded: Checking state")
                 updateStatus("idle")
-                if (currentPlaylist.isNotEmpty()) {
+                if (isPlaybackAllowed && currentPlaylist.isNotEmpty()) {
                      startPlaybackLoop()
                 }
             }
@@ -109,6 +111,7 @@ class PlayerViewModel @Inject constructor(
         updateJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val startTime = System.currentTimeMillis()
             _isDownloading.value = true // Start Indicator
+            isPlaybackAllowed = true // Allow Playback
             
             // 1. Show loading ONLY if we strictly have nothing to play (Cold Start)
             if (currentPlaylist.isEmpty()) {
