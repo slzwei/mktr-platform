@@ -26,7 +26,7 @@ class HeartbeatWorker @AssistedInject constructor(
             // Report Buffer Size and Status
             val bufferSize = impressionManager.getBufferSize()
             val prefs = applicationContext.getSharedPreferences("adplayer_prefs", Context.MODE_PRIVATE)
-            val appStatus = prefs.getString("app_status", "active") ?: "active"
+            val appStatus = prefs.getString("app_status", "idle") ?: "idle"
             
             // Get GPS Location (null if permission denied or unavailable)
             val location = locationManager.getLastLocation()

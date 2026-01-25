@@ -111,7 +111,6 @@ class PlayerViewModel @Inject constructor(
         updateJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val startTime = System.currentTimeMillis()
             _isDownloading.value = true // Start Indicator
-            isPlaybackAllowed = true // Allow Playback
             
             // 1. Show loading ONLY if we strictly have nothing to play (Cold Start)
             if (currentPlaylist.isEmpty()) {
@@ -152,6 +151,8 @@ class PlayerViewModel @Inject constructor(
 
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 _isDownloading.value = false // Stop Indicator
+                isPlaybackAllowed = true // Allow Playback (Serialized on Main Thread)
+                
                 currentPlaylist = manifest.playlist
                 assetsMap = manifest.assets.associateBy { it.id }
                 currentIndex = 0 // Reset index
