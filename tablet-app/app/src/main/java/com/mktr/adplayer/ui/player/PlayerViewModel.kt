@@ -302,5 +302,20 @@ class PlayerViewModel @Inject constructor(
             .edit()
             .putString("app_status", status)
             .apply()
+
+        // [FIX] Force immediate Heartbeat to update backend instantly
+        try {
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.mktr.adplayer.worker.HeartbeatWorker>()
+                .build()
+            
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                "HeartbeatWorker",
+                androidx.work.ExistingWorkPolicy.REPLACE,
+                request
+            )
+            Log.d("PlayerVM", "Triggered immediate heartbeat for status: $status")
+        } catch (e: Exception) {
+            Log.e("PlayerVM", "Failed to trigger heartbeat", e)
+        }
     }
 }
