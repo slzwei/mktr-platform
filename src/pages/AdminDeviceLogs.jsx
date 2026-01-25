@@ -146,12 +146,12 @@ export default function AdminDeviceLogs() {
                                         <span className="w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
                                         OFFLINE
                                     </Badge>
-                                ) : deviceStatus === 'standby' ? (
+                                ) : (deviceStatus === 'standby' || deviceStatus === 'idle') ? (
                                     <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 border-blue-200 animate-pulse">
                                         <span className="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
                                         READY
                                     </Badge>
-                                ) : deviceStatus === 'active' ? (
+                                ) : (deviceStatus === 'active' || deviceStatus === 'playing') ? (
                                     <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200 animate-pulse">
                                         <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
                                         LIVE
