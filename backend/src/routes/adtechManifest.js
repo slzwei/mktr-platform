@@ -64,7 +64,7 @@ function buildManifestForDevice(device) {
 // GET /api/adtech/v1/manifest
 const manifestLimiter = rateLimit({
   windowMs: 1000,
-  limit: parseInt(process.env.MANIFEST_RPS_PER_DEVICE || '2'),
+  limit: parseInt(process.env.MANIFEST_RPS_PER_DEVICE || '10'),
   keyGenerator: (req) => (req.device?.id || req.ip),
   standardHeaders: true,
   legacyHeaders: false,

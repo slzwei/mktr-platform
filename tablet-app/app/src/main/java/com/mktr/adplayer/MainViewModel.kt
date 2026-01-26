@@ -132,7 +132,7 @@ class MainViewModel @Inject constructor(
                         // Must dispatch to viewModelScope for proper StateFlow updates.
                         viewModelScope.launch {
                             android.util.Log.d("MainViewModel", "SSE Event Received: $type")
-                            if (type == "REFRESH_MANIFEST" || type == "CONNECTED") {
+                            if (type == "REFRESH_MANIFEST") {
                                 android.util.Log.i("MainViewModel", "Triggering Hot-Swap Refresh due to SSE ($type)")
                                 fetchManifest()
                             }
