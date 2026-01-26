@@ -137,16 +137,27 @@ router.put('/:id/pair', async (req, res) => {
         });
 
         // Update devices with role and vehicleId
+        // [FIX] Clear local campaign assignments so device inherits from vehicle
         if (masterDeviceId) {
             await Device.update(
-                { vehicleId: vehicle.id, role: 'master' },
+                {
+                    vehicleId: vehicle.id,
+                    role: 'master',
+                    campaignIds: [],
+                    campaignId: null // Clear legacy
+                },
                 { where: { id: masterDeviceId } }
             );
         }
 
         if (slaveDeviceId) {
             await Device.update(
-                { vehicleId: vehicle.id, role: 'slave' },
+                {
+                    vehicleId: vehicle.id,
+                    role: 'slave',
+                    campaignIds: [],
+                    campaignId: null // Clear legacy
+                },
                 { where: { id: slaveDeviceId } }
             );
         }
