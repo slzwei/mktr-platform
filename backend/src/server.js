@@ -310,6 +310,7 @@ async function startServer() {
 
     // New Models (AdTech V5)
     await safeSync(BeaconEvent, 'BeaconEvent');
+    await safeSync(Device, 'Device'); // Ensure Device exists before associations
     await safeSync(Impression, 'Impression');
     await safeSync(ProvisioningSession, 'ProvisioningSession');
     await safeSync(Vehicle, 'Vehicle');
@@ -516,6 +517,7 @@ async function startServer() {
 
   } catch (error) {
     console.error('❌ Unable to start server:', error);
+    console.error(error.stack);
     process.exit(1);
   }
 }
