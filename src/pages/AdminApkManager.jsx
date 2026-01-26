@@ -137,7 +137,7 @@ const AdminApkManager = () => {
                                     </div>
                                 </div>
                                 <Button asChild variant="outline" className="shrink-0 gap-2">
-                                    <a href={`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/apk/latest`} download>
+                                    <a href={`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/apk/latest`} download>
                                         <Download className="w-4 h-4" />
                                         Download
                                     </a>
