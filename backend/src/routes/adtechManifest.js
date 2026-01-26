@@ -197,7 +197,9 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
       where: {
         id: campaignIds,
         status: 'active', // Only show active campaigns
-        type: 'brand_awareness' // Double check type safety
+        // [FIX] REMOVED strict `type: 'brand_awareness'` filter.
+        // We now allow ALL active campaigns (including PHV/LeadGen) to be delivered to the tablet.
+        // type: 'brand_awareness' 
       }
     });
   }
@@ -217,10 +219,16 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
     assignedCampaigns.forEach(c => {
       if (c.ad_playlist && Array.isArray(c.ad_playlist)) {
         // Inject campaign_id into each item so we can track it
-        const itemsWithCampaign = c.ad_playlist.map(item => ({
-          ...item,
-          campaign_id: c.id
-        }));
+        const itemsWithCampaign = c.ad_playlist.map(item => {
+          // [SAFETY] Skip items without URL to prevent manifest generation crashes
+          if (!item.url) return null;
+
+          return {
+            ...item,
+            campaign_id: c.id
+          };
+        }).filter(Boolean); // Filter out nulls
+
         combinedPlaylist.push(...itemsWithCampaign);
       }
     });
