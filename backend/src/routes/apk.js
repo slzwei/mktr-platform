@@ -2,10 +2,12 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { authenticateToken, authorizeRole } from '../middleware/auth.js';
+import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
 const router = express.Router();
+
+// ... (existing code for uploadsDir, storage, fileFilter, upload) ...
 
 // Ensure apk uploads directory exists
 const uploadsDir = path.join(process.cwd(), 'uploads', 'apk');
@@ -60,7 +62,7 @@ const upload = multer({
 
 
 // POST /upload: Upload a new APK (replaces old one)
-router.post('/upload', authenticateToken, authorizeRole(['admin']), upload.single('file'), asyncHandler(async (req, res) => {
+router.post('/upload', authenticateToken, requireAdmin, upload.single('file'), asyncHandler(async (req, res) => {
     if (!req.file) {
         throw new AppError('No APK file uploaded', 400);
     }
@@ -97,7 +99,7 @@ router.get('/latest', asyncHandler(async (req, res) => {
 }));
 
 // GET /list: Get info about current APK
-router.get('/list', authenticateToken, authorizeRole(['admin']), asyncHandler(async (req, res) => {
+router.get('/list', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
     if (!fs.existsSync(uploadsDir)) {
         return res.json({ success: true, count: 0, apk: null });
     }
