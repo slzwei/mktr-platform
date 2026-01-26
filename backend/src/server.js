@@ -28,7 +28,12 @@ import {
   Vehicle,
   Impression,
   BeaconEvent,
-  ProspectActivity
+  ProvisioningSession,
+  Vehicle,
+  Impression,
+  BeaconEvent,
+  ProspectActivity,
+  Device
 } from './models/index.js';
 
 import './models/CampaignPreview.js';
