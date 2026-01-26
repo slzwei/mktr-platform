@@ -199,13 +199,7 @@ router.patch('/:id', async (req, res) => {
                 return res.status(400).json({ message: 'One or more campaigns not found' });
             }
 
-            // Enforce Rule: All must be PHV (brand_awareness)
-            const invalidType = campaigns.find(c => c.type !== 'brand_awareness');
-            if (invalidType) {
-                return res.status(400).json({
-                    message: `Campaign "${invalidType.name}" is not a PHV campaign. Only PHV campaigns can be assigned to tablets.`
-                });
-            }
+
 
             // Enforce Usage Rule: All MUST have media
             const emptyMedia = campaigns.find(c => !c.ad_playlist || !Array.isArray(c.ad_playlist) || c.ad_playlist.length === 0);
