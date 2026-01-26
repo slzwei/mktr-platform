@@ -7,12 +7,34 @@ dotenv.config();
 const PORT = process.env.PORT || 3001;
 const app = express();
 
+// Track startup state
+let startupStatus = 'STARTING';
+let startupError = null;
+
 // 1. Immediate Health Check (Keep Render Happy)
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
     mode: 'shell',
+    startupStatus,
     timestamp: new Date().toISOString()
+  });
+});
+
+// Diagnostic Endpoint (TEMPORARY)
+app.get('/shell/status', (req, res) => {
+  res.json({
+    status: startupStatus,
+    error: startupError ? {
+      message: startupError.message,
+      name: startupError.name,
+      stack: startupError.stack
+    } : null,
+    env: {
+      manifest_enabled: process.env.MANIFEST_ENABLED,
+      db_host: process.env.DB_HOST ? '[SET]' : '[MISSING]',
+      node_env: process.env.NODE_ENV
+    }
   });
 });
 
@@ -27,9 +49,12 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
 
     console.log(`[Shell] 🔄 Application module loaded. Initializing...`);
     await init(app);
+    startupStatus = 'RUNNING';
     console.log(`[Shell] ✅ Application initialized successfully.`);
 
   } catch (err) {
+    startupStatus = 'CRASHED';
+    startupError = err;
     console.error(`\n[Shell] 💥 CRITICAL FAILURE: Could not load application!`);
     console.error(`[Shell] The server is still listening on ${PORT} to allow log access.`);
     console.error(`[Shell] ERROR DETAILS:`);
