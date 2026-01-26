@@ -39,6 +39,53 @@ class PlayerViewModel @Inject constructor(
     private val impressionManager: com.mktr.adplayer.data.manager.ImpressionManager
 ) : ViewModel(), androidx.lifecycle.LifecycleEventObserver {
 
+    // ExoPlayer instance managed by ViewModel
+    val exoPlayer: androidx.media3.exoplayer.ExoPlayer by lazy {
+        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            playWhenReady = true
+            repeatMode = androidx.media3.common.Player.REPEAT_MODE_OFF
+        }
+    }
+
+    private var isPlaybackAllowed = false
+
+    override fun onStateChanged(source: androidx.lifecycle.LifecycleOwner, event: androidx.lifecycle.Lifecycle.Event) {
+        when (event) {
+            androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                Log.d("PlayerVM", "App Backgrounded: Stopping Playback")
+                exoPlayer.pause()
+                stopPlaybackLoop() // Cancel job
+                updateStatus("offline")
+            }
+            androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                Log.d("PlayerVM", "App Foregrounded: Checking state")
+                updateStatus("idle")
+                if (isPlaybackAllowed && currentPlaylist.isNotEmpty()) {
+                     startPlaybackLoop()
+                }
+            }
+            else -> {}
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
+        stopPlaybackLoop()
+        exoPlayer.release()
+    }
+
+    private val _playerState = MutableStateFlow<PlayerState>(PlayerState.Initializing)
+    val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
+
+    private val _isDownloading = MutableStateFlow(false)
+    val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
+
+    private var currentPlaylist: List<PlaylistItem> = emptyList()
+    private var assetsMap: Map<String, com.mktr.adplayer.api.model.Asset> = emptyMap()
+    private var activeMediaIndex = -1
+    private var playlistVersion = ""
+
     private var imageTimerJob: kotlinx.coroutines.Job? = null
 
     // [FIX] Simple Sequential Playback (No Sync)
