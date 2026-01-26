@@ -14,18 +14,24 @@ class VehiclePlaylistOrchestrator {
             // Find vehicles that have at least one active device connected
             // Optimization: In a real large scale system, we might want to check Redis presence
             // For now, we iterate all vehicles with assigned campaigns
+            // Find active vehicles
             const vehicles = await Vehicle.findAll({
-                where: {}, // All vehicles? Better to filter by active usage or rely on lazy start from manifest
-                include: [{
-                    model: Device,
-                    where: { status: 'playing' },
-                    required: true
-                }]
+                where: { status: 'active' },
+                include: [
+                    { model: Device, as: 'masterDevice' },
+                    { model: Device, as: 'slaveDevice' }
+                ]
             });
 
-            console.log(`[Orchestrator] Found ${vehicles.length} active vehicles to restore.`);
+            // Filter for playing devices
+            const activeVehicles = vehicles.filter(v =>
+                (v.masterDevice && v.masterDevice.status === 'playing') ||
+                (v.slaveDevice && v.slaveDevice.status === 'playing')
+            );
 
-            for (const v of vehicles) {
+            console.log(`[Orchestrator] Found ${activeVehicles.length} vehicles with playing devices to restore.`);
+
+            for (const v of activeVehicles) {
                 if (!this.vehicleTimers.has(v.id)) {
                     this.startVehicle(v.id);
                 }

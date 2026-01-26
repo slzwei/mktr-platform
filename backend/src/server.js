@@ -459,7 +459,7 @@ async function startServer() {
       // [Sync V5] Restore active vehicle timers
       try {
         const { orchestrator } = await import('./services/VehiclePlaylistOrchestrator.js');
-        orchestrator.restoreOrchestrators();
+        await orchestrator.restoreOrchestrators();
       } catch (e) {
         console.error('[Server] Failed to restore orchestrators:', e);
       }
