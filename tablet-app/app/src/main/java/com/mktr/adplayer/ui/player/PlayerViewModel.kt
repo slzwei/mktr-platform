@@ -88,6 +88,9 @@ class PlayerViewModel @Inject constructor(
     private var playlistVersion = ""
     private var syncConfig: com.mktr.adplayer.api.model.SyncConfig? = null
 
+    private var currentCycleStartTime: Long = 0L // [SYNC] Phase-Lock Anchor
+    private var totalPlaylistDuration: Long = 0L // [SYNC] Total Cycle Time
+
     private var imageTimerJob: kotlinx.coroutines.Job? = null
 
     // [FIX] Simple Sequential Playback (No Sync)
@@ -213,6 +216,12 @@ class PlayerViewModel @Inject constructor(
                 playlistVersion = manifest.version.toString()
                 syncConfig = manifest.syncConfig
                 
+                // [SYNC] Calculate Total Loop Duration for Continuous Sync
+                totalPlaylistDuration = currentPlaylist.sumOf { 
+                   if (it.durationMs > 0) it.durationMs else 10000L 
+                }
+                Log.i("PlayerVM", "Continuous Sync Mode: Cycle Duration = ${totalPlaylistDuration}ms")
+
                 // Restart Loop with new content
                 startPlaybackLoop() 
                 
@@ -262,36 +271,10 @@ class PlayerViewModel @Inject constructor(
             nextIndex = 0
         }
         
-        // [SYNC] Time-Quantized Loop Check
+        // [SYNC] Continuous Atomic Sync (No Waiting)
+        // We simply loop. phase-lock in playItem() handles the alignment.
         if (nextIndex == 0) {
-            val config = syncConfig
-            if (config != null && config.enabled && config.cycleDurationMs > 0) {
-                val now = System.currentTimeMillis()
-                val cycle = config.cycleDurationMs
-                val elapsed = (now - config.anchorEpochMs) % cycle
-                
-                // Tolerance: Reduced to 100ms for tighter sync.
-                if (elapsed > 100) {
-                    val waitMs = cycle - elapsed
-                    Log.i("PlayerVM", "Sync: Loop complete. Waiting ${waitMs}ms for next boundary.")
-                    
-                    _playerState.value = PlayerState.WaitingForSync(now + waitMs, waitMs)
-                    // [FIX] Must be "playing" to keep the PlayerScreen mounted. 
-                    // If "idle", MainActivity switches to Dashboard, triggering onDispose -> stopPlayback().
-                    updateStatus("playing") 
-                    
-                    imageTimerJob = viewModelScope.launch {
-                        delay(waitMs)
-                        if (isActive) {
-                             activeMediaIndex = 0
-                             playItem(0)
-                        }
-                    }
-                    return
-                } else {
-                    Log.i("PlayerVM", "Sync: Within tolerance (${elapsed}ms late). Starting immediately.")
-                }
-            }
+            Log.i("PlayerVM", "Loop Restarting (Continuous).")
         }
         
         activeMediaIndex = nextIndex
@@ -315,6 +298,59 @@ class PlayerViewModel @Inject constructor(
             return
         }
 
+        // [SYNC] Phase-Locked Drift Correction
+        var startOffset = 0L
+        var displayDuration = if (item.durationMs > 0) item.durationMs else 10000L
+
+        val config = syncConfig
+        if (config != null && config.enabled && totalPlaylistDuration > 0) {
+            // [SYNC] Continuous Phase Lock Logic
+            // 1. Determine where "Cycle Start" was relative to Epoch
+            val now = System.currentTimeMillis()
+            val anchor = config.anchorEpochMs
+            
+            // "Which cycle iteration are we in?"
+            // Iteration = floor((Now - Anchor) / Total)
+            // StartTime = Anchor + Iteration * Total
+            val timeSinceAnchor = now - anchor
+            val iteration = timeSinceAnchor / totalPlaylistDuration
+            currentCycleStartTime = anchor + (iteration * totalPlaylistDuration)
+            
+            // 2. Calculate Drift for THIS item
+            var idealStartOffset = 0L
+            for (i in 0 until index) {
+                idealStartOffset += (currentPlaylist.getOrNull(i)?.durationMs ?: 0L)
+            }
+            
+            // Ideal Start Time for this item
+            val idealStartTime = currentCycleStartTime + idealStartOffset
+            val drift = now - idealStartTime
+            
+            // Log.d("PlayerVM", "Phase: Loop=${iteration}, Item=$index, Ideal=${idealStartTime}, Now=${now}, Drift=${drift}ms")
+
+            if (drift > 0) {
+                // LATE: Behind schedule. Catch up.
+                if (drift > displayDuration) {
+                    Log.w("PlayerVM", "Phase: Very Late (${drift}ms > ${displayDuration}ms). Skipping item.")
+                    advanceToNextItem()
+                    return
+                }
+                
+                if (item.type == "video") {
+                    startOffset = drift
+                } else {
+                    displayDuration = (displayDuration - drift).coerceAtLeast(0L)
+                }
+            } else if (drift < -100) { 
+                // EARLY: Too fast. Wait.
+                viewModelScope.launch {
+                    delay(-drift)
+                    if (isActive) playItem(index)
+                }
+                return
+            }
+        }
+
         updateStatus("playing")
 
         // Update UI
@@ -322,7 +358,8 @@ class PlayerViewModel @Inject constructor(
             item = item,
             fileUri = Uri.fromFile(file),
             index = index,
-            total = currentPlaylist.size
+            total = currentPlaylist.size,
+            playId = System.currentTimeMillis()
         )
 
         // Track Impression
@@ -333,37 +370,17 @@ class PlayerViewModel @Inject constructor(
             val mediaItem = androidx.media3.common.MediaItem.fromUri(Uri.fromFile(file))
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.prepare()
+            if (startOffset > 0) {
+                exoPlayer.seekTo(startOffset)
+            }
             exoPlayer.play()
             // Listener will trigger advanceToNextItem() on completion
         } else {
             // IMAGE LOGIC
             exoPlayer.stop() // Ensure video is stopped
             
-            // [SYNC] Intra-Loop Drift Correction
-            // Calculate when this item *should* end ideally
-            var durationToPlay = if (item.durationMs > 0) item.durationMs else 10000L
-            
-            val config = syncConfig
-            if (config != null && config.enabled && activeMediaIndex >= 0) {
-                 // Calculate cumulative offset
-                 var cumulativeOffset = 0L
-                 for (i in 0 until activeMediaIndex) {
-                     cumulativeOffset += (currentPlaylist.getOrNull(i)?.durationMs ?: 0L)
-                 }
-                 
-                 // If we are at index 0, we assume we started at 'now' (or synced time)
-                 // But better: In wait loop, we set a "reference time".
-                 // For simplified "Catch Up" logic:
-                 // We rely on the loop boundary check to reset the clock. 
-                 // Inside the loop, we just ensure we don't drift further? 
-                 // Actually, "Catch Up" is hard without a fixed start reference.
-                 
-                 // Let's rely on the Loop Boundary for gross sync, 
-                 // but reduce the Tolerance to 100ms.
-            }
-
             imageTimerJob = viewModelScope.launch {
-                delay(durationToPlay)
+                delay(displayDuration)
                 if (isActive) {
                      advanceToNextItem()
                 }

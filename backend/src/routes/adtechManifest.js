@@ -276,7 +276,7 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
     const finalCycleDuration = Math.max(cycleDurationMs, QUANTUM_MS);
 
     baseManifest.sync_config = {
-      enabled: true,
+      enabled: true, // Enabled Phase-Locked Continuous Sync
       mode: "QUANTIZED_WALL_CLOCK",
       cycle_duration_ms: finalCycleDuration,
       anchor_epoch_ms: 0 // Align to Unix Epoch (1970-01-01 00:00:00 UTC)
