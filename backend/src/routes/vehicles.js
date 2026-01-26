@@ -1,6 +1,6 @@
 import express from 'express';
 import crypto from 'crypto';
-import { Device, Vehicle, Campaign } from '../models/index.js';
+import { Device, Vehicle, Campaign, sequelize } from '../models/index.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { pushService } from '../services/pushService.js';
 
@@ -130,45 +130,76 @@ router.put('/:id/pair', async (req, res) => {
             }
         }
 
-        // Update vehicle
-        await vehicle.update({
-            masterDeviceId: masterDeviceId || vehicle.masterDeviceId,
-            slaveDeviceId: slaveDeviceId || vehicle.slaveDeviceId
+        // Capture old device IDs for side effects
+        const oldMasterId = vehicle.masterDeviceId;
+        const oldSlaveId = vehicle.slaveDeviceId;
+
+        // Start atomic transaction
+        await sequelize.transaction(async (t) => {
+            // Unpair Old Master if replaced
+            if (masterDeviceId && oldMasterId && oldMasterId !== masterDeviceId) {
+                console.log(`[Pairing] Unpairing old master device ${oldMasterId}`);
+                await Device.update(
+                    { vehicleId: null, role: null, campaignIds: [], campaignId: null },
+                    { where: { id: oldMasterId }, transaction: t }
+                );
+            }
+
+            // Unpair Old Slave if replaced
+            if (slaveDeviceId && oldSlaveId && oldSlaveId !== slaveDeviceId) {
+                console.log(`[Pairing] Unpairing old slave device ${oldSlaveId}`);
+                await Device.update(
+                    { vehicleId: null, role: null, campaignIds: [], campaignId: null },
+                    { where: { id: oldSlaveId }, transaction: t }
+                );
+            }
+
+            // Update Vehicle
+            await vehicle.update({
+                masterDeviceId: masterDeviceId || oldMasterId,
+                slaveDeviceId: slaveDeviceId || oldSlaveId
+            }, { transaction: t });
+
+            // Update New Master
+            if (masterDeviceId) {
+                await Device.update(
+                    {
+                        vehicleId: vehicle.id,
+                        role: 'master',
+                        campaignIds: [],
+                        campaignId: null
+                    },
+                    { where: { id: masterDeviceId }, transaction: t }
+                );
+            }
+
+            // Update New Slave
+            if (slaveDeviceId) {
+                await Device.update(
+                    {
+                        vehicleId: vehicle.id,
+                        role: 'slave',
+                        campaignIds: [],
+                        campaignId: null
+                    },
+                    { where: { id: slaveDeviceId }, transaction: t }
+                );
+            }
         });
 
-        // Update devices with role and vehicleId
-        // [FIX] Clear local campaign assignments so device inherits from vehicle
-        if (masterDeviceId) {
-            await Device.update(
-                {
-                    vehicleId: vehicle.id,
-                    role: 'master',
-                    campaignIds: [],
-                    campaignId: null // Clear legacy
-                },
-                { where: { id: masterDeviceId } }
-            );
+        // --- Side Effects (After Commit) ---
+
+        // Refresh OLD replaced devices (stop playing)
+        if (masterDeviceId && oldMasterId && oldMasterId !== masterDeviceId) {
+            pushService.sendEvent(oldMasterId, 'REFRESH_MANIFEST', {});
+        }
+        if (slaveDeviceId && oldSlaveId && oldSlaveId !== slaveDeviceId) {
+            pushService.sendEvent(oldSlaveId, 'REFRESH_MANIFEST', {});
         }
 
-        if (slaveDeviceId) {
-            await Device.update(
-                {
-                    vehicleId: vehicle.id,
-                    role: 'slave',
-                    campaignIds: [],
-                    campaignId: null // Clear legacy
-                },
-                { where: { id: slaveDeviceId } }
-            );
-        }
-
-        // Trigger manifest refresh for both devices
-        if (masterDeviceId) {
-            pushService.sendEvent(masterDeviceId, 'REFRESH_MANIFEST', {});
-        }
-        if (slaveDeviceId) {
-            pushService.sendEvent(slaveDeviceId, 'REFRESH_MANIFEST', {});
-        }
+        // Refresh NEW assigned devices (start playing)
+        if (masterDeviceId) pushService.sendEvent(masterDeviceId, 'REFRESH_MANIFEST', {});
+        if (slaveDeviceId) pushService.sendEvent(slaveDeviceId, 'REFRESH_MANIFEST', {});
 
         // Reload with devices
         await vehicle.reload({
