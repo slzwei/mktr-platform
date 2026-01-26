@@ -12,11 +12,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+// import kotlinx.coroutines.flow.first // Unused
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
+
+// Removed unused WallClockSynchronizer import
 
 sealed class PlayerState {
     object Initializing : PlayerState()
@@ -34,64 +36,30 @@ sealed class PlayerState {
 class PlayerViewModel @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val assetManager: AssetManager,
-    private val impressionManager: com.mktr.adplayer.data.manager.ImpressionManager,
-    private val wallClockSynchronizer: com.mktr.adplayer.sync.WallClockSynchronizer,
-    private val devicePrefs: com.mktr.adplayer.data.local.DevicePrefs
+    private val impressionManager: com.mktr.adplayer.data.manager.ImpressionManager
 ) : ViewModel(), androidx.lifecycle.LifecycleEventObserver {
 
-    // ExoPlayer instance managed by ViewModel
-    val exoPlayer: androidx.media3.exoplayer.ExoPlayer by lazy {
-        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
-            playWhenReady = true
-            repeatMode = androidx.media3.common.Player.REPEAT_MODE_OFF
+    private var imageTimerJob: kotlinx.coroutines.Job? = null
+
+    // [FIX] Simple Sequential Playback (No Sync)
+    private val playerListener = object : androidx.media3.common.Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == androidx.media3.common.Player.STATE_ENDED) {
+                Log.d("PlayerVM", "Video Ended. Moving to next.")
+                advanceToNextItem()
+            }
+        }
+        
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            Log.e("PlayerVM", "ExoPlayer Error: ${error.message}. Skipping.", error)
+            advanceToNextItem()
         }
     }
-
-    private var isPlaybackAllowed = false
-
-    override fun onStateChanged(source: androidx.lifecycle.LifecycleOwner, event: androidx.lifecycle.Lifecycle.Event) {
-        when (event) {
-            androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
-                Log.d("PlayerVM", "App Backgrounded: Stopping Playback")
-                exoPlayer.pause()
-                stopPlaybackLoop() // Cancel job
-                updateStatus("offline")
-            }
-            androidx.lifecycle.Lifecycle.Event.ON_START -> {
-                Log.d("PlayerVM", "App Foregrounded: Checking state")
-                updateStatus("idle")
-                if (isPlaybackAllowed && currentPlaylist.isNotEmpty()) {
-                     startPlaybackLoop()
-                }
-            }
-            else -> {}
-        }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.removeObserver(this)
-        stopPlaybackLoop()
-        exoPlayer.release()
-    }
-
-    private val _playerState = MutableStateFlow<PlayerState>(PlayerState.Initializing)
-    val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
-
-    private val _isDownloading = MutableStateFlow(false)
-    val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
-
-    private var currentPlaylist: List<PlaylistItem> = emptyList()
-    private var assetsMap: Map<String, com.mktr.adplayer.api.model.Asset> = emptyMap()
-    // currentIndex is now derived from WallClock, but we keep track of what we are currently *playing* to detect changes
-    private var activeMediaIndex = -1
-    private var playlistVersion = ""
-
-    private var playbackJob: kotlinx.coroutines.Job? = null
 
     init {
         // Observe Process Lifecycle for Foreground/Background detection
         androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+        exoPlayer.addListener(playerListener) // Attach listener permanently
     }
 
     private var updateJob: kotlinx.coroutines.Job? = null
@@ -153,7 +121,7 @@ class PlayerViewModel @Inject constructor(
                                     val durationStr = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
                                     val realDuration = durationStr?.toLongOrNull()
                                     if (realDuration != null && realDuration > 0) {
-                                         Log.d("PlayerVM", "Corrected duration for ${item.assetId}: ${item.durationMs} -> ${realDuration}ms")
+                                         // Log.d("PlayerVM", "Corrected duration for ${item.assetId}: ${item.durationMs} -> ${realDuration}ms")
                                          return@map item.copy(durationMs = realDuration)
                                     }
                                 } catch (e: Exception) {
@@ -181,7 +149,6 @@ class PlayerViewModel @Inject constructor(
                 currentPlaylist = correctedPlaylist // Use corrected list
                 assetsMap = manifest.assets.associateBy { it.id }
                 playlistVersion = manifest.version.toString()
-                activeMediaIndex = -1 // Force refresh
                 
                 // Restart Loop with new content
                 startPlaybackLoop() 
@@ -198,8 +165,9 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun stopPlaybackLoop() {
-        playbackJob?.cancel()
-        playbackJob = null
+        imageTimerJob?.cancel()
+        imageTimerJob = null
+        exoPlayer.stop()
     }
 
     fun stopPlayback() {
@@ -207,103 +175,81 @@ class PlayerViewModel @Inject constructor(
         isPlaybackAllowed = false
         updateJob?.cancel() // [FIX] Cancel any pending playlist update/download
         stopPlaybackLoop()
-        exoPlayer.pause()
         updateStatus("idle")
         _playerState.value = PlayerState.Initializing
     }
 
     private fun startPlaybackLoop() {
-        // Don't start if no playlist
-        if (currentPlaylist.isEmpty()) return
+        // Reset to first item
+        activeMediaIndex = -1
+        advanceToNextItem()
+    }
+
+    private fun advanceToNextItem() {
+        if (!isPlaybackAllowed || currentPlaylist.isEmpty()) {
+            return
+        }
+
+        // Cancel previous image timer if any
+        imageTimerJob?.cancel()
+
+        // Increment or wrap
+        var nextIndex = activeMediaIndex + 1
+        if (nextIndex >= currentPlaylist.size) {
+            nextIndex = 0
+        }
         
-        playbackJob?.cancel()
-        playbackJob = viewModelScope.launch {
-            try {
-                if (!isPlaybackAllowed) {
-                     Log.w("PlayerVM", "Playback blocked because isPlaybackAllowed=false")
-                     updateStatus("idle")
-                     return@launch
+        activeMediaIndex = nextIndex
+        playItem(nextIndex)
+    }
+
+    private fun playItem(index: Int) {
+        val item = currentPlaylist.getOrNull(index) ?: return
+        val asset = assetsMap[item.assetId]
+        
+        if (asset == null) {
+            Log.e("PlayerVM", "Missing asset for item $index. Skipping.")
+            advanceToNextItem()
+            return
+        }
+
+        val file = assetManager.getAssetFile(asset)
+        if (!file.exists()) {
+            Log.e("PlayerVM", "File missing for item $index. Skipping.")
+            advanceToNextItem()
+            return
+        }
+
+        updateStatus("playing")
+
+        // Update UI
+        _playerState.value = PlayerState.Playing(
+            item = item,
+            fileUri = Uri.fromFile(file),
+            index = index,
+            total = currentPlaylist.size
+        )
+
+        // Track Impression
+        trackImpression(item)
+
+        if (item.type == "video") {
+            // EXO PLAYER LOGIC
+            val mediaItem = androidx.media3.common.MediaItem.fromUri(Uri.fromFile(file))
+            exoPlayer.setMediaItem(mediaItem)
+            exoPlayer.prepare()
+            exoPlayer.play()
+            // Listener will trigger advanceToNextItem() on completion
+        } else {
+            // IMAGE LOGIC
+            exoPlayer.stop() // Ensure video is stopped
+            val duration = if (item.durationMs > 0) item.durationMs else 10000L
+            
+            imageTimerJob = viewModelScope.launch {
+                delay(duration)
+                if (isActive) {
+                     advanceToNextItem()
                 }
-
-                updateStatus("playing")
-                
-                // Sync Loop (10Hz)
-                while (isActive) {
-                    val syncState = wallClockSynchronizer.getTargetState(currentPlaylist, playlistVersion)
-                    val targetIndex = syncState.mediaIndex
-                    val targetPos = syncState.seekPositionMs
-                    
-                    val item = currentPlaylist.getOrNull(targetIndex)
-                    if (item == null) {
-                        delay(100)
-                        continue
-                    }
-
-                    val asset = assetsMap[item.assetId]
-                    val isVideo = item.type == "video"
-                    
-                    if (asset == null) {
-                         // Missing asset, skip? Or wait? 
-                         // WallClock says we SHOULD be here. If we skip, we are ahead of time.
-                         // Just show error/loading placeholder for this segment.
-                         delay(100)
-                         continue
-                    }
-
-                    val file = assetManager.getAssetFile(asset)
-                    if (!file.exists()) {
-                         delay(100)
-                         continue
-                    }
-
-                    // CHECK: Do we need to switch media?
-                    if (activeMediaIndex != targetIndex) {
-                        Log.i("PlayerVM", "Sync: Switching to Item #$targetIndex (${item.type}) at ${targetPos}ms")
-                        
-                        // Update UI State
-                        _playerState.value = PlayerState.Playing(
-                            item = item,
-                            fileUri = Uri.fromFile(file),
-                            index = targetIndex,
-                            total = currentPlaylist.size
-                        )
-                        
-                        // Handle Media Switch
-                        if (isVideo) {
-                            val mediaItem = androidx.media3.common.MediaItem.fromUri(Uri.fromFile(file))
-                            exoPlayer.setMediaItem(mediaItem)
-                            exoPlayer.prepare()
-                            exoPlayer.seekTo(targetPos) // Seek to wall-clock offset
-                            exoPlayer.play()
-                        } else {
-                            exoPlayer.stop() // Stop video player for images
-                        }
-                        
-                        activeMediaIndex = targetIndex
-                        
-                        // Track Impression (On Start)
-                        trackImpression(item)
-
-                    } else {
-                        // WE ARE ON THE SAME ITEM.
-                        // CHECK: Do we need to correct drift (Video only)?
-                        if (isVideo && exoPlayer.isPlaying) {
-                            val currentPos = exoPlayer.currentPosition
-                            val drift = kotlin.math.abs(currentPos - targetPos)
-                            
-                            // Tolerance: 2 seconds (Generous to prevent stuttering)
-                            if (drift > 2000) {
-                                Log.w("PlayerVM", "Sync: Drift detected (${drift}ms). Seek to ${targetPos}ms")
-                                exoPlayer.seekTo(targetPos)
-                            }
-                        }
-                        // For Images, we just wait.
-                    }
-                    
-                    delay(100) // 10Hz tick
-                }
-            } finally {
-                updateStatus("idle")
             }
         }
     }
@@ -344,9 +290,6 @@ class PlayerViewModel @Inject constructor(
                 androidx.work.ExistingWorkPolicy.REPLACE,
                 request
             )
-            Log.d("PlayerVM", "Triggered immediate heartbeat for status: $status")
-        } catch (e: Exception) {
-            Log.e("PlayerVM", "Failed to trigger heartbeat", e)
-        }
+        } catch (e: Exception) { }
     }
 }
