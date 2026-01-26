@@ -478,12 +478,7 @@ async function startServer() {
         } catch (e) { console.error('Startup cleanup failed:', e); }
       }, 60000);
 
-      setInterval(async () => {
-        try {
-          const { cleanupLogs } = await import('./scripts/cleanup_logs.js');
-          await cleanupLogs();
-        } catch (e) { console.error('Daily cleanup failed:', e); }
-      }, 24 * 60 * 60 * 1000);
+
     });
 
   } catch (error) {
