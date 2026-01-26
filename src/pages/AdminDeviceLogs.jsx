@@ -58,14 +58,14 @@ export default function AdminDeviceLogs() {
         const eventSource = new EventSource(url);
 
         eventSource.onopen = () => {
-            console.log('[Logs] Connected to live stream');
+            console.debug('[Logs] Connected to live stream');
             setStreamStatus('connected');
         };
 
         eventSource.addEventListener('status_change', (e) => {
             try {
                 const data = JSON.parse(e.data);
-                console.log('[Logs] status_change:', data);
+                console.debug('[Logs] status_change:', data);
                 setDeviceStatus(data.status);
             } catch (err) { console.error(err); }
         });
@@ -84,7 +84,7 @@ export default function AdminDeviceLogs() {
         });
 
         eventSource.addEventListener('connected', (e) => {
-            console.log('[Logs] Stream confirmed:', e.data);
+            console.debug('[Logs] Stream confirmed:', e.data);
             setStreamStatus('connected');
         });
 
@@ -101,7 +101,7 @@ export default function AdminDeviceLogs() {
         };
 
         return () => {
-            console.log('[Logs] Closing stream');
+            console.debug('[Logs] Closing stream');
             eventSource.close();
             setStreamStatus('disconnected');
         };

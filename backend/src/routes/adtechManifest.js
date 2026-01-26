@@ -261,6 +261,26 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
 
     baseManifest.assets = Array.from(uniqueAssets.values());
     baseManifest.playlist = manifestPlaylist;
+
+    // [SYNC] Calculate Cycle Duration for TQL (Time-Quantized Loop)
+    // We sum the duration of all items to find the "Content Length".
+    const totalDurationMs = manifestPlaylist.reduce((acc, item) => acc + (item.duration_ms || 0), 0);
+
+    // We quantize the loop to the nearest 60 seconds (Top of the Minute alignment).
+    // This allows both tablets to align their start times to XX:00, XX:01, etc.
+    // If content is 50s, the player will play for 50s and show a specialized 'Filler' or 'Standby' for 10s.
+    const QUANTUM_MS = 60000;
+    const cycleDurationMs = Math.ceil(totalDurationMs / QUANTUM_MS) * QUANTUM_MS;
+
+    // Ensure we have at least one block
+    const finalCycleDuration = Math.max(cycleDurationMs, QUANTUM_MS);
+
+    baseManifest.sync_config = {
+      enabled: true,
+      mode: "QUANTIZED_WALL_CLOCK",
+      cycle_duration_ms: finalCycleDuration,
+      anchor_epoch_ms: 0 // Align to Unix Epoch (1970-01-01 00:00:00 UTC)
+    };
   } else {
     // Fallback/Default: Show a 'Wait for Assignment' placeholder or empty
     // For now, we return empty so the screen stays blank or shows default logo

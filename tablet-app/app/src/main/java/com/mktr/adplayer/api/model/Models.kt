@@ -11,8 +11,17 @@ data class ManifestResponse(
     val assets: List<Asset> = emptyList(),
     val playlist: List<PlaylistItem> = emptyList(),
     val role: String = "standalone", // master, slave, standalone
-    @SerialName("vehicle_id") val vehicleId: String? = null,
-    @SerialName("vehicle_wifi") val vehicleWifi: WifiCredentials? = null
+    val vehicleId: String? = null,
+    @SerialName("vehicle_wifi") val vehicleWifi: WifiCredentials? = null,
+    @SerialName("sync_config") val syncConfig: SyncConfig? = null
+)
+
+@Serializable
+data class SyncConfig(
+    val enabled: Boolean = false,
+    val mode: String = "disabled",
+    @SerialName("cycle_duration_ms") val cycleDurationMs: Long = 60000,
+    @SerialName("anchor_epoch_ms") val anchorEpochMs: Long = 0
 )
 
 @Serializable

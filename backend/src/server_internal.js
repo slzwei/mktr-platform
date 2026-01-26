@@ -29,6 +29,7 @@ import trackerRoutes from './routes/tracker.js';
 import leadCaptureBind from './routes/leadCaptureBind.js';
 import commissionRoutes from './routes/commissions.js';
 import uploadRoutes from './routes/uploads.js';
+import apkRoutes from './routes/apk.js'; // Added
 import dashboardRoutes from './routes/dashboard.js';
 import notificationRoutes from './routes/notifications.js';
 import verifyRoutes from './routes/verify.js';
@@ -158,6 +159,7 @@ export const init = async (app) => {
   app.use(leadCaptureBind);
   app.use('/api/commissions', commissionRoutes);
   app.use('/api/uploads', uploadRoutes);
+  app.use('/api/apk', apkRoutes); // Added
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/verify', verifyRoutes);

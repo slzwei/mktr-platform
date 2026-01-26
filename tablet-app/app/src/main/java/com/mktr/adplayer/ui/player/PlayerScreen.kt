@@ -66,6 +66,23 @@ fun PlayerOrchestrator(
                     Text("Playback Error: ${s.message}", color = Color.White)
                 }
             }
+            is PlayerState.WaitingForSync -> {
+                Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "MKTR",
+                            color = Color.DarkGray,
+                            style = MaterialTheme.typography.displayLarge
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            text = "SYNCHRONIZING FLEET...",
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+            }
         }
 
         // Overlay Indicator (Top Right)

@@ -100,6 +100,11 @@ const getNavigationItems = (user) => {
       title: "Commissions",
       url: createPageUrl("AdminCommissions"),
       icon: DollarSign
+    },
+    {
+      title: "App Versions",
+      url: createPageUrl("AdminApkManager"),
+      icon: LayoutDashboard // Or a more specific icon if imported
     }
   ];
 

@@ -223,12 +223,12 @@ export const auth = {
 
   // Google OAuth login
   async googleLogin(credential) {
-    console.log('🔍 AUTH: Sending Google credential to backend...');
+    // console.debug('🔍 AUTH: Sending Google credential to backend...');
     const response = await apiClient.post('/auth/google', { credential });
-    console.log('🔍 AUTH: Backend response:', response);
+    // console.debug('🔍 AUTH: Backend response:', response);
 
     if (response.success && response.data.token) {
-      console.log('✅ AUTH: Google login successful, storing token...');
+      // console.debug('✅ AUTH: Google login successful, storing token...');
       apiClient.setToken(response.data.token);
       currentUser = response.data.user;
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
@@ -275,39 +275,30 @@ export const auth = {
 
   // Get current user
   async getCurrentUser(forceRefresh = false) {
-    console.log('🔍 AUTH: Getting current user...');
-    console.log('🔍 AUTH: Current user in memory:', currentUser);
-
     if (currentUser && !forceRefresh) {
-      console.log('✅ AUTH: Returning cached user:', currentUser);
       return currentUser;
     }
 
     const stored = localStorage.getItem(STORAGE_KEYS.USER);
-    console.log('🔍 AUTH: Stored user in localStorage:', stored);
 
     if (stored && !forceRefresh) {
       currentUser = JSON.parse(stored);
-      console.log('✅ AUTH: Returning stored user:', currentUser);
       return currentUser;
     }
 
-    console.log('🔍 AUTH: No cached/stored user, checking with backend...');
+    // console.debug('🔍 AUTH: No cached/stored user, checking with backend...');
     try {
       const response = await apiClient.get('/auth/profile');
-      console.log('🔍 AUTH: Backend response:', response);
 
       if (response.success) {
         currentUser = response.data.user;
         localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
-        console.log('✅ AUTH: Got user from backend:', currentUser);
         return currentUser;
       }
     } catch (error) {
       console.error('❌ AUTH: Failed to get current user:', error);
     }
 
-    console.log('❌ AUTH: No user found, returning null');
     return null;
   },
 
@@ -331,13 +322,11 @@ export const auth = {
   // Set current user (for OAuth callbacks)
   setCurrentUser(user) {
     currentUser = user;
-    console.log('🔧 AUTH: Current user set to:', user);
 
     // Also ensure API client has the latest token
     const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
     if (token && !apiClient.getToken()) {
       apiClient.setToken(token);
-      console.log('🔧 AUTH: API client token refreshed from localStorage');
     }
   },
 

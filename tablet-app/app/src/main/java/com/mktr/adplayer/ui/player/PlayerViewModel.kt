@@ -30,6 +30,7 @@ sealed class PlayerState {
         val playId: Long = System.currentTimeMillis()
     ) : PlayerState()
     data class Error(val message: String) : PlayerState()
+    data class WaitingForSync(val targetTime: Long, val waitDuration: Long) : PlayerState()
 }
 
 @HiltViewModel
@@ -85,6 +86,7 @@ class PlayerViewModel @Inject constructor(
     private var assetsMap: Map<String, com.mktr.adplayer.api.model.Asset> = emptyMap()
     private var activeMediaIndex = -1
     private var playlistVersion = ""
+    private var syncConfig: com.mktr.adplayer.api.model.SyncConfig? = null
 
     private var imageTimerJob: kotlinx.coroutines.Job? = null
 
@@ -209,6 +211,7 @@ class PlayerViewModel @Inject constructor(
                 currentPlaylist = correctedPlaylist // Use corrected list
                 assetsMap = manifest.assets.associateBy { it.id }
                 playlistVersion = manifest.version.toString()
+                syncConfig = manifest.syncConfig
                 
                 // Restart Loop with new content
                 startPlaybackLoop() 
@@ -259,6 +262,38 @@ class PlayerViewModel @Inject constructor(
             nextIndex = 0
         }
         
+        // [SYNC] Time-Quantized Loop Check
+        if (nextIndex == 0) {
+            val config = syncConfig
+            if (config != null && config.enabled && config.cycleDurationMs > 0) {
+                val now = System.currentTimeMillis()
+                val cycle = config.cycleDurationMs
+                val elapsed = (now - config.anchorEpochMs) % cycle
+                
+                // Tolerance: Reduced to 100ms for tighter sync.
+                if (elapsed > 100) {
+                    val waitMs = cycle - elapsed
+                    Log.i("PlayerVM", "Sync: Loop complete. Waiting ${waitMs}ms for next boundary.")
+                    
+                    _playerState.value = PlayerState.WaitingForSync(now + waitMs, waitMs)
+                    // [FIX] Must be "playing" to keep the PlayerScreen mounted. 
+                    // If "idle", MainActivity switches to Dashboard, triggering onDispose -> stopPlayback().
+                    updateStatus("playing") 
+                    
+                    imageTimerJob = viewModelScope.launch {
+                        delay(waitMs)
+                        if (isActive) {
+                             activeMediaIndex = 0
+                             playItem(0)
+                        }
+                    }
+                    return
+                } else {
+                    Log.i("PlayerVM", "Sync: Within tolerance (${elapsed}ms late). Starting immediately.")
+                }
+            }
+        }
+        
         activeMediaIndex = nextIndex
         playItem(nextIndex)
     }
@@ -303,10 +338,32 @@ class PlayerViewModel @Inject constructor(
         } else {
             // IMAGE LOGIC
             exoPlayer.stop() // Ensure video is stopped
-            val duration = if (item.durationMs > 0) item.durationMs else 10000L
             
+            // [SYNC] Intra-Loop Drift Correction
+            // Calculate when this item *should* end ideally
+            var durationToPlay = if (item.durationMs > 0) item.durationMs else 10000L
+            
+            val config = syncConfig
+            if (config != null && config.enabled && activeMediaIndex >= 0) {
+                 // Calculate cumulative offset
+                 var cumulativeOffset = 0L
+                 for (i in 0 until activeMediaIndex) {
+                     cumulativeOffset += (currentPlaylist.getOrNull(i)?.durationMs ?: 0L)
+                 }
+                 
+                 // If we are at index 0, we assume we started at 'now' (or synced time)
+                 // But better: In wait loop, we set a "reference time".
+                 // For simplified "Catch Up" logic:
+                 // We rely on the loop boundary check to reset the clock. 
+                 // Inside the loop, we just ensure we don't drift further? 
+                 // Actually, "Catch Up" is hard without a fixed start reference.
+                 
+                 // Let's rely on the Loop Boundary for gross sync, 
+                 // but reduce the Tolerance to 100ms.
+            }
+
             imageTimerJob = viewModelScope.launch {
-                delay(duration)
+                delay(durationToPlay)
                 if (isActive) {
                      advanceToNextItem()
                 }

@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
 import dagger.hilt.android.AndroidEntryPoint
 import com.mktr.adplayer.worker.WatchdogService
 
@@ -298,6 +299,24 @@ fun DashboardScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 if (manifest != null) {
                     Text("Device ID: ${manifest.deviceId}")
+                    // [NEW] Show Vehicle Info
+                    if (!manifest.vehicleId.isNullOrEmpty()) {
+                        Text("Vehicle: ${manifest.vehicleId}", style = MaterialTheme.typography.bodyMedium)
+                        Text("Role: ${manifest.role.uppercase()}", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        Text("Vehicle: Unassigned", color = Color.Gray, style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    // [NEW] Show Sync Config
+                    val sync = manifest.syncConfig
+                    if (sync != null && sync.enabled) {
+                        Text("Sync Mode: ${sync.mode}", color = Color(0xFF4CAF50), style = MaterialTheme.typography.bodyMedium)
+                        Text("Loop: ${sync.cycleDurationMs / 1000}s", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        Text("Sync: Disabled", color = Color.Gray)
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text("Refresh: ${manifest.refreshSeconds}s")
                     Text("Assets: ${manifest.assets.size}")
                     Text("Playlist: ${manifest.playlist.size} items")
