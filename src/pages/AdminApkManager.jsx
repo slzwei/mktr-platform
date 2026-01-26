@@ -19,16 +19,7 @@ const AdminApkManager = () => {
     const fetchApkInfo = async () => {
         setIsLoading(true);
         try {
-            const token = apiClient.getToken();
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/apk/list`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-
-            if (!response.ok) throw new Error('Failed to fetch APK info');
-
-            const data = await response.json();
+            const data = await apiClient.get('/apk/list');
             if (data.success) {
                 setCurrentApk(data.apk);
             }
@@ -70,20 +61,7 @@ const AdminApkManager = () => {
         formData.append('file', selectedFile);
 
         try {
-            const token = apiClient.getToken();
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/apk/upload`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                },
-                body: formData
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.message || 'Upload failed');
-            }
+            await apiClient.upload('/apk/upload', formData);
 
             toast({
                 title: "Success",
