@@ -96,7 +96,17 @@ router.post('/fulfill', authenticateToken, requireAdmin, async (req, res) => {
         }
 
         // Validate Key Exists
-        const secretHash = crypto.createHash('sha256').update(deviceKey).digest('hex');
+        if (typeof deviceKey !== 'string') {
+            return res.status(400).json({ message: 'Invalid deviceKey format' });
+        }
+
+        let secretHash;
+        try {
+            secretHash = crypto.createHash('sha256').update(deviceKey).digest('hex');
+        } catch (error) {
+            console.error('Hashing error:', error);
+            return res.status(500).json({ message: 'Internal server error processing key' });
+        }
         const device = await Device.findOne({ where: { secretHash } });
 
         if (!device) {
