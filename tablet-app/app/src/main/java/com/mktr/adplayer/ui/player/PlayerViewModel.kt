@@ -185,6 +185,19 @@ class PlayerViewModel @Inject constructor(
                 item // Fallback to original if not video or failed
             }
 
+            // [FIX] Empty Playlist Handling
+            if (correctedPlaylist.isEmpty()) {
+                Log.i("PlayerVM", "Received empty playlist. Stopping playback.")
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    _isDownloading.value = false
+                    isPlaybackAllowed = false
+                    stopPlaybackLoop()
+                    currentPlaylist = emptyList()
+                    _playerState.value = PlayerState.Initializing // Return to waiting state
+                }
+                return@launch
+            }
+
             // 3. SWITCH PHASE (Main Thread)
             // Ensure we are still active and not cancelled
             if (!isActive) return@launch
