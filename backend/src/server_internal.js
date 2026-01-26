@@ -91,6 +91,19 @@ export const init = async (app) => {
 
   console.log('DEBUG: Configured CORS Origins:', corsOrigins);
 
+  // Explicit OPTIONS handler for preflight requests - must come BEFORE cors() middleware
+  app.options('*', (req, res) => {
+    const origin = req.headers.origin;
+    if (origin && corsOrigins.includes(origin)) {
+      res.set('Access-Control-Allow-Origin', origin);
+      res.set('Access-Control-Allow-Credentials', 'true');
+      res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+      res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+      res.set('Access-Control-Max-Age', '86400'); // Cache preflight for 24 hours
+    }
+    res.status(204).end();
+  });
+
   app.use(cors({
     origin: corsOrigins,
     credentials: true,
