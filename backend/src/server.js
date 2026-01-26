@@ -10,7 +10,27 @@ import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 
 import { sequelize } from './database/connection.js';
-import { QrTag, QrScan, Attribution, SessionVisit, Prospect, FleetOwner, User, Campaign, Car, ShortLink, ShortLinkClick, LeadPackage, LeadPackageAssignment } from './models/index.js';
+import {
+  QrTag,
+  QrScan,
+  Attribution,
+  SessionVisit,
+  Prospect,
+  FleetOwner,
+  User,
+  Campaign,
+  Car,
+  ShortLink,
+  ShortLinkClick,
+  LeadPackage,
+  LeadPackageAssignment,
+  ProvisioningSession,
+  Vehicle,
+  Impression,
+  BeaconEvent,
+  ProspectActivity
+} from './models/index.js';
+
 import './models/CampaignPreview.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
@@ -40,8 +60,8 @@ import contactRoutes from './routes/contact.js';
 import shortLinkRoutes from './routes/shortlinks.js';
 import leadPackageRoutes from './routes/leadPackages.js';
 import deviceRoutes from './routes/devices.js';
-import provisioningRoutes from './routes/provisioning.js'; // Added
-import vehicleRoutes from './routes/vehicles.js'; // Added for tablet pairing
+import provisioningRoutes from './routes/provisioning.js';
+import vehicleRoutes from './routes/vehicles.js';
 import { validateGoogleOAuthConfig } from './controllers/authController.js';
 
 import { optionalAuth } from './middleware/auth.js';
@@ -142,7 +162,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-import generalRoutes from './routes/general.js'; // Added
+import generalRoutes from './routes/general.js';
 
 // API Routes
 app.use('/api', generalRoutes); // Mount generic routes like /time
@@ -173,8 +193,8 @@ app.use('/share', shortLinkRoutes);
 app.use('/api/lead-packages', leadPackageRoutes);
 app.use('/api/devices/events', deviceEventsRouter);
 app.use('/api/devices', deviceRoutes);
-app.use('/api/provision', provisioningRoutes); // Added
-app.use('/api/vehicles', vehicleRoutes); // Added for tablet pairing
+app.use('/api/provision', provisioningRoutes);
+app.use('/api/vehicles', vehicleRoutes);
 
 
 // Phase C: Adtech Manifest + Beacons (behind flags)
@@ -245,6 +265,7 @@ async function startServer() {
     } catch (e) {
       console.warn('⚠️ Failed to apply SQLite PRAGMAs:', e?.message || e);
     }
+
     try {
       const dialect = sequelize.getDialect();
       if (dialect === 'sqlite') {
@@ -256,31 +277,42 @@ async function startServer() {
 
     // Targeted sync for new/changed models; avoid accidental destructive alters on sqlite
     const isSqlite = sequelize.getDialect() === 'sqlite';
+
     // Ensure base tables that QrTag depends on exist first
     await User.sync({ alter: false });
     await FleetOwner.sync({ alter: false });
     await Campaign.sync({ alter: false });
     await Car.sync({ alter: false });
+
     // Now dependent tables
     await QrTag.sync({ alter: false });
-    try {
-      // Avoid aggressive alters on Postgres for qr_scans to prevent dropping non-existent FKs
-      await QrScan.sync({ alter: false });
-    } catch (e) {
-      console.warn('⚠️ QrScan sync (alter=false) failed, continuing:', e?.message || e);
-    }
-    await Attribution.sync({ alter: false });
-    await SessionVisit.sync({ alter: false });
-    await Prospect.sync({ alter: false });
-    await (await import('./models/ProspectActivity.js')).default.sync({ alter: false });
-    await (await import('./models/ShortLink.js')).default.sync({ alter: false });
-    await (await import('./models/ShortLinkClick.js')).default.sync({ alter: false });
-    await LeadPackage.sync({ alter: false });
-    await LeadPackage.sync({ alter: false });
-    await LeadPackageAssignment.sync({ alter: false });
-    await (await import('./models/BeaconEvent.js')).default.sync({ alter: false });
-    await (await import('./models/Impression.js')).default.sync({ alter: false });
-    await (await import('./models/ProvisioningSession.js')).default.sync({ alter: false }); // Added
+
+    // Define a safe sync helper to prevent boot loops on schema mismatches
+    const safeSync = async (model, name) => {
+      try {
+        await model.sync({ alter: false });
+        console.log(`✅ Synced ${name}`);
+      } catch (e) {
+        console.warn(`⚠️ ${name} sync failed (non-fatal), continuing:`, e?.message || e);
+      }
+    };
+
+    await safeSync(QrScan, 'QrScan');
+    await safeSync(Attribution, 'Attribution');
+    await safeSync(SessionVisit, 'SessionVisit');
+    await safeSync(Prospect, 'Prospect');
+    await safeSync(ProspectActivity, 'ProspectActivity');
+    await safeSync(ShortLink, 'ShortLink');
+    await safeSync(ShortLinkClick, 'ShortLinkClick');
+
+    await safeSync(LeadPackage, 'LeadPackage');
+    await safeSync(LeadPackageAssignment, 'LeadPackageAssignment');
+
+    // New Models (AdTech V5)
+    await safeSync(BeaconEvent, 'BeaconEvent');
+    await safeSync(Impression, 'Impression');
+    await safeSync(ProvisioningSession, 'ProvisioningSession');
+    await safeSync(Vehicle, 'Vehicle');
 
     // Ensure name fields exist and constraints are updated
 
@@ -346,7 +378,7 @@ async function startServer() {
           await sequelize.query(`
             UPDATE devices 
             SET campaignIds = '[' || '"' || campaignId || '"' || ']'
-            WHERE campaignId IS NOT NULL AND (campaignIds IS NULL OR campaignIds = '[]')
+            WHERE campaignId IS NOT NULL AND(campaignIds IS NULL OR campaignIds = '[]')
           `);
           console.log('✅ Migrated existing device assignments to multi-campaign format');
         }
@@ -363,7 +395,7 @@ async function startServer() {
           SELECT column_name 
           FROM information_schema.columns 
           WHERE table_name = 'devices' AND column_name = 'campaignIds'
-        `);
+          `);
 
         if (results.length === 0) {
           console.log('🔄 Applying Postgres migration: Adding campaignIds...');
@@ -376,8 +408,8 @@ async function startServer() {
             UPDATE devices 
             SET "campaignIds" = jsonb_build_array("campaignId") 
             WHERE "campaignId" IS NOT NULL 
-              AND ("campaignIds" IS NULL OR jsonb_array_length("campaignIds") = 0)
-          `);
+              AND("campaignIds" IS NULL OR jsonb_array_length("campaignIds") = 0)
+            `);
           console.log('✅ Migrated existing device assignments to multi-campaign format (Postgres)');
         }
       } catch (e) {
@@ -418,12 +450,13 @@ async function startServer() {
             // Delete exact duplicate prospects keeping the earliest createdAt per (campaignId, phone)
             await sequelize.query(
               `DELETE FROM prospects p
-               USING (
-                 SELECT \"campaignId\", phone, MIN(createdAt) AS keep_time
+               USING(
+              SELECT \"campaignId\", phone, MIN(createdAt) AS keep_time
                  FROM prospects
                  WHERE phone IS NOT NULL AND phone <> '' AND \"campaignId\" IS NOT NULL
                  GROUP BY \"campaignId\", phone
-               ) s
+                 GROUP BY \"campaignId\", phone
+            ) s
                WHERE p.phone IS NOT NULL AND p.phone <> ''
                  AND p.\"campaignId\" IS NOT NULL
                  AND p.\"campaignId\" = s.\"campaignId\"
@@ -440,7 +473,7 @@ async function startServer() {
         try {
           await sequelize.query(
             `CREATE UNIQUE INDEX IF NOT EXISTS prospects_campaign_id_phone
-             ON prospects ("campaignId", phone)
+             ON prospects("campaignId", phone)
              WHERE phone IS NOT NULL AND phone <> ''`
           );
           console.log('✅ Ensured unique (campaignId, phone) index on prospects');
