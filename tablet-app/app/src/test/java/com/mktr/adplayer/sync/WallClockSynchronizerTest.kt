@@ -6,36 +6,45 @@ import org.junit.Test
 
 class WallClockSynchronizerTest {
 
-    private val synchronizer = WallClockSynchronizer()
+    // MockK TimeProvider
+    private val timeProvider = io.mockk.mockk<TimeProvider>(relaxed = true)
+    private val synchronizer = WallClockSynchronizer(timeProvider)
 
     @Test
-    fun `getTargetState calculates correct index and position`() {
+    fun `getTargetState calculates correct index and position using Sync V4`() {
         val playlist = listOf(
-            createItem("1", 5000), // 0-5000ms
+            createItem("1", 5000),  // 0-5000ms
             createItem("2", 10000), // 5000-15000ms
             createItem("3", 5000)   // 15000-20000ms
         )
         // Total Duration = 20000ms
+        
+        // [Sync V4] Position = now % totalDuration
+        
+        // Scenario 1: 2000ms into the loop (Item 1)
+        // 2000 % 20000 = 2000 -> Item 1 @ 2000ms
+        io.mockk.every { timeProvider.nowSyncedUnixMs() } returns 2000L
+        val state1 = synchronizer.getTargetState(playlist, "v1")
+        
+        assertEquals(0, state1.mediaIndex)
+        assertEquals(2000L, state1.seekPositionMs)
+        assertEquals("v1", state1.playlistVersion)
+        
+        // Scenario 2: 10000ms into the loop (Item 2)
+        // 10000 % 20000 = 10000 -> Item 2 @ 5000ms offset (since Item 2 starts at 5000)
+        io.mockk.every { timeProvider.nowSyncedUnixMs() } returns 10000L
+        val state2 = synchronizer.getTargetState(playlist, "v1")
+        
+        assertEquals(1, state2.mediaIndex)
+        assertEquals(5000L, state2.seekPositionMs)
 
-        // Mock System Time?
-        // Since the class uses System.currentTimeMillis() directly, it's hard to test deterministically without dependency injection of a Clock.
-        // However, for this fix, we can assume the logic: pos = time % total.
-        // To test strictly, we should have injected a Clock. 
-        // For now, let's verify the logic by manually invoking the logic if possible, 
-        // OR we can refactor WallClockSynchronizer to accept a 'now' parameter for testing.
+        // Scenario 3: 21000ms (Looped - 1 full loop + 1000ms)
+        // 21000 % 20000 = 1000 -> Item 1 @ 1000ms
+        io.mockk.every { timeProvider.nowSyncedUnixMs() } returns 21000L
+        val state3 = synchronizer.getTargetState(playlist, "v1")
         
-        // Let's refactor WallClockSynchronizer slightly to be testable?
-        // Or just trust the math. 
-        // Actually, I can't easily test "System.currentTimeMillis()" behavior without Flaky tests.
-        
-        // BETTER APPROACH: Add a helper method in the test that replicates the logic to verify "At least it compiles and runs without crashing"?
-        // No, that's useless.
-        
-        // Let's just create a basic test that ensures it returns *something* valid for the current time.
-        val state = synchronizer.getTargetState(playlist, "v1")
-        assert(state.mediaIndex in 0..2)
-        assert(state.seekPositionMs >= 0)
-        assertEquals("v1", state.playlistVersion)
+        assertEquals(0, state3.mediaIndex)
+        assertEquals(1000L, state3.seekPositionMs)
     }
 
     private fun createItem(id: String, duration: Long): PlaylistItem {

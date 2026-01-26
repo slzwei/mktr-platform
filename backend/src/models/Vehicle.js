@@ -48,9 +48,17 @@ Vehicle.init({
     tableName: 'vehicles',
     indexes: [
         { unique: true, fields: ['carplate'] },
-        { fields: ['masterDeviceId'] },
-        { fields: ['slaveDeviceId'] }
     ]
+});
+
+// [Sync V5] FM-1: Cleanup timer on vehicle deletion
+Vehicle.addHook('beforeDestroy', async (vehicle) => {
+    try {
+        const { orchestrator } = await import('../services/VehiclePlaylistOrchestrator.js');
+        orchestrator.stopVehicle(vehicle.id);
+    } catch (e) {
+        console.error('[Vehicle] Cleanup hook failed:', e);
+    }
 });
 
 export default Vehicle;

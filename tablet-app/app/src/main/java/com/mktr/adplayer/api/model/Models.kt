@@ -8,6 +8,8 @@ data class ManifestResponse(
     val version: Int,
     @SerialName("device_id") val deviceId: String,
     @SerialName("refresh_seconds") val refreshSeconds: Long = 300,
+    @SerialName("server_unix_ms") val serverUnixMs: Long? = null, // Protocol V3
+    @SerialName("session_start_unix_ms") val sessionStartUnixMs: Long? = null, // Protocol V3
     val assets: List<Asset> = emptyList(),
     val playlist: List<PlaylistItem> = emptyList(),
     val role: String = "standalone", // master, slave, standalone

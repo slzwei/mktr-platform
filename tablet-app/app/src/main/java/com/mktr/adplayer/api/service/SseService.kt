@@ -10,6 +10,8 @@ import okhttp3.sse.EventSources
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,6 +32,16 @@ class SseService @Inject constructor(
     private var reconnectAttempts = 0
     private var deviceKey: String? = null
     private var onMessageCallback: ((String, String) -> Unit)? = null
+    
+    // [Sync V5] Use Flow for event distribution
+    private val _eventFlow = kotlinx.coroutines.flow.MutableSharedFlow<SseEvent>(
+        replay = 0, 
+        extraBufferCapacity = 10,
+        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
+    )
+    val eventFlow = _eventFlow.asSharedFlow()
+
+    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
     // Connection activity tracking
     private var lastActivityTimestamp = 0L
@@ -84,18 +96,36 @@ class SseService @Inject constructor(
                 reconnectAttempts = 0
                 lastActivityTimestamp = System.currentTimeMillis()
                 onMessageCallback?.invoke("CONNECTED", "{}")
+                
+                // Emit Connected event
+                CoroutineScope(Dispatchers.IO).launch {
+                    _eventFlow.emit(SseEvent.Connected) 
+                }
             }
 
             override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
-                // Heartbeats are frequent - log at verbose only to reduce noise
                 if (type == "heartbeat") {
                     Log.v(TAG, "SSE Heartbeat received")
                 } else {
                     Log.d(TAG, "SSE Event: $type")
                 }
                 lastActivityTimestamp = System.currentTimeMillis()
+                
                 if (type != null) {
                     onMessageCallback?.invoke(type, data)
+                    
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            if (type == "play_video") {
+                                val payload = json.decodeFromString<PlayVideoPayload>(data)
+                                _eventFlow.emit(SseEvent.PlayVideo(payload))
+                            } else {
+                                _eventFlow.emit(SseEvent.Raw(type, data))
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to parse SSE event: $type", e)
+                        }
+                    }
                 }
             }
 
@@ -168,4 +198,18 @@ class SseService @Inject constructor(
         watchdogJob = null
     }
 }
+
+sealed class SseEvent {
+    object Connected : SseEvent()
+    data class PlayVideo(val payload: PlayVideoPayload) : SseEvent()
+    data class Raw(val type: String, val data: String) : SseEvent()
+}
+
+@kotlinx.serialization.Serializable
+data class PlayVideoPayload(
+    val video_index: Int,
+    val start_at_unix_ms: Long,
+    val playlist_version: Int,
+    val sequence: Long = 0
+)
 

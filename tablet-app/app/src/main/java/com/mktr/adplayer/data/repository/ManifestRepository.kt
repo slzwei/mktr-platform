@@ -14,13 +14,13 @@ import kotlinx.serialization.json.Json
 @Singleton
 class ManifestRepository @Inject constructor(
     private val api: AdTechService,
-    private val prefs: DevicePrefs
+    private val prefs: DevicePrefs,
+    private val timeProvider: com.mktr.adplayer.sync.TimeProvider // Injected
 ) {
 
     suspend fun refreshManifest(): Result<ManifestResponse?> {
         return withContext(Dispatchers.IO) {
             try {
-                // Get cached ETag
                 val etag = prefs.lastManifestEtag
                 Log.d("ManifestRepo", "Fetching manifest with ETag: $etag")
 
@@ -31,7 +31,11 @@ class ManifestRepository @Inject constructor(
                     val newEtag = response.headers()["ETag"]
 
                     if (newManifest != null) {
-                        Log.d("ManifestRepo", "New manifest received. Version: ${newManifest.version}")
+                        Log.d("ManifestRepo", "New manifest received. Ver: ${newManifest.version}")
+                        
+                        // [Sync V4] Use NTP for time sync (no server-time dependency)
+                        timeProvider.syncWithNtp()
+                        
                         // Save new ETag
                         if (newEtag != null) {
                             prefs.lastManifestEtag = newEtag

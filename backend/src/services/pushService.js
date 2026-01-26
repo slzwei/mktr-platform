@@ -229,6 +229,39 @@ class PushService extends EventEmitter {
         }
     }
 
+    // Vehicle-level Broadcast (Protocol V5)
+    async broadcastToVehicle(vehicleId, payload) {
+        // We need to find devices belonging to this vehicle.
+        // Since we don't store vehicleId in `this.clients` map directly, we iterate.
+        // Optimization: In `addClient`, store vehicleId in the client object.
+
+        // For now, let's look up device IDs from DB or assume we can iterate clients.
+        // Iterating memory map is faster than DB query for every broadcast.
+
+        // BETTER: When orchestrator calls this, it knows the vehicleId.
+        // The PushService doesn't know which connected sockets belong to which vehicle
+        // unless we store it.
+
+        // Let's rely on DB fetch for IDs, then map to connections. 
+        // Devices are cached in Sequelize usually.
+
+        try {
+            // Lazy import to avoid circular dep if needed, or pass IDs
+            const { Device } = await import('../models/index.js');
+            const devices = await Device.findAll({
+                where: { vehicleId },
+                attributes: ['id']
+            });
+
+            devices.forEach(d => {
+                this.sendEvent(d.id, payload.event, payload);
+            });
+
+        } catch (e) {
+            console.error(`[Push] Broadcast to vehicle ${vehicleId} failed:`, e);
+        }
+    }
+
     broadcastLog(deviceId, log) {
         console.log(`[Push] broadcastLog called for ID: ${deviceId} (Type: ${typeof deviceId})`);
         const set = this.observers.get(deviceId);

@@ -7,18 +7,16 @@ import javax.inject.Singleton
 import kotlin.math.max
 
 /**
- * WallClockSynchronizer - Deterministic playback scheduler based on System Time.
+ * WallClockSynchronizer - Deterministic playback scheduler (Sync V4: Pure NTP).
  * 
- * Instead of Master/Slave communication, every tablet calculates exactly
- * what frame it should be displaying at this millisecond based on the
- * Wall Clock (System.currentTimeMillis()).
- * 
- * Prerequisites:
- * - Devices must have synchronized clocks (Automatic Date/Time via Network).
- * - Playlist items must have fixed durations.
+ * All tablets sync to Google NTP (time.google.com) and calculate their
+ * playlist position as: nowSyncedUnixMs() % totalLoopDuration.
+ * No server time or session start is needed.
  */
 @Singleton
-class WallClockSynchronizer @Inject constructor() {
+class WallClockSynchronizer @Inject constructor(
+    private val timeProvider: TimeProvider
+) {
 
     companion object {
         private const val TAG = "WallClockSync"
@@ -28,62 +26,66 @@ class WallClockSynchronizer @Inject constructor() {
         val mediaIndex: Int,
         val seekPositionMs: Long,
         val shouldBePlaying: Boolean,
-        val playlistVersion: String
+        val playlistVersion: String,
+        val serverTimeMs: Long // For debug overlays (actually NTP time now)
     )
 
     /**
      * Calculate the expected playback state for a given playlist at the current moment.
+     * [Sync V4] Uses NTP-synced time and calculates position as: now % totalDuration.
      */
-    fun getTargetState(playlist: List<PlaylistItem>, version: String): SyncState {
+    fun getTargetState(
+        playlist: List<PlaylistItem>, 
+        version: String
+    ): SyncState {
+        val nowSynced = timeProvider.nowSyncedUnixMs()
+        
         if (playlist.isEmpty()) {
-            return SyncState(0, 0L, false, version)
+            return SyncState(0, 0L, false, version, nowSynced)
         }
 
         // 1. Calculate Total Loop Duration
-        // Use a safe cumulative sum to avoid overflow (though unlikely for playlists)
         var totalLoopDurationMs = 0L
         val startTimes = LongArray(playlist.size)
 
         playlist.forEachIndexed { index, item ->
             startTimes[index] = totalLoopDurationMs
-            // Ensure valid duration (fallback to 5s if missing/zero to prevent loops)
             val duration = if (item.durationMs > 0) item.durationMs else 5000L
             totalLoopDurationMs += duration
         }
 
         if (totalLoopDurationMs == 0L) {
-             return SyncState(0, 0L, false, version)
+             return SyncState(0, 0L, false, version, nowSynced)
         }
 
-        // 2. Get Current Wall Clock Time
-        val now = System.currentTimeMillis()
+        // 2. [Sync V4] Position = now % total (Simple. Elegant. Works.)
+        val positionInLoop = nowSynced % totalLoopDurationMs
 
-        // 3. Find Position in Loop
-        val positionInLoop = now % totalLoopDurationMs
-
-        // 4. Find which item covers this position
-        // We iterate backwards or use binary search, but linear is fine for <100 items
+        // 3. Find which item covers this position
         var targetIndex = 0
         var itemStartTime = 0L
         
         for (i in playlist.indices) {
-            val nextStartTime = if (i == playlist.lastIndex) totalLoopDurationMs else startTimes[i + 1]
+            val startTime = startTimes[i]
+            val duration = if (playlist[i].durationMs > 0) playlist[i].durationMs else 5000L
+            val endTime = startTime + duration
             
-            if (positionInLoop >= startTimes[i] && positionInLoop < nextStartTime) {
+            if (positionInLoop >= startTime && positionInLoop < endTime) {
                 targetIndex = i
-                itemStartTime = startTimes[i]
+                itemStartTime = startTime
                 break
             }
         }
 
-        // 5. Calculate Offset into that item
+        // 4. Calculate Offset into that item
         val seekPos = positionInLoop - itemStartTime
 
         return SyncState(
             mediaIndex = targetIndex,
             seekPositionMs = seekPos,
             shouldBePlaying = true,
-            playlistVersion = version
+            playlistVersion = version,
+            serverTimeMs = nowSynced
         )
     }
 }

@@ -316,12 +316,23 @@ fun DashboardScreen(
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = onPlay,
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = manifest.playlist.isNotEmpty()
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("START PLAYER")
+                        Button(
+                            onClick = onPlay,
+                            modifier = Modifier.weight(1f),
+                            enabled = manifest.playlist.isNotEmpty()
+                        ) {
+                            Text("START PLAYER")
+                        }
+                        OutlinedButton(
+                            onClick = onReset,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("CHANGE KEY")
+                        }
                     }
                 }
             }

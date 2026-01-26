@@ -142,7 +142,10 @@ app.get('/health', (req, res) => {
   });
 });
 
+import generalRoutes from './routes/general.js'; // Added
+
 // API Routes
+app.use('/api', generalRoutes); // Mount generic routes like /time
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/campaigns', campaignRoutes);
@@ -450,8 +453,16 @@ async function startServer() {
     }
 
     // Start server
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+    app.listen(PORT, '0.0.0.0', async () => {
+      console.log(`[Server] Running on port ${PORT}`);
+
+      // [Sync V5] Restore active vehicle timers
+      try {
+        const { orchestrator } = await import('./services/VehiclePlaylistOrchestrator.js');
+        orchestrator.restoreOrchestrators();
+      } catch (e) {
+        console.error('[Server] Failed to restore orchestrators:', e);
+      }
       console.log(`📊 Environment: ${process.env.NODE_ENV}`);
       console.log(`🔗 API URL: http://localhost:${PORT}/api`);
       console.log(`💚 Health Check: http://localhost:${PORT}/health`);
