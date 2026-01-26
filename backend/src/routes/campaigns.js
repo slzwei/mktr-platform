@@ -18,7 +18,11 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   // the column may not exist yet, so we skip to avoid 500s.
   try {
     const dialect = Campaign.sequelize.getDialect();
-    if (dialect === 'postgres') {
+    // [FIX] Ensure the model actually has the attribute defined before trying to filter by it.
+    // This prevents "column client_id does not exist" errors if schema drifts.
+    const hasTenantId = !!Campaign.rawAttributes.tenant_id;
+
+    if (dialect === 'postgres' && hasTenantId) {
       whereConditions.tenant_id = getTenantId(req);
     }
   } catch (_) {
@@ -125,7 +129,8 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
   const whereConditions = { id };
   try {
     const dialect = Campaign.sequelize.getDialect();
-    if (dialect === 'postgres') {
+    const hasTenantId = !!Campaign.rawAttributes.tenant_id;
+    if (dialect === 'postgres' && hasTenantId) {
       whereConditions.tenant_id = getTenantId(req);
     }
   } catch (_) { }
@@ -188,7 +193,8 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (r
   const whereConditions = { id };
   try {
     const dialect = Campaign.sequelize.getDialect();
-    if (dialect === 'postgres') {
+    const hasTenantId = !!Campaign.rawAttributes.tenant_id;
+    if (dialect === 'postgres' && hasTenantId) {
       whereConditions.tenant_id = getTenantId(req);
     }
   } catch (_) { }
@@ -273,7 +279,8 @@ router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async
   const whereConditions = { id };
   try {
     const dialect = Campaign.sequelize.getDialect();
-    if (dialect === 'postgres') {
+    const hasTenantId = !!Campaign.rawAttributes.tenant_id;
+    if (dialect === 'postgres' && hasTenantId) {
       whereConditions.tenant_id = getTenantId(req);
     }
   } catch (_) { }
@@ -315,7 +322,8 @@ router.get('/:id/analytics', authenticateToken, asyncHandler(async (req, res) =>
   const whereConditions = { id };
   try {
     const dialect = Campaign.sequelize.getDialect();
-    if (dialect === 'postgres') {
+    const hasTenantId = !!Campaign.rawAttributes.tenant_id;
+    if (dialect === 'postgres' && hasTenantId) {
       whereConditions.tenant_id = getTenantId(req);
     }
   } catch (_) { }
