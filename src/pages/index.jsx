@@ -194,17 +194,17 @@ function PagesContent() {
               </DashboardLayout>
             </ProtectedRoute>
           } />
-          <Route path="/admin/vehicles" element={
-            <ProtectedRoute requiredRole="admin">
-              <DashboardLayout>
-                <AdminVehicles />
-              </DashboardLayout>
-            </ProtectedRoute>
-          } />
           <Route path="/AdminFleetMap" element={
             <ProtectedRoute requiredRole="admin">
               <DashboardLayout>
                 <AdminFleetMap />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/AdminVehicles" element={
+            <ProtectedRoute requiredRole="admin">
+              <DashboardLayout>
+                <AdminVehicles />
               </DashboardLayout>
             </ProtectedRoute>
           } />

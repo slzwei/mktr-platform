@@ -322,7 +322,7 @@ export default function AdminDevices() {
                                                         <Button
                                                             variant="outline"
                                                             size="sm"
-                                                            onClick={() => navigate('/admin/vehicles')}
+                                                            onClick={() => navigate('/AdminVehicles')}
                                                             className="h-8"
                                                         >
                                                             Manage
