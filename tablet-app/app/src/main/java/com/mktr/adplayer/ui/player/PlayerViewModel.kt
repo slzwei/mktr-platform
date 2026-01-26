@@ -292,9 +292,9 @@ class PlayerViewModel @Inject constructor(
                             val currentPos = exoPlayer.currentPosition
                             val drift = kotlin.math.abs(currentPos - targetPos)
                             
-                            // Tolerance: 250ms (Tight sync) + 1s Cooldown (Thrashing Protection)
+                            // Tolerance: 500ms (Relaxed sync) + 1s Cooldown (Thrashing Protection)
                             val now = System.currentTimeMillis()
-                            if (drift > 250 && (now - lastSyncCorrectionTime > 1000)) {
+                            if (drift > 500 && (now - lastSyncCorrectionTime > 1000)) {
                                 Log.w("PlayerVM", "Sync: Drift detected (${drift}ms). Seek to ${targetPos}ms")
                                 exoPlayer.seekTo(targetPos)
                                 lastSyncCorrectionTime = now
