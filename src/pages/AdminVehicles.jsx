@@ -250,7 +250,10 @@ export default function AdminVehicles() {
         return { label: 'READY', color: 'blue' };
     };
 
-    const unpairedDevices = devices.filter(d => !d.vehicleId);
+    // [FIX] Include devices already assigned to the CURRENT selected vehicle, plus all unpaired ones.
+    const availableDevices = devices.filter(d =>
+        !d.vehicleId || (selectedVehicle && d.vehicleId === selectedVehicle.id)
+    );
 
     return (
         <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
@@ -475,17 +478,17 @@ export default function AdminVehicles() {
                 )}
 
                 {/* Unpaired Devices Section */}
-                {unpairedDevices.length > 0 && (
+                {devices.filter(d => !d.vehicleId).length > 0 && (
                     <Card className="border-dashed">
                         <CardHeader>
                             <CardTitle className="text-base flex items-center gap-2">
                                 <MonitorSmartphone className="h-5 w-5 text-muted-foreground" />
-                                Unpaired Devices ({unpairedDevices.length})
+                                Unpaired Devices ({devices.filter(d => !d.vehicleId).length})
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
                             <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-                                {unpairedDevices.map(device => (
+                                {devices.filter(d => !d.vehicleId).map(device => (
                                     <div key={device.id} className="p-3 border rounded-lg bg-gray-50/50">
                                         <p className="font-medium text-sm">{device.model || 'Tablet'}</p>
                                         <p className="text-xs text-muted-foreground font-mono">
@@ -557,7 +560,7 @@ export default function AdminVehicles() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="_none">None</SelectItem>
-                                    {unpairedDevices
+                                    {availableDevices
                                         .filter(d => d.id !== pairSlaveId)
                                         .map(device => (
                                             <SelectItem key={device.id} value={device.id}>
@@ -575,7 +578,7 @@ export default function AdminVehicles() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="_none">None</SelectItem>
-                                    {unpairedDevices
+                                    {availableDevices
                                         .filter(d => d.id !== pairMasterId)
                                         .map(device => (
                                             <SelectItem key={device.id} value={device.id}>
