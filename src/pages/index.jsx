@@ -194,7 +194,7 @@ function PagesContent() {
               </DashboardLayout>
             </ProtectedRoute>
           } />
-          <Route path="/AdminVehicles" element={
+          <Route path="/admin/vehicles" element={
             <ProtectedRoute requiredRole="admin">
               <DashboardLayout>
                 <AdminVehicles />
