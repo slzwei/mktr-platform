@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, Upload, File, Download, AlertCircle, CheckCircle2 } from "lucide-react";
-import { auth } from "@/api/client";
+import { auth, apiClient } from "@/api/client";
 import { useToast } from "@/components/ui/use-toast";
 
 const AdminApkManager = () => {
@@ -19,7 +19,7 @@ const AdminApkManager = () => {
     const fetchApkInfo = async () => {
         setIsLoading(true);
         try {
-            const token = await auth.getToken();
+            const token = apiClient.getToken();
             const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/apk/list`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -70,7 +70,7 @@ const AdminApkManager = () => {
         formData.append('file', selectedFile);
 
         try {
-            const token = await auth.getToken();
+            const token = apiClient.getToken();
             const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/apk/upload`, {
                 method: 'POST',
                 headers: {

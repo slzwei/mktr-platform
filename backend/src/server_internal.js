@@ -83,7 +83,7 @@ export const init = async (app) => {
   // CORS configuration
   const corsOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
-    : ['http://localhost:5173'];
+    : ['http://localhost:5173', 'https://mktr.sg', 'https://www.mktr.sg'];
 
   console.log('DEBUG: Configured CORS Origins:', corsOrigins);
 
