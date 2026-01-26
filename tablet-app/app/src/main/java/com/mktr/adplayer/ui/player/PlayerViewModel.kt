@@ -227,7 +227,8 @@ class PlayerViewModel @Inject constructor(
 
                 updateStatus("playing")
                 
-                // Sync Loop (10Hz)
+                var lastSyncCorrectionTime = 0L
+                // Sync Loop (~30Hz)
                 while (isActive) {
                     val syncState = wallClockSynchronizer.getTargetState(currentPlaylist, playlistVersion)
                     val targetIndex = syncState.mediaIndex
@@ -291,16 +292,18 @@ class PlayerViewModel @Inject constructor(
                             val currentPos = exoPlayer.currentPosition
                             val drift = kotlin.math.abs(currentPos - targetPos)
                             
-                            // Tolerance: 2 seconds (Generous to prevent stuttering)
-                            if (drift > 2000) {
+                            // Tolerance: 250ms (Tight sync) + 1s Cooldown (Thrashing Protection)
+                            val now = System.currentTimeMillis()
+                            if (drift > 250 && (now - lastSyncCorrectionTime > 1000)) {
                                 Log.w("PlayerVM", "Sync: Drift detected (${drift}ms). Seek to ${targetPos}ms")
                                 exoPlayer.seekTo(targetPos)
+                                lastSyncCorrectionTime = now
                             }
                         }
                         // For Images, we just wait.
                     }
                     
-                    delay(100) // 10Hz tick
+                    delay(33) // ~30Hz tick
                 }
             } finally {
                 updateStatus("idle")
