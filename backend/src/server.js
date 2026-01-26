@@ -28,10 +28,6 @@ import {
   Vehicle,
   Impression,
   BeaconEvent,
-  ProvisioningSession,
-  Vehicle,
-  Impression,
-  BeaconEvent,
   ProspectActivity,
   Device
 } from './models/index.js';
