@@ -24,7 +24,8 @@ sealed class UiState {
 class MainViewModel @Inject constructor(
     private val repository: ManifestRepository,
     private val devicePrefs: DevicePrefs,
-    private val sseService: com.mktr.adplayer.api.service.SseService
+    private val sseService: com.mktr.adplayer.api.service.SseService,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<UiState>(UiState.Loading)
@@ -127,7 +128,7 @@ class MainViewModel @Inject constructor(
                 
                 // [PUSH] Start SSE Listening (Idempotent call in SseService usually, but safe to call)
                 devicePrefs.deviceKey?.let { key ->
-                    sseService.start(key) { type, _ ->
+                    sseService.start(key) { type, payload ->
                         // [FIX] SSE callback runs on OkHttp's background thread.
                         // Must dispatch to viewModelScope for proper StateFlow updates.
                         viewModelScope.launch {
@@ -136,6 +137,20 @@ class MainViewModel @Inject constructor(
                             if (type == "REFRESH_MANIFEST" || type == "CONNECTED") {
                                 android.util.Log.i("MainViewModel", "Triggering Hot-Swap Refresh due to SSE ($type)")
                                 fetchManifest()
+                            } else if (type == "SET_VOLUME") {
+                                try {
+                                    val json = org.json.JSONObject(payload)
+                                    val volPercent = json.optInt("volume", -1)
+                                    if (volPercent in 0..100) {
+                                        val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+                                        val maxVol = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                                        val newVol = (maxVol * volPercent / 100.0).toInt()
+                                        audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, newVol, 0)
+                                        android.util.Log.i("MainViewModel", "Volume set to $volPercent% ($newVol/$maxVol)")
+                                    }
+                                } catch (e: Exception) {
+                                    android.util.Log.e("MainViewModel", "Failed to set volume", e)
+                                }
                             }
                         }
                     }
