@@ -301,7 +301,8 @@ fun DashboardScreen(
                     Text("Device ID: ${manifest.deviceId}")
                     // [NEW] Show Vehicle Info
                     if (!manifest.vehicleId.isNullOrEmpty()) {
-                        Text("Vehicle: ${manifest.vehicleId}", style = MaterialTheme.typography.bodyMedium)
+                        val label = manifest.vehiclePlate ?: manifest.vehicleId
+                        Text("Vehicle: $label", style = MaterialTheme.typography.bodyMedium)
                         Text("Role: ${manifest.role.uppercase()}", style = MaterialTheme.typography.bodyMedium)
                     } else {
                         Text("Vehicle: Unassigned", color = Color.Gray, style = MaterialTheme.typography.bodyMedium)

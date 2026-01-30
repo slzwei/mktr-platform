@@ -11,7 +11,8 @@ data class ManifestResponse(
     val assets: List<Asset> = emptyList(),
     val playlist: List<PlaylistItem> = emptyList(),
     val role: String = "standalone", // master, slave, standalone
-    val vehicleId: String? = null,
+    @SerialName("vehicle_id") val vehicleId: String? = null,
+    @SerialName("vehicle_plate") val vehiclePlate: String? = null,
     @SerialName("vehicle_wifi") val vehicleWifi: WifiCredentials? = null,
     @SerialName("sync_config") val syncConfig: SyncConfig? = null
 )

@@ -136,12 +136,11 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
 
 
   const refreshSec = parseInt(process.env.MANIFEST_REFRESH_SECONDS || '300');
-  // Fetch Vehicle if not already loaded (for credentials)
+  // Fetch Vehicle if not already loaded (for credentials & plate)
   let wifiCreds = {};
+  let vehiclePlate = null;
+
   if (device.vehicleId) {
-    // Only import if needed to save perf? We likely need it for credentials anyway.
-    // If we haven't loaded it above (we check campaignIds above), we might need to load it here.
-    // Let's ensure we have the vehicle object.
     try {
       const { Vehicle } = await import('../models/index.js');
       const vehicle = await Vehicle.findByPk(device.vehicleId);
@@ -150,6 +149,7 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
           ssid: vehicle.hotspotSsid,
           password: vehicle.hotspotPassword
         };
+        vehiclePlate = vehicle.carplate;
       }
     } catch (e) {
       console.error('[Manifest] Failed to load vehicle details:', e);
@@ -165,6 +165,7 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
     // New Config Fields for Sync
     role: device.role || 'standalone', // master, slave, standalone
     vehicle_id: device.vehicleId || null,
+    vehicle_plate: vehiclePlate,
     vehicle_wifi: wifiCreds // { ssid, password }
   };
 
