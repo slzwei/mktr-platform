@@ -339,7 +339,7 @@ export default function AdminVehicles() {
                                                 size="sm"
                                                 onClick={() => {
                                                     setSelectedVehicle(vehicle);
-                                                    setVolumeLevel([vehicle.volume || 0]);
+                                                    setVolumeLevel([Number(vehicle.volume) || 0]);
                                                     setShowVolumeDialog(true);
                                                 }}
                                                 title="Volume Control"
