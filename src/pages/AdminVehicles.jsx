@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
+import { Slider } from '../components/ui/slider';
 import { Input } from '../components/ui/input';
 import { apiClient as api } from '../api/client';
 import { formatDistanceToNow } from 'date-fns';
@@ -30,7 +31,8 @@ import {
     MapPin,
     RefreshCcw,
     MonitorSmartphone,
-    Pencil
+    Pencil,
+    Volume2
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -52,6 +54,10 @@ export default function AdminVehicles() {
     const [pairMasterId, setPairMasterId] = useState('');
     const [pairSlaveId, setPairSlaveId] = useState('');
     const [selectedCampaignIds, setSelectedCampaignIds] = useState([]);
+
+    // Volume Control State
+    const [showVolumeDialog, setShowVolumeDialog] = useState(false);
+    const [volumeLevel, setVolumeLevel] = useState([0]);
 
     useEffect(() => {
         loadData();
@@ -238,6 +244,20 @@ export default function AdminVehicles() {
         }
     };
 
+    const handleSetVolume = async () => {
+        if (!selectedVehicle) return;
+
+        try {
+            await api.put(`/vehicles/${selectedVehicle.id}/volume`, {
+                volume: volumeLevel[0]
+            });
+            toast.success(`Volume command sent (${volumeLevel[0]}%)`);
+            setShowVolumeDialog(false);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Failed to set volume');
+        }
+    };
+
     const getDeviceStatus = (device) => {
         if (!device) return { label: 'Empty', color: 'gray' };
         const isStale = !device.lastSeenAt || (Date.now() - new Date(device.lastSeenAt).getTime() > 5 * 60 * 1000);
@@ -313,6 +333,18 @@ export default function AdminVehicles() {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                    setSelectedVehicle(vehicle);
+                                                    setVolumeLevel([0]);
+                                                    setShowVolumeDialog(true);
+                                                }}
+                                                title="Volume Control"
+                                            >
+                                                <Volume2 className="h-4 w-4" />
+                                            </Button>
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
@@ -708,6 +740,38 @@ export default function AdminVehicles() {
                         </Button>
                         <Button onClick={handleAssignCampaigns}>
                             Save Assignments
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Volume Control Dialog */}
+            <Dialog open={showVolumeDialog} onOpenChange={setShowVolumeDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Volume Control</DialogTitle>
+                    </DialogHeader>
+                    <div className="py-6 space-y-6">
+                        <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">Volume Level</span>
+                            <span className="text-sm text-muted-foreground">{volumeLevel[0]}%</span>
+                        </div>
+                        <Slider
+                            value={volumeLevel}
+                            onValueChange={setVolumeLevel}
+                            max={100}
+                            step={1}
+                        />
+                        <p className="text-xs text-muted-foreground text-center">
+                            This will set the volume for both screens on {selectedVehicle?.carplate}
+                        </p>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowVolumeDialog(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleSetVolume}>
+                            Set Volume
                         </Button>
                     </DialogFooter>
                 </DialogContent>

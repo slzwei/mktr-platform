@@ -328,6 +328,39 @@ router.patch('/:id', async (req, res) => {
     }
 });
 
+// PUT /api/vehicles/:id/volume - Set volume for vehicle devices
+router.put('/:id/volume', async (req, res) => {
+    try {
+        const { volume } = req.body;
+        const vehicle = await Vehicle.findByPk(req.params.id);
+
+        if (!vehicle) {
+            return res.status(404).json({ message: 'Vehicle not found' });
+        }
+
+        // Validate volume
+        const vol = parseInt(volume);
+        if (isNaN(vol) || vol < 0 || vol > 100) {
+            return res.status(400).json({ message: 'Volume must be between 0 and 100' });
+        }
+
+        // Send to master
+        if (vehicle.masterDeviceId) {
+            pushService.sendEvent(vehicle.masterDeviceId, 'SET_VOLUME', { volume: vol });
+        }
+
+        // Send to slave
+        if (vehicle.slaveDeviceId) {
+            pushService.sendEvent(vehicle.slaveDeviceId, 'SET_VOLUME', { volume: vol });
+        }
+
+        res.json({ success: true, message: `Volume set to ${vol}%` });
+    } catch (error) {
+        console.error('Error setting volume:', error);
+        res.status(500).json({ message: 'Error setting volume' });
+    }
+});
+
 // DELETE /api/vehicles/:id - Delete vehicle
 router.delete('/:id', async (req, res) => {
     try {

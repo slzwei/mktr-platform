@@ -121,13 +121,15 @@ fun PlayerContent(state: PlayerState.Playing) {
             ImagePlayer(uri = state.fileUri)
         }
         
-        // Debug Overlay
+
+
+        // Debug Overlay (Invisible - Structural Only)
         Text(
             text = "Idx: ${state.index + 1}/${state.total} | Type: ${state.item.type} | ID: ${state.item.id}\nDur: ${state.item.durationMs}ms",
-            color = Color.White,
+            color = Color.Transparent,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .background(Color.Red.copy(alpha = 0.7f))
+                .background(Color.Transparent)
                 .padding(8.dp),
             style = MaterialTheme.typography.labelMedium
         )
