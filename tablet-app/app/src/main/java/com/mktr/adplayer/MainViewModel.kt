@@ -32,6 +32,15 @@ class MainViewModel @Inject constructor(
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     init {
+        // [Volume] Default to 0% on startup (Requirements: "playback from 0% at the start")
+        try {
+            val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, 0, 0)
+            android.util.Log.i("MainViewModel", "Startup: Volume set to 0%")
+        } catch (e: Exception) {
+            android.util.Log.e("MainViewModel", "Failed to set default volume", e)
+        }
+
         checkProvisioning()
     }
 

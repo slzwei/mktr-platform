@@ -344,6 +344,10 @@ router.put('/:id/volume', async (req, res) => {
             return res.status(400).json({ message: 'Volume must be between 0 and 100' });
         }
 
+        // Save to DB
+        vehicle.volume = vol;
+        await vehicle.save();
+
         // Send to master
         if (vehicle.masterDeviceId) {
             pushService.sendEvent(vehicle.masterDeviceId, 'SET_VOLUME', { volume: vol });

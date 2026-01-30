@@ -373,6 +373,17 @@ async function startServer() {
       } catch (e) {
         console.warn('⚠️ Could not ensure device columns on SQLite:', e.message);
       }
+
+      try {
+        const [vehicleColumns] = await sequelize.query('PRAGMA table_info(vehicles)');
+        const hasVolume = Array.isArray(vehicleColumns) && vehicleColumns.some(c => c.name === 'volume');
+        if (!hasVolume) {
+          await sequelize.query('ALTER TABLE vehicles ADD COLUMN volume INTEGER DEFAULT 0');
+          console.log('✅ Added volume column to vehicles');
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not ensure vehicle columns on SQLite:', e.message);
+      }
     }
 
     // Postgres Migration: Ensure new columns exist
@@ -400,6 +411,19 @@ async function startServer() {
           `);
           console.log('✅ Migrated existing device assignments to multi-campaign format (Postgres)');
         }
+
+        // Check for volume on vehicles
+        const [volResult] = await sequelize.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'vehicles' AND column_name = 'volume'
+        `);
+        if (volResult.length === 0) {
+          console.log('🔄 Applying Postgres migration: Adding volume to vehicles...');
+          await sequelize.query('ALTER TABLE vehicles ADD COLUMN "volume" INTEGER DEFAULT 0');
+          console.log('✅ Added volume column to vehicles (Postgres)');
+        }
+
       } catch (e) {
         console.warn('⚠️ Postgres migration failed:', e.message);
       }

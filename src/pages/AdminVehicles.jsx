@@ -252,6 +252,7 @@ export default function AdminVehicles() {
                 volume: volumeLevel[0]
             });
             toast.success(`Volume command sent (${volumeLevel[0]}%)`);
+            loadData(); // Assuming fetchVehicles is loadData based on context
             setShowVolumeDialog(false);
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to set volume');
@@ -338,7 +339,7 @@ export default function AdminVehicles() {
                                                 size="sm"
                                                 onClick={() => {
                                                     setSelectedVehicle(vehicle);
-                                                    setVolumeLevel([0]);
+                                                    setVolumeLevel([vehicle.volume || 0]);
                                                     setShowVolumeDialog(true);
                                                 }}
                                                 title="Volume Control"
