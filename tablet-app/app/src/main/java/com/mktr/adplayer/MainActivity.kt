@@ -362,12 +362,50 @@ fun ErrorScreen(error: String, onRetry: () -> Unit, onReset: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Connection Failed", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleMedium)
+        // [UX] "Waiting" State instead of "Failed"
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        CircularProgressIndicator(
+            color = MaterialTheme.colorScheme.primary,
+            strokeWidth = 4.dp,
+            modifier = Modifier.size(48.dp)
+        )
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        Text(
+            "Waiting for Connection...", 
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        
         Spacer(modifier = Modifier.height(8.dp))
-        Text(error, style = MaterialTheme.typography.bodyMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = onRetry) { Text("Retry") }
-        TextButton(onClick = onReset) { Text("Change Key") }
+        
+        Text(
+            "Auto-retrying in a few seconds",
+            style = MaterialTheme.typography.bodyMedium,
+            color = androidx.compose.ui.graphics.Color.Gray
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        // Debug Info (Small)
+        Text(
+            text = error, // Keep the actual error visible for debugging but small
+            style = MaterialTheme.typography.labelSmall,
+            color = androidx.compose.ui.graphics.Color.LightGray
+        )
+        
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            OutlinedButton(onClick = onRetry) { 
+                Text("Retry Now") 
+            }
+            TextButton(onClick = onReset) { 
+                Text("Change Key") 
+            }
+        }
     }
 }
 

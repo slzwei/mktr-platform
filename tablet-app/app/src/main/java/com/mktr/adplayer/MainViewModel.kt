@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import javax.inject.Inject
 
 sealed class UiState {
@@ -103,26 +104,30 @@ class MainViewModel @Inject constructor(
         fetchManifest()
     }
 
-    fun fetchManifest() {
-        // [FIX] Hot-Swap: Only show full-screen "Loading" if we aren't already playing content.
-        // If we are Connected, we stay Connected while the background refresh happens.
+
+    private var refreshJob: kotlinx.coroutines.Job? = null
+
+    fun fetchManifest(isAutoRetry: Boolean = false) {
+        // [FIX] Hot-Swap: Only show "Loading" if not retrying silently and not already playing.
         val currentState = _uiState.value
-        if (currentState !is UiState.Connected) {
+        
+        // If this is a manual refresh or initial load, show loading.
+        // If it's an auto-retry, we stay on the "Waiting" screen (or whatever current state is).
+        if (!isAutoRetry && currentState !is UiState.Connected) {
             _uiState.value = UiState.Loading
-        } else {
-            android.util.Log.d("MainVM", "Refreshing manifest in background (Hot Swap)...")
+        } else if (currentState is UiState.Connected) {
+             android.util.Log.d("MainVM", "Refreshing manifest in background (Hot Swap)...")
         }
 
-        viewModelScope.launch {
+        // Cancel previous fetch to prevent race conditions (e.g. rapid retries)
+        if (!isAutoRetry) refreshJob?.cancel()
+
+        refreshJob = viewModelScope.launch {
             val result = repository.refreshManifest()
             
             result.onSuccess { manifest ->
                 if (manifest != null) {
                     android.util.Log.i("MainVM", "Manifest Updated! v${manifest.version} with ${manifest.playlist.size} items")
-                    
-                    // [SYNC] Config Updated (Role/Hotspot logic removed for Virtual Sync)
-                    // We only care about the playlist content now.
-
                     _uiState.value = UiState.Connected(manifest, "Manifest Loaded (v${manifest.version})")
                 } else {
                     // 304 Not Modified
@@ -130,55 +135,73 @@ class MainViewModel @Inject constructor(
                     if (currentState !is UiState.Connected) {
                         _uiState.value = UiState.Connected(null, "Manifest not modified (304) - Using Cache")
                     } else {
-                        // If already connected, no-op (keep existing manifest)
-                        android.util.Log.d("MainVM", "Hot Swap: Skipping update because server returned 304.")
+                         android.util.Log.d("MainVM", "Hot Swap: Skipping update because server returned 304.")
                     }
                 }
                 
-                // [PUSH] Start SSE Listening (Idempotent call in SseService usually, but safe to call)
+                // [PUSH] Restart SSE if needed
                 devicePrefs.deviceKey?.let { key ->
                     sseService.start(key) { type, payload ->
-                        // [FIX] SSE callback runs on OkHttp's background thread.
-                        // Must dispatch to viewModelScope for proper StateFlow updates.
                         viewModelScope.launch {
                             android.util.Log.d("MainViewModel", "SSE Event Received: $type")
-                            // [UX] Auto-Refresh on Reconnect to catch config changes (e.g. after deployment)
                             if (type == "REFRESH_MANIFEST" || type == "CONNECTED") {
-                                android.util.Log.i("MainViewModel", "Triggering Hot-Swap Refresh due to SSE ($type)")
                                 fetchManifest()
                             } else if (type == "SET_VOLUME") {
-                                try {
-                                    val json = org.json.JSONObject(payload)
-                                    val volPercent = json.optInt("volume", -1)
-                                    if (volPercent in 0..100) {
-                                        val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
-                                        val maxVol = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
-                                        val newVol = (maxVol * volPercent / 100.0).toInt()
-                                        audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, newVol, 0)
-                                        android.util.Log.i("MainViewModel", "Volume set to $volPercent% ($newVol/$maxVol)")
-                                    }
-                                } catch (e: Exception) {
-                                    android.util.Log.e("MainViewModel", "Failed to set volume", e)
-                                }
+                                handleVolumeCommand(payload)
                             }
                         }
                     }
                 }
 
             }.onFailure { e ->
-                Log.e("MainVM", "Manifest Fetch Error", e)
+                Log.e("MainVM", "Manifest Fetch Error: ${e.message}", e)
+                
+                // Check for Auth Failure (Permanent Error)
                 if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
                     _uiState.value = UiState.Error("Auth Failed: ${e.message}. Check Key.")
+                    return@onFailure
+                }
+                
+                // Network / Other Failure -> Auto Retry
+                if (currentState !is UiState.Connected) {
+                    // If we are offline, show "Waiting" state
+                    val msg = "Network Error. Retrying..."
+                    if (currentState !is UiState.Error || currentState.error != msg) {
+                        _uiState.value = UiState.Error(msg)
+                    }
+                    
+                    // [RETRY LOOP]
+                    android.util.Log.w("MainVM", "Network failed. Retrying in 5s...")
+                    kotlinx.coroutines.delay(5000)
+                    if (isActive) {
+                        fetchManifest(isAutoRetry = true)
+                    }
                 } else {
-                    // [FIX] Resilience: If background refresh fails, DON'T kill the player with an Error screen.
-                    // Just log it and keep playing the old playlist.
-                    if (currentState !is UiState.Connected) {
-                        _uiState.value = UiState.Error("Network Error: ${e.message}")
-                    } else {
-                        android.util.Log.w("MainVM", "Hot Swap Failed. Errors suppressed to keep playback alive. Error: ${e.message}")
+                    // If playing, just log and suppressed retry (or maybe we should retry locally too? 
+                    // decided to retry silently to keep data fresh)
+                    android.util.Log.w("MainVM", "Hot Swap Failed. Retrying silently in 10s...")
+                    kotlinx.coroutines.delay(10000)
+                    if (isActive) {
+                        fetchManifest(isAutoRetry = true)
                     }
                 }
             }
+        }
+    }
+
+    private fun handleVolumeCommand(payload: String) {
+        try {
+            val json = org.json.JSONObject(payload)
+            val volPercent = json.optInt("volume", -1)
+            if (volPercent in 0..100) {
+                val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+                val maxVol = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                val newVol = (maxVol * volPercent / 100.0).toInt()
+                audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, newVol, 0)
+                android.util.Log.i("MainViewModel", "Volume set to $volPercent% ($newVol/$maxVol)")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MainViewModel", "Failed to set volume", e)
         }
     }
     
