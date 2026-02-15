@@ -35,6 +35,23 @@ services:
       - key: DB_PASSWORD
         sync: false
 
+  - type: web
+    name: mktr-backend-v2
+    env: docker
+    region: singapore
+    plan: starter
+    rootDir: platform-v2/backend
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+
   - type: static
     name: mktr-dashboard
     env: static
@@ -45,6 +62,6 @@ services:
     staticPublishPath: dist
     envVars:
       - key: VITE_API_URL
-        value: https://dooh-backend.onrender.com
+        value: https://mktr-backend-v2.onrender.com/api
       - key: VITE_SOCKET_URL
-        value: https://dooh-backend.onrender.com
+        value: https://mktr-backend-v2.onrender.com

@@ -31,9 +31,13 @@ if (!supabaseUrl || !supabaseKey) {
     // process.exit(1); // Don't crash in dev if env is missing, just warn
 }
 
-// Basic Route
+// Basic Routes
 app.get('/', (req, res) => {
     res.send('MKTR Platform V2 Backend is running');
+});
+
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
 });
 
 // Start Server
