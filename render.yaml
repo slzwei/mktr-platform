@@ -59,6 +59,6 @@ staticSites:
     staticPublishPath: dist
     envVars:
       - key: VITE_API_URL
-        value: https://mktr-backend-v2.onrender.com/api
+        value: "https://mktr-backend-v2.onrender.com/api"
       - key: VITE_SOCKET_URL
-        value: https://mktr-backend-v2.onrender.com
+        value: "https://mktr-backend-v2.onrender.com"
