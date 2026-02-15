@@ -54,7 +54,6 @@ services:
 
 staticSites:
   - name: mktr-dashboard
-    plan: starter
     buildCommand: cd platform-v2/dashboard && npm install && npm run build
     staticPublishPath: platform-v2/dashboard/dist
     envVars:
