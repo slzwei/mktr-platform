@@ -54,9 +54,9 @@ services:
 
 staticSites:
   - name: mktr-dashboard
-    rootDir: platform-v2/dashboard
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
+    plan: starter
+    buildCommand: cd platform-v2/dashboard && npm install && npm run build
+    staticPublishPath: platform-v2/dashboard/dist
     envVars:
       - key: VITE_API_URL
         value: "https://mktr-backend-v2.onrender.com/api"
