@@ -52,8 +52,8 @@ services:
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
 
-  - type: static
-    name: mktr-dashboard
+staticSites:
+  - name: mktr-dashboard
     env: static
     region: singapore
     plan: starter
