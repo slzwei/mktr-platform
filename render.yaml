@@ -54,7 +54,6 @@ services:
 
 staticSites:
   - name: mktr-dashboard
-    env: static
     region: singapore
     plan: starter
     rootDir: platform-v2/dashboard
