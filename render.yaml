@@ -34,3 +34,17 @@ services:
         sync: false
       - key: DB_PASSWORD
         sync: false
+
+  - type: static
+    name: mktr-dashboard
+    env: static
+    region: singapore
+    plan: starter
+    rootDir: platform-v2/dashboard
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://dooh-backend.onrender.com
+      - key: VITE_SOCKET_URL
+        value: https://dooh-backend.onrender.com
