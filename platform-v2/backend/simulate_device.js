@@ -1,19 +1,16 @@
 import { io } from 'socket.io-client';
 
-const BACKEND_URL = 'http://localhost:3000';
-const DEVICE_ID = 'test-device-001'; // Mock ID
-// In real app, ID is UUID. For test, ensure DB has this ID or we auto-create? 
-// Current backend endpoints might assume UUID or existing ID.
-// Let's use a real-looking UUID to be safe, or ensure we create it first.
-// Actually, `register-device` in `SocketService` just updates status. It assumes device exists?
-// "socketService.js": `supabase.from('screens').update(...)`. Yes, it expects row to exist.
-// We should probably create it via API first if not exists, or just pick an existing one from DB.
-// For now, I'll use a hardcoded UUID that I will manually Insert into DB if needed, or I'll genericize.
+const BACKEND_URL = 'https://dooh-backend.onrender.com';
+const DEVICE_ID = 'test-device-prod-001';
+// We use a fixed ID for testing so we don't spam the DB with new rows every run.
+// But valid UUID format is preferred by Supabase usually? `screens.id` is UUID or TEXT?
+// `supabase_schema.sql` says `id UUID PRIMARY KEY`.
+// So I MUST use a valid UUID.
+const MOCK_UUID = '11111111-2222-3333-4444-555555555555';
 
-// Let's use one from the list we saw earlier if possible, or just a random one.
-const MOCK_UUID = '00000000-0000-0000-0000-000000000001';
-
-const socket = io(BACKEND_URL);
+const socket = io(BACKEND_URL, {
+    transports: ['websocket'] // Force websocket
+});
 
 console.log(`Connecting to ${BACKEND_URL} as ${MOCK_UUID}...`);
 
