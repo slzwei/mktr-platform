@@ -4,6 +4,16 @@ import rateLimit from 'express-rate-limit';
 import { QrTag, QrScan, Attribution, Campaign } from '../models/index.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
+const isProd = process.env.NODE_ENV === 'production';
+if (isProd && !process.env.IP_HASH_SALT) {
+  throw new Error('FATAL: IP_HASH_SALT must be set in production');
+}
+if (isProd && !process.env.ATTRIB_SECRET) {
+  throw new Error('FATAL: ATTRIB_SECRET must be set in production');
+}
+const IP_HASH_SALT = process.env.IP_HASH_SALT || 'dev-salt';
+const ATTRIB_SECRET = process.env.ATTRIB_SECRET || 'dev-attrib-secret';
+
 const router = express.Router();
 
 const limiter = rateLimit({
@@ -24,7 +34,7 @@ router.get('/track/:slug', limiter, asyncHandler(async (req, res) => {
   const ua = req.headers['user-agent'] || '';
   const referer = req.headers.referer || '';
   const ip = req.ip || req.connection.remoteAddress || '';
-  const ipHash = crypto.createHash('sha256').update(`${ip}:${process.env.IP_HASH_SALT || 'salt'}`).digest('hex');
+  const ipHash = crypto.createHash('sha256').update(`${ip}:${IP_HASH_SALT}`).digest('hex');
   const device = /Mobile|Android|iPhone|iPad/.test(ua) ? 'mobile' : 'desktop';
   const botFlag = /(bot|spider|crawler)/i.test(ua);
 
@@ -60,7 +70,7 @@ router.get('/track/:slug', limiter, asyncHandler(async (req, res) => {
   });
 
   const payload = Buffer.from(JSON.stringify({ id: attrib.id, exp: Math.floor(expiresAt.getTime() / 1000) })).toString('base64url');
-  const sig = crypto.createHmac('sha256', process.env.ATTRIB_SECRET || 'attrib').update(payload).digest('base64url');
+  const sig = crypto.createHmac('sha256', ATTRIB_SECRET).update(payload).digest('base64url');
   const token = `${payload}.${sig}`;
 
   const isProd = process.env.NODE_ENV === 'production';
@@ -113,7 +123,7 @@ router.get('/session', asyncHandler(async (req, res) => {
     try {
       const atk = req.cookies.atk;
       const [payload, sig] = atk.split('.');
-      const expected = crypto.createHmac('sha256', process.env.ATTRIB_SECRET || 'attrib').update(payload).digest('base64url');
+      const expected = crypto.createHmac('sha256', ATTRIB_SECRET).update(payload).digest('base64url');
       if (sig === expected) {
         const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
         const nowSec = Math.floor(Date.now() / 1000);

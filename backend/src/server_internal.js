@@ -9,11 +9,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 
-import { sequelize } from './database/connection.js';
-import { QrTag, QrScan, Attribution, SessionVisit, Prospect, FleetOwner, User, Campaign, Car, ShortLink, ShortLinkClick, LeadPackage, LeadPackageAssignment } from './models/index.js';
-import './models/CampaignPreview.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
+import { bootstrapDatabase } from './database/bootstrap.js';
+import { requestId } from './middleware/requestId.js';
+import './models/CampaignPreview.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
@@ -43,11 +43,7 @@ import leadPackageRoutes from './routes/leadPackages.js';
 import deviceRoutes from './routes/devices.js';
 import provisioningRoutes from './routes/provisioning.js'; // Added
 import vehicleRoutes from './routes/vehicles.js'; // Added for tablet pairing
-import { validateGoogleOAuthConfig } from './controllers/authController.js';
-
 import { optionalAuth } from './middleware/auth.js';
-import { initSystemAgent } from './services/systemAgent.js';
-import ensureTenantPlumbing from './database/tenantMigration.js';
 
 // Load environment variables
 dotenv.config();
@@ -56,6 +52,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export const init = async (app) => {
+  // Request tracing
+  app.use(requestId);
+
   // Security middleware
   app.use(helmet({
     // Allow images and other static assets to be embedded from another origin (frontend at 5173)
@@ -243,269 +242,12 @@ export const init = async (app) => {
   app.use(errorHandler);
 
   // Database connection and server startup
-  await startServer();
+  console.log('🔧 Validating environment configuration...');
+  await bootstrapDatabase();
+  console.log(`🚀 Application Logic Ready`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV}`);
+  console.log(`[monolith] RPS env: MANIFEST_RPS_PER_DEVICE=${process.env.MANIFEST_RPS_PER_DEVICE || '2'} BEACON_RPS_PER_DEVICE=${process.env.BEACON_RPS_PER_DEVICE || '5'} BEACON_IDEMP_WINDOW_MIN=${process.env.BEACON_IDEMP_WINDOW_MIN || '10'}`);
 };
-
-async function startServer() {
-  try {
-    // Validate environment configuration
-    console.log('🔧 Validating environment configuration...');
-    validateGoogleOAuthConfig();
-
-    // Test database connection
-    await sequelize.authenticate();
-    console.log('✅ Database connection established successfully.');
-    // Improve SQLite concurrency characteristics for local stress testing
-    try {
-      if (sequelize.getDialect() === 'sqlite') {
-        await sequelize.query('PRAGMA journal_mode=WAL');
-        await sequelize.query('PRAGMA busy_timeout=5000');
-        await sequelize.query('PRAGMA synchronous=NORMAL');
-      }
-    } catch (e) {
-      console.warn('⚠️ Failed to apply SQLite PRAGMAs:', e?.message || e);
-    }
-    try {
-      const dialect = sequelize.getDialect();
-      if (dialect === 'sqlite') {
-        console.log(`🗄️ DB Path: ${sequelize.options.storage}`);
-      } else if (dialect === 'postgres') {
-        console.log(`🗄️ DB Host: ${process.env.DB_HOST} / DB Name: ${process.env.DB_NAME}`);
-      }
-    } catch (_) { }
-
-    // Targeted sync for new/changed models; avoid accidental destructive alters on sqlite
-    const isSqlite = sequelize.getDialect() === 'sqlite';
-    // Ensure base tables that QrTag depends on exist first
-    await User.sync({ alter: false });
-    await FleetOwner.sync({ alter: false });
-    await Campaign.sync({ alter: false });
-    await Car.sync({ alter: false });
-    // Now dependent tables
-    await QrTag.sync({ alter: false });
-    try {
-      // Avoid aggressive alters on Postgres for qr_scans to prevent dropping non-existent FKs
-      await QrScan.sync({ alter: false });
-    } catch (e) {
-      console.warn('⚠️ QrScan sync (alter=false) failed, continuing:', e?.message || e);
-    }
-    await Attribution.sync({ alter: false });
-    await SessionVisit.sync({ alter: false });
-    await Prospect.sync({ alter: false });
-    await (await import('./models/ProspectActivity.js')).default.sync({ alter: false });
-    await (await import('./models/ShortLink.js')).default.sync({ alter: false });
-    await (await import('./models/ShortLinkClick.js')).default.sync({ alter: false });
-    await LeadPackage.sync({ alter: false });
-    await LeadPackage.sync({ alter: false });
-    await LeadPackageAssignment.sync({ alter: false });
-    await (await import('./models/BeaconEvent.js')).default.sync({ alter: false });
-    await (await import('./models/Impression.js')).default.sync({ alter: false });
-    await (await import('./models/ProvisioningSession.js')).default.sync({ alter: false }); // Added
-
-    // Ensure name fields exist and constraints are updated
-
-    await FleetOwner.sync({ alter: false });
-    await User.sync({ alter: false });
-
-    // SQLite fallback: ensure new columns exist (users, campaigns)
-    if (isSqlite) {
-      try {
-        // Ensure invitation columns on users
-        const [userColumns] = await sequelize.query('PRAGMA table_info(users)');
-        const hasInvitationToken = Array.isArray(userColumns) && userColumns.some(c => c.name === 'invitationToken');
-        const hasInvitationExpires = Array.isArray(userColumns) && userColumns.some(c => c.name === 'invitationExpires');
-        const hasDateOfBirth = Array.isArray(userColumns) && userColumns.some(c => c.name === 'dateOfBirth');
-        const hasCompanyName = Array.isArray(userColumns) && userColumns.some(c => c.name === 'companyName');
-        if (!hasInvitationToken) {
-          await sequelize.query('ALTER TABLE users ADD COLUMN invitationToken TEXT');
-          console.log('✅ Added invitationToken column to users');
-        }
-        if (!hasInvitationExpires) {
-          await sequelize.query('ALTER TABLE users ADD COLUMN invitationExpires DATETIME');
-          console.log('✅ Added invitationExpires column to users');
-        }
-        if (!hasDateOfBirth) {
-          await sequelize.query('ALTER TABLE users ADD COLUMN dateOfBirth DATE');
-          console.log('✅ Added dateOfBirth column to users');
-        }
-        if (!hasCompanyName) {
-          await sequelize.query('ALTER TABLE users ADD COLUMN companyName TEXT');
-          console.log('✅ Added companyName column to users');
-        }
-
-        const [columns] = await sequelize.query('PRAGMA table_info(campaigns)');
-        const hasDriver = Array.isArray(columns) && columns.some(c => c.name === 'commission_amount_driver');
-        const hasFleet = Array.isArray(columns) && columns.some(c => c.name === 'commission_amount_fleet');
-        if (!hasDriver) {
-          await sequelize.query('ALTER TABLE campaigns ADD COLUMN commission_amount_driver REAL');
-          console.log('✅ Added commission_amount_driver column to campaigns');
-        }
-        if (!hasFleet) {
-          await sequelize.query('ALTER TABLE campaigns ADD COLUMN commission_amount_fleet REAL');
-          console.log('✅ Added commission_amount_fleet column to campaigns');
-        }
-      } catch (e) {
-        console.warn('⚠️ Could not ensure commission columns on SQLite:', e.message);
-      }
-
-      try {
-        const [deviceColumns] = await sequelize.query('PRAGMA table_info(devices)');
-        const hasCampaignId = Array.isArray(deviceColumns) && deviceColumns.some(c => c.name === 'campaignId');
-        if (!hasCampaignId) {
-          await sequelize.query('ALTER TABLE devices ADD COLUMN campaignId TEXT');
-          console.log('✅ Added campaignId column to devices');
-        }
-
-        const hasCampaignIds = Array.isArray(deviceColumns) && deviceColumns.some(c => c.name === 'campaignIds');
-        if (!hasCampaignIds) {
-          await sequelize.query('ALTER TABLE devices ADD COLUMN campaignIds TEXT DEFAULT "[]"');
-          console.log('✅ Added campaignIds column to devices');
-
-          // Migration: Copy singleton campaignId to array
-          // SQLite JSON array format is just a string
-          await sequelize.query(`
-            UPDATE devices 
-            SET campaignIds = '[' || '"' || campaignId || '"' || ']'
-            WHERE campaignId IS NOT NULL AND (campaignIds IS NULL OR campaignIds = '[]')
-          `);
-          console.log('✅ Migrated existing device assignments to multi-campaign format');
-        }
-      } catch (e) {
-        console.warn('⚠️ Could not ensure device columns on SQLite:', e.message);
-      }
-
-      try {
-        const [vehicleColumns] = await sequelize.query('PRAGMA table_info(vehicles)');
-        const hasVolume = Array.isArray(vehicleColumns) && vehicleColumns.some(c => c.name === 'volume');
-        if (!hasVolume) {
-          await sequelize.query('ALTER TABLE vehicles ADD COLUMN volume INTEGER DEFAULT 0');
-          console.log('✅ Added volume column to vehicles');
-        }
-      } catch (e) {
-        console.warn('⚠️ Could not ensure vehicle columns on SQLite:', e.message);
-      }
-    }
-
-    // Postgres Migration: Ensure new columns exist
-    if (!isSqlite) {
-      try {
-        // Check for campaignIds column on devices
-        const [results] = await sequelize.query(`
-          SELECT column_name 
-          FROM information_schema.columns 
-          WHERE table_name = 'devices' AND column_name = 'campaignIds'
-        `);
-
-        if (results.length === 0) {
-          console.log('🔄 Applying Postgres migration: Adding campaignIds...');
-          // Add column
-          await sequelize.query('ALTER TABLE devices ADD COLUMN "campaignIds" JSONB DEFAULT \'[]\'::jsonb');
-          console.log('✅ Added campaignIds column to devices (Postgres)');
-
-          // Migrate data
-          await sequelize.query(`
-            UPDATE devices 
-            SET "campaignIds" = jsonb_build_array("campaignId") 
-            WHERE "campaignId" IS NOT NULL 
-              AND ("campaignIds" IS NULL OR jsonb_array_length("campaignIds") = 0)
-          `);
-          console.log('✅ Migrated existing device assignments to multi-campaign format (Postgres)');
-        }
-
-        // Check for volume on vehicles
-        const [volResult] = await sequelize.query(`
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'vehicles' AND column_name = 'volume'
-        `);
-        if (volResult.length === 0) {
-          console.log('🔄 Applying Postgres migration: Adding volume to vehicles...');
-          await sequelize.query('ALTER TABLE vehicles ADD COLUMN "volume" INTEGER DEFAULT 0');
-          console.log('✅ Added volume column to vehicles (Postgres)');
-        }
-
-      } catch (e) {
-        console.warn('⚠️ Postgres migration failed:', e.message);
-      }
-    }
-
-    // Sync remaining models
-    await sequelize.sync({ alter: false });
-    console.log('✅ Database models synchronized.');
-
-    // Ensure tenant plumbing on Postgres
-    try {
-      await ensureTenantPlumbing(sequelize);
-      console.log('✅ Tenant plumbing ensured.');
-    } catch (e) {
-      console.warn('⚠️ Tenant plumbing failed (non-fatal):', e.message);
-    }
-
-    // Ensure System Agent exists and cache its ID
-    try {
-      const systemId = await initSystemAgent();
-      console.log(`✅ System Agent ready: ${systemId}`);
-    } catch (e) {
-      console.error('❌ Failed to initialize System Agent:', e);
-      // Do not block startup; assignments will retry on demand
-    }
-
-    // Create Postgres unique indexes if on Postgres
-    try {
-      if (sequelize.getDialect() === 'postgres') {
-        await sequelize.query("CREATE UNIQUE INDEX IF NOT EXISTS uniq_car_qr ON qr_tags(\"carId\") WHERE type = 'car'");
-        console.log('✅ Ensured uniq_car_qr index exists');
-
-        // Deduplicate existing duplicates on (campaignId, phone) before creating the unique index
-        try {
-          await sequelize.transaction(async (t) => {
-            // Delete exact duplicate prospects keeping the earliest createdAt per (campaignId, phone)
-            await sequelize.query(
-              `DELETE FROM prospects p
-               USING (
-                 SELECT \"campaignId\", phone, MIN(createdAt) AS keep_time
-                 FROM prospects
-                 WHERE phone IS NOT NULL AND phone <> '' AND \"campaignId\" IS NOT NULL
-                 GROUP BY \"campaignId\", phone
-               ) s
-               WHERE p.phone IS NOT NULL AND p.phone <> ''
-                 AND p.\"campaignId\" IS NOT NULL
-                 AND p.\"campaignId\" = s.\"campaignId\"
-                 AND p.phone = s.phone
-                 AND p.createdAt > s.keep_time`,
-              { transaction: t }
-            );
-          });
-        } catch (e) {
-          console.warn('⚠️ Prospect deduplication skipped:', e.message);
-        }
-
-        // Create a unique index for (campaignId, phone) excluding null/empty phones
-        try {
-          await sequelize.query(
-            `CREATE UNIQUE INDEX IF NOT EXISTS prospects_campaign_id_phone
-             ON prospects ("campaignId", phone)
-             WHERE phone IS NOT NULL AND phone <> ''`
-          );
-          console.log('✅ Ensured unique (campaignId, phone) index on prospects');
-        } catch (e) {
-          console.warn('⚠️ Could not ensure prospects (campaignId, phone) unique index:', e.message);
-        }
-      }
-    } catch (e) {
-      console.warn('⚠️ Could not ensure uniq_car_qr index:', e.message);
-    }
-
-    // Start server
-    console.log(`🚀 Application Logic Ready`);
-    console.log(`📊 Environment: ${process.env.NODE_ENV}`);
-    console.log(`[monolith] RPS env: MANIFEST_RPS_PER_DEVICE=${process.env.MANIFEST_RPS_PER_DEVICE || '2'} BEACON_RPS_PER_DEVICE=${process.env.BEACON_RPS_PER_DEVICE || '5'} BEACON_IDEMP_WINDOW_MIN=${process.env.BEACON_IDEMP_WINDOW_MIN || '10'}`);
-
-  } catch (error) {
-    console.error('❌ Unable to initialize server logic:', error);
-    throw error;
-  }
-}
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {

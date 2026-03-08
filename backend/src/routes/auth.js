@@ -1,5 +1,6 @@
 import express from 'express';
 import { Op } from 'sequelize';
+import rateLimit from 'express-rate-limit';
 import { User, FleetOwner, Car, UserPayout } from '../models/index.js';
 import { generateToken, authenticateToken } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
@@ -9,8 +10,17 @@ import { v4 as uuidv4 } from 'uuid';
 
 const router = express.Router();
 
+// Rate limit auth endpoints to prevent brute force
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many auth attempts, try again later' }
+});
+
 // Register new user
-router.post('/register', validate(schemas.userRegister), asyncHandler(async (req, res) => {
+router.post('/register', authLimiter, validate(schemas.userRegister), asyncHandler(async (req, res) => {
   const { email, password, firstName, lastName, phone, role, full_name, fullName } = req.body;
 
   // Check if user already exists
@@ -46,7 +56,7 @@ router.post('/register', validate(schemas.userRegister), asyncHandler(async (req
 }));
 
 // Login user
-router.post('/login', validate(schemas.userLogin), asyncHandler(async (req, res) => {
+router.post('/login', authLimiter, validate(schemas.userLogin), asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
   // Find user by email
@@ -265,7 +275,7 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
     }
 
     const googleUser = await userResponse.json();
-    console.log('✅ User info retrieved:', { email: googleUser.email, name: googleUser.name });
+    console.log('✅ Google user info retrieved successfully');
 
     // Find or create user in our database
     // Strategy: Check googleSub (hard link) OR email (soft link)
@@ -296,10 +306,10 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
         googleSub: googleUser.id // Store the immutable Google ID
       });
 
-      console.log('✅ New user created via Google:', user.email);
+      console.log('✅ New user created via Google OAuth');
     } else {
       // Existing user found
-      console.log('✅ User found via Google Login:', user.email);
+      console.log('✅ Existing user found via Google OAuth');
 
       // Check if agent has accepted invitation
       if (user.role === 'agent' && user.invitationToken) {
@@ -337,7 +347,7 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
         // BUT, the Op.or query would return the user if EITHER matches.
 
         if (user.googleSub && user.googleSub !== googleUser.id) {
-          console.warn(`⚠️ Warning: Google ID mismatch for ${user.email}. Stored: ${user.googleSub}, Incoming: ${googleUser.id}`);
+          console.warn(`⚠️ Warning: Google ID mismatch for user ${user.id}. Stored sub differs from incoming sub.`);
           // Decide strategy: Allow login? Block?
           // For now, allow login as the Email ownership is proven by Google.
           // Maybe update the ID? No, IDs shouldn't change.

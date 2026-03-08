@@ -45,7 +45,15 @@ router.get('/owners', authenticateToken, asyncHandler(async (req, res) => {
 
 // Create fleet owner
 router.post('/owners', authenticateToken, requireAdmin, validate(schemas.fleetOwnerCreate), asyncHandler(async (req, res) => {
-  const fleetOwner = await FleetOwner.create(req.body);
+  // Whitelist allowed fields to prevent mass assignment
+  const FLEET_OWNER_FIELDS = [
+    'full_name', 'email', 'phone', 'company_name', 'uen',
+    'payout_method', 'bank_account', 'address'
+  ];
+  const safeData = Object.fromEntries(
+    Object.entries(req.body).filter(([k]) => FLEET_OWNER_FIELDS.includes(k))
+  );
+  const fleetOwner = await FleetOwner.create(safeData);
 
   res.status(201).json({
     success: true,
@@ -80,7 +88,15 @@ router.put('/owners/:id', authenticateToken, requireAdmin, asyncHandler(async (r
     throw new AppError('Fleet owner not found', 404);
   }
 
-  await fleetOwner.update(req.body);
+  // Whitelist allowed fields to prevent mass assignment
+  const FLEET_OWNER_UPDATE_FIELDS = [
+    'full_name', 'email', 'phone', 'company_name', 'uen',
+    'payout_method', 'bank_account', 'address'
+  ];
+  const safeUpdates = Object.fromEntries(
+    Object.entries(req.body).filter(([k]) => FLEET_OWNER_UPDATE_FIELDS.includes(k))
+  );
+  await fleetOwner.update(safeUpdates);
 
   res.json({
     success: true,
@@ -179,7 +195,15 @@ router.post('/cars', authenticateToken, validate(schemas.carCreate), asyncHandle
     }
   }
 
-  const car = await Car.create(req.body);
+  // Whitelist allowed fields to prevent mass assignment
+  const CAR_FIELDS = [
+    'make', 'model', 'year', 'plate_number', 'vin', 'color',
+    'type', 'status', 'fleet_owner_id'
+  ];
+  const safeData = Object.fromEntries(
+    Object.entries(req.body).filter(([k]) => CAR_FIELDS.includes(k))
+  );
+  const car = await Car.create(safeData);
 
   res.status(201).json({
     success: true,
@@ -248,7 +272,15 @@ router.put('/cars/:id', authenticateToken, asyncHandler(async (req, res) => {
     }
   }
 
-  await car.update(req.body);
+  // Whitelist allowed fields to prevent mass assignment
+  const CAR_UPDATE_FIELDS = [
+    'make', 'model', 'year', 'plate_number', 'vin', 'color',
+    'type', 'status', 'fleet_owner_id', 'current_driver_id'
+  ];
+  const safeUpdates = Object.fromEntries(
+    Object.entries(req.body).filter(([k]) => CAR_UPDATE_FIELDS.includes(k))
+  );
+  await car.update(safeUpdates);
 
   res.json({
     success: true,

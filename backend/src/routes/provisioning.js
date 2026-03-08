@@ -1,14 +1,24 @@
 import express from 'express';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 import { ProvisioningSession, Device } from '../models/index.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { Op } from 'sequelize';
 
 const router = express.Router();
 
+// Rate limit unauthenticated provisioning endpoints
+const provisionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many provisioning requests, try again later' }
+});
+
 // 1. Tablet: Create a new provisional session
 // No auth required (tablet is not yet provisioned)
-router.post('/session', async (req, res) => {
+router.post('/session', provisionLimiter, async (req, res) => {
     try {
         const { sessionCode, ipAddress } = req.body;
 
@@ -39,7 +49,7 @@ router.post('/session', async (req, res) => {
 
 // 2. Tablet: Poll for status
 // No auth required
-router.get('/check/:code', async (req, res) => {
+router.get('/check/:code', provisionLimiter, async (req, res) => {
     try {
         const { code } = req.params;
 

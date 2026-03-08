@@ -1,5 +1,18 @@
 import request from 'supertest'
-import { app as expressApp } from '../src/server.js'
+import express from 'express'
+import { init } from '../src/server_internal.js'
+import { sequelize } from '../src/database/connection.js'
+
+let expressApp
+
+beforeAll(async () => {
+  expressApp = express()
+  await init(expressApp)
+}, 15000)
+
+afterAll(async () => {
+  await sequelize.close()
+})
 
 describe('Backend routing/auth smoke tests', () => {
   it('health check should return OK', async () => {
@@ -20,5 +33,3 @@ describe('Backend routing/auth smoke tests', () => {
     expect([401, 403]).toContain(res.status)
   })
 })
-
-

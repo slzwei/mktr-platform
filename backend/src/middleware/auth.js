@@ -3,6 +3,12 @@ import { User } from '../models/index.js';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { DEFAULT_TENANT_ID } from './tenant.js';
 
+// Validate JWT_SECRET is available
+const JWT_SECRET = process.env.JWT_SECRET;
+if (process.env.NODE_ENV === 'production' && !JWT_SECRET) {
+  throw new Error('FATAL: JWT_SECRET environment variable must be set in production');
+}
+
 // JWKS (central auth) support
 let remoteJwks = null;
 let expectedIssuer = null;
@@ -68,7 +74,7 @@ export const authenticateToken = async (req, res, next) => {
       }
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
     const legacyUser = await User.findByPk(decoded.userId);
     if (!legacyUser || !legacyUser.isActive) {
       return res.status(401).json({ success: false, message: 'Invalid or inactive user' });
@@ -134,7 +140,7 @@ export const optionalAuth = async (req, res, next) => {
       }
       if (!user) {
         try {
-          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          const decoded = jwt.verify(token, JWT_SECRET);
           user = await User.findByPk(decoded.userId);
         } catch (_) { }
       }
@@ -152,7 +158,7 @@ export const optionalAuth = async (req, res, next) => {
 export const generateToken = (userId) => {
   return jwt.sign(
     { userId },
-    process.env.JWT_SECRET,
+    JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
 };
@@ -160,7 +166,7 @@ export const generateToken = (userId) => {
 // Verify email token
 export const verifyEmailToken = (token) => {
   try {
-    return jwt.verify(token, process.env.JWT_SECRET);
+    return jwt.verify(token, JWT_SECRET);
   } catch (error) {
     return null;
   }

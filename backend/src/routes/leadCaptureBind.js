@@ -3,6 +3,12 @@ import crypto from 'crypto';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { Attribution } from '../models/index.js';
 
+const isProd = process.env.NODE_ENV === 'production';
+if (isProd && !process.env.ATTRIB_SECRET) {
+  throw new Error('FATAL: ATTRIB_SECRET must be set in production');
+}
+const ATTRIB_SECRET = process.env.ATTRIB_SECRET || 'dev-attrib-secret';
+
 const router = express.Router();
 
 // Middleware to bind attribution from atk cookie and ensure sid cookie
@@ -26,7 +32,7 @@ router.get('/lead-capture', asyncHandler(async (req, res, next) => {
   if (atk) {
     try {
       const [payload, sig] = atk.split('.');
-      const expected = crypto.createHmac('sha256', process.env.ATTRIB_SECRET || 'attrib').update(payload).digest('base64url');
+      const expected = crypto.createHmac('sha256', ATTRIB_SECRET).update(payload).digest('base64url');
       if (sig !== expected) throw new Error('Bad signature');
       const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
       if (data.exp && Date.now() / 1000 > data.exp) throw new Error('Expired');

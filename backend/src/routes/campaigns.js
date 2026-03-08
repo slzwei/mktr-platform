@@ -93,7 +93,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
 
 // Create new campaign
 router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
-  console.log('📦 Create Campaign request by user:', req.user?.id, 'role:', req.user?.role, 'body:', req.body);
+  console.log('📦 Create Campaign request by user:', req.user?.id, 'role:', req.user?.role);
   const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, commission_amount_driver, commission_amount_fleet, ad_playlist } = req.body;
 
   const campaignData = {

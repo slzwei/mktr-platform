@@ -362,39 +362,44 @@ export const auth = {
 
 // Base Entity class - Compatible with Base44 SDK patterns
 class BaseEntity {
-  constructor(endpoint) {
+  /**
+   * @param {string} endpoint - API endpoint path
+   * @param {string} listKey - Response key for list results (plural)
+   * @param {string} itemKey - Response key for single item results (singular)
+   */
+  constructor(endpoint, listKey, itemKey) {
     this.endpoint = endpoint;
+    this.listKey = listKey;
+    this.itemKey = itemKey;
   }
 
-  // Base44-compatible methods
   async list(params = {}) {
     const response = await apiClient.get(this.endpoint, params);
     // If pagination metadata exists, return the full data object with pagination
     if (response.data?.pagination) {
       return response.data;
     }
-    // Otherwise return just the data array for backwards compatibility
-    return response.data?.campaigns || response.data?.prospects || response.data?.qrTags || response.data?.users || response.data?.cars || response.data?.drivers || response.data?.fleetOwners || response.data?.commissions || response.data?.agents || response.data?.packages || [];
+    return response.data?.[this.listKey] || [];
   }
 
   async filter(params = {}) {
     const response = await apiClient.get(this.endpoint, params);
-    return response.data?.campaigns || response.data?.prospects || response.data?.qrTags || response.data?.users || response.data?.cars || response.data?.drivers || response.data?.fleetOwners || response.data?.commissions || response.data?.agents || response.data?.packages || [];
+    return response.data?.[this.listKey] || [];
   }
 
   async create(data) {
     const response = await apiClient.post(this.endpoint, data);
-    return response.data?.campaign || response.data?.prospect || response.data?.qrTag || response.data?.user || response.data?.car || response.data?.driver || response.data?.fleetOwner || response.data?.commission || response.data?.package || response.data;
+    return response.data?.[this.itemKey] || response.data;
   }
 
   async get(id) {
     const response = await apiClient.get(`${this.endpoint}/${id}`);
-    return response.data?.campaign || response.data?.prospect || response.data?.qrTag || response.data?.user || response.data?.car || response.data?.driver || response.data?.fleetOwner || response.data?.commission || response.data?.package || response.data;
+    return response.data?.[this.itemKey] || response.data;
   }
 
   async update(id, data) {
     const response = await apiClient.put(`${this.endpoint}/${id}`, data);
-    return response.data?.campaign || response.data?.prospect || response.data?.qrTag || response.data?.user || response.data?.car || response.data?.driver || response.data?.fleetOwner || response.data?.commission || response.data?.package || response.data;
+    return response.data?.[this.itemKey] || response.data;
   }
 
   async delete(id) {
@@ -402,7 +407,6 @@ class BaseEntity {
     return response.data;
   }
 
-  // Additional Base44-compatible methods
   async findMany(params = {}) {
     return this.list(params);
   }
@@ -413,14 +417,14 @@ class BaseEntity {
 
   async setApprovalStatus(id, approvalStatus) {
     const response = await apiClient.patch(`${this.endpoint}/${id}/approval`, { approvalStatus });
-    return response.data?.user || response.data;
+    return response.data?.[this.itemKey] || response.data;
   }
 }
 
 // Campaign Entity
 class CampaignEntity extends BaseEntity {
   constructor() {
-    super('/campaigns');
+    super('/campaigns', 'campaigns', 'campaign');
   }
 
   async getAnalytics(id) {
@@ -452,7 +456,7 @@ class CampaignEntity extends BaseEntity {
 // Prospect Entity
 class ProspectEntity extends BaseEntity {
   constructor() {
-    super('/prospects');
+    super('/prospects', 'prospects', 'prospect');
   }
 
   async assign(id, agentId) {
@@ -484,7 +488,7 @@ class ProspectEntity extends BaseEntity {
 // QR Tag Entity
 class QrTagEntity extends BaseEntity {
   constructor() {
-    super('/qrcodes');
+    super('/qrcodes', 'qrTags', 'qrTag');
   }
 
   async recordScan(id, metadata = {}) {
@@ -506,7 +510,7 @@ class QrTagEntity extends BaseEntity {
 // Commission Entity
 class CommissionEntity extends BaseEntity {
   constructor() {
-    super('/commissions');
+    super('/commissions', 'commissions', 'commission');
   }
 
   async approve(id, notes) {
@@ -528,14 +532,14 @@ class CommissionEntity extends BaseEntity {
 // Fleet Owner Entity
 class FleetOwnerEntity extends BaseEntity {
   constructor() {
-    super('/fleet/owners');
+    super('/fleet/owners', 'fleetOwners', 'fleetOwner');
   }
 }
 
 // Car Entity
 class CarEntity extends BaseEntity {
   constructor() {
-    super('/fleet/cars');
+    super('/fleet/cars', 'cars', 'car');
   }
 
   async assignDriver(id, driverId) {
@@ -547,14 +551,14 @@ class CarEntity extends BaseEntity {
 // Driver Entity
 class DriverEntity extends BaseEntity {
   constructor() {
-    super('/fleet/drivers');
+    super('/fleet/drivers', 'drivers', 'driver');
   }
 }
 
 // Lead Package Entity
 class LeadPackageEntity extends BaseEntity {
   constructor() {
-    super('/lead-packages');
+    super('/lead-packages', 'packages', 'package');
   }
 
   async assign(agentId, packageId) {
@@ -580,7 +584,7 @@ class LeadPackageEntity extends BaseEntity {
 // User Entity
 class UserEntity extends BaseEntity {
   constructor() {
-    super('/users');
+    super('/users', 'users', 'user');
   }
 
   async permanentDelete(id) {

@@ -1,8 +1,18 @@
 import express from 'express';
 import Joi from 'joi';
+import rateLimit from 'express-rate-limit';
 import { sendEmail } from '../services/mailer.js';
 
 const router = express.Router();
+
+// Rate limit contact form submissions
+const contactLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many contact submissions, try again later' }
+});
 
 const contactSchema = Joi.object({
   name: Joi.string().min(2).max(200).required(),
@@ -16,7 +26,7 @@ const contactSchema = Joi.object({
   message: Joi.string().min(10).max(5000).required()
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', contactLimiter, async (req, res, next) => {
   try {
     const { error, value } = contactSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
     if (error) {

@@ -1,7 +1,8 @@
 export default {
   testEnvironment: 'node',
   transform: {},
-  verbose: false
+  verbose: false,
+  forceExit: true
 }
 
 
