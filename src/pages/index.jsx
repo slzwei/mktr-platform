@@ -45,6 +45,9 @@ const AgentDashboard = lazy(() => import('./AgentDashboard'));
 
 const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
 const DriverDashboard = lazy(() => import('./DriverDashboard'));
+const DriverProfile = lazy(() => import('./DriverProfile'));
+const DriverPayoutHistory = lazy(() => import('./DriverPayoutHistory'));
+const DriverPayslip = lazy(() => import('./DriverPayslip'));
 const MyProspects = lazy(() => import('./MyProspects'));
 const ProspectDetailPage = lazy(() => import('./ProspectDetailPage'));
 const AgentProfile = lazy(() => import('./AgentProfile'));
@@ -65,7 +68,7 @@ function PagesContent() {
 
   return (
     <ErrorBoundary>
-      <Suspense fallback={<div />}>
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
         <Routes>
           {/* Public routes - no protection needed */}
           <Route path="/" element={<Homepage />} />
@@ -275,6 +278,27 @@ function PagesContent() {
             <ProtectedRoute requiredRole="driver_partner">
               <DashboardLayout>
                 <DriverDashboard />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/DriverProfile" element={
+            <ProtectedRoute requiredRole="driver_partner">
+              <DashboardLayout>
+                <DriverProfile />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/DriverPayoutHistory" element={
+            <ProtectedRoute requiredRole="driver_partner">
+              <DashboardLayout>
+                <DriverPayoutHistory />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/DriverPayslip" element={
+            <ProtectedRoute requiredRole="driver_partner">
+              <DashboardLayout>
+                <DriverPayslip />
               </DashboardLayout>
             </ProtectedRoute>
           } />

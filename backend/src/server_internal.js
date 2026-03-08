@@ -44,6 +44,7 @@ import deviceRoutes from './routes/devices.js';
 import provisioningRoutes from './routes/provisioning.js'; // Added
 import vehicleRoutes from './routes/vehicles.js'; // Added for tablet pairing
 import { optionalAuth } from './middleware/auth.js';
+import { logger } from './utils/logger.js';
 
 // Load environment variables
 dotenv.config();
@@ -88,7 +89,7 @@ export const init = async (app) => {
 
   const corsOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
 
-  console.log('DEBUG: Configured CORS Origins:', corsOrigins);
+  logger.debug('Configured CORS Origins', { origins: corsOrigins });
 
   // Explicit OPTIONS handler for preflight requests - must come BEFORE cors() middleware
   app.options('*', (req, res) => {
@@ -128,10 +129,10 @@ export const init = async (app) => {
   });
   // Ensure we decode JWT (if present) before limiter so skip() can see admin
   if (isProd) {
-    console.log('🛡️ Rate limiter enabled (production mode)');
+    logger.info('Rate limiter enabled (production mode)');
     app.use('/api', optionalAuth, limiter);
   } else {
-    console.log('🛠️ Rate limiter disabled (development mode)');
+    logger.info('Rate limiter disabled (development mode)');
     app.use('/api', optionalAuth);
   }
 
@@ -242,19 +243,23 @@ export const init = async (app) => {
   app.use(errorHandler);
 
   // Database connection and server startup
-  console.log('🔧 Validating environment configuration...');
+  logger.info('Validating environment configuration...');
   await bootstrapDatabase();
-  console.log(`🚀 Application Logic Ready`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV}`);
-  console.log(`[monolith] RPS env: MANIFEST_RPS_PER_DEVICE=${process.env.MANIFEST_RPS_PER_DEVICE || '2'} BEACON_RPS_PER_DEVICE=${process.env.BEACON_RPS_PER_DEVICE || '5'} BEACON_IDEMP_WINDOW_MIN=${process.env.BEACON_IDEMP_WINDOW_MIN || '10'}`);
+  logger.info('Application Logic Ready');
+  logger.info('Environment configured', { env: process.env.NODE_ENV });
+  logger.info('Monolith RPS config', {
+    MANIFEST_RPS_PER_DEVICE: process.env.MANIFEST_RPS_PER_DEVICE || '2',
+    BEACON_RPS_PER_DEVICE: process.env.BEACON_RPS_PER_DEVICE || '5',
+    BEACON_IDEMP_WINDOW_MIN: process.env.BEACON_IDEMP_WINDOW_MIN || '10'
+  });
 };
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
-  console.error('Unhandled Promise Rejection:', err);
+  logger.error('Unhandled Promise Rejection', { error: err?.message || String(err) });
 });
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
+  logger.error('Uncaught Exception', { error: err?.message || String(err) });
 });

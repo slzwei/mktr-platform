@@ -103,9 +103,9 @@ function getNavGroups(role) {
         label: "Navigation",
         items: [
           { title: "Dashboard", url: createPageUrl("DriverDashboard"), icon: LayoutDashboard },
-          { title: "Profile", url: "/DriverDashboard?tab=profile", icon: Settings },
-          { title: "Payout History", url: "/DriverDashboard?tab=history", icon: DollarSign },
-          { title: "Payslip", url: "/DriverDashboard?tab=payslip", icon: FileText },
+          { title: "Profile", url: createPageUrl("DriverProfile"), icon: Settings },
+          { title: "Payout History", url: createPageUrl("DriverPayoutHistory"), icon: DollarSign },
+          { title: "Payslip", url: createPageUrl("DriverPayslip"), icon: FileText },
         ],
       },
     ];

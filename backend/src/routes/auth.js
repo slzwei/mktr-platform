@@ -7,6 +7,7 @@ import { validate, schemas } from '../middleware/validation.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { googleLogin } from '../controllers/authController.js';
 import { v4 as uuidv4 } from 'uuid';
+import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -220,7 +221,7 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
     throw new AppError('Missing authorization code', 400);
   }
 
-  console.log('🔍 Received OAuth callback with code');
+  logger.debug('Received OAuth callback with code');
 
   try {
     // Exchange authorization code for tokens
@@ -238,7 +239,7 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
     const finalRedirectUri = explicitRedirectUri
       || `${derivedFrontendBaseUrl}/auth/google/callback`;
 
-    console.log('🔍 OAuth token exchange redirect_uri:', finalRedirectUri);
+    logger.debug('OAuth token exchange redirect_uri', { redirectUri: finalRedirectUri });
 
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -256,12 +257,12 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
 
     if (!tokenResponse.ok) {
       const errorData = await tokenResponse.text();
-      console.error('❌ Token exchange failed:', errorData);
+      logger.error('Token exchange failed', { error: errorData });
       throw new AppError('Failed to exchange authorization code', 400);
     }
 
     const tokens = await tokenResponse.json();
-    console.log('✅ Token exchange successful');
+    logger.debug('Token exchange successful');
 
     // Get user info from Google
     const userResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
@@ -275,7 +276,7 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
     }
 
     const googleUser = await userResponse.json();
-    console.log('✅ Google user info retrieved successfully');
+    logger.debug('Google user info retrieved successfully');
 
     // Find or create user in our database
     // Strategy: Check googleSub (hard link) OR email (soft link)
@@ -306,10 +307,10 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
         googleSub: googleUser.id // Store the immutable Google ID
       });
 
-      console.log('✅ New user created via Google OAuth');
+      logger.info('New user created via Google OAuth');
     } else {
       // Existing user found
-      console.log('✅ Existing user found via Google OAuth');
+      logger.debug('Existing user found via Google OAuth');
 
       // Check if agent has accepted invitation
       if (user.role === 'agent' && user.invitationToken) {
@@ -318,7 +319,7 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
 
       // Harden: If existing user matches by email but has no googleSub, link it now
       if (!user.googleSub) {
-        console.log('🔗 Linking existing user to Google ID (hardening)');
+        logger.info('Linking existing user to Google ID (hardening)');
         await user.update({ googleSub: googleUser.id });
       } else if (user.googleSub !== googleUser.id) {
         // Rare edge case: Email matches but ID differs (potentially recycled email?)
@@ -347,7 +348,7 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
         // BUT, the Op.or query would return the user if EITHER matches.
 
         if (user.googleSub && user.googleSub !== googleUser.id) {
-          console.warn(`⚠️ Warning: Google ID mismatch for user ${user.id}. Stored sub differs from incoming sub.`);
+          logger.warn('Google ID mismatch for user. Stored sub differs from incoming sub.', { userId: user.id });
           // Decide strategy: Allow login? Block?
           // For now, allow login as the Email ownership is proven by Google.
           // Maybe update the ID? No, IDs shouldn't change.
@@ -369,7 +370,7 @@ router.post('/google/callback', asyncHandler(async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ OAuth callback error:', error);
+    logger.error('OAuth callback error', { error: error?.message || String(error) });
     throw new AppError(`Google authentication failed: ${error.message}`, 400);
   }
 }));

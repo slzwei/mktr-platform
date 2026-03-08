@@ -118,10 +118,10 @@ export default function FleetOwnerDashboard() {
     return (
       <div className="p-6 lg:p-8">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-64"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-64"></div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {Array(4).fill(0).map((_, i) => (
-              <div key={i} className="h-32 bg-gray-200 rounded-xl"></div>
+              <div key={i} className="h-32 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
             ))}
           </div>
         </div>
@@ -154,13 +154,13 @@ export default function FleetOwnerDashboard() {
   const metrics = getDashboardMetrics();
 
   return (
-    <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
+    <div className="p-6 lg:p-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             Welcome back, {user?.full_name}!
           </h1>
-          <div className="flex items-center gap-4 text-gray-600">
+          <div className="flex items-center gap-4 text-gray-600 dark:text-gray-400">
             <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
               Fleet Owner
             </Badge>
@@ -168,7 +168,7 @@ export default function FleetOwnerDashboard() {
               {format(new Date(), 'EEEE, dd MMMM yyyy')}
             </span>
             <Select value={period} onValueChange={setPeriod}>
-              <SelectTrigger className="w-[130px] bg-white" size="sm">
+              <SelectTrigger className="w-[130px] bg-white dark:bg-gray-800" size="sm">
                 <SelectValue placeholder="Period" />
               </SelectTrigger>
               <SelectContent>
@@ -279,7 +279,7 @@ export default function FleetOwnerDashboard() {
               <div className="lg:col-span-2 space-y-6">
                 {/* Fleet Overview */}
                 <Card className="shadow-md">
-                  <CardHeader className="border-b border-gray-100">
+                  <CardHeader className="border-b border-gray-100 dark:border-gray-700">
                     <div className="flex justify-between items-center">
                       <CardTitle className="text-xl font-bold">My Fleet</CardTitle>
                       <Link to={createPageUrl("AdminFleet")}>
@@ -294,14 +294,14 @@ export default function FleetOwnerDashboard() {
                     {stats.cars.length > 0 ? (
                       <div className="space-y-4">
                         {stats.cars.slice(0, 5).map((car) => (
-                          <div key={car.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                          <div key={car.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                                 <CarIcon className="w-5 h-5 text-blue-600" />
                               </div>
                               <div>
-                                <p className="font-semibold text-gray-900">{car.plate_number}</p>
-                                <p className="text-sm text-gray-500">{car.model} • {car.color}</p>
+                                <p className="font-semibold text-gray-900 dark:text-gray-100">{car.plate_number}</p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">{car.model} • {car.color}</p>
                               </div>
                             </div>
                             <Badge className={

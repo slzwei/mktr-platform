@@ -146,10 +146,10 @@ export default function AgentDashboard() {
     return (
       <div className="p-6 lg:p-8">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-64"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-64"></div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {Array(4).fill(0).map((_, i) => (
-              <div key={i} className="h-32 bg-gray-200 rounded-xl"></div>
+              <div key={i} className="h-32 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
             ))}
           </div>
         </div>
@@ -189,13 +189,13 @@ export default function AgentDashboard() {
   }).sort((a, b) => new Date(a.nextFollowUpDate) - new Date(b.nextFollowUpDate));
 
   return (
-    <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
+    <div className="p-6 lg:p-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             Welcome back, {user?.full_name}!
           </h1>
-          <div className="flex items-center gap-4 text-gray-600">
+          <div className="flex items-center gap-4 text-gray-600 dark:text-gray-400">
             <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
               Sales Agent
             </Badge>
@@ -203,7 +203,7 @@ export default function AgentDashboard() {
               {format(new Date(), 'EEEE, dd MMMM yyyy')}
             </span>
             <Select value={period} onValueChange={setPeriod}>
-              <SelectTrigger className="w-[130px] bg-white" size="sm">
+              <SelectTrigger className="w-[130px] bg-white dark:bg-gray-800" size="sm">
                 <SelectValue placeholder="Period" />
               </SelectTrigger>
               <SelectContent>
@@ -316,13 +316,13 @@ export default function AgentDashboard() {
             </div>
 
             {/* Pipeline / List Toggle */}
-            <div className="flex items-center gap-1 mb-4 bg-white rounded-lg p-1 border w-fit">
+            <div className="flex items-center gap-1 mb-4 bg-white dark:bg-gray-800 rounded-lg p-1 border dark:border-gray-700 w-fit">
               <button
                 onClick={() => setPipelineView('pipeline')}
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   pipelineView === 'pipeline'
-                    ? 'bg-gray-900 text-white'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
                 }`}
               >
                 Pipeline
@@ -331,8 +331,8 @@ export default function AgentDashboard() {
                 onClick={() => setPipelineView('list')}
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   pipelineView === 'list'
-                    ? 'bg-gray-900 text-white'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
                 }`}
               >
                 List
@@ -375,9 +375,9 @@ export default function AgentDashboard() {
                     {overdueProspects.length > 0 ? (
                       <div className="space-y-3">
                         {overdueProspects.slice(0, 5).map(p => (
-                          <div key={p.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                          <div key={p.id} className="flex items-center justify-between py-2 border-b border-gray-50 dark:border-gray-700 last:border-0">
                             <div>
-                              <p className="text-sm font-medium text-gray-900">{p.firstName} {p.lastName}</p>
+                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{p.firstName} {p.lastName}</p>
                               <p className="text-xs text-red-500">
                                 Due {formatDistanceToNow(new Date(p.nextFollowUpDate), { addSuffix: true })}
                               </p>
@@ -425,13 +425,13 @@ export default function AgentDashboard() {
                   <CardContent>
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Conversion Rate</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Conversion Rate</span>
                         <span className="font-semibold">
                           {Math.round((metrics.closedWon / Math.max(metrics.totalProspects, 1)) * 100)}%
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Active Prospects</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Active Prospects</span>
                         <span className="font-semibold">
                           {filteredProspects.filter(p => {
                             const s = (p.leadStatus || p.status || 'new').toLowerCase();
@@ -440,7 +440,7 @@ export default function AgentDashboard() {
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">{periodLabel}</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">{periodLabel}</span>
                         <Badge variant="outline" className="bg-green-50 text-green-700">
                           {metrics.weeklyProspects} new leads
                         </Badge>

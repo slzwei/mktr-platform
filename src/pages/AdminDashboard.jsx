@@ -126,23 +126,51 @@ export default function AdminDashboard() {
     cars: user?.role === 'fleet_owner' ? getFilteredData(stats.cars, user?.role, user?.id) : stats.cars
   };
 
+  const handleExport = () => {
+    const rows = [
+      ['Metric', 'Value'],
+      ['Total Prospects', filteredStats.overview.prospectsTotal],
+      ['New Prospects', filteredStats.overview.newProspects],
+      ['Active Campaigns', filteredStats.overview.campaignsActive],
+      ['Total Campaigns', filteredStats.overview.campaignsTotal],
+      ['Total Revenue', filteredStats.overview.commissionsTotal],
+      ['', ''],
+      ['Recent Prospects', ''],
+      ['Name', 'Status', 'Date'],
+      ...filteredStats.prospects.slice(0, 50).map(p => [
+        p.firstName + ' ' + (p.lastName || ''),
+        p.leadStatus || p.status || 'new',
+        p.createdAt || p.created_date || ''
+      ])
+    ];
+
+    const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mktr-dashboard-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <div className="p-6 lg:p-8 bg-gray-50/50 min-h-screen font-sans">
+    <div className="p-6 lg:p-8 bg-gray-50/50 dark:bg-gray-900 min-h-screen font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 tracking-tight">
               Dashboard
             </h1>
-            <p className="text-gray-500 text-sm mt-1">
+            <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
               {format(new Date(), 'EEEE, d MMMM yyyy')}
             </p>
             <LastUpdated lastUpdated={lastUpdated} onRefresh={loadDashboardData} loading={loading} />
           </div>
           <div className="flex items-center gap-3">
             <Select value={period} onValueChange={handlePeriodChange}>
-              <SelectTrigger className="w-[130px] bg-white" size="sm">
+              <SelectTrigger className="w-[130px] bg-white dark:bg-gray-800" size="sm">
                 <SelectValue placeholder="Period" />
               </SelectTrigger>
               <SelectContent>
@@ -152,7 +180,7 @@ export default function AdminDashboard() {
                 <SelectItem value="90d">Last 90 days</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" className="bg-white" size="sm">
+            <Button variant="outline" className="bg-white dark:bg-gray-800" size="sm" onClick={handleExport}>
               <Download className="w-4 h-4 mr-2" />
               Export Report
             </Button>
@@ -166,7 +194,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Mobile sticky summary - visible when scrolling */}
-        <div className="md:hidden sticky top-[57px] z-40 bg-white/95 backdrop-blur-sm border-b border-gray-100 -mx-6 px-6 py-2">
+        <div className="md:hidden sticky top-[57px] z-40 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border-b border-gray-100 dark:border-gray-700 -mx-6 px-6 py-2">
           <div className="flex items-center justify-between text-xs">
             <div className="text-center">
               <p className="font-semibold text-gray-900">{filteredStats.overview.prospectsTotal}</p>

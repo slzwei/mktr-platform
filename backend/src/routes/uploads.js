@@ -6,8 +6,26 @@ import { v4 as uuidv4 } from 'uuid';
 import { storageService } from '../services/storage.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import { logger } from '../utils/logger.js';
 
 const router = express.Router();
+
+// --- Upload hardening constants ---
+
+// Global allowlist of MIME types accepted by the platform
+const ALLOWED_TYPES = [
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+  'application/pdf',
+  'video/mp4', 'video/webm'
+];
+
+// Maximum upload size (default 10 MB, configurable via env)
+const MAX_SIZE = (parseInt(process.env.MAX_UPLOAD_SIZE_MB) || 10) * 1024 * 1024;
+
+// Sanitize filenames: strip path traversal and special characters
+const sanitizeFilename = (name) => {
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.{2,}/g, '.');
+};
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -31,29 +49,35 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const uniqueSuffix = uuidv4();
     const ext = path.extname(file.originalname);
-    const name = path.basename(file.originalname, ext);
+    const name = sanitizeFilename(path.basename(file.originalname, ext));
     cb(null, `${name}-${uniqueSuffix}${ext}`);
   }
 });
 
-// File filter
+// File filter — enforce global allowlist first, then per-category allowlist
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = {
-    image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-    document: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-    spreadsheet: ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-    video: ['video/mp4', 'video/mpeg', 'video/quicktime'],
-    audio: ['audio/mpeg', 'audio/wav', 'audio/ogg'],
-    campaign_media: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/mpeg', 'video/quicktime']
+  // Global MIME type gate
+  if (!ALLOWED_TYPES.includes(file.mimetype)) {
+    logger.warn('Upload rejected: disallowed MIME type', { mimetype: file.mimetype, originalname: file.originalname });
+    return cb(new AppError(`File type not allowed. Accepted types: ${ALLOWED_TYPES.join(', ')}`, 400), false);
+  }
+
+  // Per-category refinement (backwards-compatible with existing query param)
+  const allowedByCategory = {
+    image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'],
+    document: ['application/pdf'],
+    video: ['video/mp4', 'video/webm'],
+    campaign_media: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'video/mp4', 'video/webm']
   };
 
   const { type = 'image' } = req.query;
-  const allowed = allowedTypes[type] || allowedTypes.image;
+  const allowed = allowedByCategory[type] || allowedByCategory.image;
 
   if (allowed.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new AppError(`Invalid file type. Allowed types for ${type}: ${allowed.join(', ')}`, 400), false);
+    logger.warn('Upload rejected: wrong category for MIME type', { mimetype: file.mimetype, category: type });
+    cb(new AppError(`Invalid file type for category "${type}". Allowed: ${allowed.join(', ')}`, 400), false);
   }
 };
 
@@ -62,7 +86,7 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024, // 50MB default for videos
+    fileSize: MAX_SIZE,
     files: 5 // Max 5 files at once
   }
 });
@@ -436,7 +460,7 @@ router.use((error, req, res, next) => {
       return res.status(400).json({
         success: false,
         message: 'File too large',
-        details: `Maximum file size is ${(parseInt(process.env.MAX_FILE_SIZE) || 10485760) / (1024 * 1024)}MB`
+        details: `Maximum file size is ${MAX_SIZE / (1024 * 1024)}MB`
       });
     }
     if (error.code === 'LIMIT_FILE_COUNT') {

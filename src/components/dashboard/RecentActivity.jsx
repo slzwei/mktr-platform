@@ -1,8 +1,10 @@
-
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -10,7 +12,8 @@ import {
   Clock,
   ArrowRight,
   MoreHorizontal,
-  Users
+  Users,
+  Search
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -38,6 +41,9 @@ const statusLabels = {
 };
 
 export default function RecentActivity({ prospects }) {
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+
   const formatProspectDate = (prospect) => {
     const raw = prospect.created_date || prospect.createdAt || prospect.created_at || prospect.created || prospect.createdDate;
     if (!raw) return '—';
@@ -45,21 +51,56 @@ export default function RecentActivity({ prospects }) {
     return isNaN(date.getTime()) ? '—' : format(date, 'MMM d, h:mm a');
   };
 
-  const recentProspects = prospects.slice(0, 8);
+  const filteredProspects = prospects.filter(p => {
+    const name = (p.name || p.firstName || '').toLowerCase();
+    const matchesSearch = !search || name.includes(search.toLowerCase());
+    const status = (p.leadStatus || p.status || 'new').toLowerCase();
+    const matchesStatus = statusFilter === 'all' || status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+  const recentProspects = filteredProspects.slice(0, 8);
 
   return (
     <Card className="border-none shadow-sm h-full">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <div>
-          <CardTitle className="text-lg font-bold">Recent Activity</CardTitle>
-          <p className="text-sm text-gray-500 mt-1">Latest prospect interactions</p>
+      <CardHeader className="space-y-0 pb-4">
+        <div className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-lg font-bold">Recent Activity</CardTitle>
+            <p className="text-sm text-gray-500 mt-1">
+              Showing {recentProspects.length} of {prospects.length} prospects
+            </p>
+          </div>
+          <Link to={createPageUrl("AdminProspects")}>
+            <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
+              View All
+              <ArrowRight className="w-4 h-4 ml-1" />
+            </Button>
+          </Link>
         </div>
-        <Link to={createPageUrl("AdminProspects")}>
-          <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
-            View All
-            <ArrowRight className="w-4 h-4 ml-1" />
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2 mt-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              placeholder="Search prospects..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 h-8 text-sm"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[130px] h-8 text-sm">
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="new">New</SelectItem>
+              <SelectItem value="contacted">Contacted</SelectItem>
+              <SelectItem value="meeting">Meeting</SelectItem>
+              <SelectItem value="close_won">Won</SelectItem>
+              <SelectItem value="close_lost">Lost</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">

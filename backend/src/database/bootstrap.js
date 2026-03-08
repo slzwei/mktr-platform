@@ -4,6 +4,7 @@ import ensureTenantPlumbing from './tenantMigration.js';
 import { initSystemAgent } from '../services/systemAgent.js';
 import { validateGoogleOAuthConfig } from '../controllers/authController.js';
 import { validateEnv } from '../config/envValidation.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Connect to the database, sync models, run column migrations, and
@@ -14,7 +15,7 @@ export async function bootstrapDatabase() {
   validateGoogleOAuthConfig();
 
   await sequelize.authenticate();
-  console.log('✅ Database connection established successfully.');
+  logger.info('Database connection established successfully.');
 
   await applySqlitePragmas();
   logDatabaseInfo();
@@ -29,12 +30,12 @@ export async function bootstrapDatabase() {
   }
 
   await sequelize.sync({ alter: false });
-  console.log('✅ Database models synchronized.');
+  logger.info('Database models synchronized.');
 
   await safeRun('Tenant plumbing', () => ensureTenantPlumbing(sequelize));
   await safeRun('System Agent', async () => {
     const systemId = await initSystemAgent();
-    console.log(`✅ System Agent ready: ${systemId}`);
+    logger.info('System Agent ready', { systemId });
   });
 
   if (!isSqlite) {
@@ -50,7 +51,7 @@ async function safeRun(label, fn) {
   try {
     await fn();
   } catch (e) {
-    console.warn(`⚠️ ${label} failed (non-fatal):`, e?.message || e);
+    logger.warn(`${label} failed (non-fatal)`, { error: e?.message || String(e) });
   }
 }
 
@@ -62,7 +63,7 @@ async function applySqlitePragmas() {
       await sequelize.query('PRAGMA synchronous=NORMAL');
     }
   } catch (e) {
-    console.warn('⚠️ Failed to apply SQLite PRAGMAs:', e?.message || e);
+    logger.warn('Failed to apply SQLite PRAGMAs', { error: e?.message || String(e) });
   }
 }
 
@@ -70,9 +71,9 @@ function logDatabaseInfo() {
   try {
     const dialect = sequelize.getDialect();
     if (dialect === 'sqlite') {
-      console.log(`🗄️ DB Path: ${sequelize.options.storage}`);
+      logger.info('Database path', { path: sequelize.options.storage });
     } else if (dialect === 'postgres') {
-      console.log(`🗄️ DB Host: ${process.env.DB_HOST} / DB Name: ${process.env.DB_NAME}`);
+      logger.info('Database connection', { host: process.env.DB_HOST, name: process.env.DB_NAME });
     }
   } catch (_) { }
 }
@@ -89,7 +90,7 @@ async function syncModels() {
   try {
     await QrScan.sync({ alter: false });
   } catch (e) {
-    console.warn('⚠️ QrScan sync failed, continuing:', e?.message || e);
+    logger.warn('QrScan sync failed, continuing', { error: e?.message || String(e) });
   }
   await Attribution.sync({ alter: false });
   await SessionVisit.sync({ alter: false });
@@ -113,7 +114,7 @@ async function ensureSqliteColumns() {
     const addIfMissing = async (cols, name, type) => {
       if (!Array.isArray(cols) || !cols.some(c => c.name === name)) {
         await sequelize.query(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
-        console.log(`✅ Added ${name} column to users`);
+        logger.info(`Added ${name} column to users`);
       }
     };
     await addIfMissing(userColumns, 'invitationToken', 'TEXT');
@@ -126,14 +127,14 @@ async function ensureSqliteColumns() {
     const hasFleet = Array.isArray(columns) && columns.some(c => c.name === 'commission_amount_fleet');
     if (!hasDriver) {
       await sequelize.query('ALTER TABLE campaigns ADD COLUMN commission_amount_driver REAL');
-      console.log('✅ Added commission_amount_driver column to campaigns');
+      logger.info('Added commission_amount_driver column to campaigns');
     }
     if (!hasFleet) {
       await sequelize.query('ALTER TABLE campaigns ADD COLUMN commission_amount_fleet REAL');
-      console.log('✅ Added commission_amount_fleet column to campaigns');
+      logger.info('Added commission_amount_fleet column to campaigns');
     }
   } catch (e) {
-    console.warn('⚠️ Could not ensure user/campaign columns on SQLite:', e.message);
+    logger.warn('Could not ensure user/campaign columns on SQLite', { error: e.message });
   }
 
   try {
@@ -141,21 +142,21 @@ async function ensureSqliteColumns() {
     const hasCampaignId = Array.isArray(deviceColumns) && deviceColumns.some(c => c.name === 'campaignId');
     if (!hasCampaignId) {
       await sequelize.query('ALTER TABLE devices ADD COLUMN campaignId TEXT');
-      console.log('✅ Added campaignId column to devices');
+      logger.info('Added campaignId column to devices');
     }
     const hasCampaignIds = Array.isArray(deviceColumns) && deviceColumns.some(c => c.name === 'campaignIds');
     if (!hasCampaignIds) {
       await sequelize.query('ALTER TABLE devices ADD COLUMN campaignIds TEXT DEFAULT "[]"');
-      console.log('✅ Added campaignIds column to devices');
+      logger.info('Added campaignIds column to devices');
       await sequelize.query(`
         UPDATE devices
         SET campaignIds = '[' || '"' || campaignId || '"' || ']'
         WHERE campaignId IS NOT NULL AND (campaignIds IS NULL OR campaignIds = '[]')
       `);
-      console.log('✅ Migrated existing device assignments to multi-campaign format');
+      logger.info('Migrated existing device assignments to multi-campaign format');
     }
   } catch (e) {
-    console.warn('⚠️ Could not ensure device columns on SQLite:', e.message);
+    logger.warn('Could not ensure device columns on SQLite', { error: e.message });
   }
 
   try {
@@ -163,10 +164,10 @@ async function ensureSqliteColumns() {
     const hasVolume = Array.isArray(vehicleColumns) && vehicleColumns.some(c => c.name === 'volume');
     if (!hasVolume) {
       await sequelize.query('ALTER TABLE vehicles ADD COLUMN volume INTEGER DEFAULT 0');
-      console.log('✅ Added volume column to vehicles');
+      logger.info('Added volume column to vehicles');
     }
   } catch (e) {
-    console.warn('⚠️ Could not ensure vehicle columns on SQLite:', e.message);
+    logger.warn('Could not ensure vehicle columns on SQLite', { error: e.message });
   }
 }
 
@@ -179,9 +180,9 @@ async function ensurePostgresColumns() {
     `);
 
     if (results.length === 0) {
-      console.log('🔄 Applying Postgres migration: Adding campaignIds...');
+      logger.info('Applying Postgres migration: Adding campaignIds...');
       await sequelize.query('ALTER TABLE devices ADD COLUMN "campaignIds" JSONB DEFAULT \'[]\'::jsonb');
-      console.log('✅ Added campaignIds column to devices (Postgres)');
+      logger.info('Added campaignIds column to devices (Postgres)');
 
       await sequelize.query(`
         UPDATE devices
@@ -189,7 +190,7 @@ async function ensurePostgresColumns() {
         WHERE "campaignId" IS NOT NULL
           AND ("campaignIds" IS NULL OR jsonb_array_length("campaignIds") = 0)
       `);
-      console.log('✅ Migrated existing device assignments to multi-campaign format (Postgres)');
+      logger.info('Migrated existing device assignments to multi-campaign format (Postgres)');
     }
 
     const [volResult] = await sequelize.query(`
@@ -198,19 +199,19 @@ async function ensurePostgresColumns() {
       WHERE table_name = 'vehicles' AND column_name = 'volume'
     `);
     if (volResult.length === 0) {
-      console.log('🔄 Applying Postgres migration: Adding volume to vehicles...');
+      logger.info('Applying Postgres migration: Adding volume to vehicles...');
       await sequelize.query('ALTER TABLE vehicles ADD COLUMN "volume" INTEGER DEFAULT 0');
-      console.log('✅ Added volume column to vehicles (Postgres)');
+      logger.info('Added volume column to vehicles (Postgres)');
     }
   } catch (e) {
-    console.warn('⚠️ Postgres migration failed:', e.message);
+    logger.warn('Postgres migration failed', { error: e.message });
   }
 }
 
 async function ensurePostgresIndexes() {
   try {
     await sequelize.query("CREATE UNIQUE INDEX IF NOT EXISTS uniq_car_qr ON qr_tags(\"carId\") WHERE type = 'car'");
-    console.log('✅ Ensured uniq_car_qr index exists');
+    logger.info('Ensured uniq_car_qr index exists');
 
     try {
       await sequelize.query(
@@ -218,11 +219,11 @@ async function ensurePostgresIndexes() {
          ON prospects ("campaignId", phone)
          WHERE phone IS NOT NULL AND phone <> ''`
       );
-      console.log('✅ Ensured unique (campaignId, phone) index on prospects');
+      logger.info('Ensured unique (campaignId, phone) index on prospects');
     } catch (e) {
-      console.warn('⚠️ Could not ensure prospects (campaignId, phone) unique index:', e.message);
+      logger.warn('Could not ensure prospects (campaignId, phone) unique index', { error: e.message });
     }
   } catch (e) {
-    console.warn('⚠️ Could not ensure uniq_car_qr index:', e.message);
+    logger.warn('Could not ensure uniq_car_qr index', { error: e.message });
   }
 }
