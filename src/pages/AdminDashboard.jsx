@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Prospect, Campaign, Commission, Car } from "@/api/entities"; // Ensure named exports work or default if needed
 // Actually previous file used named imports from entities, but let's check if entities is default or named.
-// Looking at previous file content (Step 10), it imported { Prospect } from "@/api/entities". 
+// Looking at previous file content (Step 10), it imported { Prospect } from "@/api/entities".
 // But wait, step 11 view_file `src/api/client.js` shows `export const entities = ...` and `export default mktrAPI`.
 // It does NOT explicitly export `Prospect`, `Campaign` etc as named exports from `client.js`.
 // However, `src/api/entities.js` might exist?
@@ -14,12 +14,17 @@ import { dashboard, auth } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Plus, Download } from "lucide-react";
+import { Plus, Download, AlertCircle, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+import { Card } from "@/components/ui/card";
 import DashboardStats from "../components/dashboard/DashboardStats";
 import DashboardCharts from "../components/dashboard/DashboardCharts";
 import RecentActivity from "../components/dashboard/RecentActivity";
+import LastUpdated from "../components/dashboard/LastUpdated";
+import TopPerformers from "../components/dashboard/TopPerformers";
+import AttentionNeeded from "../components/dashboard/AttentionNeeded";
 
 export default function AdminDashboard() {
   const [user, setUser] = useState(null);
@@ -38,12 +43,17 @@ export default function AdminDashboard() {
     }
   });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [period, setPeriod] = useState('30d');
 
   useEffect(() => {
     loadDashboardData();
   }, []);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (selectedPeriod) => {
+    const periodToUse = selectedPeriod || period;
+    setError(null);
     try {
       const userData = await auth.getCurrentUser();
       if (!userData) return; // Redirect handled by router usually
@@ -53,7 +63,7 @@ export default function AdminDashboard() {
         Prospect.list({ limit: 100 }),
         Campaign.list({ limit: 100 }),
         Commission.list({ limit: 100 }),
-        dashboard.getOverview('30d')
+        dashboard.getOverview(periodToUse)
       ]);
 
       const prospects = Array.isArray(prospectsData) ? prospectsData : (prospectsData.prospects || []);
@@ -79,10 +89,18 @@ export default function AdminDashboard() {
       };
 
       setStats({ prospects, campaigns, commissions, cars, overview: overviewStats });
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error('Error loading dashboard data:', err);
+      setError(err.message || 'Something went wrong while loading the dashboard.');
     }
     setLoading(false);
+  };
+
+  const handlePeriodChange = (value) => {
+    setPeriod(value);
+    setLoading(true);
+    loadDashboardData(value);
   };
 
   const getFilteredData = (data, userRole, userId) => {
@@ -120,8 +138,20 @@ export default function AdminDashboard() {
             <p className="text-gray-500 text-sm mt-1">
               {format(new Date(), 'EEEE, d MMMM yyyy')}
             </p>
+            <LastUpdated lastUpdated={lastUpdated} onRefresh={loadDashboardData} loading={loading} />
           </div>
           <div className="flex items-center gap-3">
+            <Select value={period} onValueChange={handlePeriodChange}>
+              <SelectTrigger className="w-[130px] bg-white" size="sm">
+                <SelectValue placeholder="Period" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="7d">Last 7 days</SelectItem>
+                <SelectItem value="30d">Last 30 days</SelectItem>
+                <SelectItem value="90d">Last 90 days</SelectItem>
+              </SelectContent>
+            </Select>
             <Button variant="outline" className="bg-white" size="sm">
               <Download className="w-4 h-4 mr-2" />
               Export Report
@@ -135,13 +165,53 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <DashboardStats stats={filteredStats} loading={loading} />
-
-        <DashboardCharts stats={filteredStats} loading={loading} />
-
-        <div className="grid grid-cols-1">
-          <RecentActivity prospects={filteredStats.prospects} />
+        {/* Mobile sticky summary - visible when scrolling */}
+        <div className="md:hidden sticky top-[57px] z-40 bg-white/95 backdrop-blur-sm border-b border-gray-100 -mx-6 px-6 py-2">
+          <div className="flex items-center justify-between text-xs">
+            <div className="text-center">
+              <p className="font-semibold text-gray-900">{filteredStats.overview.prospectsTotal}</p>
+              <p className="text-gray-400">Prospects</p>
+            </div>
+            <div className="w-px h-6 bg-gray-200" />
+            <div className="text-center">
+              <p className="font-semibold text-gray-900">{filteredStats.overview.campaignsActive}</p>
+              <p className="text-gray-400">Active</p>
+            </div>
+            <div className="w-px h-6 bg-gray-200" />
+            <div className="text-center">
+              <p className="font-semibold text-emerald-600">${(filteredStats.overview.commissionsTotal || 0).toLocaleString()}</p>
+              <p className="text-gray-400">Revenue</p>
+            </div>
+          </div>
         </div>
+
+        {error ? (
+          <Card className="p-12 text-center">
+            <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-400" />
+            <h3 className="text-lg font-semibold mb-2">Failed to load dashboard</h3>
+            <p className="text-gray-500 text-sm mb-4">{error}</p>
+            <Button onClick={loadDashboardData} variant="outline">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Try Again
+            </Button>
+          </Card>
+        ) : (
+          <>
+            <DashboardStats stats={filteredStats} loading={loading} period={period} />
+
+            <DashboardCharts stats={filteredStats} loading={loading} />
+
+            <div className="grid lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <RecentActivity prospects={filteredStats.prospects} />
+              </div>
+              <div className="space-y-6">
+                <AttentionNeeded prospects={filteredStats.prospects} campaigns={filteredStats.campaigns} />
+                <TopPerformers prospects={filteredStats.prospects} />
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

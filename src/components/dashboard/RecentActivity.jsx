@@ -9,7 +9,8 @@ import { createPageUrl } from "@/utils";
 import {
   Clock,
   ArrowRight,
-  MoreHorizontal
+  MoreHorizontal,
+  Users
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -120,7 +121,12 @@ export default function RecentActivity({ prospects }) {
               ) : (
                 <tr>
                   <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
-                    No recent activity found.
+                    <Users className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+                    <p className="font-medium mb-1">No recent activity</p>
+                    <p className="text-xs text-gray-400 mb-4">Prospects will appear here as they are added</p>
+                    <Link to={createPageUrl("AdminProspects")}>
+                      <Button variant="outline" size="sm">View All Prospects</Button>
+                    </Link>
                   </td>
                 </tr>
               )}

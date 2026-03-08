@@ -2,8 +2,9 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import ArrowRight from "lucide-react/icons/arrow-right";
 import TrendingUp from "lucide-react/icons/trending-up";
 import { Link } from "react-router-dom";
+import { LineChart, Line, ResponsiveContainer } from 'recharts';
 
-export default function StatsCard({ title, value, icon: Icon, bgColor, trend, linkTo }) {
+export default function StatsCard({ title, value, icon: Icon, bgColor, trend, linkTo, sparkData }) {
   const CardWrapper = linkTo ? Link : 'div';
 
   return (
@@ -18,6 +19,15 @@ export default function StatsCard({ title, value, icon: Icon, bgColor, trend, li
                 <CardTitle className="text-2xl lg:text-3xl font-bold mt-2 text-gray-900">
                   {value}
                 </CardTitle>
+                {sparkData && sparkData.length > 0 && (
+                  <div className="h-8 w-24 mt-2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={sparkData.map((value, i) => ({ value }))}>
+                        <Line type="monotone" dataKey="value" stroke="#9ca3af" strokeWidth={1.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
                 {trend && (
                   <div className="flex items-center mt-3 text-sm">
                     <TrendingUp className="w-4 h-4 mr-1 text-green-500" />

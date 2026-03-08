@@ -14,9 +14,11 @@ import {
   Menu,
   Shield,
   Link2,
-  Package
+  Package,
+  Search
 } from "lucide-react";
 import NotificationBell from './NotificationBell.jsx';
+import CommandPalette from './CommandPalette.jsx';
 import {
   Sidebar,
   SidebarContent,
@@ -35,142 +37,74 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const getNavigationItems = (user) => {
-  const adminItems = [
+  const adminSections = [
     {
-      title: "Dashboard",
-      url: createPageUrl("AdminDashboard"),
-      icon: LayoutDashboard
+      label: "Overview",
+      items: [
+        { title: "Dashboard", url: createPageUrl("AdminDashboard"), icon: LayoutDashboard }
+      ]
     },
     {
-      title: "Prospects",
-      url: createPageUrl("AdminProspects"),
-      icon: Users
+      label: "Lead Generation",
+      items: [
+        { title: "Prospects", url: createPageUrl("AdminProspects"), icon: Users },
+        { title: "Agents", url: createPageUrl("AdminAgents"), icon: Users },
+        { title: "Campaigns", url: createPageUrl("AdminCampaigns"), icon: Settings },
+        { title: "Lead Packages", url: createPageUrl("AdminLeadPackages"), icon: Package },
+        { title: "QR Codes", url: createPageUrl("AdminQRCodes"), icon: QrCode },
+        { title: "Short Links", url: createPageUrl("AdminShortLinks"), icon: Link2 }
+      ]
     },
     {
-      title: "Users",
-      url: createPageUrl("AdminUsers"),
-      icon: Users
+      label: "Fleet",
+      items: [
+        { title: "Fleet Management", url: createPageUrl("AdminFleet"), icon: Car },
+        { title: "Vehicle Fleet", url: createPageUrl("AdminVehicles"), icon: Car },
+        { title: "Fleet Map", url: createPageUrl("AdminFleetMap"), icon: Car },
+        { title: "Tablet Devices", url: createPageUrl("AdminDevices"), icon: Settings }
+      ]
     },
     {
-      title: "Agents",
-      url: createPageUrl("AdminAgents"),
-      icon: Users
+      label: "Finance",
+      items: [
+        { title: "Commissions", url: createPageUrl("AdminCommissions"), icon: DollarSign }
+      ]
     },
     {
-      title: "Campaigns",
-      url: createPageUrl("AdminCampaigns"),
-      icon: Settings
-    },
-    {
-      title: "Lead Packages",
-      url: createPageUrl("AdminLeadPackages"),
-      icon: Package
-    },
-    {
-      title: "QR Codes",
-      url: createPageUrl("AdminQRCodes"),
-      icon: QrCode
-    },
-    {
-      title: "Short Links",
-      url: createPageUrl("AdminShortLinks"),
-      icon: Link2
-    },
-    {
-      title: "Fleet Management",
-      url: createPageUrl("AdminFleet"),
-      icon: Car
-    },
-    {
-      title: "Tablet Devices",
-      url: createPageUrl("AdminDevices"),
-      icon: Settings
-    },
-    {
-      title: "Vehicle Fleet",
-      url: createPageUrl("AdminVehicles"),
-      icon: Car
-    },
-    {
-      title: "Fleet Map",
-      url: createPageUrl("AdminFleetMap"),
-      icon: Car
-    },
-    {
-      title: "Commissions",
-      url: createPageUrl("AdminCommissions"),
-      icon: DollarSign
-    },
-    {
-      title: "App Versions",
-      url: createPageUrl("AdminApkManager"),
-      icon: LayoutDashboard // Or a more specific icon if imported
+      label: "System",
+      items: [
+        { title: "Users", url: createPageUrl("AdminUsers"), icon: Users },
+        { title: "App Versions", url: createPageUrl("AdminApkManager"), icon: Settings }
+      ]
     }
   ];
 
   const agentItems = [
-    {
-      title: "Dashboard",
-      url: createPageUrl("AgentDashboard"),
-      icon: LayoutDashboard
-    },
-    {
-      title: "My Prospects",
-      url: createPageUrl("MyProspects"),
-      icon: Users
-    },
-    {
-      title: "Edit Profile",
-      url: "/profile",
-      icon: Settings
-    }
+    { title: "Dashboard", url: createPageUrl("AgentDashboard"), icon: LayoutDashboard },
+    { title: "My Prospects", url: createPageUrl("MyProspects"), icon: Users },
+    { title: "Edit Profile", url: "/profile", icon: Settings }
   ];
 
   const fleetOwnerItems = [
-    {
-      title: "Dashboard",
-      url: createPageUrl("FleetOwnerDashboard"),
-      icon: LayoutDashboard
-    },
-    {
-      title: "My Fleet",
-      url: createPageUrl("AdminFleet"),
-      icon: Car
-    },
-    {
-      title: "My Commissions",
-      url: createPageUrl("AdminCommissions"),
-      icon: DollarSign
-    }
+    { title: "Dashboard", url: createPageUrl("FleetOwnerDashboard"), icon: LayoutDashboard },
+    { title: "My Fleet", url: createPageUrl("AdminFleet"), icon: Car },
+    { title: "My Commissions", url: createPageUrl("AdminCommissions"), icon: DollarSign }
   ];
 
   const driverPartnerItems = [
-    {
-      title: "Dashboard",
-      url: createPageUrl("DriverDashboard"),
-      icon: LayoutDashboard
-    },
-    {
-      title: "Profile",
-      url: "/DriverDashboard?tab=profile",
-      icon: Settings
-    },
-    {
-      title: "Payout History",
-      url: "/DriverDashboard?tab=history",
-      icon: DollarSign
-    },
-    {
-      title: "Payslip",
-      url: "/DriverDashboard?tab=payslip",
-      icon: FileText
-    }
+    { title: "Dashboard", url: createPageUrl("DriverDashboard"), icon: LayoutDashboard },
+    { title: "Profile", url: "/DriverDashboard?tab=profile", icon: Settings },
+    { title: "Payout History", url: "/DriverDashboard?tab=history", icon: DollarSign },
+    { title: "Payslip", url: "/DriverDashboard?tab=payslip", icon: FileText }
   ];
 
-  if (user.role === 'admin') return adminItems;
-  if (user.role === 'agent') return agentItems;
-  if (user.role === 'fleet_owner') return fleetOwnerItems;
-  if (user.role === 'driver_partner') return driverPartnerItems;
+  if (user.role === 'admin') return adminSections;
+
+  // Non-admin roles: wrap flat items in a single section with no label
+  const wrapFlat = (items) => [{ label: null, items }];
+  if (user.role === 'agent') return wrapFlat(agentItems);
+  if (user.role === 'fleet_owner') return wrapFlat(fleetOwnerItems);
+  if (user.role === 'driver_partner') return wrapFlat(driverPartnerItems);
   return [];
 };
 
@@ -232,39 +166,47 @@ export default function DashboardLayout({ children, user, userRole }) {
           </SidebarHeader>
 
           <SidebarContent className="p-4">
-            <SidebarGroup>
-              <SidebarGroupLabel className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                {getUserDisplayRole(localUser)} Navigation
-              </SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {navigationItems.map((item) => {
-                    const isActive = (() => {
-                      if (item.url.startsWith('/DriverDashboard')) {
-                        const currentTab = new URLSearchParams(location.search).get('tab') || 'dashboard';
-                        const itemTab = new URLSearchParams(item.url.split('?')[1] || '').get('tab') || 'dashboard';
-                        return location.pathname === '/DriverDashboard' && currentTab === itemTab;
-                      }
-                      return location.pathname === item.url;
-                    })();
-                    return (
-                      <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton
-                          asChild
-                          className={`hover:bg-blue-50 hover:text-blue-700 transition-colors rounded-lg mb-1 ${isActive ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600' : ''
-                            }`}
-                        >
-                          <Link to={item.url} className="flex items-center gap-3 px-3 py-3">
-                            <item.icon className="w-5 h-5" />
-                            <span className="font-medium">{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
+            {navigationItems.map((section, sectionIdx) => (
+              <SidebarGroup key={section.label || sectionIdx}>
+                {section.label ? (
+                  <SidebarGroupLabel className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                    {section.label}
+                  </SidebarGroupLabel>
+                ) : (
+                  <SidebarGroupLabel className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                    {getUserDisplayRole(localUser)} Navigation
+                  </SidebarGroupLabel>
+                )}
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {section.items.map((item) => {
+                      const isActive = (() => {
+                        if (item.url.startsWith('/DriverDashboard')) {
+                          const currentTab = new URLSearchParams(location.search).get('tab') || 'dashboard';
+                          const itemTab = new URLSearchParams(item.url.split('?')[1] || '').get('tab') || 'dashboard';
+                          return location.pathname === '/DriverDashboard' && currentTab === itemTab;
+                        }
+                        return location.pathname === item.url;
+                      })();
+                      return (
+                        <SidebarMenuItem key={item.title}>
+                          <SidebarMenuButton
+                            asChild
+                            className={`hover:bg-blue-50 hover:text-blue-700 transition-colors rounded-lg mb-1 ${isActive ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600' : ''
+                              }`}
+                          >
+                            <Link to={item.url} className="flex items-center gap-3 px-3 py-3">
+                              <item.icon className="w-5 h-5" />
+                              <span className="font-medium">{item.title}</span>
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            ))}
           </SidebarContent>
 
           <SidebarFooter className="border-t border-gray-200 p-4">
@@ -304,7 +246,17 @@ export default function DashboardLayout({ children, user, userRole }) {
               <h1 className="text-xl font-semibold text-gray-900">
                 MKTR {localUser?.role === 'admin' ? 'Admin' : localUser?.role === 'agent' ? 'Agent' : 'Portal'}
               </h1>
-              <NotificationBell />
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
+                  className="hidden md:flex items-center gap-2 px-3 py-1.5 text-xs text-gray-400 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span>Search...</span>
+                  <kbd className="ml-2 px-1.5 py-0.5 text-[10px] font-medium bg-white rounded border border-gray-200">⌘K</kbd>
+                </button>
+                <NotificationBell />
+              </div>
             </div>
           </header>
 
@@ -312,6 +264,7 @@ export default function DashboardLayout({ children, user, userRole }) {
             {children}
           </div>
         </main>
+        <CommandPalette user={localUser} />
       </div>
     </SidebarProvider>
   );
