@@ -1,24 +1,14 @@
 import request from 'supertest'
-import express from 'express'
-import jwt from 'jsonwebtoken'
-import { init } from '../src/server_internal.js'
-import { sequelize } from '../src/database/connection.js'
-import { User } from '../src/models/index.js'
+import { getApp, closeDb, createTestUser } from './helpers.js'
 
 let app
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-jwt-secret-key'
-
-function makeToken(userId) {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '1h' })
-}
 
 beforeAll(async () => {
-  app = express()
-  await init(app)
+  app = await getApp()
 }, 15000)
 
 afterAll(async () => {
-  await sequelize.close()
+  await closeDb()
 })
 
 describe('Authentication enforcement', () => {
@@ -49,19 +39,11 @@ describe('Authentication enforcement', () => {
 })
 
 describe('Mass assignment prevention', () => {
-  let adminUser, adminToken
+  let adminToken
 
   beforeAll(async () => {
-    adminUser = await User.create({
-      email: `admin-security-${Date.now()}@test.com`,
-      firstName: 'Admin',
-      lastName: 'Test',
-      role: 'admin',
-      isActive: true,
-      emailVerified: true,
-      password: 'TestPassword123!'
-    })
-    adminToken = makeToken(adminUser.id)
+    const { token } = await createTestUser({ role: 'admin' })
+    adminToken = token
   })
 
   it('POST /api/fleet/owners strips dangerous fields from creation', async () => {
@@ -70,7 +52,7 @@ describe('Mass assignment prevention', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         full_name: 'Test Fleet Owner',
-        email: `fleet-${Date.now()}@test.com`,
+        email: `fleet-mass-${Date.now()}@test.com`,
         phone: '12345678',
         company_name: 'Test Co',
         id: '00000000-0000-0000-0000-000000000000',
@@ -93,20 +75,17 @@ describe('Mass assignment prevention', () => {
   })
 
   it('POST /api/prospects with auth cannot set arbitrary fields', async () => {
-    // Attempt to create a prospect with injected fields
     const res = await request(app)
       .post('/api/prospects')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         firstName: 'Test',
         lastName: 'Prospect',
-        email: `prospect-${Date.now()}@test.com`,
-        // These should not be settable or should be ignored
+        email: `prospect-mass-${Date.now()}@test.com`,
         id: '00000000-0000-0000-0000-000000000000',
         role: 'admin'
       })
 
-    // Whether it succeeds or fails, the injected ID should not be used
     if (res.status === 201 || res.status === 200) {
       const prospect = res.body.data?.prospect
       if (prospect) {
@@ -118,7 +97,6 @@ describe('Mass assignment prevention', () => {
 
 describe('Rate limiting', () => {
   it('/api/contact is rate-limited', async () => {
-    // Send requests rapidly — the limiter is 5/min for contact
     const promises = []
     for (let i = 0; i < 7; i++) {
       promises.push(
@@ -129,7 +107,6 @@ describe('Rate limiting', () => {
     }
     const results = await Promise.all(promises)
     const statuses = results.map(r => r.status)
-    // At least one should be 429 (rate limited) if the limiter is working
     expect(statuses).toContain(429)
   })
 })

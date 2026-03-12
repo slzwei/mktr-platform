@@ -1,0 +1,137 @@
+import express from 'express';
+import jwt from 'jsonwebtoken';
+import { init } from '../src/server_internal.js';
+import { sequelize } from '../src/database/connection.js';
+import { User, Campaign, Commission, Prospect, FleetOwner, Car } from '../src/models/index.js';
+
+const JWT_SECRET = process.env.JWT_SECRET;
+let _app = null;
+
+/**
+ * Get or create the shared Express app instance.
+ * Initializes once; subsequent calls return cached instance.
+ */
+export async function getApp() {
+  if (_app) return _app;
+  _app = express();
+  await init(_app);
+  return _app;
+}
+
+/**
+ * Close DB connection. Call in afterAll().
+ */
+export async function closeDb() {
+  await sequelize.close();
+}
+
+/**
+ * Create a JWT token for a given user ID.
+ */
+export function makeToken(userId, expiresIn = '1h') {
+  return jwt.sign({ userId }, JWT_SECRET, { expiresIn });
+}
+
+// ---- Factories ----
+
+let _counter = 0;
+function uid() { return ++_counter; }
+
+/**
+ * Create a test user and return { user, token }.
+ */
+export async function createTestUser(overrides = {}) {
+  const n = uid();
+  const user = await User.create({
+    email: `test-user-${n}-${Date.now()}@test.com`,
+    firstName: overrides.firstName || `Test${n}`,
+    lastName: overrides.lastName || 'User',
+    role: overrides.role || 'admin',
+    isActive: true,
+    emailVerified: true,
+    password: 'TestPassword123!',
+    ...overrides
+  });
+  const token = makeToken(user.id);
+  return { user, token };
+}
+
+/**
+ * Create a test campaign owned by userId.
+ */
+export async function createTestCampaign(userId, overrides = {}) {
+  return Campaign.create({
+    name: overrides.name || `Test Campaign ${uid()}`,
+    createdBy: userId,
+    status: overrides.status || 'active',
+    type: overrides.type || 'lead_generation',
+    is_active: true,
+    min_age: 18,
+    max_age: 65,
+    ...overrides
+  });
+}
+
+/**
+ * Create a test prospect for a campaign.
+ */
+export async function createTestProspect(campaignId, overrides = {}) {
+  const n = uid();
+  return Prospect.create({
+    firstName: overrides.firstName || `Prospect${n}`,
+    lastName: overrides.lastName || 'Test',
+    email: overrides.email || `prospect-${n}-${Date.now()}@test.com`,
+    phone: overrides.phone || `+65${String(Date.now()).slice(-8)}`,
+    campaignId,
+    leadStatus: overrides.leadStatus || 'new',
+    leadSource: overrides.leadSource || 'qr_code',
+    ...overrides
+  });
+}
+
+/**
+ * Create a test commission for an agent and campaign.
+ */
+export async function createTestCommission(agentId, campaignId, overrides = {}) {
+  return Commission.create({
+    agentId,
+    campaignId,
+    amount: overrides.amount || 50.00,
+    type: overrides.type || 'conversion',
+    status: overrides.status || 'pending',
+    description: overrides.description || 'Test commission',
+    earnedDate: overrides.earnedDate || new Date(),
+    ...overrides
+  });
+}
+
+/**
+ * Create a test fleet owner.
+ */
+export async function createTestFleetOwner(overrides = {}) {
+  const n = uid();
+  return FleetOwner.create({
+    full_name: overrides.full_name || `Fleet Owner ${n}`,
+    email: overrides.email || `fleet-${n}-${Date.now()}@test.com`,
+    phone: overrides.phone || `8${String(Date.now()).slice(-7)}`,
+    company_name: overrides.company_name || `Fleet Co ${n}`,
+    ...overrides
+  });
+}
+
+/**
+ * Create a test car belonging to a fleet owner.
+ */
+export async function createTestCar(fleetOwnerId, overrides = {}) {
+  const n = uid();
+  return Car.create({
+    make: overrides.make || 'Toyota',
+    model: overrides.model || `Camry-${n}`,
+    year: overrides.year || 2023,
+    plate_number: overrides.plate_number || `TEST${n}${Date.now().toString().slice(-4)}`,
+    type: overrides.type || 'sedan',
+    status: overrides.status || 'active',
+    fleet_owner_id: fleetOwnerId,
+    ...overrides
+  });
+}

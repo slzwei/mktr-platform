@@ -453,8 +453,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
 
         const dataToSubmit = {
             ...formData,
-            // Send phone number without '+' (e.g., 6591234567) if phone is visible, else null
-            phone: (visibleFields.phone !== false) ? getFullPhoneNumber().substring(1) : null,
+            // Send phone number in E.164 format (e.g., +6591234567) if phone is visible, else null
+            phone: (visibleFields.phone !== false) ? getFullPhoneNumber() : null,
             date_of_birth: (visibleFields.dob !== false) ? dobFormatted : null,
             postal_code: (visibleFields.postal_code !== false) ? formData.postal_code : null,
             education_level: (visibleFields.education_level === true) ? formData.education_level : null,

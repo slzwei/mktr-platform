@@ -41,6 +41,7 @@ const AdminFleetMap = lazy(() => import('./AdminFleetMap'));
 const AdminDeviceLogs = lazy(() => import('./AdminDeviceLogs'));
 const ProvisionDevice = lazy(() => import('./ProvisionDevice')); // Added
 const AdminApkManager = lazy(() => import('./AdminApkManager')); // Added
+const AdminAgentGroups = lazy(() => import('./AdminAgentGroups'));
 const AgentDashboard = lazy(() => import('./AgentDashboard'));
 
 const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
@@ -139,6 +140,13 @@ function PagesContent() {
             <ProtectedRoute requiredRole="admin">
               <DashboardLayout>
                 <AdminQRCodes />
+              </DashboardLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/AdminAgentGroups" element={
+            <ProtectedRoute requiredRole="admin">
+              <DashboardLayout>
+                <AdminAgentGroups />
               </DashboardLayout>
             </ProtectedRoute>
           } />

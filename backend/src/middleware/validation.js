@@ -71,7 +71,10 @@ export const schemas = {
     endDate: Joi.date().greater(Joi.ref('startDate')).optional(),
     landingPageUrl: Joi.string().uri().optional(),
     callToAction: Joi.string().max(200).optional(),
-    tags: Joi.array().items(Joi.string()).optional()
+    tags: Joi.array().items(Joi.string()).optional(),
+    agentAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
+    agentGroupId: Joi.string().uuid().allow(null).optional(),
+    agentGroupAgentIds: Joi.array().items(Joi.string()).optional()
   }),
 
   campaignUpdate: Joi.object({
@@ -84,7 +87,10 @@ export const schemas = {
     endDate: Joi.date().optional(),
     landingPageUrl: Joi.string().uri().optional(),
     callToAction: Joi.string().max(200).optional(),
-    tags: Joi.array().items(Joi.string()).optional()
+    tags: Joi.array().items(Joi.string()).optional(),
+    agentAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
+    agentGroupId: Joi.string().uuid().allow(null).optional(),
+    agentGroupAgentIds: Joi.array().items(Joi.string()).optional()
   }),
 
   // Car schemas
@@ -120,7 +126,15 @@ export const schemas = {
     firstName: Joi.string().min(1).max(50).required(),
     lastName: Joi.string().min(1).max(50).optional().allow(''),
     email: Joi.string().email().required(),
-    phone: Joi.string().min(10).max(20).optional(),
+    phone: Joi.string().min(8).max(20).optional()
+      .custom((value, helpers) => {
+        // Accept E.164 format or raw digits (will be normalized by service)
+        const cleaned = value.replace(/[\s\-()]/g, '');
+        if (/^\+[1-9]\d{9,14}$/.test(cleaned)) return value; // Valid E.164
+        if (/^\d{8,15}$/.test(cleaned)) return value; // Raw digits, service will normalize
+        return helpers.error('any.invalid');
+      })
+      .messages({ 'any.invalid': 'Phone must be in international format (e.g. +6591234567) or 8-15 digits' }),
     company: Joi.string().max(100).optional(),
     jobTitle: Joi.string().max(100).optional(),
     industry: Joi.string().max(50).optional(),
@@ -152,7 +166,10 @@ export const schemas = {
     maxScans: Joi.number().min(1).optional(),
     tags: Joi.array().items(Joi.string()).optional(),
     campaignId: Joi.string().uuid().optional(),
-    carId: Joi.string().uuid().optional()
+    carId: Joi.string().uuid().optional(),
+    assignedAgentPhone: Joi.string().pattern(/^\+[1-9]\d{9,14}$/).allow(null).optional(),
+    assignedAgentEmail: Joi.string().email().allow(null).optional(),
+    assignedAgentName: Joi.string().max(100).allow(null).optional()
   }),
 
   // NOTE: Removed duplicate fleetOwnerCreate schema that conflicted with app's current model

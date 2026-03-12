@@ -27,6 +27,9 @@ import RoundRobinCursor from './RoundRobinCursor.js';
 import Verification from './Verification.js';
 import ProvisioningSession from './ProvisioningSession.js'; // Added
 import Vehicle from './Vehicle.js'; // Added for tablet pairing
+import WebhookSubscriber from './WebhookSubscriber.js';
+import WebhookDelivery from './WebhookDelivery.js';
+import AgentGroup from './AgentGroup.js';
 
 
 // Define associations
@@ -120,6 +123,15 @@ const defineAssociations = () => {
   Vehicle.belongsTo(Device, { foreignKey: 'masterDeviceId', as: 'masterDevice' });
   Vehicle.belongsTo(Device, { foreignKey: 'slaveDeviceId', as: 'slaveDevice' });
   Device.belongsTo(Vehicle, { foreignKey: 'vehicleId', as: 'vehicle' });
+
+  // Webhook associations
+  WebhookSubscriber.hasMany(WebhookDelivery, { foreignKey: 'subscriberId', as: 'deliveries' });
+  WebhookDelivery.belongsTo(WebhookSubscriber, { foreignKey: 'subscriberId', as: 'subscriber' });
+
+  // AgentGroup associations
+  AgentGroup.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
+  User.hasMany(AgentGroup, { foreignKey: 'createdBy', as: 'agentGroups' });
+  Campaign.belongsTo(AgentGroup, { foreignKey: 'agentGroupId', as: 'agentGroup' });
 };
 
 // Initialize associations
@@ -153,7 +165,10 @@ export {
   RoundRobinCursor,
   Verification,
   ProvisioningSession, // Added
-  Vehicle // Added for tablet pairing
+  Vehicle, // Added for tablet pairing
+  WebhookSubscriber,
+  WebhookDelivery,
+  AgentGroup
 };
 
 
@@ -185,6 +200,9 @@ export default {
   RoundRobinCursor,
   Verification,
   ProvisioningSession, // Added
-  Vehicle // Added for tablet pairing
+  Vehicle, // Added for tablet pairing
+  WebhookSubscriber,
+  WebhookDelivery,
+  AgentGroup
 };
 

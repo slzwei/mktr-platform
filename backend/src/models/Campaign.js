@@ -152,6 +152,32 @@ const Campaign = sequelize.define('Campaign', {
       key: 'id'
     }
   },
+  agentAssignmentMode: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'round_robin',
+    validate: {
+      isIn: [['direct', 'round_robin']]
+    }
+  },
+  agentGroupId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'agent_groups',
+      key: 'id'
+    }
+  },
+  agentGroupAgentIds: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: []
+  },
+  roundRobinIndex: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  },
   commission_amount_driver: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: true,

@@ -50,6 +50,7 @@ const getNavigationItems = (user) => {
       items: [
         { title: "Prospects", url: createPageUrl("AdminProspects"), icon: Users },
         { title: "Agents", url: createPageUrl("AdminAgents"), icon: Users },
+        { title: "Agent Groups", url: createPageUrl("AdminAgentGroups"), icon: Users },
         { title: "Campaigns", url: createPageUrl("AdminCampaigns"), icon: Settings },
         { title: "Lead Packages", url: createPageUrl("AdminLeadPackages"), icon: Package },
         { title: "QR Codes", url: createPageUrl("AdminQRCodes"), icon: QrCode },
