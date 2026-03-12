@@ -12,3 +12,11 @@ coverage
 *.log
 uploads/temp/*
 !uploads/temp/.gitkeep
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+test/
+load/
+scripts/
+docker-compose*.yml
