@@ -1,5 +1,6 @@
 import express from 'express';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 import { Op } from 'sequelize';
 import { ShortLink, ShortLinkClick } from '../models/index.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
@@ -13,6 +14,48 @@ const generateSlug = (len = 8) => {
   for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
 };
+
+// Public: create a share shortlink (rate-limited, share purpose only)
+const shareLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests, try again later' }
+});
+
+router.post('/public/share', shareLimiter, asyncHandler(async (req, res) => {
+  const { targetUrl, campaignId } = req.body || {};
+  if (!targetUrl || typeof targetUrl !== 'string') {
+    throw new AppError('targetUrl is required', 400);
+  }
+
+  // Only allow shortening our own LeadCapture URLs
+  const allowed = targetUrl.includes('/LeadCapture') || targetUrl.includes('/lead-capture');
+  if (!allowed) {
+    throw new AppError('Only lead capture URLs can be shortened', 400);
+  }
+
+  let slug = generateSlug(8);
+  let tries = 0;
+  while (await ShortLink.findOne({ where: { slug } })) {
+    slug = generateSlug(8);
+    if (++tries > 5) break;
+  }
+
+  const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+
+  await ShortLink.create({
+    slug,
+    targetUrl,
+    purpose: 'share',
+    campaignId: campaignId || null,
+    createdBy: null,
+    expiresAt
+  });
+
+  res.status(201).json({ success: true, data: { slug, url: `/share/${slug}` } });
+}));
 
 // Admin-only: mint a new short link
 router.post('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
