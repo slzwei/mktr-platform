@@ -30,7 +30,6 @@ export default function AdminCampaignDesigner() {
       if (campaignId) {
         const campaignData = await Campaign.get(campaignId);
         if (campaignData) {
-          console.log('Loaded campaign with design_config:', campaignData.design_config);
           setCampaign(campaignData);
         }
       }
@@ -44,12 +43,10 @@ export default function AdminCampaignDesigner() {
     if (!campaign) return;
 
     try {
-      console.log('Saving design data to campaign:', designData);
       await Campaign.update(campaign.id, {
         design_config: designData
       });
 
-      // Reload the entire campaign data to ensure we get the latest
       await loadData();
 
       toast.success("Design saved successfully!");
@@ -97,41 +94,44 @@ export default function AdminCampaignDesigner() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="flex items-center justify-between p-6 bg-white dark:bg-gray-900 border-b">
-        <div className="flex items-center gap-4">
-          <Button variant="outline" onClick={() => window.history.back()}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-gray-50 dark:bg-gray-900">
+      {/* Compact Header */}
+      <div className="flex items-center justify-between px-4 py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={() => window.history.back()}>
+            <ArrowLeft className="w-4 h-4 mr-1" />
             Back
           </Button>
+          <div className="h-5 w-px bg-gray-200 dark:bg-gray-700" />
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Admin - Campaign Designer</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              {campaign ? `Designing: ${campaign.name}` : 'Design your campaign landing page'}
-            </p>
+            <h1 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Campaign Designer</h1>
+            {campaign && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[300px]">{campaign.name}</p>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={handlePreview}
-            disabled={!campaign}
-          >
-            <Eye className="w-4 h-4 mr-2" />
-            Preview
-          </Button>
-
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handlePreview}
+          disabled={!campaign}
+        >
+          <Eye className="w-4 h-4 mr-1" />
+          Preview
+        </Button>
       </div>
 
+      {/* Editor fills remaining space */}
       {campaign ? (
-        <DesignEditor
-          key={campaign.id} // Force re-render when campaign changes
-          campaign={campaign}
-          onSave={handleSave}
-        />
+        <div className="flex-1 min-h-0">
+          <DesignEditor
+            key={campaign.id}
+            campaign={campaign}
+            onSave={handleSave}
+          />
+        </div>
       ) : (
-        <div className="flex items-center justify-center h-96">
+        <div className="flex items-center justify-center flex-1">
           <div className="text-center">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Campaign not found</h3>
             <p className="text-gray-600 dark:text-gray-400">Please select a valid campaign to design.</p>
