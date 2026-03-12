@@ -1,13 +1,20 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import { User, Prospect, Commission, Campaign, LeadPackageAssignment, LeadPackage, sequelize } from '../models/index.js';
+import { User, Prospect, Commission, Campaign, LeadPackageAssignment, LeadPackage } from '../models/index.js';
 import { requireAdmin, authenticateToken } from '../middleware/auth.js';
-import { v4 as uuidv4 } from 'uuid';
-import { sendEmail } from '../services/mailer.js';
 import { getAgentInviteEmail, getAgentInviteSubject, getAgentInviteText } from '../services/emailTemplates.js';
+import { sendRoleInvitation } from '../services/invitationService.js';
 import { requireAgentOrAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { getSystemAgentId } from '../services/systemAgent.js';
+import {
+  getAssignedCampaignCounts,
+  computeAgentStats,
+  getAgentMonthlyPerformance,
+  getCommissionLeaderboard,
+  getConversionLeaderboard,
+  getProspectLeaderboard
+} from '../services/agentService.js';
 
 const router = express.Router();
 
@@ -68,65 +75,10 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
   });
 
   // Compute counts of campaigns where agents have active lead packages
-  // We want to know: For each agent, how many unique campaigns do they have a VALID assignment for?
-  const allAssignments = await LeadPackageAssignment.findAll({
-    where: { status: 'active', leadsRemaining: { [Op.gt]: 0 } },
-    include: [{
-      model: LeadPackage,
-      as: 'package',
-      attributes: ['campaignId'],
-      required: true
-    }]
-  });
-
-  const assignedCounts = {};
-  for (const assignment of allAssignments) {
-    if (assignment.package && assignment.package.campaignId) {
-      const agentId = String(assignment.agentId);
-      if (!assignedCounts[agentId]) assignedCounts[agentId] = new Set();
-      assignedCounts[agentId].add(assignment.package.campaignId);
-    }
-  }
-  // Convert Sets to counts
-  Object.keys(assignedCounts).forEach(k => {
-    assignedCounts[k] = assignedCounts[k].size;
-  });
+  const assignedCounts = await getAssignedCampaignCounts();
 
   // Calculate agent statistics
-  const agentsWithStats = agents.map(agent => {
-    const totalProspects = agent.assignedProspects.length;
-    const convertedProspects = agent.assignedProspects.filter(p => p.leadStatus === 'won').length;
-    const totalCommissions = agent.commissions.reduce((sum, c) => sum + parseFloat(c.amount), 0);
-    const paidCommissions = agent.commissions.filter(c => c.status === 'paid').reduce((sum, c) => sum + parseFloat(c.amount), 0);
-    const createdCampaignsCount = agent.createdCampaigns.length;
-    const assignedCampaignsCount = assignedCounts[String(agent.id)] || 0;
-    const tiedCampaignsCount = createdCampaignsCount + assignedCampaignsCount;
-    const activeCreatedCampaigns = agent.createdCampaigns.filter(c => c.status === 'active').length;
-
-    // Calculate total leads owed (manual + active packages)
-    const manualLeads = agent.owed_leads_count || 0;
-    const packageLeads = agent.assignedPackages
-      ? agent.assignedPackages.reduce((sum, pkg) => sum + (pkg.leadsRemaining || 0), 0)
-      : 0;
-    const totalLeadsOwed = manualLeads + packageLeads;
-
-    return {
-      ...agent.toJSON(),
-      owed_leads_count: totalLeadsOwed, // Override with aggregated total
-      owed_leads_manual_count: manualLeads, // Keep track of manual count specifically if needed
-      stats: {
-        totalProspects,
-        convertedProspects,
-        conversionRate: totalProspects > 0 ? (convertedProspects / totalProspects * 100).toFixed(2) : 0,
-        totalCommissions,
-        paidCommissions,
-        pendingCommissions: totalCommissions - paidCommissions,
-        totalCampaigns: createdCampaignsCount,
-        activeCampaigns: activeCreatedCampaigns,
-        tiedCampaignsCount
-      }
-    };
-  });
+  const agentsWithStats = agents.map(agent => computeAgentStats(agent, assignedCounts));
 
   res.json({
     success: true,
@@ -589,199 +541,24 @@ router.get('/leaderboard/performance', authenticateToken, requireAdmin, asyncHan
   });
 }));
 
-// Helper function to get agent monthly performance
-async function getAgentMonthlyPerformance(agentId) {
-  const performance = [];
-  const now = new Date();
-
-  for (let i = 11; i >= 0; i--) {
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-
-    const [commissions, prospects, conversions] = await Promise.all([
-      Commission.sum('amount', {
-        where: {
-          agentId,
-          earnedDate: { [Op.gte]: monthStart, [Op.lte]: monthEnd }
-        }
-      }) || 0,
-      Prospect.count({
-        where: {
-          assignedAgentId: agentId,
-          createdAt: { [Op.gte]: monthStart, [Op.lte]: monthEnd }
-        }
-      }),
-      Prospect.count({
-        where: {
-          assignedAgentId: agentId,
-          leadStatus: 'won',
-          conversionDate: { [Op.gte]: monthStart, [Op.lte]: monthEnd }
-        }
-      })
-    ]);
-
-    performance.push({
-      month: monthStart.toISOString().substring(0, 7),
-      commissions,
-      prospects,
-      conversions,
-      conversionRate: prospects > 0 ? (conversions / prospects * 100).toFixed(2) : 0
-    });
-  }
-
-  return performance;
-}
-
-// Leaderboard helper functions
-async function getCommissionLeaderboard(startDate, endDate, limit) {
-  const results = await Commission.findAll({
-    where: {
-      earnedDate: { [Op.gte]: startDate, [Op.lte]: endDate },
-      status: { [Op.in]: ['approved', 'paid'] }
-    },
-    attributes: [
-      'agentId',
-      [sequelize.fn('SUM', sequelize.col('amount')), 'totalCommissions'],
-      [sequelize.fn('COUNT', sequelize.col('id')), 'commissionCount']
-    ],
-    include: [
-      {
-        association: 'agent',
-        attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
-      }
-    ],
-    group: ['agentId', 'agent.id', 'agent.firstName', 'agent.lastName', 'agent.email', 'agent.avatar'],
-    order: [[sequelize.fn('SUM', sequelize.col('amount')), 'DESC']],
-    limit: parseInt(limit)
-  });
-
-  return results.map((result, index) => ({
-    rank: index + 1,
-    agent: result.agent,
-    value: parseFloat(result.dataValues.totalCommissions),
-    count: parseInt(result.dataValues.commissionCount),
-    metric: 'Total Commissions'
-  }));
-}
-
-async function getConversionLeaderboard(startDate, endDate, limit) {
-  const results = await Prospect.findAll({
-    where: {
-      conversionDate: { [Op.gte]: startDate, [Op.lte]: endDate },
-      leadStatus: 'won'
-    },
-    attributes: [
-      'assignedAgentId',
-      [sequelize.fn('COUNT', sequelize.col('id')), 'conversions']
-    ],
-    include: [
-      {
-        association: 'assignedAgent',
-        attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
-      }
-    ],
-    group: ['assignedAgentId', 'assignedAgent.id', 'assignedAgent.firstName', 'assignedAgent.lastName', 'assignedAgent.email', 'assignedAgent.avatar'],
-    order: [[sequelize.fn('COUNT', sequelize.col('id')), 'DESC']],
-    limit: parseInt(limit)
-  });
-
-  return results.map((result, index) => ({
-    rank: index + 1,
-    agent: result.assignedAgent,
-    value: parseInt(result.dataValues.conversions),
-    metric: 'Conversions'
-  }));
-}
-
-async function getProspectLeaderboard(startDate, endDate, limit) {
-  const results = await Prospect.findAll({
-    where: {
-      createdAt: { [Op.gte]: startDate, [Op.lte]: endDate }
-    },
-    attributes: [
-      'assignedAgentId',
-      [sequelize.fn('COUNT', sequelize.col('id')), 'prospects']
-    ],
-    include: [
-      {
-        association: 'assignedAgent',
-        attributes: ['id', 'firstName', 'lastName', 'email', 'avatar']
-      }
-    ],
-    group: ['assignedAgentId', 'assignedAgent.id', 'assignedAgent.firstName', 'assignedAgent.lastName', 'assignedAgent.email', 'assignedAgent.avatar'],
-    order: [[sequelize.fn('COUNT', sequelize.col('id')), 'DESC']],
-    limit: parseInt(limit)
-  });
-
-  return results.map((result, index) => ({
-    rank: index + 1,
-    agent: result.assignedAgent,
-    value: parseInt(result.dataValues.prospects),
-    metric: 'New Prospects'
-  }));
-}
-
 export default router;
 
 // Invite new agent (Admin only)
 router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
   const { email, full_name, owed_leads_count = 0 } = req.body;
 
-  if (!email || !full_name) {
-    throw new AppError('email and full_name are required', 400);
-  }
-
-
-  // Disallow inviting emails that already exist (prevents accidental role changes)
-  if (req.user?.email && String(req.user.email).toLowerCase() === String(email).toLowerCase()) {
-    throw new AppError('You cannot invite your own email address', 400);
-  }
-
-  const existing = await User.findOne({ where: { email } });
-  if (existing) {
-    // Policy: Existing users must be permanently deleted before they can be invited again
-    throw new AppError('A user with this email already exists. Permanently delete the existing user first to send a new invitation.', 400);
-  }
-
-  // Create new user and send invite
-  const nameParts = String(full_name).trim().split(/\s+/);
-  const firstName = nameParts[0] || 'Agent';
-  const lastName = nameParts.slice(1).join(' ') || '';
-
-  const invitationToken = uuidv4();
-  const invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-  const user = await User.create({
+  const { user, inviteLink } = await sendRoleInvitation({
     email,
-    firstName,
-    lastName,
+    fullName: full_name,
     role: 'agent',
-    isActive: true,
-    emailVerified: false,
-    invitationToken,
-    invitationExpires,
-    owed_leads_count: parseInt(owed_leads_count) || 0
+    inviterEmail: req.user?.email,
+    extraFields: { owed_leads_count: parseInt(owed_leads_count) || 0 },
+    getEmailContent: ({ firstName, inviteLink, companyName, companyUrl, expiryDays }) => ({
+      subject: getAgentInviteSubject(companyName),
+      html: getAgentInviteEmail({ firstName, inviteLink, companyName, companyUrl, expiryDays }),
+      text: getAgentInviteText({ firstName, inviteLink, companyName, expiryDays })
+    })
   });
-
-  const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
-  const inviteLink = `${frontendBase}/auth/accept-invite?token=${encodeURIComponent(invitationToken)}&email=${encodeURIComponent(email)}`;
-
-  const subject = getAgentInviteSubject(process.env.COMPANY_NAME || 'MKTR');
-  const html = getAgentInviteEmail({
-    firstName,
-    inviteLink,
-    companyName: process.env.COMPANY_NAME || 'MKTR',
-    companyUrl: process.env.COMPANY_URL || process.env.FRONTEND_BASE_URL || 'http://localhost:5173',
-    expiryDays: 7
-  });
-  const text = getAgentInviteText({ firstName, inviteLink, companyName: process.env.COMPANY_NAME || 'MKTR', expiryDays: 7 });
-
-  try {
-    await sendEmail({ to: email, subject, html, text });
-  } catch (emailError) {
-    console.error('❌ Failed to send invite email:', emailError.message);
-    // Don't fail the request; user is created and link is returned
-  }
 
   res.status(201).json({ success: true, message: 'Agent invited', data: { user: user.toJSON(), inviteLink } });
 }));

@@ -12,6 +12,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Save from "lucide-react/icons/save";
 import makeModelsRaw from "@/data/mktr_make_models.json";
+import {
+  ALLOWED_PLATE_PREFIXES,
+  isValidSgPlate,
+  parseSgPlate,
+} from "@/utils/validation";
 
 export default function CarFormDialog({ 
   open, 
@@ -47,25 +52,9 @@ export default function CarFormDialog({
     }, {});
   }, []);
 
-  // SG plate validation (same as onboarding)
-  const LETTERS_NO_IO = ['A','B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z'];
-  const SERIES_SECOND_LETTERS = ['B','C','D','F','G','J','K','L','M','N'];
-  const ALLOWED_PREFIXES = useMemo(() => new Set([
-    ...LETTERS_NO_IO.map((l) => `E${l}`),
-    ...SERIES_SECOND_LETTERS.flatMap((sec) => LETTERS_NO_IO.map((third) => `S${sec}${third}`))
-  ]), []);
-
-  const formatPlateInputToStrict = (plate) => String(plate || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const isValidAllowedPlateFormat = (raw) => {
-    const v = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (!v) return false;
-    let prefix = '';
-    if (v.startsWith('S')) prefix = v.slice(0, 3); else if (v.startsWith('E')) prefix = v.slice(0, 2); else return false;
-    if (!ALLOWED_PREFIXES.has(prefix)) return false;
-    const rest = v.slice(prefix.length);
-    const match = rest.match(/^(\d{1,4})([A-Z])$/);
-    return !!match;
-  };
+  // SG plate validation — shared from @/utils/validation
+  const formatPlateInputToStrict = (plate) => parseSgPlate(plate);
+  const isValidAllowedPlateFormat = (raw) => isValidSgPlate(raw);
 
   useEffect(() => {
     if (car) {

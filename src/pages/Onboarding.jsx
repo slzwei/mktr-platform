@@ -20,6 +20,15 @@ import { AnimatePresence, motion } from 'framer-motion';
 import ArrowLeft from 'lucide-react/icons/arrow-left';
 import ChevronsDown from 'lucide-react/icons/chevrons-down';
 import ChevronsUp from 'lucide-react/icons/chevrons-up';
+import {
+  LETTERS_NO_IO,
+  SERIES_SECOND_LETTERS,
+  ALLOWED_PLATE_PREFIXES,
+  isValidSgPlate as isValidAllowedPlateFormat,
+  parseSgPlate as formatPlateInputToStrict,
+  isValidSgMobile,
+  formatSgPhone,
+} from '@/utils/validation';
 
 const makesToModels = Object.keys(makeModelsRaw || {}).reduce((acc, make) => {
   const list = Array.isArray(makeModelsRaw[make]) ? makeModelsRaw[make].filter(Boolean) : [];
@@ -27,15 +36,8 @@ const makesToModels = Object.keys(makeModelsRaw || {}).reduce((acc, make) => {
   return acc;
 }, {});
 
-// Allowed SG series prefixes per business rules
-const LETTERS_NO_IO = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
-const SERIES_SECOND_LETTERS = ['B', 'C', 'D', 'F', 'G', 'J', 'K', 'L', 'M', 'N']; // SB, SC, SD, SF, SG, SJ, SK, SL, SM, SN
-const ALLOWED_PREFIXES = new Set([
-  // E-series: EA, EB, ..., EZ (excluding I, O)
-  ...LETTERS_NO_IO.map((l) => `E${l}`),
-  // S-series blocks: SBx, SCx, ... SNx (excluding I, O for x)
-  ...SERIES_SECOND_LETTERS.flatMap((sec) => LETTERS_NO_IO.map((third) => `S${sec}${third}`))
-]);
+// ALLOWED_PLATE_PREFIXES, LETTERS_NO_IO, SERIES_SECOND_LETTERS imported from @/utils/validation
+const ALLOWED_PREFIXES = ALLOWED_PLATE_PREFIXES;
 
 function LoadingButton({ loading, children, ...props }) {
   return (
@@ -229,14 +231,7 @@ export default function Onboarding() {
     return digits.slice(0, 8);
   }
 
-  function isValidSgMobile(eightDigits) {
-    return /^(?:[3689])\d{7}$/.test(eightDigits);
-  }
-
-  // Simplified Singapore plate validation: 1-3 letters, 1-4 digits, 1 letter (e.g., SGP1234A)
-  function isValidSgPlate(value) {
-    return isValidAllowedPlateFormat(value);
-  }
+  // isValidSgMobile, isValidAllowedPlateFormat imported from @/utils/validation
 
   // Validate Singapore NRIC/FIN with checksum for S/T (NRIC) and F/G/M (FIN)
   function isValidNricFin(value) {
@@ -582,33 +577,10 @@ export default function Onboarding() {
     return code >= 1 && code <= 26 ? code : 0;
   }
 
+  // isValidSgPlateStrict, formatPlateInputToStrict, isValidAllowedPlateFormat
+  // now imported from @/utils/validation (aliased at top of file)
   function isValidSgPlateStrict(raw) {
-    // Use the allowed-prefix format validation (1-4 digits, trailing letter)
     return isValidAllowedPlateFormat(raw);
-  }
-
-  function formatPlateInputToStrict(plate) {
-    const v = String(plate || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    return v;
-  }
-
-  function isValidAllowedPlateFormat(raw) {
-    const v = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (!v) return false;
-    let prefix = '';
-    if (v.startsWith('S')) {
-      prefix = v.slice(0, 3);
-    } else if (v.startsWith('E')) {
-      prefix = v.slice(0, 2);
-    } else {
-      return false;
-    }
-    if (!ALLOWED_PREFIXES.has(prefix)) return false;
-    const rest = v.slice(prefix.length);
-    // Must be 1-4 digits then 1 trailing letter
-    const match = rest.match(/^(\d{1,4})([A-Z])$/);
-    if (!match) return false;
-    return true;
   }
 
   function collectGridCars() {
