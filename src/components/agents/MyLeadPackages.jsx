@@ -12,17 +12,17 @@ import {
 import { format } from "date-fns";
 
 const statusColors = {
-  active: "bg-green-100 text-green-800",
-  completed: "bg-blue-100 text-blue-800",
-  paused: "bg-yellow-100 text-yellow-800",
-  cancelled: "bg-red-100 text-red-800"
+  active: "bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-400",
+  completed: "bg-blue-100 text-blue-800 dark:bg-blue-950/30 dark:text-blue-400",
+  paused: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-400",
+  cancelled: "bg-red-100 text-red-800 dark:bg-red-950/30 dark:text-red-400"
 };
 
 const paymentStatusColors = {
-  paid: "bg-green-100 text-green-800",
-  pending: "bg-yellow-100 text-yellow-800",
-  partial: "bg-orange-100 text-orange-800",
-  refunded: "bg-red-100 text-red-800"
+  paid: "bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-400",
+  pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-400",
+  partial: "bg-orange-100 text-orange-800 dark:bg-orange-950/30 dark:text-orange-400",
+  refunded: "bg-red-100 text-red-800 dark:bg-red-950/30 dark:text-red-400"
 };
 
 export default function MyLeadPackages({ userId }) {
@@ -94,7 +94,7 @@ export default function MyLeadPackages({ userId }) {
         <CardContent>
           <div className="animate-pulse space-y-4">
             {[1, 2].map(i => (
-              <div key={i} className="h-32 bg-gray-200 rounded"></div>
+              <div key={i} className="h-32 bg-muted rounded"></div>
             ))}
           </div>
         </CardContent>
@@ -104,16 +104,16 @@ export default function MyLeadPackages({ userId }) {
 
   if (error) {
     return (
-      <Card className="border-red-200 bg-red-50">
+      <Card className="border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-red-700">
+          <CardTitle className="flex items-center gap-2 text-red-700 dark:text-red-400">
             <Package className="w-5 h-5" />
             My Lead Packages
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-red-600 text-sm">Failed to load packages: {error}</p>
-          <p className="text-xs text-red-500 mt-1">Please try refreshing the page.</p>
+          <p className="text-red-600 dark:text-red-400 text-sm">Failed to load packages: {error}</p>
+          <p className="text-xs text-red-500 dark:text-red-500 mt-1">Please try refreshing the page.</p>
         </CardContent>
       </Card>
     );
@@ -129,9 +129,9 @@ export default function MyLeadPackages({ userId }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="text-center py-8">
-          <Package className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-          <p className="font-medium text-gray-900">No Lead Packages</p>
-          <p className="text-sm text-gray-500">You haven't purchased any lead packages yet</p>
+          <Package className="w-12 h-12 mx-auto mb-3 text-muted-foreground/50" />
+          <p className="font-medium text-foreground">No Lead Packages</p>
+          <p className="text-sm text-muted-foreground">You haven't purchased any lead packages yet</p>
         </CardContent>
       </Card>
     );
@@ -150,11 +150,11 @@ export default function MyLeadPackages({ userId }) {
           const deliveryProgress = pkg.total_leads > 0 ? (pkg.leads_delivered / pkg.total_leads) * 100 : 0;
 
           return (
-            <div key={pkg.id} className="border rounded-lg p-4 bg-gray-50">
+            <div key={pkg.id} className="border border-border rounded-lg p-4 bg-muted/50">
               <div className="flex justify-between items-start mb-3">
                 <div>
-                  <h3 className="font-semibold text-gray-900">{pkg.package_name}</h3>
-                  <p className="text-sm text-gray-600">
+                  <h3 className="font-semibold text-foreground">{pkg.package_name}</h3>
+                  <p className="text-sm text-muted-foreground">
                     Campaign: {pkg.campaign_name}
                   </p>
                 </div>
@@ -171,7 +171,7 @@ export default function MyLeadPackages({ userId }) {
               {/* Progress Bar */}
               <div className="mb-3">
                 <div className="flex justify-between items-center text-sm mb-1">
-                  <span className="text-gray-600">Delivery Progress</span>
+                  <span className="text-muted-foreground">Delivery Progress</span>
                   <span className="font-medium">
                     {pkg.leads_delivered} / {pkg.total_leads} leads
                   </span>
@@ -181,9 +181,9 @@ export default function MyLeadPackages({ userId }) {
 
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-gray-400" />
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
                   <div>
-                    <p className="text-gray-500">Purchased</p>
+                    <p className="text-muted-foreground">Purchased</p>
                     <p className="font-semibold">
                       {format(new Date(pkg.purchase_date), 'dd/MM/yyyy')}
                     </p>
@@ -192,8 +192,8 @@ export default function MyLeadPackages({ userId }) {
               </div>
 
               {pkg.notes && (
-                <div className="mt-3 p-2 bg-blue-50 rounded text-sm">
-                  <p className="text-blue-800">{pkg.notes}</p>
+                <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-950/30 rounded text-sm">
+                  <p className="text-blue-800 dark:text-blue-400">{pkg.notes}</p>
                 </div>
               )}
 

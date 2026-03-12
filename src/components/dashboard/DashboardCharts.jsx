@@ -11,8 +11,8 @@ export default function DashboardCharts({ stats, loading }) {
     if (loading) {
         return (
             <div className="grid lg:grid-cols-3 gap-6 mb-8">
-                <div className="lg:col-span-2 h-96 bg-gray-100 rounded-xl animate-pulse" />
-                <div className="h-96 bg-gray-100 rounded-xl animate-pulse" />
+                <div className="lg:col-span-2 h-96 bg-muted rounded-xl animate-pulse" />
+                <div className="h-96 bg-muted rounded-xl animate-pulse" />
             </div>
         );
     }
@@ -73,18 +73,20 @@ export default function DashboardCharts({ stats, loading }) {
                                         <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" />
                                 <XAxis
                                     dataKey="date"
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fill: '#94a3b8', fontSize: 12 }}
-                                    interval={6} // Show every 7th day roughly
+                                    className="fill-muted-foreground"
+                                    tick={{ fontSize: 12 }}
+                                    interval={6}
                                 />
                                 <YAxis
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fill: '#94a3b8', fontSize: 12 }}
+                                    className="fill-muted-foreground"
+                                    tick={{ fontSize: 12 }}
                                     tickFormatter={(value) => `$${value}`}
                                 />
                                 <Tooltip
@@ -133,12 +135,12 @@ export default function DashboardCharts({ stats, loading }) {
                                 </PieChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="text-gray-400 text-sm">No campaign data available</div>
+                            <div className="text-muted-foreground text-sm">No campaign data available</div>
                         )}
                     </div>
                     <div className="flex justify-center gap-4 mt-2">
                         {campaignStatusData.map((item, i) => (
-                            <div key={i} className="flex items-center gap-2 text-xs text-gray-500">
+                            <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
                                 {item.name} ({item.value})
                             </div>

@@ -264,7 +264,7 @@ export default function AdminAgentGroups() {
                                         <button
                                             key={agent.id || agent.phone}
                                             type="button"
-                                            className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm flex justify-between"
+                                            className="w-full text-left px-3 py-2 hover:bg-accent text-sm flex justify-between"
                                             onClick={() => addAgent(agent)}
                                         >
                                             <span>{agent.name}</span>

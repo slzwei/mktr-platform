@@ -66,7 +66,7 @@ export default function RecentActivity({ prospects }) {
         <div className="flex flex-row items-center justify-between">
           <div>
             <CardTitle className="text-lg font-bold">Recent Activity</CardTitle>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Showing {recentProspects.length} of {prospects.length} prospects
             </p>
           </div>
@@ -105,7 +105,7 @@ export default function RecentActivity({ prospects }) {
       <CardContent className="p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50/50 text-gray-500 font-medium border-b border-gray-100">
+            <thead className="bg-muted/50 text-muted-foreground font-medium border-b border-border">
               <tr>
                 <th className="px-6 py-3">Prospect</th>
                 <th className="px-6 py-3">Status</th>
@@ -113,18 +113,18 @@ export default function RecentActivity({ prospects }) {
                 <th className="px-6 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-border/50">
               {recentProspects.length > 0 ? (
                 recentProspects.map((prospect) => (
-                  <tr key={prospect.id} className="hover:bg-gray-50/50 transition-colors group">
+                  <tr key={prospect.id} className="hover:bg-muted/50 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <Avatar className="w-8 h-8 shrink-0 border border-gray-100">
-                          <AvatarFallback className="bg-white text-gray-700 text-xs font-medium">
+                        <Avatar className="w-8 h-8 shrink-0 border border-border">
+                          <AvatarFallback className="bg-background text-foreground text-xs font-medium">
                             {prospect.name?.charAt(0)?.toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
-                        <div className="font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
+                        <div className="font-medium text-foreground group-hover:text-primary transition-colors">
                           {prospect.name}
                         </div>
                       </div>
@@ -137,9 +137,9 @@ export default function RecentActivity({ prospects }) {
                         {statusLabels[prospect.status] || prospect.status}
                       </Badge>
                     </td>
-                    <td className="px-6 py-4 text-gray-500 whitespace-nowrap">
+                    <td className="px-6 py-4 text-muted-foreground whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-gray-400" />
+                        <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
                         {formatProspectDate(prospect)}
                       </div>
                     </td>
@@ -152,8 +152,9 @@ export default function RecentActivity({ prospects }) {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>View Details</DropdownMenuItem>
-                          <DropdownMenuItem>Previous Chats</DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link to={createPageUrl("AdminProspects") + `?id=${prospect.id}`}>View Details</Link>
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </td>
@@ -161,10 +162,10 @@ export default function RecentActivity({ prospects }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
-                    <Users className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+                  <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
+                    <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
                     <p className="font-medium mb-1">No recent activity</p>
-                    <p className="text-xs text-gray-400 mb-4">Prospects will appear here as they are added</p>
+                    <p className="text-xs text-muted-foreground/70 mb-4">Prospects will appear here as they are added</p>
                     <Link to={createPageUrl("AdminProspects")}>
                       <Button variant="outline" size="sm">View All Prospects</Button>
                     </Link>

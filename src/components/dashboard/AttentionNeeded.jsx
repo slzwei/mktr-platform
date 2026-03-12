@@ -4,7 +4,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 const TERMINAL_STATUSES = ["close_won", "won", "close_lost", "lost", "closed", "archived"];
 
-export default function AttentionNeeded({ prospects, campaigns }) {
+export default function AttentionNeeded({ prospects, campaigns, variant = "card" }) {
   const alerts = useMemo(() => {
     const result = [];
     const now = new Date();
@@ -79,8 +79,31 @@ export default function AttentionNeeded({ prospects, campaigns }) {
     return result;
   }, [prospects, campaigns]);
 
+  // Banner variant: compact horizontal strip, hidden when no alerts
+  if (variant === "banner") {
+    if (alerts.length === 0) return null;
+
+    return (
+      <div className="flex flex-wrap items-center gap-4 px-4 py-3 rounded-lg border border-amber-200 bg-amber-50/80 dark:border-amber-800 dark:bg-amber-950/30">
+        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+        {alerts.map((alert, i) => (
+          <div key={i} className="flex items-center gap-2 text-sm">
+            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              alert.severity === "high" ? "bg-red-500" :
+              alert.severity === "medium" ? "bg-amber-500" :
+              "bg-blue-500"
+            }`} />
+            <span className="font-medium text-foreground">{alert.title}</span>
+            <span className="text-muted-foreground hidden sm:inline">— {alert.description}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Default card variant
   return (
-    <Card>
+    <Card className="border-none shadow-sm">
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <AlertTriangle className="w-5 h-5 text-amber-500" />
@@ -97,15 +120,15 @@ export default function AttentionNeeded({ prospects, campaigns }) {
                 'bg-blue-500'
               }`} />
               <div>
-                <p className="text-sm font-medium text-gray-900">{alert.title}</p>
-                <p className="text-xs text-gray-500">{alert.description}</p>
+                <p className="text-sm font-medium text-foreground">{alert.title}</p>
+                <p className="text-xs text-muted-foreground">{alert.description}</p>
               </div>
             </div>
           ))}
           {alerts.length === 0 && (
             <div className="text-center py-6">
               <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-400" />
-              <p className="text-sm text-gray-400">Everything looks good!</p>
+              <p className="text-sm text-muted-foreground">Everything looks good!</p>
             </div>
           )}
         </div>
