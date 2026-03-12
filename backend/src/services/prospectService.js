@@ -1,9 +1,10 @@
 import { Op } from 'sequelize';
-import { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, sequelize } from '../models/index.js';
+import { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, AgentGroup, sequelize } from '../models/index.js';
 import { resolveAssignedAgentId, getSystemAgentId } from './systemAgent.js';
 import { deductLeadCredit } from './leadCredits.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { dispatchEvent } from './webhookService.js';
 
 const PROSPECT_UPDATE_FIELDS = [
   'firstName', 'lastName', 'email', 'phone', 'company', 'jobTitle',
@@ -50,20 +51,37 @@ export async function createProspect(body, user, { cookies, headers } = {}) {
     qrTagId: incoming.qrTagId
   });
 
+  // Normalize phone to E.164 format
+  if (incoming.phone) {
+    let phone = String(incoming.phone).replace(/\s+/g, '');
+    // If it's just digits (no +), assume Singapore (+65)
+    if (/^\d+$/.test(phone)) {
+      if (phone.length === 8 && /^[3689]/.test(phone)) {
+        phone = `+65${phone}`;
+      } else if (phone.startsWith('65') && phone.length === 10) {
+        phone = `+${phone}`;
+      } else {
+        phone = `+${phone}`;
+      }
+    }
+    // Ensure it starts with +
+    if (!phone.startsWith('+')) {
+      phone = `+${phone}`;
+    }
+    incoming.phone = phone;
+  }
+
   // Enforce: a phone can register once per campaign, but can register for different campaigns
   if (incoming.phone && incoming.campaignId) {
-    const normalizedPhone = String(incoming.phone).replace(/\D/g, '');
     const existing = await Prospect.findOne({
       where: {
         campaignId: incoming.campaignId,
-        phone: normalizedPhone
+        phone: incoming.phone
       }
     });
     if (existing) {
       throw new AppError('This phone number has already signed up for this campaign.', 409);
     }
-    // Persist normalized phone
-    incoming.phone = normalizedPhone;
   }
 
   // Handle Date of Birth -> Age mapping
@@ -103,18 +121,54 @@ export async function createProspect(body, user, { cookies, headers } = {}) {
     if (body.monthly_income) incoming.demographics.income = body.monthly_income;
   }
 
+  // Pre-load campaign and QR tag for routing resolution
+  const [sourceCampaign, sourceQrTag] = await Promise.all([
+    incoming.campaignId ? Campaign.findByPk(incoming.campaignId) : null,
+    incoming.qrTagId ? QrTag.findByPk(incoming.qrTagId) : null
+  ]);
+
+  // --- Routing resolution (Part 7B) ---
+  let routingMode = 'direct';
+  let resolvedAgent = null;
+  let agentGroup = null;
+
+  if (sourceCampaign?.agentAssignmentMode === 'round_robin') {
+    routingMode = 'round_robin';
+    const agentPhones = sourceCampaign.agentGroupAgentIds || [];
+    if (agentPhones.length > 0) {
+      // Atomic round-robin index increment
+      const [, [updated]] = await Campaign.update(
+        { roundRobinIndex: sequelize.literal('"roundRobinIndex" + 1') },
+        { where: { id: sourceCampaign.id }, returning: true }
+      ).catch(() => [0, [sourceCampaign]]);
+
+      const idx = (updated?.roundRobinIndex ?? sourceCampaign.roundRobinIndex) % agentPhones.length;
+      const selectedPhone = agentPhones[idx];
+
+      // Look up agent by phone from the group's agents JSON
+      if (sourceCampaign.agentGroupId) {
+        agentGroup = await AgentGroup.findByPk(sourceCampaign.agentGroupId);
+      }
+      const groupAgents = agentGroup?.agents || [];
+      resolvedAgent = groupAgents.find(a => a.phone === selectedPhone) || { phone: selectedPhone };
+    }
+  } else if (sourceCampaign?.agentAssignmentMode === 'direct' && sourceQrTag) {
+    routingMode = 'direct';
+    if (sourceQrTag.assignedAgentPhone) {
+      resolvedAgent = {
+        phone: sourceQrTag.assignedAgentPhone,
+        email: sourceQrTag.assignedAgentEmail,
+        name: sourceQrTag.assignedAgentName
+      };
+    }
+  }
+
   // Wrap all DB writes in a transaction for data integrity
   const prospect = await sequelize.transaction(async (t) => {
     const newProspect = await Prospect.create({ ...incoming, assignedAgentId }, { transaction: t });
 
-    // Fetch names for rich activity log
-    const [sourceCampaign, sourceQrTag] = await Promise.all([
-      incoming.campaignId ? Campaign.findByPk(incoming.campaignId, { transaction: t }) : null,
-      incoming.qrTagId ? QrTag.findByPk(incoming.qrTagId, { transaction: t }) : null
-    ]);
-
     const campaignName = sourceCampaign?.name || 'Unknown Campaign';
-    const qrTagName = sourceQrTag?.name || 'Unknown QR';
+    const qrTagName = sourceQrTag?.name || sourceQrTag?.label || 'Unknown QR';
     const activityDescription = `Prospect signed up for ${campaignName} campaign via ${qrTagName} QR code`;
 
     // Activity: created
@@ -155,6 +209,69 @@ export async function createProspect(body, user, { cookies, headers } = {}) {
     }
 
     return newProspect;
+  });
+
+  // --- Webhook dispatch (AFTER transaction commits, fire-and-forget) ---
+  // Load assigned agent record if we have an assignedAgentId but no resolvedAgent
+  let agentForWebhook = resolvedAgent;
+  if (!agentForWebhook && assignedAgentId) {
+    const agentRecord = await User.findByPk(assignedAgentId, {
+      attributes: ['id', 'phone', 'email', 'firstName', 'lastName']
+    });
+    if (agentRecord) {
+      agentForWebhook = {
+        phone: agentRecord.phone || null,
+        email: agentRecord.email || null,
+        name: `${agentRecord.firstName || ''} ${agentRecord.lastName || ''}`.trim(),
+        id: agentRecord.id
+      };
+    }
+  }
+
+  dispatchEvent('lead.created', () => ({
+    event: 'lead.created',
+    timestamp: new Date().toISOString(),
+    data: {
+      lead: {
+        externalId: prospect.id,
+        firstName: prospect.firstName,
+        lastName: prospect.lastName,
+        phone: prospect.phone,
+        email: prospect.email,
+        company: prospect.company,
+        jobTitle: prospect.jobTitle,
+        industry: prospect.industry,
+        leadSource: prospect.leadSource,
+        interests: prospect.interests,
+        budget: prospect.budget,
+        preferences: prospect.preferences,
+        demographics: prospect.demographics,
+        location: prospect.location,
+        tags: prospect.tags,
+        notes: prospect.notes,
+        sourceMetadata: prospect.sourceMetadata,
+        createdAt: prospect.createdAt
+      },
+      routing: {
+        mode: routingMode,
+        agentPhone: agentForWebhook?.phone || null,
+        agentEmail: agentForWebhook?.email || null,
+        agentName: agentForWebhook?.name || null,
+        agentExternalId: agentForWebhook?.id || assignedAgentId || null,
+        groupId: agentGroup?.id || null,
+        groupName: agentGroup?.name || null
+      },
+      campaign: {
+        externalId: sourceCampaign?.id || null,
+        name: sourceCampaign?.name || null
+      },
+      qrTag: {
+        externalId: sourceQrTag?.id || null,
+        slug: sourceQrTag?.slug || null
+      }
+    }
+  })).catch(err => {
+    console.error('[Webhook] dispatch error:', err);
   });
 
   return { prospect, assignedAgentId };

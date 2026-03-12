@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Campaign } from "@/api/entities";
-import { integrations } from "@/api/client";
+import { integrations, apiClient } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { format, parseISO } from "date-fns";
 import {
     Calendar as CalendarIcon,
@@ -19,7 +21,9 @@ import {
     Trash2,
     Loader2,
     Video,
-    Image as ImageIcon
+    Image as ImageIcon,
+    Users,
+    X
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -46,11 +50,34 @@ export default function AdminCampaignForm() {
         commission_amount_driver: "",
         commission_amount_fleet: "",
         ad_playlist: [],
+        agentAssignmentMode: "round_robin",
+        agentGroupId: null,
+        agentGroupAgentIds: [],
     });
 
     const [loading, setLoading] = useState(false);
     const [fetching, setFetching] = useState(isEditMode);
     const [uploading, setUploading] = useState(false);
+    const [agentGroups, setAgentGroups] = useState([]);
+    const [lyfeAgents, setLyfeAgents] = useState([]);
+    const [agentSearch, setAgentSearch] = useState("");
+
+    // Load agent groups and Lyfe agents for assignment UI
+    useEffect(() => {
+        const loadAgentData = async () => {
+            try {
+                const [groupsRes, agentsRes] = await Promise.all([
+                    apiClient.get('/admin/agent-groups').catch(() => ({ data: [] })),
+                    apiClient.get('/lyfe/agents').catch(() => ({ data: [] }))
+                ]);
+                setAgentGroups(groupsRes.data || []);
+                setLyfeAgents(agentsRes.data || []);
+            } catch (err) {
+                console.error('Failed to load agent data:', err);
+            }
+        };
+        loadAgentData();
+    }, []);
 
     useEffect(() => {
         if (isEditMode) {
@@ -73,6 +100,9 @@ export default function AdminCampaignForm() {
                     commission_amount_driver: campaign.commission_amount_driver ?? "",
                     commission_amount_fleet: campaign.commission_amount_fleet ?? "",
                     ad_playlist: campaign.ad_playlist || [],
+                    agentAssignmentMode: campaign.agentAssignmentMode || "round_robin",
+                    agentGroupId: campaign.agentGroupId || null,
+                    agentGroupAgentIds: campaign.agentGroupAgentIds || [],
                 });
             } else {
                 toast({ title: "Error", description: "Campaign not found", variant: "destructive" });
@@ -146,6 +176,9 @@ export default function AdminCampaignForm() {
                 ad_playlist: formData.ad_playlist,
                 commission_amount_driver: formData.commission_amount_driver === "" ? null : Number(formData.commission_amount_driver),
                 commission_amount_fleet: formData.commission_amount_fleet === "" ? null : Number(formData.commission_amount_fleet),
+                agentAssignmentMode: formData.agentAssignmentMode,
+                agentGroupId: formData.agentGroupId,
+                agentGroupAgentIds: formData.agentGroupAgentIds,
             };
 
             if (isEditMode) {
@@ -315,6 +348,131 @@ export default function AdminCampaignForm() {
                                         />
                                     </div>
                                 </div>
+                            </CardContent>
+                        </Card>
+                        {/* Agent Assignment Card */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <Users className="w-5 h-5" />
+                                    Agent Assignment
+                                </CardTitle>
+                                <CardDescription>How leads from this campaign are routed to agents.</CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label>Assignment Mode</Label>
+                                    <Select
+                                        value={formData.agentAssignmentMode}
+                                        onValueChange={(value) => setFormData(prev => ({ ...prev, agentAssignmentMode: value }))}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="round_robin">Round Robin - Leads distributed among a group</SelectItem>
+                                            <SelectItem value="direct">Direct - Each QR code routes to a specific agent</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                {formData.agentAssignmentMode === 'round_robin' && (
+                                    <div className="space-y-3">
+                                        <div className="space-y-2">
+                                            <Label>Agent Group</Label>
+                                            <Select
+                                                value={formData.agentGroupId || ""}
+                                                onValueChange={(value) => {
+                                                    const group = agentGroups.find(g => g.id === value);
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        agentGroupId: value || null,
+                                                        agentGroupAgentIds: group ? group.agents.map(a => a.phone) : prev.agentGroupAgentIds
+                                                    }));
+                                                }}
+                                            >
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select an agent group..." />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {agentGroups.map(group => (
+                                                        <SelectItem key={group.id} value={group.id}>
+                                                            {group.name} ({group.agentCount} agents)
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <Separator />
+                                        <Label className="text-sm text-muted-foreground">Or add agents manually:</Label>
+                                        <div className="space-y-2">
+                                            <Input
+                                                placeholder="Search agents by name or phone..."
+                                                value={agentSearch}
+                                                onChange={(e) => setAgentSearch(e.target.value)}
+                                            />
+                                            {agentSearch && (
+                                                <div className="border rounded-md max-h-40 overflow-y-auto">
+                                                    {lyfeAgents
+                                                        .filter(a =>
+                                                            (a.name || '').toLowerCase().includes(agentSearch.toLowerCase()) ||
+                                                            (a.phone || '').includes(agentSearch)
+                                                        )
+                                                        .slice(0, 10)
+                                                        .map(agent => (
+                                                            <button
+                                                                key={agent.id || agent.phone}
+                                                                type="button"
+                                                                className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm flex justify-between"
+                                                                onClick={() => {
+                                                                    if (!formData.agentGroupAgentIds.includes(agent.phone)) {
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            agentGroupAgentIds: [...prev.agentGroupAgentIds, agent.phone]
+                                                                        }));
+                                                                    }
+                                                                    setAgentSearch("");
+                                                                }}
+                                                            >
+                                                                <span>{agent.name}</span>
+                                                                <span className="text-muted-foreground">{agent.phone}</span>
+                                                            </button>
+                                                        ))
+                                                    }
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {formData.agentGroupAgentIds.length > 0 && (
+                                            <div className="flex flex-wrap gap-2">
+                                                {formData.agentGroupAgentIds.map(phone => {
+                                                    const agent = lyfeAgents.find(a => a.phone === phone);
+                                                    return (
+                                                        <Badge key={phone} variant="secondary" className="flex items-center gap-1">
+                                                            {agent?.name || phone}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setFormData(prev => ({
+                                                                    ...prev,
+                                                                    agentGroupAgentIds: prev.agentGroupAgentIds.filter(p => p !== phone)
+                                                                }))}
+                                                            >
+                                                                <X className="w-3 h-3" />
+                                                            </button>
+                                                        </Badge>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {formData.agentAssignmentMode === 'direct' && (
+                                    <p className="text-sm text-muted-foreground bg-blue-50 p-3 rounded-md">
+                                        Agents will be assigned individually to each QR code created under this campaign.
+                                    </p>
+                                )}
                             </CardContent>
                         </Card>
                     </div>

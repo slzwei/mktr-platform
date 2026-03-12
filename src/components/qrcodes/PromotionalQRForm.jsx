@@ -1,15 +1,18 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { QrTag } from "@/api/entities";
+import { apiClient } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import AlertCircle from "lucide-react/icons/alert-circle";
 import Tag from "lucide-react/icons/tag";
 import Loader2 from "lucide-react/icons/loader-2";
 import CheckCircle from "lucide-react/icons/check-circle";
+import UserIcon from "lucide-react/icons/user";
 
 // Simple UUID v4 alternative using crypto API or fallback
 const generateUniqueId = () => {
@@ -27,17 +30,36 @@ const generateUniqueId = () => {
 export default function PromotionalQRForm({ campaign, onQRGenerated }) {
   const [formData, setFormData] = useState({
     label: "",
-    tagsInput: ""
+    tagsInput: "",
+    assignedAgentPhone: null,
+    assignedAgentEmail: null,
+    assignedAgentName: null
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [lyfeAgents, setLyfeAgents] = useState([]);
+
+  const isDirectMode = campaign?.agentAssignmentMode === 'direct';
+
+  useEffect(() => {
+    if (isDirectMode) {
+      apiClient.get('/lyfe/agents')
+        .then(res => setLyfeAgents(res.data || []))
+        .catch(() => {});
+    }
+  }, [isDirectMode]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!formData.label.trim()) {
       setError("Label is required");
+      return;
+    }
+
+    if (isDirectMode && !formData.assignedAgentPhone) {
+      setError("An assigned agent is required for direct assignment campaigns");
       return;
     }
 
@@ -53,12 +75,20 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
           .filter(Boolean)
       ));
 
-      await QrTag.create({
+      const createData = {
         label: formData.label.trim(),
         tags,
         type: 'promo',
         campaignId: campaign.id
-      });
+      };
+
+      if (isDirectMode) {
+        createData.assignedAgentPhone = formData.assignedAgentPhone;
+        createData.assignedAgentEmail = formData.assignedAgentEmail;
+        createData.assignedAgentName = formData.assignedAgentName;
+      }
+
+      await QrTag.create(createData);
 
       setSuccess(`Promotional QR code "${formData.label}" created successfully!`);
       setFormData({ label: "", tagsInput: "" });
@@ -127,6 +157,45 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
             />
             <p className="text-sm text-gray-500">Multiple tags are supported; a single QR will include all tags for reporting.</p>
           </div>
+
+          {isDirectMode && (
+            <div className="space-y-2">
+              <Label>Assigned Agent *</Label>
+              <Select
+                value={formData.assignedAgentPhone || ""}
+                onValueChange={(phone) => {
+                  const agent = lyfeAgents.find(a => a.phone === phone);
+                  setFormData(prev => ({
+                    ...prev,
+                    assignedAgentPhone: phone,
+                    assignedAgentEmail: agent?.email || null,
+                    assignedAgentName: agent?.name || null
+                  }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an agent..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {lyfeAgents.map(agent => (
+                    <SelectItem key={agent.phone || agent.id} value={agent.phone}>
+                      <div className="flex items-center gap-2">
+                        <UserIcon className="w-3 h-3" />
+                        <span>{agent.name}</span>
+                        <span className="text-muted-foreground text-xs">{agent.phone}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {!isDirectMode && campaign?.agentAssignmentMode === 'round_robin' && (
+            <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-700">
+              Leads from this QR code will be round-robin assigned to the campaign's agent group.
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="description">Description (Optional)</Label>

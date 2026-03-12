@@ -1,5 +1,5 @@
 import { sequelize } from './connection.js';
-import { QrTag, QrScan, Attribution, SessionVisit, Prospect, FleetOwner, User, Campaign, Car, LeadPackage, LeadPackageAssignment } from '../models/index.js';
+import { QrTag, QrScan, Attribution, SessionVisit, Prospect, FleetOwner, User, Campaign, Car, LeadPackage, LeadPackageAssignment, WebhookSubscriber, WebhookDelivery, AgentGroup } from '../models/index.js';
 import ensureTenantPlumbing from './tenantMigration.js';
 import { initSystemAgent } from '../services/systemAgent.js';
 import { validateGoogleOAuthConfig } from '../controllers/authController.js';
@@ -104,6 +104,11 @@ async function syncModels() {
   await (await import('../models/Impression.js')).default.sync({ alter: false });
   await (await import('../models/ProvisioningSession.js')).default.sync({ alter: false });
 
+  // Webhook & agent group tables
+  await WebhookSubscriber.sync({ alter: false });
+  await WebhookDelivery.sync({ alter: false });
+  await AgentGroup.sync({ alter: false });
+
   await FleetOwner.sync({ alter: false });
   await User.sync({ alter: false });
 }
@@ -123,18 +128,41 @@ async function ensureSqliteColumns() {
     await addIfMissing(userColumns, 'companyName', 'TEXT');
 
     const [columns] = await sequelize.query('PRAGMA table_info(campaigns)');
-    const hasDriver = Array.isArray(columns) && columns.some(c => c.name === 'commission_amount_driver');
-    const hasFleet = Array.isArray(columns) && columns.some(c => c.name === 'commission_amount_fleet');
-    if (!hasDriver) {
-      await sequelize.query('ALTER TABLE campaigns ADD COLUMN commission_amount_driver REAL');
-      logger.info('Added commission_amount_driver column to campaigns');
-    }
-    if (!hasFleet) {
-      await sequelize.query('ALTER TABLE campaigns ADD COLUMN commission_amount_fleet REAL');
-      logger.info('Added commission_amount_fleet column to campaigns');
-    }
+    const addCampaignCol = async (cols, name, type) => {
+      if (!Array.isArray(cols) || !cols.some(c => c.name === name)) {
+        await sequelize.query(`ALTER TABLE campaigns ADD COLUMN ${name} ${type}`);
+        logger.info(`Added ${name} column to campaigns`);
+      }
+    };
+    await addCampaignCol(columns, 'commission_amount_driver', 'REAL');
+    await addCampaignCol(columns, 'commission_amount_fleet', 'REAL');
+    await addCampaignCol(columns, 'ad_playlist', "JSON DEFAULT '[]'");
+    await addCampaignCol(columns, 'agentAssignmentMode', "TEXT DEFAULT 'round_robin'");
+    await addCampaignCol(columns, 'agentGroupId', 'TEXT');
+    await addCampaignCol(columns, 'agentGroupAgentIds', "JSON DEFAULT '[]'");
+    await addCampaignCol(columns, 'roundRobinIndex', 'INTEGER DEFAULT 0');
   } catch (e) {
     logger.warn('Could not ensure user/campaign columns on SQLite', { error: e.message });
+  }
+
+  // QR tags columns
+  try {
+    const [qrColumns] = await sequelize.query('PRAGMA table_info(qr_tags)');
+    const addQrCol = async (cols, name, type) => {
+      if (!Array.isArray(cols) || !cols.some(c => c.name === name)) {
+        await sequelize.query(`ALTER TABLE qr_tags ADD COLUMN ${name} ${type}`);
+        logger.info(`Added ${name} column to qr_tags`);
+      }
+    };
+    await addQrCol(qrColumns, 'scanCount', 'INTEGER DEFAULT 0');
+    await addQrCol(qrColumns, 'uniqueScanCount', 'INTEGER DEFAULT 0');
+    await addQrCol(qrColumns, 'lastScanned', 'DATETIME');
+    await addQrCol(qrColumns, 'analytics', "JSON DEFAULT '{}'");
+    await addQrCol(qrColumns, 'assignedAgentPhone', 'TEXT');
+    await addQrCol(qrColumns, 'assignedAgentEmail', 'TEXT');
+    await addQrCol(qrColumns, 'assignedAgentName', 'TEXT');
+  } catch (e) {
+    logger.warn('Could not ensure qr_tags columns on SQLite', { error: e.message });
   }
 
   try {

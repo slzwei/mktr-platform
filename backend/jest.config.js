@@ -2,7 +2,11 @@ export default {
   testEnvironment: 'node',
   transform: {},
   verbose: false,
-  forceExit: true
+  testTimeout: 15000,
+  // maxWorkers=1 avoids SQLite file contention between test suites
+  maxWorkers: 1,
+  // forceExit needed: Express + morgan + process.on handlers keep Node alive
+  forceExit: true,
+  // Set env vars before any modules are loaded (JWT_SECRET, NODE_ENV)
+  setupFiles: ['./test/setup.js']
 }
-
-

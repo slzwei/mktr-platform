@@ -32,7 +32,11 @@ const Prospect = sequelize.define('Prospect', {
     type: DataTypes.STRING,
     allowNull: true,
     validate: {
-      len: [10, 20]
+      isE164(value) {
+        if (value && !/^\+[1-9]\d{9,14}$/.test(value)) {
+          throw new Error('Phone must be in E.164 format (e.g. +6591234567)');
+        }
+      }
     }
   },
   company: {

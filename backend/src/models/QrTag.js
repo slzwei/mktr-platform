@@ -108,6 +108,18 @@ const QrTag = sequelize.define('QrTag', {
       this.setDataValue('tags', JSON.stringify(value || []));
     }
   },
+  assignedAgentPhone: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  assignedAgentEmail: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  assignedAgentName: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
   campaignId: {
     type: DataTypes.UUID,
     allowNull: true,

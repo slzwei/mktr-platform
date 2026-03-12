@@ -43,6 +43,9 @@ import leadPackageRoutes from './routes/leadPackages.js';
 import deviceRoutes from './routes/devices.js';
 import provisioningRoutes from './routes/provisioning.js'; // Added
 import vehicleRoutes from './routes/vehicles.js'; // Added for tablet pairing
+import webhookAdminRoutes from './routes/webhookAdmin.js';
+import agentGroupRoutes from './routes/agentGroups.js';
+import lyfeAgentRoutes from './routes/lyfeAgents.js';
 import { optionalAuth } from './middleware/auth.js';
 import { logger } from './utils/logger.js';
 
@@ -192,6 +195,9 @@ export const init = async (app) => {
   app.use('/api/devices', deviceRoutes);
   app.use('/api/provision', provisioningRoutes); // Added
   app.use('/api/vehicles', vehicleRoutes); // Added for tablet pairing
+  app.use('/api/admin/webhooks', webhookAdminRoutes);
+  app.use('/api/admin/agent-groups', agentGroupRoutes);
+  app.use('/api/lyfe', lyfeAgentRoutes);
 
 
   // Phase C: Adtech Manifest + Beacons (behind flags)
