@@ -20,16 +20,16 @@ export function invalidateCache() {
 }
 
 function getLyfeConfig() {
-  const url = process.env.LYFE_API_URL;
-  const key = process.env.LYFE_API_KEY;
+  const url = process.env.LYFE_SUPABASE_URL;
+  const key = process.env.LYFE_SUPABASE_ANON_KEY;
   if (!url || !key) {
-    throw new Error('LYFE_API_URL and LYFE_API_KEY must be configured');
+    throw new Error('LYFE_SUPABASE_URL and LYFE_SUPABASE_ANON_KEY must be configured');
   }
   return { url: url.replace(/\/$/, ''), key };
 }
 
 /**
- * Fetch agents from Lyfe API.
+ * Fetch agents from Lyfe Supabase (users table with role in agent, pa).
  */
 export async function fetchAgents(filters = {}) {
   const cacheKey = `agents:${JSON.stringify(filters)}`;
@@ -38,57 +38,46 @@ export async function fetchAgents(filters = {}) {
 
   const { url, key } = getLyfeConfig();
 
-  const params = new URLSearchParams();
-  if (filters.roles) {
-    for (const role of filters.roles) {
-      params.append('role', role);
+  const roles = filters.roles || ['agent', 'pa'];
+  const roleFilter = `role=in.(${roles.join(',')})`;
+
+  const response = await fetch(
+    `${url}/rest/v1/users?${roleFilter}&is_active=eq.true&select=id,full_name,email,phone,role,avatar_url,date_of_birth,created_at`,
+    {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      },
+      signal: AbortSignal.timeout(10000)
     }
-  } else {
-    params.append('role', 'agent');
-    params.append('role', 'pa');
-  }
-
-  const response = await fetch(`${url}/agents?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${key}` },
-    signal: AbortSignal.timeout(10000)
-  });
+  );
 
   if (!response.ok) {
-    throw new Error(`Lyfe API error: ${response.status}`);
+    const body = await response.text().catch(() => '');
+    throw new Error(`Lyfe Supabase error: ${response.status} ${body}`);
   }
 
-  const data = await response.json();
-  const agents = data.data || data;
-  setCache(cacheKey, agents);
-  return agents;
+  const agents = await response.json();
+
+  // Normalize to the shape the rest of the codebase expects
+  const normalized = agents.map(a => ({
+    id: a.id,
+    name: a.full_name,
+    email: a.email,
+    phone: a.phone,
+    role: a.role,
+    avatarUrl: a.avatar_url,
+    dateOfBirth: a.date_of_birth,
+    createdAt: a.created_at
+  }));
+
+  setCache(cacheKey, normalized);
+  return normalized;
 }
 
 /**
- * Fetch agent groups from Lyfe API.
- */
-export async function fetchAgentGroups() {
-  const cached = getCached('agentGroups');
-  if (cached) return cached;
-
-  const { url, key } = getLyfeConfig();
-
-  const response = await fetch(`${url}/agent-groups`, {
-    headers: { Authorization: `Bearer ${key}` },
-    signal: AbortSignal.timeout(10000)
-  });
-
-  if (!response.ok) {
-    throw new Error(`Lyfe API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const groups = data.data || data;
-  setCache('agentGroups', groups);
-  return groups;
-}
-
-/**
- * Fetch a single agent by ID from Lyfe API.
+ * Fetch a single agent by ID from Lyfe Supabase.
  */
 export async function fetchAgentById(id) {
   const cacheKey = `agent:${id}`;
@@ -97,17 +86,45 @@ export async function fetchAgentById(id) {
 
   const { url, key } = getLyfeConfig();
 
-  const response = await fetch(`${url}/agents/${id}`, {
-    headers: { Authorization: `Bearer ${key}` },
-    signal: AbortSignal.timeout(10000)
-  });
+  const response = await fetch(
+    `${url}/rest/v1/users?id=eq.${id}&select=id,full_name,email,phone,role,avatar_url,date_of_birth,created_at`,
+    {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      },
+      signal: AbortSignal.timeout(10000)
+    }
+  );
 
   if (!response.ok) {
-    throw new Error(`Lyfe API error: ${response.status}`);
+    throw new Error(`Lyfe Supabase error: ${response.status}`);
   }
 
-  const data = await response.json();
-  const agent = data.data || data;
+  const rows = await response.json();
+  if (!rows.length) throw new Error('Agent not found in Lyfe');
+
+  const a = rows[0];
+  const agent = {
+    id: a.id,
+    name: a.full_name,
+    email: a.email,
+    phone: a.phone,
+    role: a.role,
+    avatarUrl: a.avatar_url,
+    dateOfBirth: a.date_of_birth,
+    createdAt: a.created_at
+  };
+
   setCache(cacheKey, agent);
   return agent;
+}
+
+/**
+ * Fetch agent groups is not applicable for Supabase-based Lyfe.
+ * Returns empty array for backward compatibility.
+ */
+export async function fetchAgentGroups() {
+  return [];
 }
