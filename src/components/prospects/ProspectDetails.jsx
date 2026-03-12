@@ -2,30 +2,17 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
-import {
-  Phone,
-  Mail,
-  MapPin,
-  Calendar,
-  User,
-  Tag,
-  FileText,
-  Save,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  Edit2,
-  X
-} from "lucide-react";
+import { Clock, User, Edit2, X } from "lucide-react";
 import { Prospect as ProspectEntity } from "@/api/entities";
+import ContactInfoCard from "@/components/prospects/details/ContactInfoCard";
+import CampaignInfoCard from "@/components/prospects/details/CampaignInfoCard";
+import ActivityTimeline from "@/components/prospects/details/ActivityTimeline";
 
 const statusOptions = [
   { value: "new", label: "New", color: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800" },
@@ -166,119 +153,22 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
           {/* Left Sidebar - Details */}
           <ScrollArea className="md:col-span-1 bg-gray-50/50 dark:bg-gray-800/50">
             <div className="p-6 space-y-6">
-              {/* Contact Info */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wider flex items-center gap-2">
-                  <User className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                  Contact Info
-                </h3>
-                {isEditing ? (
-                  <div className="space-y-3 bg-white dark:bg-gray-800 p-3 rounded-lg border dark:border-gray-600 shadow-sm">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <Label className="text-xs">First Name</Label>
-                        <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} className="h-8" />
-                      </div>
-                      <div>
-                        <Label className="text-xs">Last Name</Label>
-                        <Input value={lastName} onChange={(e) => setLastName(e.target.value)} className="h-8" />
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Email</Label>
-                      <Input value={email} onChange={(e) => setEmail(e.target.value)} className="h-8" />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Phone</Label>
-                      <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="h-8" />
-                    </div>
-                    <div className="pt-2 flex gap-2">
-                      <Button size="sm" onClick={handleSaveEdits} disabled={isUpdating} className="w-full">
-                        Save
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => setIsEditing(false)} className="w-full">
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-600 shadow-sm p-4 space-y-3">
-                    <div className="group flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
-                        <Phone className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Phone</p>
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{phone || '—'}</p>
-                      </div>
-                    </div>
-                    <Separator />
-                    <div className="group flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
-                        <Mail className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Email</p>
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={email}>{email || '—'}</p>
-                      </div>
-                    </div>
-                    <Separator />
-                    <div className="group flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
-                        <Calendar className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Date of Birth</p>
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                          {prospect.date_of_birth ? format(new Date(prospect.date_of_birth), 'MMM d, yyyy') : '—'}
-                        </p>
-                      </div>
-                    </div>
-                    <Separator />
-                    <div className="group flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
-                        <MapPin className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Postal Code</p>
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{prospect.postal_code || '—'}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Campaign Info */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wider flex items-center gap-2">
-                  <Tag className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                  Campaign
-                </h3>
-                <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-600 shadow-sm p-4 space-y-3">
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Campaign Name</p>
-                    <Badge variant="outline" className="font-normal text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600">
-                      {campaign?.name || 'Unknown Campaign'}
-                    </Badge>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Lead Source</p>
-                    <div className="inline-flex items-center px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium uppercase tracking-wide">
-                      {prospect.source || 'Unknown'}
-                    </div>
-                  </div>
-                  {prospect.campaigns_subscribed && prospect.campaigns_subscribed.length > 1 && (
-                    <div>
-                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Subscriptions</p>
-                      <div className="flex flex-wrap gap-1">
-                        {prospect.campaigns_subscribed.map((cid) => (
-                          <span key={cid} className="text-[10px] px-1.5 py-0.5 bg-gray-50 dark:bg-gray-800/50 border dark:border-gray-600 rounded text-gray-600 dark:text-gray-400">{cid}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <ContactInfoCard
+                isEditing={isEditing}
+                firstName={firstName}
+                lastName={lastName}
+                email={email}
+                phone={phone}
+                prospect={prospect}
+                isUpdating={isUpdating}
+                onFirstNameChange={setFirstName}
+                onLastNameChange={setLastName}
+                onEmailChange={setEmail}
+                onPhoneChange={setPhone}
+                onSaveEdits={handleSaveEdits}
+                onCancelEdit={() => setIsEditing(false)}
+              />
+              <CampaignInfoCard campaign={campaign} prospect={prospect} />
             </div>
           </ScrollArea>
 
@@ -335,75 +225,7 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
                 </Card>
               </section>
 
-              {/* Timeline Section */}
-              <section>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Activity History</h3>
-                <div className="relative pl-6 space-y-6">
-                  <div className="absolute left-[11px] top-2 bottom-4 w-px bg-gray-200 dark:bg-gray-600" />
-
-                  {(!details?.activities || details.activities.length === 0) ? (
-                    <div className="relative flex items-center gap-3">
-                      <div className="h-6 w-6 rounded-full bg-gray-100 dark:bg-gray-700 border-2 border-white dark:border-gray-800 ring-1 ring-gray-200 dark:ring-gray-600 flex items-center justify-center z-10">
-                        <Clock className="w-3 h-3 text-gray-400 dark:text-gray-500" />
-                      </div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">No activity recorded yet.</p>
-                    </div>
-                  ) : (
-                    details.activities.map((a, idx) => {
-                      const when = a.createdAt ? format(new Date(a.createdAt), 'MMM d, h:mm a') : '';
-                      let text = a.description || a.type;
-                      let icon = <FileText className="w-3 h-3 text-gray-500 dark:text-gray-400" />;
-
-                      if (a.type === 'assigned') {
-                        text = "Assigned to agent";
-                        icon = <User className="w-3 h-3 text-purple-600" />;
-                      } else if (a.type === 'created') {
-                        // Use backend description if it's the new rich format, otherwise fallback
-                        if (a.description && a.description.includes('Prospect signed up')) {
-                          text = a.description;
-                        } else {
-                          text = "Prospect created";
-                        }
-                        icon = <CheckCircle2 className="w-3 h-3 text-emerald-600" />;
-                      } else if (a.type === 'lead_status_updated') {
-                        text = `Status updated to ${a.description || 'new status'}`;
-                        icon = <Edit2 className="w-3 h-3 text-blue-600" />;
-                      }
-
-                      return (
-                        <div key={idx} className="relative group">
-                          <div className="flex items-start gap-4">
-                            <div className="absolute -left-[24px] mt-0.5">
-                              <div className="h-6 w-6 rounded-full bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 ring-1 ring-gray-200 dark:ring-gray-600 flex items-center justify-center z-10 shadow-sm">
-                                {icon}
-                              </div>
-                            </div>
-                            <div className="flex-1 bg-gray-50/50 dark:bg-gray-800/50 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{text}</p>
-                              {a.type === 'assigned' && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{a.description || 'System assignment'}</p>}
-                              {a.type === 'created' && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">via {prospect.source}, campaign: {campaign?.name}</p>}
-                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">{when}</p>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-
-                  {/* Origin Marker */}
-                  <div className="relative flex items-center gap-4">
-                    <div className="absolute -left-[24px]">
-                      <div className="h-6 w-6 rounded-full bg-gray-100 dark:bg-gray-700 border-2 border-white dark:border-gray-800 ring-1 ring-gray-200 dark:ring-gray-600 flex items-center justify-center z-10">
-                        <div className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500" />
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">Start of History</span>
-                    </div>
-                  </div>
-
-                </div>
-              </section>
+              <ActivityTimeline details={details} prospect={prospect} campaign={campaign} />
 
             </div>
           </ScrollArea>

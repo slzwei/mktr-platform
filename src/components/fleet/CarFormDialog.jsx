@@ -17,15 +17,17 @@ import {
   isValidSgPlate,
   parseSgPlate,
 } from "@/utils/validation";
+import CarMakeModelFields from "@/components/fleet/CarMakeModelFields";
+import CarDetailFields from "@/components/fleet/CarDetailFields";
 
-export default function CarFormDialog({ 
-  open, 
-  onOpenChange, 
-  car, 
-  onSubmit, 
+export default function CarFormDialog({
+  open,
+  onOpenChange,
+  car,
+  onSubmit,
   fleetOwners,
   currentUserRole,
-  currentUserId 
+  currentUserId
 }) {
   const [formData, setFormData] = useState({
     plate_number: "",
@@ -165,21 +167,21 @@ export default function CarFormDialog({
         model: finalModel,
         year: formData.year ? parseInt(formData.year) : undefined
       };
-      
+
       await onSubmit(submitData);
       onOpenChange(false);
     } catch (err) {
       console.error('Car form submission error:', err);
-      
+
       // Handle specific validation errors
       let errorMessage = err.message || "Failed to save vehicle";
-      
+
       if (errorMessage.includes("Validation error") || errorMessage.includes("must be unique")) {
         errorMessage = "A vehicle with this plate number already exists. Please use a different plate number.";
       } else if (errorMessage.includes("Fleet owner not found")) {
         errorMessage = "Selected fleet owner not found. Please select a valid fleet owner.";
       }
-      
+
       setError(errorMessage);
     }
     setLoading(false);
@@ -211,8 +213,8 @@ export default function CarFormDialog({
           {currentUserRole === 'admin' && (
             <div>
               <Label htmlFor="fleet_owner_id">Fleet Owner *</Label>
-              <Select 
-                value={formData.fleet_owner_id} 
+              <Select
+                value={formData.fleet_owner_id}
                 onValueChange={(value) => handleSelectChange("fleet_owner_id", value)}
               >
                 <SelectTrigger>
@@ -229,159 +231,23 @@ export default function CarFormDialog({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="make">Car Make *</Label>
-              <Select
-                value={formData.make}
-                onValueChange={(value) => {
-                  setFormData((prev) => ({ ...prev, make: value, model: '' }));
-                  setFieldErrors((prev)=>({ ...prev, make: undefined, model: undefined, customMake: undefined, customModel: undefined }));
-                  if (value !== 'Other') setCustomMake('');
-                }}
-              >
-                <SelectTrigger id="make">
-                  <SelectValue placeholder="Select make" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.keys(makesToModels).sort().map((m) => (
-                    <SelectItem key={m} value={m}>{m}</SelectItem>
-                  ))}
-                  <SelectItem value="Other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-              {fieldErrors.make && <div className="text-red-600 text-xs mt-1">{fieldErrors.make}</div>}
-              {formData.make === 'Other' && (
-                <div className="mt-2">
-                  <Input
-                    placeholder="Enter make"
-                    value={customMake}
-                    onChange={(e)=>{ setCustomMake(e.target.value); if (fieldErrors.customMake) setFieldErrors((prev)=>({ ...prev, customMake: undefined })); }}
-                    className={fieldErrors.customMake ? 'border-red-500 focus-visible:ring-red-500' : ''}
-                  />
-                  {fieldErrors.customMake && <div className="text-red-600 text-xs mt-1">{fieldErrors.customMake}</div>}
-                </div>
-              )}
-            </div>
+          <CarMakeModelFields
+            formData={formData}
+            setFormData={setFormData}
+            fieldErrors={fieldErrors}
+            setFieldErrors={setFieldErrors}
+            customMake={customMake}
+            setCustomMake={setCustomMake}
+            customModel={customModel}
+            setCustomModel={setCustomModel}
+            makesToModels={makesToModels}
+          />
 
-            <div>
-              <Label htmlFor="model">Car Model *</Label>
-              {formData.make === 'Other' ? (
-                <>
-                  <Input
-                    id="model"
-                    name="custom_model"
-                    placeholder="Enter model"
-                    value={customModel}
-                    onChange={(e)=>{ setCustomModel(e.target.value); if (fieldErrors.customModel) setFieldErrors((prev)=>({ ...prev, customModel: undefined })); }}
-                    className={fieldErrors.customModel ? 'border-red-500 focus-visible:ring-red-500' : ''}
-                  />
-                  {fieldErrors.customModel && <div className="text-red-600 text-xs mt-1">{fieldErrors.customModel}</div>}
-                </>
-              ) : (
-                <>
-                  <Select
-                    value={formData.model}
-                    onValueChange={(value) => {
-                      setFormData((prev) => ({ ...prev, model: value }));
-                      setFieldErrors((prev)=>({ ...prev, model: undefined, customModel: undefined }));
-                      if (value !== 'Other') setCustomModel('');
-                    }}
-                  >
-                    <SelectTrigger id="model">
-                      <SelectValue placeholder="Select model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(makesToModels[formData.make] || []).slice().sort().map((mo) => (
-                        <SelectItem key={mo} value={mo}>{mo}</SelectItem>
-                      ))}
-                      <SelectItem value="Other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {fieldErrors.model && <div className="text-red-600 text-xs mt-1">{fieldErrors.model}</div>}
-                  {formData.model === 'Other' && (
-                    <div className="mt-2">
-                      <Input
-                        placeholder="Enter model"
-                        value={customModel}
-                        onChange={(e)=>{ setCustomModel(e.target.value); if (fieldErrors.customModel) setFieldErrors((prev)=>({ ...prev, customModel: undefined })); }}
-                        className={fieldErrors.customModel ? 'border-red-500 focus-visible:ring-red-500' : ''}
-                      />
-                      {fieldErrors.customModel && <div className="text-red-600 text-xs mt-1">{fieldErrors.customModel}</div>}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="year">Year</Label>
-              <Input
-                id="year"
-                name="year"
-                type="number"
-                value={formData.year}
-                onChange={handleChange}
-                placeholder="2020"
-                min="1900"
-                max="2030"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="type">Vehicle Type *</Label>
-              <Select 
-                value={formData.type} 
-                onValueChange={(value) => handleSelectChange("type", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="sedan">Sedan</SelectItem>
-                  <SelectItem value="suv">SUV</SelectItem>
-                  <SelectItem value="truck">Truck</SelectItem>
-                  <SelectItem value="van">Van</SelectItem>
-                  <SelectItem value="coupe">Coupe</SelectItem>
-                  <SelectItem value="hatchback">Hatchback</SelectItem>
-                  <SelectItem value="convertible">Convertible</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="color">Color</Label>
-              <Input
-                id="color"
-                name="color"
-                value={formData.color}
-                onChange={handleChange}
-                placeholder="e.g., White"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="status">Status</Label>
-              <Select 
-                value={formData.status} 
-                onValueChange={(value) => handleSelectChange("status", value)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="maintenance">Maintenance</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <CarDetailFields
+            formData={formData}
+            handleChange={handleChange}
+            handleSelectChange={handleSelectChange}
+          />
 
           {error && (
             <div className="text-red-600 text-sm bg-red-50 p-3 rounded">
