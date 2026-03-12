@@ -21,15 +21,16 @@ export function invalidateCache() {
 
 function getLyfeConfig() {
   const url = process.env.LYFE_SUPABASE_URL;
-  const key = process.env.LYFE_SUPABASE_ANON_KEY;
+  const key = process.env.LYFE_SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    throw new Error('LYFE_SUPABASE_URL and LYFE_SUPABASE_ANON_KEY must be configured');
+    throw new Error('LYFE_SUPABASE_URL and LYFE_SUPABASE_SERVICE_ROLE_KEY must be configured');
   }
   return { url: url.replace(/\/$/, ''), key };
 }
 
 /**
  * Fetch agents from Lyfe Supabase (users table with role in agent, pa).
+ * Uses service_role key to bypass RLS.
  */
 export async function fetchAgents(filters = {}) {
   const cacheKey = `agents:${JSON.stringify(filters)}`;
@@ -42,7 +43,7 @@ export async function fetchAgents(filters = {}) {
   const roleFilter = `role=in.(${roles.join(',')})`;
 
   const response = await fetch(
-    `${url}/rest/v1/users?${roleFilter}&is_active=eq.true&select=id,full_name,email,phone,role,avatar_url,date_of_birth,created_at`,
+    `${url}/rest/v1/users?${roleFilter}&is_active=eq.true&select=id,full_name,email,phone,role,avatar_url,date_of_birth,created_at&order=full_name`,
     {
       headers: {
         apikey: key,
