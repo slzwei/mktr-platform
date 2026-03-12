@@ -4,9 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { BarChart3, Car } from "lucide-react";
 
 const statusColor = (status) => {
-  if (status === 'active') return 'bg-green-100 text-green-800';
-  if (status === 'maintenance') return 'bg-yellow-100 text-yellow-800';
-  return 'bg-gray-100 text-gray-800';
+  if (status === 'active') return 'bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-400';
+  if (status === 'maintenance') return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/30 dark:text-yellow-400';
+  return 'bg-muted text-muted-foreground';
 };
 
 function getCommissionCarId(commission) {
@@ -34,7 +34,7 @@ export default function VehiclePerformance({ cars, commissions }) {
   }, [cars, commissions]);
 
   return (
-    <Card>
+    <Card className="border-none shadow-sm">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg flex items-center gap-2">
@@ -42,31 +42,31 @@ export default function VehiclePerformance({ cars, commissions }) {
             Vehicle Performance
           </CardTitle>
         </div>
-        <p className="text-sm text-gray-500">Earnings by vehicle</p>
+        <p className="text-sm text-muted-foreground">Earnings by vehicle</p>
       </CardHeader>
       <CardContent className="p-0">
         {vehicleStats.length > 0 ? (
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500 font-medium border-b">
+            <thead className="bg-muted/50 text-muted-foreground font-medium border-b border-border">
               <tr>
                 <th className="px-6 py-3 text-left">Vehicle</th>
                 <th className="px-6 py-3 text-left">Status</th>
                 <th className="px-6 py-3 text-right">Earnings</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-border/50">
               {vehicleStats.map(v => (
-                <tr key={v.id} className="hover:bg-gray-50/50">
+                <tr key={v.id} className="hover:bg-muted/30">
                   <td className="px-6 py-3">
                     <div>
-                      <p className="font-medium text-gray-900">{v.plate_number}</p>
-                      <p className="text-xs text-gray-400">{v.make || v.model || 'Unknown'} {v.color ? `• ${v.color}` : ''}</p>
+                      <p className="font-medium text-foreground">{v.plate_number}</p>
+                      <p className="text-xs text-muted-foreground">{v.make || v.model || 'Unknown'} {v.color ? `• ${v.color}` : ''}</p>
                     </div>
                   </td>
                   <td className="px-6 py-3">
                     <Badge className={statusColor(v.status)}>{v.status}</Badge>
                   </td>
-                  <td className="px-6 py-3 text-right font-semibold">
+                  <td className="px-6 py-3 text-right font-semibold text-foreground">
                     ${v.earnings.toFixed(2)}
                   </td>
                 </tr>
@@ -74,7 +74,7 @@ export default function VehiclePerformance({ cars, commissions }) {
             </tbody>
           </table>
         ) : (
-          <div className="text-center py-8 text-gray-400">
+          <div className="text-center py-8 text-muted-foreground">
             <Car className="w-10 h-10 mx-auto mb-2" />
             <p className="text-sm">No vehicle data available</p>
           </div>

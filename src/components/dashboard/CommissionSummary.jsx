@@ -13,9 +13,9 @@ import {
 } from "lucide-react";
 
 const statusColors = {
-  accrued: "bg-blue-100 text-blue-800 border-blue-200",
-  payable: "bg-green-100 text-green-800 border-green-200",
-  paid: "bg-gray-100 text-gray-800 border-gray-200"
+  accrued: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800",
+  payable: "bg-green-100 text-green-800 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800",
+  paid: "bg-muted text-muted-foreground border-border"
 };
 
 export default function CommissionSummary({ commissions, userRole, period = '30d', lifetimeEarnings = 0, lifetimeScans = 0, totalScans = 0 }) {
@@ -38,8 +38,8 @@ export default function CommissionSummary({ commissions, userRole, period = '30d
   })();
 
   return (
-    <Card className="shadow-md">
-      <CardHeader className="border-b border-gray-100">
+    <Card className="border-none shadow-sm">
+      <CardHeader className="border-b border-border">
         <div className="flex justify-between items-center">
           <CardTitle className="text-lg font-bold">Commission Summary</CardTitle>
           <Link to={createPageUrl("AdminCommissions")}>
@@ -53,68 +53,68 @@ export default function CommissionSummary({ commissions, userRole, period = '30d
       <CardContent className="p-6">
         {userRole === 'admin' ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="text-center p-3 bg-green-50 rounded-lg">
+            <div className="text-center p-3 bg-green-50 dark:bg-green-950/30 rounded-lg">
               <div className="flex items-center justify-center mb-2">
                 <DollarSign className="w-5 h-5 text-green-600" />
               </div>
-              <p className="text-2xl font-bold text-green-900">
+              <p className="text-2xl font-bold text-green-900 dark:text-green-400">
                 ${totalDriverCommissions.toFixed(2)}
               </p>
-              <p className="text-sm text-green-700">Driver Commissions (total)</p>
+              <p className="text-sm text-green-700 dark:text-green-500">Driver Commissions (total)</p>
             </div>
-            <div className="text-center p-3 bg-blue-50 rounded-lg">
+            <div className="text-center p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
               <div className="flex items-center justify-center mb-2">
                 <DollarSign className="w-5 h-5 text-blue-600" />
               </div>
-              <p className="text-2xl font-bold text-blue-900">
+              <p className="text-2xl font-bold text-blue-900 dark:text-blue-400">
                 ${totalFleetCommissions.toFixed(2)}
               </p>
-              <p className="text-sm text-blue-700">Fleet Owner Commissions (total)</p>
+              <p className="text-sm text-blue-700 dark:text-blue-500">Fleet Owner Commissions (total)</p>
             </div>
-            <div className="text-center p-3 bg-purple-50 rounded-lg">
+            <div className="text-center p-3 bg-purple-50 dark:bg-purple-950/30 rounded-lg">
               <div className="flex items-center justify-center mb-2">
                 <BarChart3 className="w-5 h-5 text-purple-600" />
               </div>
-              <p className="text-2xl font-bold text-purple-900">
+              <p className="text-2xl font-bold text-purple-900 dark:text-purple-400">
                 {Number(totalScans).toLocaleString()}
               </p>
-              <p className="text-sm text-purple-700">Total Scans</p>
+              <p className="text-sm text-purple-700 dark:text-purple-500">Total Scans</p>
             </div>
           </div>
         ) : (
           <>
             {/* Lifetime Stats */}
             <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="text-center p-3 bg-indigo-50 rounded-lg">
+              <div className="text-center p-3 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg">
                 <div className="flex items-center justify-center mb-2">
                   <DollarSign className="w-5 h-5 text-indigo-600" />
                 </div>
-                <p className="text-2xl font-bold text-indigo-900">
+                <p className="text-2xl font-bold text-indigo-900 dark:text-indigo-400">
                   ${Number(lifetimeEarnings).toFixed(2)}
                 </p>
-                <p className="text-sm text-indigo-600">Total Lifetime Earnings</p>
+                <p className="text-sm text-indigo-600 dark:text-indigo-500">Total Lifetime Earnings</p>
               </div>
-              <div className="text-center p-3 bg-purple-50 rounded-lg">
+              <div className="text-center p-3 bg-purple-50 dark:bg-purple-950/30 rounded-lg">
                 <div className="flex items-center justify-center mb-2">
                   <BarChart3 className="w-5 h-5 text-purple-600" />
                 </div>
-                <p className="text-2xl font-bold text-purple-900">
+                <p className="text-2xl font-bold text-purple-900 dark:text-purple-400">
                   {Number(lifetimeScans)}
                 </p>
-                <p className="text-sm text-purple-600">Total Lifetime Scans</p>
+                <p className="text-sm text-purple-600 dark:text-purple-500">Total Lifetime Scans</p>
               </div>
             </div>
 
             {/* Period Earned */}
             <div className="grid grid-cols-1 gap-4 mb-6">
-              <div className="text-center p-3 bg-blue-50 rounded-lg">
+              <div className="text-center p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
                 <div className="flex items-center justify-center mb-2">
                   <DollarSign className="w-5 h-5 text-blue-600" />
                 </div>
-                <p className="text-2xl font-bold text-blue-900">
+                <p className="text-2xl font-bold text-blue-900 dark:text-blue-400">
                   ${totalEarnings.toFixed(2)}
                 </p>
-                <p className="text-sm text-blue-600">Earned ({periodLabel})</p>
+                <p className="text-sm text-blue-600 dark:text-blue-500">Earned ({periodLabel})</p>
               </div>
             </div>
           </>
@@ -122,14 +122,14 @@ export default function CommissionSummary({ commissions, userRole, period = '30d
 
         {/* Recent Commissions */}
         <div className="space-y-3">
-          <h4 className="font-semibold text-gray-900 text-sm">Recent Commissions</h4>
+          <h4 className="font-semibold text-foreground text-sm">Recent Commissions</h4>
           {recentCommissions.length > 0 ? (
             recentCommissions.map((commission) => (
-              <div key={commission.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div key={commission.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <DollarSign className="w-4 h-4 text-gray-500" />
-                    <span className="font-semibold text-gray-900">
+                    <DollarSign className="w-4 h-4 text-muted-foreground" />
+                    <span className="font-semibold text-foreground">
                       ${(userRole === 'driver_partner' ? commission.amount_driver : 
                          userRole === 'fleet_owner' ? commission.amount_fleet : 
                          commission.amount_driver + commission.amount_fleet).toFixed(2)}
@@ -138,7 +138,7 @@ export default function CommissionSummary({ commissions, userRole, period = '30d
                       {commission.status}
                     </Badge>
                   </div>
-                  <div className="flex items-center gap-1 text-xs text-gray-500">
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
                     <Clock className="w-3 h-3" />
                     {format(new Date(commission.created_date), 'MMM d, HH:mm')}
                   </div>
@@ -146,8 +146,8 @@ export default function CommissionSummary({ commissions, userRole, period = '30d
               </div>
             ))
           ) : (
-            <div className="text-center py-6 text-gray-500">
-              <DollarSign className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+            <div className="text-center py-6 text-muted-foreground">
+              <DollarSign className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
               <p className="text-sm">No commissions yet</p>
             </div>
           )}

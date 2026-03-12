@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { auth } from "@/api/client";
+import { DashboardProvider } from "@/contexts/DashboardContext";
 import {
   LayoutDashboard,
   Users,
@@ -257,7 +258,9 @@ export default function DashboardLayout({ children, user, userRole }) {
           </header>
 
           <div className="flex-1 overflow-auto">
-            {children}
+            <DashboardProvider user={localUser}>
+              {children}
+            </DashboardProvider>
           </div>
         </main>
         <CommandPalette user={localUser} />
