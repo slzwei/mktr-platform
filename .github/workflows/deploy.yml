@@ -49,6 +49,14 @@ jobs:
           cd backend
           npm ci
 
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high --production
+
+      - name: Audit backend dependencies
+        run: |
+          cd backend
+          npm audit --audit-level=high --production
+
       - name: Run frontend tests
         run: npm test -- --watchAll=false
 
