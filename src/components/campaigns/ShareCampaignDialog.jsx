@@ -53,21 +53,21 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
         if (!v) setCopied(false);
       }}
     >
-      <DialogContent className="sm:max-w-md rounded-2xl overflow-hidden border-0 shadow-2xl">
-        <DialogHeader className="bg-gray-50 p-6 border-b border-gray-100">
-          <DialogTitle className="text-xl font-bold text-center">
+      <DialogContent className="sm:max-w-md max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border-0 shadow-2xl p-0">
+        <DialogHeader className="bg-gray-50 px-5 py-4 border-b border-gray-100">
+          <DialogTitle className="text-lg font-bold text-center">
             Invite Others
           </DialogTitle>
-          <DialogDescription className="text-center text-gray-500 mt-1.5">
-            Use the link below to share "{campaignName}" with friends.
+          <DialogDescription className="text-center text-gray-500 mt-1">
+            Share "{campaignName}" with friends.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="p-6 space-y-6">
+        <div className="px-5 py-4 space-y-4">
           {/* Link display + copy */}
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-200/60 flex items-center gap-3 shadow-inner">
+          <div className="bg-gray-50 rounded-xl p-3 border border-gray-200/60 flex items-center gap-2 shadow-inner">
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-gray-900 truncate">
+              <div className="text-xs font-medium text-gray-900 truncate">
                 {shortening ? 'Creating link...' : shareUrl}
               </div>
               <div className="text-[10px] text-gray-500 mt-0.5">Unique referral link</div>
@@ -118,7 +118,7 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
           </div>
         </div>
 
-        <DialogFooter className="p-4 bg-gray-50 border-t border-gray-100 flex justify-center sm:justify-center">
+        <DialogFooter className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex justify-center sm:justify-center">
           <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} className="text-gray-500 hover:text-gray-900">
             Close
           </Button>
