@@ -31,65 +31,68 @@ export const TC_TEMPLATES = {
   }
 };
 
-export const LAYOUT_TEMPLATES = {
-  modern: {
-    id: 'modern',
+export const PAGE_TEMPLATES = {
+  vibrant: {
+    id: 'vibrant',
     name: 'Vibrant Modern',
-    description: 'Gradient background, glassmorphism card, rounded corners.',
-    backgroundStyle: 'gradient',
-    themeColor: '#3B82F6',
-    cardStyle: 'glass',
+    tagline: 'Blue gradient, glassmorphism card, rounded corners',
+    preview: { bg: '#DBEAFE', accent: '#3B82F6', card: 'rgba(255,255,255,0.85)' },
     config: {
+      layoutTemplate: 'modern',
       backgroundType: 'custom',
       backgroundColor: '#EFF6FF',
+      cardBackgroundColor: '',
       themeColor: '#3B82F6',
       textColor: '#1E293B',
-      cardBackgroundColor: '',
+      backgroundStyle: 'gradient',
       headlineSize: 24,
       alignment: 'center',
+      spacing: 'normal',
+      formWidth: 400,
     }
   },
   corporate: {
     id: 'corporate',
-    name: 'Corporate Clean',
-    description: 'Dark slate background, sharp edges, professional contrast.',
-    backgroundStyle: 'solid_slate',
-    themeColor: '#0F172A',
-    cardStyle: 'solid',
+    name: 'Corporate',
+    tagline: 'Dark slate background, white card, sharp edges',
+    preview: { bg: '#1E293B', accent: '#0F172A', card: '#FFFFFF' },
     config: {
+      layoutTemplate: 'corporate',
       backgroundType: 'custom',
       backgroundColor: '#1E293B',
+      cardBackgroundColor: '#FFFFFF',
       themeColor: '#0F172A',
       textColor: '#0F172A',
-      cardBackgroundColor: '#FFFFFF',
+      backgroundStyle: 'solid_slate',
       headlineSize: 22,
       alignment: 'left',
+      spacing: 'normal',
+      formWidth: 420,
     }
   },
-  simple: {
-    id: 'simple',
+  clean: {
+    id: 'clean',
     name: 'Clean & Simple',
-    description: 'Pure white, no card border, minimal and focused.',
-    backgroundStyle: 'simple_gray',
-    themeColor: '#2563EB',
-    cardStyle: 'flat',
+    tagline: 'Pure white, borderless, minimal and focused',
+    preview: { bg: '#FFFFFF', accent: '#2563EB', card: '#FFFFFF' },
     config: {
+      layoutTemplate: 'simple',
       backgroundType: 'preset',
       backgroundColor: '#ffffff',
+      cardBackgroundColor: '',
       themeColor: '#2563EB',
       textColor: '#111827',
-      cardBackgroundColor: '',
+      backgroundStyle: 'simple_gray',
       headlineSize: 20,
       alignment: 'center',
+      spacing: 'normal',
+      formWidth: 400,
     }
-  }
-};
-
-export const PAGE_TEMPLATES = {
+  },
   bold: {
     id: 'bold',
-    name: 'Bold',
-    tagline: 'Dark background, vibrant accent, high contrast',
+    name: 'Bold Dark',
+    tagline: 'Dark card, vibrant rose accent, high contrast',
     preview: { bg: '#0F172A', accent: '#F43F5E', card: '#1E293B' },
     config: {
       layoutTemplate: 'corporate',
@@ -105,37 +108,18 @@ export const PAGE_TEMPLATES = {
       formWidth: 420,
     }
   },
-  clean: {
-    id: 'clean',
-    name: 'Clean',
-    tagline: 'White, minimal, professional',
-    preview: { bg: '#FFFFFF', accent: '#0F172A', card: '#FFFFFF' },
-    config: {
-      layoutTemplate: 'simple',
-      backgroundType: 'preset',
-      backgroundColor: '#ffffff',
-      cardBackgroundColor: '',
-      themeColor: '#0F172A',
-      textColor: '#111827',
-      backgroundStyle: 'simple_gray',
-      headlineSize: 22,
-      alignment: 'center',
-      spacing: 'normal',
-      formWidth: 400,
-    }
-  },
-  vibrant: {
-    id: 'vibrant',
-    name: 'Vibrant',
-    tagline: 'Gradient background, colorful, energetic',
-    preview: { bg: '#3B82F6', accent: '#3B82F6', card: 'rgba(255,255,255,0.8)' },
+  warm: {
+    id: 'warm',
+    name: 'Warm Sunset',
+    tagline: 'Soft cream background, warm orange accent',
+    preview: { bg: '#FFF7ED', accent: '#F97316', card: '#FFFFFF' },
     config: {
       layoutTemplate: 'modern',
-      backgroundType: 'preset',
-      backgroundColor: '#ffffff',
-      cardBackgroundColor: '',
-      themeColor: '#3B82F6',
-      textColor: '#111827',
+      backgroundType: 'custom',
+      backgroundColor: '#FFF7ED',
+      cardBackgroundColor: '#FFFFFF',
+      themeColor: '#F97316',
+      textColor: '#1C1917',
       backgroundStyle: 'gradient',
       headlineSize: 24,
       alignment: 'center',
