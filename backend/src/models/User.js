@@ -120,6 +120,11 @@ const User = sequelize.define('User', {
     type: DataTypes.ENUM('pending', 'approved', 'rejected'),
     allowNull: false,
     defaultValue: 'pending'
+  },
+  lyfeId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    unique: true
   }
 }, {
   tableName: 'users',

@@ -42,7 +42,8 @@ import {
   CheckCircle,
   XCircle,
   ShieldAlert,
-  UserCheck
+  UserCheck,
+  RefreshCw
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -74,6 +75,7 @@ export default function AdminAgents() {
   const [packagesForAgent, setPackagesForAgent] = useState([]);
 
   const { toast } = useToast();
+  const [syncing, setSyncing] = useState(false);
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [editLeadCount, setEditLeadCount] = useState("");
 
@@ -95,6 +97,27 @@ export default function AdminAgents() {
       console.error('Error loading agents:', error);
     }
     setLoading(false);
+  };
+
+  const handleSyncFromLyfe = async () => {
+    setSyncing(true);
+    try {
+      const res = await apiClient.post('/lyfe/agents/sync');
+      const { created, updated, skipped } = res.data || {};
+      toast({
+        title: "Sync Complete",
+        description: `${created || 0} new agents added, ${updated || 0} updated, ${skipped || 0} unchanged`
+      });
+      await loadData();
+    } catch (error) {
+      console.error('Error syncing from Lyfe:', error);
+      toast({
+        variant: "destructive",
+        title: "Sync Failed",
+        description: error?.message || "Could not fetch agents from Lyfe"
+      });
+    }
+    setSyncing(false);
   };
 
   const handleOpenForm = (agent = null) => {
@@ -373,10 +396,20 @@ export default function AdminAgents() {
               Manage your sales agents and their performance.
             </p>
           </div>
-          <Button onClick={() => handleOpenForm()} className="bg-blue-600 hover:bg-blue-700">
-            <Plus className="w-5 h-5 mr-2" />
-            Invite Agent
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={handleSyncFromLyfe}
+              disabled={syncing}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing...' : 'Sync from Lyfe'}
+            </Button>
+            <Button onClick={() => handleOpenForm()} className="bg-blue-600 hover:bg-blue-700">
+              <Plus className="w-5 h-5 mr-2" />
+              Invite Agent
+            </Button>
+          </div>
         </div>
 
         <Card className="border-gray-200/50 dark:border-gray-700/50 shadow-sm bg-white dark:bg-gray-900 overflow-hidden">

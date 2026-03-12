@@ -37,6 +37,7 @@ export async function bootstrapDatabase() {
     const systemId = await initSystemAgent();
     logger.info('System Agent ready', { systemId });
   });
+  await safeRun('Lyfe webhook subscriber', ensureLyfeWebhookSubscriber);
 
   if (!isSqlite) {
     await ensurePostgresIndexes();
@@ -126,6 +127,7 @@ async function ensureSqliteColumns() {
     await addIfMissing(userColumns, 'invitationExpires', 'DATETIME');
     await addIfMissing(userColumns, 'dateOfBirth', 'DATE');
     await addIfMissing(userColumns, 'companyName', 'TEXT');
+    await addIfMissing(userColumns, 'lyfeId', 'TEXT');
 
     const [columns] = await sequelize.query('PRAGMA table_info(campaigns)');
     const addCampaignCol = async (cols, name, type) => {
@@ -226,6 +228,16 @@ async function ensurePostgresColumns() {
       FROM information_schema.columns
       WHERE table_name = 'vehicles' AND column_name = 'volume'
     `);
+    const [lyfeIdResult] = await sequelize.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'users' AND column_name = 'lyfeId'
+    `);
+    if (lyfeIdResult.length === 0) {
+      await sequelize.query('ALTER TABLE users ADD COLUMN "lyfeId" VARCHAR(255) UNIQUE');
+      logger.info('Added lyfeId column to users (Postgres)');
+    }
+
     if (volResult.length === 0) {
       logger.info('Applying Postgres migration: Adding volume to vehicles...');
       await sequelize.query('ALTER TABLE vehicles ADD COLUMN "volume" INTEGER DEFAULT 0');
@@ -254,4 +266,45 @@ async function ensurePostgresIndexes() {
   } catch (e) {
     logger.warn('Could not ensure uniq_car_qr index', { error: e.message });
   }
+}
+
+/**
+ * Ensure the Lyfe webhook subscriber exists so lead.created events
+ * are forwarded to the Lyfe Edge Function automatically.
+ * Reads URL and secret from env vars; skips silently if not configured.
+ */
+async function ensureLyfeWebhookSubscriber() {
+  const url = process.env.LYFE_WEBHOOK_URL;
+  const secret = process.env.LYFE_WEBHOOK_SECRET;
+
+  if (!url || !secret) {
+    logger.debug('Lyfe webhook not configured (LYFE_WEBHOOK_URL / LYFE_WEBHOOK_SECRET missing), skipping.');
+    return;
+  }
+
+  const SUBSCRIBER_NAME = 'Lyfe App';
+
+  const existing = await WebhookSubscriber.findOne({ where: { name: SUBSCRIBER_NAME } });
+
+  if (existing) {
+    // Update URL/secret in case they changed
+    if (existing.url !== url || existing.secret !== secret || !existing.enabled) {
+      await existing.update({ url, secret, enabled: true });
+      logger.info('Lyfe webhook subscriber updated', { url });
+    } else {
+      logger.debug('Lyfe webhook subscriber already registered', { url });
+    }
+    return;
+  }
+
+  await WebhookSubscriber.create({
+    name: SUBSCRIBER_NAME,
+    url,
+    secret,
+    events: ['lead.created'],
+    enabled: true,
+    description: 'Forward leads to Lyfe mobile app via Supabase Edge Function'
+  });
+
+  logger.info('Lyfe webhook subscriber registered', { url });
 }
