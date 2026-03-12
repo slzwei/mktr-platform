@@ -344,10 +344,10 @@ export default function AdminAgents() {
 
   if (loading) {
     return (
-      <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+      <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
         <div className="max-w-[1600px] mx-auto space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-48 animate-pulse"></div>
-          <div className="h-96 bg-gray-200 rounded-xl animate-pulse"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-48 animate-pulse"></div>
+          <div className="h-96 bg-gray-200 dark:bg-gray-700 rounded-xl animate-pulse"></div>
         </div>
       </div>
     );
@@ -355,21 +355,21 @@ export default function AdminAgents() {
 
   if (user?.role !== 'admin') {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gray-50">
+      <div className="flex flex-col items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
         <ShieldAlert className="w-16 h-16 text-red-500 mb-4" />
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h2>
-        <p className="text-gray-500">You do not have permission to view this page.</p>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Access Denied</h2>
+        <p className="text-gray-500 dark:text-gray-400">You do not have permission to view this page.</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+    <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
       <div className="max-w-[1600px] mx-auto space-y-6">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Agents</h1>
-            <p className="text-sm text-gray-500 mt-1">
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Agents</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               Manage your sales agents and their performance.
             </p>
           </div>
@@ -379,21 +379,21 @@ export default function AdminAgents() {
           </Button>
         </div>
 
-        <Card className="border-gray-200/50 shadow-sm bg-white overflow-hidden">
-          <CardHeader className="border-b border-gray-100 p-4 lg:p-6 bg-white">
+        <Card className="border-gray-200/50 dark:border-gray-700/50 shadow-sm bg-white dark:bg-gray-900 overflow-hidden">
+          <CardHeader className="border-b border-gray-100 dark:border-gray-700 p-4 lg:p-6 bg-white dark:bg-gray-900">
             <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
               <div className="relative flex-1 w-full lg:max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
                 <Input
                   placeholder="Search agents..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9 h-9 bg-gray-50/50 border-gray-200 focus:bg-white"
+                  className="pl-9 h-9 bg-gray-50/50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:bg-white dark:focus:bg-gray-900"
                 />
               </div>
               <div className="w-full lg:w-[180px]">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="h-9 bg-white">
+                  <SelectTrigger className="h-9 bg-white dark:bg-gray-900">
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -409,8 +409,8 @@ export default function AdminAgents() {
 
           {/* Bulk Action Bar */}
           {selectedAgentIds.length > 0 && (
-            <div className="bg-blue-50 border-b border-blue-100 p-3 flex items-center justify-between animate-in slide-in-from-top-2">
-              <span className="text-sm text-blue-800 font-medium ml-2">
+            <div className="bg-blue-50 dark:bg-blue-950/30 border-b border-blue-100 dark:border-blue-900 p-3 flex items-center justify-between animate-in slide-in-from-top-2">
+              <span className="text-sm text-blue-800 dark:text-blue-300 font-medium ml-2">
                 {selectedAgentIds.length} agents selected
               </span>
               <Button
@@ -429,7 +429,7 @@ export default function AdminAgents() {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-gray-100">
+                  <TableRow className="bg-gray-50/50 dark:bg-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800 border-gray-100 dark:border-gray-700">
                     <TableHead className="w-12 h-12 px-4 text-center">
                       <Checkbox
                         checked={filteredAgents.length > 0 && selectedAgentIds.length === filteredAgents.length}
@@ -437,23 +437,23 @@ export default function AdminAgents() {
                         aria-label="Select all"
                       />
                     </TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 min-w-[200px]">Agent</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 min-w-[250px]">Contact</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 min-w-[140px]">Status</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 min-w-[160px]">Leads Owed</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 min-w-[140px]">Joined</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 text-right w-[80px]">Actions</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 min-w-[200px]">Agent</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 min-w-[250px]">Contact</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 min-w-[140px]">Status</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 min-w-[160px]">Leads Owed</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 min-w-[140px]">Joined</TableHead>
+                    <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 text-right w-[80px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredAgents.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="h-48 text-center text-gray-500">
+                      <TableCell colSpan={7} className="h-48 text-center text-gray-500 dark:text-gray-400">
                         No agents found matching your criteria.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredAgents.map((agent) => <TableRow key={agent.id} className={`hover:bg-gray-50/50 border-gray-100 ${selectedAgentIds.includes(agent.id) ? 'bg-blue-50/30' : ''}`}>
+                    filteredAgents.map((agent) => <TableRow key={agent.id} className={`hover:bg-gray-50/50 dark:hover:bg-gray-800/50 border-gray-100 dark:border-gray-700 ${selectedAgentIds.includes(agent.id) ? 'bg-blue-50/30 dark:bg-blue-950/20' : ''}`}>
                       <TableCell className="px-4 text-center">
                         <Checkbox
                           checked={selectedAgentIds.includes(agent.id)}
@@ -463,27 +463,27 @@ export default function AdminAgents() {
                       </TableCell>
                       <TableCell className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-medium uppercase text-xs">
+                          <div className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-medium uppercase text-xs">
                             {(agent.fullName?.[0] || agent.email?.[0] || '?')}
                           </div>
                           <div>
-                            <Link to={`/AdminAgents/${agent.id}`} className="font-medium text-gray-900 hover:text-blue-600 transition-colors">
+                            <Link to={`/AdminAgents/${agent.id}`} className="font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                               {agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim()}
                             </Link>
-                            <p className="text-xs text-gray-500">ID: {agent.id.slice(-8)}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">ID: {agent.id.slice(-8)}</p>
                           </div>
                         </div>
                       </TableCell>
 
                       <TableCell className="px-6 py-4 max-w-[250px]">
                         <div className="space-y-1 text-sm">
-                          <div className="flex items-start gap-1.5 text-gray-600 break-all">
-                            <Mail className="w-3 h-3 text-gray-400 shrink-0 mt-0.5" />
+                          <div className="flex items-start gap-1.5 text-gray-600 dark:text-gray-400 break-all">
+                            <Mail className="w-3 h-3 text-gray-400 dark:text-gray-500 shrink-0 mt-0.5" />
                             <span className="leading-tight">{agent.email}</span>
                           </div>
                           {agent.phone && (
-                            <div className="flex items-center gap-1.5 text-gray-500">
-                              <Phone className="w-3 h-3 text-gray-400 shrink-0" />
+                            <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+                              <Phone className="w-3 h-3 text-gray-400 dark:text-gray-500 shrink-0" />
                               {agent.phone}
                             </div>
                           )}
@@ -496,20 +496,20 @@ export default function AdminAgents() {
                           const pendingRegistration = isPending(agent);
                           const isActive = agent.isActive && !pendingApproval && !pendingRegistration;
 
-                          if (pendingApproval) return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-50">Pending Approval</Badge>;
-                          if (pendingRegistration) return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-50">Invited</Badge>;
-                          if (isActive) return <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50">Active</Badge>;
-                          return <Badge variant="outline" className="bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-100">Inactive</Badge>;
+                          if (pendingApproval) return <Badge variant="outline" className="bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30">Pending Approval</Badge>;
+                          if (pendingRegistration) return <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30">Invited</Badge>;
+                          if (isActive) return <Badge variant="outline" className="bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30">Active</Badge>;
+                          return <Badge variant="outline" className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700">Inactive</Badge>;
                         })()}
                       </TableCell>
 
                       <TableCell className="px-6 py-4">
                         <div className="flex items-center gap-2">
-                          <Badge variant="secondary" className="font-mono bg-gray-100 text-gray-700 border-gray-200">{agent.owed_leads_count || 0}</Badge>
+                          <Badge variant="secondary" className="font-mono bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700">{agent.owed_leads_count || 0}</Badge>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 whitespace-nowrap"
+                            className="h-6 px-2 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 whitespace-nowrap"
                             onClick={() => handleOpenPackageDialog(agent)}
                           >
                             <Plus className="w-3 h-3 mr-1" /> Assign
@@ -517,14 +517,14 @@ export default function AdminAgents() {
                         </div>
                       </TableCell>
 
-                      <TableCell className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                      <TableCell className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
                         {agent.createdAt ? format(new Date(agent.createdAt), 'MMM d, yyyy') : (agent.created_date ? format(new Date(agent.created_date), 'MMM d, yyyy') : '-')}
                       </TableCell>
 
                       <TableCell className="px-6 py-4 text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0 text-gray-500 hover:text-gray-900">
+                            <Button variant="ghost" className="h-8 w-8 p-0 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -623,9 +623,9 @@ export default function AdminAgents() {
                 </Button>
               </div>
             </DialogHeader>
-            <div className="max-h-[60vh] overflow-y-auto divide-y">
+            <div className="max-h-[60vh] overflow-y-auto divide-y dark:divide-gray-700">
               {packagesForAgent.length === 0 ? (
-                <div className="text-sm text-gray-500 p-8 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                <div className="text-sm text-gray-500 dark:text-gray-400 p-8 text-center bg-gray-50 dark:bg-gray-800 rounded-lg border border-dashed border-gray-200 dark:border-gray-700">
                   No packages assigned yet.
                 </div>
               ) : packagesForAgent.map(assignment => (
@@ -633,19 +633,19 @@ export default function AdminAgents() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="font-semibold text-gray-900">{assignment.package?.name || 'Unknown Package'}</p>
+                        <p className="font-semibold text-gray-900 dark:text-gray-100">{assignment.package?.name || 'Unknown Package'}</p>
                         <Badge variant="outline" className={`
-                          ${assignment.status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : ''}
-                          ${assignment.status === 'exhausted' ? 'bg-gray-100 text-gray-600 border-gray-200' : ''}
-                          ${assignment.status === 'expired' ? 'bg-amber-50 text-amber-700 border-amber-200' : ''}
+                          ${assignment.status === 'active' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700' : ''}
+                          ${assignment.status === 'exhausted' ? 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700' : ''}
+                          ${assignment.status === 'expired' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-700' : ''}
                         `}>
                           {assignment.status}
                         </Badge>
                       </div>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                         Campaign: {assignment.package?.campaign?.name || 'N/A'}
                       </p>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-400">
                         <span>Purchased: {assignment.purchaseDate ? format(new Date(assignment.purchaseDate), 'MMM d, yyyy') : '-'}</span>
                         <span>Price: ${assignment.priceSnapshot}</span>
                       </div>
@@ -663,7 +663,7 @@ export default function AdminAgents() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                            className="h-8 w-8 text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/30"
                             onClick={() => handleUpdateAssignment(assignment.id)}
                           >
                             <CheckCircle className="h-4 w-4" />
@@ -671,7 +671,7 @@ export default function AdminAgents() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                            className="h-8 w-8 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
                             onClick={handleCancelEdit}
                           >
                             <XCircle className="h-4 w-4" />
@@ -680,20 +680,20 @@ export default function AdminAgents() {
                       </div>
                     ) : (
                       <div className="text-right group relative">
-                        <p className="text-sm font-medium text-gray-900 flex items-center justify-end gap-2">
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center justify-end gap-2">
                           {assignment.leadsRemaining} / {assignment.leadsTotal}
                           <Edit
-                            className="w-3 h-3 text-gray-400 cursor-pointer opacity-0 group-hover:opacity-100 hover:text-blue-600 transition-opacity"
+                            className="w-3 h-3 text-gray-400 dark:text-gray-500 cursor-pointer opacity-0 group-hover:opacity-100 hover:text-blue-600 dark:hover:text-blue-400 transition-opacity"
                             onClick={() => handleStartEdit(assignment)}
                           />
                         </p>
-                        <p className="text-xs text-gray-500">leads remaining</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">leads remaining</p>
                       </div>
                     )}
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                      className="h-8 w-8 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
                       onClick={() => handleDeleteAssignment(assignment.id)}
                     >
                       <Trash2 className="h-4 w-4" />

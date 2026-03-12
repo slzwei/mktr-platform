@@ -78,7 +78,7 @@ export default function AdminCampaignDesigner() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
@@ -86,27 +86,27 @@ export default function AdminCampaignDesigner() {
 
   if (user?.role !== 'admin') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="flex flex-col items-center justify-center p-8 text-center">
           <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h2>
-          <p className="text-gray-600">You do not have permission to view this page.</p>
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Access Denied</h2>
+          <p className="text-gray-600 dark:text-gray-400">You do not have permission to view this page.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="flex items-center justify-between p-6 bg-white border-b">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex items-center justify-between p-6 bg-white dark:bg-gray-900 border-b">
         <div className="flex items-center gap-4">
           <Button variant="outline" onClick={() => window.history.back()}>
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Admin - Campaign Designer</h1>
-            <p className="text-gray-600">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Admin - Campaign Designer</h1>
+            <p className="text-gray-600 dark:text-gray-400">
               {campaign ? `Designing: ${campaign.name}` : 'Design your campaign landing page'}
             </p>
           </div>
@@ -133,8 +133,8 @@ export default function AdminCampaignDesigner() {
       ) : (
         <div className="flex items-center justify-center h-96">
           <div className="text-center">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Campaign not found</h3>
-            <p className="text-gray-600">Please select a valid campaign to design.</p>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Campaign not found</h3>
+            <p className="text-gray-600 dark:text-gray-400">Please select a valid campaign to design.</p>
           </div>
         </div>
       )}

@@ -282,8 +282,8 @@ export default function AdminFleet() {
     return (
       <div className="p-6 lg:p-8">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-64"></div>
-          <div className="h-96 bg-gray-200 rounded-xl"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-64"></div>
+          <div className="h-96 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
         </div>
       </div>
     );
@@ -292,21 +292,21 @@ export default function AdminFleet() {
   // Access control
   if (!user || !['admin', 'fleet_owner', 'driver_partner'].includes(user.role)) {
     return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-gray-50">
+      <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-gray-50 dark:bg-gray-800">
         <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h2>
-        <p className="text-gray-600">You do not have permission to view this page.</p>
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Access Denied</h2>
+        <p className="text-gray-600 dark:text-gray-400">You do not have permission to view this page.</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
+    <div className="p-6 lg:p-8 bg-gray-50 dark:bg-gray-900/50 min-h-screen">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Fleet Management</h1>
-            <p className="text-gray-600 mt-1">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Fleet Management</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">
               {user?.role === 'admin' && 'Manage fleet owners, vehicles and driver assignments'}
               {user?.role === 'fleet_owner' && 'Manage your vehicles and driver assignments'}
               {user?.role === 'driver_partner' && 'View your assigned vehicle'}
@@ -374,7 +374,7 @@ export default function AdminFleet() {
 
           <TabsContent value="vehicles">
             <Card className="shadow-lg">
-              <CardHeader className="border-b border-gray-100">
+              <CardHeader className="border-b border-gray-100 dark:border-gray-700">
                 <div className="flex justify-between items-center">
                   <CardTitle className="flex items-center gap-2">
                     <CarIcon className="w-6 h-6" />
@@ -382,7 +382,7 @@ export default function AdminFleet() {
                   </CardTitle>
                   <div className="flex gap-4 items-center">
                     <div className="relative max-w-sm">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
                       <Input
                         placeholder="Search vehicles..."
                         value={searchTerm}
@@ -407,7 +407,7 @@ export default function AdminFleet() {
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-gray-50">
+                      <TableRow className="bg-gray-50 dark:bg-gray-800">
                         <TableHead className="w-[18%]">Vehicle Details</TableHead>
                         <TableHead className="w-[18%]">Fleet Owner</TableHead>
                         <TableHead className="w-[18%]">Current Driver</TableHead>
@@ -418,23 +418,23 @@ export default function AdminFleet() {
                     </TableHeader>
                     <TableBody>
                       {filteredCars.map((car) => (
-                        <TableRow key={car.id} className="hover:bg-gray-50">
+                        <TableRow key={car.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                           <TableCell>
                             <div>
-                              <p className="font-semibold text-gray-900">{car.plate_number}</p>
+                              <p className="font-semibold text-gray-900 dark:text-gray-100">{car.plate_number}</p>
                               {(car.make || car.model || car.year) && (
-                                <p className="text-sm text-gray-500">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
                                   {car.make} {car.model} {car.year && `(${car.year})`}
                                 </p>
                               )}
                               {car.color && (
-                                <p className="text-xs text-gray-400">{car.color}</p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500">{car.color}</p>
                               )}
                             </div>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-sm font-semibold">
+                              <div className="w-8 h-8 bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 rounded-full flex items-center justify-center text-sm font-semibold">
                                 {getFleetOwnerName(car.fleet_owner_id).charAt(0)}
                               </div>
                               <span className="font-medium">{getFleetOwnerName(car.fleet_owner_id)}</span>
@@ -443,24 +443,24 @@ export default function AdminFleet() {
                           <TableCell>
                             {car.current_driver_id ? (
                               <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 bg-green-100 text-green-700 rounded-full flex items-center justify-center text-sm font-semibold">
+                                <div className="w-8 h-8 bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400 rounded-full flex items-center justify-center text-sm font-semibold">
                                   {getDriverName(car.current_driver_id).charAt(0)}
                                 </div>
                                 <span className="font-medium">{getDriverName(car.current_driver_id)}</span>
                               </div>
                             ) : (
-                              <span className="text-gray-400 italic">Unassigned</span>
+                              <span className="text-gray-400 dark:text-gray-500 italic">Unassigned</span>
                             )}
                           </TableCell>
                           <TableCell>
                             <Badge
                               variant={car.current_driver_id ? "default" : "outline"}
-                              className={car.current_driver_id ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}
+                              className={car.current_driver_id ? "bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400" : "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200"}
                             >
                               {car.current_driver_id ? "Rented" : "Available"}
                             </Badge>
                             {Boolean(car.status && car.status !== 'active') && (
-                              <Badge variant="outline" className="ml-2 bg-yellow-100 text-yellow-800">
+                              <Badge variant="outline" className="ml-2 bg-yellow-100 dark:bg-yellow-950/30 text-yellow-800 dark:text-yellow-400">
                                 {car.status}
                               </Badge>
                             )}
@@ -472,7 +472,7 @@ export default function AdminFleet() {
                                 {format(new Date(car.assignment_start), 'dd/MM/yyyy')}
                               </div>
                             ) : (
-                              <span className="text-gray-400 text-sm">-</span>
+                              <span className="text-gray-400 dark:text-gray-500 text-sm">-</span>
                             )}
                           </TableCell>
                           <TableCell className="text-right pr-4">
@@ -514,13 +514,13 @@ export default function AdminFleet() {
 
                   {filteredCars.length === 0 && (
                     <div className="text-center py-12">
-                      <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                        <CarIcon className="w-6 h-6 text-gray-400" />
+                      <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                        <CarIcon className="w-6 h-6 text-gray-400 dark:text-gray-500" />
                       </div>
-                      <h3 className="font-semibold text-gray-900 mb-2">
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
                         {searchTerm ? 'No vehicles found' : 'No vehicles yet'}
                       </h3>
-                      <p className="text-gray-500">
+                      <p className="text-gray-500 dark:text-gray-400">
                         {searchTerm ? 'Try adjusting your search' : 'Add your first vehicle to get started'}
                       </p>
                     </div>
@@ -534,7 +534,7 @@ export default function AdminFleet() {
             <>
               <TabsContent value="fleet-owners">
                 <Card className="shadow-lg">
-                  <CardHeader className="border-b border-gray-100">
+                  <CardHeader className="border-b border-gray-100 dark:border-gray-700">
                     <div className="flex justify-between items-center">
                       <CardTitle className="flex items-center gap-2">
                         <Users className="w-6 h-6" />
@@ -542,7 +542,7 @@ export default function AdminFleet() {
                       </CardTitle>
                       <div className="flex gap-4 items-center">
                         <div className="relative max-w-sm">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
                           <Input
                             placeholder="Search fleet owners..."
                             value={searchTerm}
@@ -565,7 +565,7 @@ export default function AdminFleet() {
                     <div className="overflow-x-auto">
                       <Table>
                         <TableHeader>
-                          <TableRow className="bg-gray-50">
+                          <TableRow className="bg-gray-50 dark:bg-gray-800">
                             <TableHead className="w-[18%]">Fleet Owner</TableHead>
                             <TableHead className="w-[22%]">Contact Information</TableHead>
                             <TableHead className="w-[18%]">Company</TableHead>
@@ -579,19 +579,19 @@ export default function AdminFleet() {
                           {filteredFleetOwners.map((owner) => {
                             const ownerVehicles = cars.filter(car => car.fleet_owner_id === owner.id);
                             return (
-                              <TableRow key={owner.id} className="hover:bg-gray-50">
+                              <TableRow key={owner.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                                 <TableCell>
                                   <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-semibold">
+                                    <div className="w-10 h-10 bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 rounded-full flex items-center justify-center font-semibold">
                                       {owner.full_name?.charAt(0)?.toUpperCase() || 'F'}
                                     </div>
                                     <div>
-                                      <p className="font-semibold text-gray-900">
+                                      <p className="font-semibold text-gray-900 dark:text-gray-100">
                                         {owner.full_name || 'N/A'}
                                       </p>
-                                      <p className="text-sm text-gray-500">ID: {owner.id.slice(-8)}</p>
+                                      <p className="text-sm text-gray-500 dark:text-gray-400">ID: {owner.id.slice(-8)}</p>
                                       {owner.uen && (
-                                        <p className="text-xs text-gray-400">UEN: {owner.uen}</p>
+                                        <p className="text-xs text-gray-400 dark:text-gray-500">UEN: {owner.uen}</p>
                                       )}
                                     </div>
                                   </div>
@@ -600,17 +600,17 @@ export default function AdminFleet() {
                                 <TableCell>
                                   <div className="space-y-1">
                                     <div className="flex items-center gap-2 text-sm">
-                                      <Mail className="w-4 h-4 text-gray-400" />
+                                      <Mail className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                                       {owner.email}
                                     </div>
                                     {owner.phone && (
-                                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                                        <Phone className="w-4 h-4 text-gray-400" />
+                                      <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                        <Phone className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                                         {owner.phone}
                                       </div>
                                     )}
                                     {owner.payout_method && (
-                                      <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded inline-block">
+                                      <div className="text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/30 px-2 py-1 rounded inline-block">
                                         {owner.payout_method}
                                       </div>
                                     )}
@@ -620,16 +620,16 @@ export default function AdminFleet() {
                                 <TableCell>
                                   {owner.company_name ? (
                                     <div className="flex items-center gap-2">
-                                      <Building className="w-4 h-4 text-gray-400" />
+                                      <Building className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                                       <span className="text-sm">{owner.company_name}</span>
                                     </div>
                                   ) : (
-                                    <span className="text-gray-400 italic">-</span>
+                                    <span className="text-gray-400 dark:text-gray-500 italic">-</span>
                                   )}
                                 </TableCell>
 
                                 <TableCell>
-                                  <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                                  <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400">
                                     {ownerVehicles.length} vehicle{ownerVehicles.length !== 1 ? 's' : ''}
                                   </Badge>
                                 </TableCell>
@@ -637,7 +637,7 @@ export default function AdminFleet() {
                                 <TableCell>
                                   <Badge
                                     variant={owner.status === 'active' ? 'default' : 'outline'}
-                                    className={owner.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}
+                                    className={owner.status === 'active' ? 'bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400' : 'bg-red-100 dark:bg-red-950/30 text-red-800 dark:text-red-400'}
                                   >
                                     {owner.status || 'active'}
                                   </Badge>
@@ -670,7 +670,7 @@ export default function AdminFleet() {
                                         </div>
                                       );
                                     }
-                                    return <span className="text-sm text-gray-500">{foUser?.approvalStatus || 'approved'}</span>;
+                                    return <span className="text-sm text-gray-500 dark:text-gray-400">{foUser?.approvalStatus || 'approved'}</span>;
                                   })()}
                                 </TableCell>
 
@@ -701,13 +701,13 @@ export default function AdminFleet() {
 
                       {filteredFleetOwners.length === 0 && (
                         <div className="text-center py-12">
-                          <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                            <Users className="w-6 h-6 text-gray-400" />
+                          <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                            <Users className="w-6 h-6 text-gray-400 dark:text-gray-500" />
                           </div>
-                          <h3 className="font-semibold text-gray-900 mb-2">
+                          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
                             {searchTerm ? 'No fleet owners found' : 'No fleet owners yet'}
                           </h3>
-                          <p className="text-gray-500">
+                          <p className="text-gray-500 dark:text-gray-400">
                             {searchTerm ? 'Try adjusting your search' : 'Add your first fleet owner to get started'}
                           </p>
                         </div>
@@ -719,7 +719,7 @@ export default function AdminFleet() {
 
               <TabsContent value="drivers">
                 <Card className="shadow-lg">
-                  <CardHeader className="border-b border-gray-100">
+                  <CardHeader className="border-b border-gray-100 dark:border-gray-700">
                     <div className="flex justify-between items-center">
                       <CardTitle className="flex items-center gap-2">
                         <Users className="w-6 h-6" />
@@ -727,7 +727,7 @@ export default function AdminFleet() {
                       </CardTitle>
                       <div className="flex gap-4 items-center">
                         <div className="relative max-w-sm">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
                           <Input
                             placeholder="Search drivers..."
                             value={searchTerm}
@@ -750,7 +750,7 @@ export default function AdminFleet() {
                     <div className="overflow-x-auto">
                       <Table>
                         <TableHeader>
-                          <TableRow className="bg-gray-50">
+                          <TableRow className="bg-gray-50 dark:bg-gray-800">
                             <TableHead className="w-[22%]">Driver</TableHead>
                             <TableHead className="w-[24%]">Contact Information</TableHead>
                             <TableHead className="w-[18%]">Assigned Vehicle</TableHead>
@@ -763,17 +763,17 @@ export default function AdminFleet() {
                           {filteredDrivers.map((driver) => {
                             const assignedCar = cars.find(car => car.current_driver_id === driver.id);
                             return (
-                              <TableRow key={driver.id} className="hover:bg-gray-50">
+                              <TableRow key={driver.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                                 <TableCell>
                                   <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-green-100 text-green-700 rounded-full flex items-center justify-center font-semibold">
+                                    <div className="w-10 h-10 bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400 rounded-full flex items-center justify-center font-semibold">
                                       {driver.firstName?.charAt(0)?.toUpperCase() || 'D'}
                                     </div>
                                     <div>
-                                      <p className="font-semibold text-gray-900">
+                                      <p className="font-semibold text-gray-900 dark:text-gray-100">
                                         {[driver.firstName, driver.lastName].filter(Boolean).join(' ') || 'N/A'}
                                       </p>
-                                      <p className="text-sm text-gray-500">ID: {driver.id.slice(-8)}</p>
+                                      <p className="text-sm text-gray-500 dark:text-gray-400">ID: {driver.id.slice(-8)}</p>
                                     </div>
                                   </div>
                                 </TableCell>
@@ -781,12 +781,12 @@ export default function AdminFleet() {
                                 <TableCell>
                                   <div className="space-y-1">
                                     <div className="flex items-center gap-2 text-sm">
-                                      <Mail className="w-4 h-4 text-gray-400" />
+                                      <Mail className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                                       {driver.email}
                                     </div>
                                     {driver.phone && (
-                                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                                        <Phone className="w-4 h-4 text-gray-400" />
+                                      <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                        <Phone className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                                         {driver.phone}
                                       </div>
                                     )}
@@ -796,18 +796,18 @@ export default function AdminFleet() {
                                 <TableCell>
                                   {assignedCar ? (
                                     <div className="flex items-center gap-2">
-                                      <CarIcon className="w-4 h-4 text-gray-400" />
+                                      <CarIcon className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                                       <span className="text-sm font-medium">{assignedCar.plate_number}</span>
                                     </div>
                                   ) : (
-                                    <span className="text-gray-400 italic">No vehicle assigned</span>
+                                    <span className="text-gray-400 dark:text-gray-500 italic">No vehicle assigned</span>
                                   )}
                                 </TableCell>
 
                                 <TableCell>
                                   <Badge
                                     variant={assignedCar ? 'default' : 'outline'}
-                                    className={assignedCar ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}
+                                    className={assignedCar ? 'bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'}
                                   >
                                     {assignedCar ? 'Active' : 'Available'}
                                   </Badge>
@@ -833,7 +833,7 @@ export default function AdminFleet() {
                                       </Button>
                                     </div>
                                   ) : (
-                                    <span className="text-sm text-gray-500">{driver.approvalStatus || 'approved'}</span>
+                                    <span className="text-sm text-gray-500 dark:text-gray-400">{driver.approvalStatus || 'approved'}</span>
                                   )}
                                 </TableCell>
 
@@ -864,13 +864,13 @@ export default function AdminFleet() {
 
                       {filteredDrivers.length === 0 && (
                         <div className="text-center py-12">
-                          <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                            <Users className="w-6 h-6 text-gray-400" />
+                          <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                            <Users className="w-6 h-6 text-gray-400 dark:text-gray-500" />
                           </div>
-                          <h3 className="font-semibold text-gray-900 mb-2">
+                          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
                             {searchTerm ? 'No drivers found' : 'No drivers yet'}
                           </h3>
-                          <p className="text-gray-500">
+                          <p className="text-gray-500 dark:text-gray-400">
                             {searchTerm ? 'Try adjusting your search' : 'Add your first driver to get started'}
                           </p>
                         </div>

@@ -277,7 +277,7 @@ export default function AdminVehicles() {
     );
 
     return (
-        <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+        <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
             <div className="max-w-[1600px] mx-auto space-y-6">
                 <div className="flex justify-between items-center">
                     <div>
@@ -305,7 +305,7 @@ export default function AdminVehicles() {
                 ) : vehicles.length === 0 ? (
                     <Card>
                         <CardContent className="py-12 text-center">
-                            <Car className="h-12 w-12 mx-auto text-gray-300 mb-4" />
+                            <Car className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
                             <h3 className="text-lg font-medium mb-2">No Vehicles Yet</h3>
                             <p className="text-muted-foreground mb-4">
                                 Create a vehicle to start pairing tablets
@@ -320,11 +320,11 @@ export default function AdminVehicles() {
                     <div className="grid gap-4">
                         {vehicles.map(vehicle => (
                             <Card key={vehicle.id} className="overflow-hidden">
-                                <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b py-4">
+                                <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-b py-4">
                                     <div className="flex justify-between items-start">
                                         <div className="flex items-center gap-3">
-                                            <div className="p-2 bg-blue-100 rounded-lg">
-                                                <Car className="h-5 w-5 text-blue-600" />
+                                            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+                                                <Car className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                                             </div>
                                             <div>
                                                 <CardTitle className="text-lg">{vehicle.carplate}</CardTitle>
@@ -360,7 +360,7 @@ export default function AdminVehicles() {
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                className="text-red-600 dark:text-red-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
                                                 onClick={() => handleDeleteVehicle(vehicle.id)}
                                             >
                                                 <Trash2 className="h-4 w-4" />
@@ -371,10 +371,10 @@ export default function AdminVehicles() {
                                 <CardContent className="p-4">
                                     <div className="grid md:grid-cols-2 gap-4">
                                         {/* Master Device */}
-                                        <div className="border rounded-lg p-4 bg-white">
+                                        <div className="border rounded-lg p-4 bg-white dark:bg-gray-900">
                                             <div className="flex items-center justify-between mb-3">
                                                 <div className="flex items-center gap-2">
-                                                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                                                    <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800">
                                                         MASTER
                                                     </Badge>
                                                     <span className="text-xs text-muted-foreground">Left Screen</span>
@@ -384,10 +384,10 @@ export default function AdminVehicles() {
                                                         variant="outline"
                                                         className={
                                                             getDeviceStatus(vehicle.masterDevice).color === 'green'
-                                                                ? 'bg-green-50 text-green-700 border-green-200'
+                                                                ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800'
                                                                 : getDeviceStatus(vehicle.masterDevice).color === 'blue'
-                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                                    : 'bg-gray-100 text-gray-500 border-gray-200'
+                                                                    ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                                                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'
                                                         }
                                                     >
                                                         {getDeviceStatus(vehicle.masterDevice).label}
@@ -415,7 +415,7 @@ export default function AdminVehicles() {
                                         </div>
 
                                         {/* Slave Device */}
-                                        <div className="border rounded-lg p-4 bg-white">
+                                        <div className="border rounded-lg p-4 bg-white dark:bg-gray-900">
                                             <div className="flex items-center justify-between mb-3">
                                                 <div className="flex items-center gap-2">
                                                     <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
@@ -428,10 +428,10 @@ export default function AdminVehicles() {
                                                         variant="outline"
                                                         className={
                                                             getDeviceStatus(vehicle.slaveDevice).color === 'green'
-                                                                ? 'bg-green-50 text-green-700 border-green-200'
+                                                                ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800'
                                                                 : getDeviceStatus(vehicle.slaveDevice).color === 'blue'
-                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                                    : 'bg-gray-100 text-gray-500 border-gray-200'
+                                                                    ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                                                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'
                                                         }
                                                     >
                                                         {getDeviceStatus(vehicle.slaveDevice).label}
@@ -472,7 +472,7 @@ export default function AdminVehicles() {
                                                     ))}
                                                 </div>
                                             ) : (
-                                                <span className="text-sm text-gray-400 italic">None assigned</span>
+                                                <span className="text-sm text-gray-400 dark:text-gray-500 italic">None assigned</span>
                                             )}
                                         </div>
                                         <div className="flex gap-2">
@@ -522,7 +522,7 @@ export default function AdminVehicles() {
                         <CardContent>
                             <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
                                 {devices.filter(d => !d.vehicleId).map(device => (
-                                    <div key={device.id} className="p-3 border rounded-lg bg-gray-50/50">
+                                    <div key={device.id} className="p-3 border rounded-lg bg-gray-50/50 dark:bg-gray-800/50">
                                         <p className="font-medium text-sm">{device.model || 'Tablet'}</p>
                                         <p className="text-xs text-muted-foreground font-mono">
                                             {device.id.substring(0, 8)}...
@@ -531,10 +531,10 @@ export default function AdminVehicles() {
                                             variant="outline"
                                             className={
                                                 getDeviceStatus(device).color === 'green'
-                                                    ? 'bg-green-50 text-green-700 border-green-200 mt-2'
+                                                    ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 mt-2'
                                                     : getDeviceStatus(device).color === 'blue'
-                                                        ? 'bg-blue-50 text-blue-700 border-blue-200 mt-2'
-                                                        : 'bg-gray-100 text-gray-500 border-gray-200 mt-2'
+                                                        ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800 mt-2'
+                                                        : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 mt-2'
                                             }
                                         >
                                             {getDeviceStatus(device).label}
@@ -677,8 +677,8 @@ export default function AdminVehicles() {
                                         <div
                                             key={campaign.id}
                                             className={`flex items-center gap-2 p-3 border rounded-lg transition-colors ${selectedCampaignIds.includes(campaign.id)
-                                                ? 'bg-blue-50 border-blue-300'
-                                                : 'hover:bg-gray-50 border-gray-200'
+                                                ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-800'
+                                                : 'hover:bg-gray-50 dark:hover:bg-gray-800 border-gray-200 dark:border-gray-700'
                                                 }`}
                                         >
                                             <label className="flex items-start gap-3 flex-1 cursor-pointer">
@@ -714,7 +714,7 @@ export default function AdminVehicles() {
                                                                 ⏱️ {totalDuration}s loop
                                                             </span>
                                                         )}
-                                                        <span className={`${campaign.status === 'active' ? 'text-green-600' : 'text-gray-500'}`}>
+                                                        <span className={`${campaign.status === 'active' ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
                                                             {campaign.status}
                                                         </span>
                                                     </div>

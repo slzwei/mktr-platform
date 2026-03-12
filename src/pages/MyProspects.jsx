@@ -164,14 +164,14 @@ export default function MyProspects() {
 
     const getStatusColor = (status) => {
         switch (status) {
-            case 'new': return 'bg-blue-100 text-blue-700 border-blue-200';
-            case 'contacted': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-            case 'qualified': return 'bg-indigo-100 text-indigo-700 border-indigo-200';
-            case 'proposal': return 'bg-purple-100 text-purple-700 border-purple-200';
-            case 'negotiation': return 'bg-pink-100 text-pink-700 border-pink-200';
-            case 'won': return 'bg-green-100 text-green-700 border-green-200';
-            case 'lost': return 'bg-red-100 text-red-700 border-red-200';
-            default: return 'bg-gray-100 text-gray-700 border-gray-200';
+            case 'new': return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800';
+            case 'contacted': return 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-950/30 dark:text-yellow-400 dark:border-yellow-800';
+            case 'qualified': return 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-800';
+            case 'proposal': return 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400 dark:border-purple-800';
+            case 'negotiation': return 'bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-950/30 dark:text-pink-400 dark:border-pink-800';
+            case 'won': return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800';
+            case 'lost': return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800';
+            default: return 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-700';
         }
     };
 
@@ -183,8 +183,8 @@ export default function MyProspects() {
         <div className="p-6 lg:p-8 space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight text-gray-900">My Prospects</h1>
-                    <p className="text-gray-500">Manage and track your assigned leads</p>
+                    <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">My Prospects</h1>
+                    <p className="text-gray-500 dark:text-gray-400">Manage and track your assigned leads</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <Button variant="outline" size="sm" className="h-9" onClick={loadData}>
@@ -203,56 +203,56 @@ export default function MyProspects() {
                 <Card>
                     <CardContent className="p-6 flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-gray-500">Total Assigned</p>
-                            <h3 className="text-2xl font-bold text-gray-900 mt-1">{prospects.length}</h3>
+                            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Assigned</p>
+                            <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">{prospects.length}</h3>
                         </div>
-                        <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center">
-                            <User className="w-5 h-5 text-blue-600" />
+                        <div className="w-10 h-10 bg-blue-50 dark:bg-blue-950/30 rounded-full flex items-center justify-center">
+                            <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                         </div>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardContent className="p-6 flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-gray-500">Active Leads</p>
-                            <h3 className="text-2xl font-bold text-gray-900 mt-1">
+                            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Active Leads</p>
+                            <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">
                                 {prospects.filter(p => !['won', 'lost', 'rejected'].includes(p.status || p.leadStatus)).length}
                             </h3>
                         </div>
-                        <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center">
-                            <RefreshCw className="w-5 h-5 text-green-600" />
+                        <div className="w-10 h-10 bg-green-50 dark:bg-green-950/30 rounded-full flex items-center justify-center">
+                            <RefreshCw className="w-5 h-5 text-green-600 dark:text-green-400" />
                         </div>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardContent className="p-6 flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-gray-500">Conversion Rate</p>
-                            <h3 className="text-2xl font-bold text-gray-900 mt-1">
+                            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Conversion Rate</p>
+                            <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">
                                 {prospects.length > 0
                                     ? Math.round((prospects.filter(p => (p.status || p.leadStatus) === 'won').length / prospects.length) * 100)
                                     : 0}%
                             </h3>
                         </div>
-                        <div className="w-10 h-10 bg-purple-50 rounded-full flex items-center justify-center">
-                            <Download className="w-5 h-5 text-purple-600" />
+                        <div className="w-10 h-10 bg-purple-50 dark:bg-purple-950/30 rounded-full flex items-center justify-center">
+                            <Download className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                         </div>
                     </CardContent>
                 </Card>
             </div>
 
-            <Card className="border-gray-200 shadow-sm">
-                <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row gap-4 justify-between items-center">
+            <Card className="border-gray-200 dark:border-gray-700 shadow-sm">
+                <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row gap-4 justify-between items-center">
                     <div className="relative w-full sm:w-72">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
                         <Input
                             placeholder="Search prospects..."
-                            className="pl-9 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
+                            className="pl-9 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:bg-white dark:focus:bg-gray-900 transition-colors"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
-                    <Button variant="outline" size="sm" className="w-full sm:w-auto text-gray-600">
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto text-gray-600 dark:text-gray-400">
                         <Filter className="w-4 h-4 mr-2" />
                         Filter
                     </Button>
@@ -261,7 +261,7 @@ export default function MyProspects() {
                 <div className="relative overflow-x-auto">
                     <Table>
                         <TableHeader>
-                            <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
+                            <TableRow className="bg-gray-50/50 dark:bg-gray-900/50 hover:bg-gray-50/50 dark:hover:bg-gray-900/50">
                                 <TableHead className="w-[250px]">Prospect Name</TableHead>
                                 <TableHead>Status</TableHead>
                                 <TableHead>Contact Info</TableHead>
@@ -274,7 +274,7 @@ export default function MyProspects() {
                             {loading ? (
                                 <TableRow>
                                     <TableCell colSpan={6} className="h-32 text-center">
-                                        <div className="flex flex-col items-center justify-center text-gray-500">
+                                        <div className="flex flex-col items-center justify-center text-gray-500 dark:text-gray-400">
                                             <Loader2 className="w-6 h-6 animate-spin mb-2" />
                                             <p>Loading prospects...</p>
                                         </div>
@@ -283,12 +283,12 @@ export default function MyProspects() {
                             ) : filteredProspects.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={6} className="h-64 text-center">
-                                        <div className="flex flex-col items-center justify-center text-gray-500">
-                                            <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                                                <User className="w-6 h-6 text-gray-400" />
+                                        <div className="flex flex-col items-center justify-center text-gray-500 dark:text-gray-400">
+                                            <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
+                                                <User className="w-6 h-6 text-gray-400 dark:text-gray-500" />
                                             </div>
-                                            <p className="text-lg font-medium text-gray-900">No prospects found</p>
-                                            <p className="text-sm text-gray-500 max-w-xs mx-auto mt-1">
+                                            <p className="text-lg font-medium text-gray-900 dark:text-gray-100">No prospects found</p>
+                                            <p className="text-sm text-gray-500 dark:text-gray-400 max-w-xs mx-auto mt-1">
                                                 {searchQuery
                                                     ? `No results matching "${searchQuery}"`
                                                     : "You haven't been assigned any prospects yet."}
@@ -298,15 +298,15 @@ export default function MyProspects() {
                                 </TableRow>
                             ) : (
                                 filteredProspects.map((prospect) => (
-                                    <TableRow key={prospect.id} className="group hover:bg-blue-50/30 transition-colors">
+                                    <TableRow key={prospect.id} className="group hover:bg-blue-50/30 dark:hover:bg-blue-950/20 transition-colors">
                                         <TableCell>
                                             <div className="flex items-center gap-3">
                                                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-medium shadow-sm">
                                                     {prospect.firstName?.[0]}{prospect.lastName?.[0]}
                                                 </div>
                                                 <div>
-                                                    <p className="font-medium text-gray-900">{prospect.firstName} {prospect.lastName}</p>
-                                                    <p className="text-xs text-gray-500">{prospect.company || 'Individual'}</p>
+                                                    <p className="font-medium text-gray-900 dark:text-gray-100">{prospect.firstName} {prospect.lastName}</p>
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400">{prospect.company || 'Individual'}</p>
                                                 </div>
                                             </div>
                                         </TableCell>
@@ -318,14 +318,14 @@ export default function MyProspects() {
                                         <TableCell>
                                             <div className="space-y-1">
                                                 {prospect.email && (
-                                                    <div className="flex items-center text-sm text-gray-600">
-                                                        <Mail className="w-3.5 h-3.5 mr-2 text-gray-400" />
+                                                    <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                                        <Mail className="w-3.5 h-3.5 mr-2 text-gray-400 dark:text-gray-500" />
                                                         {prospect.email}
                                                     </div>
                                                 )}
                                                 {prospect.phone && (
-                                                    <div className="flex items-center text-sm text-gray-600">
-                                                        <Phone className="w-3.5 h-3.5 mr-2 text-gray-400" />
+                                                    <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                                                        <Phone className="w-3.5 h-3.5 mr-2 text-gray-400 dark:text-gray-500" />
                                                         {prospect.phone}
                                                     </div>
                                                 )}
@@ -333,20 +333,20 @@ export default function MyProspects() {
                                         </TableCell>
                                         <TableCell>
                                             <div className="text-sm">
-                                                <p className="font-medium text-gray-700">{prospect.campaign?.name || 'Unknown Campaign'}</p>
-                                                <p className="text-xs text-gray-500">{prospect.leadSource}</p>
+                                                <p className="font-medium text-gray-700 dark:text-gray-300">{prospect.campaign?.name || 'Unknown Campaign'}</p>
+                                                <p className="text-xs text-gray-500 dark:text-gray-400">{prospect.leadSource}</p>
                                             </div>
                                         </TableCell>
                                         <TableCell>
-                                            <div className="flex items-center text-sm text-gray-500">
-                                                <Calendar className="w-3.5 h-3.5 mr-2 text-gray-400" />
+                                            <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                                                <Calendar className="w-3.5 h-3.5 mr-2 text-gray-400 dark:text-gray-500" />
                                                 {format(new Date(prospect.createdAt), 'MMM d, yyyy')}
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-900">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-100">
                                                         <MoreHorizontal className="w-4 h-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>

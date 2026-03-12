@@ -127,7 +127,7 @@ export default function AdminDeviceLogs() {
     };
 
     return (
-        <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+        <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
             <div className="max-w-[1200px] mx-auto space-y-6">
                 {/* Header */}
                 <div className="flex items-center gap-4">
@@ -142,30 +142,30 @@ export default function AdminDeviceLogs() {
                             </span>
                             {streamStatus === 'connected' && (
                                 (deviceStatus === 'inactive' || deviceStatus === 'offline') ? (
-                                    <Badge variant="outline" className="ml-2 bg-gray-100 text-gray-500 border-gray-200">
-                                        <span className="w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
+                                    <Badge variant="outline" className="ml-2 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700">
+                                        <span className="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500 mr-2"></span>
                                         OFFLINE
                                     </Badge>
                                 ) : (deviceStatus === 'standby' || deviceStatus === 'idle') ? (
-                                    <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 border-blue-200 animate-pulse">
+                                    <Badge variant="outline" className="ml-2 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800 animate-pulse">
                                         <span className="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
                                         READY
                                     </Badge>
                                 ) : (deviceStatus === 'active' || deviceStatus === 'playing') ? (
-                                    <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200 animate-pulse">
+                                    <Badge variant="outline" className="ml-2 bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 animate-pulse">
                                         <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
                                         LIVE
                                     </Badge>
                                 ) : null
                             )}
                             {streamStatus === 'connecting' && (
-                                <Badge variant="outline" className="ml-2 bg-yellow-50 text-yellow-700 border-yellow-200">
+                                <Badge variant="outline" className="ml-2 bg-yellow-50 dark:bg-yellow-950/30 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800">
                                     <span className="w-2 h-2 rounded-full bg-yellow-500 mr-2 animate-bounce"></span>
                                     Connecting...
                                 </Badge>
                             )}
                             {streamStatus === 'error' && (
-                                <Badge variant="outline" className="ml-2 bg-red-50 text-red-700 border-red-200">
+                                <Badge variant="outline" className="ml-2 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800">
                                     <span className="w-2 h-2 rounded-full bg-red-500 mr-2"></span>
                                     Stream Error
                                 </Badge>
@@ -190,10 +190,10 @@ export default function AdminDeviceLogs() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="overflow-hidden rounded-md border border-gray-100">
+                        <div className="overflow-hidden rounded-md border border-gray-100 dark:border-gray-700">
                             <Table>
                                 <TableHeader>
-                                    <TableRow className="bg-gray-50/50">
+                                    <TableRow className="bg-gray-50/50 dark:bg-gray-800/50">
                                         <TableHead className="w-[180px]">Timestamp</TableHead>
                                         <TableHead className="w-[120px]">Type</TableHead>
                                         <TableHead>Payload Details</TableHead>
@@ -256,7 +256,7 @@ export default function AdminDeviceLogs() {
                                                             <span className="text-muted-foreground ml-2">
                                                                 ({log.payload?.campaignName})
                                                             </span>
-                                                            <span className="text-xs text-gray-400 ml-auto">
+                                                            <span className="text-xs text-gray-400 dark:text-gray-500 ml-auto">
                                                                 {log.payload?.durationMs ? `${(log.payload.durationMs / 1000).toFixed(1)}s` : ''}
                                                             </span>
                                                         </span>

@@ -57,10 +57,10 @@ import { format } from "date-fns";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const statusStyles = {
-  active: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  inactive: "bg-gray-100 text-gray-600 border-gray-200",
-  pending: "bg-amber-50 text-amber-700 border-amber-200",
-  pending_registration: "bg-blue-50 text-blue-700 border-blue-200"
+  active: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700",
+  inactive: "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700",
+  pending: "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-700",
+  pending_registration: "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700"
 };
 
 export default function AdminUsers() {
@@ -285,31 +285,31 @@ export default function AdminUsers() {
 
   if (loading) {
     return (
-      <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+      <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
         <div className="max-w-[1600px] mx-auto space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-48 animate-pulse"></div>
-          <div className="h-96 bg-gray-200 rounded-xl animate-pulse"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-48 animate-pulse"></div>
+          <div className="h-96 bg-gray-200 dark:bg-gray-700 rounded-xl animate-pulse"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+    <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
       <div className="max-w-[1600px] mx-auto space-y-6">
 
         {/* Page Header */}
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">User Management</h1>
-            <p className="text-sm text-gray-500 mt-1">
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">User Management</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               Manage system access, approve new users, and update roles.
             </p>
           </div>
           <div className="flex gap-2">
             <Button
               variant="outline"
-              className="bg-white"
+              className="bg-white dark:bg-gray-900"
               onClick={exportToCSV}
               disabled={filteredUsers.length === 0}
             >
@@ -324,43 +324,43 @@ export default function AdminUsers() {
         </div>
 
         {/* Main Content Card */}
-        <Card className="border-gray-200/50 shadow-sm bg-white overflow-hidden">
-          <CardHeader className="border-b border-gray-100 p-4 lg:p-6 bg-white space-y-4">
+        <Card className="border-gray-200/50 dark:border-gray-700/50 shadow-sm bg-white dark:bg-gray-900 overflow-hidden">
+          <CardHeader className="border-b border-gray-100 dark:border-gray-700 p-4 lg:p-6 bg-white dark:bg-gray-900 space-y-4">
             {/* Tabs inside Header */}
             <Tabs value={lifecycleTab} onValueChange={setLifecycleTab} className="w-full">
-              <TabsList className="bg-transparent border-b border-gray-100 w-full justify-start h-auto p-0 gap-6 rounded-none">
+              <TabsList className="bg-transparent border-b border-gray-100 dark:border-gray-700 w-full justify-start h-auto p-0 gap-6 rounded-none">
                 <TabsTrigger
                   value="all"
-                  className="data-[state=active]:bg-transparent data-[state=active]:text-blue-600 data-[state=active]:border-b-2 data-[state=active]:border-blue-600 rounded-none px-0 py-2 text-gray-500 hover:text-gray-700 transition-colors"
+                  className="data-[state=active]:bg-transparent data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400 data-[state=active]:border-b-2 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-400 rounded-none px-0 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
                 >
                   All Users
                 </TabsTrigger>
                 <TabsTrigger
                   value="pending_approval"
-                  className="data-[state=active]:bg-transparent data-[state=active]:text-amber-600 data-[state=active]:border-b-2 data-[state=active]:border-amber-600 rounded-none px-0 py-2 text-gray-500 hover:text-gray-700 transition-colors relative"
+                  className="data-[state=active]:bg-transparent data-[state=active]:text-amber-600 dark:data-[state=active]:text-amber-400 data-[state=active]:border-b-2 data-[state=active]:border-amber-600 dark:data-[state=active]:border-amber-400 rounded-none px-0 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors relative"
                 >
                   Pending Approval
                   {users.filter(u => u.approvalStatus === 'pending' || u.status === 'pending_approval').length > 0 && (
-                    <span className="ml-2 bg-amber-100 text-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                    <span className="ml-2 bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                       {users.filter(u => u.approvalStatus === 'pending' || u.status === 'pending_approval').length}
                     </span>
                   )}
                 </TabsTrigger>
                 <TabsTrigger
                   value="active"
-                  className="data-[state=active]:bg-transparent data-[state=active]:text-emerald-600 data-[state=active]:border-b-2 data-[state=active]:border-emerald-600 rounded-none px-0 py-2 text-gray-500 hover:text-gray-700 transition-colors"
+                  className="data-[state=active]:bg-transparent data-[state=active]:text-emerald-600 dark:data-[state=active]:text-emerald-400 data-[state=active]:border-b-2 data-[state=active]:border-emerald-600 dark:data-[state=active]:border-emerald-400 rounded-none px-0 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
                 >
                   Active
                 </TabsTrigger>
                 <TabsTrigger
                   value="pending_registration"
-                  className="data-[state=active]:bg-transparent data-[state=active]:text-blue-600 data-[state=active]:border-b-2 data-[state=active]:border-blue-600 rounded-none px-0 py-2 text-gray-500 hover:text-gray-700 transition-colors"
+                  className="data-[state=active]:bg-transparent data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400 data-[state=active]:border-b-2 data-[state=active]:border-blue-600 dark:data-[state=active]:border-blue-400 rounded-none px-0 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
                 >
                   Pending Registration
                 </TabsTrigger>
                 <TabsTrigger
                   value="inactive"
-                  className="data-[state=active]:bg-transparent data-[state=active]:text-gray-900 data-[state=active]:border-b-2 data-[state=active]:border-gray-900 rounded-none px-0 py-2 text-gray-500 hover:text-gray-700 transition-colors"
+                  className="data-[state=active]:bg-transparent data-[state=active]:text-gray-900 dark:data-[state=active]:text-gray-100 data-[state=active]:border-b-2 data-[state=active]:border-gray-900 dark:data-[state=active]:border-gray-100 rounded-none px-0 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
                 >
                   Inactive
                 </TabsTrigger>
@@ -370,12 +370,12 @@ export default function AdminUsers() {
             <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center pt-2">
               <div className="flex flex-col sm:flex-row gap-2 flex-1 w-full lg:max-w-3xl">
                 <div className="relative flex-1 min-w-[200px]">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
                   <Input
                     placeholder="Search users by name or email..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-9 h-10 bg-gray-50/50 border-gray-200 focus:bg-white transition-colors"
+                    className="pl-9 h-10 bg-gray-50/50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:bg-white dark:focus:bg-gray-900 transition-colors"
                   />
                 </div>
                 <Select value={roleFilter} onValueChange={setRoleFilter}>
@@ -393,7 +393,7 @@ export default function AdminUsers() {
 
               {/* View Toggle & Page Size */}
               <div className="flex items-center gap-2">
-                <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500 mr-2">
+                <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mr-2">
                   <span className="hidden sm:inline">Rows:</span>
                   <Select value={String(pagination.itemsPerPage)} onValueChange={(value) => handlePageSizeChange(parseInt(value))}>
                     <SelectTrigger className="w-[70px] h-9">
@@ -407,7 +407,7 @@ export default function AdminUsers() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex items-center border rounded-md p-1 bg-gray-50/50">
+                <div className="flex items-center border dark:border-gray-700 rounded-md p-1 bg-gray-50/50 dark:bg-gray-800">
                   <Button
                     variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                     size="sm"
@@ -433,23 +433,23 @@ export default function AdminUsers() {
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-gray-100 text-xs uppercase tracking-wider">
-                      <TableHead className="py-3 px-6 font-medium text-gray-500">User</TableHead>
-                      <TableHead className="py-3 px-6 font-medium text-gray-500">Role</TableHead>
-                      <TableHead className="py-3 px-6 font-medium text-gray-500">Status</TableHead>
-                      <TableHead className="py-3 px-6 font-medium text-gray-500">Joined</TableHead>
-                      <TableHead className="py-3 px-6 font-medium text-gray-500 w-[100px] text-right">Actions</TableHead>
+                    <TableRow className="bg-gray-50/50 dark:bg-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800 border-gray-100 dark:border-gray-700 text-xs uppercase tracking-wider">
+                      <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400">User</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400">Role</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400">Status</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400">Joined</TableHead>
+                      <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 w-[100px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {paginatedUsers.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} className="h-64 text-center">
-                          <div className="flex flex-col items-center justify-center text-gray-500">
-                            <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-3">
-                              <Search className="w-6 h-6 text-gray-400" />
+                          <div className="flex flex-col items-center justify-center text-gray-500 dark:text-gray-400">
+                            <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-3">
+                              <Search className="w-6 h-6 text-gray-400 dark:text-gray-500" />
                             </div>
-                            <p className="font-medium text-gray-900">No users found</p>
+                            <p className="font-medium text-gray-900 dark:text-gray-100">No users found</p>
                             <p className="text-sm mt-1">Try adjusting your filters or search terms</p>
                           </div>
                         </TableCell>
@@ -470,22 +470,22 @@ export default function AdminUsers() {
                         }
 
                         return (
-                          <TableRow key={user.id} className="hover:bg-gray-50/50 border-gray-100 transition-colors">
+                          <TableRow key={user.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 border-gray-100 dark:border-gray-700 transition-colors">
                             <TableCell className="px-6 py-4">
                               <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-bold uppercase ring-2 ring-white shadow-sm flex-shrink-0">
+                                <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 flex items-center justify-center text-sm font-bold uppercase ring-2 ring-white dark:ring-gray-900 shadow-sm flex-shrink-0">
                                   {(user.firstName?.[0] || user.email?.[0] || '?')}
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <div className="font-medium text-gray-900" title={user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.email}>
+                                  <div className="font-medium text-gray-900 dark:text-gray-100" title={user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.email}>
                                     {user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.email}
                                   </div>
-                                  <div className="text-xs text-gray-500 font-normal break-all" title={user.email}>{user.email}</div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400 font-normal break-all" title={user.email}>{user.email}</div>
                                 </div>
                               </div>
                             </TableCell>
                             <TableCell className="px-6 py-4">
-                              <Badge variant="outline" className="capitalize font-medium border-gray-200 text-gray-700 px-2.5 py-0.5 bg-gray-50">
+                              <Badge variant="outline" className="capitalize font-medium border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 px-2.5 py-0.5 bg-gray-50 dark:bg-gray-800">
                                 {user.role}
                               </Badge>
                             </TableCell>
@@ -494,14 +494,14 @@ export default function AdminUsers() {
                                 {statusLabel}
                               </Badge>
                             </TableCell>
-                            <TableCell className="px-6 py-4 text-sm text-gray-500">
+                            <TableCell className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
                               {user.createdAt ? format(new Date(user.createdAt), 'MMM d, yyyy') : '-'}
-                              {user.createdAt && <div className="text-xs text-gray-400 mt-0.5">{format(new Date(user.createdAt), 'h:mm a')}</div>}
+                              {user.createdAt && <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{format(new Date(user.createdAt), 'h:mm a')}</div>}
                             </TableCell>
                             <TableCell className="px-6 py-4 text-right">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600">
+                                  <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
                                     <MoreHorizontal className="h-4 w-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
@@ -511,7 +511,7 @@ export default function AdminUsers() {
                                     <Edit className="mr-2 h-4 w-4" /> Edit Details
                                   </DropdownMenuItem>
                                   {(user.approvalStatus === 'pending' || user.status === 'pending_approval') && (
-                                    <DropdownMenuItem onClick={() => handleApproveUser(user.id)} className="text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50">
+                                    <DropdownMenuItem onClick={() => handleApproveUser(user.id)} className="text-emerald-600 dark:text-emerald-400 focus:text-emerald-700 dark:focus:text-emerald-400 focus:bg-emerald-50 dark:focus:bg-emerald-950/30">
                                       <CheckCircle className="mr-2 h-4 w-4" /> Approve User
                                     </DropdownMenuItem>
                                   )}
@@ -523,7 +523,7 @@ export default function AdminUsers() {
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem
                                     onClick={() => handleDeleteUser(user.id)}
-                                    className="text-red-600 focus:text-red-700 focus:bg-red-50"
+                                    className="text-red-600 dark:text-red-400 focus:text-red-700 dark:focus:text-red-400 focus:bg-red-50 dark:focus:bg-red-950/30"
                                     disabled={user.firstName === 'System' && user.lastName === 'Agent'}
                                   >
                                     <Trash2 className="mr-2 h-4 w-4" /> Delete User
@@ -541,11 +541,11 @@ export default function AdminUsers() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
                 {(paginatedUsers.length === 0) ? (
-                  <div className="col-span-full h-64 flex flex-col items-center justify-center text-gray-500">
-                    <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-3">
-                      <Search className="w-6 h-6 text-gray-400" />
+                  <div className="col-span-full h-64 flex flex-col items-center justify-center text-gray-500 dark:text-gray-400">
+                    <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-3">
+                      <Search className="w-6 h-6 text-gray-400 dark:text-gray-500" />
                     </div>
-                    <p className="font-medium text-gray-900">No users found</p>
+                    <p className="font-medium text-gray-900 dark:text-gray-100">No users found</p>
                   </div>
                 ) : (
                   paginatedUsers.map(user => {
@@ -563,9 +563,9 @@ export default function AdminUsers() {
                     }
 
                     return (
-                      <Card key={user.id} className="shadow-sm hover:shadow-md transition-shadow border-gray-200/50 overflow-hidden group">
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gray-50/30">
-                          <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold uppercase text-sm ring-1 ring-blue-100">
+                      <Card key={user.id} className="shadow-sm hover:shadow-md transition-shadow border-gray-200/50 dark:border-gray-700/50 overflow-hidden group">
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gray-50/30 dark:bg-gray-800/30">
+                          <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold uppercase text-sm ring-1 ring-blue-100 dark:ring-blue-900">
                             {(user.firstName?.[0] || user.email?.[0] || '?')}
                           </div>
                           <Badge variant="outline" className={`${statusStyles[statusKey]} font-normal`}>
@@ -573,24 +573,24 @@ export default function AdminUsers() {
                           </Badge>
                         </CardHeader>
                         <CardContent className="pt-4">
-                          <div className="text-lg font-semibold truncate text-gray-900" title={user.email}>
+                          <div className="text-lg font-semibold truncate text-gray-900 dark:text-gray-100" title={user.email}>
                             {user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.email}
                           </div>
-                          <div className="text-xs text-gray-500 mb-4 truncate">{user.email}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mb-4 truncate">{user.email}</div>
 
-                          <div className="flex items-center justify-between text-sm mt-4 pt-4 border-t border-gray-100">
-                            <Badge variant="secondary" className="font-medium capitalize bg-gray-100 text-gray-600">
+                          <div className="flex items-center justify-between text-sm mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                            <Badge variant="secondary" className="font-medium capitalize bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
                               {user.role}
                             </Badge>
                             <div className="flex gap-1">
-                              <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)} className="h-8 w-8 text-gray-400 hover:text-blue-600">
+                              <Button variant="ghost" size="icon" onClick={() => openEditDialog(user)} className="h-8 w-8 text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400">
                                 <Edit className="h-4 w-4" />
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => handleDeleteUser(user.id)}
-                                className="h-8 w-8 text-gray-400 hover:text-red-600"
+                                className="h-8 w-8 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400"
                                 disabled={user.firstName === 'System' && user.lastName === 'Agent'}
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -607,8 +607,8 @@ export default function AdminUsers() {
 
             {/* Pagination Footer */}
             {totalPages > 1 && (
-              <div className="border-t border-gray-100 bg-gray-50/50 p-4 flex items-center justify-between">
-                <span className="text-sm text-gray-500 hidden sm:inline">
+              <div className="border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800 p-4 flex items-center justify-between">
+                <span className="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">
                   Page {pagination.currentPage} of {totalPages}
                 </span>
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-center">
@@ -617,7 +617,7 @@ export default function AdminUsers() {
                     size="sm"
                     onClick={() => handlePageChange(pagination.currentPage - 1)}
                     disabled={pagination.currentPage === 1}
-                    className="h-8 shadow-sm bg-white"
+                    className="h-8 shadow-sm bg-white dark:bg-gray-900"
                   >
                     <ChevronLeft className="w-4 h-4 mr-1" /> Previous
                   </Button>
@@ -626,7 +626,7 @@ export default function AdminUsers() {
                     size="sm"
                     onClick={() => handlePageChange(pagination.currentPage + 1)}
                     disabled={pagination.currentPage === totalPages}
-                    className="h-8 shadow-sm bg-white"
+                    className="h-8 shadow-sm bg-white dark:bg-gray-900"
                   >
                     Next <ChevronRight className="w-4 h-4 ml-1" />
                   </Button>
@@ -729,7 +729,7 @@ export default function AdminUsers() {
                     id="edit-email"
                     value={editData.email}
                     disabled
-                    className="bg-gray-50 text-gray-500"
+                    className="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">

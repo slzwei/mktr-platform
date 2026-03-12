@@ -432,10 +432,10 @@ export default function DriverProfile() {
     return (
       <div className="p-6 lg:p-8">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-64"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-64"></div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {Array(4).fill(0).map((_, i) => (
-              <div key={i} className="h-32 bg-gray-200 rounded-xl"></div>
+              <div key={i} className="h-32 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
             ))}
           </div>
         </div>
@@ -452,7 +452,7 @@ export default function DriverProfile() {
             <CardTitle>Access Denied</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-gray-600 mb-4">You do not have permission to view this page.</p>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">You do not have permission to view this page.</p>
           </CardContent>
         </Card>
       </div>
@@ -460,12 +460,12 @@ export default function DriverProfile() {
   }
 
   return (
-    <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
+    <div className="p-6 lg:p-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Profile</h1>
-          <div className="flex items-center gap-4 text-gray-600">
-            <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">Driver Partner</Badge>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Profile</h1>
+          <div className="flex items-center gap-4 text-gray-600 dark:text-gray-400">
+            <Badge variant="outline" className="bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800">Driver Partner</Badge>
             <span className="text-sm">{user?.full_name || user?.fullName || 'Driver'}</span>
           </div>
         </div>
@@ -479,7 +479,7 @@ export default function DriverProfile() {
               <div>
                 <Label className="text-xs font-medium">Email</Label>
                 <div className="relative">
-                  <Mail className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                  <Mail className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 dark:text-gray-500" />
                   <Input
                     type="email"
                     className={`pl-7 h-8 text-sm ${emailError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
@@ -488,7 +488,7 @@ export default function DriverProfile() {
                     onBlur={(e) => { const v = e.target.value; setEmailError(v && !isValidEmail(v) ? 'Please enter a valid email address' : ''); }}
                     disabled
                   />
-                  <div className="text-xs text-gray-500 mt-1">Email is linked to Google and cannot be changed.</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Email is linked to Google and cannot be changed.</div>
                 </div>
                 {emailError && (
                   <div className="text-xs text-red-600 mt-1">{emailError}</div>
@@ -498,7 +498,7 @@ export default function DriverProfile() {
                 <Label className="text-xs font-medium">Contact Number</Label>
                 <div className="flex items-center gap-1">
                   <div className="relative flex-grow">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-700 text-sm whitespace-nowrap">+65</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-700 dark:text-gray-300 text-sm whitespace-nowrap">+65</span>
                     <Input
                       type="tel"
                       placeholder="9123 4567"
@@ -514,7 +514,7 @@ export default function DriverProfile() {
                       const phoneChanged = (phone || '') !== (originalLocal || '');
                       const showVerified = (!phoneChanged && otpState === 'idle') || otpState === 'verified';
                       return showVerified ? (
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-green-700 bg-green-50 border border-green-200 rounded px-2 h-6 text-[11px]">
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded px-2 h-6 text-[11px]">
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           <span>Verified</span>
                         </div>
@@ -547,26 +547,26 @@ export default function DriverProfile() {
             </div>
 
             {otpState === 'pending' && (
-              <div className="space-y-2 p-3 bg-gray-50 rounded-lg border">
+              <div className="space-y-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium text-gray-800">Enter Code</Label>
-                  <Button type="button" variant="ghost" size="sm" onClick={handleCancelOtp} className="text-gray-500 hover:text-gray-700 h-6 px-1">
+                  <Label className="text-sm font-medium text-gray-800 dark:text-gray-200">Enter Code</Label>
+                  <Button type="button" variant="ghost" size="sm" onClick={handleCancelOtp} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 h-6 px-1">
                     <X className="w-3 h-3" />
                   </Button>
                 </div>
-                <p className="text-xs text-gray-500 !-mt-1">Sent to +65 {displayPhone(phone)}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 !-mt-1">Sent to +65 {displayPhone(phone)}</p>
                 <div className="flex items-center gap-2">
                   <div className="relative flex-grow">
-                    <ShieldCheck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                    <ShieldCheck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
                     <Input id="otp" type="tel" inputMode="numeric" autoComplete="one-time-code" placeholder="123456" className="pl-8 tracking-wider h-9 text-sm" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} />
                   </div>
                   <Button type="button" size="sm" onClick={handleVerifyOtp} disabled={loadingKind === 'verifying' || showSuccessTick} className={`h-9 px-4 text-sm w-28 transition-colors duration-300 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600' : ''}`}>
                     {showSuccessTick ? <CheckCircle2 className="w-5 h-5 text-white" /> : (loadingKind === 'verifying' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm')}
                   </Button>
                 </div>
-                <div className="text-center text-xs text-gray-500 pt-1">
+                <div className="text-center text-xs text-gray-500 dark:text-gray-400 pt-1">
                   Didn't receive a code?{' '}
-                  <Button type="button" variant="link" size="sm" onClick={handleSendOtp} disabled={resendCooldown > 0} className="h-auto p-0 text-xs font-semibold text-blue-600 hover:text-blue-800 disabled:text-gray-500 disabled:no-underline">
+                  <Button type="button" variant="link" size="sm" onClick={handleSendOtp} disabled={resendCooldown > 0} className="h-auto p-0 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 disabled:text-gray-500 dark:disabled:text-gray-400 disabled:no-underline">
                     {resendCooldown > 0 ? (resendCooldown > 60 ? `Wait ${Math.ceil(resendCooldown / 60)} min` : `Resend in ${resendCooldown}s`) : 'Resend now'}
                   </Button>
                 </div>
@@ -574,7 +574,7 @@ export default function DriverProfile() {
             )}
 
             {errorMsg && (
-              <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded border">
+              <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-2 rounded border dark:border-red-800">
                 <AlertCircle className="w-3 h-3" />
                 <span>{errorMsg}</span>
               </div>
@@ -612,7 +612,7 @@ export default function DriverProfile() {
                         <Label className="text-xs font-medium">PayNow Number</Label>
                         <div>
                           <div className="relative h-8">
-                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-gray-700 text-sm whitespace-nowrap">+65</span>
+                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-gray-700 dark:text-gray-300 text-sm whitespace-nowrap">+65</span>
                             <Input
                               type="tel"
                               placeholder="9123 4567"
@@ -673,7 +673,7 @@ export default function DriverProfile() {
                           setBankAccount(digits);
                         }}
                       />
-                      <div className="text-[10px] text-gray-500 mt-1">Up to 20 digits. Please remove any dashes.</div>
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">Up to 20 digits. Please remove any dashes.</div>
                     </div>
                   </div>
                 ) : (
@@ -699,7 +699,7 @@ export default function DriverProfile() {
           </CardHeader>
           <CardContent className="space-y-4">
             {!carId ? (
-              <div className="text-sm text-gray-500">No car assigned yet.</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">No car assigned yet.</div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
