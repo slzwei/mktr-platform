@@ -23,11 +23,11 @@ export function getBackgroundClass(design) {
   const style = design.backgroundStyle || 'gradient';
 
   switch (style) {
-    case 'gradient': // Modern default
-      return { className: 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-50 via-white to-gray-50', style: {} };
-    case 'solid_slate': // Corporate
-      return { className: 'bg-slate-50', style: {} };
-    case 'simple_gray': // Simple
+    case 'gradient': // Modern — visible blue gradient
+      return { className: 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-100 via-blue-50 to-white', style: {} };
+    case 'solid_slate': // Corporate — dark slate
+      return { className: 'bg-slate-800', style: {} };
+    case 'simple_gray': // Simple — clean white
       return { className: 'bg-white', style: {} };
     case 'solid': // Legacy
       return { className: 'bg-gray-50', style: {} };
