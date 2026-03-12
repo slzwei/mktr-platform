@@ -68,8 +68,8 @@ export default function NotificationBell() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors">
-          <Bell className="w-5 h-5 text-gray-600" />
+        <button className="relative p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+          <Bell className="w-5 h-5 text-gray-600 dark:text-gray-400" />
           {unreadCount > 0 && (
             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] leading-none px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
               {unreadCount}
@@ -78,8 +78,8 @@ export default function NotificationBell() {
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-96 p-0">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <h3 className="font-semibold text-sm text-gray-900">Notifications</h3>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="font-semibold text-sm text-gray-900 dark:text-gray-100">Notifications</h3>
           {unreadCount > 0 && (
             <Button
               variant="ghost"
@@ -95,9 +95,9 @@ export default function NotificationBell() {
         <div className="max-h-[400px] overflow-y-auto">
           {notifications.length === 0 ? (
             <div className="px-4 py-8 text-center">
-              <Bell className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-              <p className="text-sm text-gray-500">No notifications yet</p>
-              <p className="text-xs text-gray-400 mt-1">We'll notify you when something happens</p>
+              <Bell className="w-8 h-8 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+              <p className="text-sm text-gray-500 dark:text-gray-400">No notifications yet</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">We'll notify you when something happens</p>
             </div>
           ) : (
             notifications.map((n) => {
@@ -107,7 +107,7 @@ export default function NotificationBell() {
               return (
                 <div
                   key={n.id}
-                  className={`flex items-start gap-3 px-4 py-3 border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer ${!isRead ? 'bg-blue-50/30' : ''}`}
+                  className={`flex items-start gap-3 px-4 py-3 border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer ${!isRead ? 'bg-blue-50/30 dark:bg-blue-950/30' : ''}`}
                   onClick={() => {
                     if (!isRead) {
                       setReadIds(prev => [...prev, n.id]);
@@ -118,10 +118,10 @@ export default function NotificationBell() {
                     <Icon className="w-3.5 h-3.5 text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm leading-snug ${!isRead ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                    <p className={`text-sm leading-snug ${!isRead ? 'text-gray-900 dark:text-gray-100 font-medium' : 'text-gray-600 dark:text-gray-400'}`}>
                       {n.message}
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">{getRelativeTime(n.createdAt)}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{getRelativeTime(n.createdAt)}</p>
                   </div>
                   {!isRead && (
                     <div className="mt-2 w-2 h-2 rounded-full bg-blue-500 shrink-0" />

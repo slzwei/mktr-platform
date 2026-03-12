@@ -251,6 +251,12 @@ export default function Homepage() {
           --grey: #909090;
         }
 
+        .dark {
+          --black: #ffffff;
+          --white: #1a1a2e;
+          --grey: #a0a0a0;
+        }
+
         /* Import Fonts */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=PT+Mono:wght@400&display=swap');
@@ -546,6 +552,14 @@ export default function Homepage() {
           transform: translateX(0);
         }
 
+        .dark .mobile-menu {
+          background: #1a1a2e;
+          box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+        }
+        .dark .mobile-menu-link {
+          color: #ffffff;
+        }
+
         .mobile-menu-link {
           font-family: var(--mono-font);
           font-size: 1.1rem; /* Adjusted font size */
@@ -576,6 +590,10 @@ export default function Homepage() {
           animation: fadeIn 0.3s ease;
         }
 
+        .dark .modal-overlay {
+          background: rgba(0, 0, 0, 0.6);
+        }
+
         .modal-content {
           background: var(--white);
           padding: 2rem; /* Adjusted padding */
@@ -601,6 +619,16 @@ export default function Homepage() {
           font-size: 1.8rem; /* Adjusted font size */
           margin-bottom: 1rem;
           color: var(--black);
+        }
+
+        .dark .modal-content {
+          background: #1e1e2f;
+        }
+        .dark .modal-title {
+          color: #ffffff;
+        }
+        .dark .modal-close {
+          color: #ffffff;
         }
 
         .modal-text {
@@ -730,6 +758,11 @@ export default function Homepage() {
           z-index: 100;
           border-bottom: 1px solid var(--grey);
           transition: all 0.3s ease;
+        }
+
+        .dark .header {
+          background: rgba(26, 26, 46, 0.95);
+          border-bottom-color: #2a2a3e;
         }
 
         .header-content {
@@ -896,14 +929,14 @@ export default function Homepage() {
       <div className="flex flex-col sm:flex-row gap-8 justify-center mobile-button-container">
         <Link
           to={createPageUrl("AdminDashboard")}
-          className="btn-primary bg-white text-black hover:bg-gray-100 hover:text-black transition-all duration-300"
+          className="btn-primary bg-white text-black hover:bg-gray-100 dark:hover:bg-gray-200 hover:text-black transition-all duration-300"
         >
           Get Started
           <ArrowRight className="w-4 h-4" />
         </Link>
         <Link
           to={createPageUrl("LeadCapture")}
-          className="btn-primary bg-white text-black hover:bg-gray-100 hover:text-black transition-all duration-300"
+          className="btn-primary bg-white text-black hover:bg-gray-100 dark:hover:bg-gray-200 hover:text-black transition-all duration-300"
         >
           Schedule DEMO
         </Link>
@@ -916,62 +949,62 @@ export default function Homepage() {
   
 
       {/* Lead Sources Section - WHITE BACKGROUND */}
-      <section className="section-spacing bg-white">
+      <section className="section-spacing bg-white dark:bg-gray-900">
         <div className="container">
-          <p className="section-title text-center text-black">Where Our Leads Come From</p>
-          <h2 className="text-center mb-16 text-black" style={{ fontFamily: 'var(--heading-font)', fontSize: 'clamp(1.5rem, 4vw, 3rem)', lineHeight: '1.1' }}>
+          <p className="section-title text-center text-black dark:text-white">Where Our Leads Come From</p>
+          <h2 className="text-center mb-16 text-black dark:text-white" style={{ fontFamily: 'var(--heading-font)', fontSize: 'clamp(1.5rem, 4vw, 3rem)', lineHeight: '1.1' }}>
             Multi-Channel Lead<br />
             Generation Strategy
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
             <div className="text-center">
-              <div className="w-20 h-20 mx-auto mb-6 border-2 border-black flex items-center justify-center bg-white hover:bg-black hover:text-white transition-all duration-300">
+              <div className="w-20 h-20 mx-auto mb-6 border-2 border-black dark:border-white flex items-center justify-center bg-white dark:bg-gray-800 hover:bg-black hover:text-white transition-all duration-300">
                 <TrendingUp className="w-8 h-8" />
               </div>
               <div className="mb-4">
-                <span className="section-title text-xs text-gray-500">01</span>
+                <span className="section-title text-xs text-gray-500 dark:text-gray-400">01</span>
                 <h3 className="section-title mb-2 text-lg">Social Media Ads</h3>
               </div>
-              <p className="body-text text-sm text-gray-600 leading-relaxed">
+              <p className="body-text text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
                 Facebook, Instagram, and TikTok campaigns driving qualified prospects to your landing pages
               </p>
             </div>
 
             <div className="text-center">
-              <div className="w-20 h-20 mx-auto mb-6 border-2 border-black flex items-center justify-center bg-white hover:bg-black hover:text-white transition-all duration-300">
+              <div className="w-20 h-20 mx-auto mb-6 border-2 border-black dark:border-white flex items-center justify-center bg-white dark:bg-gray-800 hover:bg-black hover:text-white transition-all duration-300">
                 <QrCode className="w-8 h-8" />
               </div>
               <div className="mb-4">
-                <span className="section-title text-xs text-gray-500">02</span>
+                <span className="section-title text-xs text-gray-500 dark:text-gray-400">02</span>
                 <h3 className="section-title mb-2 text-lg">Physical Flyers</h3>
               </div>
-              <p className="body-text text-sm text-gray-600 leading-relaxed">
+              <p className="body-text text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
                 QR-enabled flyers distributed at MRTs, shopping centers, and high-traffic locations
               </p>
             </div>
 
             <div className="text-center">
-              <div className="w-20 h-20 mx-auto mb-6 border-2 border-black flex items-center justify-center bg-white hover:bg-black hover:text-white transition-all duration-300">
+              <div className="w-20 h-20 mx-auto mb-6 border-2 border-black dark:border-white flex items-center justify-center bg-white dark:bg-gray-800 hover:bg-black hover:text-white transition-all duration-300">
                 <Car className="w-8 h-8" />
               </div>
               <div className="mb-4">
-                <span className="section-title text-xs text-gray-500">03</span>
+                <span className="section-title text-xs text-gray-500 dark:text-gray-400">03</span>
                 <h3 className="section-title mb-2 text-lg">Private Transport</h3>
               </div>
-              <p className="body-text text-sm text-gray-600 leading-relaxed">
+              <p className="body-text text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
                 Vehicle-mounted QR codes on Grab cars, taxis, and private hire vehicles across Singapore
               </p>
             </div>
 
             <div className="text-center">
-              <div className="w-20 h-20 mx-auto mb-6 border-2 border-black flex items-center justify-center bg-white hover:bg-black hover:text-white transition-all duration-300">
+              <div className="w-20 h-20 mx-auto mb-6 border-2 border-black dark:border-white flex items-center justify-center bg-white dark:bg-gray-800 hover:bg-black hover:text-white transition-all duration-300">
                 <Users className="w-8 h-8" />
               </div>
               <div className="mb-4">
-                <span className="section-title text-xs text-gray-500">04</span>
+                <span className="section-title text-xs text-gray-500 dark:text-gray-400">04</span>
                 <h3 className="section-title mb-2 text-lg">Digital Campaigns</h3>
               </div>
-              <p className="body-text text-sm text-gray-600 leading-relaxed">
+              <p className="body-text text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
                 Targeted online advertising reaching prospects when they're actively searching
               </p>
             </div>
@@ -1019,12 +1052,12 @@ export default function Homepage() {
       </section>
 
       {/* CTA Section - WHITE BACKGROUND */}
-      <section className="section-spacing bg-white">
+      <section className="section-spacing bg-white dark:bg-gray-900">
         <div className="container text-center">
-          <h2 className="!text-black mb-8 hero-title" style={{ fontSize: 'clamp(2rem, 6vw, 4rem)' }}>
+          <h2 className="text-black dark:text-white mb-8 hero-title" style={{ fontSize: 'clamp(2rem, 6vw, 4rem)' }}>
             Ready to Transform<br />Your Marketing?
           </h2>
-          <p className="mx-auto my-2 body-text max-w-2xl text-black" style={{ fontSize: '1.2rem' }}>
+          <p className="mx-auto my-2 body-text max-w-2xl text-black dark:text-white" style={{ fontSize: '1.2rem' }}>
             Join hundreds of agents already using MKTR to capture and convert more leads.
           </p>
           <div className="mt-8">

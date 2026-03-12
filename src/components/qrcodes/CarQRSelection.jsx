@@ -235,9 +235,9 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
       <Card>
         <CardContent className="p-8">
           <div className="animate-pulse space-y-4">
-            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-            <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-            <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+            <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-3/4"></div>
+            <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-1/2"></div>
+            <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-5/6"></div>
           </div>
         </CardContent>
       </Card>
@@ -254,22 +254,22 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-blue-900 mb-2">About Car QR Codes</h3>
-            <p className="text-blue-700 text-sm">
+          <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg">
+            <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">About Car QR Codes</h3>
+            <p className="text-blue-700 dark:text-blue-400 text-sm">
               Each car has one permanent QR code. Assigning links it to this campaign; reassigning keeps the same QR and slug and preserves analytics.
             </p>
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg">
+            <div className="flex items-center gap-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3 rounded-lg">
               <AlertCircle className="w-5 h-5" />
               <span>{error}</span>
             </div>
           )}
 
           {success && (
-            <div className="flex items-center gap-2 text-green-600 bg-green-50 p-3 rounded-lg">
+            <div className="flex items-center gap-2 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/30 p-3 rounded-lg">
               <CheckCircle className="w-5 h-5" />
               <span>{success}</span>
             </div>
@@ -278,7 +278,7 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
           {/* Filters */}
           <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
               <Input
                 placeholder="Search by plate number..."
                 value={filters.search}
@@ -287,7 +287,7 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
               />
             </div>
             <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-gray-500" />
+              <Filter className="w-4 h-4 text-gray-500 dark:text-gray-400" />
               <Select
                 value={filters.fleetOwner}
                 onValueChange={(value) => setFilters({...filters, fleetOwner: value})}
@@ -308,7 +308,7 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
           </div>
 
           {/* Selection Summary */}
-          <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+          <div className="flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
             <div className="flex items-center gap-4">
               <Button
                 variant="outline"
@@ -317,7 +317,7 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
               >
                 {selectedCarIds.size === filteredCars.length ? 'Unselect All' : 'Select All'}
               </Button>
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-gray-600 dark:text-gray-400">
                 {selectedCarIds.size} of {filteredCars.length} cars selected
               </span>
             </div>
@@ -344,7 +344,7 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
           <div className="border rounded-lg">
             <Table>
               <TableHeader>
-                <TableRow className="bg-gray-50">
+                <TableRow className="bg-gray-50 dark:bg-gray-800">
                   <TableHead className="w-12">Select</TableHead>
                   <TableHead>Plate Number</TableHead>
                   <TableHead>Fleet Owner</TableHead>
@@ -353,7 +353,7 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
               </TableHeader>
               <TableBody>
                 {filteredCars.map((car) => (
-                  <TableRow key={car.id} className="hover:bg-gray-50">
+                  <TableRow key={car.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                     <TableCell>
                       <Checkbox
                         checked={selectedCarIds.has(car.id)}
@@ -366,7 +366,7 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
                     <TableCell>
                       {getFleetOwnerName(car.fleet_owner_id)}
                     </TableCell>
-                    <TableCell className="text-gray-600">
+                    <TableCell className="text-gray-600 dark:text-gray-400">
                       {car.current_driver_id || '-'}
                     </TableCell>
                   </TableRow>
@@ -376,9 +376,9 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
 
             {filteredCars.length === 0 && (
               <div className="text-center py-8">
-                <CarIcon className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                <h3 className="font-semibold text-gray-900 mb-2">No cars found</h3>
-                <p className="text-gray-500">
+                <CarIcon className="w-12 h-12 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">No cars found</h3>
+                <p className="text-gray-500 dark:text-gray-400">
                   {cars.length === 0
                     ? 'No cars are registered in the system yet.'
                     : 'Try adjusting your search or filter criteria.'
@@ -399,15 +399,15 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
                 Proceeding will reassign them to "{campaign.name}". This keeps the same QR and link slug and preserves analytics.
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <div className="max-h-48 overflow-auto rounded border p-2 bg-gray-50 text-sm">
+            <div className="max-h-48 overflow-auto rounded border p-2 bg-gray-50 dark:bg-gray-800 text-sm">
               {precheck.toReassign.map(({ car, tag }) => (
                 <div key={car.id} className="flex justify-between py-1">
                   <span className="font-medium">{car.plate_number}</span>
-                  <span className="text-gray-600">from {precheck.campaignNames[tag.campaignId] || tag.campaignId || 'Unknown'}</span>
+                  <span className="text-gray-600 dark:text-gray-400">from {precheck.campaignNames[tag.campaignId] || tag.campaignId || 'Unknown'}</span>
                 </div>
               ))}
               {precheck.alreadyOnCampaign.length > 0 && (
-                <div className="mt-3 text-gray-600">
+                <div className="mt-3 text-gray-600 dark:text-gray-400">
                   {precheck.alreadyOnCampaign.length} car{precheck.alreadyOnCampaign.length !== 1 ? 's are' : ' is'} already on this campaign and will be skipped.
                 </div>
               )}

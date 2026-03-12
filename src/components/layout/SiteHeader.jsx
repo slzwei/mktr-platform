@@ -52,6 +52,12 @@ export default function SiteHeader() {
           --grey: #909090;
         }
 
+        .dark {
+          --black: #ffffff;
+          --white: #1a1a2e;
+          --grey: #a0a0a0;
+        }
+
         .header {
           position: fixed;
           top: 0;
@@ -110,6 +116,20 @@ export default function SiteHeader() {
         .mobile-menu-link { font-family: 'PT Mono', 'Courier New', monospace; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 2px; color: var(--black); text-decoration: none; transition: opacity 0.2s ease; padding: 0.75rem 0; }
         .mobile-menu-link:hover { opacity: 0.7; }
 
+        .dark .header {
+          background: rgba(26, 26, 46, 0.95);
+          border-bottom-color: #2a2a3e;
+        }
+
+        .dark .mobile-menu {
+          background: #1a1a2e;
+          box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .dark .mobile-menu-link {
+          color: #ffffff;
+        }
+
         /* Ensure footer actions clear iOS Safari bottom bar */
         .mobile-menu-footer { padding-bottom: calc(2rem + env(safe-area-inset-bottom)); padding-bottom: calc(2rem + constant(safe-area-inset-bottom)); }
       `}</style>
@@ -128,8 +148,8 @@ export default function SiteHeader() {
       )}
 
       <nav className={`mobile-menu ${menuOpen ? 'open' : ''}`}>
-        <button className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg transition-colors" onClick={toggleMenu}>
-          <X className="w-6 h-6 text-gray-600" />
+        <button className="absolute top-4 right-4 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors" onClick={toggleMenu}>
+          <X className="w-6 h-6 text-gray-600 dark:text-gray-400" />
         </button>
 
         <div className="w-full px-6 pt-8 flex justify-start">
@@ -160,7 +180,7 @@ export default function SiteHeader() {
           {isAuthed ? (
             <>
               <Link to={dashboardPath} onClick={toggleMenu} className="block">
-                <button className="w-full bg-black text-white border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider hover:bg-gray-900 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
+                <button className="w-full bg-black text-white border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider hover:bg-gray-900 dark:hover:bg-gray-100 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
                   Go to Dashboard
                 </button>
               </Link>
@@ -171,7 +191,7 @@ export default function SiteHeader() {
                   toggleMenu();
                   navigate('/');
                 }}
-                className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider hover:bg-gray-100 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200"
+                className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider hover:bg-gray-100 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:bg-gray-700 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200"
               >
                 Logout
               </button>
@@ -179,7 +199,7 @@ export default function SiteHeader() {
           ) : (
             <>
               <Link to={createPageUrl("CustomerLogin")} onClick={toggleMenu} className="block">
-                <button className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider hover:bg-gray-100 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
+                <button className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider hover:bg-gray-100 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:bg-gray-700 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
                   Login
                 </button>
               </Link>

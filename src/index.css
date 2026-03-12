@@ -182,6 +182,10 @@ button:focus-visible {
   .dark .glass {
     @apply bg-slate-900/70 backdrop-blur-md border border-white/10;
   }
+
+  .dark .glass-card {
+    @apply bg-slate-900/80 backdrop-blur-lg border border-slate-700/50 shadow-md;
+  }
 }
 
 

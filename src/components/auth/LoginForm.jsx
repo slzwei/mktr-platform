@@ -240,6 +240,12 @@ export default function LoginForm() {
           --grey: #909090;
         }
 
+        .dark {
+          --black: #ffffff;
+          --white: #1a1a2e;
+          --grey: #a0a0a0;
+        }
+
         /* Import Fonts */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=PT+Mono:wght@400&display=swap');
@@ -548,6 +554,91 @@ export default function LoginForm() {
         .auth-footer-link:hover {
           color: #5a67d8;
           text-decoration: underline;
+        }
+
+        .dark .auth-container {
+          background: linear-gradient(135deg, #1a1a2e 0%, #2d1b4e 100%);
+        }
+
+        .dark .auth-card {
+          background: rgba(30, 30, 47, 0.95);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .dark .auth-header {
+          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .dark .auth-tabs-list {
+          background: rgba(255, 255, 255, 0.05);
+        }
+
+        .dark .form-input input {
+          border: 2px solid rgba(255, 255, 255, 0.1);
+          background: rgba(30, 30, 47, 0.8);
+          color: #ffffff;
+        }
+
+        .dark .form-input input:focus {
+          border-color: #667eea;
+          box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+          background: rgba(30, 30, 47, 1);
+        }
+
+        .dark .form-input input::placeholder {
+          color: #6b7280;
+        }
+
+        .dark .form-select {
+          border: 2px solid rgba(255, 255, 255, 0.1);
+          background: rgba(30, 30, 47, 0.8);
+          color: #ffffff;
+        }
+
+        .dark .form-select:focus {
+          border-color: #667eea;
+          box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+          background: rgba(30, 30, 47, 1);
+        }
+
+        .dark .auth-button-primary {
+          background: #ffffff;
+          color: #1a1a2e;
+        }
+
+        .dark .auth-button-primary:hover:not(:disabled) {
+          background: #e5e5e5;
+        }
+
+        .dark .auth-button-google {
+          background: rgba(30, 30, 47, 0.8);
+          color: #ffffff;
+          border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .dark .auth-button-google:hover:not(:disabled) {
+          border-color: #667eea;
+        }
+
+        .dark .auth-divider::before,
+        .dark .auth-divider::after {
+          background: rgba(255, 255, 255, 0.1);
+        }
+
+        .dark .auth-message.error {
+          background: rgba(239, 68, 68, 0.15);
+          border: 1px solid rgba(239, 68, 68, 0.3);
+          color: #f87171;
+        }
+
+        .dark .auth-message.success {
+          background: rgba(34, 197, 94, 0.15);
+          border: 1px solid rgba(34, 197, 94, 0.3);
+          color: #4ade80;
+        }
+
+        .dark .auth-footer {
+          border-top: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         /* Responsive Design */

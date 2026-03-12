@@ -84,6 +84,12 @@ export default function Contact() {
           --grey: #909090;
         }
 
+        .dark {
+          --black: #ffffff;
+          --white: #1a1a2e;
+          --grey: #a0a0a0;
+        }
+
         /* Import Fonts */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=PT+Mono:wght@400&display=swap');
@@ -191,7 +197,7 @@ export default function Contact() {
         }
       `}</style>
 
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
         {/* Header */}
         <SiteHeader />
         <div className="h-20 md:h-24" />
@@ -200,9 +206,9 @@ export default function Contact() {
         <section className="section-spacing bg-black">
           <div className="container">
             <div className="text-center max-w-4xl mx-auto mb-16">
-              <p className="section-title text-white" style={{ color: '#ffffff' }}>Get in Touch</p>
-              <h1 className="hero-title mb-6 text-white" style={{ color: '#ffffff' }}>Let's Talk Business</h1>
-              <p className="body-text max-w-2xl mx-auto text-white mt-4" style={{ color: '#ffffff' }}>
+              <p className="section-title text-white">Get in Touch</p>
+              <h1 className="hero-title mb-6 text-white">Let's Talk Business</h1>
+              <p className="body-text max-w-2xl mx-auto text-white mt-4">
                 Speak with us about lead generation, campaign design, and sales enablement. We typically respond within one business day.
               </p>
             </div>
@@ -210,7 +216,7 @@ export default function Contact() {
         </section>
 
         {/* Contact Section */}
-        <section className="bg-white py-16">
+        <section className="bg-white dark:bg-gray-900 py-16">
           <div className="container">
             <div className="grid lg:grid-cols-2 gap-16">
               {/* Contact Form */}
@@ -218,8 +224,8 @@ export default function Contact() {
                 {submitted ? (
                   <Card className="p-8 text-center">
                     <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                    <h3 className="text-2xl font-bold text-gray-900 mb-2">Message Sent!</h3>
-                    <p className="text-gray-600">
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Message Sent!</h3>
+                    <p className="text-gray-600 dark:text-gray-400">
                       Thank you for reaching out. We'll get back to you within 24 hours.
                     </p>
                   </Card>
@@ -229,7 +235,7 @@ export default function Contact() {
                     <form onSubmit={handleSubmit} className="space-y-6">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Full Name *
                           </label>
                           <Input
@@ -242,7 +248,7 @@ export default function Contact() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Company
                           </label>
                           <Input
@@ -258,7 +264,7 @@ export default function Contact() {
                       {/* I am an... inline with dropdown */}
                       <div>
                         <div className="flex items-center gap-3">
-                          <span className="text-sm font-medium text-gray-700 whitespace-nowrap">I am a</span>
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">I am a</span>
                           <div className="flex-1">
                             <Select
                               value={formData.userType}
@@ -280,7 +286,7 @@ export default function Contact() {
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Email Address *
                           </label>
                           <Input
@@ -294,7 +300,7 @@ export default function Contact() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Phone Number
                           </label>
                           <Input
@@ -308,7 +314,7 @@ export default function Contact() {
                       </div>
                       
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                           Message *
                         </label>
                         <Textarea
@@ -353,11 +359,11 @@ export default function Contact() {
                         <MapPin className="w-6 h-6" />
                       </div>
                       <div>
-                        <h4 className="font-semibold text-gray-900 mb-1">MKTR PTE. LTD.</h4>
-                        <p className="text-gray-600">Singapore</p>
+                        <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">MKTR PTE. LTD.</h4>
+                        <p className="text-gray-600 dark:text-gray-400">Singapore</p>
                       </div>
                     </div>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
                       For all enquiries, please use the contact form.
                     </div>
                   </div>
@@ -369,8 +375,8 @@ export default function Contact() {
                       <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg" alt="WhatsApp" className="w-6 h-6 invert" />
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-1">Message us on WhatsApp</h4>
-                      <p className="text-gray-600">WhatsApp only</p>
+                      <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">Message us on WhatsApp</h4>
+                      <p className="text-gray-600 dark:text-gray-400">WhatsApp only</p>
                       <a
                         href="https://wa.me/6580790542"
                         target="_blank"

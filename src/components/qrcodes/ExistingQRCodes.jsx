@@ -160,7 +160,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="bg-gray-50">
+              <TableRow className="bg-gray-50 dark:bg-gray-800">
                 <TableHead>QR Image</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Details</TableHead>
@@ -175,10 +175,10 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                   <TableRow key={index}>
                     <TableCell colSpan="6" className="p-4">
                       <div className="animate-pulse flex space-x-4">
-                        <div className="rounded-md bg-gray-200 h-16 w-16"></div>
+                        <div className="rounded-md bg-gray-200 dark:bg-gray-600 h-16 w-16"></div>
                         <div className="flex-1 space-y-2 py-1">
-                          <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                          <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                          <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-3/4"></div>
+                          <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-1/2"></div>
                         </div>
                       </div>
                     </TableCell>
@@ -186,10 +186,10 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                 ))
               ) : qrTags.length > 0 ? (
                 qrTags.map((qr) => (
-                  <TableRow key={qr.id} className="hover:bg-gray-50">
+                  <TableRow key={qr.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                     <TableCell>
                       {qr.qrImageUrl ? (
-                        <div className="w-16 h-16 p-1 bg-white rounded-md border">
+                        <div className="w-16 h-16 p-1 bg-white dark:bg-gray-800 rounded-md border">
                           <img 
                             src={resolveBackendUrl(qr.qrImageUrl)} 
                             alt={`QR Code ${qr.slug}`}
@@ -197,8 +197,8 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                           />
                         </div>
                       ) : (
-                        <div className="w-16 h-16 rounded-md bg-gray-100 flex items-center justify-center">
-                          <span className="text-xs text-gray-500">No Image</span>
+                        <div className="w-16 h-16 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">No Image</span>
                         </div>
                       )}
                     </TableCell>
@@ -208,14 +208,14 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="font-medium text-gray-900">
+                      <div className="font-medium text-gray-900 dark:text-gray-100">
                         {qr.label || (qr.type === 'car' ? `Car ID: ${qr.carId}` : '')}
                       </div>
-                      <div className="text-xs text-gray-500 truncate" title={qr.slug}>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={qr.slug}>
                         Slug: {qr.slug}
                       </div>
                       {qr.slug && (
-                        <div className="text-xs text-blue-700 break-all">
+                        <div className="text-xs text-blue-700 dark:text-blue-400 break-all">
                           {`${trackingBase}/${qr.slug}`}
                         </div>
                       )}
@@ -224,21 +224,21 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                       <div className="flex flex-col space-y-1">
                         {loadingAnalytics ? (
                           <div className="flex items-center gap-1">
-                            <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
-                            <span className="text-xs text-gray-500">Loading...</span>
+                            <Loader2 className="w-3 h-3 animate-spin text-gray-400 dark:text-gray-500" />
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Loading...</span>
                           </div>
                         ) : (
                           <>
                             <div className="flex items-center gap-1">
-                              <span className="text-xs text-gray-500">Scans:</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Scans:</span>
                               <span className="font-semibold text-sm text-blue-600">{scanTotals[qr.id]?.totalScans ?? 0}</span>
                             </div>
                             <div className="flex items-center gap-1">
-                              <span className="text-xs text-gray-500">Landings:</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Landings:</span>
                               <span className="font-medium text-xs text-green-600">{scanTotals[qr.id]?.landings ?? 0}</span>
                             </div>
                             <div className="flex items-center gap-1">
-                              <span className="text-xs text-gray-500">Leads:</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Leads:</span>
                               <span className="font-medium text-xs text-purple-600">{scanTotals[qr.id]?.leads ?? 0}</span>
                             </div>
                           </>
@@ -249,7 +249,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                       <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 text-blue-500" />
                         {loadingProspects ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                          <Loader2 className="w-4 h-4 animate-spin text-gray-400 dark:text-gray-500" />
                         ) : (
                           <span className="font-semibold text-lg text-blue-600">
                             {prospectCounts[qr.id] || 0}
@@ -307,7 +307,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan="6" className="text-center py-12 text-gray-500">
+                  <TableCell colSpan="6" className="text-center py-12 text-gray-500 dark:text-gray-400">
                     <h3 className="font-semibold">No QR codes found for this campaign.</h3>
                     <p>Generate one using the tabs above.</p>
                   </TableCell>
