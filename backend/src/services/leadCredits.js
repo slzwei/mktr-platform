@@ -8,10 +8,13 @@ import { Op } from 'sequelize';
  * @param {number} amount - Number of leads to deduct (default 1)
  * @returns {Promise<boolean>} - True if deduction occurred (fully or partially)
  */
-export async function deductLeadCredit(agentId, amount = 1) {
+export async function deductLeadCredit(agentId, amount = 1, externalTransaction = null) {
     if (!agentId || amount <= 0) return false;
 
-    const t = await sequelize.transaction();
+    // If caller passed a transaction, use it (no nested transaction).
+    // Otherwise create our own.
+    const ownTransaction = !externalTransaction;
+    const t = externalTransaction || await sequelize.transaction();
     try {
         let remainingToDeduct = amount;
 
@@ -61,7 +64,7 @@ export async function deductLeadCredit(agentId, amount = 1) {
             }
         }
 
-        await t.commit();
+        if (ownTransaction) await t.commit();
 
         // Log if we couldn't deduct full amount (unpaid lead?)
         if (remainingToDeduct > 0 && remainingToDeduct < amount) {
@@ -74,7 +77,7 @@ export async function deductLeadCredit(agentId, amount = 1) {
         return true;
 
     } catch (error) {
-        await t.rollback();
+        if (ownTransaction) await t.rollback();
         console.error('Error deducting lead credits:', error);
         // Don't throw, just return false so we don't break the prospect creation flow
         return false;
