@@ -35,26 +35,53 @@ export const LAYOUT_TEMPLATES = {
   modern: {
     id: 'modern',
     name: 'Vibrant Modern',
-    description: 'Colorful gradients, glassmorphism, and rounded aesthetics.',
+    description: 'Gradient background, glassmorphism card, rounded corners.',
     backgroundStyle: 'gradient',
     themeColor: '#3B82F6',
-    cardStyle: 'glass'
+    cardStyle: 'glass',
+    config: {
+      backgroundType: 'custom',
+      backgroundColor: '#EFF6FF',
+      themeColor: '#3B82F6',
+      textColor: '#1E293B',
+      cardBackgroundColor: '',
+      headlineSize: 24,
+      alignment: 'center',
+    }
   },
   corporate: {
     id: 'corporate',
     name: 'Corporate Clean',
-    description: 'Professional solid colors, boxier layout, and subtle shadows.',
+    description: 'Dark slate background, sharp edges, professional contrast.',
     backgroundStyle: 'solid_slate',
     themeColor: '#0F172A',
-    cardStyle: 'solid'
+    cardStyle: 'solid',
+    config: {
+      backgroundType: 'custom',
+      backgroundColor: '#1E293B',
+      themeColor: '#0F172A',
+      textColor: '#F8FAFC',
+      cardBackgroundColor: '#FFFFFF',
+      headlineSize: 22,
+      alignment: 'left',
+    }
   },
   simple: {
     id: 'simple',
     name: 'Clean & Simple',
-    description: 'Minimalist flat design with maximum readability.',
+    description: 'Pure white, no card border, minimal and focused.',
     backgroundStyle: 'simple_gray',
     themeColor: '#2563EB',
-    cardStyle: 'flat'
+    cardStyle: 'flat',
+    config: {
+      backgroundType: 'preset',
+      backgroundColor: '#ffffff',
+      themeColor: '#2563EB',
+      textColor: '#111827',
+      cardBackgroundColor: '',
+      headlineSize: 20,
+      alignment: 'center',
+    }
   }
 };
 

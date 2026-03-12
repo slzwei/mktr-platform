@@ -20,7 +20,11 @@ export default function DesignPanel({ currentDesign, onDesignChange }) {
               onClick={() => {
                 onDesignChange('layoutTemplate', template.id);
                 onDesignChange('backgroundStyle', template.backgroundStyle);
-                onDesignChange('backgroundType', 'preset');
+                if (template.config) {
+                  Object.entries(template.config).forEach(([key, value]) => {
+                    onDesignChange(key, value);
+                  });
+                }
               }}
               className={`relative p-4 rounded-xl border-2 transition-all cursor-pointer ${
                 currentDesign.layoutTemplate === template.id
@@ -28,13 +32,30 @@ export default function DesignPanel({ currentDesign, onDesignChange }) {
                   : 'border-gray-100 dark:border-gray-700 hover:border-blue-200 dark:hover:border-blue-800 hover:bg-gray-50 dark:hover:bg-gray-800'
               }`}
             >
-              <div className="flex items-start justify-between">
-                <div>
+              <div className="flex items-center gap-3">
+                {/* Mini preview swatch */}
+                <div
+                  className="w-12 h-12 rounded-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center shrink-0 overflow-hidden"
+                  style={{ backgroundColor: template.config?.backgroundColor || '#f9fafb' }}
+                >
+                  <div
+                    className="w-7 h-9 shadow-sm"
+                    style={{
+                      backgroundColor: template.config?.cardBackgroundColor || '#fff',
+                      borderRadius: template.id === 'modern' ? '6px' : template.id === 'simple' ? '0' : '3px',
+                      border: '1px solid rgba(0,0,0,0.08)'
+                    }}
+                  >
+                    <div className="w-3 h-0.5 rounded-full mt-1.5 mx-auto" style={{ backgroundColor: template.config?.themeColor || template.themeColor }} />
+                    <div className="w-4 h-0.5 rounded-full mt-0.5 mx-auto bg-gray-300/50" />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
                   <h4 className="font-semibold text-gray-900 dark:text-gray-100">{template.name}</h4>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{template.description}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{template.description}</p>
                 </div>
                 {currentDesign.layoutTemplate === template.id && (
-                  <div className="h-5 w-5 rounded-full bg-blue-600 flex items-center justify-center">
+                  <div className="h-5 w-5 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
                     <CheckCircle2 className="w-3 h-3 text-white" />
                   </div>
                 )}
