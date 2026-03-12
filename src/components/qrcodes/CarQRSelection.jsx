@@ -1,46 +1,11 @@
-
 import { useState, useEffect } from "react";
-import { QrTag } from "@/api/entities";
-import { Car } from "@/api/entities";
-import { User } from "@/api/entities";
-import { Campaign } from "@/api/entities";
+import { QrTag, Car, User, Campaign } from "@/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { AlertCircle, Car as CarIcon, Search, Loader2, CheckCircle, Filter } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-
-// Simple UUID v4 alternative using crypto API or fallback
-const generateUniqueId = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  // Fallback for environments without crypto.randomUUID
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
+import { AlertCircle, Car as CarIcon, Loader2, CheckCircle } from "lucide-react";
+import CarFilterBar from "@/components/qrcodes/CarFilterBar";
+import CarSelectionTable from "@/components/qrcodes/CarSelectionTable";
+import ReassignConfirmDialog from "@/components/qrcodes/ReassignConfirmDialog";
 
 export default function CarQRSelection({ campaign, onQRGenerated }) {
   const [cars, setCars] = useState([]);
@@ -50,7 +15,7 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [successCount, setSuccessCount] = useState(0); // New state for progress
+  const [successCount, setSuccessCount] = useState(0);
   const [filters, setFilters] = useState({
     search: "",
     fleetOwner: "all"
@@ -86,7 +51,6 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
   const getFilteredCars = () => {
     let filtered = cars;
 
-    // Search filter
     if (filters.search) {
       const search = filters.search.toLowerCase();
       filtered = filtered.filter(car =>
@@ -94,7 +58,6 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
       );
     }
 
-    // Fleet owner filter
     if (filters.fleetOwner !== "all") {
       filtered = filtered.filter(car => car.fleet_owner_id === filters.fleetOwner);
     }
@@ -117,10 +80,8 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
   const handleSelectAll = () => {
     const filteredCars = getFilteredCars();
     if (selectedCarIds.size === filteredCars.length) {
-      // Unselect all
       setSelectedCarIds(new Set());
     } else {
-      // Select all filtered cars
       setSelectedCarIds(new Set(filteredCars.map(car => car.id)));
     }
   };
@@ -275,37 +236,11 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
             </div>
           )}
 
-          {/* Filters */}
-          <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
-              <Input
-                placeholder="Search by plate number..."
-                value={filters.search}
-                onChange={(e) => setFilters({...filters, search: e.target.value})}
-                className="pl-10"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-              <Select
-                value={filters.fleetOwner}
-                onValueChange={(value) => setFilters({...filters, fleetOwner: value})}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Fleets</SelectItem>
-                  {fleetOwners.map((owner) => (
-                    <SelectItem key={owner.id} value={owner.id}>
-                      {owner.full_name || owner.company_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <CarFilterBar
+            filters={filters}
+            onFiltersChange={setFilters}
+            fleetOwners={fleetOwners}
+          />
 
           {/* Selection Summary */}
           <div className="flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
@@ -340,91 +275,23 @@ export default function CarQRSelection({ campaign, onQRGenerated }) {
             </Button>
           </div>
 
-          {/* Cars Table */}
-          <div className="border rounded-lg">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50 dark:bg-gray-800">
-                  <TableHead className="w-12">Select</TableHead>
-                  <TableHead>Plate Number</TableHead>
-                  <TableHead>Fleet Owner</TableHead>
-                  <TableHead>Current Driver</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredCars.map((car) => (
-                  <TableRow key={car.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedCarIds.has(car.id)}
-                        onCheckedChange={() => handleCarToggle(car.id)}
-                      />
-                    </TableCell>
-                    <TableCell className="font-semibold">
-                      {car.plate_number}
-                    </TableCell>
-                    <TableCell>
-                      {getFleetOwnerName(car.fleet_owner_id)}
-                    </TableCell>
-                    <TableCell className="text-gray-600 dark:text-gray-400">
-                      {car.current_driver_id || '-'}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-
-            {filteredCars.length === 0 && (
-              <div className="text-center py-8">
-                <CarIcon className="w-12 h-12 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
-                <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">No cars found</h3>
-                <p className="text-gray-500 dark:text-gray-400">
-                  {cars.length === 0
-                    ? 'No cars are registered in the system yet.'
-                    : 'Try adjusting your search or filter criteria.'
-                  }
-                </p>
-              </div>
-            )}
-          </div>
+          <CarSelectionTable
+            filteredCars={filteredCars}
+            totalCars={cars.length}
+            selectedCarIds={selectedCarIds}
+            onCarToggle={handleCarToggle}
+            getFleetOwnerName={getFleetOwnerName}
+          />
         </div>
 
-        {/* Reassignment confirmation */}
-        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Confirm reassignment</AlertDialogTitle>
-              <AlertDialogDescription>
-                {precheck.toReassign.length} car{precheck.toReassign.length !== 1 ? 's' : ''} already have a QR assigned to another campaign.
-                Proceeding will reassign them to "{campaign.name}". This keeps the same QR and link slug and preserves analytics.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className="max-h-48 overflow-auto rounded border p-2 bg-gray-50 dark:bg-gray-800 text-sm">
-              {precheck.toReassign.map(({ car, tag }) => (
-                <div key={car.id} className="flex justify-between py-1">
-                  <span className="font-medium">{car.plate_number}</span>
-                  <span className="text-gray-600 dark:text-gray-400">from {precheck.campaignNames[tag.campaignId] || tag.campaignId || 'Unknown'}</span>
-                </div>
-              ))}
-              {precheck.alreadyOnCampaign.length > 0 && (
-                <div className="mt-3 text-gray-600 dark:text-gray-400">
-                  {precheck.alreadyOnCampaign.length} car{precheck.alreadyOnCampaign.length !== 1 ? 's are' : ' is'} already on this campaign and will be skipped.
-                </div>
-              )}
-            </div>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={generating}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => executeAssign([...precheck.toCreate, ...precheck.toReassign.map(x => x.car)])}
-                disabled={generating}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                Confirm and Assign
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ReassignConfirmDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          precheck={precheck}
+          campaignName={campaign.name}
+          generating={generating}
+          onConfirm={() => executeAssign([...precheck.toCreate, ...precheck.toReassign.map(x => x.car)])}
+        />
       </CardContent>
     </Card>
   );
