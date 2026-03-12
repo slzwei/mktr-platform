@@ -29,7 +29,7 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
             campaignId,
             purpose: 'share',
             ttlDays: 90,
-          });
+          }, { skipAuth: true });
           const url = resp?.data?.url;
           const absolute = url?.startsWith('http') ? url : `${window.location.origin}${url}`;
           setShortShareUrl(absolute || '');
