@@ -157,8 +157,8 @@ export default function AdminCampaigns() {
     return (
       <div className="p-6 lg:p-8">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-64"></div>
-          <div className="h-96 bg-gray-200 rounded-xl"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-64"></div>
+          <div className="h-96 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
         </div>
       </div>
     );
@@ -218,8 +218,8 @@ export default function AdminCampaigns() {
 
   // helper for type icon
   const getTypeIcon = (type) => {
-    if (type === 'brand_awareness') return <Car className="w-4 h-4 text-blue-600" />;
-    return <QrCode className="w-4 h-4 text-green-600" />;
+    if (type === 'brand_awareness') return <Car className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
+    return <QrCode className="w-4 h-4 text-green-600 dark:text-green-400" />;
   };
 
   const renderListTable = (list, archived = false) => (
@@ -227,7 +227,7 @@ export default function AdminCampaigns() {
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
-          <TableRow className="bg-gray-50">
+          <TableRow className="bg-gray-50 dark:bg-gray-800">
             <TableHead>Campaign Name</TableHead>
             {!archived && <TableHead>Status</TableHead>}
             <TableHead>Type</TableHead>
@@ -239,14 +239,14 @@ export default function AdminCampaigns() {
         </TableHeader>
         <TableBody>
           {list.map((campaign) => (
-            <TableRow key={campaign.id} className="hover:bg-gray-50">
+            <TableRow key={campaign.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
               <TableCell className="font-semibold">
                 {archived ? (
-                  <span className="text-gray-700">{campaign.name}</span>
+                  <span className="text-gray-700 dark:text-gray-300">{campaign.name}</span>
                 ) : (
                   <Link
                     to={createPageUrl(`AdminProspects?campaign=${campaign.id}`)}
-                    className="text-blue-600 hover:underline hover:text-blue-800"
+                    className="text-blue-600 dark:text-blue-400 hover:underline hover:text-blue-800"
                   >
                     {campaign.name}
                   </Link>
@@ -258,8 +258,8 @@ export default function AdminCampaigns() {
                     variant={campaign.is_active ? "default" : "outline"}
                     className={
                       campaign.is_active
-                        ? "bg-green-100 text-green-800"
-                        : "bg-red-100 text-red-800"
+                        ? "bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-400"
+                        : "bg-red-100 text-red-800 dark:bg-red-950/30 dark:text-red-400"
                     }
                   >
                     {campaign.is_active ? "Active" : "Inactive"}
@@ -269,7 +269,7 @@ export default function AdminCampaigns() {
               <TableCell>
                 <div className="flex items-center gap-2" title={campaign.type === 'brand_awareness' ? 'PHV Campaign' : 'Regular Campaign'}>
                   {getTypeIcon(campaign.type)}
-                  <span className="text-sm text-gray-600 capitalize">
+                  <span className="text-sm text-gray-600 dark:text-gray-400 capitalize">
                     {campaign.type === 'brand_awareness' ? 'PHV' : 'Regular'}
                   </span>
                 </div>
@@ -280,7 +280,7 @@ export default function AdminCampaigns() {
                     {format(parseISO(campaign.start_date), "dd MMM yyyy")} - {format(parseISO(campaign.end_date), "dd MMM yyyy")}
                   </>
                 ) : (
-                  <span className="text-gray-400">Not set</span>
+                  <span className="text-gray-400 dark:text-gray-500">Not set</span>
                 )}
               </TableCell>
               <TableCell>
@@ -327,29 +327,29 @@ export default function AdminCampaigns() {
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-base font-semibold truncate">{c.name}</CardTitle>
             {archived ? (
-              <Badge variant="outline" className="bg-gray-100 text-gray-700">Archived</Badge>
+              <Badge variant="outline" className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">Archived</Badge>
             ) : (
-              <Badge className={c.is_active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"} variant={c.is_active ? "default" : "outline"}>
+              <Badge className={c.is_active ? "bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-400" : "bg-red-100 text-red-800 dark:bg-red-950/30 dark:text-red-400"} variant={c.is_active ? "default" : "outline"}>
                 {c.is_active ? "Active" : "Inactive"}
               </Badge>
             )}
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
               <div>
-                <span className="text-gray-500">Duration:</span>{" "}
+                <span className="text-gray-500 dark:text-gray-400">Duration:</span>{" "}
                 {c.start_date && c.end_date ? (
                   `${format(parseISO(c.start_date), 'dd MMM')} – ${format(parseISO(c.end_date), 'dd MMM yyyy')}`
                 ) : (
-                  <span className="text-gray-400">Not set</span>
+                  <span className="text-gray-400 dark:text-gray-500">Not set</span>
                 )}
               </div>
               <div>
-                <span className="text-gray-500">Age:</span> {c.min_age} – {c.max_age || 'Any'}
+                <span className="text-gray-500 dark:text-gray-400">Age:</span> {c.min_age} – {c.max_age || 'Any'}
               </div>
 
             </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
+            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
               {getTypeIcon(c.type)}
               <span>{c.type === 'brand_awareness' ? 'PHV Campaign' : 'Regular Campaign'}</span>
             </div>
@@ -379,7 +379,7 @@ export default function AdminCampaigns() {
         </Card>
       ))}
       {list.length === 0 && (
-        <div className="col-span-full text-center py-12 text-gray-500">
+        <div className="col-span-full text-center py-12 text-gray-500 dark:text-gray-400">
           <h3 className="font-semibold">No campaigns found.</h3>
         </div>
       )}
@@ -387,12 +387,12 @@ export default function AdminCampaigns() {
   );
 
   return (
-    <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
+    <div className="p-6 lg:p-8 bg-gray-50 dark:bg-gray-900/50 min-h-screen">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Admin - Campaign Management</h1>
-            <p className="text-gray-600 mt-1">Create and manage your marketing campaigns.</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Admin - Campaign Management</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">Create and manage your marketing campaigns.</p>
           </div>
           <Button onClick={() => setIsTypeSelectionOpen(true)} className="bg-blue-600 hover:bg-blue-700">
             <Plus className="w-5 h-5 mr-2" />
@@ -404,19 +404,19 @@ export default function AdminCampaigns() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <Card>
             <CardContent className="py-3">
-              <div className="text-sm text-gray-500">Active</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Active</div>
               <div className="text-2xl font-semibold">{campaigns.filter(c => c.is_active).length}</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="py-3">
-              <div className="text-sm text-gray-500">Inactive</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Inactive</div>
               <div className="text-2xl font-semibold">{campaigns.filter(c => !c.is_active).length}</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="py-3">
-              <div className="text-sm text-gray-500">Archived</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Archived</div>
               <div className="text-2xl font-semibold">{archivedCampaigns.length}</div>
             </CardContent>
           </Card>
@@ -426,7 +426,7 @@ export default function AdminCampaigns() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
           <div className="flex items-center gap-2 w-full lg:w-auto">
             <div className="relative w-full lg:w-80">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
               <Input
                 placeholder="Search campaigns..."
                 className="pl-9"
@@ -478,7 +478,7 @@ export default function AdminCampaigns() {
                   renderGrid(visibleActive)
                 )}
                 {visibleActive.length === 0 && (
-                  <div className="text-center py-12 text-gray-500">
+                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                     <h3 className="font-semibold">No campaigns found.</h3>
                     <p>Adjust filters or create a new campaign.</p>
                   </div>
@@ -496,7 +496,7 @@ export default function AdminCampaigns() {
                   renderGrid(visibleArchived, true)
                 )}
                 {visibleArchived.length === 0 && (
-                  <div className="text-center py-12 text-gray-500">
+                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                     <h3 className="font-semibold">No archived campaigns.</h3>
                   </div>
                 )}

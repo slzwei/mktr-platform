@@ -100,8 +100,8 @@ const AdminApkManager = () => {
     return (
         <div className="container mx-auto p-6 max-w-4xl">
             <div className="mb-8">
-                <h1 className="text-3xl font-bold tracking-tight text-gray-900">App Versions</h1>
-                <p className="text-gray-500 mt-2">Manage the Android application package (APK) for the fleet.</p>
+                <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">App Versions</h1>
+                <p className="text-gray-500 dark:text-gray-400 mt-2">Manage the Android application package (APK) for the fleet.</p>
             </div>
 
             <div className="grid gap-6">
@@ -113,26 +113,26 @@ const AdminApkManager = () => {
                             Current Latest Version
                         </CardTitle>
                         <CardDescription>
-                            The version currently being served at <code className="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono">/api/apk/latest</code>
+                            The version currently being served at <code className="bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded text-xs font-mono">/api/apk/latest</code>
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
                         {isLoading ? (
                             <div className="flex items-center justify-center py-8">
-                                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                                <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400" />
                             </div>
                         ) : currentApk ? (
-                            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700">
                                 <div className="space-y-1">
                                     <div className="flex items-center gap-2">
-                                        <span className="font-semibold text-gray-900">{currentApk.filename}</span>
-                                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                                        <span className="font-semibold text-gray-900 dark:text-gray-100">{currentApk.filename}</span>
+                                        <span className="text-xs bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
                                             <CheckCircle2 className="w-3 h-3" /> Active
                                         </span>
                                     </div>
-                                    <div className="text-sm text-gray-500 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                                    <div className="text-sm text-gray-500 dark:text-gray-400 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                                         <span>Size: {formatBytes(currentApk.size)}</span>
-                                        <span className="hidden sm:inline text-gray-300">|</span>
+                                        <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>
                                         <span>Uploaded: {new Date(currentApk.uploadedAt).toLocaleString()}</span>
                                     </div>
                                 </div>
@@ -144,8 +144,8 @@ const AdminApkManager = () => {
                                 </Button>
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center justify-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-                                <AlertCircle className="w-10 h-10 mb-2 text-gray-400" />
+                            <div className="flex flex-col items-center justify-center py-8 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg border border-dashed border-gray-200 dark:border-gray-700">
+                                <AlertCircle className="w-10 h-10 mb-2 text-gray-400 dark:text-gray-500" />
                                 <p>No APK version uploaded yet.</p>
                             </div>
                         )}
@@ -153,13 +153,13 @@ const AdminApkManager = () => {
                 </Card>
 
                 {/* Upload New Version Card */}
-                <Card className="border-blue-100 shadow-sm">
-                    <CardHeader className="bg-blue-50/50 border-b border-blue-100">
-                        <CardTitle className="text-blue-900 flex items-center gap-2">
+                <Card className="border-blue-100 dark:border-blue-900 shadow-sm">
+                    <CardHeader className="bg-blue-50/50 dark:bg-blue-950/20 border-b border-blue-100 dark:border-blue-900">
+                        <CardTitle className="text-blue-900 dark:text-blue-300 flex items-center gap-2">
                             <Upload className="w-5 h-5" />
                             Upload New Version
                         </CardTitle>
-                        <CardDescription className="text-blue-700/80">
+                        <CardDescription className="text-blue-700/80 dark:text-blue-400/80">
                             Uploading a new APK will <strong>replace</strong> the existing version immediately.
                         </CardDescription>
                     </CardHeader>
@@ -173,11 +173,11 @@ const AdminApkManager = () => {
                                 onChange={handleFileChange}
                                 disabled={isUploading}
                             />
-                            <p className="text-xs text-gray-500">Only .apk files are allowed. Max size 200MB.</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Only .apk files are allowed. Max size 200MB.</p>
                         </div>
 
                         {selectedFile && (
-                            <div className="mb-4 p-3 bg-gray-50 rounded text-sm text-gray-700 flex items-center justify-between">
+                            <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-800 rounded text-sm text-gray-700 dark:text-gray-300 flex items-center justify-between">
                                 <span>Selected: <strong>{selectedFile.name}</strong> ({formatBytes(selectedFile.size)})</span>
                             </div>
                         )}

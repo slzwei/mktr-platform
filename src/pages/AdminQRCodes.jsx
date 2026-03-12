@@ -207,8 +207,8 @@ export default function AdminQRCodes() {
     return (
       <div className="p-8">
         <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-64"></div>
-          <div className="h-96 bg-gray-200 rounded-xl"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-64"></div>
+          <div className="h-96 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
         </div>
       </div>
     );
@@ -221,12 +221,12 @@ export default function AdminQRCodes() {
   }
 
   return (
-    <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
+    <div className="p-6 lg:p-8 bg-gray-50 dark:bg-gray-900/50 min-h-screen">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">QR Code Management</h1>
-            <p className="text-gray-600 mt-1">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">QR Code Management</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">
               Generate and manage QR codes for your campaigns.
             </p>
           </div>
@@ -248,7 +248,7 @@ export default function AdminQRCodes() {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50">
+                  <TableRow className="bg-gray-50 dark:bg-gray-800">
                     <TableHead>Campaign Name</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Duration</TableHead>
@@ -259,17 +259,17 @@ export default function AdminQRCodes() {
                 <TableBody>
                   {filteredCampaigns.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan="5" className="text-center py-8 text-gray-500">
+                      <TableCell colSpan="5" className="text-center py-8 text-gray-500 dark:text-gray-400">
                         {campaignSearch ? `"${campaignSearch}" is not found` : 'No campaigns found.'}
                       </TableCell>
                     </TableRow>
                   ) : filteredCampaigns.map((campaign) => (
-                    <TableRow key={campaign.id} className="hover:bg-gray-50">
+                    <TableRow key={campaign.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                       <TableCell className="font-semibold">{campaign.name}</TableCell>
                       <TableCell>
                         <Badge
                           variant={campaign.is_active ? "default" : "outline"}
-                          className={campaign.is_active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}
+                          className={campaign.is_active ? "bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-400" : "bg-red-100 text-red-800 dark:bg-red-950/30 dark:text-red-400"}
                         >
                           {campaign.is_active ? "Active" : "Inactive"}
                         </Badge>
@@ -316,7 +316,7 @@ export default function AdminQRCodes() {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50">
+                  <TableRow className="bg-gray-50 dark:bg-gray-800">
                     <TableHead>QR Image</TableHead>
                     <TableHead>Label / Slug</TableHead>
                     <TableHead>Campaign</TableHead>
@@ -328,15 +328,15 @@ export default function AdminQRCodes() {
                 <TableBody>
                   {filteredPromotional.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan="6" className="text-center py-8 text-gray-500">
+                      <TableCell colSpan="6" className="text-center py-8 text-gray-500 dark:text-gray-400">
                         {promoSearch ? `"${promoSearch}" is not found` : 'No promotional QR codes found.'}
                       </TableCell>
                     </TableRow>
                   ) : filteredPromotional.map((qr) => (
-                    <TableRow key={qr.id} className="hover:bg-gray-50">
+                    <TableRow key={qr.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                       <TableCell>
                         {qr.qrImageUrl ? (
-                          <div className="w-16 h-16 p-1 bg-white rounded-md border">
+                          <div className="w-16 h-16 p-1 bg-white dark:bg-gray-900 rounded-md border">
                             <img
                               src={resolveBackendUrl(qr.qrImageUrl)}
                               alt={`QR Code ${qr.slug}`}
@@ -344,23 +344,23 @@ export default function AdminQRCodes() {
                             />
                           </div>
                         ) : (
-                          <div className="w-16 h-16 rounded-md bg-gray-100 flex items-center justify-center">
-                            <span className="text-xs text-gray-500">No Image</span>
+                          <div className="w-16 h-16 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">No Image</span>
                           </div>
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="font-medium text-gray-900">{qr.label || (Array.isArray(qr.tags) && qr.tags.length ? qr.tags.join(', ') : '-')}</div>
-                        <div className="text-xs text-gray-500 truncate" title={qr.slug}>Slug: {qr.slug}</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{qr.label || (Array.isArray(qr.tags) && qr.tags.length ? qr.tags.join(', ') : '-')}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={qr.slug}>Slug: {qr.slug}</div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                        <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400">
                           {qr.campaign?.name || '-'}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         {loadingAnalytics ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                          <Loader2 className="w-4 h-4 animate-spin text-gray-400 dark:text-gray-500" />
                         ) : (
                           <span className="font-semibold text-lg">{scanTotals[qr.id]?.totalScans ?? 0}</span>
                         )}
@@ -369,11 +369,11 @@ export default function AdminQRCodes() {
                         <div className="flex items-center gap-2">
                           <Users className="w-4 h-4 text-blue-500" />
                           {loadingAnalytics ? (
-                            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                            <Loader2 className="w-4 h-4 animate-spin text-gray-400 dark:text-gray-500" />
                           ) : (
                             <Link
                               to={`/admin/prospects?campaign=${qr.campaignId}&qrTagId=${qr.id}`}
-                              className="font-semibold text-lg text-blue-600 hover:text-blue-800 hover:underline"
+                              className="font-semibold text-lg text-blue-600 dark:text-blue-400 hover:text-blue-800 hover:underline"
                             >
                               {scanTotals[qr.id]?.leads || 0}
                             </Link>
@@ -452,7 +452,7 @@ export default function AdminQRCodes() {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50">
+                  <TableRow className="bg-gray-50 dark:bg-gray-800">
                     <TableHead>QR Image</TableHead>
                     <TableHead>Car Details</TableHead>
                     <TableHead>Campaign</TableHead>
@@ -464,15 +464,15 @@ export default function AdminQRCodes() {
                 <TableBody>
                   {filteredCars.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan="6" className="text-center py-8 text-gray-500">
+                      <TableCell colSpan="6" className="text-center py-8 text-gray-500 dark:text-gray-400">
                         {carSearch ? `"${carSearch}" is not found` : 'No car QR codes found.'}
                       </TableCell>
                     </TableRow>
                   ) : filteredCars.map((qr) => (
-                    <TableRow key={qr.id} className="hover:bg-gray-50">
+                    <TableRow key={qr.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                       <TableCell>
                         {qr.qrImageUrl ? (
-                          <div className="w-16 h-16 p-1 bg-white rounded-md border">
+                          <div className="w-16 h-16 p-1 bg-white dark:bg-gray-900 rounded-md border">
                             <img
                               src={resolveBackendUrl(qr.qrImageUrl)}
                               alt={`QR Code ${qr.slug}`}
@@ -480,26 +480,26 @@ export default function AdminQRCodes() {
                             />
                           </div>
                         ) : (
-                          <div className="w-16 h-16 rounded-md bg-gray-100 flex items-center justify-center">
-                            <span className="text-xs text-gray-500">No Image</span>
+                          <div className="w-16 h-16 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">No Image</span>
                           </div>
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="font-medium text-gray-900">{qr.car?.plate_number || (qr.label ? `Car: ${qr.label}` : `Car ID: ${qr.carId}`)}</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{qr.car?.plate_number || (qr.label ? `Car: ${qr.label}` : `Car ID: ${qr.carId}`)}</div>
                         {qr.car && (qr.car.model || qr.car.make) ? (
-                          <div className="text-sm text-gray-500">{qr.car.make} {qr.car.model}</div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">{qr.car.make} {qr.car.model}</div>
                         ) : null}
-                        <div className="text-xs text-gray-500 truncate" title={qr.slug}>Slug: {qr.slug}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={qr.slug}>Slug: {qr.slug}</div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                        <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400">
                           {qr.campaign?.name || '-'}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         {loadingAnalytics ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                          <Loader2 className="w-4 h-4 animate-spin text-gray-400 dark:text-gray-500" />
                         ) : (
                           <span className="font-semibold text-lg">{scanTotals[qr.id]?.totalScans ?? 0}</span>
                         )}
@@ -508,11 +508,11 @@ export default function AdminQRCodes() {
                         <div className="flex items-center gap-2">
                           <Users className="w-4 h-4 text-blue-500" />
                           {loadingAnalytics ? (
-                            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                            <Loader2 className="w-4 h-4 animate-spin text-gray-400 dark:text-gray-500" />
                           ) : (
                             <Link
                               to={`/AdminProspects?campaign=${qr.campaignId}&qrTagId=${qr.id}`}
-                              className="font-semibold text-lg text-blue-600 hover:text-blue-800 hover:underline"
+                              className="font-semibold text-lg text-blue-600 dark:text-blue-400 hover:text-blue-800 hover:underline"
                             >
                               {scanTotals[qr.id]?.leads || 0}
                             </Link>

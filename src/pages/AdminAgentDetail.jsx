@@ -42,16 +42,16 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 
 const statusStyles = {
-    new: "bg-blue-50 text-blue-700 border-blue-200",
-    contacted: "bg-amber-50 text-amber-700 border-amber-200",
-    meeting: "bg-violet-50 text-violet-700 border-violet-200",
-    close_won: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    won: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    close_lost: "bg-rose-50 text-rose-700 border-rose-200",
-    lost: "bg-rose-50 text-rose-700 border-rose-200",
-    rejected: "bg-slate-50 text-slate-700 border-slate-200",
-    negotiating: "bg-pink-100 text-pink-700 border-pink-200",
-    qualified: "bg-indigo-100 text-indigo-700 border-indigo-200"
+    new: "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800",
+    contacted: "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800",
+    meeting: "bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-200 dark:border-violet-800",
+    close_won: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
+    won: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
+    close_lost: "bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800",
+    lost: "bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800",
+    rejected: "bg-slate-50 dark:bg-slate-950/30 text-slate-700 dark:text-slate-400 border-slate-200 dark:border-slate-800",
+    negotiating: "bg-pink-100 dark:bg-pink-950/30 text-pink-700 dark:text-pink-400 border-pink-200 dark:border-pink-800",
+    qualified: "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800"
 };
 
 const statusLabels = {
@@ -215,17 +215,17 @@ export default function AdminAgentDetail() {
 
     if (loadingAgent) {
         return (
-            <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400" />
             </div>
         );
     }
 
     if (!agent) {
         return (
-            <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+            <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
                 <div className="max-w-[1600px] mx-auto text-center py-12">
-                    <h2 className="text-xl font-semibold text-gray-900">Agent not found</h2>
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Agent not found</h2>
                     <Link to="/AdminAgents">
                         <Button variant="outline" className="mt-4">Back to Agents</Button>
                     </Link>
@@ -235,24 +235,24 @@ export default function AdminAgentDetail() {
     }
 
     return (
-        <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+        <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
             <div className="max-w-[1600px] mx-auto space-y-6">
 
                 {/* Header */}
                 <div>
-                    <Link to="/AdminAgents" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-900 mb-4 transition-colors">
+                    <Link to="/AdminAgents" className="inline-flex items-center text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-4 transition-colors">
                         <ArrowLeft className="w-4 h-4 mr-1" />
                         Back to Agents
                     </Link>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
-                            <h1 className="text-2xl font-bold tracking-tight text-gray-900 flex items-center gap-3">
+                            <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100 flex items-center gap-3">
                                 {agent.firstName} {agent.lastName}
-                                <Badge variant="outline" className="font-normal text-sm bg-gray-100 text-gray-600">
+                                <Badge variant="outline" className="font-normal text-sm bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
                                     ID: {agent.id.slice(-8)}
                                 </Badge>
                             </h1>
-                            <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
+                            <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400 mt-1">
                                 <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> {agent.email}</span>
                                 {agent.phone && <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {agent.phone}</span>}
                             </div>
@@ -265,11 +265,11 @@ export default function AdminAgentDetail() {
                 </div>
 
                 {/* Filters */}
-                <Card className="border-gray-200/50 shadow-sm bg-white">
-                    <CardHeader className="border-b border-gray-100 p-4">
+                <Card className="border-gray-200/50 dark:border-gray-700/50 shadow-sm bg-white dark:bg-gray-900">
+                    <CardHeader className="border-b border-gray-100 dark:border-gray-700 p-4">
                         <div className="flex flex-col sm:flex-row gap-4 justify-between items-center">
                             <div className="relative w-full sm:w-72">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
                                 <Input
                                     placeholder="Search leads..."
                                     className="pl-9"
@@ -299,7 +299,7 @@ export default function AdminAgentDetail() {
                         <div className="overflow-x-auto">
                             <Table>
                                 <TableHeader>
-                                    <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-gray-100">
+                                    <TableRow className="bg-gray-50/50 dark:bg-gray-800/50 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 border-gray-100 dark:border-gray-700">
                                         <TableHead className="py-3 px-6">Prospect</TableHead>
                                         <TableHead className="py-3 px-6">Campaign</TableHead>
                                         <TableHead className="py-3 px-6">Status</TableHead>
@@ -311,14 +311,14 @@ export default function AdminAgentDetail() {
                                     {loading ? (
                                         <TableRow>
                                             <TableCell colSpan={5} className="h-24 text-center">
-                                                <div className="flex justify-center items-center gap-2 text-gray-500">
+                                                <div className="flex justify-center items-center gap-2 text-gray-500 dark:text-gray-400">
                                                     <Loader2 className="w-4 h-4 animate-spin" /> Loading...
                                                 </div>
                                             </TableCell>
                                         </TableRow>
                                     ) : prospects.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={5} className="h-32 text-center text-gray-500">
+                                            <TableCell colSpan={5} className="h-32 text-center text-gray-500 dark:text-gray-400">
                                                 No prospects found for this agent.
                                             </TableCell>
                                         </TableRow>
@@ -326,38 +326,38 @@ export default function AdminAgentDetail() {
                                         prospects.map(prospect => (
                                             <TableRow
                                                 key={prospect.id}
-                                                className="hover:bg-gray-50/50 cursor-pointer group"
+                                                className="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 cursor-pointer group"
                                                 onClick={() => setSelectedProspect(prospect)}
                                             >
                                                 <TableCell className="px-6 py-4">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-xs font-bold uppercase">
+                                                        <div className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-bold uppercase">
                                                             {prospect.firstName?.[0] || <UserIcon className="w-4 h-4" />}
                                                         </div>
                                                         <div>
-                                                            <p className="font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
+                                                            <p className="font-medium text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                                                                 {prospect.name}
                                                             </p>
-                                                            <p className="text-xs text-gray-500">{prospect.company}</p>
+                                                            <p className="text-xs text-gray-500 dark:text-gray-400">{prospect.company}</p>
                                                         </div>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="px-6 py-4">
-                                                    <span className="text-sm text-gray-700">{prospect.campaign?.name || 'Unknown'}</span>
+                                                    <span className="text-sm text-gray-700 dark:text-gray-300">{prospect.campaign?.name || 'Unknown'}</span>
                                                 </TableCell>
                                                 <TableCell className="px-6 py-4">
-                                                    <Badge variant="outline" className={statusStyles[prospect.leadStatus] || "bg-gray-100"}>
+                                                    <Badge variant="outline" className={statusStyles[prospect.leadStatus] || "bg-gray-100 dark:bg-gray-700"}>
                                                         {statusLabels[prospect.leadStatus] || prospect.leadStatus}
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell className="px-6 py-4">
-                                                    <code className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200 uppercase">
+                                                    <code className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700 uppercase">
                                                         {prospect.leadSource}
                                                     </code>
                                                 </TableCell>
-                                                <TableCell className="px-6 py-4 text-sm text-gray-500">
+                                                <TableCell className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
                                                     <div className="flex items-center gap-1.5">
-                                                        <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                                                        <Calendar className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
                                                         {format(new Date(prospect.createdAt), 'MMM d, yyyy')}
                                                     </div>
                                                 </TableCell>
@@ -370,8 +370,8 @@ export default function AdminAgentDetail() {
 
                         {/* Pagination */}
                         {pagination.totalPages > 1 && (
-                            <div className="border-t border-gray-100 p-4 flex items-center justify-between bg-gray-50/30">
-                                <span className="text-sm text-gray-500">
+                            <div className="border-t border-gray-100 dark:border-gray-700 p-4 flex items-center justify-between bg-gray-50/30 dark:bg-gray-800/30">
+                                <span className="text-sm text-gray-500 dark:text-gray-400">
                                     Page {pagination.page} of {pagination.totalPages} ({totalProspects} records)
                                 </span>
                                 <div className="flex items-center gap-2">

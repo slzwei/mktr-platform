@@ -54,7 +54,7 @@ export default function AdminShortLinks() {
       </div>
       <div className="overflow-x-auto border rounded">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-gray-50 dark:bg-gray-800">
             <tr>
               <th className="text-left p-2">Slug</th>
               <th className="text-left p-2">Target</th>
@@ -66,7 +66,7 @@ export default function AdminShortLinks() {
           <tbody>
             {items.map(it => (
               <tr key={it.id} className="border-t">
-                <td className="p-2"><a className="text-blue-600 hover:underline" href={`/share/${it.slug}`} target="_blank" rel="noreferrer">{it.slug}</a></td>
+                <td className="p-2"><a className="text-blue-600 dark:text-blue-400 hover:underline" href={`/share/${it.slug}`} target="_blank" rel="noreferrer">{it.slug}</a></td>
                 <td className="p-2 break-all">{it.targetUrl}</td>
                 <td className="p-2">{it.clickCount}</td>
                 <td className="p-2">{it.expiresAt ? new Date(it.expiresAt).toLocaleString() : '—'}</td>
@@ -78,7 +78,7 @@ export default function AdminShortLinks() {
               </tr>
             ))}
             {items.length === 0 && (
-              <tr><td className="p-4 text-center text-gray-500" colSpan={5}>{loading ? 'Loading…' : 'No results'}</td></tr>
+              <tr><td className="p-4 text-center text-gray-500 dark:text-gray-400" colSpan={5}>{loading ? 'Loading…' : 'No results'}</td></tr>
             )}
           </tbody>
         </table>
@@ -89,7 +89,7 @@ export default function AdminShortLinks() {
           <h2 className="font-semibold mb-2">Recent clicks for /share/{selected.slug}</h2>
           <div className="overflow-x-auto border rounded">
             <table className="min-w-full text-sm">
-              <thead className="bg-gray-50">
+              <thead className="bg-gray-50 dark:bg-gray-800">
                 <tr>
                   <th className="text-left p-2">Time</th>
                   <th className="text-left p-2">Device</th>
@@ -107,7 +107,7 @@ export default function AdminShortLinks() {
                   </tr>
                 ))}
                 {clicks.length === 0 && (
-                  <tr><td className="p-4 text-center text-gray-500" colSpan={4}>No clicks</td></tr>
+                  <tr><td className="p-4 text-center text-gray-500 dark:text-gray-400" colSpan={4}>No clicks</td></tr>
                 )}
               </tbody>
             </table>

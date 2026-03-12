@@ -189,7 +189,7 @@ export default function AdminDevices() {
 
 
     return (
-        <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50">
+        <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
             <div className="max-w-[1600px] mx-auto space-y-6">
                 <div className="flex justify-between items-center">
                     <h1 className="text-2xl font-bold">Device Management</h1>
@@ -204,27 +204,27 @@ export default function AdminDevices() {
                         {loading ? (
                             <div className="text-center py-4">Loading fleet status...</div>
                         ) : devices.length === 0 ? (
-                            <div className="text-center py-8 text-gray-500">
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                                 No devices registered yet. Turn on a tablet to auto-enroll.
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
                                 <Table>
                                     <TableHeader>
-                                        <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-gray-100">
+                                        <TableRow className="bg-gray-50/50 dark:bg-gray-800/50 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 border-gray-100 dark:border-gray-700">
                                             <TableHead className="w-[50px]"></TableHead> {/* Expand Trigger */}
-                                            <TableHead className="py-3 px-6 font-medium text-gray-500">Device Details</TableHead>
-                                            <TableHead className="py-3 px-6 font-medium text-gray-500">Status</TableHead>
-                                            <TableHead className="py-3 px-6 font-medium text-gray-500">Assigned Campaign</TableHead>
-                                            <TableHead className="py-3 px-6 font-medium text-gray-500">Last Seen</TableHead>
-                                            <TableHead className="py-3 px-6 font-medium text-gray-500 text-right">Actions</TableHead>
+                                            <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400">Device Details</TableHead>
+                                            <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400">Status</TableHead>
+                                            <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400">Assigned Campaign</TableHead>
+                                            <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400">Last Seen</TableHead>
+                                            <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 text-right">Actions</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {devices.map(device => (
                                             <React.Fragment key={device.id}>
                                                 {/* Main Row */}
-                                                <TableRow className={`hover:bg-gray-50/50 transition-colors border-gray-100 ${expandedDeviceId === device.id ? 'bg-muted/30' : ''}`}>
+                                                <TableRow className={`hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors border-gray-100 dark:border-gray-700 ${expandedDeviceId === device.id ? 'bg-muted/30' : ''}`}>
                                                     <TableCell>
                                                         <Button
                                                             variant="ghost"
@@ -241,7 +241,7 @@ export default function AdminDevices() {
                                                     </TableCell>
                                                     <TableCell className="px-6 py-4 font-medium">
                                                         <div className="flex flex-col gap-1">
-                                                            <span className="text-base font-semibold text-gray-900">{device.model || 'Generic Device'}</span>
+                                                            <span className="text-base font-semibold text-gray-900 dark:text-gray-100">{device.model || 'Generic Device'}</span>
                                                             <div
                                                                 className="flex items-center gap-1.5 text-xs text-blue-600/80 font-mono cursor-pointer hover:underline w-fit"
                                                                 onClick={() => navigator.clipboard.writeText(device.id)}
@@ -260,11 +260,11 @@ export default function AdminDevices() {
                                                             if (status === 'inactive' || status === 'offline' || isStale) {
                                                                 return (
                                                                     <div className="flex flex-col gap-1">
-                                                                        <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-200 w-fit">
-                                                                            <span className="w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
+                                                                        <Badge variant="outline" className="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 w-fit">
+                                                                            <span className="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500 mr-2"></span>
                                                                             OFFLINE
                                                                         </Badge>
-                                                                        <span className="text-xs text-gray-400">
+                                                                        <span className="text-xs text-gray-400 dark:text-gray-500">
                                                                             {device.lastSeenAt ? formatDistanceToNow(new Date(device.lastSeenAt), { addSuffix: true }) : 'Never seen'}
                                                                         </span>
                                                                     </div>
@@ -272,7 +272,7 @@ export default function AdminDevices() {
                                                             }
                                                             if (status === 'standby' || status === 'idle') {
                                                                 return (
-                                                                    <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                                                                    <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800">
                                                                         <span className="w-2 h-2 rounded-full bg-blue-500 mr-2"></span>
                                                                         READY
                                                                     </Badge>
@@ -280,7 +280,7 @@ export default function AdminDevices() {
                                                             }
                                                             if (status === 'playing' || status === 'active') {
                                                                 return (
-                                                                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 animate-pulse">
+                                                                    <Badge variant="outline" className="bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 animate-pulse">
                                                                         <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
                                                                         LIVE
                                                                     </Badge>
@@ -294,16 +294,16 @@ export default function AdminDevices() {
                                                         {device.campaigns && device.campaigns.length > 0 ? (
                                                             <div className="flex flex-wrap gap-1">
                                                                 {device.campaigns.map(c => (
-                                                                    <span key={c.id} className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded text-sm whitespace-nowrap">
+                                                                    <span key={c.id} className="font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 px-2 py-1 rounded text-sm whitespace-nowrap">
                                                                         {c.name}
                                                                     </span>
                                                                 ))}
                                                             </div>
                                                         ) : (
-                                                            <span className="text-gray-400 italic text-sm">Unassigned</span>
+                                                            <span className="text-gray-400 dark:text-gray-500 italic text-sm">Unassigned</span>
                                                         )}
                                                     </TableCell>
-                                                    <TableCell className="px-6 py-4 text-sm text-gray-500">
+                                                    <TableCell className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
                                                         {device.latitude && device.longitude ? (
                                                             <Button
                                                                 variant="ghost"
@@ -315,7 +315,7 @@ export default function AdminDevices() {
                                                                 View Map
                                                             </Button>
                                                         ) : (
-                                                            <span className="text-gray-400 text-xs">No GPS</span>
+                                                            <span className="text-gray-400 dark:text-gray-500 text-xs">No GPS</span>
                                                         )}
                                                     </TableCell>
                                                     <TableCell className="px-6 py-4 text-right">
@@ -334,7 +334,7 @@ export default function AdminDevices() {
                                                 {expandedDeviceId === device.id && (
                                                     <TableRow className="bg-muted/10">
                                                         <TableCell colSpan={6} className="p-0">
-                                                            <div className="p-4 border-b border-gray-100 bg-slate-50/50">
+                                                            <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-slate-50/50 dark:bg-gray-800/50">
                                                                 <div className="flex justify-between items-center mb-3 px-2">
                                                                     <h4 className="text-sm font-semibold flex items-center gap-2">
                                                                         <Activity className="h-4 w-4 text-primary" />
@@ -357,7 +357,7 @@ export default function AdminDevices() {
                                                                 ) : (
                                                                     <div className="space-y-2">
                                                                         {previewLogs.map((log) => (
-                                                                            <div key={log.id} className="grid grid-cols-[140px_100px_1fr] gap-4 text-xs p-2 rounded bg-white border border-gray-100 items-center">
+                                                                            <div key={log.id} className="grid grid-cols-[140px_100px_1fr] gap-4 text-xs p-2 rounded bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-700 items-center">
                                                                                 <span className="text-muted-foreground">
                                                                                     {format(new Date(log.createdAt), 'MMM d, HH:mm:ss')}
                                                                                 </span>

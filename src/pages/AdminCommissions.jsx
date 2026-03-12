@@ -24,9 +24,9 @@ import {
 } from "lucide-react";
 
 const statusColors = {
-  pending: "bg-blue-100 text-blue-800 border-blue-200",
-  approved: "bg-green-100 text-green-800 border-green-200",
-  paid: "bg-gray-100 text-gray-800 border-gray-200"
+  pending: "bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-400 border-blue-200 dark:border-blue-700",
+  approved: "bg-green-100 dark:bg-green-950/30 text-green-800 dark:text-green-400 border-green-200 dark:border-green-700",
+  paid: "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-700"
 };
 
 export default function AdminCommissions() {
@@ -137,13 +137,13 @@ export default function AdminCommissions() {
     return (
       <div className="p-6 lg:p-8">
         <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-64"></div>
+          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-64"></div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             {Array(4).fill(0).map((_, i) => (
-              <div key={i} className="h-32 bg-gray-200 rounded-xl"></div>
+              <div key={i} className="h-32 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
             ))}
           </div>
-          <div className="h-96 bg-gray-200 rounded-xl"></div>
+          <div className="h-96 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
         </div>
       </div>
     );
@@ -151,21 +151,21 @@ export default function AdminCommissions() {
 
   if (!user || !["admin", "agent"].includes(user.role)) {
     return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-gray-50">
+      <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-gray-50 dark:bg-gray-800">
         <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h2>
-        <p className="text-gray-600">You do not have permission to view this page.</p>
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Access Denied</h2>
+        <p className="text-gray-600 dark:text-gray-400">You do not have permission to view this page.</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
+    <div className="p-6 lg:p-8 bg-gray-50 dark:bg-gray-900/50 min-h-screen">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Commission Management</h1>
-            <p className="text-gray-600 mt-1">Track and manage agent and fleet owner commissions</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Commission Management</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">Track and manage agent and fleet owner commissions</p>
           </div>
         </div>
 
@@ -203,7 +203,7 @@ export default function AdminCommissions() {
           <CardHeader>
             <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
                 <Input
                   placeholder="Search agents or fleet owners..."
                   value={searchTerm}
@@ -212,7 +212,7 @@ export default function AdminCommissions() {
                 />
               </div>
               <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-gray-500" />
+                <Filter className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="w-40">
                     <SelectValue />
@@ -247,7 +247,7 @@ export default function AdminCommissions() {
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-gray-50">
+                      <TableRow className="bg-gray-50 dark:bg-gray-800">
                         <TableHead>Agent</TableHead>
                         <TableHead>Contact</TableHead>
                         <TableHead>Total Earned</TableHead>
@@ -259,25 +259,25 @@ export default function AdminCommissions() {
                       {agentAggregates.map((item) => {
                         const fullName = [item.agent.firstName, item.agent.lastName].filter(Boolean).join(" ") || "N/A";
                         return (
-                          <TableRow key={item.agent.id} className="hover:bg-gray-50">
+                          <TableRow key={item.agent.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                             <TableCell>
                               <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-semibold">
+                                <div className="w-10 h-10 bg-blue-100 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 rounded-full flex items-center justify-center font-semibold">
                                   {(fullName || "A").charAt(0).toUpperCase()}
                                 </div>
                                 <div>
-                                  <p className="font-semibold text-gray-900">{fullName}</p>
-                                  <p className="text-sm text-gray-500">ID: {String(item.agent.id).slice(-8)}</p>
+                                  <p className="font-semibold text-gray-900 dark:text-gray-100">{fullName}</p>
+                                  <p className="text-sm text-gray-500 dark:text-gray-400">ID: {String(item.agent.id).slice(-8)}</p>
                                 </div>
                               </div>
                             </TableCell>
                             <TableCell>
                               <div className="text-sm">
-                                <p className="text-gray-900">{item.agent.email}</p>
+                                <p className="text-gray-900 dark:text-gray-100">{item.agent.email}</p>
                               </div>
                             </TableCell>
                             <TableCell>
-                              <span className="text-lg font-bold text-green-600">${item.total.toFixed(2)}</span>
+                              <span className="text-lg font-bold text-green-600 dark:text-green-400">${item.total.toFixed(2)}</span>
                             </TableCell>
                             <TableCell>
                               <span className="font-semibold">{item.count}</span>
@@ -309,9 +309,9 @@ export default function AdminCommissions() {
 
                   {agentAggregates.length === 0 && (
                     <div className="text-center py-12">
-                      <Users className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                      <h3 className="font-semibold text-gray-900 mb-2">No agent commissions found</h3>
-                      <p className="text-gray-500">{searchTerm ? 'Try adjusting your search criteria' : 'No commissions have been generated yet'}</p>
+                      <Users className="w-12 h-12 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">No agent commissions found</h3>
+                      <p className="text-gray-500 dark:text-gray-400">{searchTerm ? 'Try adjusting your search criteria' : 'No commissions have been generated yet'}</p>
                     </div>
                   )}
                 </div>
@@ -331,7 +331,7 @@ export default function AdminCommissions() {
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-gray-50">
+                      <TableRow className="bg-gray-50 dark:bg-gray-800">
                         <TableHead>Fleet Owner</TableHead>
                         <TableHead>Contact</TableHead>
                         <TableHead>Total Earned</TableHead>
@@ -343,25 +343,25 @@ export default function AdminCommissions() {
                       {fleetOwnerAggregates.map((item) => {
                         const fullName = item.owner.full_name || 'N/A';
                         return (
-                          <TableRow key={item.owner.id} className="hover:bg-gray-50">
+                          <TableRow key={item.owner.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                             <TableCell>
                               <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-green-100 text-green-700 rounded-full flex items-center justify-center font-semibold">
+                                <div className="w-10 h-10 bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400 rounded-full flex items-center justify-center font-semibold">
                                   {(fullName || 'F').charAt(0).toUpperCase()}
                                 </div>
                                 <div>
-                                  <p className="font-semibold text-gray-900">{fullName}</p>
-                                  <p className="text-sm text-gray-500">ID: {String(item.owner.id).slice(-8)}</p>
+                                  <p className="font-semibold text-gray-900 dark:text-gray-100">{fullName}</p>
+                                  <p className="text-sm text-gray-500 dark:text-gray-400">ID: {String(item.owner.id).slice(-8)}</p>
                                 </div>
                               </div>
                             </TableCell>
                             <TableCell>
                               <div className="text-sm">
-                                <p className="text-gray-900">{item.owner.email}</p>
+                                <p className="text-gray-900 dark:text-gray-100">{item.owner.email}</p>
                               </div>
                             </TableCell>
                             <TableCell>
-                              <span className="text-lg font-bold text-green-600">${item.total.toFixed(2)}</span>
+                              <span className="text-lg font-bold text-green-600 dark:text-green-400">${item.total.toFixed(2)}</span>
                             </TableCell>
                             <TableCell>
                               <span className="font-semibold">{item.count}</span>
@@ -393,9 +393,9 @@ export default function AdminCommissions() {
 
                   {fleetOwnerAggregates.length === 0 && (
                     <div className="text-center py-12">
-                      <Users className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                      <h3 className="font-semibold text-gray-900 mb-2">No fleet owner commissions found</h3>
-                      <p className="text-gray-500">{searchTerm ? 'Try adjusting your search criteria' : 'No commissions have been generated yet'}</p>
+                      <Users className="w-12 h-12 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">No fleet owner commissions found</h3>
+                      <p className="text-gray-500 dark:text-gray-400">{searchTerm ? 'Try adjusting your search criteria' : 'No commissions have been generated yet'}</p>
                     </div>
                   )}
                 </div>
