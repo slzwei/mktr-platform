@@ -90,7 +90,7 @@ export default function DashboardCharts({ stats, loading }) {
                                     tickFormatter={(value) => `$${value}`}
                                 />
                                 <Tooltip
-                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', background: 'hsl(var(--card))', color: 'hsl(var(--card-foreground))' }}
                                     formatter={(value) => [`$${value.toFixed(2)}`, 'Revenue']}
                                 />
                                 <Area
@@ -129,7 +129,7 @@ export default function DashboardCharts({ stats, loading }) {
                                         ))}
                                     </Pie>
                                     <Tooltip
-                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', background: 'hsl(var(--card))', color: 'hsl(var(--card-foreground))' }}
                                     />
                                     {/* Custom Legend moved outside or simplified */}
                                 </PieChart>

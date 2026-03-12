@@ -280,6 +280,12 @@ export default function CustomerLogin() {
           --grey: #909090;
         }
 
+        .dark {
+          --black: #ffffff;
+          --white: #1a1a2e;
+          --grey: #a0a0a0;
+        }
+
         /* Import Fonts */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=PT+Mono:wght@400&display=swap');
@@ -327,7 +333,7 @@ export default function CustomerLogin() {
         }
       `}</style>
 
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
         {/* Simple Header with Logo and Back Button */}
         <div className="absolute top-6 left-6 z-10">
           <Link to={createPageUrl("Homepage")}>
@@ -340,7 +346,7 @@ export default function CustomerLogin() {
 
         <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-10">
           <h1 
-            className="text-2xl font-bold text-black"
+            className="text-2xl font-bold text-black dark:text-white"
             style={{ fontFamily: 'var(--heading-font)' }}
           >
             MKTR.
@@ -352,10 +358,10 @@ export default function CustomerLogin() {
           <div className="w-full max-w-md mx-4">
             <Card className="shadow-xl">
               <CardHeader className="text-center pb-4">
-                <CardTitle className="text-2xl font-bold text-gray-900 mb-2">
+                <CardTitle className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
                   Customer Portal
                 </CardTitle>
-                <p className="text-gray-600">
+                <p className="text-gray-600 dark:text-gray-400">
                   Sign in to access your dashboard
                 </p>
               </CardHeader>
@@ -374,17 +380,17 @@ export default function CustomerLogin() {
 
                   <TabsContent value="agent" className="space-y-4">
                     <div className="text-center py-4">
-                      <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full mx-auto mb-4 flex items-center justify-center">
+                      <div className="w-16 h-16 bg-blue-100 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 rounded-full mx-auto mb-4 flex items-center justify-center">
                         <Users className="w-8 h-8" />
                       </div>
-                      <h3 className="font-semibold text-gray-900 mb-2">Sales Agent Portal</h3>
-                      <p className="text-sm text-gray-600 mb-6">
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Sales Agent Portal</h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
                         Access your leads, campaigns, and commission tracking
                       </p>
                       
                       <form onSubmit={handleSubmit} className="space-y-4 text-left">
                         <div className="space-y-2">
-                          <label htmlFor="agent-email" className="text-sm font-medium text-gray-700">
+                          <label htmlFor="agent-email" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             Email
                           </label>
                           <Input
@@ -400,7 +406,7 @@ export default function CustomerLogin() {
                         </div>
                         
                         <div className="space-y-2">
-                          <label htmlFor="agent-password" className="text-sm font-medium text-gray-700">
+                          <label htmlFor="agent-password" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             Password
                           </label>
                           <Input
@@ -416,7 +422,7 @@ export default function CustomerLogin() {
                         </div>
                         
                         {error && (
-                          <div className="flex items-center gap-2 p-3 bg-red-50 text-red-600 rounded-lg">
+                          <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-950/30 text-red-600 rounded-lg">
                             <AlertCircle className="w-4 h-4" />
                             <span className="text-sm">{error}</span>
                           </div>
@@ -443,7 +449,7 @@ export default function CustomerLogin() {
                             <span className="w-full border-t" />
                           </div>
                           <div className="relative flex justify-center text-xs uppercase">
-                            <span className="bg-white px-2 text-gray-500">Or continue with</span>
+                            <span className="bg-white dark:bg-gray-900 px-2 text-gray-500 dark:text-gray-400">Or continue with</span>
                           </div>
                         </div>
                         
@@ -468,17 +474,17 @@ export default function CustomerLogin() {
 
                   <TabsContent value="fleet" className="space-y-4">
                     <div className="text-center py-4">
-                      <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full mx-auto mb-4 flex items-center justify-center">
+                      <div className="w-16 h-16 bg-green-100 dark:bg-green-950/30 text-green-600 dark:text-green-400 rounded-full mx-auto mb-4 flex items-center justify-center">
                         <Car className="w-8 h-8" />
                       </div>
-                      <h3 className="font-semibold text-gray-900 mb-2">Fleet Owner Portal</h3>
-                      <p className="text-sm text-gray-600 mb-6">
+                      <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Fleet Owner Portal</h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
                         Manage your vehicles, drivers, and track commissions
                       </p>
                       
                       <form onSubmit={handleSubmit} className="space-y-4 text-left">
                         <div className="space-y-2">
-                          <label htmlFor="fleet-email" className="text-sm font-medium text-gray-700">
+                          <label htmlFor="fleet-email" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             Email
                           </label>
                           <Input
@@ -494,7 +500,7 @@ export default function CustomerLogin() {
                         </div>
                         
                         <div className="space-y-2">
-                          <label htmlFor="fleet-password" className="text-sm font-medium text-gray-700">
+                          <label htmlFor="fleet-password" className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             Password
                           </label>
                           <Input
@@ -510,7 +516,7 @@ export default function CustomerLogin() {
                         </div>
                         
                         {error && (
-                          <div className="flex items-center gap-2 p-3 bg-red-50 text-red-600 rounded-lg">
+                          <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-950/30 text-red-600 rounded-lg">
                             <AlertCircle className="w-4 h-4" />
                             <span className="text-sm">{error}</span>
                           </div>
@@ -537,7 +543,7 @@ export default function CustomerLogin() {
                             <span className="w-full border-t" />
                           </div>
                           <div className="relative flex justify-center text-xs uppercase">
-                            <span className="bg-white px-2 text-gray-500">Or continue with</span>
+                            <span className="bg-white dark:bg-gray-900 px-2 text-gray-500 dark:text-gray-400">Or continue with</span>
                           </div>
                         </div>
                         
@@ -561,8 +567,8 @@ export default function CustomerLogin() {
                   </TabsContent>
                 </Tabs>
 
-                <div className="text-center pt-4 border-t border-gray-200">
-                  <p className="text-sm text-gray-500 mb-3">
+                <div className="text-center pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
                     New to MKTR?
                   </p>
                   <Link to={createPageUrl("Contact")}>
