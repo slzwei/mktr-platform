@@ -54,6 +54,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
 
     const textStyle = textColor ? { color: textColor } : {};
 
+    const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
     useEffect(() => {
         let timer;
         if (resendCooldown > 0) {
@@ -850,7 +852,8 @@ export default function CampaignSignupForm({ themeColor, formHeadline, formSubhe
                     otpState !== 'verified' ||
                     loading === 'submitting' ||
                     ageError !== '' ||
-                    dobIncomplete
+                    dobIncomplete ||
+                    !isValidEmail(formData.email)
                 }
             >
                 {loading === 'submitting' ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Submit Application'}
