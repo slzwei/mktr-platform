@@ -103,10 +103,15 @@ export default function AdminAgents() {
     setSyncing(true);
     try {
       const res = await apiClient.post('/lyfe/agents/sync');
-      const { created, updated, skipped } = res.data || {};
+      const { created, updated, deactivated, skipped } = res.data || {};
+      const parts = [];
+      if (created) parts.push(`${created} added`);
+      if (updated) parts.push(`${updated} updated`);
+      if (deactivated) parts.push(`${deactivated} deactivated`);
+      if (skipped) parts.push(`${skipped} unchanged`);
       toast({
         title: "Sync Complete",
-        description: `${created || 0} new agents added, ${updated || 0} updated, ${skipped || 0} unchanged`
+        description: parts.join(', ') || 'No changes'
       });
       await loadData();
     } catch (error) {

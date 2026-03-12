@@ -1,4 +1,5 @@
 import express from 'express';
+import { Op } from 'sequelize';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { fetchAgents, fetchAgentGroups, fetchAgentById, invalidateCache } from '../services/agentSyncService.js';
@@ -92,10 +93,29 @@ router.post('/agents/sync', asyncHandler(async (req, res) => {
     }
   }
 
+  // Deactivate local agents that are no longer in Lyfe
+  let deactivated = 0;
+  const lyfeIds = lyfeAgents.map(a => String(a.id)).filter(Boolean);
+
+  if (lyfeIds.length > 0) {
+    const staleAgents = await User.findAll({
+      where: {
+        lyfeId: { [Op.ne]: null, [Op.notIn]: lyfeIds },
+        role: 'agent',
+        isActive: true
+      }
+    });
+
+    for (const agent of staleAgents) {
+      await agent.update({ isActive: false });
+      deactivated++;
+    }
+  }
+
   res.json({
     success: true,
-    message: `Sync complete: ${created} created, ${updated} updated, ${skipped} unchanged`,
-    data: { created, updated, skipped, total: lyfeAgents.length }
+    message: `Sync complete: ${created} created, ${updated} updated, ${deactivated} deactivated, ${skipped} unchanged`,
+    data: { created, updated, deactivated, skipped, total: lyfeAgents.length }
   });
 }));
 
