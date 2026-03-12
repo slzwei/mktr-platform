@@ -60,7 +60,7 @@ export const LAYOUT_TEMPLATES = {
       backgroundType: 'custom',
       backgroundColor: '#1E293B',
       themeColor: '#0F172A',
-      textColor: '#F8FAFC',
+      textColor: '#0F172A',
       cardBackgroundColor: '#FFFFFF',
       headlineSize: 22,
       alignment: 'left',
