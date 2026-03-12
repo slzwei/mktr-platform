@@ -79,7 +79,7 @@ class APIClient {
       const response = await fetch(url, config);
 
       // Handle authentication errors
-      if (response.status === 401) {
+      if (response.status === 401 && !options.skipAuth) {
         this.setToken(null);
         currentUser = null;
         localStorage.removeItem(STORAGE_KEYS.USER);
@@ -89,6 +89,10 @@ class APIClient {
           window.dispatchEvent(new Event('auth:unauthorized'));
         }
 
+        throw new Error('Authentication required');
+      }
+
+      if (response.status === 401 && options.skipAuth) {
         throw new Error('Authentication required');
       }
 
