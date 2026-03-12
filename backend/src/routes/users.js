@@ -1,12 +1,12 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import { v4 as uuidv4 } from 'uuid';
-import { User, sequelize, Prospect, LeadPackageAssignment, ProspectActivity } from '../models/index.js';
+import { User, sequelize } from '../models/index.js';
 import { authenticateToken, requireAdmin, requireAgentOrAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
-import { sendEmail } from '../services/mailer.js';
 import { getRoleInviteEmail, getRoleInviteSubject, getRoleInviteText } from '../services/emailTemplates.js';
+import { sendRoleInvitation } from '../services/invitationService.js';
 import { getSystemAgentId } from '../services/systemAgent.js';
+import { deactivateUser, permanentlyDeleteUser, bulkDeleteUsers } from '../services/userService.js';
 
 const router = express.Router();
 
@@ -94,7 +94,7 @@ router.get('/', authenticateToken, requireAdmin, asyncHandler(async (req, res) =
 router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req, res) => {
   const { email, full_name, role, owed_leads_count = 0 } = req.body;
 
-  if (!email || !full_name || !role) {
+  if (!role) {
     throw new AppError('email, full_name and role are required', 400);
   }
 
@@ -103,54 +103,25 @@ router.post('/invite', authenticateToken, requireAdmin, asyncHandler(async (req,
     throw new AppError('Invalid role. Must be one of agent, fleet_owner, driver_partner', 400);
   }
 
-  if (req.user?.email && String(req.user.email).toLowerCase() === String(email).toLowerCase()) {
-    throw new AppError('You cannot invite your own email address', 400);
-  }
-
-  const existing = await User.findOne({ where: { email } });
-  if (existing) {
-    throw new AppError('A user with this email already exists. Permanently delete the existing user first to send a new invitation.', 400);
-  }
-
-  const nameParts = String(full_name).trim().split(/\s+/);
-  const firstName = nameParts[0] || 'User';
-  const lastName = nameParts.slice(1).join(' ') || '';
-
-  const invitationToken = uuidv4();
-  const invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-  const creationData = {
-    email,
-    firstName,
-    lastName,
-    role,
-    isActive: true,
-    emailVerified: false,
-    invitationToken,
-    invitationExpires
-  };
+  const extraFields = {};
   if (role === 'agent') {
-    creationData.owed_leads_count = parseInt(owed_leads_count) || 0;
+    extraFields.owed_leads_count = parseInt(owed_leads_count) || 0;
   }
 
-  const user = await User.create(creationData);
-
-  const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
-  const inviteLink = `${frontendBase}/auth/accept-invite?token=${encodeURIComponent(invitationToken)}&email=${encodeURIComponent(email)}`;
+  const { user, inviteLink } = await sendRoleInvitation({
+    email,
+    fullName: full_name,
+    role,
+    inviterEmail: req.user?.email,
+    extraFields,
+    getEmailContent: ({ firstName, inviteLink, companyName, companyUrl, expiryDays, roleLabel }) => ({
+      subject: getRoleInviteSubject({ companyName, roleLabel }),
+      html: getRoleInviteEmail({ firstName, inviteLink, companyName, companyUrl, expiryDays, roleLabel }),
+      text: getRoleInviteText({ firstName, inviteLink, companyName, expiryDays, roleLabel })
+    })
+  });
 
   const roleLabel = role === 'agent' ? 'Agent' : role === 'fleet_owner' ? 'Fleet Owner' : 'Driver Partner';
-  const subject = getRoleInviteSubject({ companyName: process.env.COMPANY_NAME || 'MKTR', roleLabel });
-  const html = getRoleInviteEmail({
-    firstName,
-    inviteLink,
-    companyName: process.env.COMPANY_NAME || 'MKTR',
-    companyUrl: process.env.COMPANY_URL || process.env.FRONTEND_BASE_URL || 'http://localhost:5173',
-    expiryDays: 7,
-    roleLabel
-  });
-  const text = getRoleInviteText({ firstName, inviteLink, companyName: process.env.COMPANY_NAME || 'MKTR', expiryDays: 7, roleLabel });
-  await sendEmail({ to: email, subject, html, text });
-
   res.status(201).json({ success: true, message: `${roleLabel} invited`, data: { user: user.toJSON(), inviteLink } });
 }));
 
@@ -243,55 +214,8 @@ router.delete('/:id', authenticateToken, requireAdmin, asyncHandler(async (req, 
     throw new AppError('Cannot delete the System Agent', 400);
   }
 
-  const user = await User.findByPk(id);
-  if (!user) {
-    throw new AppError('User not found', 404);
-  }
-
-  // Soft delete by deactivating
-  await sequelize.transaction(async (t) => {
-    // 0. Find prospects assigned to this agent to log activity
-    const assignedProspects = await Prospect.findAll({
-      where: { assignedAgentId: id },
-      attributes: ['id'],
-      transaction: t
-    });
-
-    if (assignedProspects.length > 0) {
-      const agentName = `${user.firstName} ${user.lastName}`.trim() || user.email;
-      const activityRecords = assignedProspects.map(p => ({
-        prospectId: p.id,
-        type: 'updated',
-        actorUserId: req.user.id,
-        description: `Lead unassigned because agent ${agentName} was deactivated`,
-        metadata: {
-          previousAssignedAgentId: id,
-          reason: 'agent_deactivated'
-        }
-      }));
-
-      await ProspectActivity.bulkCreate(activityRecords, { transaction: t });
-    }
-
-    // 1. Unassign prospects
-    await Prospect.update(
-      { assignedAgentId: null },
-      { where: { assignedAgentId: id }, transaction: t }
-    );
-
-    // 2. Remove package assignments
-    await LeadPackageAssignment.destroy({
-      where: { agentId: id }, transaction: t
-    });
-
-    // 3. Deactivate the user
-    await user.update({ isActive: false }, { transaction: t });
-
-    res.json({
-      success: true,
-      message: 'User deactivated and assignments removed'
-    });
-  });
+  const result = await deactivateUser(id, req.user.id);
+  res.json({ success: true, message: result.message });
 }));
 
 // Bulk delete users (Admin only)
@@ -313,68 +237,8 @@ router.post('/bulk-delete', authenticateToken, requireAdmin, asyncHandler(async 
     throw new AppError('Cannot delete the System Agent', 400);
   }
 
-  await sequelize.transaction(async (t) => {
-    // 0. Fetch agents to get their names for activity logs
-    const agents = await User.findAll({
-      where: { id: { [Op.in]: ids } },
-      attributes: ['id', 'firstName', 'lastName', 'email'],
-      transaction: t
-    });
-    const agentMap = agents.reduce((acc, agent) => {
-      acc[agent.id] = agent;
-      return acc;
-    }, {});
-
-    // 0.5 Find prospects assigned to these agents to log activity
-    const assignedProspects = await Prospect.findAll({
-      where: { assignedAgentId: { [Op.in]: ids } },
-      attributes: ['id', 'assignedAgentId'],
-      transaction: t
-    });
-
-    if (assignedProspects.length > 0) {
-      const activityRecords = assignedProspects.map(p => {
-        const agent = agentMap[p.assignedAgentId];
-        const agentName = agent ? `${agent.firstName} ${agent.lastName}`.trim() : (agent?.email || 'Unknown Agent');
-        return {
-          prospectId: p.id,
-          type: 'updated',
-          actorUserId: req.user.id,
-          description: `Lead unassigned because agent ${agentName} was deleted`,
-          metadata: {
-            previousAssignedAgentId: p.assignedAgentId,
-            reason: 'agent_deleted_bulk'
-          }
-        };
-      });
-
-      // Use bulkCreate for performance
-      await ProspectActivity.bulkCreate(activityRecords, { transaction: t });
-    }
-
-    // 1. Unassign prospects
-    await Prospect.update(
-      { assignedAgentId: null },
-      { where: { assignedAgentId: { [Op.in]: ids } }, transaction: t }
-    );
-
-    // 2. Remove package assignments
-    await LeadPackageAssignment.destroy({
-      where: { agentId: { [Op.in]: ids } },
-      transaction: t
-    });
-
-    // 3. Delete the users
-    const deletedCount = await User.destroy({
-      where: { id: { [Op.in]: ids } },
-      transaction: t
-    });
-
-    res.json({
-      success: true,
-      message: `${deletedCount} users permanently deleted`
-    });
-  });
+  const result = await bulkDeleteUsers(ids, req.user.id);
+  res.json({ success: true, message: result.message });
 }));
 
 // Permanently delete user (Admin only)
@@ -392,55 +256,8 @@ router.delete('/:id/permanent', authenticateToken, requireAdmin, asyncHandler(as
     throw new AppError('Cannot delete the System Agent', 400);
   }
 
-  const user = await User.findByPk(id);
-  if (!user) {
-    throw new AppError('User not found', 404);
-  }
-
-  await sequelize.transaction(async (t) => {
-    // 0. Find prospects assigned to this agent to log activity
-    const assignedProspects = await Prospect.findAll({
-      where: { assignedAgentId: id },
-      attributes: ['id'],
-      transaction: t
-    });
-
-    if (assignedProspects.length > 0) {
-      const agentName = `${user.firstName} ${user.lastName}`.trim() || user.email;
-      const activityRecords = assignedProspects.map(p => ({
-        prospectId: p.id,
-        type: 'updated',
-        actorUserId: req.user.id,
-        description: `Lead unassigned because agent ${agentName} was deleted`,
-        metadata: {
-          previousAssignedAgentId: id,
-          reason: 'agent_deleted'
-        }
-      }));
-
-      await ProspectActivity.bulkCreate(activityRecords, { transaction: t });
-    }
-
-    // Clean up dependencies to ensure successful deletion
-    // 1. Unassign prospects
-    await Prospect.update(
-      { assignedAgentId: null },
-      { where: { assignedAgentId: id }, transaction: t }
-    );
-
-    // 2. Remove package assignments
-    await LeadPackageAssignment.destroy({
-      where: { agentId: id }, transaction: t
-    });
-
-    // 3. Delete the user
-    await user.destroy({ transaction: t });
-
-    res.json({
-      success: true,
-      message: 'User and related assignments permanently deleted'
-    });
-  });
+  const result = await permanentlyDeleteUser(id, req.user.id);
+  res.json({ success: true, message: result.message });
 }));
 
 // Get agents (for assignment purposes)
