@@ -127,41 +127,41 @@ export async function createProspect(body, user, { cookies, headers } = {}) {
     incoming.qrTagId ? QrTag.findByPk(incoming.qrTagId) : null
   ]);
 
-  // --- Routing resolution (Part 7B) ---
+  // --- Routing resolution: reads from QrTag, not Campaign ---
   let routingMode = 'direct';
   let resolvedAgent = null;
   let agentGroup = null;
 
-  if (sourceCampaign?.agentAssignmentMode === 'round_robin') {
+  if (sourceQrTag?.agentAssignmentMode === 'round_robin') {
     routingMode = 'round_robin';
-    const agentPhones = sourceCampaign.agentGroupAgentIds || [];
+    const agentPhones = sourceQrTag.agentGroupAgentIds || [];
     if (agentPhones.length > 0) {
-      // Atomic round-robin index increment
-      const [, [updated]] = await Campaign.update(
+      // Atomic round-robin index increment on QrTag
+      const [, [updated]] = await QrTag.update(
         { roundRobinIndex: sequelize.literal('"roundRobinIndex" + 1') },
-        { where: { id: sourceCampaign.id }, returning: true }
-      ).catch(() => [0, [sourceCampaign]]);
+        { where: { id: sourceQrTag.id }, returning: true }
+      ).catch(() => [0, [sourceQrTag]]);
 
-      const idx = (updated?.roundRobinIndex ?? sourceCampaign.roundRobinIndex) % agentPhones.length;
+      const idx = (updated?.roundRobinIndex ?? sourceQrTag.roundRobinIndex) % agentPhones.length;
       const selectedPhone = agentPhones[idx];
 
-      // Look up agent by phone from the group's agents JSON
-      if (sourceCampaign.agentGroupId) {
-        agentGroup = await AgentGroup.findByPk(sourceCampaign.agentGroupId);
+      // Look up full agent info from group
+      if (sourceQrTag.agentGroupId) {
+        agentGroup = await AgentGroup.findByPk(sourceQrTag.agentGroupId);
       }
       const groupAgents = agentGroup?.agents || [];
       resolvedAgent = groupAgents.find(a => a.phone === selectedPhone) || { phone: selectedPhone };
     }
-  } else if (sourceCampaign?.agentAssignmentMode === 'direct' && sourceQrTag) {
-    routingMode = 'direct';
-    if (sourceQrTag.assignedAgentPhone) {
-      resolvedAgent = {
-        phone: sourceQrTag.assignedAgentPhone,
-        email: sourceQrTag.assignedAgentEmail,
-        name: sourceQrTag.assignedAgentName
-      };
-    }
+  } else if (sourceQrTag?.assignedAgentPhone) {
+    // Direct mode — use per-QR assigned agent
+    resolvedAgent = {
+      phone: sourceQrTag.assignedAgentPhone,
+      email: sourceQrTag.assignedAgentEmail,
+      name: sourceQrTag.assignedAgentName
+    };
   }
+  // If no QrTag or no assignment config → resolvedAgent stays null
+  // resolveAssignedAgentId() handles fallback (QR owner → LeadPackage RR → SystemAgent)
 
   // Wrap all DB writes in a transaction for data integrity
   const prospect = await sequelize.transaction(async (t) => {

@@ -120,6 +120,33 @@ const QrTag = sequelize.define('QrTag', {
     type: DataTypes.STRING,
     allowNull: true
   },
+  // --- Assignment routing (moved from Campaign) ---
+  agentAssignmentMode: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'direct',
+    validate: {
+      isIn: [['direct', 'round_robin']]
+    }
+  },
+  agentGroupId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'agent_groups',
+      key: 'id'
+    }
+  },
+  agentGroupAgentIds: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: []
+  },
+  roundRobinIndex: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  },
   campaignId: {
     type: DataTypes.UUID,
     allowNull: true,

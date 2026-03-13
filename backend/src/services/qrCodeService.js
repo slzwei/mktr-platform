@@ -97,7 +97,9 @@ export async function listQrCodes(user, query) {
 }
 
 export async function createQrCode(body, user) {
-  const { label, tags = [], type, campaignId, carId } = body;
+  const { label, tags = [], type, campaignId, carId,
+          agentAssignmentMode, agentGroupId, agentGroupAgentIds,
+          assignedAgentPhone, assignedAgentEmail, assignedAgentName } = body;
 
   // Validate campaign access
   if (campaignId) {
@@ -160,7 +162,13 @@ export async function createQrCode(body, user) {
     ownerUserId: user.id,
     active: true,
     qrCode: svg,
-    qrImageUrl: publicUrl
+    qrImageUrl: publicUrl,
+    agentAssignmentMode: agentAssignmentMode || 'direct',
+    agentGroupId: agentGroupId || null,
+    agentGroupAgentIds: agentGroupAgentIds || [],
+    assignedAgentPhone: assignedAgentPhone || null,
+    assignedAgentEmail: assignedAgentEmail || null,
+    assignedAgentName: assignedAgentName || null
   });
 
   return { qrTag, updated: false };
@@ -183,11 +191,23 @@ export async function getQrCode(id, user) {
   return qrTag;
 }
 
+const QR_UPDATE_FIELDS = [
+  'label', 'tags', 'active', 'location', 'placement', 'description',
+  'agentAssignmentMode', 'agentGroupId', 'agentGroupAgentIds',
+  'assignedAgentPhone', 'assignedAgentEmail', 'assignedAgentName',
+  'campaignId'
+];
+
 export async function updateQrCode(id, body, user) {
-  const { regenerateCode, ...updateData } = body;
+  const { regenerateCode, ...rawData } = body;
   const where = buildOwnerWhere(user, { id });
   const qrTag = await QrTag.findOne({ where });
   if (!qrTag) throw new AppError('QR code not found or access denied', 404);
+
+  // Whitelist allowed fields
+  const updateData = Object.fromEntries(
+    Object.entries(rawData).filter(([k]) => QR_UPDATE_FIELDS.includes(k))
+  );
 
   if (regenerateCode) {
     const publicBase = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
@@ -310,10 +330,17 @@ export async function bulkOperateQrCodes(operation, qrTagIds, data, user) {
       await QrTag.update({ status: 'archived' }, { where });
       message = `${qrTags.length} QR codes archived`;
       break;
-    case 'update':
-      await QrTag.update(data, { where });
+    case 'update': {
+      // Exclude assignment fields from bulk update to prevent mass-overwrite
+      const BULK_EXCLUDE = ['agentAssignmentMode', 'agentGroupId', 'agentGroupAgentIds',
+        'assignedAgentPhone', 'assignedAgentEmail', 'assignedAgentName', 'roundRobinIndex'];
+      const safeData = Object.fromEntries(
+        Object.entries(data || {}).filter(([k]) => !BULK_EXCLUDE.includes(k))
+      );
+      await QrTag.update(safeData, { where });
       message = `${qrTags.length} QR codes updated`;
       break;
+    }
     default:
       throw new AppError('Invalid operation', 400);
   }

@@ -132,6 +132,7 @@ const defineAssociations = () => {
   AgentGroup.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
   User.hasMany(AgentGroup, { foreignKey: 'createdBy', as: 'agentGroups' });
   Campaign.belongsTo(AgentGroup, { foreignKey: 'agentGroupId', as: 'agentGroup' });
+  QrTag.belongsTo(AgentGroup, { foreignKey: 'agentGroupId', as: 'agentGroup' });
 };
 
 // Initialize associations

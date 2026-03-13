@@ -1,5 +1,5 @@
 import express from 'express';
-import { AgentGroup, Campaign } from '../models/index.js';
+import { AgentGroup, Campaign, QrTag } from '../models/index.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
@@ -71,10 +71,17 @@ router.delete('/:id', asyncHandler(async (req, res) => {
     }
   });
 
-  if (campaignCount > 0) {
+  // Check if any QR tags reference this group
+  const qrTagCount = await QrTag.count({ where: { agentGroupId: group.id } });
+
+  const inUseCount = campaignCount + qrTagCount;
+  if (inUseCount > 0) {
+    const parts = [];
+    if (campaignCount > 0) parts.push(`${campaignCount} active campaign(s)`);
+    if (qrTagCount > 0) parts.push(`${qrTagCount} QR code(s)`);
     return res.status(409).json({
       success: false,
-      message: `Cannot delete: ${campaignCount} active campaign(s) reference this group`
+      message: `Cannot delete: ${parts.join(' and ')} reference this group`
     });
   }
 
