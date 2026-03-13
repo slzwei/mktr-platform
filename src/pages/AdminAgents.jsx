@@ -83,6 +83,7 @@ export default function AdminAgents() {
 
   const { toast } = useToast();
   const [syncing, setSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(() => localStorage.getItem('lyfe_last_sync'));
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [editLeadCount, setEditLeadCount] = useState("");
 
@@ -100,6 +101,9 @@ export default function AdminAgents() {
         title: "Sync Complete",
         description: parts.join(', ') || 'No changes'
       });
+      const now = new Date().toISOString();
+      localStorage.setItem('lyfe_last_sync', now);
+      setLastSyncTime(now);
       queryClient.invalidateQueries({ queryKey: ['agents'] });
     } catch (error) {
       console.error('Error syncing from Lyfe:', error);
@@ -389,14 +393,21 @@ export default function AdminAgents() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleSyncFromLyfe}
-              disabled={syncing}
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Syncing...' : 'Sync from Lyfe'}
-            </Button>
+            <div className="flex flex-col items-end gap-1">
+              <Button
+                variant="outline"
+                onClick={handleSyncFromLyfe}
+                disabled={syncing}
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Syncing...' : 'Sync from Lyfe'}
+              </Button>
+              {lastSyncTime && (
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  Last synced {new Date(lastSyncTime).toLocaleString()}
+                </span>
+              )}
+            </div>
             <Button onClick={() => handleOpenForm()} className="bg-blue-600 hover:bg-blue-700">
               <Plus className="w-5 h-5 mr-2" />
               Invite Agent
