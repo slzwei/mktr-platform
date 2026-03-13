@@ -1,13 +1,14 @@
-import { useState, useEffect } from "react";
-import { User, Campaign } from "@/api/entities";
-import { auth, agents as agentsAPI, apiClient } from "@/api/client";
+import { useState } from "react";
+import { User } from "@/api/entities";
+import { agents as agentsAPI, apiClient } from "@/api/client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
 import { LeadPackage } from "@/api/entities";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -61,9 +62,15 @@ import AgentDetailsDialog from "../components/agents/AgentDetailsDialog";
 import AssignPackageDialog from "../components/agents/AssignPackageDialog";
 
 export default function AdminAgents() {
-  const [user, setUser] = useState(null);
-  const [agents, setAgents] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { data: user } = useCurrentUser();
+  const { data: agentsData, isLoading: loading } = useQuery({
+    queryKey: ['agents', 'list'],
+    queryFn: () => agentsAPI.getAll(),
+    enabled: !!user,
+  });
+  const agents = agentsData?.agents || [];
+
   const [selectedAgentIds, setSelectedAgentIds] = useState([]); // [1] Add selection state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -79,26 +86,6 @@ export default function AdminAgents() {
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [editLeadCount, setEditLeadCount] = useState("");
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      const userData = await auth.getCurrentUser(true);
-      if (!userData || userData.role !== 'admin') {
-        throw new Error('Insufficient permissions');
-      }
-      const agentsData = await agentsAPI.getAll();
-
-      setUser(userData);
-      setAgents(agentsData?.agents || []);
-    } catch (error) {
-      console.error('Error loading agents:', error);
-    }
-    setLoading(false);
-  };
-
   const handleSyncFromLyfe = async () => {
     setSyncing(true);
     try {
@@ -113,7 +100,7 @@ export default function AdminAgents() {
         title: "Sync Complete",
         description: parts.join(', ') || 'No changes'
       });
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
     } catch (error) {
       console.error('Error syncing from Lyfe:', error);
       toast({
@@ -154,7 +141,7 @@ export default function AdminAgents() {
         });
       }
 
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
       setIsFormOpen(false);
       setSelectedAgent(null);
     } catch (error) {
@@ -191,7 +178,7 @@ export default function AdminAgents() {
       const assignments = await LeadPackage.getAssignments(selectedAgent.id);
       setPackagesForAgent(assignments || []);
       // Also refresh main list to update owed leads count
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
     } catch (e) {
       console.error('Failed to delete assignment', e);
       toast({ variant: "destructive", title: "Error", description: e.message || "Failed to delete assignment" });
@@ -224,7 +211,7 @@ export default function AdminAgents() {
       const assignments = await LeadPackage.getAssignments(selectedAgent.id);
       setPackagesForAgent(assignments || []);
       // Also refresh main list to update owed leads count
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
     } catch (e) {
       console.error('Failed to update assignment', e);
       toast({ variant: "destructive", title: "Error", description: e.message || "Failed to update assignment" });
@@ -241,7 +228,7 @@ export default function AdminAgents() {
       await apiClient.post('/users/bulk-delete', { ids: selectedAgentIds });
       toast({ title: "Success", description: `${selectedAgentIds.length} agents deleted successfully` });
       setSelectedAgentIds([]); // Clear selection
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
     } catch (error) {
       console.error('Error deleting agents:', error);
       toast({ variant: "destructive", title: "Error", description: error?.message || "Failed to delete agents" });
@@ -275,7 +262,7 @@ export default function AdminAgents() {
 
     try {
       await apiClient.delete(`/users/${agent.id}/permanent`);
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
       toast({ title: "Success", description: "Agent deleted successfully" });
     } catch (error) {
       console.error('Error deleting agent:', error);
@@ -287,7 +274,7 @@ export default function AdminAgents() {
     if (!agent) return;
     try {
       await User.update(agent.id, { isActive: !agent.isActive });
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
     } catch (error) {
       console.error('Error toggling agent status:', error);
     }
@@ -318,7 +305,7 @@ export default function AdminAgents() {
         setPackagesForAgent(assignments || []);
       }
 
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
       setIsPackageDialogOpen(false);
       // Do NOT clear selectedAgent here, as we might be in the Manage Packages flow which relies on it
       // if managePackagesDialogOpen is true, we keep it. Otherwise we can clear it? 
@@ -589,10 +576,10 @@ export default function AdminAgents() {
                             <DropdownMenuSeparator />
                             {(agent.approvalStatus === 'pending' || agent.status === 'pending_approval') && (
                               <>
-                                <DropdownMenuItem onClick={async () => { try { await User.setApprovalStatus(agent.id, 'approved'); await loadData(); } catch (e) { console.error(e); } }} className="text-emerald-600">
+                                <DropdownMenuItem onClick={async () => { try { await User.setApprovalStatus(agent.id, 'approved'); queryClient.invalidateQueries({ queryKey: ['agents'] }); } catch (e) { console.error(e); } }} className="text-emerald-600">
                                   <CheckCircle className="mr-2 h-4 w-4" /> Approve
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={async () => { try { await User.setApprovalStatus(agent.id, 'rejected'); await loadData(); } catch (e) { console.error(e); } }} className="text-red-600">
+                                <DropdownMenuItem onClick={async () => { try { await User.setApprovalStatus(agent.id, 'rejected'); queryClient.invalidateQueries({ queryKey: ['agents'] }); } catch (e) { console.error(e); } }} className="text-red-600">
                                   <XCircle className="mr-2 h-4 w-4" /> Reject
                                 </DropdownMenuItem>
                               </>

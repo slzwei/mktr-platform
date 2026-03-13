@@ -193,6 +193,17 @@
   background: rgba(0, 0, 0, 0.05);
 }
 
+.form-error {
+  color: #dc2626;
+  font-size: 0.75rem;
+  font-family: var(--body-font);
+  margin-top: 0.25rem;
+}
+
+.dark .form-error {
+  color: #f87171;
+}
+
 .form-select {
   width: 100%;
   padding: 0.875rem 1rem;

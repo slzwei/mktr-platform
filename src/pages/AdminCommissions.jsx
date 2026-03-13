@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { auth } from "@/api/client";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Commission } from "@/api/entities";
+import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -30,30 +31,14 @@ const statusColors = {
 };
 
 export default function AdminCommissions() {
-  const [user, setUser] = useState(null);
-  const [commissions, setCommissions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data: user } = useCurrentUser();
+  const { data: commissionsRaw, isLoading: loading } = useQuery({
+    queryKey: ['commissions', 'list', { limit: 1000 }],
+    queryFn: () => Commission.list({ limit: 1000 })
+  });
+  const commissions = Array.isArray(commissionsRaw) ? commissionsRaw : (commissionsRaw?.commissions || []);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [currentUser, listData] = await Promise.all([
-          auth.getCurrentUser(),
-          Commission.list({ limit: 1000 })
-        ]);
-        setUser(currentUser);
-        const list = Array.isArray(listData) ? listData : (listData.commissions || []);
-        setCommissions(list);
-      } catch (e) {
-        console.error("Failed to load commissions:", e);
-      }
-      setLoading(false);
-    };
-    load();
-  }, []);
 
   const filteredCommissions = useMemo(() => {
     let items = commissions.slice();

@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
-import { User, Campaign, QrTag, Prospect } from "@/api/entities";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
+import { Campaign, QrTag } from "@/api/entities";
 import { apiClient } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,11 +41,32 @@ import { format, parseISO } from "date-fns";
 import CampaignQRManager from "@/components/qrcodes/CampaignQRManager";
 
 export default function AdminQRCodes() {
-  const [user, setUser] = useState(null);
-  const [campaigns, setCampaigns] = useState([]);
+  const queryClient = useQueryClient();
+  const { data: user } = useCurrentUser();
+
+  const { data: campaignsRaw, isLoading: campaignsLoading } = useQuery({
+    queryKey: ['campaigns', 'list', { sort: '-created_date', limit: 100 }],
+    queryFn: () => Campaign.list({ sort: '-created_date', limit: 100 }),
+  });
+
+  const { data: qrTagsRaw, isLoading: qrLoading } = useQuery({
+    queryKey: ['qrTags', 'list'],
+    queryFn: () => QrTag.list({ sort: '-created_date', limit: 500 }),
+  });
+
+  const campaigns = useMemo(() => {
+    const campaignsList = Array.isArray(campaignsRaw) ? campaignsRaw : (campaignsRaw?.campaigns || []);
+    return campaignsList.filter(campaign => campaign.status !== 'archived');
+  }, [campaignsRaw]);
+
+  const allQrTags = useMemo(() => {
+    const qrTagsList = Array.isArray(qrTagsRaw) ? qrTagsRaw : (qrTagsRaw?.qrTags || []);
+    return qrTagsList || [];
+  }, [qrTagsRaw]);
+
+  const loading = campaignsLoading || qrLoading;
+
   const [selectedCampaign, setSelectedCampaign] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [allQrTags, setAllQrTags] = useState([]);
   const [campaignSearch, setCampaignSearch] = useState("");
   const [promoSearch, setPromoSearch] = useState("");
   const [carSearch, setCarSearch] = useState("");
@@ -53,32 +76,6 @@ export default function AdminQRCodes() {
   const [scanTotals, setScanTotals] = useState({});
   const [copiedLink, setCopiedLink] = useState(null);
   const [deleting, setDeleting] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const [userData, campaignsData, qrTagsDataHelper] = await Promise.all([
-          User.me(),
-          Campaign.list({ sort: "-created_date", limit: 100 }),
-          QrTag.list({ sort: "-created_date", limit: 500 }),
-        ]);
-        setUser(userData);
-
-        // Handle paginated responses
-        const campaignsList = Array.isArray(campaignsData) ? campaignsData : (campaignsData.campaigns || []);
-        const qrTagsList = Array.isArray(qrTagsDataHelper) ? qrTagsDataHelper : (qrTagsDataHelper.qrTags || []);
-
-        // Filter out archived campaigns - only show active campaigns for QR management
-        const activeCampaigns = campaignsList.filter(campaign => campaign.status !== 'archived');
-        setCampaigns(activeCampaigns);
-        setAllQrTags(qrTagsList || []);
-      } catch (e) {
-        // ignore
-      }
-      setLoading(false);
-    })();
-  }, []);
 
   useEffect(() => {
     const loadAnalytics = async () => {
@@ -148,10 +145,7 @@ export default function AdminQRCodes() {
     setDeleting(true);
     try {
       await QrTag.delete(qrTag.id);
-      // refresh lists
-      const refreshed = await QrTag.list({ sort: "-created_date", limit: 500 });
-      const refreshedList = Array.isArray(refreshed) ? refreshed : (refreshed.qrTags || []);
-      setAllQrTags(refreshedList || []);
+      queryClient.invalidateQueries({ queryKey: ['qrTags'] });
     } catch (e) {
       console.error('Failed to delete QR tag:', e);
     }
@@ -161,10 +155,8 @@ export default function AdminQRCodes() {
   const refreshQrTables = async () => {
     setRefreshing(true);
     try {
-      const qrTagsData = await QrTag.list({ sort: "-created_date", limit: 500 });
-      const qrTagsList = Array.isArray(qrTagsData) ? qrTagsData : (qrTagsData.qrTags || []);
-      setAllQrTags(qrTagsList || []);
-      setAllQrTags(qrTagsList || []);
+      await queryClient.invalidateQueries({ queryKey: ['qrTags'] });
+      await queryClient.invalidateQueries({ queryKey: ['campaigns'] });
     } catch (e) {
       console.error('Failed to refresh QR data:', e);
     }

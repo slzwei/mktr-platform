@@ -1,5 +1,3 @@
-import { useState, useEffect } from "react";
-import { User } from "@/api/entities";
 import { Campaign } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import ArrowLeft from "lucide-react/icons/arrow-left";
@@ -9,35 +7,15 @@ import { toast } from "sonner";
 
 import DesignEditor from "../components/campaigns/DesignEditor";
 import { apiClient } from "@/api/client";
+import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
+import { useCampaign } from "@/hooks/queries/useCampaignsQuery";
+import { queryClient } from "@/lib/queryClient";
 
 export default function AdminCampaignDesigner() {
-  const [user, setUser] = useState(null);
-  const [campaign, setCampaign] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      const userData = await User.me();
-      setUser(userData);
-
-      const params = new URLSearchParams(window.location.search);
-      const campaignId = params.get('campaign_id');
-
-      if (campaignId) {
-        const campaignData = await Campaign.get(campaignId);
-        if (campaignData) {
-          setCampaign(campaignData);
-        }
-      }
-    } catch (error) {
-      console.error('Error loading campaign designer:', error);
-    }
-    setLoading(false);
-  };
+  const campaignId = new URLSearchParams(window.location.search).get('campaign_id');
+  const { data: user, isLoading: userLoading } = useCurrentUser();
+  const { data: campaign, isLoading: campaignLoading } = useCampaign(campaignId);
+  const loading = userLoading || campaignLoading;
 
   const handleSave = async (designData) => {
     if (!campaign) return;
@@ -47,7 +25,7 @@ export default function AdminCampaignDesigner() {
         design_config: designData
       });
 
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
 
       toast.success("Design saved successfully!");
     } catch (error) {

@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { auth } from "@/api/client";
 import { User } from "@/api/entities";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,8 +44,7 @@ import {
   LayoutGrid,
   List as ListIcon,
   ChevronLeft,
-  ChevronRight,
-  User as UserIcon
+  ChevronRight
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -64,9 +65,14 @@ const statusStyles = {
 };
 
 export default function AdminUsers() {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { data: currentUser } = useCurrentUser();
+  const { data: usersRaw, isLoading: loading } = useQuery({
+    queryKey: ['users', 'list'],
+    queryFn: () => User.list()
+  });
+  const users = Array.isArray(usersRaw) ? usersRaw : (usersRaw?.users || []);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -91,32 +97,6 @@ export default function AdminUsers() {
 
   const isMobile = useIsMobile();
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const [userData, usersData] = await Promise.all([
-        auth.getCurrentUser(),
-        User.list()
-      ]);
-
-      if (userData.role !== 'admin') {
-        throw new Error('Unauthorized');
-      }
-
-      setCurrentUser(userData);
-      // Ensure usersData is an array
-      setUsers(Array.isArray(usersData) ? usersData : (usersData.users || []));
-    } catch (error) {
-      console.error('Error loading users:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleInviteUser = async (e) => {
     e.preventDefault();
     setInviteLoading(true);
@@ -124,7 +104,7 @@ export default function AdminUsers() {
       await auth.inviteUser(inviteData.email, inviteData.role, inviteData.fullName);
       setInviteDialogOpen(false);
       setInviteData({ email: "", role: "user", fullName: "" });
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['users'] });
     } catch (error) {
       console.error('Error inviting user:', error);
       alert('Failed to invite user: ' + (error.message || 'Unknown error'));
@@ -146,7 +126,7 @@ export default function AdminUsers() {
       });
       setEditDialogOpen(false);
       setSelectedUser(null);
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['users'] });
     } catch (error) {
       console.error('Error updating user:', error);
       alert('Failed to update user');
@@ -183,7 +163,7 @@ export default function AdminUsers() {
     if (!window.confirm("Are you sure you want to PERMANENTLY delete this user? This cannot be undone.")) return;
     try {
       await User.permanentDelete(userId);
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['users'] });
     } catch (error) {
       console.error('Error deleting user:', error);
       alert('Failed to delete user');
@@ -203,7 +183,7 @@ export default function AdminUsers() {
   const handleApproveUser = async (userId) => {
     try {
       await User.setApprovalStatus(userId, 'approved');
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['users'] });
     } catch (error) {
       console.error('Error approving user:', error);
     }

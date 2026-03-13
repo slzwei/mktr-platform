@@ -1,23 +1,11 @@
-import { useEffect, useState } from "react";
-import { auth } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
+import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
 
 export default function DriverPayslip() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    auth.getCurrentUser().then((me) => {
-      setUser(me);
-    }).catch((e) => {
-      console.error("Failed to load user", e);
-    }).finally(() => {
-      setLoading(false);
-    });
-  }, []);
+  const { data: user, isLoading: loading } = useCurrentUser();
 
   if (loading) {
     return (
