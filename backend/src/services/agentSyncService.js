@@ -39,7 +39,7 @@ export async function fetchAgents(filters = {}) {
 
   const { url, key } = getLyfeConfig();
 
-  const roles = filters.roles || ['agent', 'pa'];
+  const roles = filters.roles || ['agent'];
   const roleFilter = `role=in.(${roles.join(',')})`;
 
   const response = await fetch(
