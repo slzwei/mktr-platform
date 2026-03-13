@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Prospect } from '@/api/entities';
-import { auth } from '@/api/client';
+import { useCurrentUser } from '@/hooks/queries/useUsersQuery';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,55 +10,22 @@ import { ArrowLeft, Phone, MessageCircle, Mail, Calendar, MapPin } from 'lucide-
 export default function ProspectDetailPage() {
     const { id } = useParams();
     const navigate = useNavigate();
-    const [prospect, setProspect] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [agentName, setAgentName] = useState('');
 
-    useEffect(() => {
-        loadProspect();
-        loadAgentName();
-    }, [id]);
+    const { data: currentUser } = useCurrentUser();
+    const agentName = currentUser?.firstName || 'Agent';
 
-    async function loadAgentName() {
-        try {
-            const user = await auth.getCurrentUser();
-            setAgentName(user.firstName || 'Agent');
-        } catch (err) {
-            console.error('Failed to load agent name:', err);
-        }
-    }
-
-    async function loadProspect() {
-        try {
-            setLoading(true);
-            setError(null);
-
+    const { data: prospect, isLoading: loading, error: queryError } = useQuery({
+        queryKey: ['prospects', 'detail', id],
+        queryFn: async () => {
             const data = await Prospect.getById(id);
-            setProspect(data);
+            // Track view as a side effect (don't await — fire and forget)
+            Prospect.trackView(id).catch(() => {});
+            return data;
+        },
+        enabled: !!id,
+    });
 
-            // Track view
-            await trackView(id);
-        } catch (err) {
-            console.error('Failed to load prospect:', err);
-            if (err.message?.includes('403') || err.message?.includes('404')) {
-                setError('You do not have permission to view this prospect.');
-            } else {
-                setError('Failed to load prospect details. Please try again.');
-            }
-        } finally {
-            setLoading(false);
-        }
-    }
-
-    async function trackView(prospectId) {
-        try {
-            await Prospect.trackView(prospectId);
-        } catch (err) {
-            // Silent fail - don't block page load if tracking fails
-            console.error('Failed to track view:', err);
-        }
-    }
+    const error = queryError ? (queryError.message?.includes('403') || queryError.message?.includes('404') ? 'You do not have permission to view this prospect.' : 'Failed to load prospect details. Please try again.') : null;
 
     const handleWhatsApp = () => {
         if (!prospect?.phone) return;

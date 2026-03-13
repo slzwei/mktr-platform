@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { Prospect, Campaign } from "@/api/entities";
-import { auth } from "@/api/client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
+import { useUpdateProspect } from "@/hooks/queries/useProspectsQuery";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -31,14 +33,11 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuLabel,
-    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
     Dialog,
     DialogContent,
-    DialogHeader,
-    DialogTitle,
 } from "@/components/ui/dialog";
 import ProspectDetails from "@/components/prospects/ProspectDetails";
 
@@ -88,56 +87,46 @@ function normalizeProspect(p) {
 }
 
 export default function MyProspects() {
-    const [prospects, setProspects] = useState([]);
-    const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
-    const [currentUser, setCurrentUser] = useState(null);
-    const [campaigns, setCampaigns] = useState([]);
     const [selectedProspect, setSelectedProspect] = useState(null);
 
-    useEffect(() => {
-        loadData();
-    }, []);
+    const queryClient = useQueryClient();
+    const { data: currentUser } = useCurrentUser();
 
-    const loadData = async () => {
-        setLoading(true);
-        try {
-            const user = await auth.getCurrentUser();
-            setCurrentUser(user);
+    const { data: prospectsRaw, isLoading: loading } = useQuery({
+        queryKey: ['prospects', 'list', { limit: 100 }],
+        queryFn: () => Prospect.list({ limit: 100 }),
+    });
 
-            // Fetch prospects
-            const data = await Prospect.list({ limit: 100 });
-
-            let rawProspects = [];
-            if (data && Array.isArray(data.prospects)) {
-                rawProspects = data.prospects;
-            } else if (data && data.data && Array.isArray(data.data.prospects)) {
-                rawProspects = data.data.prospects;
-            } else if (Array.isArray(data)) {
-                rawProspects = data;
-            }
-
-            const normalized = rawProspects.map(normalizeProspect);
-            setProspects(normalized);
-
-
-            // Load campaigns for filtering and context - keep all including archived for lookups
-            const allCampaignsData = await Campaign.list({ limit: 1000 });
-            const campaignsResponse = Array.isArray(allCampaignsData) ? allCampaignsData : (allCampaignsData.campaigns || []);
-            setCampaigns(campaignsResponse);
-
-        } catch (error) {
-            console.error("Error loading prospects:", error);
-        } finally {
-            setLoading(false);
+    const prospects = useMemo(() => {
+        if (!prospectsRaw) return [];
+        let rawProspects = [];
+        if (Array.isArray(prospectsRaw.prospects)) {
+            rawProspects = prospectsRaw.prospects;
+        } else if (prospectsRaw.data && Array.isArray(prospectsRaw.data.prospects)) {
+            rawProspects = prospectsRaw.data.prospects;
+        } else if (Array.isArray(prospectsRaw)) {
+            rawProspects = prospectsRaw;
         }
-    };
+        return rawProspects.map(normalizeProspect);
+    }, [prospectsRaw]);
+
+    const { data: campaignsRaw } = useQuery({
+        queryKey: ['campaigns', 'all-for-lookup'],
+        queryFn: () => Campaign.list({ limit: 1000 }),
+        staleTime: 60_000,
+    });
+
+    const campaigns = useMemo(() => {
+        if (!campaignsRaw) return [];
+        return Array.isArray(campaignsRaw) ? campaignsRaw : (campaignsRaw?.campaigns || []);
+    }, [campaignsRaw]);
+
+    const updateMutation = useUpdateProspect();
 
     const handleStatusUpdate = async (prospectId, newStatus) => {
         try {
-            await Prospect.update(prospectId, { leadStatus: newStatus });
-
-            // Update local state immediately to reflect change in UI
+            await updateMutation.mutateAsync({ id: prospectId, data: { leadStatus: newStatus } });
             if (selectedProspect && selectedProspect.id === prospectId) {
                 setSelectedProspect(prev => ({
                     ...prev,
@@ -145,8 +134,6 @@ export default function MyProspects() {
                     leadStatus: newStatus
                 }));
             }
-
-            await loadData();
         } catch (error) {
             console.error('Error updating status:', error);
         }
@@ -187,7 +174,7 @@ export default function MyProspects() {
                     <p className="text-gray-500 dark:text-gray-400">Manage and track your assigned leads</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <Button variant="outline" size="sm" className="h-9" onClick={loadData}>
+                    <Button variant="outline" size="sm" className="h-9" onClick={() => queryClient.invalidateQueries({ queryKey: ['prospects'] })}>
                         <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                         Refresh
                     </Button>
@@ -374,7 +361,7 @@ export default function MyProspects() {
                             onStatusUpdate={handleStatusUpdate}
                             onClose={() => setSelectedProspect(null)}
                             userRole="agent"
-                            onEdited={loadData}
+                            onEdited={() => queryClient.invalidateQueries({ queryKey: ['prospects'] })}
                         />
                     )}
                 </DialogContent>

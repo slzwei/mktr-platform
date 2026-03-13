@@ -13,18 +13,19 @@ import Loader2 from 'lucide-react/icons/loader-2';
 import ArrowRight from 'lucide-react/icons/arrow-right';
 
 export default function RegisterTab({
-  registerData,
-  handleInputChange,
+  form,
   showPassword,
   setShowPassword,
   showConfirmPassword,
   setShowConfirmPassword,
   loading,
-  handleRegister,
+  onSubmit,
 }) {
+  const { register, formState: { errors } } = form;
+
   return (
     <TabsContent value="register" className="space-y-4">
-      <form onSubmit={handleRegister} className="auth-form">
+      <form onSubmit={onSubmit} className="auth-form">
         <div className="form-group">
           <Label htmlFor="register-name" className="form-label">Full Name</Label>
           <div className="form-input">
@@ -33,11 +34,10 @@ export default function RegisterTab({
               id="register-name"
               type="text"
               placeholder="Enter your full name"
-              value={registerData.full_name}
-              onChange={(e) => handleInputChange('register', 'full_name', e.target.value)}
-              required
+              {...register('full_name')}
             />
           </div>
+          {errors.full_name && <p className="form-error">{errors.full_name.message}</p>}
         </div>
 
         <div className="form-group">
@@ -49,11 +49,10 @@ export default function RegisterTab({
               type="email"
               autoComplete="email"
               placeholder="Enter your email"
-              value={registerData.email}
-              onChange={(e) => handleInputChange('register', 'email', e.target.value)}
-              required
+              {...register('email')}
             />
           </div>
+          {errors.email && <p className="form-error">{errors.email.message}</p>}
         </div>
 
         <div className="form-group">
@@ -64,10 +63,10 @@ export default function RegisterTab({
               id="register-phone"
               type="tel"
               placeholder="Enter your phone number"
-              value={registerData.phone}
-              onChange={(e) => handleInputChange('register', 'phone', e.target.value)}
+              {...register('phone')}
             />
           </div>
+          {errors.phone && <p className="form-error">{errors.phone.message}</p>}
         </div>
 
         <div className="form-group">
@@ -78,25 +77,24 @@ export default function RegisterTab({
               id="register-company"
               type="text"
               placeholder="Enter company name"
-              value={registerData.company_name}
-              onChange={(e) => handleInputChange('register', 'company_name', e.target.value)}
+              {...register('company_name')}
             />
           </div>
+          {errors.company_name && <p className="form-error">{errors.company_name.message}</p>}
         </div>
 
         <div className="form-group">
           <Label htmlFor="register-role" className="form-label">Account Type</Label>
           <select
             id="register-role"
-            value={registerData.role}
-            onChange={(e) => handleInputChange('register', 'role', e.target.value)}
+            {...register('role')}
             className="form-select"
-            required
           >
             <option value="customer">Customer</option>
             <option value="agent">Sales Agent</option>
             <option value="fleet_owner">Fleet Owner</option>
           </select>
+          {errors.role && <p className="form-error">{errors.role.message}</p>}
         </div>
 
         <div className="form-group">
@@ -108,9 +106,7 @@ export default function RegisterTab({
               type={showPassword ? 'text' : 'password'}
               autoComplete="new-password"
               placeholder="Create a password"
-              value={registerData.password}
-              onChange={(e) => handleInputChange('register', 'password', e.target.value)}
-              required
+              {...register('password')}
             />
             <button
               type="button"
@@ -120,6 +116,7 @@ export default function RegisterTab({
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+          {errors.password && <p className="form-error">{errors.password.message}</p>}
         </div>
 
         <div className="form-group">
@@ -131,9 +128,7 @@ export default function RegisterTab({
               type={showConfirmPassword ? 'text' : 'password'}
               autoComplete="new-password"
               placeholder="Confirm your password"
-              value={registerData.confirm_password}
-              onChange={(e) => handleInputChange('register', 'confirm_password', e.target.value)}
-              required
+              {...register('confirm_password')}
             />
             <button
               type="button"
@@ -143,6 +138,7 @@ export default function RegisterTab({
               {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+          {errors.confirm_password && <p className="form-error">{errors.confirm_password.message}</p>}
         </div>
 
         <Button

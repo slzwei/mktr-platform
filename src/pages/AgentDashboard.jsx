@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Prospect } from "@/api/entities";
+import { useUpdateProspect } from "@/hooks/queries/useProspectsQuery";
 import { useDashboard } from "@/contexts/DashboardContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Users,
@@ -32,12 +33,18 @@ function isActiveProspect(p) {
 
 export default function AgentDashboard() {
   const { user } = useDashboard();
-  const [stats, setStats] = useState({ prospects: [] });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const queryClient = useQueryClient();
   const [period, setPeriod] = useState("30d");
   const [pipelineView, setPipelineView] = useState("pipeline");
+
+  const { data: agentProspects = [], isLoading: loading, error: queryError } = useQuery({
+    queryKey: ['prospects', 'agent', user?.id],
+    queryFn: () => Prospect.filter({ assigned_agent_id: user.id }),
+    enabled: !!user,
+  });
+
+  const stats = { prospects: agentProspects };
+  const error = queryError?.message || null;
 
   const periodDays = period === "7d" ? 7 : period === "30d" ? 30 : 90;
   const periodLabel = period === "7d" ? "Last 7 days" : period === "30d" ? "Last 30 days" : "Last 90 days";
@@ -48,22 +55,6 @@ export default function AgentDashboard() {
     cutoff.setHours(0, 0, 0, 0);
     return stats.prospects.filter((p) => new Date(p.created_date || p.createdAt) >= cutoff);
   }, [stats.prospects, periodDays]);
-
-  useEffect(() => {
-    if (user) loadDashboardData();
-  }, [user]);
-
-  const loadDashboardData = async () => {
-    setError(null);
-    try {
-      const prospects = await Prospect.filter({ assigned_agent_id: user.id });
-      setStats({ prospects });
-      setLastUpdated(new Date());
-    } catch (err) {
-      setError(err.message || "Something went wrong while loading the dashboard.");
-    }
-    setLoading(false);
-  };
 
   const getDashboardMetrics = () => {
     if (!user) return {};
@@ -109,15 +100,12 @@ export default function AgentDashboard() {
     return { totalProspects: filteredProspects.length, newProspects, closedWon, prospectSparkline, prospectChange };
   };
 
+  const updateMutation = useUpdateProspect();
   const handleStatusChange = async (prospectId, newStatus) => {
-    try {
-      await Prospect.update(prospectId, { leadStatus: newStatus });
-      const prospects = await Prospect.filter({ assigned_agent_id: user.id });
-      setStats({ prospects });
-    } catch (err) {
-      throw err;
-    }
+    await updateMutation.mutateAsync({ id: prospectId, data: { leadStatus: newStatus } });
   };
+
+  const handleRefresh = () => queryClient.invalidateQueries({ queryKey: ['prospects', 'agent'] });
 
   const metrics = !loading ? getDashboardMetrics() : {};
 
@@ -176,7 +164,7 @@ export default function AgentDashboard() {
     .sort((a, b) => new Date(a.nextFollowUpDate) - new Date(b.nextFollowUpDate));
 
   return (
-    <DashboardShell loading={loading} error={error} onRetry={loadDashboardData}>
+    <DashboardShell loading={loading} error={error} onRetry={handleRefresh}>
       <DashboardHeader
         user={user}
         greeting
@@ -184,8 +172,8 @@ export default function AgentDashboard() {
         period={period}
         onPeriodChange={setPeriod}
         periodOptions={{ "7d": "Last 7 days", "30d": "Last 30 days", "90d": "Last 90 days" }}
-        lastUpdated={lastUpdated}
-        onRefresh={loadDashboardData}
+        lastUpdated={null}
+        onRefresh={handleRefresh}
         refreshLoading={loading}
       />
 

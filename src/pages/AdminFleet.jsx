@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { User } from "@/api/entities";
 import { Car } from "@/api/entities";
 import { FleetOwner } from "@/api/entities";
+import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,12 +41,56 @@ import FleetOwnerFormDialog from "../components/fleet/FleetOwnerFormDialog";
 import DriverFormDialog from "../components/fleet/DriverFormDialog";
 
 export default function AdminFleet() {
-  const [user, setUser] = useState(null);
-  const [cars, setCars] = useState([]);
-  const [drivers, setDrivers] = useState([]);
-  const [fleetOwners, setFleetOwners] = useState([]);
-  const [fleetOwnerUsers, setFleetOwnerUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { data: user } = useCurrentUser();
+
+  const { data: driversRaw } = useQuery({
+    queryKey: ['users', 'drivers'],
+    queryFn: () => User.filter({ role: 'driver_partner' }),
+    enabled: !!user,
+  });
+  const drivers = Array.isArray(driversRaw) ? driversRaw : (driversRaw?.users || []);
+
+  const { data: fleetOwnersRaw } = useQuery({
+    queryKey: ['fleetOwners', 'list'],
+    queryFn: () => FleetOwner.list({ sort: '-created_date', limit: 100 }),
+    enabled: !!user,
+  });
+  const fleetOwners = Array.isArray(fleetOwnersRaw) ? fleetOwnersRaw : (fleetOwnersRaw?.fleetOwners || []);
+
+  const { data: foUsersResp } = useQuery({
+    queryKey: ['users', 'fleet-owners'],
+    queryFn: () => apiClient.get('/users', { role: 'fleet_owner', page: 1, limit: 1000 }).catch(() => ({ data: { users: [] } })),
+    enabled: !!user,
+  });
+  const fleetOwnerUsers = foUsersResp?.data?.users || [];
+
+  const { data: carsRaw, isLoading: carsLoading } = useQuery({
+    queryKey: ['cars', 'fleet-page', user?.role, user?.id],
+    queryFn: async () => {
+      if (user.role === 'admin') {
+        const data = await Car.list({ sort: '-created_date', limit: 500 });
+        return Array.isArray(data) ? data : (data.cars || []);
+      } else if (user.role === 'fleet_owner') {
+        const foData = await FleetOwner.list({ sort: '-created_date', limit: 100 });
+        const foList = Array.isArray(foData) ? foData : (foData.fleetOwners || []);
+        const userFo = foList.find(fo => fo.email === user.email);
+        if (userFo) {
+          const data = await Car.filter({ fleet_owner_id: userFo.id });
+          return Array.isArray(data) ? data : (data.cars || []);
+        }
+        return [];
+      } else if (user.role === 'driver_partner') {
+        const data = await Car.filter({ current_driver_id: user.id });
+        return Array.isArray(data) ? data : (data.cars || []);
+      }
+      return [];
+    },
+    enabled: !!user,
+  });
+  const cars = carsRaw ?? [];
+  const loading = !user || carsLoading;
+
   const [searchTerm, setSearchTerm] = useState("");
 
   const [isCarFormOpen, setIsCarFormOpen] = useState(false);
@@ -54,58 +100,6 @@ export default function AdminFleet() {
   const [selectedFleetOwner, setSelectedFleetOwner] = useState(null);
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [isAssignDriverOpen, setIsAssignDriverOpen] = useState(false);
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const userData = await User.me();
-      setUser(userData);
-
-      let fetchedCars = [];
-      const [driversData, fleetOwnersData] = await Promise.all([
-        User.filter({ role: 'driver_partner' }),
-        FleetOwner.list({ sort: '-created_date', limit: 100 })
-      ]);
-
-      const fetchedDrivers = Array.isArray(driversData) ? driversData : (driversData.users || []);
-      const fetchedFleetOwners = Array.isArray(fleetOwnersData) ? fleetOwnersData : (fleetOwnersData.fleetOwners || []);
-
-      // Fetch user accounts for fleet owners to read approval status
-      try {
-        const foUsersResp = await apiClient.get('/users', { role: 'fleet_owner', page: 1, limit: 1000 });
-        setFleetOwnerUsers(foUsersResp?.data?.users || []);
-      } catch (_) {
-        setFleetOwnerUsers([]);
-      }
-
-      if (userData.role === 'admin') {
-        const carsData = await Car.list({ sort: '-created_date', limit: 500 });
-        fetchedCars = Array.isArray(carsData) ? carsData : (carsData.cars || []);
-      } else if (userData.role === 'fleet_owner') {
-        // For fleet owners, we need to find cars that belong to their fleet owner record
-        const userFleetOwner = fetchedFleetOwners.find(fo => fo.email === userData.email);
-        if (userFleetOwner) {
-          const carsData = await Car.filter({ fleet_owner_id: userFleetOwner.id });
-          fetchedCars = Array.isArray(carsData) ? carsData : (carsData.cars || []);
-        }
-      } else if (userData.role === 'driver_partner') {
-        const carsData = await Car.filter({ current_driver_id: userData.id });
-        fetchedCars = Array.isArray(carsData) ? carsData : (carsData.cars || []);
-      }
-
-      setCars(fetchedCars);
-      setDrivers(fetchedDrivers);
-      setFleetOwners(fetchedFleetOwners);
-
-    } catch (error) {
-      console.error("Error loading fleet data:", error);
-    }
-    setLoading(false);
-  };
 
   const handleOpenCarForm = (car = null) => {
     setSelectedCar(car);
@@ -153,7 +147,7 @@ export default function AdminFleet() {
         console.log('📝 All form data:', formData);
         await Car.create(dataToCreate);
       }
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['cars'] });
     } catch (error) {
       console.error("Failed to save car:", error);
       throw error;
@@ -167,7 +161,8 @@ export default function AdminFleet() {
       } else {
         await FleetOwner.create(formData);
       }
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['fleetOwners'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
     } catch (error) {
       console.error("Failed to save fleet owner:", error);
       throw error;
@@ -181,7 +176,7 @@ export default function AdminFleet() {
       } else {
         await User.create({ ...formData, role: 'driver_partner' });
       }
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['users', 'drivers'] });
     } catch (error) {
       console.error("Failed to save driver:", error);
       throw error;
@@ -197,7 +192,7 @@ export default function AdminFleet() {
       };
 
       await Car.update(carId, updateData);
-      await loadData();
+      queryClient.invalidateQueries({ queryKey: ['cars'] });
     } catch (error) {
       console.error("Failed to assign/unassign driver:", error);
       throw error;
@@ -208,7 +203,7 @@ export default function AdminFleet() {
     if (window.confirm("Are you sure you want to delete this vehicle? This action cannot be undone.")) {
       try {
         await Car.delete(carId);
-        await loadData();
+        queryClient.invalidateQueries({ queryKey: ['cars'] });
       } catch (error) {
         console.error("Failed to delete car:", error);
       }
@@ -226,7 +221,8 @@ export default function AdminFleet() {
     if (window.confirm("Are you sure you want to delete this fleet owner? This action cannot be undone.")) {
       try {
         await FleetOwner.delete(fleetOwnerId);
-        await loadData();
+        queryClient.invalidateQueries({ queryKey: ['fleetOwners'] });
+        queryClient.invalidateQueries({ queryKey: ['users'] });
       } catch (error) {
         console.error("Failed to delete fleet owner:", error);
       }
@@ -244,7 +240,7 @@ export default function AdminFleet() {
     if (window.confirm("Are you sure you want to delete this driver? This action cannot be undone.")) {
       try {
         await User.delete(driverId);
-        await loadData();
+        queryClient.invalidateQueries({ queryKey: ['users', 'drivers'] });
       } catch (error) {
         console.error("Failed to delete driver:", error);
       }
@@ -655,7 +651,7 @@ export default function AdminFleet() {
                                             variant="ghost"
                                             size="sm"
                                             className="text-green-700 hover:text-green-900"
-                                            onClick={async () => { try { await User.setApprovalStatus(foUser.id, 'approved'); await loadData(); } catch (e) { console.error(e); } }}
+                                            onClick={async () => { try { await User.setApprovalStatus(foUser.id, 'approved'); queryClient.invalidateQueries({ queryKey: ['users'] }); } catch (e) { console.error(e); } }}
                                           >
                                             Approve
                                           </Button>
@@ -663,7 +659,7 @@ export default function AdminFleet() {
                                             variant="ghost"
                                             size="sm"
                                             className="text-red-700 hover:text-red-900"
-                                            onClick={async () => { try { await User.setApprovalStatus(foUser.id, 'rejected'); await loadData(); } catch (e) { console.error(e); } }}
+                                            onClick={async () => { try { await User.setApprovalStatus(foUser.id, 'rejected'); queryClient.invalidateQueries({ queryKey: ['users'] }); } catch (e) { console.error(e); } }}
                                           >
                                             Reject
                                           </Button>
@@ -819,7 +815,7 @@ export default function AdminFleet() {
                                         variant="ghost"
                                         size="sm"
                                         className="text-green-700 hover:text-green-900"
-                                        onClick={async () => { try { await User.setApprovalStatus(driver.id, 'approved'); await loadData(); } catch (e) { console.error(e); } }}
+                                        onClick={async () => { try { await User.setApprovalStatus(driver.id, 'approved'); queryClient.invalidateQueries({ queryKey: ['users'] }); } catch (e) { console.error(e); } }}
                                       >
                                         Approve
                                       </Button>
@@ -827,7 +823,7 @@ export default function AdminFleet() {
                                         variant="ghost"
                                         size="sm"
                                         className="text-red-700 hover:text-red-900"
-                                        onClick={async () => { try { await User.setApprovalStatus(driver.id, 'rejected'); await loadData(); } catch (e) { console.error(e); } }}
+                                        onClick={async () => { try { await User.setApprovalStatus(driver.id, 'rejected'); queryClient.invalidateQueries({ queryKey: ['users'] }); } catch (e) { console.error(e); } }}
                                       >
                                         Reject
                                       </Button>

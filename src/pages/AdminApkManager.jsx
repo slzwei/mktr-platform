@@ -1,43 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, Upload, File, Download, AlertCircle, CheckCircle2 } from "lucide-react";
-import { auth, apiClient } from "@/api/client";
+import { apiClient } from "@/api/client";
 import { useToast } from "@/components/ui/use-toast";
 
 const AdminApkManager = () => {
-    const [isLoading, setIsLoading] = useState(true);
+    const qc = useQueryClient();
     const [isUploading, setIsUploading] = useState(false);
-    const [currentApk, setCurrentApk] = useState(null);
     const [selectedFile, setSelectedFile] = useState(null);
     const { toast } = useToast();
 
-    // Fetch current APK info
-    const fetchApkInfo = async () => {
-        setIsLoading(true);
-        try {
+    const { data: currentApk, isLoading } = useQuery({
+        queryKey: ['apk', 'info'],
+        queryFn: async () => {
             const data = await apiClient.get('/apk/list');
-            if (data.success) {
-                setCurrentApk(data.apk);
-            }
-        } catch (error) {
-            console.error('Error fetching APK info:', error);
-            toast({
-                title: "Error",
-                description: "Failed to load current APK information.",
-                variant: "destructive"
-            });
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchApkInfo();
-    }, []);
+            return data.success ? data.apk : null;
+        },
+    });
 
     const handleFileChange = (e) => {
         const file = e.target.files[0];
@@ -74,7 +57,7 @@ const AdminApkManager = () => {
             if (fileInput) fileInput.value = '';
 
             // Refresh list
-            fetchApkInfo();
+            qc.invalidateQueries({ queryKey: ['apk', 'info'] });
 
         } catch (error) {
             console.error('Upload error:', error);

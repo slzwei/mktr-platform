@@ -5,14 +5,60 @@ import * as campaignService from '../services/campaignService.js';
 
 const router = express.Router();
 
-// Get all campaigns
+/**
+ * @openapi
+ * /campaigns:
+ *   get:
+ *     tags: [Campaigns]
+ *     summary: List campaigns (filtered by user role)
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [active, archived] }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of campaigns
+ */
 router.get('/', authenticateToken, asyncHandler(async (req, res) => {
   const data = await campaignService.listCampaigns(req.user, req.query, req);
 
   res.json({ success: true, data });
 }));
 
-// Create new campaign
+/**
+ * @openapi
+ * /campaigns:
+ *   post:
+ *     tags: [Campaigns]
+ *     summary: Create a new campaign
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, type]
+ *             properties:
+ *               name: { type: string }
+ *               type: { type: string, enum: [lead_generation, brand_awareness, product_promotion, event_marketing] }
+ *               start_date: { type: string, format: date }
+ *               end_date: { type: string, format: date }
+ *               is_active: { type: boolean }
+ *     responses:
+ *       201:
+ *         description: Campaign created
+ *       403:
+ *         description: Agent or admin role required
+ */
 router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
   const campaign = await campaignService.createCampaign(req.body, req.user);
 

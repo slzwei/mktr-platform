@@ -1,28 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 export default function AdminShortLinks() {
-  const [items, setItems] = useState([]);
-  const [total, setTotal] = useState(0);
+  const qc = useQueryClient();
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [searchKey, setSearchKey] = useState('');
   const [selected, setSelected] = useState(null);
   const [clicks, setClicks] = useState([]);
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const res = await apiClient.get(`/shortlinks?search=${encodeURIComponent(search)}`);
-      setItems(res.data.items || []);
-      setTotal(res.data.total || 0);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: shortlinksData, isLoading: loading } = useQuery({
+    queryKey: ['shortlinks', searchKey],
+    queryFn: async () => {
+      const res = await apiClient.get(`/shortlinks?search=${encodeURIComponent(searchKey)}`);
+      return res.data;
+    },
+  });
 
-  useEffect(() => { load(); }, []);
+  const items = shortlinksData?.items || [];
+  const total = shortlinksData?.total || 0;
+
+  const load = () => {
+    setSearchKey(search);
+  };
 
   const openClicks = async (item) => {
     setSelected(item);
@@ -35,14 +37,14 @@ export default function AdminShortLinks() {
   const extend90Days = async (item) => {
     const newExpiry = new Date(Date.now() + 90*24*60*60*1000).toISOString();
     await apiClient.patch(`/shortlinks/${item.id}`, { expiresAt: newExpiry });
-    await load();
+    qc.invalidateQueries({ queryKey: ['shortlinks'] });
   };
 
   const remove = async (item) => {
     if (!window.confirm(`Delete short link /share/${item.slug}? This cannot be undone.`)) return;
     await apiClient.delete(`/shortlinks/${item.id}`);
     if (selected?.id === item.id) setSelected(null);
-    await load();
+    qc.invalidateQueries({ queryKey: ['shortlinks'] });
   };
 
   return (

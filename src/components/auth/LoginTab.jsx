@@ -10,17 +10,18 @@ import Loader2 from 'lucide-react/icons/loader-2';
 import ArrowRight from 'lucide-react/icons/arrow-right';
 
 export default function LoginTab({
-  loginData,
-  handleInputChange,
+  form,
   showPassword,
   setShowPassword,
   loading,
-  handleLogin,
+  onSubmit,
   children,
 }) {
+  const { register, formState: { errors } } = form;
+
   return (
     <TabsContent value="login" className="space-y-4">
-      <form onSubmit={handleLogin} className="auth-form">
+      <form onSubmit={onSubmit} className="auth-form">
         <div className="form-group">
           <Label htmlFor="login-email" className="form-label">Email</Label>
           <div className="form-input">
@@ -30,11 +31,10 @@ export default function LoginTab({
               type="email"
               autoComplete="username"
               placeholder="Enter your email"
-              value={loginData.email}
-              onChange={(e) => handleInputChange('login', 'email', e.target.value)}
-              required
+              {...register('email')}
             />
           </div>
+          {errors.email && <p className="form-error">{errors.email.message}</p>}
         </div>
 
         <div className="form-group">
@@ -46,9 +46,7 @@ export default function LoginTab({
               type={showPassword ? 'text' : 'password'}
               autoComplete="current-password"
               placeholder="Enter your password"
-              value={loginData.password}
-              onChange={(e) => handleInputChange('login', 'password', e.target.value)}
-              required
+              {...register('password')}
             />
             <button
               type="button"
@@ -58,6 +56,7 @@ export default function LoginTab({
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+          {errors.password && <p className="form-error">{errors.password.message}</p>}
         </div>
 
         <Button

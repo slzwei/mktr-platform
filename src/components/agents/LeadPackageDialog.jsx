@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,27 +17,37 @@ import { Textarea } from "@/components/ui/textarea";
 import { Campaign } from "@/api/entities";
 import Package from "lucide-react/icons/package";
 import Save from "lucide-react/icons/save";
+import { leadPackageSchema } from "@/schemas/leadPackage";
 
 export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit }) {
   const [campaigns, setCampaigns] = useState([]);
-  const [formData, setFormData] = useState({
-    campaign_id: "",
-    package_name: "",
-    total_leads: "",
-    price_per_lead: "",
-    start_date: "",
-    end_date: "",
-    payment_status: "pending",
-    notes: ""
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    control,
+    watch,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm({
+    resolver: zodResolver(leadPackageSchema),
+    defaultValues: {
+      campaign_id: "",
+      package_name: "",
+      total_leads: "",
+      price_per_lead: "",
+      start_date: new Date().toISOString().split('T')[0],
+      end_date: "",
+      payment_status: "pending",
+      notes: "",
+    },
   });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
   useEffect(() => {
     if (open) {
       loadCampaigns();
-      // Reset form for new package
-      setFormData({
+      reset({
         campaign_id: "",
         package_name: "",
         total_leads: "",
@@ -43,16 +55,14 @@ export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit 
         start_date: new Date().toISOString().split('T')[0],
         end_date: "",
         payment_status: "pending",
-        notes: ""
+        notes: "",
       });
     }
-  }, [open]);
+  }, [open, reset]);
 
   const loadCampaigns = async () => {
     try {
-      // Request active campaigns with a higher limit to ensure we get them all
       const response = await Campaign.list({ status: 'active', limit: 100 });
-      // helper to handle both paginated (object with campaigns prop) and non-paginated (array) responses
       const campaignsList = response.campaigns || (Array.isArray(response) ? response : []);
       setCampaigns(campaignsList);
     } catch (error) {
@@ -60,56 +70,26 @@ export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit 
     }
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  const totalLeads = watch("total_leads");
+  const pricePerLead = watch("price_per_lead");
+  const totalAmount = (parseInt(totalLeads) || 0) * (parseFloat(pricePerLead) || 0);
 
-    // Auto-calculate total amount when leads or price changes
-    if (name === 'total_leads' || name === 'price_per_lead') {
-      const leads = name === 'total_leads' ? parseFloat(value) || 0 : parseFloat(formData.total_leads) || 0;
-      const pricePerLead = name === 'price_per_lead' ? parseFloat(value) || 0 : parseFloat(formData.price_per_lead) || 0;
-      // Total amount will be calculated on submit
-    }
-  };
-
-  const handleSelectChange = (name, value) => {
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-
+  const onFormSubmit = async (data) => {
     try {
-      // Validate required fields
-      if (!formData.campaign_id || !formData.package_name || !formData.total_leads || !formData.price_per_lead) {
-        throw new Error("Please fill in all required fields");
-      }
-
-      const totalLeads = parseInt(formData.total_leads);
-      const pricePerLead = parseFloat(formData.price_per_lead);
-      const totalAmount = totalLeads * pricePerLead;
-
       const packageData = {
-        ...formData,
+        ...data,
         agent_id: agent.id,
-        total_leads: totalLeads,
-        price_per_lead: pricePerLead,
-        total_amount: totalAmount,
-        leads_remaining: totalLeads, // Initially all leads are remaining
-        purchase_date: new Date().toISOString()
+        total_amount: data.total_leads * data.price_per_lead,
+        leads_remaining: data.total_leads,
+        purchase_date: new Date().toISOString(),
       };
 
       await onSubmit(packageData);
       onOpenChange(false);
     } catch (err) {
-      setError(err.message || "Failed to create lead package");
+      setError("root", { message: err.message || "Failed to create lead package" });
     }
-    setLoading(false);
   };
-
-  const totalAmount = (parseInt(formData.total_leads) || 0) * (parseFloat(formData.price_per_lead) || 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -123,36 +103,42 @@ export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit 
             Set up a new lead package with specific quantity and pricing.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 py-4">
+        <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4 py-4">
           <div>
             <Label htmlFor="campaign_id">Campaign *</Label>
-            <Select
-              value={formData.campaign_id}
-              onValueChange={(value) => handleSelectChange("campaign_id", value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select campaign" />
-              </SelectTrigger>
-              <SelectContent>
-                {campaigns.map((campaign) => (
-                  <SelectItem key={campaign.id} value={campaign.id}>
-                    {campaign.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Controller
+              name="campaign_id"
+              control={control}
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select campaign" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {campaigns.map((campaign) => (
+                      <SelectItem key={campaign.id} value={campaign.id}>
+                        {campaign.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {errors.campaign_id && (
+              <p className="text-red-600 text-xs mt-1">{errors.campaign_id.message}</p>
+            )}
           </div>
 
           <div>
             <Label htmlFor="package_name">Package Name *</Label>
             <Input
               id="package_name"
-              name="package_name"
-              value={formData.package_name}
-              onChange={handleChange}
               placeholder="e.g., Starter Package, Premium Package"
-              required
+              {...register("package_name")}
             />
+            {errors.package_name && (
+              <p className="text-red-600 text-xs mt-1">{errors.package_name.message}</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -160,28 +146,28 @@ export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit 
               <Label htmlFor="total_leads">Total Leads *</Label>
               <Input
                 id="total_leads"
-                name="total_leads"
                 type="number"
                 min="1"
-                value={formData.total_leads}
-                onChange={handleChange}
                 placeholder="100"
-                required
+                {...register("total_leads")}
               />
+              {errors.total_leads && (
+                <p className="text-red-600 text-xs mt-1">{errors.total_leads.message}</p>
+              )}
             </div>
             <div>
               <Label htmlFor="price_per_lead">Price per Lead (SGD) *</Label>
               <Input
                 id="price_per_lead"
-                name="price_per_lead"
                 type="number"
                 min="0"
                 step="0.01"
-                value={formData.price_per_lead}
-                onChange={handleChange}
                 placeholder="20.00"
-                required
+                {...register("price_per_lead")}
               />
+              {errors.price_per_lead && (
+                <p className="text-red-600 text-xs mt-1">{errors.price_per_lead.message}</p>
+              )}
             </div>
           </div>
 
@@ -198,56 +184,53 @@ export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit 
               <Label htmlFor="start_date">Start Date</Label>
               <Input
                 id="start_date"
-                name="start_date"
                 type="date"
-                value={formData.start_date}
-                onChange={handleChange}
+                {...register("start_date")}
               />
             </div>
             <div>
               <Label htmlFor="end_date">End Date</Label>
               <Input
                 id="end_date"
-                name="end_date"
                 type="date"
-                value={formData.end_date}
-                onChange={handleChange}
+                {...register("end_date")}
               />
             </div>
           </div>
 
           <div>
             <Label htmlFor="payment_status">Payment Status</Label>
-            <Select
-              value={formData.payment_status}
-              onValueChange={(value) => handleSelectChange("payment_status", value)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="paid">Paid</SelectItem>
-                <SelectItem value="partial">Partial</SelectItem>
-              </SelectContent>
-            </Select>
+            <Controller
+              name="payment_status"
+              control={control}
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="partial">Partial</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
 
           <div>
             <Label htmlFor="notes">Notes</Label>
             <Textarea
               id="notes"
-              name="notes"
-              value={formData.notes}
-              onChange={handleChange}
               placeholder="Additional notes about this package..."
               rows={3}
+              {...register("notes")}
             />
           </div>
 
-          {error && (
+          {errors.root && (
             <div className="text-red-600 text-sm bg-red-50 p-3 rounded">
-              {error}
+              {errors.root.message}
             </div>
           )}
 
@@ -255,9 +238,9 @@ export default function LeadPackageDialog({ open, onOpenChange, agent, onSubmit 
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700">
+            <Button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700">
               <Save className="w-4 h-4 mr-2" />
-              {loading ? "Creating..." : "Create Package"}
+              {isSubmitting ? "Creating..." : "Create Package"}
             </Button>
           </DialogFooter>
         </form>

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
-import { Plus, Search, Archive, Package, Edit, MoreHorizontal, Loader2, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, Search, Package, Edit, MoreHorizontal, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,35 +23,18 @@ import { useToast } from "@/components/ui/use-toast";
 import LeadPackageTemplateDialog from "@/components/lead-packages/LeadPackageTemplateDialog";
 
 const AdminLeadPackages = () => {
-    const [packages, setPackages] = useState([]);
-    const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingPackage, setEditingPackage] = useState(null);
     const { toast } = useToast();
+    const queryClient = useQueryClient();
 
-    useEffect(() => {
-        loadPackages();
-    }, []);
-
-    const loadPackages = async () => {
-        try {
-            setLoading(true);
-            const response = await LeadPackage.list();
-            // Handle response format variations
-            const list = response.packages || (Array.isArray(response) ? response : []);
-            setPackages(list);
-        } catch (error) {
-            console.error("Failed to load packages:", error);
-            toast({
-                title: "Error",
-                description: "Failed to load lead packages",
-                variant: "destructive",
-            });
-        } finally {
-            setLoading(false);
-        }
-    };
+    const { data: packagesRaw, isLoading: loading } = useQuery({
+        queryKey: ['leadPackages', 'list'],
+        queryFn: () => LeadPackage.list(),
+        select: (response) => response.packages || (Array.isArray(response) ? response : []),
+    });
+    const packages = packagesRaw ?? [];
 
     const handleCreatePackage = () => {
         setEditingPackage(null);
@@ -71,22 +55,19 @@ const AdminLeadPackages = () => {
                 await LeadPackage.create(data);
                 toast({ title: "Success", description: "Package created successfully" });
             }
-            loadPackages();
+            queryClient.invalidateQueries({ queryKey: ['leadPackages'] });
         } catch (error) {
             console.error("Submit error:", error);
-            throw error; // Re-throw to be handled by the dialog
+            throw error;
         }
     };
 
     const handleDeletePackage = async (pkg) => {
         if (!window.confirm(`Are you sure you want to delete "${pkg.name}"?`)) return;
-
         try {
-            // Note: BaseEntity.delete does NOT exist on LeadPackageEntity if not inherited/overridden?
-            // BaseEntity has a delete method? Yes, viewed it earlier in client.js.
             await LeadPackage.delete(pkg.id);
             toast({ title: "Success", description: "Package deleted/archived successfully" });
-            loadPackages();
+            queryClient.invalidateQueries({ queryKey: ['leadPackages'] });
         } catch (error) {
             console.error("Delete error:", error);
             toast({

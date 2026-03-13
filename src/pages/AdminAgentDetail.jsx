@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { User, Prospect, Campaign } from "@/api/entities";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -16,8 +17,6 @@ import {
 import {
     Dialog,
     DialogContent,
-    DialogHeader,
-    DialogTitle,
 } from "@/components/ui/dialog";
 import {
     ChevronLeft,
@@ -93,19 +92,13 @@ function normalizeProspect(p) {
 
 export default function AdminAgentDetail() {
     const { agentId } = useParams();
-    const [agent, setAgent] = useState(null);
-    const [prospects, setProspects] = useState([]);
-    const [totalProspects, setTotalProspects] = useState(0);
-    const [loading, setLoading] = useState(true);
-    const [loadingAgent, setLoadingAgent] = useState(true);
-    const [campaigns, setCampaigns] = useState([]);
+    const queryClient = useQueryClient();
     const [selectedProspect, setSelectedProspect] = useState(null);
     const { toast } = useToast();
 
     const [pagination, setPagination] = useState({
         page: 1,
-        limit: 25,
-        totalPages: 1
+        limit: 25
     });
 
     const [filters, setFilters] = useState({
@@ -113,84 +106,62 @@ export default function AdminAgentDetail() {
         status: "all"
     });
 
-    useEffect(() => {
-        async function fetchAgent() {
-            if (!agentId) return;
-            try {
-                setLoadingAgent(true);
-                const agentData = await User.get(agentId);
-                setAgent(agentData);
-            } catch (error) {
-                console.error("Error fetching agent:", error);
-                toast({
-                    title: "Error",
-                    description: "Failed to load agent details",
-                    variant: "destructive"
-                });
-            } finally {
-                setLoadingAgent(false);
-            }
-        }
-        fetchAgent();
-        // Load campaigns for details dialog
-        Campaign.list({ limit: 1000 }).then(data => {
-            const list = Array.isArray(data) ? data : (data.campaigns || []);
-            setCampaigns(list);
-        });
-    }, [agentId]);
+    const { data: agent, isLoading: agentLoading } = useQuery({
+        queryKey: ['users', 'detail', agentId],
+        queryFn: () => User.get(agentId),
+        enabled: !!agentId
+    });
 
-    useEffect(() => {
-        fetchProspects();
-    }, [agentId, pagination.page, pagination.limit, filters]);
+    const { data: campaignsRaw } = useQuery({
+        queryKey: ['campaigns', 'all-for-lookup'],
+        queryFn: () => Campaign.list({ limit: 1000 }),
+        staleTime: 60_000
+    });
 
+    const campaigns = useMemo(() => {
+        if (!campaignsRaw) return [];
+        return Array.isArray(campaignsRaw) ? campaignsRaw : (campaignsRaw.campaigns || []);
+    }, [campaignsRaw]);
 
-    async function fetchProspects() {
-        if (!agentId) return;
-        try {
-            setLoading(true);
+    const { data: prospectsRaw, isLoading: prospectsLoading } = useQuery({
+        queryKey: ['prospects', 'by-agent', agentId, pagination.page, pagination.limit, filters],
+        queryFn: () => {
             const params = {
                 assignedAgentId: agentId,
                 page: pagination.page,
                 limit: pagination.limit
             };
-
             if (filters.search) params.search = filters.search;
             if (filters.status !== "all") params.leadStatus = filters.status;
+            return Prospect.list(params);
+        },
+        enabled: !!agentId
+    });
 
-            const response = await Prospect.list(params);
+    const { prospects, totalProspects, totalPages } = useMemo(() => {
+        if (!prospectsRaw) return { prospects: [], totalProspects: 0, totalPages: 1 };
+        const response = prospectsRaw;
+        let list = [];
+        let count = 0;
+        let tp = 1;
 
-            let list = [];
-            let count = 0;
-            let totalPages = 1;
-
-            if (response && response.prospects) {
-                list = response.prospects;
-                count = response.pagination?.totalItems || list.length;
-                totalPages = response.pagination?.totalPages || 1;
-            } else if (response && response.data) {
-                list = response.data.prospects || [];
-                count = response.data.pagination?.totalItems || list.length;
-                totalPages = response.data.pagination?.totalPages || 1;
-            } else if (Array.isArray(response)) {
-                list = response;
-                count = list.length;
-            }
-
-            setProspects(list.map(normalizeProspect));
-            setTotalProspects(count);
-            setPagination(prev => ({ ...prev, totalPages }));
-
-        } catch (error) {
-            console.error("Error fetching prospects:", error);
-            toast({
-                title: "Error",
-                description: "Failed to load prospects",
-                variant: "destructive"
-            });
-        } finally {
-            setLoading(false);
+        if (response && response.prospects) {
+            list = response.prospects;
+            count = response.pagination?.totalItems || list.length;
+            tp = response.pagination?.totalPages || 1;
+        } else if (response && response.data) {
+            list = response.data.prospects || [];
+            count = response.data.pagination?.totalItems || list.length;
+            tp = response.data.pagination?.totalPages || 1;
+        } else if (Array.isArray(response)) {
+            list = response;
+            count = list.length;
         }
-    }
+
+        return { prospects: list.map(normalizeProspect), totalProspects: count, totalPages: tp };
+    }, [prospectsRaw]);
+
+    const loading = prospectsLoading;
 
     const handlePageChange = (newPage) => {
         setPagination(prev => ({ ...prev, page: newPage }));
@@ -202,7 +173,7 @@ export default function AdminAgentDetail() {
             if (selectedProspect?.id === prospectId) {
                 setSelectedProspect(prev => ({ ...prev, leadStatus: newStatus, status: newStatus }));
             }
-            fetchProspects(); // Refresh list
+            queryClient.invalidateQueries({ queryKey: ['prospects', 'by-agent', agentId] });
         } catch (error) {
             console.error("Error updating status:", error);
             toast({
@@ -213,7 +184,7 @@ export default function AdminAgentDetail() {
         }
     };
 
-    if (loadingAgent) {
+    if (agentLoading) {
         return (
             <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50 flex items-center justify-center">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-600 dark:text-blue-400" />
@@ -369,10 +340,10 @@ export default function AdminAgentDetail() {
                         </div>
 
                         {/* Pagination */}
-                        {pagination.totalPages > 1 && (
+                        {totalPages > 1 && (
                             <div className="border-t border-gray-100 dark:border-gray-700 p-4 flex items-center justify-between bg-gray-50/30 dark:bg-gray-800/30">
                                 <span className="text-sm text-gray-500 dark:text-gray-400">
-                                    Page {pagination.page} of {pagination.totalPages} ({totalProspects} records)
+                                    Page {pagination.page} of {totalPages} ({totalProspects} records)
                                 </span>
                                 <div className="flex items-center gap-2">
                                     <Button
@@ -387,7 +358,7 @@ export default function AdminAgentDetail() {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => handlePageChange(pagination.page + 1)}
-                                        disabled={pagination.page >= pagination.totalPages}
+                                        disabled={pagination.page >= totalPages}
                                     >
                                         Next <ChevronRight className="w-4 h-4" />
                                     </Button>
@@ -407,7 +378,7 @@ export default function AdminAgentDetail() {
                                 onStatusUpdate={handleStatusUpdate}
                                 onClose={() => setSelectedProspect(null)}
                                 userRole="admin"
-                                onEdited={fetchProspects}
+                                onEdited={() => queryClient.invalidateQueries({ queryKey: ['prospects', 'by-agent', agentId] })}
                             />
                         )}
                     </DialogContent>

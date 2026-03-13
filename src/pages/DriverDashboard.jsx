@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entities, apiClient } from "@/api/client";
 import { useDashboard } from "@/contexts/DashboardContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,40 +14,21 @@ import ResponsiveStatsGrid from "../components/dashboard/ResponsiveStatsGrid";
 
 export default function DriverDashboard() {
   const { user } = useDashboard();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const queryClient = useQueryClient();
   const [period, setPeriod] = useState("30d");
-  const [commissions, setCommissions] = useState([]);
-  const [scanTrend, setScanTrend] = useState([]);
-  const [earnTrend, setEarnTrend] = useState([]);
-  const [lifetimeEarnings, setLifetimeEarnings] = useState(0);
-  const [lifetimeScans, setLifetimeScans] = useState(0);
-  const [lastUpdated, setLastUpdated] = useState(null);
 
-  useEffect(() => {
-    if (user) {
-      setLoading(false);
-    }
-  }, [user]);
+  const { data: periodData, isLoading: periodLoading, error: periodError, dataUpdatedAt } = useQuery({
+    queryKey: ['driver', 'dashboard', period, user?.id],
+    queryFn: async () => {
+      const p = period;
 
-  useEffect(() => {
-    if (user) {
-      loadData(period);
-      loadLifetime();
-    }
-  }, [user, period]);
-
-  const loadData = async (p) => {
-    setError(null);
-    try {
       // Fetch commissions once and reuse for both state and earnings trend
       let comms = [];
       try {
         const resp = await apiClient.get(`/dashboard/driver/commissions`, { period: p });
         comms = resp?.data?.commissions || [];
-        setCommissions(comms);
       } catch (e) {
-        setCommissions([]);
+        comms = [];
       }
 
       let scans = [];
@@ -87,9 +69,9 @@ export default function DriverDashboard() {
           scans = Array.from(map.entries()).map(([day, count]) => ({ label: `${day.slice(8)}-${day.slice(5, 7)}`, count }));
         }
       }
-      setScanTrend(scans);
 
       // Build earnings trend from already-fetched commissions
+      let earnTrendResult = [];
       try {
         const map = new Map();
         if (p === "1d") {
@@ -100,7 +82,7 @@ export default function DriverDashboard() {
             const key = `${hour}:00`;
             if (map.has(key)) map.set(key, (map.get(key) || 0) + (Number(c.amount_driver) || 0));
           }
-          setEarnTrend(Array.from(map.entries()).map(([label, amount]) => ({ label, amount })));
+          earnTrendResult = Array.from(map.entries()).map(([label, amount]) => ({ label, amount }));
         } else {
           const now = new Date();
           const days = p === "7d" ? 7 : 30;
@@ -113,28 +95,42 @@ export default function DriverDashboard() {
             const key = new Date(c.created_date).toISOString().split("T")[0];
             if (map.has(key)) map.set(key, (map.get(key) || 0) + (Number(c.amount_driver) || 0));
           }
-          setEarnTrend(Array.from(map.entries()).map(([day, amount]) => ({ label: `${day.slice(8)}-${day.slice(5, 7)}`, amount })));
+          earnTrendResult = Array.from(map.entries()).map(([day, amount]) => ({ label: `${day.slice(8)}-${day.slice(5, 7)}`, amount }));
         }
       } catch (_) {
-        setEarnTrend([]);
+        earnTrendResult = [];
       }
-      setLastUpdated(new Date());
-    } catch (e) {
-      setError(e.message || "Failed to load driver data");
-    }
-  };
 
-  const loadLifetime = async () => {
-    try {
+      return { commissions: comms, scanTrend: scans, earnTrend: earnTrendResult };
+    },
+    enabled: !!user,
+  });
+
+  const { data: lifetimeData } = useQuery({
+    queryKey: ['driver', 'lifetime', user?.id],
+    queryFn: async () => {
       const [commResp, scansResp] = await Promise.all([
         apiClient.get(`/dashboard/driver/commissions`, { period: "all" }),
         apiClient.get(`/dashboard/driver/scans`, { period: "all" }),
       ]);
       const lifetimeCommissions = commResp?.data?.commissions || [];
       const totalEarned = lifetimeCommissions.reduce((sum, c) => sum + (Number(c.amount_driver) || 0), 0);
-      setLifetimeEarnings(totalEarned);
-      setLifetimeScans(scansResp?.data?.total || 0);
-    } catch (e) { }
+      return { earnings: totalEarned, scans: scansResp?.data?.total || 0 };
+    },
+    enabled: !!user,
+  });
+
+  const commissions = periodData?.commissions ?? [];
+  const scanTrend = periodData?.scanTrend ?? [];
+  const earnTrend = periodData?.earnTrend ?? [];
+  const lifetimeEarnings = lifetimeData?.earnings ?? 0;
+  const lifetimeScans = lifetimeData?.scans ?? 0;
+  const loading = periodLoading;
+  const error = periodError?.message || null;
+  const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['driver'] });
   };
 
   const periodEarnings = commissions.reduce((sum, c) => sum + (Number(c.amount_driver) || 0), 0);
@@ -181,7 +177,7 @@ export default function DriverDashboard() {
   ];
 
   return (
-    <DashboardShell loading={loading} error={error} onRetry={() => loadData(period)}>
+    <DashboardShell loading={loading} error={error} onRetry={handleRefresh}>
       <DashboardHeader
         user={user}
         greeting
@@ -190,7 +186,7 @@ export default function DriverDashboard() {
         onPeriodChange={setPeriod}
         periodOptions={{ "1d": "Today (hourly)", "7d": "Last 7 days", "30d": "Last 30 days" }}
         lastUpdated={lastUpdated}
-        onRefresh={() => loadData(period)}
+        onRefresh={handleRefresh}
         refreshLoading={false}
       />
 

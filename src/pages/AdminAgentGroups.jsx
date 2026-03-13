@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/api/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,8 +22,7 @@ import { Users, Plus, Pencil, Trash2, Loader2, Search, X } from "lucide-react";
 
 export default function AdminAgentGroups() {
     const { toast } = useToast();
-    const [groups, setGroups] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const qc = useQueryClient();
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingGroup, setEditingGroup] = useState(null);
     const [saving, setSaving] = useState(false);
@@ -33,33 +33,23 @@ export default function AdminAgentGroups() {
     const [formAgents, setFormAgents] = useState([]);
 
     // Agent search
-    const [lyfeAgents, setLyfeAgents] = useState([]);
     const [agentSearch, setAgentSearch] = useState("");
 
-    const loadGroups = async () => {
-        setLoading(true);
-        try {
+    const { data: groups = [], isLoading: loading } = useQuery({
+        queryKey: ['admin', 'agent-groups'],
+        queryFn: async () => {
             const res = await apiClient.get('/admin/agent-groups');
-            setGroups(res.data || []);
-        } catch (err) {
-            toast({ title: "Error", description: "Failed to load agent groups", variant: "destructive" });
-        }
-        setLoading(false);
-    };
+            return res.data || [];
+        },
+    });
 
-    const loadLyfeAgents = async () => {
-        try {
+    const { data: lyfeAgents = [] } = useQuery({
+        queryKey: ['lyfe', 'agents'],
+        queryFn: async () => {
             const res = await apiClient.get('/lyfe/agents');
-            setLyfeAgents(res.data || []);
-        } catch (err) {
-            // Lyfe API may not be configured yet
-        }
-    };
-
-    useEffect(() => {
-        loadGroups();
-        loadLyfeAgents();
-    }, []);
+            return res.data || [];
+        },
+    });
 
     const openCreateDialog = () => {
         setEditingGroup(null);
@@ -99,7 +89,7 @@ export default function AdminAgentGroups() {
             }
 
             setDialogOpen(false);
-            loadGroups();
+            qc.invalidateQueries({ queryKey: ['admin', 'agent-groups'] });
         } catch (err) {
             toast({ title: "Error", description: err.message || "Failed to save group", variant: "destructive" });
         }
@@ -110,7 +100,7 @@ export default function AdminAgentGroups() {
         try {
             await apiClient.delete(`/admin/agent-groups/${groupId}`);
             toast({ title: "Success", description: "Agent group deleted" });
-            loadGroups();
+            qc.invalidateQueries({ queryKey: ['admin', 'agent-groups'] });
         } catch (err) {
             const msg = err.response?.data?.message || "Failed to delete group";
             toast({ title: "Error", description: msg, variant: "destructive" });

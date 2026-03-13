@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
-import { User } from "@/api/entities";
-import { Campaign } from "@/api/entities";
+import { useState } from "react";
+import { useCampaignsList, useArchiveCampaign, useRestoreCampaign, useDeleteCampaign } from "@/hooks/queries/useCampaignsQuery";
+import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +35,6 @@ import {
   Edit,
   Copy,
   Link as LinkIcon,
-  Users,
   Palette,
   Archive,
   RotateCcw,
@@ -55,11 +54,15 @@ import { useNavigate } from "react-router-dom";
 
 
 export default function AdminCampaigns() {
-  const [user, setUser] = useState(null);
-  const [campaigns, setCampaigns] = useState([]);
-  const [archivedCampaigns, setArchivedCampaigns] = useState([]);
-  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { data: user } = useCurrentUser();
+  const { data: campaignData, isLoading: loading } = useCampaignsList({ sort: '-created_date', limit: 100 });
+  const archiveMutation = useArchiveCampaign();
+  const restoreMutation = useRestoreCampaign();
+  const deleteMutation = useDeleteCampaign();
+
+  const campaigns = campaignData?.active ?? [];
+  const archivedCampaigns = campaignData?.archived ?? [];
 
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
@@ -68,35 +71,6 @@ export default function AdminCampaigns() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // all | active | inactive
   const [isTypeSelectionOpen, setIsTypeSelectionOpen] = useState(false);
-
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      const [userData, campaignsData] = await Promise.all([
-        User.me(),
-        Campaign.list({ sort: '-created_date', limit: 100 })
-      ]);
-
-      setUser(userData);
-
-      // Handle both array (legacy) and paginated object responses
-      const campaignsList = Array.isArray(campaignsData) ? campaignsData : (campaignsData.campaigns || []);
-
-      // Separate active and archived campaigns
-      const activeCampaigns = campaignsList.filter(campaign => campaign.status !== 'archived');
-      const archived = campaignsList.filter(campaign => campaign.status === 'archived');
-
-      setCampaigns(activeCampaigns);
-      setArchivedCampaigns(archived);
-    } catch (error) {
-      console.error('Error loading campaigns:', error);
-    }
-    setLoading(false);
-  };
 
 
 
@@ -122,8 +96,7 @@ export default function AdminCampaigns() {
   const handleArchiveCampaign = async (campaignId) => {
     if (window.confirm("Are you sure you want to archive this campaign? It will be moved to the archived campaigns section.")) {
       try {
-        await Campaign.archive(campaignId);
-        await loadData();
+        await archiveMutation.mutateAsync(campaignId);
       } catch (error) {
         console.error("Failed to archive campaign:", error);
         alert("Failed to archive campaign. Please try again.");
@@ -133,8 +106,7 @@ export default function AdminCampaigns() {
 
   const handleRestoreCampaign = async (campaignId) => {
     try {
-      await Campaign.restore(campaignId);
-      await loadData();
+      await restoreMutation.mutateAsync(campaignId);
     } catch (error) {
       console.error("Failed to restore campaign:", error);
       alert("Failed to restore campaign. Please try again.");
@@ -144,8 +116,7 @@ export default function AdminCampaigns() {
   const handlePermanentDelete = async (campaignId) => {
     if (window.confirm("Are you sure you want to PERMANENTLY DELETE this campaign? This action cannot be undone and will delete all associated data.")) {
       try {
-        await Campaign.permanentDelete(campaignId);
-        await loadData();
+        await deleteMutation.mutateAsync(campaignId);
       } catch (error) {
         console.error("Failed to delete campaign:", error);
         alert("Failed to delete campaign. Please try again.");

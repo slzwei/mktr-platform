@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Car } from "@/api/entities";
 import { Commission } from "@/api/entities";
 import { useDashboard } from "@/contexts/DashboardContext";
@@ -23,11 +24,28 @@ import VehiclePerformance from "../components/dashboard/VehiclePerformance";
 
 export default function FleetOwnerDashboard() {
   const { user } = useDashboard();
-  const [stats, setStats] = useState({ cars: [], commissions: [] });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const queryClient = useQueryClient();
   const [period, setPeriod] = useState("30d");
+
+  const { data: cars = [], isLoading: carsLoading, error: carsError } = useQuery({
+    queryKey: ['cars', 'fleet-owner', user?.id],
+    queryFn: () => Car.filter({ fleet_owner_id: user.id }),
+    enabled: !!user,
+  });
+  const { data: commissions = [], isLoading: commissionsLoading, error: commissionsError } = useQuery({
+    queryKey: ['commissions', 'fleet-owner', user?.id],
+    queryFn: () => Commission.filter({ fleet_owner_id: user.id }),
+    enabled: !!user,
+  });
+
+  const stats = { cars, commissions };
+  const loading = carsLoading || commissionsLoading;
+  const error = (carsError || commissionsError)?.message || null;
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['cars'] });
+    queryClient.invalidateQueries({ queryKey: ['commissions'] });
+  };
 
   const periodDays = period === "7d" ? 7 : period === "30d" ? 30 : 90;
 
@@ -37,25 +55,6 @@ export default function FleetOwnerDashboard() {
     cutoff.setHours(0, 0, 0, 0);
     return stats.commissions.filter((c) => new Date(c.created_date || c.createdAt) >= cutoff);
   }, [stats.commissions, periodDays]);
-
-  useEffect(() => {
-    if (user) loadDashboardData();
-  }, [user]);
-
-  const loadDashboardData = async () => {
-    setError(null);
-    try {
-      const [cars, commissions] = await Promise.all([
-        Car.filter({ fleet_owner_id: user.id }),
-        Commission.filter({ fleet_owner_id: user.id }),
-      ]);
-      setStats({ cars, commissions });
-      setLastUpdated(new Date());
-    } catch (err) {
-      setError(err.message || "Something went wrong while loading the dashboard.");
-    }
-    setLoading(false);
-  };
 
   const getDashboardMetrics = () => {
     if (!user) return {};
@@ -133,7 +132,7 @@ export default function FleetOwnerDashboard() {
     : [];
 
   return (
-    <DashboardShell loading={loading} error={error} onRetry={loadDashboardData}>
+    <DashboardShell loading={loading} error={error} onRetry={handleRefresh}>
       <DashboardHeader
         user={user}
         greeting
@@ -141,8 +140,8 @@ export default function FleetOwnerDashboard() {
         period={period}
         onPeriodChange={setPeriod}
         periodOptions={{ "7d": "Last 7 days", "30d": "Last 30 days", "90d": "Last 90 days" }}
-        lastUpdated={lastUpdated}
-        onRefresh={loadDashboardData}
+        lastUpdated={null}
+        onRefresh={handleRefresh}
         refreshLoading={loading}
       />
 

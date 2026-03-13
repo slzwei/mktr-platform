@@ -20,7 +20,34 @@ const authLimiter = rateLimit({
   message: { success: false, message: 'Too many auth attempts, try again later' }
 });
 
-// Register new user
+/**
+ * @openapi
+ * /auth/register:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Register a new user
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string, format: email }
+ *               password: { type: string, minLength: 6 }
+ *               firstName: { type: string }
+ *               lastName: { type: string }
+ *               full_name: { type: string }
+ *               phone: { type: string }
+ *               role: { type: string, enum: [customer, agent, fleet_owner] }
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ *       400:
+ *         description: Validation error or duplicate email
+ */
 router.post('/register', authLimiter, validate(schemas.userRegister), asyncHandler(async (req, res) => {
   const { email, password, firstName, lastName, phone, role, full_name, fullName } = req.body;
 
@@ -56,7 +83,29 @@ router.post('/register', authLimiter, validate(schemas.userRegister), asyncHandl
   });
 }));
 
-// Login user
+/**
+ * @openapi
+ * /auth/login:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Login with email and password
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string, format: email }
+ *               password: { type: string }
+ *     responses:
+ *       200:
+ *         description: Login successful, returns JWT token
+ *       401:
+ *         description: Invalid credentials
+ */
 router.post('/login', authLimiter, validate(schemas.userLogin), asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
@@ -627,7 +676,6 @@ router.post('/accept-invite', asyncHandler(async (req, res) => {
   await user.update({
     password,
     firstName,
-    lastName,
     lastName,
     phone: req.body.phone || user.phone, // Update phone if provided (verified in frontend), otherwise keep existing
     dateOfBirth: req.body.dateOfBirth || user.dateOfBirth,

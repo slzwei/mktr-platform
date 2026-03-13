@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
-import { auth } from "@/api/client";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Prospect, Campaign } from "@/api/entities";
+import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
+import { useUpdateProspect, useDeleteProspect } from "@/hooks/queries/useProspectsQuery";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,12 +29,9 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   User
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -98,10 +97,11 @@ function normalizeProspect(p) {
 
 export default function AdminProspects() {
   const location = useLocation();
-  const [user, setUser] = useState(null);
-  const [prospects, setProspects] = useState([]);
-  const [campaigns, setCampaigns] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { data: user } = useCurrentUser();
+  const updateProspectMutation = useUpdateProspect();
+  const deleteProspectMutation = useDeleteProspect();
+
   const [selectedProspect, setSelectedProspect] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   // Initialize filters from URL or defaults
@@ -116,12 +116,8 @@ export default function AdminProspects() {
     };
   });
 
-  const [pagination, setPagination] = useState({
-    currentPage: 1,
-    totalPages: 1,
-    totalItems: 0,
-    itemsPerPage: 25
-  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
   const isMobile = useIsMobile();
 
   // Listen for URL changes (popstate or navigation) and update filters
@@ -131,80 +127,72 @@ export default function AdminProspects() {
     const qrTagId = params.get('qrTagId') || "all";
 
     setFilters(prev => {
-      // Only update if changed to avoid loops
       if (prev.campaign === campaignId && prev.qrTagId === qrTagId) return prev;
       return { ...prev, campaign: campaignId, qrTagId: qrTagId };
     });
   }, [location.search]);
 
-  useEffect(() => {
-    loadDataWithFilters();
-  }, [filters, pagination.currentPage, pagination.itemsPerPage]);
-
-  const loadDataWithFilters = async () => {
-    setLoading(true);
-    try {
-      const params = {
-        page: pagination.currentPage,
-        limit: pagination.itemsPerPage
-      };
-
-      if (filters.search) params.search = filters.search;
-      if (filters.status !== "all") params.leadStatus = filters.status;
-      if (filters.status !== "all") params.leadStatus = filters.status;
-      if (filters.campaign !== "all") params.campaignId = filters.campaign;
-      if (filters.qrTagId !== "all") params.qrTagId = filters.qrTagId;
-      if (filters.source !== "all") {
-        if (filters.source === "qr") params.leadSource = "qr_code";
-        else if (filters.source === "form") params.leadSource = "website";
-        else params.leadSource = filters.source;
-      }
-
-      const [userData, prospectsResponse, allCampaignsData] = await Promise.all([
-        user || auth.getCurrentUser(),
-        Prospect.list(params),
-        campaigns.length > 0 ? Promise.resolve(campaigns) : Campaign.list({ limit: 1000 })
-      ]);
-
-      if (!user) setUser(userData);
-
-      const campaignsResponse = Array.isArray(allCampaignsData) ? allCampaignsData : (allCampaignsData.campaigns || []);
-      // Keep all campaigns including archived ones for lookups - prospects may reference them
-      const campaignsData = campaignsResponse;
-
-      const prospectsData = prospectsResponse.prospects || prospectsResponse || [];
-      const paginationData = prospectsResponse.pagination || {
-        currentPage: pagination.currentPage,
-        totalPages: 1,
-        totalItems: prospectsData.length,
-        itemsPerPage: pagination.itemsPerPage
-      };
-
-      const normalized = (prospectsData || []).map(normalizeProspect);
-      setProspects(normalized);
-      if (campaignsData.length > 0) setCampaigns(campaignsData);
-
-      setPagination(paginationData);
-    } catch (error) {
-      console.error('Error loading prospects:', error);
+  // Build query params from filters
+  const queryParams = useMemo(() => {
+    const params = { page: currentPage, limit: itemsPerPage };
+    if (filters.search) params.search = filters.search;
+    if (filters.status !== "all") params.leadStatus = filters.status;
+    if (filters.campaign !== "all") params.campaignId = filters.campaign;
+    if (filters.qrTagId !== "all") params.qrTagId = filters.qrTagId;
+    if (filters.source !== "all") {
+      if (filters.source === "qr") params.leadSource = "qr_code";
+      else if (filters.source === "form") params.leadSource = "website";
+      else params.leadSource = filters.source;
     }
-    setLoading(false);
+    return params;
+  }, [filters, currentPage, itemsPerPage]);
+
+  const { data: prospectsResponse, isLoading: prospectsLoading } = useQuery({
+    queryKey: ['prospects', 'list', queryParams],
+    queryFn: () => Prospect.list(queryParams),
+  });
+
+  const { data: campaignsRaw } = useQuery({
+    queryKey: ['campaigns', 'all-for-lookup'],
+    queryFn: () => Campaign.list({ limit: 1000 }),
+    staleTime: 60_000,
+  });
+
+  const campaigns = useMemo(() => {
+    if (!campaignsRaw) return [];
+    return Array.isArray(campaignsRaw) ? campaignsRaw : (campaignsRaw.campaigns || []);
+  }, [campaignsRaw]);
+
+  const prospects = useMemo(() => {
+    const data = prospectsResponse?.prospects || prospectsResponse || [];
+    return (Array.isArray(data) ? data : []).map(normalizeProspect);
+  }, [prospectsResponse]);
+
+  const pagination = prospectsResponse?.pagination || {
+    currentPage,
+    totalPages: 1,
+    totalItems: prospects.length,
+    itemsPerPage
   };
 
+  const loading = prospectsLoading;
+
   const handlePageChange = (newPage) => {
-    setPagination(prev => ({ ...prev, currentPage: newPage }));
+    setCurrentPage(newPage);
   };
 
   const handlePageSizeChange = (newSize) => {
-    setPagination(prev => ({ ...prev, currentPage: 1, itemsPerPage: newSize }));
+    setCurrentPage(1);
+    setItemsPerPage(newSize);
   };
 
-  const loadData = async () => loadDataWithFilters();
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['prospects'] });
+  };
 
   const handleStatusUpdate = async (prospectId, newStatus) => {
     try {
-      await Prospect.update(prospectId, { leadStatus: newStatus });
-      await loadData();
+      await updateProspectMutation.mutateAsync({ id: prospectId, data: { leadStatus: newStatus } });
     } catch (error) {
       console.error('Error updating status:', error);
     }
@@ -212,8 +200,7 @@ export default function AdminProspects() {
 
   const handleDeleteProspect = async (prospectId) => {
     try {
-      await Prospect.delete(prospectId);
-      await loadData();
+      await deleteProspectMutation.mutateAsync(prospectId);
       setDeleteConfirm(null);
     } catch (error) {
       console.error('Error deleting prospect:', error);
@@ -505,7 +492,7 @@ export default function AdminProspects() {
                 onStatusUpdate={handleStatusUpdate}
                 onClose={() => setSelectedProspect(null)}
                 userRole={user?.role}
-                onEdited={loadData}
+                onEdited={handleRefresh}
               />
             )}
           </DialogContent>

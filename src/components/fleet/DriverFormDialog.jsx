@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,75 +12,54 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Save from "lucide-react/icons/save";
+import { driverInviteSchema } from "@/schemas/fleet";
 
-export default function DriverFormDialog({ 
-  open, 
-  onOpenChange, 
-  driver, 
+export default function DriverFormDialog({
+  open,
+  onOpenChange,
+  driver,
   onSubmit
 }) {
-  const [formData, setFormData] = useState({
-    full_name: "",
-    email: "",
-    phone: ""
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm({
+    resolver: zodResolver(driverInviteSchema),
+    defaultValues: { full_name: "", email: "", phone: "" },
   });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (driver) {
-      setFormData({
-        full_name: driver.full_name || "",
-        email: driver.email || "",
-        phone: driver.phone || ""
-      });
-    } else {
-      setFormData({
-        full_name: "",
-        email: "",
-        phone: ""
-      });
+    if (open) {
+      reset(driver
+        ? { full_name: driver.full_name || "", email: driver.email || "", phone: driver.phone || "" }
+        : { full_name: "", email: "", phone: "" }
+      );
     }
-    setError("");
-  }, [driver, open]);
+  }, [driver, open, reset]);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-
+  const onFormSubmit = async (data) => {
     try {
-      if (!formData.full_name.trim()) {
-        throw new Error("Full name is required");
-      }
-      if (!formData.email.trim()) {
-        throw new Error("Email is required");
-      }
-
       // Split full_name into firstName and lastName for User model
-      const nameParts = formData.full_name.trim().split(' ');
+      const nameParts = data.full_name.trim().split(' ');
       const firstName = nameParts[0] || '';
-      const lastName = nameParts.slice(1).join(' ') || nameParts[0] || ''; // Use first name as last name if only one name
-      
+      const lastName = nameParts.slice(1).join(' ') || nameParts[0] || '';
+
       const submitData = {
         firstName,
         lastName,
-        email: formData.email,
-        phone: formData.phone,
+        email: data.email,
+        phone: data.phone,
         role: 'driver_partner'
       };
 
       await onSubmit(submitData);
       onOpenChange(false);
     } catch (err) {
-      setError(err.message || "Failed to save driver");
+      setError("root", { message: err.message || "Failed to save driver" });
     }
-    setLoading(false);
   };
 
   return (
@@ -87,46 +68,47 @@ export default function DriverFormDialog({
         <DialogHeader>
           <DialogTitle>{driver ? "Edit Driver" : "Add New Driver"}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 py-4">
+        <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4 py-4">
           <div>
             <Label htmlFor="full_name">Full Name *</Label>
             <Input
               id="full_name"
-              name="full_name"
-              value={formData.full_name}
-              onChange={handleChange}
               placeholder="Driver's full name"
-              required
+              {...register("full_name")}
             />
+            {errors.full_name && (
+              <p className="text-red-600 text-xs mt-1">{errors.full_name.message}</p>
+            )}
           </div>
 
           <div>
             <Label htmlFor="email">Email Address *</Label>
             <Input
               id="email"
-              name="email"
               type="email"
-              value={formData.email}
-              onChange={handleChange}
               placeholder="driver@example.com"
-              required
+              {...register("email")}
             />
+            {errors.email && (
+              <p className="text-red-600 text-xs mt-1">{errors.email.message}</p>
+            )}
           </div>
 
           <div>
             <Label htmlFor="phone">Phone Number</Label>
             <Input
               id="phone"
-              name="phone"
-              value={formData.phone}
-              onChange={handleChange}
               placeholder="+65 XXXX XXXX"
+              {...register("phone")}
             />
+            {errors.phone && (
+              <p className="text-red-600 text-xs mt-1">{errors.phone.message}</p>
+            )}
           </div>
 
-          {error && (
+          {errors.root && (
             <div className="text-red-600 text-sm bg-red-50 p-3 rounded">
-              {error}
+              {errors.root.message}
             </div>
           )}
 
@@ -134,9 +116,9 @@ export default function DriverFormDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700">
+            <Button type="submit" disabled={isSubmitting} className="bg-blue-600 hover:bg-blue-700">
               <Save className="w-4 h-4 mr-2" />
-              {loading ? "Saving..." : "Save Driver"}
+              {isSubmitting ? "Saving..." : "Save Driver"}
             </Button>
           </DialogFooter>
         </form>

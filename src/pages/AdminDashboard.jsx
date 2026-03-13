@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
-import { Prospect, Campaign, Commission, Car } from "@/api/entities";
-import { dashboard } from "@/api/client";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useDashboard } from "@/contexts/DashboardContext";
+import { useDashboardData } from "@/hooks/queries/useDashboardQuery";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -125,73 +125,42 @@ function buildAdminCards(stats, period) {
 
 export default function AdminDashboard() {
   const { user } = useDashboard();
-  const [stats, setStats] = useState({
-    prospects: [],
-    campaigns: [],
-    commissions: [],
-    cars: [],
-    totalScans: 0,
-    overview: {
-      prospectsTotal: 0,
-      newProspects: 0,
-      campaignsTotal: 0,
-      campaignsActive: 0,
-      commissionsTotal: 0,
-    },
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const queryClient = useQueryClient();
   const [period, setPeriod] = useState("30d");
 
-  useEffect(() => {
-    if (user) loadDashboardData();
-  }, [user]);
+  const {
+    prospects,
+    campaigns,
+    commissions,
+    cars,
+    overview: rawOverview,
+    isLoading: loading,
+    error: queryError,
+  } = useDashboardData(period, !!user);
 
-  const loadDashboardData = async (selectedPeriod) => {
-    const periodToUse = selectedPeriod || period;
-    setError(null);
-    try {
-      const [prospectsData, campaignsData, commissionsData, overview] = await Promise.all([
-        Prospect.list({ limit: 100 }),
-        Campaign.list({ limit: 100 }),
-        Commission.list({ limit: 100 }),
-        dashboard.getOverview(periodToUse),
-      ]);
+  const error = queryError?.message || null;
 
-      const prospects = Array.isArray(prospectsData) ? prospectsData : prospectsData.prospects || [];
-      const allCampaigns = Array.isArray(campaignsData) ? campaignsData : campaignsData.campaigns || [];
-      const commissions = Array.isArray(commissionsData) ? commissionsData : commissionsData.commissions || [];
-      const campaigns = allCampaigns.filter((campaign) => campaign.status !== "archived");
-
-      let cars = [];
-      try {
-        cars = await Car.list();
-      } catch (e) {
-        // Fleet module may not be available
-      }
-
-      const overviewStats = {
-        prospectsTotal: overview?.stats?.prospects?.total || 0,
-        newProspects: overview?.stats?.prospects?.new || 0,
-        campaignsTotal: overview?.stats?.campaigns?.total || 0,
-        campaignsActive: overview?.stats?.campaigns?.active || 0,
-        commissionsTotal: Number(overview?.stats?.commissions?.total || 0),
-        impressionsToday: overview?.stats?.impressions?.today || 0,
-      };
-
-      setStats({ prospects, campaigns, commissions, cars, overview: overviewStats });
-      setLastUpdated(new Date());
-    } catch (err) {
-      setError(err.message || "Something went wrong while loading the dashboard.");
-    }
-    setLoading(false);
+  const overview = {
+    prospectsTotal: rawOverview?.stats?.prospects?.total || 0,
+    newProspects: rawOverview?.stats?.prospects?.new || 0,
+    campaignsTotal: rawOverview?.stats?.campaigns?.total || 0,
+    campaignsActive: rawOverview?.stats?.campaigns?.active || 0,
+    commissionsTotal: Number(rawOverview?.stats?.commissions?.total || 0),
+    impressionsToday: rawOverview?.stats?.impressions?.today || 0,
   };
+
+  const stats = { prospects, campaigns, commissions, cars, overview };
 
   const handlePeriodChange = (value) => {
     setPeriod(value);
-    setLoading(true);
-    loadDashboardData(value);
+  };
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['prospects'] });
+    queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+    queryClient.invalidateQueries({ queryKey: ['commissions'] });
+    queryClient.invalidateQueries({ queryKey: ['cars'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
   };
 
   const getFilteredData = (data) => {
@@ -241,14 +210,14 @@ export default function AdminDashboard() {
   const cards = !loading ? buildAdminCards(filteredStats, period) : [];
 
   return (
-    <DashboardShell loading={loading} error={error} onRetry={loadDashboardData}>
+    <DashboardShell loading={loading} error={error} onRetry={handleRefresh}>
       <DashboardHeader
         user={user}
         title="Dashboard"
         period={period}
         onPeriodChange={handlePeriodChange}
-        lastUpdated={lastUpdated}
-        onRefresh={loadDashboardData}
+        lastUpdated={null}
+        onRefresh={handleRefresh}
         refreshLoading={loading}
         actions={
           <>
