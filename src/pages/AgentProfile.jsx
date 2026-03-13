@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
-import { auth, apiClient } from '@/api/client';
+import { apiClient } from '@/api/client';
+import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { toast } from '@/components/ui/use-toast';
-import { Loader2, Mail, Phone, Calendar, User, ShieldCheck, CheckCircle2, AlertCircle, X, Lock } from 'lucide-react';
+import { Loader2, Mail, Calendar, User, ShieldCheck, CheckCircle2, AlertCircle, X, Lock } from 'lucide-react';
 import { sendOtp, verifyOtp } from '@/components/lib/customFunctions';
 import { motion } from 'framer-motion';
 
 export default function AgentProfile() {
+    const refreshUser = useAuthStore((s) => s.refreshUser);
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -53,7 +55,7 @@ export default function AgentProfile() {
 
     const loadUser = async () => {
         try {
-            const currentUser = await auth.getCurrentUser();
+            const currentUser = await refreshUser();
             setUser(currentUser);
 
             const rawPhone = (currentUser.phone || '').replace(/\D/g, '');
@@ -172,7 +174,7 @@ export default function AgentProfile() {
             await apiClient.put('/auth/profile', payload);
 
             // Update local state
-            const updatedUser = await auth.getCurrentUser(true); // force refresh
+            const updatedUser = await refreshUser(true); // force refresh
             setUser(updatedUser);
             setOriginalPhone(formData.phone);
             setOtpState('idle');

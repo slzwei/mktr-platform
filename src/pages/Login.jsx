@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { auth } from "@/api/client";
+import { useAuthStore } from "@/stores/authStore";
 import { GOOGLE_CLIENT_ID } from "@/config/google";
 import { getPostAuthRedirectPath } from "@/lib/utils";
 import { LogIn, AlertCircle } from "lucide-react";
@@ -18,6 +18,7 @@ export default function CustomerLogin() {
 
   const navigate = useNavigate();
   const location = useLocation();
+  const storeLogin = useAuthStore((s) => s.login);
 
   useEffect(() => {
     // If we have a return URL in the state, save it to session storage
@@ -39,7 +40,7 @@ export default function CustomerLogin() {
         return;
       }
 
-      const result = await auth.login(email, password);
+      const result = await storeLogin(email, password);
       if (result.success) {
         const user = result.data.user;
 

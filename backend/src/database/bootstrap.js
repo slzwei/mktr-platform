@@ -4,6 +4,7 @@ import ensureTenantPlumbing from './tenantMigration.js';
 import { initSystemAgent } from '../services/systemAgent.js';
 import { validateGoogleOAuthConfig } from '../controllers/authController.js';
 import { validateEnv } from '../config/envValidation.js';
+import { runMigrations } from './runMigrations.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -38,6 +39,8 @@ export async function bootstrapDatabase() {
     logger.info('System Agent ready', { systemId });
   });
   await safeRun('Lyfe webhook subscriber', ensureLyfeWebhookSubscriber);
+
+  await safeRun('Migrations', runMigrations);
 
   if (!isSqlite) {
     await ensurePostgresIndexes();
@@ -76,7 +79,7 @@ function logDatabaseInfo() {
     } else if (dialect === 'postgres') {
       logger.info('Database connection', { host: process.env.DB_HOST, name: process.env.DB_NAME });
     }
-  } catch (_) { }
+  } catch (_) { /* non-critical logging */ }
 }
 
 async function syncModels() {

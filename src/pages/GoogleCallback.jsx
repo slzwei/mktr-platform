@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import Loader2 from 'lucide-react/icons/loader-2';
 import CheckCircle from 'lucide-react/icons/check-circle';
 import XCircle from 'lucide-react/icons/x-circle';
 import MKTRAnimatedLogo from '@/components/MKTRAnimatedLogo';
-import { apiClient, auth } from '@/api/client';
+import { apiClient } from '@/api/client';
+import { useAuthStore } from '@/stores/authStore';
 import { getPostAuthRedirectPath } from '@/lib/utils';
 
 export default function GoogleCallback() {
@@ -13,6 +13,7 @@ export default function GoogleCallback() {
   const navigate = useNavigate();
   const [status, setStatus] = useState('processing'); // processing, success, error
   const [message, setMessage] = useState('Processing Google authentication...');
+  const setUser = useAuthStore((s) => s.setUser);
 
   useEffect(() => {
     const handleCallback = async () => {
@@ -68,19 +69,10 @@ export default function GoogleCallback() {
           const user = result.data.user;
           console.log('✅ Authentication successful, user:', user);
 
-          // Store the token and update API client
+          // Store the token and update API client + store
           if (result.data.token) {
-            localStorage.setItem('mktr_auth_token', result.data.token);
-            localStorage.setItem('mktr_user', JSON.stringify(user));
-
-            // CRITICAL: Update the API client with the new token
             apiClient.setToken(result.data.token);
-
-            // CRITICAL: Set the current user in the auth module
-            auth.setCurrentUser(user);
-
-            console.log('✅ API client updated with authentication token');
-            console.log('✅ Current user set in auth module:', user);
+            setUser(user);
           }
 
           setStatus('success');

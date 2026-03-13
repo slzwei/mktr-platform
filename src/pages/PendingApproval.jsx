@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Loader2, ArrowRight, ShieldCheck, Clock } from 'lucide-react';
-import { auth } from '@/api/client';
+import { useAuthStore } from '@/stores/authStore';
 import { getPostAuthRedirectPath } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -12,20 +12,19 @@ export default function PendingApproval() {
   const [checking, setChecking] = useState(false);
   const [lastCheckedAt, setLastCheckedAt] = useState(null);
   const intervalRef = useRef(null);
+  const { token, refreshUser, setUser } = useAuthStore();
 
   useEffect(() => {
-    const token = localStorage.getItem('mktr_auth_token');
     if (!token) navigate('/');
 
     // Poll for approval status every 5 seconds and redirect once approved
     const checkStatus = async () => {
       try {
         setChecking(true);
-        const freshUser = await auth.getCurrentUser(true);
+        const freshUser = await refreshUser();
         setLastCheckedAt(new Date());
         if (freshUser && freshUser.approvalStatus !== 'pending' && freshUser.status !== 'pending_approval') {
-          // Keep local auth state fresh and navigate to the correct destination
-          auth.setCurrentUser(freshUser);
+          setUser(freshUser);
           const target = getPostAuthRedirectPath(freshUser);
           navigate(target);
         }
@@ -48,10 +47,10 @@ export default function PendingApproval() {
   const handleManualCheck = async () => {
     try {
       setChecking(true);
-      const freshUser = await auth.getCurrentUser(true);
+      const freshUser = await refreshUser();
       setLastCheckedAt(new Date());
       if (freshUser && freshUser.approvalStatus !== 'pending' && freshUser.status !== 'pending_approval') {
-        auth.setCurrentUser(freshUser);
+        setUser(freshUser);
         const target = getPostAuthRedirectPath(freshUser);
         navigate(target);
       }

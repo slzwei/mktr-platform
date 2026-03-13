@@ -1,5 +1,6 @@
 import './setup.js';
-import { getApp, closeDb, createTestUser, createTestCampaign } from './helpers.js';
+import crypto from 'crypto';
+import { getApp, closeDb, createTestUser } from './helpers.js';
 import request from 'supertest';
 import { WebhookSubscriber, WebhookDelivery } from '../src/models/index.js';
 
@@ -94,6 +95,79 @@ describe('Webhook Admin API', () => {
   });
 });
 
+describe('Webhook Dead-Letter & Stats API', () => {
+  let subscriberId;
+
+  beforeAll(async () => {
+    // Create a subscriber with some failed deliveries
+    const res = await request(app)
+      .post('/api/admin/webhooks/subscribers')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        name: 'DL Test Subscriber',
+        url: 'https://example.com/dl-test',
+        secret: 'dl-secret',
+        events: ['lead.created'],
+        enabled: true
+      });
+    subscriberId = res.body.data.id;
+
+    // Create failed deliveries directly
+    await WebhookDelivery.bulkCreate([
+      { subscriberId, deliveryId: crypto.randomUUID(), eventType: 'lead.created', payload: {}, status: 'failed', attempts: 3, maxAttempts: 3 },
+      { subscriberId, deliveryId: crypto.randomUUID(), eventType: 'lead.created', payload: {}, status: 'failed', attempts: 3, maxAttempts: 3 },
+      { subscriberId, deliveryId: crypto.randomUUID(), eventType: 'lead.created', payload: {}, status: 'success', attempts: 1, maxAttempts: 3 },
+    ]);
+  });
+
+  test('GET /api/admin/webhooks/deliveries/dead-letter — lists failed grouped by subscriber', async () => {
+    const res = await request(app)
+      .get('/api/admin/webhooks/deliveries/dead-letter')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    // At least our subscriber should have failed deliveries
+    const group = res.body.data.find(g => g.subscriber.id === subscriberId);
+    expect(group).toBeDefined();
+    expect(group.deliveries.length).toBe(2);
+  });
+
+  test('GET /api/admin/webhooks/stats — returns per-subscriber stats', async () => {
+    const res = await request(app)
+      .get('/api/admin/webhooks/stats')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.data)).toBe(true);
+    const stat = res.body.data.find(s => s.subscriber.id === subscriberId);
+    expect(stat).toBeDefined();
+    expect(stat.last24h).toHaveProperty('success');
+    expect(stat.last24h).toHaveProperty('failed');
+    expect(stat.last24h).toHaveProperty('pending');
+    expect(stat.last30d.total).toBeGreaterThanOrEqual(3);
+  });
+
+  test('POST /api/admin/webhooks/deliveries/dead-letter/purge — purges old failures', async () => {
+    const res = await request(app)
+      .post('/api/admin/webhooks/deliveries/dead-letter/purge')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ maxAgeDays: 0 }); // purge all
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.deleted).toBeGreaterThanOrEqual(2);
+  });
+
+  afterAll(async () => {
+    // Clean up
+    await WebhookDelivery.destroy({ where: { subscriberId } });
+    await WebhookSubscriber.destroy({ where: { id: subscriberId } });
+  });
+});
+
 describe('Webhook Service', () => {
   test('dispatchEvent does not throw when no subscribers', async () => {
     const { dispatchEvent } = await import('../src/services/webhookService.js');
@@ -103,8 +177,12 @@ describe('Webhook Service', () => {
   });
 
   test('dispatchEvent skips disabled subscribers', async () => {
+    // Clean slate: remove all subscribers and deliveries
+    await WebhookDelivery.destroy({ where: {} });
+    await WebhookSubscriber.destroy({ where: {} });
+
     // Create a disabled subscriber
-    await WebhookSubscriber.create({
+    const disabledSub = await WebhookSubscriber.create({
       name: 'Disabled Sub',
       url: 'https://example.com/disabled',
       secret: 'secret',
@@ -119,11 +197,11 @@ describe('Webhook Service', () => {
     const { dispatchEvent } = await import('../src/services/webhookService.js');
     await dispatchEvent('lead.created', () => ({ test: true }));
 
-    // No deliveries should be created for disabled subscriber
-    const deliveries = await WebhookDelivery.findAll();
-    const hasDisabled = deliveries.some(d => d.payload?.test === true);
-    // The disabled subscriber should not have received a delivery
-    expect(hasDisabled).toBe(false);
+    // No deliveries should be created for the disabled subscriber
+    const deliveries = await WebhookDelivery.findAll({
+      where: { subscriberId: disabledSub.id }
+    });
+    expect(deliveries.length).toBe(0);
 
     process.env.WEBHOOK_ENABLED = origEnv;
   });

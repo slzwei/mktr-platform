@@ -3,7 +3,7 @@ import { Op } from 'sequelize';
 import { WebhookSubscriber, WebhookDelivery } from '../models/index.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { retryDelivery, retryAllFailed } from '../services/webhookService.js';
+import { retryDelivery, retryAllFailed, getDeadLetterQueue, purgeDeadLetters, getDeliveryStats } from '../services/webhookService.js';
 
 const router = express.Router();
 
@@ -110,6 +110,41 @@ router.get('/deliveries', asyncHandler(async (req, res) => {
   });
 }));
 
+// --- Dead-letter queue (must be before :id routes) ---
+
+// List failed deliveries grouped by subscriber
+router.get('/deliveries/dead-letter', asyncHandler(async (req, res) => {
+  const data = await getDeadLetterQueue();
+  res.json({ success: true, data });
+}));
+
+// Purge old failed deliveries (>30 days by default)
+router.post('/deliveries/dead-letter/purge', asyncHandler(async (req, res) => {
+  const maxAgeDays = req.body.maxAgeDays !== undefined ? parseInt(req.body.maxAgeDays) : 30;
+  const deleted = await purgeDeadLetters(maxAgeDays);
+  res.json({ success: true, message: `${deleted} dead-letter deliveries purged`, deleted });
+}));
+
+// Retry all failed deliveries for a subscriber
+router.post('/deliveries/retry-all', asyncHandler(async (req, res) => {
+  const { subscriberId } = req.body;
+  if (!subscriberId) {
+    return res.status(400).json({ success: false, message: 'subscriberId is required' });
+  }
+  const count = await retryAllFailed(subscriberId);
+  res.json({ success: true, message: `${count} deliveries queued for retry` });
+}));
+
+// --- Delivery stats ---
+
+// Get success/failure/pending counts per subscriber for 24h/7d/30d
+router.get('/stats', asyncHandler(async (req, res) => {
+  const data = await getDeliveryStats();
+  res.json({ success: true, data });
+}));
+
+// --- Parameterized delivery routes (must be after static paths) ---
+
 // Single delivery detail
 router.get('/deliveries/:id', asyncHandler(async (req, res) => {
   const delivery = await WebhookDelivery.findByPk(req.params.id, {
@@ -125,16 +160,6 @@ router.get('/deliveries/:id', asyncHandler(async (req, res) => {
 router.post('/deliveries/:id/retry', asyncHandler(async (req, res) => {
   await retryDelivery(req.params.id);
   res.json({ success: true, message: 'Delivery queued for retry' });
-}));
-
-// Retry all failed deliveries for a subscriber
-router.post('/deliveries/retry-all', asyncHandler(async (req, res) => {
-  const { subscriberId } = req.body;
-  if (!subscriberId) {
-    return res.status(400).json({ success: false, message: 'subscriberId is required' });
-  }
-  const count = await retryAllFailed(subscriberId);
-  res.json({ success: true, message: `${count} deliveries queued for retry` });
 }));
 
 export default router;
