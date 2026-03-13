@@ -60,6 +60,9 @@ router.post('/agents/sync', asyncHandler(async (req, res) => {
       const updateData = {};
       if (agent.id && !existing.lyfeId) updateData.lyfeId = String(agent.id);
       if (agent.name && !existing.fullName) updateData.fullName = agent.name;
+      if (agent.email && (!existing.email || existing.email.endsWith('@placeholder.local'))) {
+        updateData.email = agent.email;
+      }
       if (agent.phone && !existing.phone) {
         updateData.phone = String(agent.phone).replace(/\D/g, '');
       }
