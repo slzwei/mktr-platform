@@ -13,7 +13,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import Save from "lucide-react/icons/save";
 import makeModelsRaw from "@/data/mktr_make_models.json";
 import {
-  ALLOWED_PLATE_PREFIXES,
   isValidSgPlate,
   parseSgPlate,
 } from "@/utils/validation";
@@ -189,7 +188,7 @@ export default function CarFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{car ? "Edit Vehicle" : "Add New Vehicle"}</DialogTitle>
         </DialogHeader>

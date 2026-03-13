@@ -51,7 +51,7 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
         if (full?.lastName) setLastName(full.lastName);
         if (full?.email) setEmail(full.email);
         if (full?.phone) setPhone(full.phone);
-      } catch (_) { }
+      } catch (_) { /* ignore fetch errors */ }
     })();
     return () => { mounted = false; };
   }, [prospect.id]);
@@ -147,7 +147,7 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden min-h-0">
         <div className="grid grid-cols-1 md:grid-cols-3 h-full divide-x">
 
           {/* Left Sidebar - Details */}

@@ -147,23 +147,23 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-blue-900 mb-2">About Promotional QR Codes</h3>
-            <p className="text-blue-700 text-sm">
+          <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg">
+            <h3 className="font-semibold text-blue-900 dark:text-blue-300 mb-2">About Promotional QR Codes</h3>
+            <p className="text-blue-700 dark:text-blue-400 text-sm">
               Promotional QR codes link directly to your campaign landing page and help you track
               the performance of different marketing channels or locations.
             </p>
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg">
+            <div className="flex items-center gap-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3 rounded-lg">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {success && (
-            <div className="flex items-center gap-2 text-green-600 bg-green-50 p-3 rounded-lg">
+            <div className="flex items-center gap-2 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/30 p-3 rounded-lg">
               <CheckCircle className="w-5 h-5 flex-shrink-0" />
               <span>{success}</span>
             </div>
@@ -192,7 +192,7 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
               rows={3}
               maxLength={250}
             />
-            <p className="text-sm text-gray-500">Multiple tags are supported; a single QR will include all tags for reporting.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Multiple tags are supported; a single QR will include all tags for reporting.</p>
           </div>
 
           {/* Assignment Mode */}
