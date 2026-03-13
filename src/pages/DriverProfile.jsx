@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { auth, apiClient } from "@/api/client";
+import { apiClient } from "@/api/client";
+import { useAuthStore } from "@/stores/authStore";
 import makeModelsRaw from "@/data/mktr_make_models.json";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle } from "lucide-react";
-import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Phone, Mail, ShieldCheck, Loader2, AlertCircle, X, CheckCircle2 } from "lucide-react";
+import { Mail, ShieldCheck, Loader2, AlertCircle, X, CheckCircle2 } from "lucide-react";
 import { sendOtp, verifyOtp } from "@/components/lib/customFunctions";
 import { motion } from "framer-motion";
 import { toast } from "@/components/ui/use-toast";
@@ -31,6 +31,7 @@ const BANK_OPTIONS = [
 ];
 
 export default function DriverProfile() {
+  const refreshUser = useAuthStore((s) => s.refreshUser);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   // Profile form state
@@ -112,7 +113,7 @@ export default function DriverProfile() {
 
   const loadBase = async () => {
     try {
-      const me = await auth.getCurrentUser();
+      const me = await refreshUser();
       setUser(me);
     } catch (e) {
       console.error("Failed to load user", e);
@@ -155,7 +156,7 @@ export default function DriverProfile() {
         setCarCustomMake('');
         setCarCustomModel('');
       }
-    } catch (_) { }
+    } catch (_) { /* non-critical */ }
   };
 
   // Plate validation — align with onboarding rules (EA–EZ or SB–SN + 1–4 digits + letter)
@@ -346,7 +347,7 @@ export default function DriverProfile() {
       }
 
       // Refresh local user cache
-      const refreshed = await auth.getCurrentUser(true);
+      const refreshed = await refreshUser(true);
       setUser(refreshed);
       toast({ title: 'Profile updated', description: 'Your details and payout method were saved successfully.' });
     } catch (e) {

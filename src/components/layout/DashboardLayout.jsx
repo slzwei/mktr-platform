@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { auth } from "@/api/client";
+import { useAuthStore } from "@/stores/authStore";
 import { DashboardProvider } from "@/contexts/DashboardContext";
 import {
   LayoutDashboard,
@@ -121,21 +121,20 @@ const getUserDisplayRole = (user) => {
 };
 
 export default function DashboardLayout({ children, user, userRole }) {
-  const [localUser, setLocalUser] = useState(user || auth.getUser());
+  const storeUser = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+  const refreshUser = useAuthStore((s) => s.refreshUser);
+  const localUser = user || storeUser;
   const location = useLocation();
 
   useEffect(() => {
     if (!localUser) {
-      auth.getCurrentUser().then((u) => {
-        if (u) setLocalUser(u);
-      }).catch(() => {
-        // leave as null; ProtectedRoute should handle redirect
-      });
+      refreshUser();
     }
-  }, [localUser]);
+  }, [localUser, refreshUser]);
 
   const handleLogout = async () => {
-    auth.logout();
+    logout();
     window.location.reload();
   };
 

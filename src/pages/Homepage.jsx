@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { getDefaultRouteForRole } from "@/lib/utils";
-import { auth } from "@/api/client";
+import { useAuthStore } from "@/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -208,8 +208,7 @@ const FloatingElements = () => {
 
 export default function Homepage() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isAuthed, setIsAuthed] = useState(false);
-  const [dashboardPath, setDashboardPath] = useState('/AdminDashboard');
+  const { user: authUser, token: authToken } = useAuthStore();
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
 
@@ -221,22 +220,8 @@ export default function Homepage() {
     };
   }, []);
 
-  useEffect(() => {
-    // Determine auth state for hamburger menu
-    try {
-      const token = localStorage.getItem('mktr_auth_token');
-      const storedUser = localStorage.getItem('mktr_user');
-      if (token && storedUser) {
-        setIsAuthed(true);
-        const user = JSON.parse(storedUser);
-        setDashboardPath(getDefaultRouteForRole(user?.role));
-      } else {
-        setIsAuthed(false);
-      }
-    } catch (_) {
-      setIsAuthed(false);
-    }
-  }, [menuOpen]);
+  const isAuthed = !!authToken && !!authUser;
+  const dashboardPath = authUser ? getDefaultRouteForRole(authUser.role) : '/AdminDashboard';
 
   return (
     <>

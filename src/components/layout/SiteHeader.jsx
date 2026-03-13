@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import { createPageUrl } from "@/utils";
-import { auth } from "@/api/client";
+import { useAuthStore } from "@/stores/authStore";
 import { getDefaultRouteForRole } from "@/lib/utils";
 
 const HamburgerMenu = ({ isOpen, toggle }) => (
@@ -20,27 +20,13 @@ const HamburgerMenu = ({ isOpen, toggle }) => (
 
 export default function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isAuthed, setIsAuthed] = useState(false);
-  const [dashboardPath, setDashboardPath] = useState('/AdminDashboard');
+  const { user, token, logout } = useAuthStore();
   const navigate = useNavigate();
 
   const toggleMenu = () => setMenuOpen((v) => !v);
 
-  useEffect(() => {
-    try {
-      const token = localStorage.getItem('mktr_auth_token');
-      const storedUser = localStorage.getItem('mktr_user');
-      if (token && storedUser) {
-        setIsAuthed(true);
-        const user = JSON.parse(storedUser);
-        setDashboardPath(getDefaultRouteForRole(user?.role));
-      } else {
-        setIsAuthed(false);
-      }
-    } catch (_) {
-      setIsAuthed(false);
-    }
-  }, [menuOpen]);
+  const isAuthed = !!token && !!user;
+  const dashboardPath = user ? getDefaultRouteForRole(user.role) : '/AdminDashboard';
 
   return (
     <>
@@ -186,8 +172,7 @@ export default function SiteHeader() {
               </Link>
               <button
                 onClick={() => {
-                  auth.logout();
-                  setIsAuthed(false);
+                  logout();
                   toggleMenu();
                   navigate('/');
                 }}

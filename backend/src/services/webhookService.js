@@ -1,6 +1,9 @@
 import crypto from 'crypto';
+import { Op } from 'sequelize';
 import { WebhookSubscriber, WebhookDelivery } from '../models/index.js';
 import { logger } from '../utils/logger.js';
+
+const AUTO_DISABLE_THRESHOLD = 10;
 
 /**
  * Dispatch an event to all active webhook subscribers.
@@ -93,7 +96,7 @@ export async function attemptDelivery(delivery, subscriber) {
       let responseBody = '';
       try {
         responseBody = await response.text();
-      } catch (_) {}
+      } catch (_) { /* best-effort body read */ }
 
       await handleFailure(delivery, subscriber, {
         responseCode: response.status,
@@ -143,6 +146,9 @@ async function handleFailure(delivery, subscriber, { responseCode, responseBody,
   } else {
     updateData.status = 'failed';
     await delivery.update(updateData);
+
+    // Auto-disable subscriber after consecutive failures
+    await checkAutoDisable(subscriber);
   }
 
   logger.warn('[Webhook] delivery failed', {
@@ -201,4 +207,134 @@ export async function retryAllFailed(subscriberId) {
   }
 
   return deliveries.length;
+}
+
+/**
+ * Auto-disable a subscriber if it has 10+ consecutive failed deliveries
+ * (no successful delivery more recent than the oldest of the last 10 failures).
+ */
+async function checkAutoDisable(subscriber) {
+  try {
+    const recentFailed = await WebhookDelivery.count({
+      where: {
+        subscriberId: subscriber.id,
+        status: 'failed'
+      }
+    });
+
+    if (recentFailed < AUTO_DISABLE_THRESHOLD) return;
+
+    // Check if there's any success more recent than the 10th-oldest failure
+    const tenthFailure = await WebhookDelivery.findOne({
+      where: { subscriberId: subscriber.id, status: 'failed' },
+      order: [['createdAt', 'DESC']],
+      offset: AUTO_DISABLE_THRESHOLD - 1
+    });
+
+    if (!tenthFailure) return;
+
+    const recentSuccess = await WebhookDelivery.count({
+      where: {
+        subscriberId: subscriber.id,
+        status: 'success',
+        createdAt: { [Op.gte]: tenthFailure.createdAt }
+      }
+    });
+
+    if (recentSuccess === 0) {
+      await subscriber.update({ enabled: false });
+      logger.warn('[Webhook] subscriber auto-disabled after consecutive failures', {
+        subscriberId: subscriber.id,
+        subscriberName: subscriber.name,
+        consecutiveFailures: AUTO_DISABLE_THRESHOLD
+      });
+    }
+  } catch (err) {
+    logger.error('[Webhook] checkAutoDisable error', {
+      subscriberId: subscriber.id,
+      error: err.message
+    });
+  }
+}
+
+/**
+ * Get failed deliveries grouped by subscriber (dead-letter queue).
+ */
+export async function getDeadLetterQueue() {
+  const deliveries = await WebhookDelivery.findAll({
+    where: { status: 'failed' },
+    include: [{ association: 'subscriber', attributes: ['id', 'name', 'url', 'enabled'] }],
+    order: [['createdAt', 'DESC']]
+  });
+
+  // Group by subscriber
+  const grouped = {};
+  for (const d of deliveries) {
+    const subId = d.subscriberId;
+    if (!grouped[subId]) {
+      grouped[subId] = {
+        subscriber: d.subscriber ? { id: d.subscriber.id, name: d.subscriber.name, url: d.subscriber.url, enabled: d.subscriber.enabled } : { id: subId },
+        deliveries: []
+      };
+    }
+    grouped[subId].deliveries.push(d);
+  }
+
+  return Object.values(grouped);
+}
+
+/**
+ * Purge failed deliveries older than maxAgeDays.
+ */
+export async function purgeDeadLetters(maxAgeDays = 30) {
+  const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
+  const deleted = await WebhookDelivery.destroy({
+    where: {
+      status: 'failed',
+      createdAt: { [Op.lt]: cutoff }
+    }
+  });
+  return deleted;
+}
+
+/**
+ * Get delivery statistics per subscriber for given time periods.
+ */
+export async function getDeliveryStats() {
+  const now = new Date();
+  const day1 = new Date(now - 24 * 60 * 60 * 1000);
+  const day7 = new Date(now - 7 * 24 * 60 * 60 * 1000);
+  const day30 = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+  const subscribers = await WebhookSubscriber.findAll({
+    attributes: ['id', 'name', 'url', 'enabled']
+  });
+
+  const stats = [];
+  for (const sub of subscribers) {
+    const countForPeriod = async (since) => {
+      const where = { subscriberId: sub.id, createdAt: { [Op.gte]: since } };
+      const [success, failed, pending] = await Promise.all([
+        WebhookDelivery.count({ where: { ...where, status: 'success' } }),
+        WebhookDelivery.count({ where: { ...where, status: 'failed' } }),
+        WebhookDelivery.count({ where: { ...where, status: 'pending' } })
+      ]);
+      return { success, failed, pending, total: success + failed + pending };
+    };
+
+    const [last24h, last7d, last30d] = await Promise.all([
+      countForPeriod(day1),
+      countForPeriod(day7),
+      countForPeriod(day30)
+    ]);
+
+    stats.push({
+      subscriber: { id: sub.id, name: sub.name, url: sub.url, enabled: sub.enabled },
+      last24h,
+      last7d,
+      last30d
+    });
+  }
+
+  return stats;
 }

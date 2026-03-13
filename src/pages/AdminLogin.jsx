@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { auth } from "@/api/client";
+import { useAuthStore } from "@/stores/authStore";
 import { GOOGLE_CLIENT_ID } from "@/config/google";
 import {
   ArrowLeft,
@@ -23,6 +23,7 @@ export default function AdminLogin() {
 
   const navigate = useNavigate();
   const location = useLocation();
+  const { login: storeLogin, setUser: storeSetUser } = useAuthStore();
 
   useEffect(() => {
     // If we have a return URL in the state, save it to session storage
@@ -71,10 +72,9 @@ export default function AdminLogin() {
 
         // Only allow admin users
         if (user.role === 'admin') {
-          // Store the token
+          // Sync store state
           if (result.data.token) {
-            localStorage.setItem('mktr_auth_token', result.data.token);
-            localStorage.setItem('mktr_user', JSON.stringify(user));
+            storeSetUser(user);
           }
           // Redirect logic
           let targetUrl = '/AdminDashboard';
@@ -124,7 +124,7 @@ export default function AdminLogin() {
       }
 
       // Call backend login API
-      const result = await auth.login(formData.email, formData.password);
+      const result = await storeLogin(formData.email, formData.password);
 
       if (result.success) {
         const user = result.data.user;

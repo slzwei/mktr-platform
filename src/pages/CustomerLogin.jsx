@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { auth } from "@/api/client";
+import { useAuthStore } from "@/stores/authStore";
 import { useNavigate } from "react-router-dom";
 import { GOOGLE_CLIENT_ID } from "@/config/google";
 import { getPostAuthRedirectPath } from "@/lib/utils";
@@ -27,6 +27,7 @@ export default function CustomerLogin() {
   });
   
   const navigate = useNavigate();
+  const { login: storeLogin, setUser: storeSetUser, token: storeToken, user: storeUser } = useAuthStore();
 
   // Google OAuth callback handler
   const handleGoogleCallback = async (credentialResponse) => {
@@ -69,10 +70,9 @@ export default function CustomerLogin() {
         const user = result.data.user;
         console.log('✅ Login successful, user:', user);
         
-        // Store the token
+        // Sync store state
         if (result.data.token) {
-          localStorage.setItem('mktr_auth_token', result.data.token);
-          localStorage.setItem('mktr_user', JSON.stringify(user));
+          storeSetUser(user);
         }
         
         // Use the centralized redirect logic
@@ -103,7 +103,7 @@ export default function CustomerLogin() {
       }
 
       // Call backend login API
-      const result = await auth.login(formData.email, formData.password);
+      const result = await storeLogin(formData.email, formData.password);
       
       if (result.success) {
         // Use the centralized redirect logic
@@ -179,16 +179,11 @@ export default function CustomerLogin() {
   // Initialize Google OAuth
   useEffect(() => {
     // If already authenticated, redirect immediately to default dashboard
-    try {
-      const token = localStorage.getItem('mktr_auth_token');
-      const storedUser = localStorage.getItem('mktr_user');
-      if (token && storedUser) {
-        const user = JSON.parse(storedUser);
-        const targetUrl = getPostAuthRedirectPath(user);
-        navigate(targetUrl, { replace: true });
-        return; // Skip initializing Google if redirecting
-      }
-    } catch (_) {}
+    if (storeToken && storeUser) {
+      const targetUrl = getPostAuthRedirectPath(storeUser);
+      navigate(targetUrl, { replace: true });
+      return; // Skip initializing Google if redirecting
+    }
 
     let isInitialized = false;
     let scriptElement = null;

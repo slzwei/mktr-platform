@@ -2,13 +2,14 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import morgan from 'morgan';
+import pinoHttp from 'pino-http';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import cookieParser from 'cookie-parser';
 
+import * as Sentry from '@sentry/node';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 import { bootstrapDatabase } from './database/bootstrap.js';
@@ -48,6 +49,8 @@ import agentGroupRoutes from './routes/agentGroups.js';
 import lyfeAgentRoutes from './routes/lyfeAgents.js';
 import { optionalAuth } from './middleware/auth.js';
 import { logger } from './utils/logger.js';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger.js';
 
 // Load environment variables
 dotenv.config();
@@ -139,8 +142,8 @@ export const init = async (app) => {
     app.use('/api', optionalAuth);
   }
 
-  // Logging
-  app.use(morgan('combined'));
+  // Structured request logging via Pino
+  app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
 
   // Body parsing middleware
   app.use(express.json({ limit: '10mb' }));
@@ -163,6 +166,10 @@ export const init = async (app) => {
       environment: process.env.NODE_ENV
     });
   });
+
+  // Swagger API docs
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  app.get('/api-docs.json', (req, res) => res.json(swaggerSpec));
 
   // API Routes
   app.use('/api/auth', authRoutes);
@@ -246,6 +253,7 @@ export const init = async (app) => {
 
   // Error handling middleware
   app.use(notFound);
+  Sentry.setupExpressErrorHandler(app);
   app.use(errorHandler);
 
   // Database connection and server startup

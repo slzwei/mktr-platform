@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, Fragment, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { apiClient, auth } from '@/api/client';
+import { apiClient } from '@/api/client';
+import { useAuthStore } from '@/stores/authStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Loader2 from 'lucide-react/icons/loader-2';
@@ -34,6 +35,7 @@ const makesToModels = Object.keys(makeModelsRaw || {}).reduce((acc, make) => {
 
 export default function Onboarding() {
   const navigate = useNavigate();
+  const refreshUser = useAuthStore((s) => s.refreshUser);
   const [user, setUser] = useState(null);
   const [step, setStep] = useState(0);
   const [maxVisitedStep, setMaxVisitedStep] = useState(0);
@@ -105,7 +107,7 @@ export default function Onboarding() {
   }, [carsRows]);
 
   useEffect(() => {
-    auth.getCurrentUser(true).then(setUser).catch(() => setUser(null));
+    refreshUser().then(setUser).catch(() => setUser(null));
   }, []);
 
   useEffect(() => {
@@ -333,9 +335,9 @@ export default function Onboarding() {
       const profileResp = await apiClient.put('/auth/profile', profilePayload);
       const roleResp = await apiClient.post('/auth/onboarding/role', { role });
       try {
-        const refreshed = await auth.getCurrentUser(true);
+        const refreshed = await refreshUser();
         if (refreshed) { /* no-op, just ensuring local cache is updated */ }
-      } catch (_) { }
+      } catch (_) { /* non-critical refresh */ }
       next();
     } catch (e) {
       setErrors((prev) => ({ ...prev, _server: e?.message || 'Validation failed' }));

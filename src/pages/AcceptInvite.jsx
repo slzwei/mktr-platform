@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { auth, apiClient } from '@/api/client';
+import { useAuthStore } from '@/stores/authStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,7 +11,6 @@ import {
   CheckCircle2,
   X,
   AlertCircle,
-  Phone,
   ArrowRight,
   ShieldCheck,
   Calendar
@@ -25,6 +25,7 @@ import { REGEXP_ONLY_DIGITS } from "input-otp";
 export default function AcceptInvite() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const storeAcceptInvite = useAuthStore((s) => s.acceptInvite);
   const token = searchParams.get('token') || '';
   const emailFromLink = searchParams.get('email') || '';
 
@@ -211,7 +212,7 @@ export default function AcceptInvite() {
 
     setLoading(true);
     try {
-      const resp = await auth.acceptInvite({
+      const resp = await storeAcceptInvite({
         token,
         email,
         password,

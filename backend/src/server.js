@@ -1,8 +1,18 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import * as Sentry from '@sentry/node';
 
 // Load environment variables immediately
 dotenv.config();
+
+// Initialize Sentry before anything else
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+  });
+}
 
 const PORT = process.env.PORT || 3001;
 const app = express();

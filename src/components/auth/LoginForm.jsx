@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Shield from 'lucide-react/icons/shield';
 import CheckCircle from 'lucide-react/icons/check-circle';
-import { auth } from '@/api/client';
+import { useAuthStore } from '@/stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { GOOGLE_CLIENT_ID } from '@/config/google';
 import { getPostAuthRedirectPath } from '@/lib/utils';
+import { loginSchema, registerSchema } from '@/schemas/auth';
 import LoginTab from '@/components/auth/LoginTab';
 import RegisterTab from '@/components/auth/RegisterTab';
 import './LoginForm.css';
@@ -17,30 +20,29 @@ export default function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-
-  // Login form state
-  const [loginData, setLoginData] = useState({
-    email: '',
-    password: ''
-  });
-
-  // Registration form state
-  const [registerData, setRegisterData] = useState({
-    full_name: '',
-    email: '',
-    phone: '',
-    password: '',
-    confirm_password: '',
-    role: 'customer',
-    company_name: ''
-  });
-
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const navigate = useNavigate();
+  const { login: storeLogin, googleLogin: storeGoogleLogin, register: storeRegister } = useAuthStore();
 
+  const loginForm = useForm({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: '', password: '' },
+  });
 
+  const registerForm = useForm({
+    resolver: zodResolver(registerSchema),
+    defaultValues: {
+      full_name: '',
+      email: '',
+      phone: '',
+      password: '',
+      confirm_password: '',
+      role: 'customer',
+      company_name: '',
+    },
+  });
 
   // Google OAuth callback handler
   const handleGoogleCallback = async (response) => {
@@ -53,8 +55,7 @@ export default function LoginForm() {
     setError('');
 
     try {
-      // Send credential to backend for verification
-      const result = await auth.googleLogin(response.credential);
+      const result = await storeGoogleLogin(response.credential);
 
       if (result.success) {
         setSuccess('Google login successful! Redirecting...');
@@ -70,14 +71,13 @@ export default function LoginForm() {
     }
   };
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  const handleLogin = async (data) => {
     setLoading(true);
     setError('');
     setSuccess('');
 
     try {
-      const result = await auth.login(loginData.email, loginData.password);
+      const result = await storeLogin(data.email, data.password);
 
       if (result.success) {
         setSuccess('Login successful! Redirecting...');
@@ -93,27 +93,13 @@ export default function LoginForm() {
     }
   };
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
+  const handleRegister = async (data) => {
     setLoading(true);
     setError('');
     setSuccess('');
 
-    // Validation
-    if (registerData.password !== registerData.confirm_password) {
-      setError('Passwords do not match');
-      setLoading(false);
-      return;
-    }
-
-    if (registerData.password.length < 6) {
-      setError('Password must be at least 6 characters long');
-      setLoading(false);
-      return;
-    }
-
     try {
-      const result = await auth.register(registerData);
+      const result = await storeRegister(data);
 
       if (result.success) {
         setSuccess('Registration successful! Redirecting...');
@@ -129,16 +115,6 @@ export default function LoginForm() {
     }
   };
 
-  const handleInputChange = (form, field, value) => {
-    if (form === 'login') {
-      setLoginData(prev => ({ ...prev, [field]: value }));
-    } else {
-      setRegisterData(prev => ({ ...prev, [field]: value }));
-    }
-  };
-
-
-
   // Load Google OAuth script
   useEffect(() => {
     const loadGoogleScript = () => {
@@ -149,7 +125,6 @@ export default function LoginForm() {
         script.defer = true;
         script.onload = () => {
           try {
-            // Initialize Google Identity Services
             if (!GOOGLE_CLIENT_ID || !window.google?.accounts?.id) return;
 
             window.google.accounts.id.initialize({
@@ -159,7 +134,6 @@ export default function LoginForm() {
               cancel_on_tap_outside: true
             });
 
-            // Render button immediately after initialization
             setTimeout(() => {
               const buttonElement = document.getElementById('google-signin-button');
               if (buttonElement) {
@@ -183,7 +157,6 @@ export default function LoginForm() {
 
         document.head.appendChild(script);
       } else if (window.google && window.google.accounts) {
-        // Google already loaded, just initialize
         if (!GOOGLE_CLIENT_ID || !window.google?.accounts?.id) return;
 
         try {
@@ -194,7 +167,6 @@ export default function LoginForm() {
             cancel_on_tap_outside: true
           });
 
-          // Render button immediately after re-initialization
           setTimeout(() => {
             const buttonElement = document.getElementById('google-signin-button');
             if (buttonElement) {
@@ -216,8 +188,6 @@ export default function LoginForm() {
     loadGoogleScript();
   }, []);
 
-
-
   return (
     <div className="auth-container">
       <Card className="auth-card">
@@ -238,26 +208,24 @@ export default function LoginForm() {
 
             {/* Login Tab */}
             <LoginTab
-              loginData={loginData}
-              handleInputChange={handleInputChange}
+              form={loginForm}
               showPassword={showPassword}
               setShowPassword={setShowPassword}
               loading={loading}
-              handleLogin={handleLogin}
+              onSubmit={loginForm.handleSubmit(handleLogin)}
             >
               <div id="google-signin-button" className="w-full mb-4"></div>
             </LoginTab>
 
             {/* Register Tab */}
             <RegisterTab
-              registerData={registerData}
-              handleInputChange={handleInputChange}
+              form={registerForm}
               showPassword={showPassword}
               setShowPassword={setShowPassword}
               showConfirmPassword={showConfirmPassword}
               setShowConfirmPassword={setShowConfirmPassword}
               loading={loading}
-              handleRegister={handleRegister}
+              onSubmit={registerForm.handleSubmit(handleRegister)}
             />
           </Tabs>
 
