@@ -166,8 +166,26 @@ async function ensureSqliteColumns() {
     await addQrCol(qrColumns, 'assignedAgentPhone', 'TEXT');
     await addQrCol(qrColumns, 'assignedAgentEmail', 'TEXT');
     await addQrCol(qrColumns, 'assignedAgentName', 'TEXT');
+    await addQrCol(qrColumns, 'agentAssignmentMode', "TEXT DEFAULT 'direct'");
+    await addQrCol(qrColumns, 'agentGroupId', 'TEXT');
+    await addQrCol(qrColumns, 'agentGroupAgentIds', "JSON DEFAULT '[]'");
+    await addQrCol(qrColumns, 'roundRobinIndex', 'INTEGER DEFAULT 0');
   } catch (e) {
     logger.warn('Could not ensure qr_tags columns on SQLite', { error: e.message });
+  }
+
+  // Campaign: defaultAssignmentMode
+  try {
+    const [campCols] = await sequelize.query('PRAGMA table_info(campaigns)');
+    const addCampCol2 = async (cols, name, type) => {
+      if (!Array.isArray(cols) || !cols.some(c => c.name === name)) {
+        await sequelize.query(`ALTER TABLE campaigns ADD COLUMN ${name} ${type}`);
+        logger.info(`Added ${name} column to campaigns`);
+      }
+    };
+    await addCampCol2(campCols, 'defaultAssignmentMode', "TEXT DEFAULT 'direct'");
+  } catch (e) {
+    logger.warn('Could not ensure campaign defaultAssignmentMode on SQLite', { error: e.message });
   }
 
   try {

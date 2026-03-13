@@ -152,6 +152,7 @@ const Campaign = sequelize.define('Campaign', {
       key: 'id'
     }
   },
+  // @deprecated — routing moved to QrTag. Kept for backward compat.
   agentAssignmentMode: {
     type: DataTypes.STRING,
     allowNull: false,
@@ -160,6 +161,7 @@ const Campaign = sequelize.define('Campaign', {
       isIn: [['direct', 'round_robin']]
     }
   },
+  // @deprecated — routing moved to QrTag
   agentGroupId: {
     type: DataTypes.UUID,
     allowNull: true,
@@ -168,15 +170,26 @@ const Campaign = sequelize.define('Campaign', {
       key: 'id'
     }
   },
+  // @deprecated — routing moved to QrTag
   agentGroupAgentIds: {
     type: DataTypes.JSON,
     allowNull: true,
     defaultValue: []
   },
+  // @deprecated — routing moved to QrTag
   roundRobinIndex: {
     type: DataTypes.INTEGER,
     allowNull: false,
     defaultValue: 0
+  },
+  // UX convenience: pre-fills QR forms with this default
+  defaultAssignmentMode: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'direct',
+    validate: {
+      isIn: [['direct', 'round_robin']]
+    }
   },
   commission_amount_driver: {
     type: DataTypes.DECIMAL(10, 2),

@@ -72,9 +72,10 @@ export const schemas = {
     landingPageUrl: Joi.string().uri().optional(),
     callToAction: Joi.string().max(200).optional(),
     tags: Joi.array().items(Joi.string()).optional(),
-    agentAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
-    agentGroupId: Joi.string().uuid().allow(null).optional(),
-    agentGroupAgentIds: Joi.array().items(Joi.string()).optional()
+    agentAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(), // deprecated
+    agentGroupId: Joi.string().uuid().allow(null).optional(), // deprecated
+    agentGroupAgentIds: Joi.array().items(Joi.string()).optional(), // deprecated
+    defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional()
   }),
 
   campaignUpdate: Joi.object({
@@ -88,9 +89,10 @@ export const schemas = {
     landingPageUrl: Joi.string().uri().optional(),
     callToAction: Joi.string().max(200).optional(),
     tags: Joi.array().items(Joi.string()).optional(),
-    agentAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
-    agentGroupId: Joi.string().uuid().allow(null).optional(),
-    agentGroupAgentIds: Joi.array().items(Joi.string()).optional()
+    agentAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(), // deprecated
+    agentGroupId: Joi.string().uuid().allow(null).optional(), // deprecated
+    agentGroupAgentIds: Joi.array().items(Joi.string()).optional(), // deprecated
+    defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional()
   }),
 
   // Car schemas

@@ -18,9 +18,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import Loader2 from "lucide-react/icons/loader-2";
 import CarIcon from "lucide-react/icons/car";
 import Search from "lucide-react/icons/search";
+import Users from "lucide-react/icons/users";
 
 export default function CarQRDirectory({ campaign, onAssigned }) {
   const [cars, setCars] = useState([]);
@@ -33,6 +35,9 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [selectedCarIds, setSelectedCarIds] = useState(new Set());
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [agentGroups, setAgentGroups] = useState([]);
+  const [bulkAssignmentMode, setBulkAssignmentMode] = useState('direct');
+  const [bulkAgentGroupId, setBulkAgentGroupId] = useState(null);
 
   const backendOrigin = apiClient.baseURL.replace(/\/api\/?$/, "");
   const resolveBackendUrl = (path) => {
@@ -78,12 +83,16 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
     })();
   }, []);
 
-  // Load campaigns on mount for bulk assignment
+  // Load campaigns and agent groups on mount for bulk assignment
   useEffect(() => {
     (async () => {
       try {
-        const list = await Campaign.list("-created_date");
-        setCampaigns(list);
+        const [campaignList, groupsRes] = await Promise.all([
+          Campaign.list("-created_date"),
+          apiClient.get('/admin/agent-groups').catch(() => ({ data: [] }))
+        ]);
+        setCampaigns(campaignList);
+        setAgentGroups(groupsRes.data || []);
       } catch (e) {
         setCampaigns([]);
       }
@@ -134,7 +143,16 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
           }
         }
         if (tag) {
-          await QrTag.update(tag.id, { campaignId: selectedCampaignId });
+          const updatePayload = { campaignId: selectedCampaignId };
+          if (bulkAssignmentMode === 'round_robin' && bulkAgentGroupId) {
+            const group = agentGroups.find(g => g.id === bulkAgentGroupId);
+            updatePayload.agentAssignmentMode = 'round_robin';
+            updatePayload.agentGroupId = bulkAgentGroupId;
+            updatePayload.agentGroupAgentIds = group ? (group.agents || []).map(a => a.phone) : [];
+          } else {
+            updatePayload.agentAssignmentMode = 'direct';
+          }
+          await QrTag.update(tag.id, updatePayload);
         }
       }
       setSuccess(`Assigned ${selectedCarIds.size} car QR${selectedCarIds.size > 1 ? 's' : ''} to campaign.`);
@@ -277,19 +295,61 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
                   Choose a campaign to link to the selected car QR codes.
                 </AlertDialogDescription>
               </AlertDialogHeader>
-              <div className="space-y-3">
-                <Select value={selectedCampaignId || ''} onValueChange={setSelectedCampaignId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select campaign" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {campaigns.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Campaign</Label>
+                  <Select value={selectedCampaignId || ''} onValueChange={(v) => {
+                    setSelectedCampaignId(v);
+                    const camp = campaigns.find(c => c.id === v);
+                    setBulkAssignmentMode(camp?.defaultAssignmentMode || 'direct');
+                    setBulkAgentGroupId(null);
+                  }}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select campaign" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {campaigns.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedCampaignId && (
+                  <div className="space-y-2">
+                    <Label>Assignment Mode</Label>
+                    <Select value={bulkAssignmentMode} onValueChange={setBulkAssignmentMode}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="direct">Direct (no specific agent)</SelectItem>
+                        <SelectItem value="round_robin">Round Robin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {bulkAssignmentMode === 'round_robin' && (
+                  <div className="space-y-2">
+                    <Label>Agent Group</Label>
+                    <Select value={bulkAgentGroupId || ''} onValueChange={setBulkAgentGroupId}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select agent group" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {agentGroups.map((g) => (
+                          <SelectItem key={g.id} value={g.id} disabled={(g.agents || []).length === 0}>
+                            <div className="flex items-center gap-1">
+                              <Users className="w-3 h-3" />
+                              {g.name} ({(g.agents || []).length} agents)
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
               <AlertDialogFooter>
                 <AlertDialogCancel disabled={assigning}>Cancel</AlertDialogCancel>
