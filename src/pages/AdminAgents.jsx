@@ -393,7 +393,12 @@ export default function AdminAgents() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2">
+              {lastSyncTime && (
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  Last synced {new Date(lastSyncTime).toLocaleString()}
+                </span>
+              )}
               <Button
                 variant="outline"
                 onClick={handleSyncFromLyfe}
@@ -402,11 +407,6 @@ export default function AdminAgents() {
                 <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
                 {syncing ? 'Syncing...' : 'Sync from Lyfe'}
               </Button>
-              {lastSyncTime && (
-                <span className="text-xs text-gray-400 dark:text-gray-500">
-                  Last synced {new Date(lastSyncTime).toLocaleString()}
-                </span>
-              )}
             </div>
             <Button onClick={() => handleOpenForm()} className="bg-blue-600 hover:bg-blue-700">
               <Plus className="w-5 h-5 mr-2" />
