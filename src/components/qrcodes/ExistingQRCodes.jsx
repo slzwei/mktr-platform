@@ -441,7 +441,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
 
     {/* Edit Assignment Dialog */}
     <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit QR Assignment</DialogTitle>
           <DialogDescription>
@@ -450,7 +450,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
         </DialogHeader>
 
         {editError && (
-          <div className="text-red-600 bg-red-50 p-2 rounded text-sm">{editError}</div>
+          <div className="text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-2 rounded text-sm">{editError}</div>
         )}
 
         <div className="space-y-4">

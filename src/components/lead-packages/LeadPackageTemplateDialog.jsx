@@ -84,7 +84,7 @@ export default function LeadPackageTemplateDialog({ open, onOpenChange, onSubmit
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editingPackage ? 'Edit Package Template' : 'Create Package Template'}</DialogTitle>
         </DialogHeader>

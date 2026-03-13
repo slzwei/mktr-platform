@@ -59,7 +59,7 @@ export default function CampaignQRManager({ campaign, onBack }) {
   const carQRs = qrTags.filter(qr => qr.type === 'car');
 
   return (
-    <div className="p-6 lg:p-8 bg-gray-50 min-h-screen">
+    <div className="p-6 lg:p-8 bg-gray-50 dark:bg-gray-900/50 min-h-screen">
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center gap-4 mb-8">
           <Button variant="outline" onClick={onBack}>
@@ -67,17 +67,17 @@ export default function CampaignQRManager({ campaign, onBack }) {
             Back to Campaigns
           </Button>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
               QR Codes for "{campaign.name}"
             </h1>
             <div className="flex items-center gap-4 mt-2">
-              <Badge 
+              <Badge
                 variant={campaign.is_active ? "default" : "outline"}
-                className={campaign.is_active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}
+                className={campaign.is_active ? "bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-400" : "bg-red-100 text-red-800 dark:bg-red-950/30 dark:text-red-400"}
               >
                 {campaign.is_active ? "Active" : "Inactive"}
               </Badge>
-              <span className="text-gray-500 text-sm">
+              <span className="text-gray-500 dark:text-gray-400 text-sm">
                 {promotionalQRs.length} Promotional • {carQRs.length} Car QRs
               </span>
             </div>

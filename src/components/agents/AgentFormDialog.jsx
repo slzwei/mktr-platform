@@ -75,7 +75,7 @@ export default function AgentFormDialog({ open, onOpenChange, agent, onSubmit })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{agent ? "Edit Agent" : "Invite New Agent"}</DialogTitle>
           <DialogDescription>

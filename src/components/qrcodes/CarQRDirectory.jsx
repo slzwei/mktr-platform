@@ -181,10 +181,10 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
       <CardContent>
         <div className="space-y-6">
           {error && (
-            <div className="text-red-600 bg-red-50 p-3 rounded">{error}</div>
+            <div className="text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3 rounded">{error}</div>
           )}
           {success && (
-            <div className="text-green-700 bg-green-50 p-3 rounded">{success}</div>
+            <div className="text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30 p-3 rounded">{success}</div>
           )}
 
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-3 md:justify-between">
@@ -212,10 +212,10 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
             </div>
           </div>
 
-          <div className="border rounded-lg overflow-hidden">
+          <div className="border dark:border-gray-700 rounded-lg overflow-hidden">
             <Table>
               <TableHeader>
-                <TableRow className="bg-gray-50">
+                <TableRow className="bg-gray-50 dark:bg-gray-800">
                   <TableHead className="w-10">
                     <Checkbox
                       checked={filteredCars.length > 0 && selectedCarIds.size === filteredCars.length}
@@ -233,14 +233,14 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
                 {loading ? (
                   <TableRow>
                     <TableCell colSpan="5">
-                      <div className="flex items-center gap-2 text-gray-500 p-4">
+                      <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 p-4">
                         <Loader2 className="w-4 h-4 animate-spin" /> Loading...
                       </div>
                     </TableCell>
                   </TableRow>
                 ) : filteredCars.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan="5" className="text-center py-10 text-gray-500">
+                    <TableCell colSpan="5" className="text-center py-10 text-gray-500 dark:text-gray-400">
                       No cars found.
                     </TableCell>
                   </TableRow>
@@ -248,7 +248,7 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
                   filteredCars.map((car) => {
                     const tag = car.__carTag;
                     return (
-                      <TableRow key={car.id} className="hover:bg-gray-50">
+                      <TableRow key={car.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                         <TableCell>
                           <Checkbox
                             checked={selectedCarIds.has(car.id)}
@@ -258,7 +258,7 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
                         </TableCell>
                         <TableCell>
                           {tag?.qrImageUrl ? (
-                            <div className="w-16 h-16 p-1 bg-white rounded-md border">
+                            <div className="w-16 h-16 p-1 bg-white dark:bg-gray-900 rounded-md border">
                               <img
                                 src={resolveBackendUrl(tag.qrImageUrl)}
                                 alt={`QR ${tag.slug}`}
@@ -266,8 +266,8 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
                               />
                             </div>
                           ) : (
-                            <div className="w-16 h-16 rounded-md bg-gray-100 flex items-center justify-center">
-                              <span className="text-xs text-gray-500">No Image</span>
+                            <div className="w-16 h-16 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">No Image</span>
                             </div>
                           )}
                         </TableCell>

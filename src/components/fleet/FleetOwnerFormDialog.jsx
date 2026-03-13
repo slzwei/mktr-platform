@@ -77,7 +77,7 @@ export default function FleetOwnerFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{fleetOwner ? "Edit Fleet Owner" : "Add New Fleet Owner"}</DialogTitle>
         </DialogHeader>
