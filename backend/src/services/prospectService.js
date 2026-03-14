@@ -44,7 +44,7 @@ export async function createProspect(body, user, { cookies, headers } = {}) {
   }
 
   // Resolve secure assignment (agent/admin override -> qr owner -> campaign -> system)
-  const assignedAgentId = await resolveAssignedAgentId({
+  let assignedAgentId = await resolveAssignedAgentId({
     reqUser: user,
     requestedAgentId: body.assignedAgentId,
     campaignId: incoming.campaignId,
@@ -160,8 +160,16 @@ export async function createProspect(body, user, { cookies, headers } = {}) {
       name: sourceQrTag.assignedAgentName
     };
   }
-  // If no QrTag or no assignment config → resolvedAgent stays null
-  // resolveAssignedAgentId() handles fallback (QR owner → LeadPackage RR → SystemAgent)
+
+  // Override assignedAgentId with QR-level routing result (by phone lookup)
+  if (resolvedAgent?.phone) {
+    const agentByPhone = await User.findOne({
+      where: { phone: resolvedAgent.phone, role: 'agent', isActive: true }
+    });
+    if (agentByPhone) {
+      assignedAgentId = agentByPhone.id;
+    }
+  }
 
   // Wrap all DB writes in a transaction for data integrity
   const prospect = await sequelize.transaction(async (t) => {
