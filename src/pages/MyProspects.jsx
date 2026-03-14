@@ -353,7 +353,7 @@ export default function MyProspects() {
             </Card>
 
             <Dialog open={!!selectedProspect} onOpenChange={() => setSelectedProspect(null)}>
-                <DialogContent hideClose={true} className="max-w-4xl max-h-[90vh] p-0 flex flex-col gap-0 overflow-hidden text-clip">
+                <DialogContent hideClose={true} className="max-w-4xl h-[90vh] p-0 flex flex-col gap-0 overflow-hidden">
                     {selectedProspect && (
                         <ProspectDetails
                             prospect={selectedProspect}

@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import { Label } from '../ui/label';
-import { Badge } from '../ui/badge';
 import { apiClient as api } from '../../api/client';
 import { useToast } from '../ui/use-toast';
 
@@ -100,7 +99,7 @@ export const AssignCampaignDialog = ({ device, open, onClose, onAssign }) => {
 
     return (
         <Dialog open={open} onOpenChange={onClose}>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Assign Campaigns to {device?.model}</DialogTitle>
                 </DialogHeader>
