@@ -1,14 +1,15 @@
 import request from 'supertest'
-import { getApp, closeDb, createTestUser, createTestCampaign, createTestProspect } from './helpers.js'
+import { getApp, closeDb, createTestUser, createTestCampaign, createTestProspect, createTestQrTag, createTestAttribution } from './helpers.js'
+import { ProspectActivity } from '../src/models/index.js'
 
-let app, adminUser, adminToken, agentUser, agentToken
+let app, adminUser, adminToken, agentUser, _agentToken
 
 beforeAll(async () => {
   app = await getApp()
   const admin = await createTestUser({ role: 'admin' })
   adminUser = admin.user; adminToken = admin.token
   const agent = await createTestUser({ role: 'agent' })
-  agentUser = agent.user; agentToken = agent.token
+  agentUser = agent.user; _agentToken = agent.token
 }, 15000)
 
 afterAll(async () => {
@@ -432,5 +433,200 @@ describe('Schedule follow-up', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.data.prospect.nextFollowUpDate).toBeDefined()
+  })
+
+  it('returns 400 when nextFollowUpDate is missing', async () => {
+    const res = await request(app)
+      .patch(`/api/prospects/${prospect.id}/follow-up`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ notes: 'No date provided' })
+
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('Attribution binding', () => {
+  let campaign, qrTag
+
+  beforeAll(async () => {
+    campaign = await createTestCampaign(adminUser.id)
+    qrTag = await createTestQrTag(campaign.id, adminUser.id)
+  })
+
+  it('binds attributionId and qrTagId from x-session-id header', async () => {
+    const sessionId = `test-session-${Date.now()}`
+    const attribution = await createTestAttribution(qrTag.id, sessionId)
+
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('x-session-id', sessionId)
+      .send({
+        firstName: 'AttrBind',
+        lastName: 'Test',
+        email: `attrbind-${Date.now()}@test.com`,
+        phone: `+65${Date.now().toString().slice(-8)}`,
+        leadSource: 'qr_code',
+        campaignId: campaign.id
+      })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.prospect.attributionId).toBe(attribution.id)
+    expect(res.body.data.prospect.qrTagId).toBe(qrTag.id)
+  })
+})
+
+describe('QR tag campaign derivation', () => {
+  it('derives campaignId from qrTagId when campaignId is not provided', async () => {
+    const campaign = await createTestCampaign(adminUser.id)
+    const qrTag = await createTestQrTag(campaign.id, adminUser.id)
+
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        firstName: 'DeriveC',
+        lastName: 'Test',
+        email: `derivec-${Date.now()}@test.com`,
+        phone: `+65${Date.now().toString().slice(-8)}`,
+        leadSource: 'qr_code',
+        qrTagId: qrTag.id
+        // no campaignId
+      })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.prospect.campaignId).toBe(campaign.id)
+  })
+})
+
+describe('Delete prospect edge cases', () => {
+  it('returns 404 when deleting a non-existent prospect', async () => {
+    const res = await request(app)
+      .delete('/api/prospects/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('Track prospect view', () => {
+  let campaign, prospect
+
+  beforeAll(async () => {
+    campaign = await createTestCampaign(adminUser.id)
+    prospect = await createTestProspect(campaign.id)
+  })
+
+  it('POST /api/prospects/:id/track-view returns 200', async () => {
+    const res = await request(app)
+      .post(`/api/prospects/${prospect.id}/track-view`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ source: 'email_link' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+  })
+})
+
+describe('Education and income demographic mapping', () => {
+  let campaign
+
+  beforeAll(async () => {
+    campaign = await createTestCampaign(adminUser.id)
+  })
+
+  it('maps education_level to demographics.education', async () => {
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        firstName: 'EduTest',
+        lastName: 'User',
+        email: `edu-${Date.now()}@test.com`,
+        phone: `+65${Date.now().toString().slice(-8)}`,
+        leadSource: 'qr_code',
+        campaignId: campaign.id,
+        education_level: 'bachelors'
+      })
+
+    expect(res.status).toBe(201)
+    const demographics = res.body.data.prospect.demographics
+    expect(demographics).toBeDefined()
+    expect(demographics.education).toBe('bachelors')
+  })
+
+  it('maps monthly_income to demographics.income', async () => {
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        firstName: 'IncTest',
+        lastName: 'User',
+        email: `inc-${Date.now()}@test.com`,
+        phone: `+65${Date.now().toString().slice(-8)}`,
+        leadSource: 'qr_code',
+        campaignId: campaign.id,
+        monthly_income: '5000-10000'
+      })
+
+    expect(res.status).toBe(201)
+    const demographics = res.body.data.prospect.demographics
+    expect(demographics).toBeDefined()
+    expect(demographics.income).toBe('5000-10000')
+  })
+
+  it('maps both education_level and monthly_income together', async () => {
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        firstName: 'BothTest',
+        lastName: 'User',
+        email: `both-${Date.now()}@test.com`,
+        phone: `+65${Date.now().toString().slice(-8)}`,
+        leadSource: 'qr_code',
+        campaignId: campaign.id,
+        education_level: 'masters',
+        monthly_income: '10000-20000'
+      })
+
+    expect(res.status).toBe(201)
+    const demographics = res.body.data.prospect.demographics
+    expect(demographics.education).toBe('masters')
+    expect(demographics.income).toBe('10000-20000')
+  })
+})
+
+describe('Unassignment activity logging', () => {
+  let campaign, prospect
+
+  beforeAll(async () => {
+    campaign = await createTestCampaign(adminUser.id)
+    prospect = await createTestProspect(campaign.id, { assignedAgentId: agentUser.id })
+  })
+
+  it('logs activity when prospect is manually unassigned', async () => {
+    const res = await request(app)
+      .put(`/api/prospects/${prospect.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ assignedAgentId: null })
+
+    expect(res.status).toBe(200)
+
+    // Verify unassignment activity was created
+    const activities = await ProspectActivity.findAll({
+      where: {
+        prospectId: prospect.id,
+        type: 'updated'
+      },
+      order: [['createdAt', 'DESC']]
+    })
+
+    const unassignActivity = activities.find(a => {
+      const meta = a.metadata || {}
+      return meta.reason === 'manual_unassignment'
+    })
+    expect(unassignActivity).toBeDefined()
+    expect(unassignActivity.metadata.previousAssignedAgentId).toBe(agentUser.id)
   })
 })

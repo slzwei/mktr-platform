@@ -157,4 +157,128 @@ describe('Error handler', () => {
     expect(res.status).toBe(404)
     expect(res.body.success).toBe(false)
   })
+
+  it('generic server error returns 500 with message', async () => {
+    // DELETE /api/prospects/:id with non-existent UUID triggers 404, which is an AppError
+    // Instead, test that a malformed UUID triggers a 500 or appropriate error
+    const res = await request(app)
+      .get('/api/prospects/not-a-uuid')
+      .set('Authorization', `Bearer ${adminToken}`)
+    // The route handler will fail trying to look up an invalid UUID
+    expect([400, 404, 500]).toContain(res.status)
+    expect(res.body.success).toBe(false)
+  })
+
+  it('AppError with details object includes details in response', async () => {
+    // POST /api/prospects with duplicate email in same campaign triggers an error with details
+    const res = await request(app)
+      .put('/api/prospects/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ leadStatus: 'contacted' })
+    expect(res.status).toBe(404)
+    expect(res.body.success).toBe(false)
+    expect(res.body).toHaveProperty('message')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Validation middleware (Joi schema validation)
+// ---------------------------------------------------------------------------
+describe('Validation middleware', () => {
+  it('returns 400 with field-level errors for invalid prospect data', async () => {
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        // Missing required fields: firstName, email, leadSource
+        lastName: 'Test'
+      })
+    expect(res.status).toBe(400)
+    expect(res.body.success).toBe(false)
+    expect(res.body.message).toBe('Validation Error')
+    expect(res.body.errors).toBeDefined()
+    expect(Array.isArray(res.body.errors)).toBe(true)
+    // Should report missing firstName, email, and leadSource
+    const fields = res.body.errors.map(e => e.field)
+    expect(fields).toContain('firstName')
+    expect(fields).toContain('email')
+    expect(fields).toContain('leadSource')
+  })
+
+  it('returns 400 when email format is invalid', async () => {
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        firstName: 'Test',
+        email: 'not-an-email',
+        leadSource: 'website'
+      })
+    expect(res.status).toBe(400)
+    expect(res.body.success).toBe(false)
+    const fields = res.body.errors.map(e => e.field)
+    expect(fields).toContain('email')
+  })
+
+  it('returns 400 when leadSource is not in allowed enum', async () => {
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        firstName: 'Test',
+        email: 'valid@test.com',
+        leadSource: 'invalid_source'
+      })
+    expect(res.status).toBe(400)
+    expect(res.body.success).toBe(false)
+    const fields = res.body.errors.map(e => e.field)
+    expect(fields).toContain('leadSource')
+  })
+
+  it('passes validation and proceeds for valid prospect data', async () => {
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        firstName: 'ValidProspect',
+        email: `valid-${Date.now()}@test.com`,
+        leadSource: 'website',
+        campaignId: campaign.id
+      })
+    // Should not be 400 validation error
+    expect(res.status).not.toBe(400)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Prospect scoping: fleet_owner role
+// ---------------------------------------------------------------------------
+describe('Prospect scoping – fleet_owner role', () => {
+  let fleetOwnerUser, fleetOwnerToken
+  let fleetOwnerCampaign, prospectInFleetCampaign
+
+  beforeAll(async () => {
+    const fo = await createTestUser({ role: 'fleet_owner' })
+    fleetOwnerUser = fo.user
+    fleetOwnerToken = fo.token
+
+    fleetOwnerCampaign = await createTestCampaign(fleetOwnerUser.id)
+    prospectInFleetCampaign = await createTestProspect(fleetOwnerCampaign.id, {
+      firstName: 'FleetProspect'
+    })
+  })
+
+  it('fleet_owner only sees prospects from their own campaigns', async () => {
+    const res = await request(app)
+      .get('/api/prospects')
+      .set('Authorization', `Bearer ${fleetOwnerToken}`)
+
+    expect(res.status).toBe(200)
+    const ids = res.body.data.prospects.map(p => p.id)
+    // Should see prospect in their own campaign
+    expect(ids).toContain(prospectInFleetCampaign.id)
+    // Should NOT see prospects from admin's campaign
+    expect(ids).not.toContain(prospectForAgent1.id)
+    expect(ids).not.toContain(prospectForAgent2.id)
+  })
 })

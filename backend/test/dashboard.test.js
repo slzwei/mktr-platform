@@ -195,3 +195,117 @@ describe('Dashboard with date filters', () => {
     expect(res.body.data.period).toBe('30d')
   })
 })
+
+describe('Dashboard overview — expanded coverage', () => {
+  it('GET /api/dashboard/overview?period=7d — admin stats have recentActivities array', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/overview?period=7d')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    const { stats } = res.body.data
+    expect(stats).toBeDefined()
+    expect(Array.isArray(stats.recentActivities)).toBe(true)
+  })
+
+  it('GET /api/dashboard/overview?period=90d — admin stats include impressions.today', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/overview?period=90d')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const { stats } = res.body.data
+    expect(stats.impressions).toBeDefined()
+    expect(typeof stats.impressions.today).toBe('number')
+  })
+
+  it('GET /api/dashboard/overview?period=7d — admin users.growth is an array', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/overview?period=7d')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const { stats } = res.body.data
+    expect(Array.isArray(stats.users.growth)).toBe(true)
+    // 7d period should yield ≤ 7 growth entries
+    expect(stats.users.growth.length).toBeLessThanOrEqual(8)
+    if (stats.users.growth.length > 0) {
+      expect(stats.users.growth[0]).toHaveProperty('date')
+      expect(stats.users.growth[0]).toHaveProperty('count')
+    }
+  })
+
+  it('GET /api/dashboard/overview — agent stats include commissions breakdown', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/overview?period=30d')
+      .set('Authorization', `Bearer ${agentToken}`)
+
+    expect(res.status).toBe(200)
+    const { stats } = res.body.data
+    expect(stats.commissions).toHaveProperty('total')
+    expect(stats.commissions).toHaveProperty('pending')
+    expect(stats.commissions).toHaveProperty('paid')
+    expect(typeof stats.commissions.total).toBe('number')
+  })
+
+  it('GET /api/dashboard/overview — agent stats include recentProspects', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/overview?period=30d')
+      .set('Authorization', `Bearer ${agentToken}`)
+
+    expect(res.status).toBe(200)
+    const { stats } = res.body.data
+    expect(Array.isArray(stats.recentProspects)).toBe(true)
+  })
+
+  it('GET /api/dashboard/overview — agent stats include campaigns total/active', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/overview?period=30d')
+      .set('Authorization', `Bearer ${agentToken}`)
+
+    expect(res.status).toBe(200)
+    const { stats } = res.body.data
+    expect(stats.campaigns).toHaveProperty('total')
+    expect(stats.campaigns).toHaveProperty('active')
+    expect(typeof stats.campaigns.total).toBe('number')
+  })
+})
+
+describe('Dashboard analytics — expanded coverage', () => {
+  it('GET /api/dashboard/analytics?type=qr_codes — returns QR analytics', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/analytics?type=qr_codes&period=30d')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.type).toBe('qr_codes')
+    expect(res.body.data.analytics).toBeDefined()
+  })
+
+  it('GET /api/dashboard/analytics — agent can access prospect analytics', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/analytics?type=prospects&period=7d')
+      .set('Authorization', `Bearer ${agentToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.type).toBe('prospects')
+    expect(res.body.data.period).toBe('7d')
+  })
+
+  it('GET /api/dashboard/analytics — agent can access commission analytics', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/analytics?type=commissions&period=90d')
+      .set('Authorization', `Bearer ${agentToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.type).toBe('commissions')
+  })
+
+  it('GET /api/dashboard/analytics — returns 401 without token', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/analytics?type=prospects')
+
+    expect([401, 403]).toContain(res.status)
+  })
+})

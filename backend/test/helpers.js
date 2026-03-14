@@ -2,7 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { init } from '../src/server_internal.js';
 import { sequelize } from '../src/database/connection.js';
-import { User, Campaign, Commission, Prospect, FleetOwner, Car, QrTag, AgentGroup } from '../src/models/index.js';
+import { User, Campaign, Commission, Prospect, FleetOwner, Car, QrTag, AgentGroup, Attribution, QrScan, LeadPackage, LeadPackageAssignment } from '../src/models/index.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 let _app = null;
@@ -170,6 +170,66 @@ export async function createTestCar(fleetOwnerId, overrides = {}) {
     type: overrides.type || 'sedan',
     status: overrides.status || 'active',
     fleet_owner_id: fleetOwnerId,
+    ...overrides
+  });
+}
+
+/**
+ * Create a test attribution record linked to a QR tag and session.
+ * Requires a QrScan to exist (creates one automatically).
+ */
+export async function createTestAttribution(qrTagId, sessionId, overrides = {}) {
+  // Create a QrScan first (Attribution requires qrScanId FK)
+  const scan = await QrScan.create({
+    qrTagId,
+    ipHash: overrides.ipHash || 'testhash' + Date.now(),
+    ts: new Date(),
+    ua: 'test-agent',
+    botFlag: false,
+    isDuplicate: false
+  });
+
+  return Attribution.create({
+    qrTagId,
+    qrScanId: scan.id,
+    sessionId,
+    firstTouch: true,
+    lastTouchAt: new Date(),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    usedOnce: false,
+    ...overrides
+  });
+}
+
+/**
+ * Create a test lead package for a campaign.
+ */
+export async function createTestLeadPackage(campaignId, createdBy, overrides = {}) {
+  const n = uid();
+  return LeadPackage.create({
+    name: overrides.name || `Test Package ${n}`,
+    type: overrides.type || 'basic',
+    price: overrides.price || 100.00,
+    leadCount: overrides.leadCount || 50,
+    status: overrides.status || 'active',
+    campaignId,
+    createdBy,
+    ...overrides
+  });
+}
+
+/**
+ * Create a test lead package assignment for an agent.
+ */
+export async function createTestLeadPackageAssignment(agentId, packageId, overrides = {}) {
+  return LeadPackageAssignment.create({
+    agentId,
+    leadPackageId: packageId,
+    status: overrides.status || 'active',
+    leadsRemaining: overrides.leadsRemaining ?? 10,
+    leadsTotal: overrides.leadsTotal ?? 50,
+    priceSnapshot: overrides.priceSnapshot || 100.00,
+    purchaseDate: overrides.purchaseDate || new Date(),
     ...overrides
   });
 }
