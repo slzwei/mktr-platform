@@ -2,7 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { init } from '../src/server_internal.js';
 import { sequelize } from '../src/database/connection.js';
-import { User, Campaign, Commission, Prospect, FleetOwner, Car } from '../src/models/index.js';
+import { User, Campaign, Commission, Prospect, FleetOwner, Car, QrTag, AgentGroup } from '../src/models/index.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 let _app = null;
@@ -115,6 +115,44 @@ export async function createTestFleetOwner(overrides = {}) {
     email: overrides.email || `fleet-${n}-${Date.now()}@test.com`,
     phone: overrides.phone || `8${String(Date.now()).slice(-7)}`,
     company_name: overrides.company_name || `Fleet Co ${n}`,
+    ...overrides
+  });
+}
+
+/**
+ * Create a test QR tag for a campaign.
+ */
+export async function createTestQrTag(campaignId, ownerUserId, overrides = {}) {
+  const n = uid();
+  return QrTag.create({
+    slug: `test-${n}-${Date.now()}`,
+    label: overrides.label || `Test QR ${n}`,
+    type: overrides.type || 'promotional',
+    campaignId,
+    ownerUserId,
+    active: true,
+    agentAssignmentMode: overrides.agentAssignmentMode || 'direct',
+    assignedAgentPhone: overrides.assignedAgentPhone || null,
+    assignedAgentEmail: overrides.assignedAgentEmail || null,
+    assignedAgentName: overrides.assignedAgentName || null,
+    agentGroupId: overrides.agentGroupId || null,
+    agentGroupAgentIds: overrides.agentGroupAgentIds || [],
+    roundRobinIndex: overrides.roundRobinIndex || 0,
+    ...overrides
+  });
+}
+
+/**
+ * Create a test agent group.
+ */
+export async function createTestAgentGroup(createdBy, agents = [], overrides = {}) {
+  const n = uid();
+  return AgentGroup.create({
+    name: overrides.name || `Test Group ${n}`,
+    description: overrides.description || 'Test agent group',
+    agents,
+    agentCount: agents.length,
+    createdBy,
     ...overrides
   });
 }
