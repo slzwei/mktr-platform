@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { auth } from '@/api/client';
+import { auth, apiClient } from '@/api/client';
 
 const STORAGE_KEYS = {
   TOKEN: 'mktr_auth_token',
@@ -60,6 +60,16 @@ export const useAuthStore = create((set, get) => ({
       });
     }
     return response;
+  },
+
+  /** Atomically set both user and token (used by OAuth callback flows). */
+  setAuth: (user, token) => {
+    apiClient.setToken(token);
+    set({ user, token });
+    if (user) {
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+      auth.setCurrentUser(user);
+    }
   },
 
   setUser: (user) => {
