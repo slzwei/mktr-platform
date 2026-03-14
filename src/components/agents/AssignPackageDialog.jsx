@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -58,7 +58,7 @@ const AssignPackageDialog = ({ open, onOpenChange, agent, onSubmitSuccess }) => 
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-[425px] max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Assign Package to {agent?.full_name}</DialogTitle>
                 </DialogHeader>

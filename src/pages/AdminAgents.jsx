@@ -646,7 +646,7 @@ export default function AdminAgents() {
 
         {/* Manage Packages Dialog */}
         <Dialog open={managePackagesDialogOpen} onOpenChange={setManagePackagesDialogOpen}>
-          <DialogContent className="sm:max-w-2xl">
+          <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <div className="flex items-center justify-between gap-4">
                 <div>
