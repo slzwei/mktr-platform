@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import CheckCircle from 'lucide-react/icons/check-circle';
 import XCircle from 'lucide-react/icons/x-circle';
 import MKTRAnimatedLogo from '@/components/MKTRAnimatedLogo';
-import { apiClient } from '@/api/client';
 import { useAuthStore } from '@/stores/authStore';
 import { getPostAuthRedirectPath } from '@/lib/utils';
 
@@ -13,7 +12,7 @@ export default function GoogleCallback() {
   const navigate = useNavigate();
   const [status, setStatus] = useState('processing'); // processing, success, error
   const [message, setMessage] = useState('Processing Google authentication...');
-  const setUser = useAuthStore((s) => s.setUser);
+  const setAuth = useAuthStore((s) => s.setAuth);
 
   useEffect(() => {
     const handleCallback = async () => {
@@ -69,10 +68,9 @@ export default function GoogleCallback() {
           const user = result.data.user;
           console.log('✅ Authentication successful, user:', user);
 
-          // Store the token and update API client + store
+          // Store the token and update API client + store atomically
           if (result.data.token) {
-            apiClient.setToken(result.data.token);
-            setUser(user);
+            setAuth(user, result.data.token);
           }
 
           setStatus('success');
