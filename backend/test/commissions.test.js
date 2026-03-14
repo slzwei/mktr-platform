@@ -203,3 +203,308 @@ describe('Commission statistics', () => {
     expect(res.body.data.summary).toBeDefined()
   })
 })
+
+describe('Commission filtering', () => {
+  let campaign
+
+  beforeAll(async () => {
+    campaign = await createTestCampaign(adminUser.id)
+    // Create commissions with different statuses and types
+    await createTestCommission(agentUser.id, campaign.id, {
+      status: 'pending',
+      type: 'conversion',
+      amount: 40,
+      description: `filter-test-pending-${Date.now()}`
+    })
+    await createTestCommission(agentUser.id, campaign.id, {
+      status: 'approved',
+      type: 'referral',
+      amount: 60,
+      description: `filter-test-approved-${Date.now()}`
+    })
+    await createTestCommission(agentUser.id, campaign.id, {
+      status: 'pending',
+      type: 'bonus',
+      amount: 25,
+      description: `filter-test-bonus-${Date.now()}`
+    })
+  })
+
+  it('GET /api/commissions?status=pending — filters by status', async () => {
+    const res = await request(app)
+      .get('/api/commissions?status=pending')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const commissions = res.body.data.commissions
+    expect(commissions.length).toBeGreaterThanOrEqual(1)
+    expect(commissions.every(c => c.status === 'pending')).toBe(true)
+  })
+
+  it('GET /api/commissions?status=approved — filters by approved status', async () => {
+    const res = await request(app)
+      .get('/api/commissions?status=approved')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const commissions = res.body.data.commissions
+    expect(commissions.length).toBeGreaterThanOrEqual(1)
+    expect(commissions.every(c => c.status === 'approved')).toBe(true)
+  })
+
+  it('GET /api/commissions?type=conversion — filters by type', async () => {
+    const res = await request(app)
+      .get('/api/commissions?type=conversion')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const commissions = res.body.data.commissions
+    expect(commissions.length).toBeGreaterThanOrEqual(1)
+    expect(commissions.every(c => c.type === 'conversion')).toBe(true)
+  })
+
+  it('GET /api/commissions?type=referral — filters by referral type', async () => {
+    const res = await request(app)
+      .get('/api/commissions?type=referral')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const commissions = res.body.data.commissions
+    expect(commissions.length).toBeGreaterThanOrEqual(1)
+    expect(commissions.every(c => c.type === 'referral')).toBe(true)
+  })
+
+  it('GET /api/commissions?status=pending&type=bonus — combined filters', async () => {
+    const res = await request(app)
+      .get('/api/commissions?status=pending&type=bonus')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const commissions = res.body.data.commissions
+    expect(commissions.length).toBeGreaterThanOrEqual(1)
+    expect(commissions.every(c => c.status === 'pending' && c.type === 'bonus')).toBe(true)
+  })
+
+  it('GET /api/commissions?campaignId=... — filters by campaign', async () => {
+    const res = await request(app)
+      .get(`/api/commissions?campaignId=${campaign.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const commissions = res.body.data.commissions
+    expect(commissions.length).toBeGreaterThanOrEqual(1)
+    expect(commissions.every(c => c.campaignId === campaign.id)).toBe(true)
+  })
+})
+
+describe('Commission stats detail', () => {
+  it('GET /api/commissions/stats/overview — returns full stats structure', async () => {
+    const res = await request(app)
+      .get('/api/commissions/stats/overview?period=year')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const data = res.body.data
+
+    // summary
+    expect(data.summary).toBeDefined()
+    expect(typeof data.summary.totalAmount).toBe('number')
+    expect(typeof data.summary.totalCount).toBe('number')
+    expect(data.summary.averageCommission).toBeDefined()
+
+    // breakdowns
+    expect(Array.isArray(data.byStatus)).toBe(true)
+    expect(Array.isArray(data.byType)).toBe(true)
+    expect(Array.isArray(data.topCampaigns)).toBe(true)
+
+    // monthly trend
+    expect(Array.isArray(data.monthlyTrend)).toBe(true)
+    expect(data.monthlyTrend.length).toBe(12)
+    data.monthlyTrend.forEach(m => {
+      expect(m).toHaveProperty('month')
+      expect(m).toHaveProperty('total')
+    })
+  })
+
+  it('GET /api/commissions/stats/overview?period=today — scoped to today', async () => {
+    const res = await request(app)
+      .get('/api/commissions/stats/overview?period=today')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.summary.totalAmount).toBeGreaterThanOrEqual(0)
+  })
+
+  it('GET /api/commissions/agents/:agentId/summary — returns agent summary', async () => {
+    const res = await request(app)
+      .get(`/api/commissions/agents/${agentUser.id}/summary`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const data = res.body.data
+
+    expect(data.agent).toBeDefined()
+    expect(data.agent.id).toBe(agentUser.id)
+    expect(data.summary).toBeDefined()
+    expect(typeof data.summary.totalEarnings).toBe('number')
+    expect(typeof data.summary.paidAmount).toBe('number')
+    expect(typeof data.summary.pendingAmount).toBe('number')
+    expect(typeof data.summary.totalCommissions).toBe('number')
+    expect(Array.isArray(data.monthlyBreakdown)).toBe(true)
+    expect(data.monthlyBreakdown.length).toBe(12)
+  })
+
+  it('GET /api/commissions/agents/:agentId/summary — returns 404 for non-existent agent', async () => {
+    const res = await request(app)
+      .get('/api/commissions/agents/00000000-0000-0000-0000-000000000000/summary')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('Commission status updates', () => {
+  let campaign, pendingCommissionId
+
+  beforeAll(async () => {
+    campaign = await createTestCampaign(adminUser.id)
+  })
+
+  beforeEach(async () => {
+    const c = await createTestCommission(agentUser.id, campaign.id, {
+      status: 'pending',
+      amount: 55,
+      type: 'conversion'
+    })
+    pendingCommissionId = c.id
+  })
+
+  it('PATCH /api/commissions/:id/approve — updates status to approved', async () => {
+    const res = await request(app)
+      .patch(`/api/commissions/${pendingCommissionId}/approve`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ notes: 'Looks good' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.commission.status).toBe('approved')
+  })
+
+  it('PATCH /api/commissions/:id/approve — agent cannot approve', async () => {
+    const res = await request(app)
+      .patch(`/api/commissions/${pendingCommissionId}/approve`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ notes: 'Self-approve' })
+
+    expect([401, 403]).toContain(res.status)
+  })
+
+  it('PATCH /api/commissions/:id/pay — approved commission can be paid', async () => {
+    // First approve
+    await request(app)
+      .patch(`/api/commissions/${pendingCommissionId}/approve`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    // Then pay
+    const res = await request(app)
+      .patch(`/api/commissions/${pendingCommissionId}/pay`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        paymentMethod: 'bank_transfer',
+        transactionId: `TXN-${Date.now()}`,
+        processingFee: 1.50
+      })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.commission.status).toBe('paid')
+  })
+
+  it('PUT /api/commissions/:id — admin can update pending commission amount', async () => {
+    const res = await request(app)
+      .put(`/api/commissions/${pendingCommissionId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ amount: 120 })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.commission.amount).toBe(120)
+  })
+})
+
+describe('Agent scoping — agent sees own commissions only', () => {
+  let campaign, otherAgent, otherToken
+
+  beforeAll(async () => {
+    campaign = await createTestCampaign(adminUser.id)
+    const other = await createTestUser({ role: 'agent' })
+    otherAgent = other.user
+    otherToken = other.token
+
+    // Create commissions for agentUser
+    await createTestCommission(agentUser.id, campaign.id, {
+      amount: 30, type: 'conversion', description: `scope-agent-${Date.now()}`
+    })
+    // Create commissions for otherAgent
+    await createTestCommission(otherAgent.id, campaign.id, {
+      amount: 45, type: 'referral', description: `scope-other-${Date.now()}`
+    })
+  })
+
+  it('agentUser sees only own commissions', async () => {
+    const res = await request(app)
+      .get('/api/commissions')
+      .set('Authorization', `Bearer ${agentToken}`)
+
+    expect(res.status).toBe(200)
+    const commissions = res.body.data.commissions
+    expect(commissions.length).toBeGreaterThanOrEqual(1)
+    expect(commissions.every(c => c.agentId === agentUser.id)).toBe(true)
+  })
+
+  it('otherAgent sees only own commissions', async () => {
+    const res = await request(app)
+      .get('/api/commissions')
+      .set('Authorization', `Bearer ${otherToken}`)
+
+    expect(res.status).toBe(200)
+    const commissions = res.body.data.commissions
+    expect(commissions.length).toBeGreaterThanOrEqual(1)
+    expect(commissions.every(c => c.agentId === otherAgent.id)).toBe(true)
+  })
+
+  it('admin sees commissions from all agents', async () => {
+    const res = await request(app)
+      .get('/api/commissions?limit=100')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const agentIds = [...new Set(res.body.data.commissions.map(c => c.agentId))]
+    expect(agentIds.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('agent cannot see another agent commission by ID', async () => {
+    // Create a commission for otherAgent
+    const c = await createTestCommission(otherAgent.id, campaign.id, {
+      amount: 10, type: 'bonus'
+    })
+
+    const res = await request(app)
+      .get(`/api/commissions/${c.id}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('Commission pagination', () => {
+  it('GET /api/commissions?page=1&limit=2 — respects pagination', async () => {
+    const res = await request(app)
+      .get('/api/commissions?page=1&limit=2')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.commissions.length).toBeLessThanOrEqual(2)
+    expect(res.body.data.pagination.currentPage).toBe(1)
+    expect(res.body.data.pagination.itemsPerPage).toBe(2)
+    expect(res.body.data.pagination.totalItems).toBeGreaterThanOrEqual(1)
+    expect(res.body.data.pagination.totalPages).toBeGreaterThanOrEqual(1)
+  })
+})
