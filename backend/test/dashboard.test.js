@@ -104,3 +104,94 @@ describe('Dashboard analytics', () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe('Dashboard overview stats structure', () => {
+  it('GET /api/dashboard/overview — admin stats include totalCampaigns and totalProspects', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/overview?period=30d')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+
+    const { stats } = res.body.data
+    // campaigns
+    expect(stats.campaigns).toHaveProperty('total')
+    expect(stats.campaigns).toHaveProperty('active')
+    expect(typeof stats.campaigns.total).toBe('number')
+    expect(stats.campaigns.total).toBeGreaterThanOrEqual(1)
+
+    // prospects
+    expect(stats.prospects).toHaveProperty('total')
+    expect(stats.prospects).toHaveProperty('new')
+    expect(typeof stats.prospects.total).toBe('number')
+    expect(stats.prospects.total).toBeGreaterThanOrEqual(0)
+
+    // commissions
+    expect(stats.commissions).toHaveProperty('total')
+    expect(stats.commissions).toHaveProperty('pending')
+
+    // qrCodes
+    expect(stats.qrCodes).toHaveProperty('total')
+    expect(stats.qrCodes).toHaveProperty('totalScans')
+
+    // fleet
+    expect(stats.fleet).toHaveProperty('totalCars')
+    expect(stats.fleet).toHaveProperty('activeCars')
+  })
+
+  it('GET /api/dashboard/overview — response includes lastUpdated timestamp', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/overview?period=30d')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.lastUpdated).toBeDefined()
+    // Should be a valid date string
+    expect(new Date(res.body.data.lastUpdated).toString()).not.toBe('Invalid Date')
+  })
+
+  it('GET /api/dashboard/overview — agent stats include assigned prospect count', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/overview?period=30d')
+      .set('Authorization', `Bearer ${agentToken}`)
+
+    expect(res.status).toBe(200)
+    const { stats } = res.body.data
+    expect(stats.prospects).toHaveProperty('assigned')
+    expect(stats.prospects).toHaveProperty('converted')
+    expect(stats.prospects).toHaveProperty('conversionRate')
+    expect(typeof stats.prospects.assigned).toBe('number')
+  })
+})
+
+describe('Dashboard with date filters', () => {
+  it('GET /api/dashboard/overview?period=7d — returns 200 with 7d period', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/overview?period=7d')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.period).toBe('7d')
+    expect(res.body.data.stats).toBeDefined()
+  })
+
+  it('GET /api/dashboard/overview?period=90d — returns 200 with 90d period', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/overview?period=90d')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.period).toBe('90d')
+    expect(res.body.data.stats).toBeDefined()
+  })
+
+  it('GET /api/dashboard/overview — defaults to 30d when period omitted', async () => {
+    const res = await request(app)
+      .get('/api/dashboard/overview')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.period).toBe('30d')
+  })
+})
