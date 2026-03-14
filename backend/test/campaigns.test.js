@@ -185,3 +185,159 @@ describe('Campaign filtering and pagination', () => {
     }
   })
 })
+
+describe('Campaign search and filtering', () => {
+  let activeCampaign, draftCampaign, lgCampaign
+
+  beforeAll(async () => {
+    activeCampaign = await createTestCampaign(adminUser.id, {
+      name: 'SearchActive One',
+      status: 'active',
+      type: 'lead_generation'
+    })
+    draftCampaign = await createTestCampaign(adminUser.id, {
+      name: 'SearchDraft Two',
+      status: 'draft',
+      type: 'brand_awareness'
+    })
+    lgCampaign = await createTestCampaign(adminUser.id, {
+      name: 'SearchLG Three',
+      status: 'active',
+      type: 'lead_generation'
+    })
+  })
+
+  it('GET /api/campaigns?status=active — only returns active campaigns', async () => {
+    const res = await request(app)
+      .get('/api/campaigns?status=active')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const campaigns = res.body.data.campaigns
+    expect(campaigns.length).toBeGreaterThanOrEqual(1)
+    expect(campaigns.every(c => c.status === 'active')).toBe(true)
+    // Draft campaign must not appear
+    expect(campaigns.find(c => c.id === draftCampaign.id)).toBeUndefined()
+  })
+
+  it('GET /api/campaigns?type=lead_generation — filters by type', async () => {
+    const res = await request(app)
+      .get('/api/campaigns?type=lead_generation')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const campaigns = res.body.data.campaigns
+    expect(campaigns.length).toBeGreaterThanOrEqual(1)
+    expect(campaigns.every(c => c.type === 'lead_generation')).toBe(true)
+    // brand_awareness campaign must not appear
+    expect(campaigns.find(c => c.id === draftCampaign.id)).toBeUndefined()
+  })
+
+  it('GET /api/campaigns?status=draft — returns only draft campaigns', async () => {
+    const res = await request(app)
+      .get('/api/campaigns?status=draft')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const campaigns = res.body.data.campaigns
+    if (campaigns.length > 0) {
+      expect(campaigns.every(c => c.status === 'draft')).toBe(true)
+    }
+  })
+})
+
+describe('Campaign update', () => {
+  let campaignToUpdate
+
+  beforeAll(async () => {
+    campaignToUpdate = await createTestCampaign(adminUser.id, {
+      name: 'Before Update',
+      status: 'active',
+      is_active: true
+    })
+  })
+
+  it('PUT /api/campaigns/:id — update name', async () => {
+    const res = await request(app)
+      .put(`/api/campaigns/${campaignToUpdate.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'After Update' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.data.campaign.name).toBe('After Update')
+  })
+
+  it('PUT /api/campaigns/:id — update is_active to false sets status to draft', async () => {
+    const res = await request(app)
+      .put(`/api/campaigns/${campaignToUpdate.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ is_active: false })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.campaign.is_active).toBe(false)
+    expect(res.body.data.campaign.status).toBe('draft')
+  })
+
+  it('PUT /api/campaigns/:id — update min_age and max_age', async () => {
+    const res = await request(app)
+      .put(`/api/campaigns/${campaignToUpdate.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ min_age: 30, max_age: 50 })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.campaign.min_age).toBe(30)
+    expect(res.body.data.campaign.max_age).toBe(50)
+  })
+
+  it('PUT /api/campaigns/:id — returns 404 for non-existent campaign', async () => {
+    const res = await request(app)
+      .put('/api/campaigns/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Ghost' })
+
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('Campaign delete', () => {
+  let campaignToDelete
+
+  beforeEach(async () => {
+    campaignToDelete = await createTestCampaign(adminUser.id, {
+      name: 'Deletable Campaign',
+      status: 'active'
+    })
+  })
+
+  it('DELETE /api/campaigns/:id — archives and returns 200', async () => {
+    const res = await request(app)
+      .delete(`/api/campaigns/${campaignToDelete.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.message).toContain('archived')
+  })
+
+  it('DELETE /api/campaigns/:id — verify campaign status is archived after delete', async () => {
+    await request(app)
+      .delete(`/api/campaigns/${campaignToDelete.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    const getRes = await request(app)
+      .get(`/api/campaigns/${campaignToDelete.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(getRes.status).toBe(200)
+    expect(getRes.body.data.campaign.status).toBe('archived')
+  })
+
+  it('DELETE non-existent ID — returns 404', async () => {
+    const res = await request(app)
+      .delete('/api/campaigns/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(404)
+  })
+})
