@@ -77,6 +77,25 @@ router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async
   });
 }));
 
+// Bulk assign prospects (must be registered before /:id/assign to avoid param capture)
+router.patch('/bulk/assign', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
+  const { prospectIds, agentId } = req.body;
+  const { affectedCount, agent } = await prospectService.bulkAssignProspects(prospectIds, agentId, req.user);
+
+  // Notify agent about bulk assignment
+  if (affectedCount > 0) {
+    sendLeadAssignmentEmail(agent, null, true, affectedCount).catch(err =>
+      console.error(`❌ Failed to send bulk assignment email to agent ${agentId} for ${affectedCount} prospects:`, err.message || err)
+    );
+  }
+
+  res.json({
+    success: true,
+    message: `${affectedCount} prospects assigned successfully`,
+    data: { affectedCount }
+  });
+}));
+
 // Assign prospect to agent
 router.patch('/:id/assign', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
   const { prospect, agent, prospectWithCampaign } = await prospectService.assignProspect(
@@ -94,25 +113,6 @@ router.patch('/:id/assign', authenticateToken, requireAgentOrAdmin, asyncHandler
     success: true,
     message: 'Prospect assigned successfully',
     data: { prospect }
-  });
-}));
-
-// Bulk assign prospects
-router.patch('/bulk/assign', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
-  const { prospectIds, agentId } = req.body;
-  const { affectedCount, agent } = await prospectService.bulkAssignProspects(prospectIds, agentId, req.user);
-
-  // Notify agent about bulk assignment
-  if (affectedCount > 0) {
-    sendLeadAssignmentEmail(agent, null, true, affectedCount).catch(err =>
-      console.error(`❌ Failed to send bulk assignment email to agent ${agentId} for ${affectedCount} prospects:`, err.message || err)
-    );
-  }
-
-  res.json({
-    success: true,
-    message: `${affectedCount} prospects assigned successfully`,
-    data: { affectedCount }
   });
 }));
 

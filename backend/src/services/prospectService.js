@@ -630,11 +630,13 @@ export async function listProspects(user, params) {
   if (campaignId) whereConditions.campaignId = campaignId;
 
   if (search) {
+    // Use Op.like for SQLite (case-insensitive by default), Op.iLike for Postgres
+    const likeOp = sequelize.getDialect() === 'postgres' ? Op.iLike : Op.like;
     whereConditions[Op.or] = [
-      { firstName: { [Op.iLike]: `%${search}%` } },
-      { lastName: { [Op.iLike]: `%${search}%` } },
-      { email: { [Op.iLike]: `%${search}%` } },
-      { company: { [Op.iLike]: `%${search}%` } }
+      { firstName: { [likeOp]: `%${search}%` } },
+      { lastName: { [likeOp]: `%${search}%` } },
+      { email: { [likeOp]: `%${search}%` } },
+      { company: { [likeOp]: `%${search}%` } }
     ];
   }
 
