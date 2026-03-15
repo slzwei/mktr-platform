@@ -29,7 +29,7 @@ function getLyfeConfig() {
 }
 
 /**
- * Fetch agents from Lyfe Supabase (users table with role in agent, pa).
+ * Fetch agents from Lyfe Supabase (users table with role in agent, pa, director, manager).
  * Uses service_role key to bypass RLS.
  */
 export async function fetchAgents(filters = {}) {
@@ -39,7 +39,7 @@ export async function fetchAgents(filters = {}) {
 
   const { url, key } = getLyfeConfig();
 
-  const roles = filters.roles || ['agent'];
+  const roles = filters.roles || ['agent', 'director', 'manager'];
   const roleFilter = `role=in.(${roles.join(',')})`;
 
   const response = await fetch(
