@@ -57,45 +57,45 @@ export default function ContactInfoCard({
         </div>
       ) : (
         <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-600 shadow-sm p-4 space-y-3">
-          <div className="group flex items-center gap-3">
+          <div className="group flex items-start gap-3">
             <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
               <Phone className="w-4 h-4 text-blue-600" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Phone</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{phone || '—'}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 break-all">{phone || '—'}</p>
             </div>
           </div>
           <Separator />
-          <div className="group flex items-center gap-3">
+          <div className="group flex items-start gap-3">
             <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
               <Mail className="w-4 h-4 text-blue-600" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Email</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={email}>{email || '—'}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 break-all">{email || '—'}</p>
             </div>
           </div>
           <Separator />
-          <div className="group flex items-center gap-3">
+          <div className="group flex items-start gap-3">
             <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
               <Calendar className="w-4 h-4 text-blue-600" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Date of Birth</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
                 {prospect.date_of_birth ? format(new Date(prospect.date_of_birth), 'MMM d, yyyy') : '—'}
               </p>
             </div>
           </div>
           <Separator />
-          <div className="group flex items-center gap-3">
+          <div className="group flex items-start gap-3">
             <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
               <MapPin className="w-4 h-4 text-blue-600" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Postal Code</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{prospect.postal_code || '—'}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{prospect.postal_code || '—'}</p>
             </div>
           </div>
         </div>
