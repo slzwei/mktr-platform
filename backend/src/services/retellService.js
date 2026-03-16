@@ -11,18 +11,43 @@ const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
  * Verify the Retell webhook signature (HMAC-SHA256).
+ * Retell sends: x-retell-signature: v=<timestamp>,d=<hmac_hex>
+ * The HMAC is computed over: "<timestamp>.<raw_body>"
+ *
  * @param {Buffer} rawBody - raw request body
- * @param {string} signature - value of x-retell-signature header
+ * @param {string} signatureHeader - value of x-retell-signature header
  * @returns {boolean}
  */
-export function verifyRetellSignature(rawBody, signature) {
+export function verifyRetellSignature(rawBody, signatureHeader) {
   const secret = process.env.RETELL_WEBHOOK_SECRET;
-  if (!secret || !signature) return false;
+  if (!secret || !signatureHeader) return false;
 
-  const expected = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('hex');
+  // Parse "v=<timestamp>,d=<hex>" format
+  const parts = {};
+  for (const part of signatureHeader.split(',')) {
+    const [key, ...rest] = part.split('=');
+    parts[key.trim()] = rest.join('=').trim();
+  }
+
+  const timestamp = parts.v;
+  const signature = parts.d;
+
+  // Fallback: if no v/d format, treat entire header as plain hex (for manual/test webhooks)
+  if (!signature) {
+    const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    try {
+      return crypto.timingSafeEqual(
+        Buffer.from(expected, 'hex'),
+        Buffer.from(signatureHeader, 'hex')
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  // Retell format: HMAC of "<timestamp>.<body>"
+  const payload = `${timestamp}.${rawBody.toString()}`;
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
 
   try {
     return crypto.timingSafeEqual(
