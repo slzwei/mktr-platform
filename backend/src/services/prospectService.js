@@ -258,6 +258,8 @@ export async function createProspect(body, user, { cookies, headers } = {}) {
         tags: prospect.tags,
         notes: prospect.notes,
         sourceMetadata: prospect.sourceMetadata,
+        recordingUrl: prospect.sourceMetadata?.recordingUrl || null,
+        transcript: prospect.sourceMetadata?.retellCallId ? prospect.notes : null,
         createdAt: prospect.createdAt
       },
       routing: {
@@ -507,6 +509,7 @@ export async function assignProspect(prospectId, agentId, user) {
   });
 
   // Fire lead.assigned webhook
+  const meta = prospect.sourceMetadata || {};
   dispatchEvent('lead.assigned', () => ({
     event: 'lead.assigned',
     timestamp: new Date().toISOString(),
@@ -519,7 +522,10 @@ export async function assignProspect(prospectId, agentId, user) {
         email: prospect.email,
         leadSource: prospect.leadSource,
         tags: prospect.tags,
-        sourceMetadata: prospect.sourceMetadata,
+        notes: prospect.notes,
+        sourceMetadata: meta,
+        recordingUrl: meta.recordingUrl || null,
+        transcript: meta.retellCallId ? prospect.notes : null,
         createdAt: prospect.createdAt
       },
       routing: {
