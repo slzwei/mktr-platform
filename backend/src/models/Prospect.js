@@ -206,6 +206,12 @@ const Prospect = sequelize.define('Prospect', {
     allowNull: true,
     defaultValue: {},
     comment: 'Additional data about the lead source (referrer URL, QR code location, etc.)'
+  },
+  retellCallId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    unique: true,
+    comment: 'Retell AI call_id for idempotent webhook processing'
   }
 }, {
   tableName: 'prospects',
