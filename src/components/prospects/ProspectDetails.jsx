@@ -8,8 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
-import { Clock, User, Edit2, X } from "lucide-react";
-import { Prospect as ProspectEntity } from "@/api/entities";
+import { Clock, User, Edit2, X, UserPlus } from "lucide-react";
+import { Prospect as ProspectEntity, User as UserEntity } from "@/api/entities";
 import ContactInfoCard from "@/components/prospects/details/ContactInfoCard";
 import CampaignInfoCard from "@/components/prospects/details/CampaignInfoCard";
 import ActivityTimeline from "@/components/prospects/details/ActivityTimeline";
@@ -37,14 +37,22 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
   const [phone, setPhone] = useState(prospect.phone || "");
 
   const [details, setDetails] = useState(null);
+  const [agents, setAgents] = useState([]);
+  const [assignedAgentId, setAssignedAgentId] = useState(prospect.assigned_agent_id || "");
+  const [isAssigning, setIsAssigning] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const full = await ProspectEntity.get(prospect.id);
+        const [full, agentList] = await Promise.all([
+          ProspectEntity.get(prospect.id),
+          UserEntity.getAgents().catch(() => [])
+        ]);
         if (!mounted) return;
         setDetails(full);
+        setAgents(agentList);
+        if (full?.assignedAgentId) setAssignedAgentId(full.assignedAgentId);
         if (full?.leadStatus) setStatus((full.leadStatus || '').toLowerCase());
         if (full?.notes) setNotes(full.notes);
         if (full?.firstName) setFirstName(full.firstName);
@@ -55,6 +63,20 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
     })();
     return () => { mounted = false; };
   }, [prospect.id]);
+
+  const handleAssignAgent = async (agentId) => {
+    setIsAssigning(true);
+    try {
+      await ProspectEntity.assign(prospect.id, agentId);
+      setAssignedAgentId(agentId);
+      const full = await ProspectEntity.get(prospect.id);
+      setDetails(full);
+      if (typeof onEdited === 'function') await onEdited();
+    } catch (error) {
+      console.error('Error assigning agent:', error);
+    }
+    setIsAssigning(false);
+  };
 
   const campaign = prospect.campaign || campaigns.find(c => c.id === prospect.campaign_id);
   const currentStatus = statusOptions.find(s => s.value === status) || statusOptions[0];
@@ -129,7 +151,9 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
               <span className="text-gray-300 dark:text-gray-600">|</span>
               <div className="flex items-center gap-1">
                 <User className="w-3.5 h-3.5" />
-                <span>{(details?.assignedAgent ? [details.assignedAgent.firstName, details.assignedAgent.lastName].filter(Boolean).join(' ') || details.assignedAgent.email : (prospect.assigned_agent_name || 'Unassigned'))}</span>
+                <span className={!details?.assignedAgent && !prospect.assigned_agent_name ? 'text-amber-500 dark:text-amber-400 font-medium' : ''}>
+                  {(details?.assignedAgent ? [details.assignedAgent.firstName, details.assignedAgent.lastName].filter(Boolean).join(' ') || details.assignedAgent.email : (prospect.assigned_agent_name || 'Unassigned'))}
+                </span>
               </div>
             </div>
           </div>
@@ -202,7 +226,37 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="sm:col-span-3">
+                      <div className="sm:col-span-1">
+                        <Label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5 block">Assign To</Label>
+                        <Select
+                          value={assignedAgentId || "unassigned"}
+                          onValueChange={(val) => handleAssignAgent(val === "unassigned" ? null : val)}
+                          disabled={isAssigning}
+                        >
+                          <SelectTrigger className={`w-full ${!assignedAgentId ? 'border-amber-300 dark:border-amber-700' : ''}`}>
+                            <SelectValue placeholder="Select agent..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned" className="focus:bg-gray-50 dark:focus:bg-gray-800">
+                              <div className="flex items-center gap-2 text-gray-400">
+                                <UserPlus className="w-3.5 h-3.5" />
+                                Unassigned
+                              </div>
+                            </SelectItem>
+                            {agents.map((agent) => (
+                              <SelectItem key={agent.id} value={agent.id} className="focus:bg-gray-50 dark:focus:bg-gray-800">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center text-[10px] font-semibold">
+                                    {(agent.firstName || agent.email || '?').charAt(0).toUpperCase()}
+                                  </div>
+                                  {[agent.firstName, agent.lastName].filter(Boolean).join(' ') || agent.email}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="sm:col-span-2">
                         <Label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5 block">Notes</Label>
                         <Textarea
                           value={notes}
