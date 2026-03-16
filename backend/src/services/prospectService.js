@@ -224,14 +224,14 @@ export async function createProspect(body, user, { cookies, headers } = {}) {
   let agentForWebhook = resolvedAgent;
   if (!agentForWebhook && assignedAgentId) {
     const agentRecord = await User.findByPk(assignedAgentId, {
-      attributes: ['id', 'phone', 'email', 'firstName', 'lastName']
+      attributes: ['id', 'lyfeId', 'phone', 'email', 'firstName', 'lastName']
     });
     if (agentRecord) {
       agentForWebhook = {
         phone: agentRecord.phone || null,
         email: agentRecord.email || null,
         name: `${agentRecord.firstName || ''} ${agentRecord.lastName || ''}`.trim(),
-        id: agentRecord.id
+        id: agentRecord.lyfeId || agentRecord.id
       };
     }
   }
@@ -451,7 +451,13 @@ export async function assignProspect(prospectId, agentId, user) {
       metadata: { previousAgentId }
     });
 
-    // Fire lead.unassigned webhook
+    // Fire lead.unassigned webhook — resolve lyfeId for previous agent
+    let previousAgentLyfeId = previousAgentId;
+    if (previousAgentId) {
+      const prevAgent = await User.findByPk(previousAgentId, { attributes: ['lyfeId'] });
+      if (prevAgent?.lyfeId) previousAgentLyfeId = prevAgent.lyfeId;
+    }
+
     dispatchEvent('lead.unassigned', () => ({
       event: 'lead.unassigned',
       timestamp: new Date().toISOString(),
@@ -465,7 +471,7 @@ export async function assignProspect(prospectId, agentId, user) {
           leadSource: prospect.leadSource,
           sourceMetadata: prospect.sourceMetadata
         },
-        previousAgentId
+        previousAgentId: previousAgentLyfeId
       }
     }));
 
@@ -517,7 +523,7 @@ export async function assignProspect(prospectId, agentId, user) {
         createdAt: prospect.createdAt
       },
       routing: {
-        agentExternalId: agent.id,
+        agentExternalId: agent.lyfeId || agent.id,
         agentName: [agent.firstName, agent.lastName].filter(Boolean).join(' '),
         agentEmail: agent.email,
         agentPhone: agent.phone
