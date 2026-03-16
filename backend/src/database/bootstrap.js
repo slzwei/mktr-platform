@@ -309,6 +309,16 @@ async function ensurePostgresIndexes() {
       logger.warn('Could not ensure prospects (campaignId, phone) unique index', { error: e.message });
     }
 
+    // Add call_bot to leadSource ENUM
+    try {
+      await sequelize.query(`
+        ALTER TYPE "enum_prospects_leadSource" ADD VALUE IF NOT EXISTS 'call_bot'
+      `);
+      logger.info('Ensured call_bot value in leadSource ENUM');
+    } catch (e) {
+      logger.warn('Could not add call_bot to leadSource ENUM', { error: e.message });
+    }
+
     try {
       await sequelize.query(
         `CREATE UNIQUE INDEX IF NOT EXISTS prospects_retell_call_id

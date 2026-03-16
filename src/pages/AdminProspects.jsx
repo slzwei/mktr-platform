@@ -73,6 +73,7 @@ function normalizeProspect(p) {
   let simplifiedSource = "other";
   if (source === "qr_code") simplifiedSource = "qr";
   else if (source === "website") simplifiedSource = "form";
+  else if (source === "call_bot") simplifiedSource = "call bot";
 
   const assignedAgentId = p.assignedAgentId || p.assigned_agent_id || "";
   const assignedAgentName = p.assignedAgent
