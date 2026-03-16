@@ -432,26 +432,53 @@ export async function deleteProspect(id, user) {
  * Assign a single prospect to an agent. Returns { prospect, agent } for email side-effect.
  */
 export async function assignProspect(prospectId, agentId, user) {
-  if (!agentId) {
-    throw new AppError('Agent ID is required', 400);
+  const prospect = await Prospect.findByPk(prospectId);
+  if (!prospect) {
+    throw new AppError('Prospect not found', 404);
   }
 
+  const previousAgentId = prospect.assignedAgentId;
+
+  // ── Unassign ──
+  if (!agentId) {
+    await prospect.update({ assignedAgentId: null });
+
+    await ProspectActivity.create({
+      prospectId: prospect.id,
+      type: 'assigned',
+      actorUserId: user?.id || null,
+      description: 'Unassigned from agent',
+      metadata: { previousAgentId }
+    });
+
+    // Fire lead.unassigned webhook
+    dispatchEvent('lead.unassigned', () => ({
+      event: 'lead.unassigned',
+      timestamp: new Date().toISOString(),
+      data: {
+        lead: {
+          externalId: prospect.id,
+          firstName: prospect.firstName,
+          lastName: prospect.lastName,
+          phone: prospect.phone,
+          email: prospect.email,
+          leadSource: prospect.leadSource,
+          sourceMetadata: prospect.sourceMetadata
+        },
+        previousAgentId
+      }
+    }));
+
+    return { prospect, agent: null, prospectWithCampaign: prospect };
+  }
+
+  // ── Assign ──
   const agent = await User.findOne({
-    where: {
-      id: agentId,
-      role: 'agent',
-      isActive: true
-    }
+    where: { id: agentId, role: 'agent', isActive: true }
   });
 
   if (!agent) {
     throw new AppError('Invalid or inactive agent', 400);
-  }
-
-  const prospect = await Prospect.findByPk(prospectId);
-
-  if (!prospect) {
-    throw new AppError('Prospect not found', 404);
   }
 
   await prospect.update({
@@ -459,22 +486,47 @@ export async function assignProspect(prospectId, agentId, user) {
     lastContactDate: new Date()
   });
 
-  // Activity: assigned
   await ProspectActivity.create({
     prospectId: prospect.id,
     type: 'assigned',
     actorUserId: user?.id || null,
-    description: `Assigned to agent ${agentId}`,
-    metadata: { assignedAgentId: agentId }
+    description: `Assigned to agent ${agent.firstName} ${agent.lastName}`.trim(),
+    metadata: { assignedAgentId: agentId, previousAgentId }
   });
 
-  // Deduct lead credit
   await deductLeadCredit(agentId).catch(err => console.error('Failed to deduct credit:', err));
 
-  // Reload prospect with campaign data for email
   const prospectWithCampaign = await Prospect.findByPk(prospect.id, {
     include: [{ association: 'campaign', attributes: ['id', 'name'] }]
   });
+
+  // Fire lead.assigned webhook
+  dispatchEvent('lead.assigned', () => ({
+    event: 'lead.assigned',
+    timestamp: new Date().toISOString(),
+    data: {
+      lead: {
+        externalId: prospect.id,
+        firstName: prospect.firstName,
+        lastName: prospect.lastName,
+        phone: prospect.phone,
+        email: prospect.email,
+        leadSource: prospect.leadSource,
+        tags: prospect.tags,
+        sourceMetadata: prospect.sourceMetadata,
+        createdAt: prospect.createdAt
+      },
+      routing: {
+        agentExternalId: agent.id,
+        agentName: [agent.firstName, agent.lastName].filter(Boolean).join(' '),
+        agentEmail: agent.email,
+        agentPhone: agent.phone
+      },
+      campaign: prospectWithCampaign?.campaign
+        ? { externalId: prospectWithCampaign.campaign.id, name: prospectWithCampaign.campaign.name }
+        : null
+    }
+  }));
 
   return { prospect, agent, prospectWithCampaign };
 }
