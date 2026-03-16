@@ -263,6 +263,8 @@ export async function processRetellCall(payload) {
           tags: ['retell', 'phone-call'],
           notes: prospect.notes,
           sourceMetadata: prospect.sourceMetadata,
+          recordingUrl: recording_url || null,
+          transcript: prospect.notes,
           createdAt: prospect.createdAt
         },
         source: 'retell_webhook',
