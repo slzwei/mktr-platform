@@ -1,7 +1,8 @@
 import crypto from 'crypto';
-import { sequelize, Prospect, IdempotencyKey } from '../models/index.js';
+import { sequelize, Prospect, IdempotencyKey, User } from '../models/index.js';
 import ProspectActivity from '../models/ProspectActivity.js';
 import { dispatchEvent } from './webhookService.js';
+import { sendLeadAssignmentEmail } from './mailer.js';
 import { logger } from '../utils/logger.js';
 
 const IDEMPOTENCY_SCOPE = 'retell:call';
@@ -198,6 +199,15 @@ export async function processRetellCall(payload) {
         campaign: campaignId ? { externalId: campaignId } : null
       }
     }));
+
+    // ── Email notification (fire-and-forget) ──
+    // System Agent has email = 'system@mktr.sg', mailer redirects to shawnleejob@gmail.com
+    const systemAgent = await User.findOne({ where: { email: 'system@mktr.sg' } });
+    if (systemAgent) {
+      sendLeadAssignmentEmail(systemAgent, prospect).catch(err =>
+        logger.warn('[Retell] Failed to send lead assignment email', { error: err.message })
+      );
+    }
 
     logger.info('[Retell] Prospect created from call', {
       call_id,
