@@ -350,9 +350,13 @@ export default function AdminProspects() {
                                 className="font-medium text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors text-left"
                               >
                                 {prospect.name}
-                                {prospect.assigned_agent_name && (
+                                {prospect.assigned_agent_name ? (
                                   <span className="block text-xs text-gray-400 dark:text-gray-500 font-normal mt-0.5">
                                     Agent: {prospect.assigned_agent_name}
+                                  </span>
+                                ) : (
+                                  <span className="block text-xs text-amber-500 dark:text-amber-400 font-normal mt-0.5">
+                                    Unassigned — click to assign
                                   </span>
                                 )}
                               </button>
