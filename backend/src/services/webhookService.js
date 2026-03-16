@@ -3,7 +3,7 @@ import { Op } from 'sequelize';
 import { WebhookSubscriber, WebhookDelivery } from '../models/index.js';
 import { logger } from '../utils/logger.js';
 
-const AUTO_DISABLE_THRESHOLD = 10;
+const AUTO_DISABLE_THRESHOLD = 50;
 
 /**
  * Dispatch an event to all active webhook subscribers.
