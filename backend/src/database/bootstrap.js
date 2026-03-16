@@ -39,6 +39,7 @@ export async function bootstrapDatabase() {
     logger.info('System Agent ready', { systemId });
   });
   await safeRun('Lyfe webhook subscriber', ensureLyfeWebhookSubscriber);
+  await safeRun('Retell campaigns', ensureRetellCampaigns);
 
   await safeRun('Migrations', runMigrations);
 
@@ -351,4 +352,60 @@ async function ensureLyfeWebhookSubscriber() {
   });
 
   logger.info('Lyfe webhook subscriber registered', { url });
+}
+
+/**
+ * Auto-create campaigns for Retell AI agents.
+ * Reads RETELL_AGENTS env var (JSON array) to know which agents to create campaigns for.
+ * Format: RETELL_AGENTS=[{"agentId":"agent_xxx","name":"Luggage - CPF CareShield Life"}]
+ * Falls back to a default if not set.
+ */
+async function ensureRetellCampaigns() {
+  let retellAgents;
+  try {
+    retellAgents = JSON.parse(process.env.RETELL_AGENTS || '[]');
+  } catch {
+    retellAgents = [];
+  }
+
+  // Default: Luggage Redemption agent (always ensure this exists)
+  if (retellAgents.length === 0) {
+    retellAgents = [{
+      agentId: 'agent_58b8bbdfb8920ce49bb2750b86',
+      name: 'Luggage - CPF CareShield Life'
+    }];
+  }
+
+  const { initSystemAgent } = await import('../services/systemAgent.js');
+  const systemAgentId = await initSystemAgent();
+
+  for (const agent of retellAgents) {
+    const campaignName = `[Retell] ${agent.name}`;
+
+    const existing = await Campaign.findOne({ where: { name: campaignName } });
+
+    if (existing) {
+      // Ensure it stays active
+      if (!existing.is_active) {
+        await existing.update({ is_active: true });
+        logger.info('Retell campaign reactivated', { name: campaignName });
+      } else {
+        logger.debug('Retell campaign already exists', { name: campaignName });
+      }
+      continue;
+    }
+
+    await Campaign.create({
+      name: campaignName,
+      type: 'lead_generation',
+      status: 'active',
+      is_active: true,
+      description: `Auto-created campaign for Retell AI agent: ${agent.name}. Leads from successful phone calls are captured here automatically.`,
+      createdBy: systemAgentId,
+      min_age: 30,
+      max_age: 65
+    });
+
+    logger.info('Retell campaign created', { name: campaignName, retellAgentId: agent.agentId });
+  }
 }
