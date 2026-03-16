@@ -210,7 +210,6 @@ const Prospect = sequelize.define('Prospect', {
   retellCallId: {
     type: DataTypes.STRING,
     allowNull: true,
-    unique: true,
     comment: 'Retell AI call_id for idempotent webhook processing'
   }
 }, {
@@ -219,6 +218,7 @@ const Prospect = sequelize.define('Prospect', {
     {
       fields: ['email']
     },
+    // unique index on retellCallId is managed in ensurePostgresIndexes (bootstrap.js)
     // unique constraint on (campaignId, phone) will be enforced via a partial index in Postgres at startup
     // to allow safe de-duplication on existing data before creating the index.
     {

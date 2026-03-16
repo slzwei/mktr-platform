@@ -285,7 +285,7 @@ async function ensurePostgresColumns() {
       WHERE table_name = 'prospects' AND column_name = 'retellCallId'
     `);
     if (retellColResult.length === 0) {
-      await sequelize.query('ALTER TABLE prospects ADD COLUMN "retellCallId" VARCHAR(255) UNIQUE');
+      await sequelize.query('ALTER TABLE prospects ADD COLUMN "retellCallId" VARCHAR(255)');
       logger.info('Added retellCallId column to prospects (Postgres)');
     }
   } catch (e) {
@@ -307,6 +307,17 @@ async function ensurePostgresIndexes() {
       logger.info('Ensured unique (campaignId, phone) index on prospects');
     } catch (e) {
       logger.warn('Could not ensure prospects (campaignId, phone) unique index', { error: e.message });
+    }
+
+    try {
+      await sequelize.query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS prospects_retell_call_id
+         ON prospects ("retellCallId")
+         WHERE "retellCallId" IS NOT NULL`
+      );
+      logger.info('Ensured unique retellCallId index on prospects');
+    } catch (e) {
+      logger.warn('Could not ensure prospects retellCallId unique index', { error: e.message });
     }
   } catch (e) {
     logger.warn('Could not ensure uniq_car_qr index', { error: e.message });
