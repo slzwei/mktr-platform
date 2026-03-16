@@ -62,14 +62,6 @@ export function verifyRetellSignature(rawBody, signatureHeader) {
     } catch { /* length mismatch */ }
   }
 
-  logger.warn('[Retell] Signature mismatch debug', {
-    receivedSig: signature?.substring(0, 20) + '...',
-    candidates: candidates.map(c => c.substring(0, 20) + '...'),
-    timestamp,
-    bodyLen: rawBody.length,
-    secretPrefix: secret.substring(0, 8) + '...'
-  });
-
   return false;
 }
 

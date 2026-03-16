@@ -13,8 +13,8 @@ const router = Router();
  * Verifies HMAC signature, filters for successful calls,
  * and creates a Prospect in MKTR.
  *
- * The raw body is attached by the rawBodyCapture middleware
- * registered in server_internal.js.
+ * Retell sends: { event: "call_ended", call: { call_id, ... } }
+ * Signature format: x-retell-signature: v=<timestamp>,d=<hmac>
  */
 router.post('/webhook', async (req, res) => {
   try {
@@ -32,27 +32,15 @@ router.post('/webhook', async (req, res) => {
       return res.status(401).json({ error: 'Missing signature' });
     }
 
-    const sigValid = verifyRetellSignature(rawBody, signature);
-    if (!sigValid) {
-      // Log but allow through while debugging signature format
-      logger.warn('[Retell] Signature verification failed, allowing through for debug', {
-        ip: req.ip,
-        sigHeader: signature?.substring(0, 30)
-      });
+    if (!verifyRetellSignature(rawBody, signature)) {
+      logger.warn('[Retell] Invalid webhook signature', { ip: req.ip });
+      return res.status(401).json({ error: 'Invalid signature' });
     }
 
-    // ── Process the call ──
+    // ── Extract call data ──
     const payload = req.body;
 
-    // Debug: log payload structure
-    logger.info('[Retell] Webhook payload keys', {
-      keys: Object.keys(payload),
-      event: payload.event,
-      call_id: payload.call_id,
-      hasData: !!payload.data
-    });
-
-    // Retell may wrap payload as { event, call } or send flat
+    // Retell wraps as { event, call: {...} } or sends flat call object
     const callData = payload.call || payload.data || payload;
     const callId = callData.call_id || payload.call_id;
 
