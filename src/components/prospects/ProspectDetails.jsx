@@ -7,8 +7,9 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { format } from "date-fns";
-import { Clock, User, Edit2, ChevronLeft, UserPlus, Phone, Mail, Tag, Building } from "lucide-react";
+import { Clock, User, Edit2, ChevronLeft, UserPlus, Phone, Mail, Tag, Building, Headphones } from "lucide-react";
 import { Prospect as ProspectEntity, User as UserEntity } from "@/api/entities";
+import { apiClient } from "@/api/client";
 import ContactInfoCard from "@/components/prospects/details/ContactInfoCard";
 import ActivityTimeline from "@/components/prospects/details/ActivityTimeline";
 
@@ -37,6 +38,7 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
   const [agents, setAgents] = useState([]);
   const [assignedAgentId, setAssignedAgentId] = useState(prospect.assigned_agent_id || "");
   const [isAssigning, setIsAssigning] = useState(false);
+  const [recordingUrl, setRecordingUrl] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -56,6 +58,14 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
         if (full?.lastName) setLastName(full.lastName);
         if (full?.email) setEmail(full.email);
         if (full?.phone) setPhone(full.phone);
+
+        // Fetch recording URL for Retell prospects
+        if (full?.sourceMetadata?.retellCallId) {
+          try {
+            const rec = await apiClient.get(`/retell/recording/${prospect.id}`);
+            if (mounted && rec.data?.recordingUrl) setRecordingUrl(rec.data.recordingUrl);
+          } catch (_) { /* no recording available */ }
+        }
       } catch (_) { /* ignore */ }
     })();
     return () => { mounted = false; };
@@ -243,6 +253,30 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
               </div>
             </CardContent>
           </Card>
+
+          {/* Call Recording */}
+          {recordingUrl && (
+            <Card className="border-gray-200/50 dark:border-gray-700/50 shadow-sm">
+              <CardContent className="p-5 space-y-3">
+                <Label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-2">
+                  <Headphones className="w-3.5 h-3.5" />
+                  Call Recording
+                </Label>
+                <audio controls preload="metadata" className="w-full h-10">
+                  <source src={recordingUrl} type="audio/wav" />
+                  Your browser does not support audio playback.
+                </audio>
+                <p className="text-xs text-gray-400 dark:text-gray-500">
+                  {details?.sourceMetadata?.durationMs
+                    ? `Duration: ${Math.round(details.sourceMetadata.durationMs / 1000)}s`
+                    : ''}
+                  {details?.sourceMetadata?.sentiment
+                    ? ` · Sentiment: ${details.sourceMetadata.sentiment}`
+                    : ''}
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Notes */}
           <Card className="border-gray-200/50 dark:border-gray-700/50 shadow-sm">
