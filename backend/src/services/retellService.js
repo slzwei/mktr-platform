@@ -1,6 +1,7 @@
 import crypto from 'crypto';
-import { sequelize, Prospect, IdempotencyKey, User } from '../models/index.js';
+import { sequelize, Prospect, IdempotencyKey, User, Campaign } from '../models/index.js';
 import ProspectActivity from '../models/ProspectActivity.js';
+import { resolveAssignedAgentId } from './systemAgent.js';
 import { dispatchEvent } from './webhookService.js';
 import { sendLeadAssignmentEmail } from './mailer.js';
 import { logger } from '../utils/logger.js';
@@ -31,6 +32,40 @@ export function verifyRetellSignature(rawBody, signature) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Resolve MKTR campaign for a Retell agent.
+ * Looks up by naming convention: "[Retell] {agent_name}" (auto-created at startup).
+ * Falls back to env-based RETELL_CAMPAIGN_MAP override.
+ */
+async function resolveRetellCampaign(retellAgentId, retellAgentName) {
+  if (!retellAgentId) return null;
+
+  // Check env-based mapping first (override)
+  const campaignMap = process.env.RETELL_CAMPAIGN_MAP;
+  if (campaignMap) {
+    for (const pair of campaignMap.split(',').map(p => p.trim())) {
+      const [rid, cid] = pair.split(':');
+      if (rid === retellAgentId) {
+        return await Campaign.findByPk(cid);
+      }
+    }
+  }
+
+  // DB lookup: find campaign by naming convention [Retell] {agent_name}
+  if (retellAgentName) {
+    const campaign = await Campaign.findOne({
+      where: { name: `[Retell] ${retellAgentName}`, is_active: true }
+    });
+    if (campaign) return campaign;
+  }
+
+  // Fallback: any [Retell] campaign matching this agent
+  const allRetell = await Campaign.findAll({
+    where: { is_active: true },
+  });
+  return allRetell.find(c => c.name?.startsWith('[Retell]')) || null;
 }
 
 /**
@@ -106,18 +141,18 @@ export async function processRetellCall(payload) {
     transcript || '(no transcript)'
   ];
 
-  // ── Campaign mapping (from env: RETELL_CAMPAIGN_MAP=agentId:campaignUUID,…) ──
-  let campaignId = null;
-  const campaignMap = process.env.RETELL_CAMPAIGN_MAP;
-  if (campaignMap && agent_id) {
-    const pairs = campaignMap.split(',').map(p => p.trim());
-    for (const pair of pairs) {
-      const [retellAgentId, mktrCampaignId] = pair.split(':');
-      if (retellAgentId === agent_id) {
-        campaignId = mktrCampaignId;
-        break;
-      }
-    }
+  // ── Resolve campaign and agent assignment ──
+  const campaign = await resolveRetellCampaign(agent_id, agent_name);
+  const campaignId = campaign?.id || null;
+
+  let assignedAgentId = null;
+  if (campaignId) {
+    assignedAgentId = await resolveAssignedAgentId({
+      reqUser: null,
+      requestedAgentId: null,
+      campaignId,
+      qrTagId: null
+    });
   }
 
   // ── Create prospect in a transaction (with idempotency key) ──
@@ -135,6 +170,7 @@ export async function processRetellCall(payload) {
       notes: noteLines.join('\n'),
       tags: ['retell', 'phone-call'],
       campaignId,
+      assignedAgentId,
       preferences: {
         contactMethod: 'phone',
         contactTime: '',
@@ -163,7 +199,8 @@ export async function processRetellCall(payload) {
       metadata: {
         source: 'retell_webhook',
         callId: call_id,
-        sentiment: call_analysis.user_sentiment
+        sentiment: call_analysis.user_sentiment,
+        campaignName: campaign?.name || null
       }
     }, { transaction: t });
 
@@ -196,15 +233,20 @@ export async function processRetellCall(payload) {
           createdAt: prospect.createdAt
         },
         source: 'retell_webhook',
-        campaign: campaignId ? { externalId: campaignId } : null
+        campaign: campaign ? { externalId: campaign.id, name: campaign.name } : null
       }
     }));
 
     // ── Email notification (fire-and-forget) ──
-    // System Agent has email = 'system@mktr.sg', mailer redirects to shawnleejob@gmail.com
-    const systemAgent = await User.findOne({ where: { email: 'system@mktr.sg' } });
-    if (systemAgent) {
-      sendLeadAssignmentEmail(systemAgent, prospect).catch(err =>
+    const notifyAgent = assignedAgentId
+      ? await User.findByPk(assignedAgentId)
+      : await User.findOne({ where: { email: 'system@mktr.sg' } });
+
+    if (notifyAgent) {
+      const prospectWithCampaign = campaign
+        ? Object.assign(prospect.toJSON(), { campaign: { id: campaign.id, name: campaign.name } })
+        : prospect;
+      sendLeadAssignmentEmail(notifyAgent, prospectWithCampaign).catch(err =>
         logger.warn('[Retell] Failed to send lead assignment email', { error: err.message })
       );
     }
@@ -212,6 +254,8 @@ export async function processRetellCall(payload) {
     logger.info('[Retell] Prospect created from call', {
       call_id,
       prospectId: prospect.id,
+      campaignId,
+      assignedAgentId,
       phone: to_number ? to_number.slice(0, 6) + '****' : 'N/A'
     });
 
