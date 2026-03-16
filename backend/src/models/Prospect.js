@@ -61,7 +61,7 @@ const Prospect = sequelize.define('Prospect', {
     }
   },
   leadSource: {
-    type: DataTypes.ENUM('qr_code', 'website', 'referral', 'social_media', 'advertisement', 'direct', 'other'),
+    type: DataTypes.ENUM('qr_code', 'website', 'referral', 'social_media', 'advertisement', 'direct', 'call_bot', 'other'),
     allowNull: false
   },
   leadStatus: {

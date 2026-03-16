@@ -47,7 +47,7 @@ function buildCallPayload(overrides = {}) {
 
 describe('POST /api/retell/webhook', () => {
   afterEach(async () => {
-    await Prospect.destroy({ where: { leadSource: 'direct' }, force: true })
+    await Prospect.destroy({ where: { leadSource: 'call_bot' }, force: true })
     await IdempotencyKey.destroy({ where: { scope: 'retell:call' } })
   })
 
@@ -91,8 +91,8 @@ describe('POST /api/retell/webhook', () => {
     expect(prospect.firstName).toBe('John')
     expect(prospect.lastName).toBe('Doe')
     expect(prospect.phone).toBe('+6591234567')
-    expect(prospect.leadSource).toBe('direct')
-    expect(prospect.leadStatus).toBe('contacted')
+    expect(prospect.leadSource).toBe('call_bot')
+    expect(prospect.leadStatus).toBe('new')
     expect(prospect.priority).toBe('high')
     expect(prospect.retellCallId).toBe(payload.call_id)
     expect(prospect.sourceMetadata.retellCallId).toBe(payload.call_id)
