@@ -45,18 +45,32 @@ export function verifyRetellSignature(rawBody, signatureHeader) {
     }
   }
 
-  // Retell format: HMAC of "<timestamp>.<body>"
-  const payload = `${timestamp}.${rawBody.toString()}`;
-  const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  // Try multiple signing approaches to find what Retell uses
+  const bodyStr = rawBody.toString();
+  const candidates = [
+    crypto.createHmac('sha256', secret).update(`${timestamp}.${bodyStr}`).digest('hex'),
+    crypto.createHmac('sha256', secret).update(bodyStr).digest('hex'),
+    crypto.createHmac('sha256', secret).update(rawBody).digest('hex'),
+    crypto.createHmac('sha256', secret).update(`${timestamp}${bodyStr}`).digest('hex'),
+  ];
 
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(expected, 'hex'),
-      Buffer.from(signature, 'hex')
-    );
-  } catch {
-    return false;
+  for (const expected of candidates) {
+    try {
+      if (crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'))) {
+        return true;
+      }
+    } catch { /* length mismatch */ }
   }
+
+  logger.warn('[Retell] Signature mismatch debug', {
+    receivedSig: signature?.substring(0, 20) + '...',
+    candidates: candidates.map(c => c.substring(0, 20) + '...'),
+    timestamp,
+    bodyLen: rawBody.length,
+    secretPrefix: secret.substring(0, 8) + '...'
+  });
+
+  return false;
 }
 
 /**
