@@ -87,7 +87,8 @@ export async function processRetellCall(payload) {
     duration_ms,
     disconnection_reason,
     agent_id,
-    agent_name
+    agent_name,
+    recording_url
   } = payload;
 
   // ── Guard: only process successful, ended calls ──
@@ -186,7 +187,8 @@ export async function processRetellCall(payload) {
         durationMs: duration_ms,
         disconnectionReason: disconnection_reason,
         sentiment: call_analysis.user_sentiment,
-        callSuccessful: call_analysis.call_successful
+        callSuccessful: call_analysis.call_successful,
+        recordingUrl: recording_url || null
       },
       retellCallId: call_id
     }, { transaction: t });
