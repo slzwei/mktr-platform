@@ -47,6 +47,7 @@ import vehicleRoutes from './routes/vehicles.js'; // Added for tablet pairing
 import webhookAdminRoutes from './routes/webhookAdmin.js';
 import agentGroupRoutes from './routes/agentGroups.js';
 import lyfeAgentRoutes from './routes/lyfeAgents.js';
+import retellRoutes from './routes/retell.js';
 import { optionalAuth } from './middleware/auth.js';
 import { logger } from './utils/logger.js';
 import swaggerUi from 'swagger-ui-express';
@@ -146,7 +147,15 @@ export const init = async (app) => {
   app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
 
   // Body parsing middleware
-  app.use(express.json({ limit: '10mb' }));
+  // The verify callback captures the raw body for webhook signature verification (Retell, Stripe, etc.)
+  app.use(express.json({
+    limit: '10mb',
+    verify: (req, _res, buf) => {
+      if (req.originalUrl.startsWith('/api/retell/')) {
+        req.rawBody = buf;
+      }
+    }
+  }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
@@ -205,6 +214,7 @@ export const init = async (app) => {
   app.use('/api/admin/webhooks', webhookAdminRoutes);
   app.use('/api/admin/agent-groups', agentGroupRoutes);
   app.use('/api/lyfe', lyfeAgentRoutes);
+  app.use('/api/retell', retellRoutes);
 
 
   // Phase C: Adtech Manifest + Beacons (behind flags)

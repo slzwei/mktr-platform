@@ -18,6 +18,7 @@ export function validateEnv() {
     'CORS_ORIGIN',
     'IP_HASH_SALT',
     'ATTRIB_SECRET',
+    'RETELL_WEBHOOK_SECRET',
   ];
 
   const missing = required.filter(key => !process.env[key]);

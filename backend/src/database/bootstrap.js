@@ -220,6 +220,18 @@ async function ensureSqliteColumns() {
   } catch (e) {
     logger.warn('Could not ensure vehicle columns on SQLite', { error: e.message });
   }
+
+  // Prospects: retellCallId column
+  try {
+    const [prospectCols] = await sequelize.query('PRAGMA table_info(prospects)');
+    const hasRetellCallId = Array.isArray(prospectCols) && prospectCols.some(c => c.name === 'retellCallId');
+    if (!hasRetellCallId) {
+      await sequelize.query('ALTER TABLE prospects ADD COLUMN retellCallId TEXT');
+      logger.info('Added retellCallId column to prospects');
+    }
+  } catch (e) {
+    logger.warn('Could not ensure prospect retellCallId on SQLite', { error: e.message });
+  }
 }
 
 async function ensurePostgresColumns() {
@@ -263,6 +275,17 @@ async function ensurePostgresColumns() {
       logger.info('Applying Postgres migration: Adding volume to vehicles...');
       await sequelize.query('ALTER TABLE vehicles ADD COLUMN "volume" INTEGER DEFAULT 0');
       logger.info('Added volume column to vehicles (Postgres)');
+    }
+
+    // Prospects: retellCallId column
+    const [retellColResult] = await sequelize.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'prospects' AND column_name = 'retellCallId'
+    `);
+    if (retellColResult.length === 0) {
+      await sequelize.query('ALTER TABLE prospects ADD COLUMN "retellCallId" VARCHAR(255) UNIQUE');
+      logger.info('Added retellCallId column to prospects (Postgres)');
     }
   } catch (e) {
     logger.warn('Postgres migration failed', { error: e.message });
