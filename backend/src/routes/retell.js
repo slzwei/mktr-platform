@@ -44,11 +44,23 @@ router.post('/webhook', async (req, res) => {
     // ── Process the call ──
     const payload = req.body;
 
-    if (!payload.call_id) {
+    // Debug: log payload structure
+    logger.info('[Retell] Webhook payload keys', {
+      keys: Object.keys(payload),
+      event: payload.event,
+      call_id: payload.call_id,
+      hasData: !!payload.data
+    });
+
+    // Retell may wrap payload as { event, call } or send flat
+    const callData = payload.call || payload.data || payload;
+    const callId = callData.call_id || payload.call_id;
+
+    if (!callId) {
       return res.status(400).json({ error: 'Missing call_id' });
     }
 
-    const result = await processRetellCall(payload);
+    const result = await processRetellCall(callData);
 
     return res.status(200).json({
       success: true,
