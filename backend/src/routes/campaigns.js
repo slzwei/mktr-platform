@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
+import { authenticateToken, requireAgentOrAdmin, requireAdmin } from '../middleware/auth.js';
 import * as campaignController from '../controllers/campaignController.js';
 
 export const meta = {
@@ -82,12 +82,12 @@ router.patch('/:id/metrics', authenticateToken, requireAgentOrAdmin, campaignCon
 router.post('/:id/duplicate', authenticateToken, requireAgentOrAdmin, campaignController.duplicateCampaign);
 
 // Archive campaign
-router.patch('/:id/archive', authenticateToken, campaignController.archiveCampaign);
+router.patch('/:id/archive', authenticateToken, requireAgentOrAdmin, campaignController.archiveCampaign);
 
 // Restore campaign from archive
-router.patch('/:id/restore', authenticateToken, campaignController.restoreCampaign);
+router.patch('/:id/restore', authenticateToken, requireAgentOrAdmin, campaignController.restoreCampaign);
 
 // Permanently delete campaign
-router.delete('/:id/permanent', authenticateToken, campaignController.permanentlyDeleteCampaign);
+router.delete('/:id/permanent', authenticateToken, requireAdmin, campaignController.permanentlyDeleteCampaign);
 
 export default router;

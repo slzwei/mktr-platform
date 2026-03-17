@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
 import * as prospectController from '../controllers/prospectController.js';
@@ -12,11 +13,20 @@ export const meta = {
 
 const router = express.Router();
 
+// Rate limiter for public lead capture endpoint
+const leadCaptureLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many submissions from this IP, please try again later.'
+});
+
 // Get all prospects
 router.get('/', authenticateToken, prospectController.listProspects);
 
-// Create new prospect (lead capture)
-router.post('/', validate(schemas.prospectCreate), prospectController.createProspect);
+// Create new prospect (lead capture) — rate-limited, no auth required
+router.post('/', leadCaptureLimit, validate(schemas.prospectCreate), prospectController.createProspect);
 
 // Get prospect by ID
 router.get('/:id', authenticateToken, prospectController.getProspect);

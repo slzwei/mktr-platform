@@ -1,7 +1,13 @@
-import React from "react";
+import { useMemo } from "react";
+import DOMPurify from "dompurify";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function MarketingConsentDialog({ open, onOpenChange, content }) {
+  const sanitizedContent = useMemo(
+    () => content ? DOMPurify.sanitize(content) : null,
+    [content]
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[92vw] max-w-md sm:max-w-lg max-h-[80vh] overflow-y-auto p-5">
@@ -9,8 +15,8 @@ export default function MarketingConsentDialog({ open, onOpenChange, content }) 
           <DialogTitle>Marketing Consent – MKTR PTE. LTD. (UEN: 202507548M)</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 text-sm text-gray-700 leading-6 pr-1">
-          {content ? (
-            <div dangerouslySetInnerHTML={{ __html: content }} className="space-y-4" />
+          {sanitizedContent ? (
+            <div dangerouslySetInnerHTML={{ __html: sanitizedContent }} className="space-y-4" />
           ) : (
             <>
               <p>

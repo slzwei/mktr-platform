@@ -36,9 +36,8 @@ export async function register({ email, password, firstName, lastName, fullName,
  * @returns {{ user: object, token: string }}
  */
 export async function login(email, password) {
-  const user = await User.findOne({
-    where: { email },
-    attributes: { include: ['password'] }
+  const user = await User.scope('withPassword').findOne({
+    where: { email }
   });
 
   if (!user) {
@@ -78,9 +77,7 @@ export async function changePassword(userId, currentPassword, newPassword) {
     throw new AppError('New password must be at least 8 characters long', 400);
   }
 
-  const user = await User.findByPk(userId, {
-    attributes: { include: ['password'] }
-  });
+  const user = await User.scope('withPassword').findByPk(userId);
 
   const isValidPassword = await user.comparePassword(currentPassword);
   if (!isValidPassword) {

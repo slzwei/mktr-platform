@@ -8,10 +8,15 @@ dotenv.config();
 import { sequelize } from '../src/database/connection.js';
 import WebhookSubscriber from '../src/models/WebhookSubscriber.js';
 
+if (!process.env.LYFE_WEBHOOK_URL || !process.env.LYFE_WEBHOOK_SECRET) {
+  console.error('Missing required env vars: LYFE_WEBHOOK_URL, LYFE_WEBHOOK_SECRET');
+  process.exit(1);
+}
+
 const LYFE_WEBHOOK = {
   name: 'Lyfe App',
-  url: 'https://nvtedkyjwulkzjeoqjgx.supabase.co/functions/v1/receive-mktr-lead',
-  secret: 'f53c4475013b6252870ad1614128503b89a75e0b2ce5bb60e162b11b4ae75ada',
+  url: process.env.LYFE_WEBHOOK_URL,
+  secret: process.env.LYFE_WEBHOOK_SECRET,
   events: ['lead.created'],
   enabled: true,
   description: 'Push new leads to Lyfe mobile app for agent follow-up'
