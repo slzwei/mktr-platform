@@ -1,8 +1,10 @@
 import express from 'express';
 import { authenticateDevice } from '../middleware/deviceAuth.js';
 import { pushService } from '../services/pushService.js';
-import { Impression, Device, Campaign } from '../models/index.js';
+import { Impression, Campaign } from '../models/index.js';
 import rateLimit from 'express-rate-limit';
+
+export const meta = { path: '/api/adtech', flag: 'BEACONS_ENABLED', flagDefault: 'true' };
 
 const router = express.Router();
 
