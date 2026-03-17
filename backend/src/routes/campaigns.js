@@ -1,7 +1,13 @@
 import express from 'express';
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
-import * as campaignService from '../services/campaignService.js';
+import * as campaignController from '../controllers/campaignController.js';
+
+export const meta = {
+  mounts: [
+    { path: '/api/campaigns' },
+    { path: '/api/adtech/campaigns', flag: 'ENABLE_DOMAIN_PREFIXES' },
+  ],
+};
 
 const router = express.Router();
 
@@ -28,11 +34,7 @@ const router = express.Router();
  *       200:
  *         description: List of campaigns
  */
-router.get('/', authenticateToken, asyncHandler(async (req, res) => {
-  const data = await campaignService.listCampaigns(req.user, req.query, req);
-
-  res.json({ success: true, data });
-}));
+router.get('/', authenticateToken, campaignController.listCampaigns);
 
 /**
  * @openapi
@@ -59,97 +61,33 @@ router.get('/', authenticateToken, asyncHandler(async (req, res) => {
  *       403:
  *         description: Agent or admin role required
  */
-router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
-  const campaign = await campaignService.createCampaign(req.body, req.user);
-
-  res.status(201).json({
-    success: true,
-    message: 'Campaign created successfully',
-    data: { campaign }
-  });
-}));
+router.post('/', authenticateToken, requireAgentOrAdmin, campaignController.createCampaign);
 
 // Get campaign by ID
-router.get('/:id', authenticateToken, asyncHandler(async (req, res) => {
-  const campaign = await campaignService.getCampaign(req.params.id, req);
-
-  res.json({ success: true, data: { campaign } });
-}));
+router.get('/:id', authenticateToken, campaignController.getCampaign);
 
 // Update campaign
-router.put('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
-  const campaign = await campaignService.updateCampaign(req.params.id, req.body, req);
-
-  res.json({
-    success: true,
-    message: 'Campaign updated successfully',
-    data: { campaign }
-  });
-}));
+router.put('/:id', authenticateToken, requireAgentOrAdmin, campaignController.updateCampaign);
 
 // Delete campaign (archive)
-router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
-  await campaignService.archiveCampaign(req.params.id, req);
-
-  res.json({ success: true, message: 'Campaign archived successfully' });
-}));
+router.delete('/:id', authenticateToken, requireAgentOrAdmin, campaignController.deleteCampaign);
 
 // Get campaign analytics
-router.get('/:id/analytics', authenticateToken, asyncHandler(async (req, res) => {
-  const analytics = await campaignService.getCampaignAnalytics(req.params.id, req);
-
-  res.json({ success: true, data: { analytics } });
-}));
+router.get('/:id/analytics', authenticateToken, campaignController.getCampaignAnalytics);
 
 // Update campaign metrics
-router.patch('/:id/metrics', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
-  const campaign = await campaignService.updateCampaignMetrics(req.params.id, req.body.metrics, req);
-
-  res.json({
-    success: true,
-    message: 'Campaign metrics updated successfully',
-    data: { campaign }
-  });
-}));
+router.patch('/:id/metrics', authenticateToken, requireAgentOrAdmin, campaignController.updateCampaignMetrics);
 
 // Duplicate campaign
-router.post('/:id/duplicate', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
-  const campaign = await campaignService.duplicateCampaign(req.params.id, req.body, req);
-
-  res.status(201).json({
-    success: true,
-    message: 'Campaign duplicated successfully',
-    data: { campaign }
-  });
-}));
+router.post('/:id/duplicate', authenticateToken, requireAgentOrAdmin, campaignController.duplicateCampaign);
 
 // Archive campaign
-router.patch('/:id/archive', authenticateToken, asyncHandler(async (req, res) => {
-  const campaign = await campaignService.archiveCampaign(req.params.id, req);
-
-  res.json({
-    success: true,
-    message: 'Campaign archived successfully',
-    data: { campaign }
-  });
-}));
+router.patch('/:id/archive', authenticateToken, campaignController.archiveCampaign);
 
 // Restore campaign from archive
-router.patch('/:id/restore', authenticateToken, asyncHandler(async (req, res) => {
-  const campaign = await campaignService.restoreCampaign(req.params.id, req);
-
-  res.json({
-    success: true,
-    message: 'Campaign restored successfully',
-    data: { campaign }
-  });
-}));
+router.patch('/:id/restore', authenticateToken, campaignController.restoreCampaign);
 
 // Permanently delete campaign
-router.delete('/:id/permanent', authenticateToken, asyncHandler(async (req, res) => {
-  await campaignService.permanentlyDeleteCampaign(req.params.id, req);
-
-  res.json({ success: true, message: 'Campaign permanently deleted' });
-}));
+router.delete('/:id/permanent', authenticateToken, campaignController.permanentlyDeleteCampaign);
 
 export default router;

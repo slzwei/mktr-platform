@@ -27,11 +27,9 @@ export const handleWebhook = asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Missing signature' });
   }
 
-  // Verify signature -- log warning but allow through if verification fails.
-  // Retell's signing format is not fully documented; idempotency keys
-  // and call_id uniqueness provide the real protection against forgery.
   if (!verifyRetellSignature(rawBody, signature)) {
     logger.warn('[Retell] Signature verification failed', { ip: req.ip });
+    return res.status(401).json({ error: 'Invalid webhook signature' });
   }
 
   // -- Extract call data --
