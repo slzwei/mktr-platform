@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { GOOGLE_CLIENT_ID } from "@/config/google";
 import { getPostAuthRedirectPath } from "@/lib/utils";
@@ -24,7 +23,6 @@ export default function CustomerLogin() {
     // If we have a return URL in the state, save it to session storage
     // This ensures it persists if the user clicks "Continue with Google"
     if (location.state?.from) {
-      console.log('Login: Saving return URL to session storage:', location.state.from);
       sessionStorage.setItem('mktr_auth_return_url', JSON.stringify(location.state.from));
     }
   }, [location]);
@@ -202,7 +200,7 @@ export default function CustomerLogin() {
 
               <div className="text-center pt-4 border-t border-zinc-200">
                 <p className="text-sm text-zinc-600 mb-3">New to MKTR?</p>
-                <Link to={createPageUrl("Contact")}>
+                <Link to={"/Contact"}>
                   <Button className="w-full bg-black text-white hover:bg-zinc-800">
                     Contact Us to Get Started
                   </Button>

@@ -1,6 +1,1 @@
-
-
-
-export function createPageUrl(pageName: string) {
-    return '/' + pageName;
-}
+// Shared utilities — createPageUrl removed (was a no-op wrapper around "/" + pageName).

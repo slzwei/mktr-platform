@@ -7,7 +7,6 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import {
   Clock,
   ArrowRight,
@@ -21,24 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-const statusStyles = {
-  new: "bg-blue-50 text-blue-700 border-blue-200",
-  contacted: "bg-amber-50 text-amber-700 border-amber-200",
-  meeting: "bg-violet-50 text-violet-700 border-violet-200",
-  close_won: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  close_lost: "bg-rose-50 text-rose-700 border-rose-200",
-  rejected: "bg-slate-50 text-slate-700 border-slate-200"
-};
-
-const statusLabels = {
-  new: "New",
-  contacted: "Contacted",
-  meeting: "Meeting Set",
-  close_won: "Won",
-  close_lost: "Lost",
-  rejected: "Rejected"
-};
+import { statusStyles, statusLabels } from "@/constants/statusConfig";
 
 export default function RecentActivity({ prospects }) {
   const [search, setSearch] = useState('');
@@ -70,7 +52,7 @@ export default function RecentActivity({ prospects }) {
               Showing {recentProspects.length} of {prospects.length} prospects
             </p>
           </div>
-          <Link to={createPageUrl("AdminProspects")}>
+          <Link to={"/AdminProspects"}>
             <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
               View All
               <ArrowRight className="w-4 h-4 ml-1" />
@@ -153,7 +135,7 @@ export default function RecentActivity({ prospects }) {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem asChild>
-                            <Link to={createPageUrl("AdminProspects") + `?id=${prospect.id}`}>View Details</Link>
+                            <Link to={"/AdminProspects" + `?id=${prospect.id}`}>View Details</Link>
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -166,7 +148,7 @@ export default function RecentActivity({ prospects }) {
                     <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
                     <p className="font-medium mb-1">No recent activity</p>
                     <p className="text-xs text-muted-foreground/70 mb-4">Prospects will appear here as they are added</p>
-                    <Link to={createPageUrl("AdminProspects")}>
+                    <Link to={"/AdminProspects"}>
                       <Button variant="outline" size="sm">View All Prospects</Button>
                     </Link>
                   </td>

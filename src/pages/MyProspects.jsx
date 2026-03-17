@@ -1,8 +1,9 @@
 import { useState, useMemo } from "react";
-import { Prospect, Campaign } from "@/api/entities";
+import { Prospect } from "@/api/entities";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
 import { useUpdateProspect } from "@/hooks/queries/useProspectsQuery";
+import { useCampaignLookup } from "@/hooks/queries/useCampaignsQuery";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -40,51 +41,8 @@ import {
     DialogContent,
 } from "@/components/ui/dialog";
 import ProspectDetails from "@/components/prospects/ProspectDetails";
-
-// Normalize backend prospect to UI shape expected by shared components
-function normalizeProspect(p) {
-    const name = [p.firstName, p.lastName].filter(Boolean).join(" ") || p.name || "";
-    let status = (p.leadStatus || p.status || "new").toLowerCase();
-
-    // Normalize legacy/frontend statuses to backend Enum
-    if (status === 'meeting') status = 'negotiating';
-    const createdDate = p.createdAt || p.created_date || new Date().toISOString();
-
-    // Map leadSource to simplified UI values used in filters/display
-    const source = (p.leadSource || p.source || "other").toLowerCase();
-    let simplifiedSource = "other";
-    if (source === "qr_code") simplifiedSource = "qr";
-    else if (source === "website") simplifiedSource = "form";
-    else if (source) simplifiedSource = source;
-
-    const assignedAgentId = p.assignedAgentId || p.assigned_agent_id || "";
-    const assignedAgentName = p.assignedAgent
-        ? ([p.assignedAgent.firstName, p.assignedAgent.lastName].filter(Boolean).join(" ") || p.assignedAgent.email || "Agent")
-        : (p.assigned_agent_name || "");
-
-    return {
-        id: p.id,
-        firstName: p.firstName,
-        lastName: p.lastName,
-        name,
-        phone: p.phone || "",
-        email: p.email || "",
-        company: p.company || "",
-        postal_code: p.location?.zipCode || p.postal_code || "",
-        date_of_birth: p.dateOfBirth || p.date_of_birth || null,
-        status,
-        leadStatus: status, // Keep both for now to be safe
-        created_date: createdDate,
-        createdAt: createdDate, // Keep both
-        source: simplifiedSource,
-        leadSource: p.leadSource || simplifiedSource,
-        assigned_agent_id: assignedAgentId,
-        assigned_agent_name: assignedAgentName,
-        campaign_id: p.campaignId || p.campaign_id || "",
-        campaign: p.campaign, // Keep original campaign object if present
-        notes: p.notes
-    };
-}
+import normalizeProspect from "@/utils/normalizeProspect";
+import { getStatusColor, formatStatus } from "@/constants/statusConfig";
 
 export default function MyProspects() {
     const [searchQuery, setSearchQuery] = useState("");
@@ -111,16 +69,7 @@ export default function MyProspects() {
         return rawProspects.map(normalizeProspect);
     }, [prospectsRaw]);
 
-    const { data: campaignsRaw } = useQuery({
-        queryKey: ['campaigns', 'all-for-lookup'],
-        queryFn: () => Campaign.list({ limit: 1000 }),
-        staleTime: 60_000,
-    });
-
-    const campaigns = useMemo(() => {
-        if (!campaignsRaw) return [];
-        return Array.isArray(campaignsRaw) ? campaignsRaw : (campaignsRaw?.campaigns || []);
-    }, [campaignsRaw]);
+    const { data: campaigns = [] } = useCampaignLookup();
 
     const updateMutation = useUpdateProspect();
 
@@ -149,22 +98,6 @@ export default function MyProspects() {
         );
     });
 
-    const getStatusColor = (status) => {
-        switch (status) {
-            case 'new': return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800';
-            case 'contacted': return 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-950/30 dark:text-yellow-400 dark:border-yellow-800';
-            case 'qualified': return 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-800';
-            case 'proposal': return 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400 dark:border-purple-800';
-            case 'negotiation': return 'bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-950/30 dark:text-pink-400 dark:border-pink-800';
-            case 'won': return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800';
-            case 'lost': return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800';
-            default: return 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-700';
-        }
-    };
-
-    const formatStatus = (status) => {
-        return status ? status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Unknown';
-    };
 
     return (
         <div className="p-6 lg:p-8 space-y-6">

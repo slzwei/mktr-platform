@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { apiClient } from "@/api/client";
 import { ArrowLeft, AlertCircle, CheckCircle } from "lucide-react";
 
@@ -41,7 +40,7 @@ export default function ForgotPassword() {
   return (
     <div className="min-h-screen bg-black text-white">
       <div className="absolute top-6 left-6 z-10">
-        <Link to={createPageUrl("CustomerLogin")}>
+        <Link to={"/CustomerLogin"}>
           <Button variant="outline" className="gap-2 border-zinc-700 text-zinc-200 hover:bg-zinc-900">
             <ArrowLeft className="w-4 h-4" />
             Back to Login
