@@ -5,6 +5,8 @@ import fs from 'fs';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
+export const meta = { path: '/api/apk' };
+
 const router = express.Router();
 
 // ... (existing code for uploadsDir, storage, fileFilter, upload) ...
