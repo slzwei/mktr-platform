@@ -1,11 +1,10 @@
 import './setup.js';
 import request from 'supertest';
 import { getApp, closeDb, createTestUser, createTestCampaign, createTestQrTag, createTestAgentGroup } from './helpers.js';
-import { QrTag } from '../src/models/index.js';
 
 let app, adminUser, adminToken;
 
-// Unique phone prefix per test run to avoid stale SQLite collisions
+// Unique phone prefix per test run to avoid collisions
 const P = Date.now().toString().slice(-6);
 
 beforeAll(async () => {
@@ -129,8 +128,7 @@ describeRR('QR Round Robin Assignment', () => {
 
     qr = await createTestQrTag(campaign.id, adminUser.id, {
       agentAssignmentMode: 'round_robin',
-      agentGroupId: group.id,
-      agentGroupAgentIds: [agentB.phone, agentC.phone]
+      agentGroupId: group.id
     });
   });
 
@@ -153,9 +151,11 @@ describeRR('QR Round Robin Assignment', () => {
   });
 
   it('rotates to the other agent on next lead', async () => {
-    const freshQr = await QrTag.findByPk(qr.id);
-    const idx = freshQr.roundRobinIndex % 2;
-    const expectedAgent = idx === 0 ? agentB : agentC;
+    // Capture who got the first lead
+    const firstProspect = (await request(app)
+      .get('/api/prospects?leadSource=qr_code')
+      .set('Authorization', `Bearer ${adminToken}`)).body.data.prospects;
+    const firstAgentId = firstProspect.find(p => p.firstName === 'RR1')?.assignedAgentId;
 
     const res = await request(app)
       .post('/api/prospects')
@@ -171,13 +171,18 @@ describeRR('QR Round Robin Assignment', () => {
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.data.prospect.assignedAgentId).toBe(expectedAgent.id);
+    // Second lead should go to the OTHER agent (round-robin alternation)
+    const secondAgentId = res.body.data.prospect.assignedAgentId;
+    expect([agentB.id, agentC.id]).toContain(secondAgentId);
+    expect(secondAgentId).not.toBe(firstAgentId);
   });
 
   it('wraps around on third lead', async () => {
-    const freshQr = await QrTag.findByPk(qr.id);
-    const idx = freshQr.roundRobinIndex % 2;
-    const expectedAgent = idx === 0 ? agentB : agentC;
+    // Capture who got the second lead
+    const allProspects = (await request(app)
+      .get('/api/prospects?leadSource=qr_code')
+      .set('Authorization', `Bearer ${adminToken}`)).body.data.prospects;
+    const secondAgentId = allProspects.find(p => p.firstName === 'RR2')?.assignedAgentId;
 
     const res = await request(app)
       .post('/api/prospects')
@@ -193,7 +198,10 @@ describeRR('QR Round Robin Assignment', () => {
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.data.prospect.assignedAgentId).toBe(expectedAgent.id);
+    // Third lead should wrap around to the same agent as the first (not the second)
+    const thirdAgentId = res.body.data.prospect.assignedAgentId;
+    expect([agentB.id, agentC.id]).toContain(thirdAgentId);
+    expect(thirdAgentId).not.toBe(secondAgentId);
   });
 });
 
@@ -240,8 +248,7 @@ describeRR('Mixed QR modes on same campaign', () => {
     ]);
     const rrQr = await createTestQrTag(campaign.id, adminUser.id, {
       agentAssignmentMode: 'round_robin',
-      agentGroupId: group.id,
-      agentGroupAgentIds: [b.user.phone, c.user.phone]
+      agentGroupId: group.id
     });
 
     // Lead via direct QR

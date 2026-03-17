@@ -45,7 +45,7 @@ describe('POST /api/uploads/single', () => {
     ]);
 
     const res = await request(app)
-      .post('/api/uploads/single?type=image')
+      .post('/api/uploads/single?type=images')
       .set('Authorization', `Bearer ${adminToken}`)
       .attach('file', pngHeader, { filename: 'test-upload.png', contentType: 'image/png' });
 
@@ -60,7 +60,7 @@ describe('POST /api/uploads/single', () => {
 
   it('rejects disallowed MIME type', async () => {
     const res = await request(app)
-      .post('/api/uploads/single?type=image')
+      .post('/api/uploads/single?type=images')
       .set('Authorization', `Bearer ${adminToken}`)
       .attach('file', Buffer.from('not-an-exe'), { filename: 'bad.exe', contentType: 'application/x-msdownload' });
 
@@ -69,7 +69,7 @@ describe('POST /api/uploads/single', () => {
 
   it('rejects wrong category MIME type (PDF in image category)', async () => {
     const res = await request(app)
-      .post('/api/uploads/single?type=image')
+      .post('/api/uploads/single?type=images')
       .set('Authorization', `Bearer ${adminToken}`)
       .attach('file', Buffer.from('%PDF-1.4 test'), { filename: 'doc.pdf', contentType: 'application/pdf' });
 
@@ -106,7 +106,7 @@ describe('POST /api/uploads/multiple', () => {
     ]);
 
     const res = await request(app)
-      .post('/api/uploads/multiple?type=image')
+      .post('/api/uploads/multiple?type=images')
       .set('Authorization', `Bearer ${adminToken}`)
       .attach('files', pngBuf, { filename: 'multi1.png', contentType: 'image/png' })
       .attach('files', pngBuf, { filename: 'multi2.png', contentType: 'image/png' });
@@ -148,7 +148,7 @@ describe('POST /api/uploads/avatar', () => {
     ]);
 
     const res = await request(app)
-      .post('/api/uploads/avatar?type=image')
+      .post('/api/uploads/avatar?type=images')
       .set('Authorization', `Bearer ${adminToken}`)
       .attach('avatar', pngBuf, { filename: 'my-avatar.png', contentType: 'image/png' });
 
@@ -175,7 +175,7 @@ describe('DELETE /api/uploads/:type/:filename', () => {
     ]);
 
     const res = await request(app)
-      .post('/api/uploads/single?type=image')
+      .post('/api/uploads/single?type=images')
       .set('Authorization', `Bearer ${adminToken}`)
       .attach('file', pngBuf, { filename: 'delete-me.png', contentType: 'image/png' });
 
@@ -184,14 +184,14 @@ describe('DELETE /api/uploads/:type/:filename', () => {
 
   it('returns 401 when no auth token provided', async () => {
     const res = await request(app)
-      .delete(`/api/uploads/image/${uploadedFilename}`);
+      .delete(`/api/uploads/images/${uploadedFilename}`);
 
     expect(res.status).toBe(401);
   });
 
   it('deletes an uploaded file successfully', async () => {
     const res = await request(app)
-      .delete(`/api/uploads/image/${uploadedFilename}`)
+      .delete(`/api/uploads/images/${uploadedFilename}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
@@ -201,7 +201,7 @@ describe('DELETE /api/uploads/:type/:filename', () => {
 
   it('returns 404 when file does not exist', async () => {
     const res = await request(app)
-      .delete('/api/uploads/image/nonexistent-file.png')
+      .delete('/api/uploads/images/nonexistent-file.png')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(404);
@@ -223,7 +223,7 @@ describe('GET /api/uploads/info/:type/:filename', () => {
     ]);
 
     const res = await request(app)
-      .post('/api/uploads/single?type=image')
+      .post('/api/uploads/single?type=images')
       .set('Authorization', `Bearer ${adminToken}`)
       .attach('file', pngBuf, { filename: 'info-test.png', contentType: 'image/png' });
 
@@ -232,27 +232,27 @@ describe('GET /api/uploads/info/:type/:filename', () => {
 
   it('returns 401 when no auth token provided', async () => {
     const res = await request(app)
-      .get(`/api/uploads/info/image/${uploadedFilename}`);
+      .get(`/api/uploads/info/images/${uploadedFilename}`);
 
     expect(res.status).toBe(401);
   });
 
   it('returns file info for an existing file', async () => {
     const res = await request(app)
-      .get(`/api/uploads/info/image/${uploadedFilename}`)
+      .get(`/api/uploads/info/images/${uploadedFilename}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.file).toBeDefined();
     expect(res.body.data.file.filename).toBe(uploadedFilename);
-    expect(res.body.data.file.type).toBe('image');
+    expect(res.body.data.file.type).toBe('images');
     expect(typeof res.body.data.file.size).toBe('number');
   });
 
   it('returns 404 for non-existent file', async () => {
     const res = await request(app)
-      .get('/api/uploads/info/image/nonexistent.png')
+      .get('/api/uploads/info/images/nonexistent.png')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(404);
@@ -265,14 +265,14 @@ describe('GET /api/uploads/info/:type/:filename', () => {
 describe('GET /api/uploads/list/:type', () => {
   it('returns 401 when no auth token provided', async () => {
     const res = await request(app)
-      .get('/api/uploads/list/image');
+      .get('/api/uploads/list/images');
 
     expect(res.status).toBe(401);
   });
 
   it('lists files in a directory with pagination', async () => {
     const res = await request(app)
-      .get('/api/uploads/list/image?page=1&limit=10')
+      .get('/api/uploads/list/images?page=1&limit=10')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);

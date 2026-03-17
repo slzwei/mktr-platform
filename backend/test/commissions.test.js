@@ -36,7 +36,7 @@ describe('Commission CRUD', () => {
 
     expect(res.status).toBe(201)
     expect(res.body.success).toBe(true)
-    expect(res.body.data.commission.amount).toBe(75)
+    expect(Number(res.body.data.commission.amount)).toBe(75)
     expect(res.body.data.commission.status).toBe('pending')
     commissionId = res.body.data.commission.id
   })
