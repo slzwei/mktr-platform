@@ -1,5 +1,6 @@
 import { User, LeadPackageAssignment, sequelize } from '../models/index.js';
 import { Op } from 'sequelize';
+import { logger } from '../utils/logger.js';
 
 /**
  * Deducts lead credits from an agent's account.
@@ -78,7 +79,7 @@ export async function deductLeadCredit(agentId, amount = 1, externalTransaction 
 
     } catch (error) {
         if (ownTransaction) await t.rollback();
-        console.error('Error deducting lead credits:', error);
+        logger.error('Error deducting lead credits', { error: error?.message || String(error) });
         // Don't throw, just return false so we don't break the prospect creation flow
         return false;
     }

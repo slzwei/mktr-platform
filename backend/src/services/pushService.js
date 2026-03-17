@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { logger } from '../utils/logger.js';
 
 class PushService extends EventEmitter {
     constructor() {
@@ -28,7 +29,7 @@ class PushService extends EventEmitter {
 
         // If client already exists, log it. We overwrite it below.
         if (this.clients.has(deviceId)) {
-            console.log(`[Push] Replacing existing client for ${deviceId}`);
+            logger.info('[Push] Replacing existing client', { deviceId });
         }
 
         const client = {
@@ -39,7 +40,7 @@ class PushService extends EventEmitter {
         };
 
         this.clients.set(deviceId, client);
-        console.log(`[Push] Client connected: ${deviceId} (${connectionId}) | Total: ${this.clients.size}`);
+        logger.info('[Push] Client connected', { deviceId, connectionId, totalClients: this.clients.size });
 
         // 1. Determine Status (Preserve "Playing" if reconnecting quickly)
         // Improved: Check in-memory history first (Atomic handoff)
@@ -51,7 +52,7 @@ class PushService extends EventEmitter {
         const recent = this.disconnectHistory.get(deviceId);
         if (recent && (Date.now() - recent.timestamp < 15000) && (recent.status === 'playing' || recent.status === 'active')) {
             newStatus = recent.status;
-            console.log(`[Push] Restored status '${newStatus}' from history for ${deviceId}`);
+            logger.info('[Push] Restored status from history', { deviceId, status: newStatus });
         }
 
         client.status = newStatus;
@@ -74,7 +75,7 @@ class PushService extends EventEmitter {
     }
 
     addObserver(deviceId, res) {
-        console.log(`[Push] addObserver called for ID: ${deviceId} (Type: ${typeof deviceId})`);
+        logger.debug('[Push] addObserver called', { deviceId, type: typeof deviceId });
         if (!this.observers.has(deviceId)) {
             this.observers.set(deviceId, new Set());
         }
@@ -83,7 +84,7 @@ class PushService extends EventEmitter {
         const observer = { id: connectionId, res };
 
         this.observers.get(deviceId).add(observer);
-        console.log(`[Push] Observer added for ${deviceId} (${connectionId}). Total: ${this.observers.get(deviceId).size}`);
+        logger.info('[Push] Observer added', { deviceId, connectionId, totalObservers: this.observers.get(deviceId).size });
 
         // Initial Event
         res.write(`event: connected\n`);
@@ -93,7 +94,7 @@ class PushService extends EventEmitter {
         res.write(`: ${' '.repeat(2048)}\n\n`);
 
         res.on('close', () => {
-            console.log(`[Push] Observer removed for ${deviceId} (${connectionId})`);
+            logger.info('[Push] Observer removed', { deviceId, connectionId });
             const set = this.observers.get(deviceId);
             if (set) {
                 // We have to iterate to find the object reference unless we store it specifically
@@ -113,7 +114,7 @@ class PushService extends EventEmitter {
         // CRITICAL: Only mark inactive if the closing connection is the CURRENT one.
         // If the tablet reconnected quickly, clients.get(id).id will be different.
         if (currentClient && (!closingConnectionId || currentClient.id === closingConnectionId)) {
-            console.log(`[Push] Client disconnected: ${deviceId} (${closingConnectionId || 'unknown'}) -> Marking Inactive`);
+            logger.info('[Push] Client disconnected — marking inactive', { deviceId, connectionId: closingConnectionId || 'unknown' });
 
             this.disconnectHistory.set(deviceId, {
                 status: currentClient.status || 'active',
@@ -126,7 +127,7 @@ class PushService extends EventEmitter {
             this.updateDeviceStatus(deviceId, 'inactive');
             this.broadcastStatusChange(deviceId, 'inactive');
         } else {
-            console.log(`[Push] Stale disconnect ignored for ${deviceId} (${closingConnectionId}). Current: ${currentClient?.id}`);
+            logger.debug('[Push] Stale disconnect ignored', { deviceId, closingConnectionId, currentConnectionId: currentClient?.id });
         }
     }
 
@@ -138,7 +139,7 @@ class PushService extends EventEmitter {
             const { Device } = await import('../models/index.js');
             await Device.update({ status, lastSeenAt: new Date() }, { where: { id: deviceId } });
         } catch (err) {
-            console.error(`[Push] Failed to update device status ${deviceId}`, err);
+            logger.error('[Push] Failed to update device status', { deviceId, error: err?.message || String(err) });
         }
     }
 
@@ -188,7 +189,7 @@ class PushService extends EventEmitter {
         const observer = { id: connectionId, res };
         this.fleetObservers.add(observer);
 
-        console.log(`[Push] Fleet Observer added (${connectionId}). Total: ${this.fleetObservers.size}`);
+        logger.info('[Push] Fleet Observer added', { connectionId, totalFleetObservers: this.fleetObservers.size });
 
         // Initial Event
         res.write(`event: connected\n`);
@@ -200,7 +201,7 @@ class PushService extends EventEmitter {
 
         res.on('close', () => {
             this.fleetObservers.delete(observer);
-            console.log(`[Push] Fleet Observer removed (${connectionId})`);
+            logger.info('[Push] Fleet Observer removed', { connectionId });
         });
     }
 
@@ -223,20 +224,19 @@ class PushService extends EventEmitter {
 
             return true;
         } catch (err) {
-            console.error(`[Push] Failed to send event to ${deviceId}`, err);
+            logger.error('[Push] Failed to send event', { deviceId, error: err?.message || String(err) });
             this.removeClient(deviceId);
             return false;
         }
     }
 
     broadcastLog(deviceId, log) {
-        console.log(`[Push] broadcastLog called for ID: ${deviceId} (Type: ${typeof deviceId})`);
+        logger.debug('[Push] broadcastLog called', { deviceId, type: typeof deviceId });
         const set = this.observers.get(deviceId);
 
         // DEBUG: Print keys if not found
         if (!set || set.size === 0) {
-            console.log(`[Push] No observers found for ${deviceId}. Observers Map Size: ${this.observers.size}`);
-            // Limit spam, but could dump keys: console.log([...this.observers.keys()])
+            logger.debug('[Push] No observers found', { deviceId, observersMapSize: this.observers.size });
             return;
         }
 
@@ -246,7 +246,7 @@ class PushService extends EventEmitter {
                 obs.res.write(`event: log\n`);
                 obs.res.write(`data: ${payload}\n\n`);
             } catch (err) {
-                console.error(`[Push] Failed to send log to observer`, err);
+                logger.error('[Push] Failed to send log to observer', { error: err?.message || String(err) });
             }
         }
     }
@@ -284,7 +284,7 @@ class PushService extends EventEmitter {
         for (const obs of this.fleetObservers) {
             try {
                 obs.res.write(': keep-alive\n\n');
-            } catch (e) { }
+            } catch (e) { /* expected: SSE connection may close */ }
         }
     }
 }

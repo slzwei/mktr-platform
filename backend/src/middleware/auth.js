@@ -2,28 +2,63 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models/index.js';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { DEFAULT_TENANT_ID } from './tenant.js';
+import { logger } from '../utils/logger.js';
 
-// Validate JWT_SECRET is available
-const JWT_SECRET = process.env.JWT_SECRET;
-if (process.env.NODE_ENV === 'production' && !JWT_SECRET) {
-  throw new Error('FATAL: JWT_SECRET environment variable must be set in production');
+// Hard check: JWT_SECRET must be set or all token operations fail-safe
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is not configured');
+  }
+  return secret;
 }
 
-// JWKS (central auth) support
-let remoteJwks = null;
-let expectedIssuer = null;
-let expectedAudience = null;
-if (process.env.AUTH_JWKS_URL) {
-  try {
-    remoteJwks = createRemoteJWKSet(new URL(process.env.AUTH_JWKS_URL));
-    expectedIssuer = process.env.AUTH_ISSUER || null;
-    expectedAudience = process.env.AUTH_AUDIENCE || null;
-  } catch (_) {
-    remoteJwks = null;
+// Lazy JWKS (central auth) support — initialized on first access
+let _remoteJwks = undefined; // undefined = not yet initialized
+let _expectedIssuer = null;
+let _expectedAudience = null;
+
+function getRemoteJwks() {
+  if (_remoteJwks !== undefined) return _remoteJwks;
+  if (process.env.AUTH_JWKS_URL) {
+    // Require issuer and audience when JWKS is enabled
+    if (!process.env.AUTH_ISSUER || !process.env.AUTH_AUDIENCE) {
+      logger.error('AUTH_ISSUER and AUTH_AUDIENCE must be set when AUTH_JWKS_URL is configured');
+      _remoteJwks = null;
+      return null;
+    }
+    try {
+      _remoteJwks = createRemoteJWKSet(new URL(process.env.AUTH_JWKS_URL));
+      _expectedIssuer = process.env.AUTH_ISSUER;
+      _expectedAudience = process.env.AUTH_AUDIENCE;
+    } catch (_) {
+      _remoteJwks = null;
+    }
+  } else {
+    _remoteJwks = null;
   }
+  return _remoteJwks;
+}
+
+function getExpectedIssuer() {
+  getRemoteJwks(); // ensure initialized
+  return _expectedIssuer;
+}
+
+function getExpectedAudience() {
+  getRemoteJwks(); // ensure initialized
+  return _expectedAudience;
+}
+
+// Test injection hook for user lookup
+let _userLookup = null;
+
+export function setUserLookup(fn) {
+  _userLookup = fn;
 }
 
 async function mapJwtToUser(payload) {
+  if (_userLookup) return _userLookup(payload);
   let user = null;
   if (payload?.sub) user = await User.findByPk(payload.sub);
   if (!user && payload?.email) user = await User.findOne({ where: { email: payload.email } });
@@ -55,18 +90,22 @@ export const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Access token required' });
     }
 
-    if (remoteJwks) {
+    if (getRemoteJwks()) {
       try {
-        const { payload } = await jwtVerify(token, remoteJwks, {
-          issuer: expectedIssuer || undefined,
-          audience: expectedAudience || undefined
+        const { payload } = await jwtVerify(token, getRemoteJwks(), {
+          issuer: getExpectedIssuer() || undefined,
+          audience: getExpectedAudience() || undefined
         });
         const user = await mapJwtToUser(payload);
         if (!user || !user.isActive) {
           return res.status(401).json({ success: false, message: 'Invalid or inactive user' });
         }
-        user.lastLogin = new Date();
-        await user.save();
+        // Debounce lastLogin writes — only update if stale by 5+ minutes
+        const fiveMinutes = 5 * 60 * 1000;
+        if (!user.lastLogin || (Date.now() - new Date(user.lastLogin).getTime()) > fiveMinutes) {
+          user.lastLogin = new Date();
+          user.save().catch(() => {}); // fire-and-forget, don't block the request
+        }
         req.user = user;
         return next();
       } catch (_) {
@@ -74,13 +113,17 @@ export const authenticateToken = async (req, res, next) => {
       }
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, getJwtSecret());
     const legacyUser = await User.findByPk(decoded.userId);
     if (!legacyUser || !legacyUser.isActive) {
       return res.status(401).json({ success: false, message: 'Invalid or inactive user' });
     }
-    legacyUser.lastLogin = new Date();
-    await legacyUser.save();
+    // Debounce lastLogin writes — only update if stale by 5+ minutes
+    const fiveMinutes = 5 * 60 * 1000;
+    if (!legacyUser.lastLogin || (Date.now() - new Date(legacyUser.lastLogin).getTime()) > fiveMinutes) {
+      legacyUser.lastLogin = new Date();
+      legacyUser.save().catch(() => {}); // fire-and-forget, don't block the request
+    }
     req.user = legacyUser;
     return next();
   } catch (error) {
@@ -129,20 +172,20 @@ export const optionalAuth = async (req, res, next) => {
 
     if (token) {
       let user = null;
-      if (remoteJwks) {
+      if (getRemoteJwks()) {
         try {
-          const { payload } = await jwtVerify(token, remoteJwks, {
-            issuer: expectedIssuer || undefined,
-            audience: expectedAudience || undefined
+          const { payload } = await jwtVerify(token, getRemoteJwks(), {
+            issuer: getExpectedIssuer() || undefined,
+            audience: getExpectedAudience() || undefined
           });
           user = await mapJwtToUser(payload);
-        } catch (_) { }
+        } catch (_) { /* expected: token verification may fail */ }
       }
       if (!user) {
         try {
-          const decoded = jwt.verify(token, JWT_SECRET);
+          const decoded = jwt.verify(token, getJwtSecret());
           user = await User.findByPk(decoded.userId);
-        } catch (_) { }
+        } catch (_) { /* expected: token verification may fail */ }
       }
       if (user && user.isActive) req.user = user;
     }
@@ -158,7 +201,7 @@ export const optionalAuth = async (req, res, next) => {
 export const generateToken = (userId) => {
   return jwt.sign(
     { userId },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
 };
@@ -166,7 +209,7 @@ export const generateToken = (userId) => {
 // Verify email token
 export const verifyEmailToken = (token) => {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, getJwtSecret());
   } catch (error) {
     return null;
   }
