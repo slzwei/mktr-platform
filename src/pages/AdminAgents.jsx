@@ -1,157 +1,83 @@
 import { useState } from "react";
-import { User } from "@/api/entities";
-import { agents as agentsAPI, apiClient } from "@/api/client";
+import { agents as agentsAPI } from "@/api/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
-import { LeadPackage } from "@/api/entities";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { Link } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from "@/components/ui/table";
+import { Plus, RefreshCw } from "lucide-react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
-import {
-  Select,
-  SelectTrigger,
-  SelectContent,
-  SelectItem,
-  SelectValue
-} from "@/components/ui/select";
-
-
-import {
-  Plus,
-  Edit,
-  Eye,
-  Search,
-  Phone,
-  Mail,
-  Package,
-  Trash2,
-  MoreHorizontal,
-  CheckCircle,
-  XCircle,
-  ShieldAlert,
-  UserCheck,
-  RefreshCw
-} from "lucide-react";
-import { format } from "date-fns";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-
-import AgentFormDialog from "../components/agents/AgentFormDialog";
+import AgentFilters from "../components/agents/AgentFilters";
+import AgentTable from "../components/agents/AgentTable";
+import ManagePackagesDialog from "../components/agents/ManagePackagesDialog";
+import InviteAgentDialog from "../components/agents/InviteAgentDialog";
 import AgentDetailsDialog from "../components/agents/AgentDetailsDialog";
-
 import AssignPackageDialog from "../components/agents/AssignPackageDialog";
+import useAgentActions from "@/hooks/useAgentActions";
 
 export default function AdminAgents() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { data: user } = useCurrentUser();
+
   const { data: agentsData, isLoading: loading } = useQuery({
-    queryKey: ['agents', 'list'],
+    queryKey: ["agents", "list"],
     queryFn: () => agentsAPI.getAll(),
     enabled: !!user,
   });
   const agents = agentsData?.agents || [];
 
-  const [selectedAgentIds, setSelectedAgentIds] = useState([]); // [1] Add selection state
+  // --- Local UI state ---
+  const [selectedAgentIds, setSelectedAgentIds] = useState([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isPackageDialogOpen, setIsPackageDialogOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [managePackagesDialogOpen, setManagePackagesDialogOpen] = useState(false);
-  const [packagesForAgent, setPackagesForAgent] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("all");
 
-  const { toast } = useToast();
-  const [syncing, setSyncing] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState(() => localStorage.getItem('lyfe_last_sync'));
-  const [editingAssignmentId, setEditingAssignmentId] = useState(null);
-  const [editLeadCount, setEditLeadCount] = useState("");
+  // --- Actions hook ---
+  const actions = useAgentActions({ queryClient, toast });
 
-  const handleSyncFromLyfe = async () => {
-    setSyncing(true);
-    try {
-      const res = await apiClient.post('/lyfe/agents/sync');
-      const { created, updated, deactivated, skipped } = res.data || {};
-      const parts = [];
-      if (created) parts.push(`${created} added`);
-      if (updated) parts.push(`${updated} updated`);
-      if (deactivated) parts.push(`${deactivated} deactivated`);
-      if (skipped) parts.push(`${skipped} unchanged`);
-      toast({
-        title: "Sync Complete",
-        description: parts.join(', ') || 'No changes'
-      });
-      const now = new Date().toISOString();
-      localStorage.setItem('lyfe_last_sync', now);
-      setLastSyncTime(now);
-      queryClient.invalidateQueries({ queryKey: ['agents'] });
-    } catch (error) {
-      console.error('Error syncing from Lyfe:', error);
-      toast({
-        variant: "destructive",
-        title: "Sync Failed",
-        description: error?.message || "Could not fetch agents from Lyfe"
-      });
+  // --- Filtering ---
+  const filteredAgents = agents.filter((agent) => {
+    const needle = (searchTerm || "").toLowerCase();
+    const name = (agent.fullName || agent.full_name || "").toLowerCase();
+    const matchesSearch =
+      name.includes(needle) ||
+      agent.email?.toLowerCase().includes(needle) ||
+      agent.phone?.includes(searchTerm);
+
+    let matchesStatus = true;
+    if (statusFilter !== "all") {
+      const isPending =
+        agent?.isActive === true &&
+        (agent?.status === "pending_registration" ||
+          !!agent?.invitationToken ||
+          agent?.emailVerified === false);
+      if (statusFilter === "pending") matchesStatus = isPending;
+      else if (statusFilter === "active") matchesStatus = agent.isActive && !isPending;
+      else if (statusFilter === "inactive") matchesStatus = !agent.isActive;
     }
-    setSyncing(false);
+    return matchesSearch && matchesStatus;
+  });
+
+  // --- Selection handlers ---
+  const handleSelectAll = (checked) => {
+    setSelectedAgentIds(checked ? filteredAgents.map((a) => a.id) : []);
   };
 
+  const handleSelectAgent = (agentId, checked) => {
+    setSelectedAgentIds((prev) =>
+      checked ? [...prev, agentId] : prev.filter((id) => id !== agentId)
+    );
+  };
+
+  // --- Dialog openers ---
   const handleOpenForm = (agent = null) => {
     setSelectedAgent(agent);
     setIsFormOpen(true);
-  };
-
-  const handleFormSubmit = async (formData) => {
-    try {
-      const name = (formData.full_name || '').trim();
-      const isActive = (formData.status || 'active') === 'active';
-
-      if (selectedAgent) {
-        const [firstName, ...rest] = name.split(' ');
-        const lastName = rest.join(' ').trim();
-        const normalizedPhone = (formData.phone || '').replace(/\D/g, '');
-        await User.update(selectedAgent.id, {
-          firstName,
-          lastName,
-          email: formData.email,
-          phone: normalizedPhone || undefined,
-          dateOfBirth: formData.dateOfBirth || undefined,
-          isActive
-        });
-      } else {
-        await agentsAPI.invite({
-          email: formData.email,
-          full_name: name
-        });
-      }
-
-      queryClient.invalidateQueries({ queryKey: ['agents'] });
-      setIsFormOpen(false);
-      setSelectedAgent(null);
-    } catch (error) {
-      console.error('Error saving agent:', error);
-      throw error;
-    }
   };
 
   const handleOpenDetails = (agent) => {
@@ -159,208 +85,38 @@ export default function AdminAgents() {
     setIsDetailsOpen(true);
   };
 
-  const openManagePackagesDialog = async (agent) => {
-    if (!agent) return;
-    setSelectedAgent(agent);
-    try {
-      const assignments = await LeadPackage.getAssignments(agent.id);
-      setPackagesForAgent(assignments || []);
-      setManagePackagesDialogOpen(true);
-    } catch (e) {
-      console.error('Failed to load agent packages', e);
-      toast({ variant: "destructive", title: "Error", description: "Failed to load assigned packages" });
-    }
-  };
-
-  const handleDeleteAssignment = async (assignmentId) => {
-    if (!confirm('Are you sure you want to remove this package assignment? This cannot be undone.')) return;
-
-    try {
-      await LeadPackage.deleteAssignment(assignmentId);
-      toast({ title: "Success", description: "Package assignment removed" });
-      // Refresh list
-      const assignments = await LeadPackage.getAssignments(selectedAgent.id);
-      setPackagesForAgent(assignments || []);
-      // Also refresh main list to update owed leads count
-      queryClient.invalidateQueries({ queryKey: ['agents'] });
-    } catch (e) {
-      console.error('Failed to delete assignment', e);
-      toast({ variant: "destructive", title: "Error", description: e.message || "Failed to delete assignment" });
-    }
-  };
-
-  const handleStartEdit = (assignment) => {
-    setEditingAssignmentId(assignment.id);
-    setEditLeadCount(String(assignment.leadsRemaining));
-  };
-
-  const handleCancelEdit = () => {
-    setEditingAssignmentId(null);
-    setEditLeadCount("");
-  };
-
-  const handleUpdateAssignment = async (assignmentId) => {
-    try {
-      const newCount = parseInt(editLeadCount, 10);
-      if (isNaN(newCount) || newCount < 0) {
-        toast({ variant: "destructive", title: "Error", description: "Invalid lead count" });
-        return;
-      }
-
-      await LeadPackage.updateAssignment(assignmentId, { leadsRemaining: newCount });
-
-      toast({ title: "Success", description: "Lead count updated" });
-      setEditingAssignmentId(null);
-      // Refresh list
-      const assignments = await LeadPackage.getAssignments(selectedAgent.id);
-      setPackagesForAgent(assignments || []);
-      // Also refresh main list to update owed leads count
-      queryClient.invalidateQueries({ queryKey: ['agents'] });
-    } catch (e) {
-      console.error('Failed to update assignment', e);
-      toast({ variant: "destructive", title: "Error", description: e.message || "Failed to update assignment" });
-    }
-  };
-
-  // Bulk Delete Handler
-  const handleBulkDelete = async () => {
-    if (selectedAgentIds.length === 0) return;
-
-    if (!confirm(`Are you sure you want to permanently delete ${selectedAgentIds.length} agents? This cannot be undone.`)) return;
-
-    try {
-      await apiClient.post('/users/bulk-delete', { ids: selectedAgentIds });
-      toast({ title: "Success", description: `${selectedAgentIds.length} agents deleted successfully` });
-      setSelectedAgentIds([]); // Clear selection
-      queryClient.invalidateQueries({ queryKey: ['agents'] });
-    } catch (error) {
-      console.error('Error deleting agents:', error);
-      toast({ variant: "destructive", title: "Error", description: error?.message || "Failed to delete agents" });
-    }
-  };
-
-  const handleSelectAll = (checked) => {
-    if (checked) {
-      const allIds = filteredAgents.map(a => a.id);
-      setSelectedAgentIds(allIds);
-    } else {
-      setSelectedAgentIds([]);
-    }
-  };
-
-  const handleSelectAgent = (agentId, checked) => {
-    if (checked) {
-      setSelectedAgentIds(prev => [...prev, agentId]);
-    } else {
-      setSelectedAgentIds(prev => prev.filter(id => id !== agentId));
-    }
-  };
-
-
-  const handleDeleteAgent = async (agent) => {
-    if (!agent) return;
-
-    const message = `Permanently delete ${agent.fullName || agent.email}? This cannot be undone.`;
-
-    if (!window.confirm(message)) return;
-
-    try {
-      await apiClient.delete(`/users/${agent.id}/permanent`);
-      queryClient.invalidateQueries({ queryKey: ['agents'] });
-      toast({ title: "Success", description: "Agent deleted successfully" });
-    } catch (error) {
-      console.error('Error deleting agent:', error);
-      toast({ variant: "destructive", title: "Error", description: error?.message || "Failed to delete agent" });
-    }
-  };
-
-  const handleToggleStatus = async (agent) => {
-    if (!agent) return;
-    try {
-      await User.update(agent.id, { isActive: !agent.isActive });
-      queryClient.invalidateQueries({ queryKey: ['agents'] });
-    } catch (error) {
-      console.error('Error toggling agent status:', error);
-    }
-  };
-
-  const handleResendInvite = async (agent) => {
-    if (!agent?.email) return;
-    try {
-      const fullName = agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim();
-      await agentsAPI.invite({ email: agent.email, full_name: fullName });
-      alert('Invitation email sent');
-    } catch (error) {
-      console.error('Error resending invite:', error);
-      alert(error?.message || 'Failed to resend invitation');
-    }
-  };
-
   const handleOpenPackageDialog = (agent) => {
     setSelectedAgent(agent);
     setIsPackageDialogOpen(true);
   };
 
-  const handlePackageSubmit = async () => {
+  const handleOpenManagePackages = (agent) => {
+    setSelectedAgent(agent);
+    actions.openManagePackagesDialog(agent);
+  };
+
+  // --- Form submit wrapper ---
+  const handleFormSubmit = async (formData) => {
     try {
-      if (selectedAgent) {
-        // Refresh the assignments list for the "Manage Packages" dialog if it's open or about to be viewed
-        const assignments = await LeadPackage.getAssignments(selectedAgent.id);
-        setPackagesForAgent(assignments || []);
-      }
-
-      queryClient.invalidateQueries({ queryKey: ['agents'] });
-      setIsPackageDialogOpen(false);
-      // Do NOT clear selectedAgent here, as we might be in the Manage Packages flow which relies on it
-      // if managePackagesDialogOpen is true, we keep it. Otherwise we can clear it? 
-      // Actually, if we are in "Manage Packages", we want to stay there.
-      // If we came from the main "Assign Package" button, we might want to clear it.
-      // But clearing it breaks the "Manage Packages" dialog refetch if meaningful.
-      // The safest bet to support the user request "Packages assigned... should update immediately"
-      // implies the "Manage Packages" dialog is OPEN or we return to it.
-
-      // If we are NOT in the manage packages dialog, we can clear selected agent?
-      if (!managePackagesDialogOpen) {
-        setSelectedAgent(null);
-      }
-
-      toast({ title: "Success", description: "Package assigned successfully" });
+      await actions.handleFormSubmit(formData, selectedAgent);
+      setIsFormOpen(false);
+      setSelectedAgent(null);
     } catch (error) {
-      console.error('Error refreshing data:', error);
+      console.error("Error saving agent:", error);
+      throw error;
     }
   };
 
-  const filteredAgents = agents.filter(agent => {
-    const needle = (searchTerm || '').toLowerCase();
-    const name = (agent.fullName || agent.full_name || '').toLowerCase();
-    const matchesSearch = (
-      name.includes(needle) ||
-      agent.email?.toLowerCase().includes(needle) ||
-      agent.phone?.includes(searchTerm)
-    );
-
-    let matchesStatus = true;
-    if (statusFilter !== 'all') {
-      const isPending = agent?.isActive === true && (
-        agent?.status === 'pending_registration' ||
-        !!agent?.invitationToken ||
-        agent?.emailVerified === false
-      );
-      if (statusFilter === 'pending') matchesStatus = isPending;
-      else if (statusFilter === 'active') matchesStatus = agent.isActive && !isPending;
-      else if (statusFilter === 'inactive') matchesStatus = !agent.isActive;
+  // --- Package submit wrapper ---
+  const handlePackageSubmit = async () => {
+    await actions.handlePackageSubmit(selectedAgent);
+    setIsPackageDialogOpen(false);
+    if (!actions.managePackagesDialogOpen) {
+      setSelectedAgent(null);
     }
-    return matchesSearch && matchesStatus;
-  });
+  };
 
-  const isPending = (agent) => (
-    agent?.isActive === true && (
-      agent?.status === 'pending_registration' ||
-      !!agent?.invitationToken ||
-      agent?.emailVerified === false
-    )
-  );
-
+  // --- Loading state ---
   if (loading) {
     return (
       <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
@@ -372,19 +128,12 @@ export default function AdminAgents() {
     );
   }
 
-  if (user?.role !== 'admin') {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
-        <ShieldAlert className="w-16 h-16 text-red-500 mb-4" />
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Access Denied</h2>
-        <p className="text-gray-500 dark:text-gray-400">You do not have permission to view this page.</p>
-      </div>
-    );
-  }
+  // Role gating handled by ProtectedRoute; avoid double-deny here
 
   return (
     <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
       <div className="max-w-[1600px] mx-auto space-y-6">
+        {/* Header */}
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Agents</h1>
@@ -394,18 +143,14 @@ export default function AdminAgents() {
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2">
-              {lastSyncTime && (
+              {actions.lastSyncTime && (
                 <span className="text-xs text-gray-400 dark:text-gray-500">
-                  Last synced {new Date(lastSyncTime).toLocaleString()}
+                  Last synced {new Date(actions.lastSyncTime).toLocaleString()}
                 </span>
               )}
-              <Button
-                variant="outline"
-                onClick={handleSyncFromLyfe}
-                disabled={syncing}
-              >
-                <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
-                {syncing ? 'Syncing...' : 'Sync from Lyfe'}
+              <Button variant="outline" onClick={actions.handleSyncFromLyfe} disabled={actions.syncing}>
+                <RefreshCw className={`w-4 h-4 mr-2 ${actions.syncing ? "animate-spin" : ""}`} />
+                {actions.syncing ? "Syncing..." : "Sync from Lyfe"}
               </Button>
             </div>
             <Button onClick={() => handleOpenForm()} className="bg-blue-600 hover:bg-blue-700">
@@ -415,216 +160,38 @@ export default function AdminAgents() {
           </div>
         </div>
 
+        {/* Filters + Table */}
         <Card className="border-gray-200/50 dark:border-gray-700/50 shadow-sm bg-white dark:bg-gray-900 overflow-hidden">
           <CardHeader className="border-b border-gray-100 dark:border-gray-700 p-4 lg:p-6 bg-white dark:bg-gray-900">
-            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center">
-              <div className="relative flex-1 w-full lg:max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
-                <Input
-                  placeholder="Search agents..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9 h-9 bg-gray-50/50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 focus:bg-white dark:focus:bg-gray-900"
-                />
-              </div>
-              <div className="w-full lg:w-[180px]">
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="h-9 bg-white dark:bg-gray-900">
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
-                    <SelectItem value="pending">Pending Registration</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            <AgentFilters
+              searchTerm={searchTerm}
+              onSearchChange={setSearchTerm}
+              statusFilter={statusFilter}
+              onStatusFilterChange={setStatusFilter}
+            />
           </CardHeader>
-
-          {/* Bulk Action Bar */}
-          {selectedAgentIds.length > 0 && (
-            <div className="bg-blue-50 dark:bg-blue-950/30 border-b border-blue-100 dark:border-blue-900 p-3 flex items-center justify-between animate-in slide-in-from-top-2">
-              <span className="text-sm text-blue-800 dark:text-blue-300 font-medium ml-2">
-                {selectedAgentIds.length} agents selected
-              </span>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleBulkDelete}
-                className="bg-red-600 hover:bg-red-700 h-8"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete Selected
-              </Button>
-            </div>
-          )}
-
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50/50 dark:bg-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800 border-gray-100 dark:border-gray-700">
-                    <TableHead className="w-12 h-12 px-4 text-center">
-                      <Checkbox
-                        checked={filteredAgents.length > 0 && selectedAgentIds.length === filteredAgents.length}
-                        onCheckedChange={handleSelectAll}
-                        aria-label="Select all"
-                      />
-                    </TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 min-w-[200px]">Agent</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 min-w-[250px]">Contact</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 min-w-[140px]">Status</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 min-w-[160px]">Leads Owed</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 min-w-[140px]">Joined</TableHead>
-                    <TableHead className="py-3 px-6 font-medium text-gray-500 dark:text-gray-400 text-right w-[80px]">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAgents.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="h-48 text-center text-gray-500 dark:text-gray-400">
-                        No agents found matching your criteria.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredAgents.map((agent) => <TableRow key={agent.id} className={`hover:bg-gray-50/50 dark:hover:bg-gray-800/50 border-gray-100 dark:border-gray-700 ${selectedAgentIds.includes(agent.id) ? 'bg-blue-50/30 dark:bg-blue-950/20' : ''}`}>
-                      <TableCell className="px-4 text-center">
-                        <Checkbox
-                          checked={selectedAgentIds.includes(agent.id)}
-                          onCheckedChange={(checked) => handleSelectAgent(agent.id, checked)}
-                          aria-label={`Select ${agent.fullName}`}
-                        />
-                      </TableCell>
-                      <TableCell className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-medium uppercase text-xs">
-                            {(agent.fullName?.[0] || agent.email?.[0] || '?')}
-                          </div>
-                          <div>
-                            <Link to={`/AdminAgents/${agent.id}`} className="font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                              {agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim()}
-                            </Link>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">ID: {agent.id.slice(-8)}</p>
-                          </div>
-                        </div>
-                      </TableCell>
-
-                      <TableCell className="px-6 py-4 max-w-[250px]">
-                        <div className="space-y-1 text-sm">
-                          <div className="flex items-start gap-1.5 text-gray-600 dark:text-gray-400 break-all">
-                            <Mail className="w-3 h-3 text-gray-400 dark:text-gray-500 shrink-0 mt-0.5" />
-                            <span className="leading-tight">{agent.email}</span>
-                          </div>
-                          {agent.phone && (
-                            <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
-                              <Phone className="w-3 h-3 text-gray-400 dark:text-gray-500 shrink-0" />
-                              {agent.phone}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-
-                      <TableCell className="px-6 py-4">
-                        {(() => {
-                          const pendingApproval = agent.approvalStatus === 'pending' || agent.status === 'pending_approval';
-                          const pendingRegistration = isPending(agent);
-                          const isActive = agent.isActive && !pendingApproval && !pendingRegistration;
-
-                          if (pendingApproval) return <Badge variant="outline" className="bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30">Pending Approval</Badge>;
-                          if (pendingRegistration) return <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30">Invited</Badge>;
-                          if (isActive) return <Badge variant="outline" className="bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30">Active</Badge>;
-                          return <Badge variant="outline" className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700">Inactive</Badge>;
-                        })()}
-                      </TableCell>
-
-                      <TableCell className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary" className="font-mono bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700">{agent.owed_leads_count || 0}</Badge>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 whitespace-nowrap"
-                            onClick={() => handleOpenPackageDialog(agent)}
-                          >
-                            <Plus className="w-3 h-3 mr-1" /> Assign
-                          </Button>
-                        </div>
-                      </TableCell>
-
-                      <TableCell className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                        {agent.createdAt ? format(new Date(agent.createdAt), 'MMM d, yyyy') : (agent.created_date ? format(new Date(agent.created_date), 'MMM d, yyyy') : '-')}
-                      </TableCell>
-
-                      <TableCell className="px-6 py-4 text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuLabel>Manage Agent</DropdownMenuLabel>
-                            <DropdownMenuItem onClick={() => handleOpenDetails(agent)}>
-                              <Eye className="mr-2 h-4 w-4" /> View Profile
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                              <Link to={`/AdminAgents/${agent.id}`} className="w-full cursor-pointer">
-                                <UserCheck className="mr-2 h-4 w-4" /> View Assigned Leads
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleOpenForm(agent)}>
-                              <Edit className="mr-2 h-4 w-4" /> Edit Profile
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => openManagePackagesDialog(agent)}>
-                              <Package className="mr-2 h-4 w-4" /> Manage Packages
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleOpenPackageDialog(agent)}>
-                              <Package className="mr-2 h-4 w-4" /> Assign Lead Package
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            {(agent.approvalStatus === 'pending' || agent.status === 'pending_approval') && (
-                              <>
-                                <DropdownMenuItem onClick={async () => { try { await User.setApprovalStatus(agent.id, 'approved'); queryClient.invalidateQueries({ queryKey: ['agents'] }); } catch (e) { console.error(e); } }} className="text-emerald-600">
-                                  <CheckCircle className="mr-2 h-4 w-4" /> Approve
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={async () => { try { await User.setApprovalStatus(agent.id, 'rejected'); queryClient.invalidateQueries({ queryKey: ['agents'] }); } catch (e) { console.error(e); } }} className="text-red-600">
-                                  <XCircle className="mr-2 h-4 w-4" /> Reject
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            {isPending(agent) ? (
-                              <DropdownMenuItem onClick={() => handleResendInvite(agent)}>
-                                <Mail className="mr-2 h-4 w-4" /> Resend Invite
-                              </DropdownMenuItem>
-                            ) : (
-                              <DropdownMenuItem onClick={() => handleToggleStatus(agent)}>
-                                {agent.isActive ? (
-                                  <><ShieldAlert className="mr-2 h-4 w-4" /> Deactivate</>
-                                ) : (
-                                  <><CheckCircle className="mr-2 h-4 w-4" /> Activate</>
-                                )}
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => handleDeleteAgent(agent)} className="text-red-600">
-                              <Trash2 className="mr-2 h-4 w-4" /> Delete Agent
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                    )
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+            <AgentTable
+              agents={filteredAgents}
+              selectedAgentIds={selectedAgentIds}
+              onSelectAll={handleSelectAll}
+              onSelectAgent={handleSelectAgent}
+              onBulkDelete={() => actions.handleBulkDelete(selectedAgentIds, () => setSelectedAgentIds([]))}
+              onViewDetails={handleOpenDetails}
+              onEditAgent={(agent) => handleOpenForm(agent)}
+              onDeleteAgent={actions.handleDeleteAgent}
+              onToggleStatus={actions.handleToggleStatus}
+              onResendInvite={actions.handleResendInvite}
+              onApprove={(id) => actions.handleSetApprovalStatus(id, "approved")}
+              onReject={(id) => actions.handleSetApprovalStatus(id, "rejected")}
+              onManagePackages={handleOpenManagePackages}
+              onAssignPackage={handleOpenPackageDialog}
+            />
           </CardContent>
         </Card>
 
-        <AgentFormDialog
+        {/* Dialogs */}
+        <InviteAgentDialog
           open={isFormOpen}
           onOpenChange={setIsFormOpen}
           agent={selectedAgent}
@@ -644,106 +211,31 @@ export default function AdminAgents() {
           onSubmitSuccess={handlePackageSubmit}
         />
 
-        {/* Manage Packages Dialog */}
-        <Dialog open={managePackagesDialogOpen} onOpenChange={setManagePackagesDialogOpen}>
-          <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-            <DialogHeader>
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <DialogTitle>Packages assigned to {selectedAgent?.fullName || selectedAgent?.email}</DialogTitle>
-                  <DialogDescription>View active lead package assignments.</DialogDescription>
-                </div>
-                <Button onClick={() => handleOpenPackageDialog(selectedAgent)} className="bg-blue-600 hover:bg-blue-700">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Assign Package
-                </Button>
-              </div>
-            </DialogHeader>
-            <div className="max-h-[60vh] overflow-y-auto divide-y dark:divide-gray-700">
-              {packagesForAgent.length === 0 ? (
-                <div className="text-sm text-gray-500 dark:text-gray-400 p-8 text-center bg-gray-50 dark:bg-gray-800 rounded-lg border border-dashed border-gray-200 dark:border-gray-700">
-                  No packages assigned yet.
-                </div>
-              ) : packagesForAgent.map(assignment => (
-                <div key={assignment.id} className="py-4 first:pt-0 last:pb-0">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-gray-900 dark:text-gray-100">{assignment.package?.name || 'Unknown Package'}</p>
-                        <Badge variant="outline" className={`
-                          ${assignment.status === 'active' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700' : ''}
-                          ${assignment.status === 'exhausted' ? 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700' : ''}
-                          ${assignment.status === 'expired' ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-700' : ''}
-                        `}>
-                          {assignment.status}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Campaign: {assignment.package?.campaign?.name || 'N/A'}
-                      </p>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        <span>Purchased: {assignment.purchaseDate ? format(new Date(assignment.purchaseDate), 'MMM d, yyyy') : '-'}</span>
-                        <span>Price: ${assignment.priceSnapshot}</span>
-                      </div>
-                    </div>
-                    {editingAssignmentId === assignment.id ? (
-                      <div className="flex items-center justify-end gap-2">
-                        <Input
-                          type="number"
-                          className="h-8 w-20 text-right"
-                          value={editLeadCount}
-                          onChange={(e) => setEditLeadCount(e.target.value)}
-                          min="0"
-                        />
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/30"
-                            onClick={() => handleUpdateAssignment(assignment.id)}
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-                            onClick={handleCancelEdit}
-                          >
-                            <XCircle className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-right group relative">
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center justify-end gap-2">
-                          {assignment.leadsRemaining} / {assignment.leadsTotal}
-                          <Edit
-                            className="w-3 h-3 text-gray-400 dark:text-gray-500 cursor-pointer opacity-0 group-hover:opacity-100 hover:text-blue-600 dark:hover:text-blue-400 transition-opacity"
-                            onClick={() => handleStartEdit(assignment)}
-                          />
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">leads remaining</p>
-                      </div>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
-                      onClick={() => handleDeleteAssignment(assignment.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </DialogContent>
-        </Dialog>
+        <ManagePackagesDialog
+          open={actions.managePackagesDialogOpen}
+          onOpenChange={actions.setManagePackagesDialogOpen}
+          agent={selectedAgent}
+          packages={actions.packagesForAgent}
+          editingAssignmentId={actions.editingAssignmentId}
+          editLeadCount={actions.editLeadCount}
+          onEditLeadCountChange={actions.setEditLeadCount}
+          onStartEdit={actions.handleStartEdit}
+          onCancelEdit={actions.handleCancelEdit}
+          onUpdateAssignment={(id) => actions.handleUpdateAssignment(id, selectedAgent?.id)}
+          onDeleteAssignment={(id) => actions.handleDeleteAssignment(id, selectedAgent?.id)}
+          onAssignPackage={() => handleOpenPackageDialog(selectedAgent)}
+        />
 
-        {/* Assign Campaigns Dialog */}
-
+        <ConfirmDialog
+          open={actions.confirmDialog.open}
+          onOpenChange={(open) => { if (!open) actions.closeConfirm(); }}
+          title={actions.confirmDialog.title}
+          description={actions.confirmDialog.description}
+          onConfirm={actions.confirmDialog.onConfirm}
+          confirmText={actions.confirmDialog.destructive ? "Delete" : "OK"}
+          destructive={actions.confirmDialog.destructive}
+        />
       </div>
-    </div >
+    </div>
   );
 }
