@@ -288,18 +288,14 @@ describe('QR Code list filters', () => {
     promoQrId = res.body.data.qrTag.id;
   });
 
-  // Note: Op.iLike search tests tolerate 500 on SQLite (unsupported operator).
-  // These queries work on PostgreSQL in production.
-  it('GET /api/qrcodes?search= — search endpoint responds (iLike may 500 on SQLite)', async () => {
+  it('GET /api/qrcodes?search= — search endpoint responds', async () => {
     const res = await request(app)
       .get('/api/qrcodes?search=FilterPromo')
       .set('Authorization', `Bearer ${adminToken}`);
 
-    expect([200, 500]).toContain(res.status);
-    if (res.status === 200) {
-      expect(res.body.success).toBe(true);
-      expect(Array.isArray(res.body.data.qrTags)).toBe(true);
-    }
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.data.qrTags)).toBe(true);
   });
 
   it('GET /api/qrcodes?type=promotional — filters by type', async () => {

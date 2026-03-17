@@ -1,0 +1,22 @@
+# Lightweight Postgres for running the test suite.
+# Usage:  docker compose -f docker-compose.test.yml up -d
+#         npm test
+#         docker compose -f docker-compose.test.yml down
+version: '3.8'
+services:
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: mktr-postgres-test
+    environment:
+      POSTGRES_DB: mktr_test
+      POSTGRES_USER: mktr
+      POSTGRES_PASSWORD: mktr
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data  # RAM-backed for speed
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mktr -d mktr_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10

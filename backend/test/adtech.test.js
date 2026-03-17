@@ -8,7 +8,7 @@ process.env.BEACONS_ENABLED = 'true'
 process.env.ENABLE_DOMAIN_PREFIXES = 'true'
 
 import { getApp, closeDb, createTestUser, createTestCampaign } from './helpers.js'
-import { Device } from '../src/models/index.js'
+import { Device, DeviceCampaignAssignment, CampaignMediaItem } from '../src/models/index.js'
 
 let app, adminUser, adminToken
 
@@ -214,15 +214,32 @@ describe('Adtech Manifest', () => {
   beforeAll(async () => {
     const campaign = await createTestCampaign(adminUser.id, {
       name: 'Manifest Test Campaign',
-      status: 'active',
-      ad_playlist: [
-        { id: 'ad1', type: 'image', url: 'https://example.com/img1.jpg', duration: 10 },
-        { id: 'ad2', type: 'video', url: 'https://example.com/vid1.mp4', duration: 15 }
-      ]
+      status: 'active'
     })
-    const result = await createTestDevice({ campaignIds: [campaign.id] })
+    // Create media items (replaces ad_playlist JSON column)
+    await CampaignMediaItem.create({
+      campaignId: campaign.id,
+      mediaType: 'image',
+      url: 'https://example.com/img1.jpg',
+      durationSecs: 10,
+      sortOrder: 0
+    })
+    await CampaignMediaItem.create({
+      campaignId: campaign.id,
+      mediaType: 'video',
+      url: 'https://example.com/vid1.mp4',
+      durationSecs: 15,
+      sortOrder: 1
+    })
+    const result = await createTestDevice()
     testDevice = result.device
     rawKey = result.rawKey
+    // Use join table for device-campaign assignment
+    await DeviceCampaignAssignment.create({
+      deviceId: testDevice.id,
+      campaignId: campaign.id,
+      sortOrder: 0
+    })
   })
 
   it('GET /api/adtech/v1/manifest — returns manifest with playlist', async () => {

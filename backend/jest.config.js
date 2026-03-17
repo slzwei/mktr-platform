@@ -2,8 +2,8 @@ export default {
   testEnvironment: 'node',
   transform: {},
   verbose: false,
-  testTimeout: 15000,
-  // maxWorkers=1 avoids SQLite file contention between test suites
+  testTimeout: 20000,
+  // maxWorkers=1 avoids DB contention between test suites
   maxWorkers: 1,
   // forceExit needed: Express + morgan + process.on handlers keep Node alive
   forceExit: true,

@@ -2,11 +2,11 @@ import './setup.js'
 import crypto from 'crypto'
 import request from 'supertest'
 import { getApp, closeDb, createTestUser, createTestCampaign } from './helpers.js'
-import { Device, Vehicle } from '../src/models/index.js'
+import { Device, VehicleCampaignAssignment } from '../src/models/index.js'
 
 let app, adminToken, adminUser, agentToken
 
-/** Short unique suffix for carplates to avoid SQLite collisions across runs */
+/** Short unique suffix for carplates to avoid collisions across runs */
 const ts = Date.now().toString(36).toUpperCase()
 let plateSeq = 0
 function uniquePlate(prefix = 'T') {
@@ -98,7 +98,11 @@ describe('Vehicle CRUD', () => {
 
   it('GET /api/vehicles — hydrates campaign names', async () => {
     const campaign = await createTestCampaign(adminUser.id, { name: `VehCamp${ts}` })
-    await Vehicle.update({ campaignIds: [campaign.id] }, { where: { id: vehicleId } })
+    await VehicleCampaignAssignment.create({
+      vehicleId: vehicleId,
+      campaignId: campaign.id,
+      sortOrder: 0
+    })
 
     const res = await request(app)
       .get('/api/vehicles')
