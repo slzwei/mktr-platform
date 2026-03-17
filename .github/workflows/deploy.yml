@@ -17,11 +17,11 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15
+        image: postgres:15-alpine
         env:
-          POSTGRES_PASSWORD: test_password
-          POSTGRES_USER: test_user
-          POSTGRES_DB: mktr_test_db
+          POSTGRES_DB: mktr_test
+          POSTGRES_USER: mktr
+          POSTGRES_PASSWORD: mktr
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -58,7 +58,7 @@ jobs:
           npm audit --audit-level=high --production
 
       - name: Run frontend tests
-        run: npm test -- --watchAll=false
+        run: npx vitest run
 
       - name: Run backend tests
         run: |
@@ -68,10 +68,12 @@ jobs:
           NODE_ENV: test
           DB_HOST: localhost
           DB_PORT: 5432
-          DB_NAME: mktr_test_db
-          DB_USER: test_user
-          DB_PASSWORD: test_password
+          DB_NAME: mktr_test
+          DB_USER: mktr
+          DB_PASSWORD: mktr
           JWT_SECRET: test-jwt-secret
+          RETELL_WEBHOOK_SECRET: test-retell-secret
+          WEBHOOK_ENABLED: "false"
 
       - name: Build frontend
         run: npm run build
