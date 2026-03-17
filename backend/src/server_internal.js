@@ -37,22 +37,26 @@ export const init = async (app) => {
   app.use(requestId);
 
   // Security middleware — disable global CORP so we can set it per-route
-  app.use(helmet({
-    crossOriginResourcePolicy: false
-  }));
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: false,
+    })
+  );
 
-  app.use(compression({
-    filter: (req, res) => {
-      if (req.headers['x-no-compression']) {
-        return false;
-      }
-      // Don't compress support SSE endpoints
-      if (req.path.includes('/stream') || req.path.includes('/events')) {
-        return false;
-      }
-      return compression.filter(req, res);
-    }
-  }));
+  app.use(
+    compression({
+      filter: (req, res) => {
+        if (req.headers['x-no-compression']) {
+          return false;
+        }
+        // Don't compress support SSE endpoints
+        if (req.path.includes('/stream') || req.path.includes('/events')) {
+          return false;
+        }
+        return compression.filter(req, res);
+      },
+    })
+  );
 
   // Trust proxy (for accurate req.ip behind reverse proxies)
   if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === 'true') {
@@ -62,50 +66,38 @@ export const init = async (app) => {
   // CORS configuration
   // Always allow these origins + any from environment variables
   const defaultOrigins = ['http://localhost:5173', 'https://mktr.sg', 'https://www.mktr.sg'];
-  const envOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
-    : [];
+  const envOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()) : [];
 
   const corsOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
 
   logger.debug('Configured CORS Origins', { origins: corsOrigins });
 
-  // Explicit OPTIONS handler for preflight requests - must come BEFORE cors() middleware
-  app.options('*', (req, res) => {
-    const origin = req.headers.origin;
-    if (origin && corsOrigins.includes(origin)) {
-      res.set('Access-Control-Allow-Origin', origin);
-      res.set('Access-Control-Allow-Credentials', 'true');
-      res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-      res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-      res.set('Access-Control-Max-Age', '86400'); // Cache preflight for 24 hours
-    }
-    res.status(204).end();
-  });
+  // CORS handles preflight OPTIONS automatically via cors() middleware below.
+  // No explicit OPTIONS handler needed — cors({ preflightContinue: false }) handles it.
 
-  app.use(cors({
-    origin: corsOrigins,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    preflightContinue: false,
-    optionsSuccessStatus: 204
-  }));
+  app.use(
+    cors({
+      origin: corsOrigins,
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      preflightContinue: false,
+      optionsSuccessStatus: 204,
+    })
+  );
 
   // Rate limiting (relaxed for development, bypass for authenticated admins)
   const isProd = process.env.NODE_ENV === 'production';
   const limiter = rateLimit({
-    windowMs: isProd
-      ? (parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000)
-      : 60 * 1000, // 1 minute window in dev
+    windowMs: isProd ? parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000 : 60 * 1000, // 1 minute window in dev
     max: (req) => {
       if (isProd && req.user && req.user.role === 'admin') return 2000;
       return isProd
-        ? (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200)
-        : (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000);
+        ? parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200
+        : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000;
     },
     skip: (req) => !isProd,
-    message: 'Too many requests from this IP, please try again later.'
+    message: 'Too many requests from this IP, please try again later.',
   });
   // Ensure we decode JWT (if present) before limiter so skip() can see admin
   if (isProd) {
@@ -121,14 +113,16 @@ export const init = async (app) => {
 
   // Body parsing middleware
   // The verify callback captures the raw body for webhook signature verification (Retell, Stripe, etc.)
-  app.use(express.json({
-    limit: '1mb',
-    verify: (req, _res, buf) => {
-      if (req.originalUrl.startsWith('/api/retell/')) {
-        req.rawBody = buf;
-      }
-    }
-  }));
+  app.use(
+    express.json({
+      limit: '1mb',
+      verify: (req, _res, buf) => {
+        if (req.originalUrl.startsWith('/api/retell/')) {
+          req.rawBody = buf;
+        }
+      },
+    })
+  );
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
   // CSRF protection: Not required — API uses Bearer token authentication exclusively.
@@ -141,19 +135,23 @@ export const init = async (app) => {
   app.use(leadgenProxyShim());
 
   // Static file serving for uploads — allow cross-origin embedding for images
-  app.use('/uploads', (req, res, next) => {
-    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-    next();
-  }, express.static(path.join(__dirname, '../uploads'), {
-    setHeaders: (res, filePath) => {
-      res.set('X-Content-Type-Options', 'nosniff');
-      // Force download for SVG files (prevents script execution)
-      if (filePath.endsWith('.svg')) {
-        res.set('Content-Disposition', 'attachment');
-        res.set('Content-Type', 'image/svg+xml');
-      }
-    }
-  }));
+  app.use(
+    '/uploads',
+    (req, res, next) => {
+      res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+      next();
+    },
+    express.static(path.join(__dirname, '../uploads'), {
+      setHeaders: (res, filePath) => {
+        res.set('X-Content-Type-Options', 'nosniff');
+        // Force download for SVG files (prevents script execution)
+        if (filePath.endsWith('.svg')) {
+          res.set('Content-Disposition', 'attachment');
+          res.set('Content-Type', 'image/svg+xml');
+        }
+      },
+    })
+  );
 
   // Health check endpoint
   app.get('/health', (req, res) => {
@@ -161,7 +159,7 @@ export const init = async (app) => {
       status: 'OK',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      environment: process.env.NODE_ENV
+      environment: process.env.NODE_ENV,
     });
   });
 
@@ -205,7 +203,7 @@ export const init = async (app) => {
   logger.info('Monolith RPS config', {
     MANIFEST_RPS_PER_DEVICE: process.env.MANIFEST_RPS_PER_DEVICE || '2',
     BEACON_RPS_PER_DEVICE: process.env.BEACON_RPS_PER_DEVICE || '5',
-    BEACON_IDEMP_WINDOW_MIN: process.env.BEACON_IDEMP_WINDOW_MIN || '10'
+    BEACON_IDEMP_WINDOW_MIN: process.env.BEACON_IDEMP_WINDOW_MIN || '10',
   });
 };
 
