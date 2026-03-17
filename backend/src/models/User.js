@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { sequelize } from '../database/connection.js';
 import bcrypt from 'bcryptjs';
 
@@ -159,7 +159,11 @@ const User = sequelize.define('User', {
         user.password = await bcrypt.hash(user.password, salt);
       }
     }
-  }
+  },
+  indexes: [
+    { fields: ['role', 'isActive'], name: 'idx_users_role_isactive' },
+    { fields: ['phone'], name: 'idx_users_phone', where: { phone: { [Op.ne]: null } } }
+  ]
 });
 
 // Instance methods

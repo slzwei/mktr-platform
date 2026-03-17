@@ -28,14 +28,14 @@ export const schemas = {
   // User schemas
   userRegister: Joi.object({
     email: Joi.string().email().required(),
-    password: Joi.string().min(6).required(),
+    password: Joi.string().min(8).max(128).required(),
     // Allow either full_name/fullName OR firstName+lastName
     full_name: Joi.string().min(1).max(100),
     fullName: Joi.string().min(1).max(100),
     firstName: Joi.string().min(1).max(50),
     lastName: Joi.string().min(1).max(50),
     phone: Joi.string().min(10).max(20).optional(),
-    role: Joi.string().valid('admin', 'agent', 'fleet_owner', 'customer').optional()
+    role: Joi.string().valid('customer', 'driver_partner', 'fleet_owner').optional()
   }).custom((value, helpers) => {
     const hasFull = !!value.full_name || !!value.fullName;
     const hasParts = !!value.firstName && !!value.lastName;
@@ -72,9 +72,6 @@ export const schemas = {
     landingPageUrl: Joi.string().uri().optional(),
     callToAction: Joi.string().max(200).optional(),
     tags: Joi.array().items(Joi.string()).optional(),
-    agentAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(), // deprecated
-    agentGroupId: Joi.string().uuid().allow(null).optional(), // deprecated
-    agentGroupAgentIds: Joi.array().items(Joi.string()).optional(), // deprecated
     defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional()
   }),
 
@@ -89,9 +86,6 @@ export const schemas = {
     landingPageUrl: Joi.string().uri().optional(),
     callToAction: Joi.string().max(200).optional(),
     tags: Joi.array().items(Joi.string()).optional(),
-    agentAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(), // deprecated
-    agentGroupId: Joi.string().uuid().allow(null).optional(), // deprecated
-    agentGroupAgentIds: Joi.array().items(Joi.string()).optional(), // deprecated
     defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional()
   }),
 
@@ -197,12 +191,8 @@ export const schemas = {
     price: Joi.number().min(0).required(),
     leadCount: Joi.number().min(1).required(),
     qualityScore: Joi.number().min(1).max(10).optional(),
-    targetAudience: Joi.object().optional(),
-    leadCriteria: Joi.object().optional(),
     deliveryMethod: Joi.string().valid('email', 'api', 'csv_download', 'dashboard').optional(),
     validityPeriod: Joi.number().min(1).optional(),
-    features: Joi.array().items(Joi.string()).optional(),
-    tags: Joi.array().items(Joi.string()).optional(),
     campaignId: Joi.string().uuid().optional()
   })
 };

@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { sequelize } from '../database/connection.js';
 
 const Prospect = sequelize.define('Prospect', {
@@ -244,7 +244,10 @@ const Prospect = sequelize.define('Prospect', {
     },
     {
       fields: ['nextFollowUpDate']
-    }
+    },
+    { fields: ['createdAt'], name: 'idx_prospects_createdat' },
+    { fields: ['conversionDate'], name: 'idx_prospects_conversiondate', where: { conversionDate: { [Op.ne]: null } } },
+    { fields: ['assignedAgentId', 'leadStatus'], name: 'idx_prospects_agent_status' }
   ]
 });
 
