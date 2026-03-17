@@ -6,7 +6,6 @@ import TypingLoader from '@/components/ui/TypingLoader';
 import CheckCircle from 'lucide-react/icons/check-circle';
 import AlertTriangle from 'lucide-react/icons/alert-triangle';
 import ShareCampaignDialog from '@/components/campaigns/ShareCampaignDialog';
-import { Button } from '@/components/ui/button';
 import LeadCaptureLayout from '@/components/campaigns/LeadCaptureLayout';
 
 export default function PublicPreview() {
@@ -30,7 +29,9 @@ export default function PublicPreview() {
         if (mounted) setLoading(false);
       }
     })();
-    return () => { mounted = false };
+    return () => {
+      mounted = false;
+    };
   }, [slug]);
 
   const design = useMemo(() => snapshot?.design_config || {}, [snapshot]);
@@ -53,10 +54,13 @@ export default function PublicPreview() {
         email: formData.email,
         phone: formData.phone,
         leadSource: 'website',
-        campaignId: snapshot?.id
+        campaignId: snapshot?.id,
       };
       const res = await apiClient.post('/prospects', body);
-      if (res.success) { setSubmitted(true); setShareOpen(true); } else setError(res.message || 'Submission failed');
+      if (res.success) {
+        setSubmitted(true);
+        setShareOpen(true);
+      } else setError(res.message || 'Submission failed');
     } catch (e) {
       setError(e.message || 'Submission failed');
     }
@@ -116,7 +120,9 @@ function Title({ title }) {
   useEffect(() => {
     const prev = document.title;
     document.title = title;
-    return () => { document.title = prev; };
+    return () => {
+      document.title = prev;
+    };
   }, [title]);
   return null;
 }
