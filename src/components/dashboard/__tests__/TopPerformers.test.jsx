@@ -19,10 +19,30 @@ describe('TopPerformers', () => {
 
   it('renders ranked agents with names and conversion rates', () => {
     const prospects = [
-      { id: '1', assignedAgentId: 'agent-1234-abcd', assignedAgent: { firstName: 'Alice', lastName: 'Tan' }, leadStatus: 'close_won' },
-      { id: '2', assignedAgentId: 'agent-1234-abcd', assignedAgent: { firstName: 'Alice', lastName: 'Tan' }, leadStatus: 'contacted' },
-      { id: '3', assignedAgentId: 'agent-1234-abcd', assignedAgent: { firstName: 'Alice', lastName: 'Tan' }, leadStatus: 'close_won' },
-      { id: '4', assignedAgentId: 'agent-5678-efgh', assignedAgent: { firstName: 'Bob', lastName: 'Lim' }, leadStatus: 'new' },
+      {
+        id: '1',
+        assignedAgentId: 'agent-1234-abcd',
+        assignedAgent: { firstName: 'Alice', lastName: 'Tan' },
+        leadStatus: 'close_won',
+      },
+      {
+        id: '2',
+        assignedAgentId: 'agent-1234-abcd',
+        assignedAgent: { firstName: 'Alice', lastName: 'Tan' },
+        leadStatus: 'contacted',
+      },
+      {
+        id: '3',
+        assignedAgentId: 'agent-1234-abcd',
+        assignedAgent: { firstName: 'Alice', lastName: 'Tan' },
+        leadStatus: 'close_won',
+      },
+      {
+        id: '4',
+        assignedAgentId: 'agent-5678-efgh',
+        assignedAgent: { firstName: 'Bob', lastName: 'Lim' },
+        leadStatus: 'new',
+      },
     ];
     render(<TopPerformers prospects={prospects} />);
 
@@ -38,18 +58,35 @@ describe('TopPerformers', () => {
     expect(screen.getByText('0% rate')).toBeInTheDocument();
   });
 
-  it('falls back to truncated ID when agent record is missing', () => {
+  it('excludes prospects with no agent record (orphaned/deleted agents)', () => {
     const prospects = [
       { id: '1', assignedAgentId: 'orphan-99-xxxx', leadStatus: 'won' },
+      {
+        id: '2',
+        assignedAgentId: 'real-agent-id',
+        assignedAgent: { firstName: 'Alice', lastName: 'Tan' },
+        leadStatus: 'new',
+      },
     ];
     render(<TopPerformers prospects={prospects} />);
-    expect(screen.getByText('Agent orphan-9')).toBeInTheDocument();
+    expect(screen.queryByText(/orphan/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Alice Tan')).toBeInTheDocument();
   });
 
   it('excludes the system agent from rankings', () => {
     const prospects = [
-      { id: '1', assignedAgentId: 'sys-agent-id', assignedAgent: { email: 'system@mktr.local', firstName: 'System', lastName: 'Agent' }, leadStatus: 'won' },
-      { id: '2', assignedAgentId: 'real-agent-id', assignedAgent: { firstName: 'Alice', lastName: 'Tan' }, leadStatus: 'new' },
+      {
+        id: '1',
+        assignedAgentId: 'sys-agent-id',
+        assignedAgent: { email: 'system@mktr.local', firstName: 'System', lastName: 'Agent' },
+        leadStatus: 'won',
+      },
+      {
+        id: '2',
+        assignedAgentId: 'real-agent-id',
+        assignedAgent: { firstName: 'Alice', lastName: 'Tan' },
+        leadStatus: 'new',
+      },
     ];
     render(<TopPerformers prospects={prospects} />);
 
