@@ -12,7 +12,7 @@ export async function createCommission(req, res) {
   res.status(201).json({
     success: true,
     message: 'Commission created successfully',
-    data: { commission }
+    data: { commission },
   });
 }
 
@@ -41,17 +41,17 @@ export async function updateCommission(req, res) {
   res.json({
     success: true,
     message: 'Commission updated successfully',
-    data: { commission }
+    data: { commission },
   });
 }
 
 // Approve commission
 export async function approveCommission(req, res) {
-  const commission = await commissionService.approveCommission(req.params.id, req.user.id, req.body.notes);
+  const commission = await commissionService.approveCommission(req.params.id, req.user.id, req.body?.notes);
   res.json({
     success: true,
     message: 'Commission approved successfully',
-    data: { commission }
+    data: { commission },
   });
 }
 
@@ -61,18 +61,20 @@ export async function payCommission(req, res) {
   res.json({
     success: true,
     message: 'Commission marked as paid successfully',
-    data: { commission }
+    data: { commission },
   });
 }
 
 // Bulk approve commissions
 export async function bulkApproveCommissions(req, res) {
   const affectedCount = await commissionService.bulkApproveCommissions(
-    req.body.commissionIds, req.user.id, req.body.notes
+    req.body.commissionIds,
+    req.user.id,
+    req.body.notes
   );
   res.json({
     success: true,
     message: `${affectedCount} commissions approved successfully`,
-    data: { affectedCount }
+    data: { affectedCount },
   });
 }
