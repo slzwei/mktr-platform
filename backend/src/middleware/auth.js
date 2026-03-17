@@ -3,6 +3,7 @@ import { User } from '../models/index.js';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { DEFAULT_TENANT_ID } from './tenant.js';
 import { logger } from '../utils/logger.js';
+import { COOKIE_NAME } from '../utils/authCookie.js';
 
 // Hard check: JWT_SECRET must be set or all token operations fail-safe
 function getJwtSecret() {
@@ -70,7 +71,7 @@ async function mapJwtToUser(payload) {
       fullName: payload.name || null,
       role: 'customer',
       isActive: true,
-      emailVerified: true
+      emailVerified: true,
     });
   }
   if (user) {
@@ -83,8 +84,11 @@ async function mapJwtToUser(payload) {
 // Verify JWT token
 export const authenticateToken = async (req, res, next) => {
   try {
+    // Read token: cookie first, then Authorization header
+    const cookieToken = req.cookies?.[COOKIE_NAME];
     const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+    const bearerToken = authHeader && authHeader.split(' ')[1];
+    const token = cookieToken || bearerToken;
 
     if (!token) {
       return res.status(401).json({ success: false, message: 'Access token required' });
@@ -94,7 +98,7 @@ export const authenticateToken = async (req, res, next) => {
       try {
         const { payload } = await jwtVerify(token, getRemoteJwks(), {
           issuer: getExpectedIssuer() || undefined,
-          audience: getExpectedAudience() || undefined
+          audience: getExpectedAudience() || undefined,
         });
         const user = await mapJwtToUser(payload);
         if (!user || !user.isActive) {
@@ -102,7 +106,7 @@ export const authenticateToken = async (req, res, next) => {
         }
         // Debounce lastLogin writes — only update if stale by 5+ minutes
         const fiveMinutes = 5 * 60 * 1000;
-        if (!user.lastLogin || (Date.now() - new Date(user.lastLogin).getTime()) > fiveMinutes) {
+        if (!user.lastLogin || Date.now() - new Date(user.lastLogin).getTime() > fiveMinutes) {
           user.lastLogin = new Date();
           user.save().catch(() => {}); // fire-and-forget, don't block the request
         }
@@ -120,7 +124,7 @@ export const authenticateToken = async (req, res, next) => {
     }
     // Debounce lastLogin writes — only update if stale by 5+ minutes
     const fiveMinutes = 5 * 60 * 1000;
-    if (!legacyUser.lastLogin || (Date.now() - new Date(legacyUser.lastLogin).getTime()) > fiveMinutes) {
+    if (!legacyUser.lastLogin || Date.now() - new Date(legacyUser.lastLogin).getTime() > fiveMinutes) {
       legacyUser.lastLogin = new Date();
       legacyUser.save().catch(() => {}); // fire-and-forget, don't block the request
     }
@@ -140,14 +144,14 @@ export const requireRole = (...roles) => {
     if (!req.user) {
       return res.status(401).json({
         success: false,
-        message: 'Authentication required'
+        message: 'Authentication required',
       });
     }
 
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        message: 'Insufficient permissions'
+        message: 'Insufficient permissions',
       });
     }
 
@@ -167,8 +171,11 @@ export const requireFleetOwnerOrAdmin = requireRole('fleet_owner', 'admin');
 // Optional authentication (doesn't fail if no token)
 export const optionalAuth = async (req, res, next) => {
   try {
+    // Read token: cookie first, then Authorization header
+    const cookieToken = req.cookies?.[COOKIE_NAME];
     const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1];
+    const bearerToken = authHeader && authHeader.split(' ')[1];
+    const token = cookieToken || bearerToken;
 
     if (token) {
       let user = null;
@@ -176,16 +183,20 @@ export const optionalAuth = async (req, res, next) => {
         try {
           const { payload } = await jwtVerify(token, getRemoteJwks(), {
             issuer: getExpectedIssuer() || undefined,
-            audience: getExpectedAudience() || undefined
+            audience: getExpectedAudience() || undefined,
           });
           user = await mapJwtToUser(payload);
-        } catch (_) { /* expected: token verification may fail */ }
+        } catch (_) {
+          /* expected: token verification may fail */
+        }
       }
       if (!user) {
         try {
           const decoded = jwt.verify(token, getJwtSecret());
           user = await User.findByPk(decoded.userId);
-        } catch (_) { /* expected: token verification may fail */ }
+        } catch (_) {
+          /* expected: token verification may fail */
+        }
       }
       if (user && user.isActive) req.user = user;
     }
@@ -199,11 +210,7 @@ export const optionalAuth = async (req, res, next) => {
 
 // Generate JWT token
 export const generateToken = (userId) => {
-  return jwt.sign(
-    { userId },
-    getJwtSecret(),
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-  );
+  return jwt.sign({ userId }, getJwtSecret(), { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
 };
 
 // Verify email token

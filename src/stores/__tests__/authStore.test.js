@@ -18,9 +18,15 @@ const localStorageMock = (() => {
   let store = {};
   return {
     getItem: vi.fn((key) => store[key] ?? null),
-    setItem: vi.fn((key, value) => { store[key] = String(value); }),
-    removeItem: vi.fn((key) => { delete store[key]; }),
-    clear: vi.fn(() => { store = {}; }),
+    setItem: vi.fn((key, value) => {
+      store[key] = String(value);
+    }),
+    removeItem: vi.fn((key) => {
+      delete store[key];
+    }),
+    clear: vi.fn(() => {
+      store = {};
+    }),
     _store: () => store,
   };
 })();
@@ -56,7 +62,7 @@ describe('authStore', () => {
 
     expect(result.success).toBe(true);
     expect(useAuthStore.getState().user).toEqual(fakeUser);
-    expect(useAuthStore.getState().token).toBe('tok-abc');
+    expect(useAuthStore.getState().token).toBe('authenticated');
   });
 
   it('login does not set state when API returns failure', async () => {
@@ -83,8 +89,8 @@ describe('authStore', () => {
     useAuthStore.getState().setAuth(user, 'tok-xyz');
 
     expect(useAuthStore.getState().user).toEqual(user);
-    expect(useAuthStore.getState().token).toBe('tok-xyz');
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('mktr_auth_token', 'tok-xyz');
+    expect(useAuthStore.getState().token).toBe('authenticated');
+    expect(localStorageMock.setItem).toHaveBeenCalledWith('mktr_auth_token', 'authenticated');
     expect(localStorageMock.setItem).toHaveBeenCalledWith('mktr_user', JSON.stringify(user));
   });
 
@@ -115,7 +121,7 @@ describe('authStore', () => {
     await useAuthStore.getState().register({ email: 'dave@test.com', password: 'secret' });
 
     expect(useAuthStore.getState().user).toEqual(fakeUser);
-    expect(useAuthStore.getState().token).toBe('tok-reg');
+    expect(useAuthStore.getState().token).toBe('authenticated');
   });
 
   it('googleLogin sets user and token on success', async () => {
@@ -128,6 +134,6 @@ describe('authStore', () => {
     await useAuthStore.getState().googleLogin('google-cred');
 
     expect(useAuthStore.getState().user).toEqual(fakeUser);
-    expect(useAuthStore.getState().token).toBe('tok-google');
+    expect(useAuthStore.getState().token).toBe('authenticated');
   });
 });
