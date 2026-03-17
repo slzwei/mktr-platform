@@ -28,7 +28,6 @@ import {
     HardDrive,
     RefreshCcw,
     Eye,
-    PlayCircle,
     MapPin
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -62,7 +61,7 @@ export default function AdminDevices() {
         const url = `${import.meta.env.VITE_API_URL}/devices/events/fleet/stream?token=${token}`;
         const sse = new EventSource(url);
 
-        sse.onopen = () => console.log('✅ Connected to Fleet Stream');
+        sse.onopen = () => {};
 
         sse.addEventListener('status_change', (e) => {
             try {
@@ -135,12 +134,11 @@ export default function AdminDevices() {
     useEffect(() => {
         if (!expandedDeviceId) return;
 
-        console.log(`[Preview] Connecting to stream for ${expandedDeviceId}`);
         const token = localStorage.getItem('mktr_auth_token');
         const url = `${import.meta.env.VITE_API_URL}/devices/events/${expandedDeviceId}/logs/stream?token=${token}`;
         const sse = new EventSource(url);
 
-        sse.onopen = () => console.log(`[Preview] Connected to ${expandedDeviceId}`);
+        sse.onopen = () => {};
 
         sse.addEventListener('log', (e) => {
             try {
@@ -161,7 +159,6 @@ export default function AdminDevices() {
         };
 
         return () => {
-            console.log(`[Preview] Closing stream for ${expandedDeviceId}`);
             sse.close();
         };
     }, [expandedDeviceId]);
