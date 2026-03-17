@@ -24,7 +24,7 @@ const LeadPackageAssignment = sequelize.define('LeadPackageAssignment', {
         }
     },
     status: {
-        type: DataTypes.ENUM('active', 'completed', 'cancelled', 'expired'),
+        type: DataTypes.ENUM('active', 'completed', 'cancelled', 'expired', 'exhausted'),
         defaultValue: 'active'
     },
     leadsRemaining: {
@@ -59,7 +59,8 @@ const LeadPackageAssignment = sequelize.define('LeadPackageAssignment', {
         },
         {
             fields: ['status']
-        }
+        },
+        { fields: ['agentId', 'status', 'leadsRemaining'], name: 'idx_lpa_agent_status_remaining' }
     ]
 });
 

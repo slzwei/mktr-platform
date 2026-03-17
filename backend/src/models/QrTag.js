@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { sequelize } from '../database/connection.js';
 
 const QrTag = sequelize.define('QrTag', {
@@ -108,6 +108,10 @@ const QrTag = sequelize.define('QrTag', {
       this.setDataValue('tags', JSON.stringify(value || []));
     }
   },
+  assignedAgentId: {
+    type: DataTypes.UUID,
+    allowNull: true
+  },
   assignedAgentPhone: {
     type: DataTypes.STRING,
     allowNull: true
@@ -136,11 +140,6 @@ const QrTag = sequelize.define('QrTag', {
       model: 'agent_groups',
       key: 'id'
     }
-  },
-  agentGroupAgentIds: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: []
   },
   roundRobinIndex: {
     type: DataTypes.INTEGER,
@@ -191,7 +190,9 @@ const QrTag = sequelize.define('QrTag', {
     {
       fields: ['carId']
     },
-    // slug index can be added via raw SQL after backfill in SQLite
+    { unique: true, fields: ['slug'], name: 'idx_qrtags_slug_unique', where: { slug: { [Op.ne]: null } } },
+    { fields: ['ownerUserId'], name: 'idx_qrtags_owneruserid' },
+    { fields: ['agentGroupId'], name: 'idx_qrtags_agentgroupid', where: { agentGroupId: { [Op.ne]: null } } }
   ]
 });
 

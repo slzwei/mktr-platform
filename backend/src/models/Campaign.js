@@ -83,11 +83,6 @@ const Campaign = sequelize.define('Campaign', {
     type: DataTypes.BOOLEAN,
     defaultValue: true
   },
-  assigned_agents: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: []
-  },
   design_config: {
     type: DataTypes.JSON,
     allowNull: true,
@@ -107,27 +102,7 @@ const Campaign = sequelize.define('Campaign', {
       len: [1, 200]
     }
   },
-  ad_playlist: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: [] // [{type, url, duration, id}]
-  },
-  designAssets: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: []
-  },
-  metrics: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {
-      views: 0,
-      clicks: 0,
-      conversions: 0,
-      leads: 0,
-      revenue: 0
-    }
-  },
+  // metrics column removed — now computed by campaignService.computeCampaignMetrics()
   tags: {
     type: DataTypes.TEXT,
     allowNull: true,
@@ -151,36 +126,6 @@ const Campaign = sequelize.define('Campaign', {
       model: 'users',
       key: 'id'
     }
-  },
-  // @deprecated — routing moved to QrTag. Kept for backward compat.
-  agentAssignmentMode: {
-    type: DataTypes.STRING,
-    allowNull: false,
-    defaultValue: 'round_robin',
-    validate: {
-      isIn: [['direct', 'round_robin']]
-    }
-  },
-  // @deprecated — routing moved to QrTag
-  agentGroupId: {
-    type: DataTypes.UUID,
-    allowNull: true,
-    references: {
-      model: 'agent_groups',
-      key: 'id'
-    }
-  },
-  // @deprecated — routing moved to QrTag
-  agentGroupAgentIds: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: []
-  },
-  // @deprecated — routing moved to QrTag
-  roundRobinIndex: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    defaultValue: 0
   },
   // UX convenience: pre-fills QR forms with this default
   defaultAssignmentMode: {
