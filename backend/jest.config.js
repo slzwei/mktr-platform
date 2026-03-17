@@ -8,5 +8,12 @@ export default {
   // forceExit needed: Express + morgan + process.on handlers keep Node alive
   forceExit: true,
   // Set env vars before any modules are loaded (JWT_SECRET, NODE_ENV)
-  setupFiles: ['./test/setup.js']
+  setupFiles: ['./test/setup.js'],
+  collectCoverageFrom: [
+    'src/**/*.js',
+    '!src/tests/**',
+    '!src/database/migrations/**',
+    '!src/database/seed/**',
+  ],
+  coverageReporters: ['text', 'text-summary', 'lcov'],
 }
