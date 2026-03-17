@@ -128,6 +128,12 @@ const User = sequelize.define('User', {
   }
 }, {
   tableName: 'users',
+  defaultScope: {
+    attributes: { exclude: ['password', 'emailVerificationToken', 'resetPasswordToken', 'resetPasswordExpires'] }
+  },
+  scopes: {
+    withPassword: { attributes: {} }
+  },
   hooks: {
     // Ensure name fields stay in sync whether client sends first/last or full name
     beforeValidate: (user) => {

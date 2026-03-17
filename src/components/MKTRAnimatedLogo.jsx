@@ -1,56 +1,58 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react';
 
 const MKTRAnimatedLogo = ({ message }) => {
-  const [borderProgress, setBorderProgress] = useState(0)
-  const [flashEffect, setFlashEffect] = useState(false)
-  const [glitchEffect, setGlitchEffect] = useState(false)
+  const [borderProgress, setBorderProgress] = useState(0);
+  const [flashEffect, setFlashEffect] = useState(false);
+  const [glitchEffect, setGlitchEffect] = useState(false);
 
   const startAnimation = () => {
-    setBorderProgress(0)
-    setFlashEffect(false)
-    setGlitchEffect(false)
+    setBorderProgress(0);
+    setFlashEffect(false);
+    setGlitchEffect(false);
 
     const animateProgress = () => {
-      let progress = 0
+      let progress = 0;
       const interval = setInterval(() => {
-        progress += 2
-        setBorderProgress(progress)
+        progress += 2;
+        setBorderProgress(progress);
         if (progress >= 100) {
-          clearInterval(interval)
-          setTimeout(() => setFlashEffect(true), 100)
-          setTimeout(() => setFlashEffect(false), 400)
-          setTimeout(() => setFlashEffect(true), 500)
-          setTimeout(() => setFlashEffect(false), 800)
-          setTimeout(() => setGlitchEffect(true), 900)
-          setTimeout(() => setGlitchEffect(false), 1200)
+          clearInterval(interval);
+          setTimeout(() => setFlashEffect(true), 100);
+          setTimeout(() => setFlashEffect(false), 400);
+          setTimeout(() => setFlashEffect(true), 500);
+          setTimeout(() => setFlashEffect(false), 800);
+          setTimeout(() => setGlitchEffect(true), 900);
+          setTimeout(() => setGlitchEffect(false), 1200);
         }
-      }, 20)
-    }
+      }, 20);
+    };
 
-    setTimeout(animateProgress, 10)
-  }
+    setTimeout(animateProgress, 10);
+  };
 
   useEffect(() => {
-    startAnimation()
-  }, [])
+    startAnimation();
+  }, []);
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      minHeight: '100vh', 
-      backgroundColor: 'black'
-    }}>
-      <div 
-        style={{ 
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        backgroundColor: 'black',
+      }}
+    >
+      <div
+        style={{
           cursor: 'pointer',
           position: 'relative',
           padding: '12px 20px',
           backgroundColor: flashEffect ? 'white' : 'transparent',
           transition: 'background-color 0.1s',
           borderRadius: '24px',
-          border: '4px solid transparent'
+          border: '4px solid transparent',
         }}
       >
         <div style={{ display: 'flex', position: 'relative', zIndex: 1 }}>
@@ -63,15 +65,19 @@ const MKTRAnimatedLogo = ({ message }) => {
                 color: flashEffect ? 'black' : 'white',
                 fontFamily: 'Inter, sans-serif',
                 opacity: 1,
-                transform: glitchEffect ? `translate(${Math.random() * 12 - 6}px, ${Math.random() * 12 - 6}px) skew(${Math.random() * 10 - 5}deg)` : 'translateY(0)',
-                textShadow: glitchEffect ? `
+                transform: glitchEffect
+                  ? `translate(${Math.random() * 12 - 6}px, ${Math.random() * 12 - 6}px) skew(${Math.random() * 10 - 5}deg)`
+                  : 'translateY(0)',
+                textShadow: glitchEffect
+                  ? `
                   ${Math.random() * 8 - 4}px ${Math.random() * 4 - 2}px red,
                   ${Math.random() * 8 - 4}px ${Math.random() * 4 - 2}px blue,
                   ${Math.random() * 8 - 4}px ${Math.random() * 4 - 2}px green,
                   ${Math.random() * 12 - 6}px ${Math.random() * 6 - 3}px cyan,
                   ${Math.random() * 10 - 5}px ${Math.random() * 5 - 2.5}px magenta
-                ` : 'none',
-                transition: glitchEffect ? 'none' : 'all 0.05s'
+                `
+                  : 'none',
+                transition: glitchEffect ? 'none' : 'all 0.05s',
               }}
             >
               {letter}
@@ -92,15 +98,16 @@ const MKTRAnimatedLogo = ({ message }) => {
             overflow: 'hidden',
             opacity: glitchEffect ? 1 : 0,
             transition: 'opacity 0.12s',
-            zIndex: 2
+            zIndex: 2,
           }}
         >
           <div
             style={{
               position: 'absolute',
               inset: 0,
-              background: 'repeating-linear-gradient( to bottom, rgba(255,0,0,0.08) 0px, rgba(0,255,255,0.08) 2px, rgba(255,0,255,0.08) 4px, transparent 6px )',
-              transform: `translateY(${Math.random() * 8 - 4}px)`
+              background:
+                'repeating-linear-gradient( to bottom, rgba(255,0,0,0.08) 0px, rgba(0,255,255,0.08) 2px, rgba(255,0,255,0.08) 4px, transparent 6px )',
+              transform: `translateY(${Math.random() * 8 - 4}px)`,
             }}
           />
           <div
@@ -108,12 +115,12 @@ const MKTRAnimatedLogo = ({ message }) => {
               position: 'absolute',
               inset: 0,
               background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.07) 50%, transparent 100%)',
-              animation: 'mktr-glitch-scan 0.35s linear infinite'
+              animation: 'mktr-glitch-scan 0.35s linear infinite',
             }}
           />
         </div>
 
-        <div 
+        <div
           style={{
             position: 'absolute',
             top: 0,
@@ -127,7 +134,7 @@ const MKTRAnimatedLogo = ({ message }) => {
             maskComposite: 'xor',
             WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
             WebkitMaskComposite: 'xor',
-            boxShadow: glitchEffect ? '0 0 10px red, 0 0 20px blue' : 'none'
+            boxShadow: glitchEffect ? '0 0 10px red, 0 0 20px blue' : 'none',
           }}
         />
       </div>
@@ -145,9 +152,7 @@ const MKTRAnimatedLogo = ({ message }) => {
         </div>
       )}
     </div>
-  )
-}
+  );
+};
 
-export default MKTRAnimatedLogo
-
-
+export default MKTRAnimatedLogo;

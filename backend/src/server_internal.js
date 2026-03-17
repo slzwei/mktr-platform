@@ -98,12 +98,13 @@ export const init = async (app) => {
     windowMs: isProd
       ? (parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000)
       : 60 * 1000, // 1 minute window in dev
-    max: isProd
-      ? (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200)
-      : (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000), // very high in dev
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: (req) => (!isProd) || !!(req.user && req.user.role === 'admin'),
+    max: (req) => {
+      if (isProd && req.user && req.user.role === 'admin') return 2000;
+      return isProd
+        ? (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200)
+        : (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000);
+    },
+    skip: (req) => !isProd,
     message: 'Too many requests from this IP, please try again later.'
   });
   // Ensure we decode JWT (if present) before limiter so skip() can see admin
@@ -164,9 +165,11 @@ export const init = async (app) => {
     });
   });
 
-  // Swagger API docs
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-  app.get('/api-docs.json', (req, res) => res.json(swaggerSpec));
+  // Swagger API docs (restricted to non-production)
+  if (process.env.NODE_ENV !== 'production') {
+    app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+    app.get('/api-docs.json', (req, res) => res.json(swaggerSpec));
+  }
 
   // Bind attribution/session for SPA lead-capture page (path-less middleware, must precede routes)
   app.use(leadCaptureBind);

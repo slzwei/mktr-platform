@@ -19,10 +19,14 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
       if (open) {
         setShortening(true);
         try {
-          const resp = await apiClient.post('/shortlinks/public/share', {
-            targetUrl: longShareUrl,
-            campaignId,
-          }, { skipAuth: true });
+          const resp = await apiClient.post(
+            '/shortlinks/public/share',
+            {
+              targetUrl: longShareUrl,
+              campaignId,
+            },
+            { skipAuth: true }
+          );
           const url = resp?.data?.url;
           const absolute = url?.startsWith('http') ? url : `${window.location.origin}${url}`;
           setShortShareUrl(absolute || '');
@@ -43,7 +47,9 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
     } else {
       document.body.style.overflow = '';
     }
-    return () => { document.body.style.overflow = ''; };
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [open]);
 
   const shareUrl = shortShareUrl || longShareUrl;
@@ -66,9 +72,7 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex-1">
             <h2 className="text-lg font-bold text-gray-900">Invite Friends</h2>
-            <p className="text-sm text-gray-500 mt-0.5">
-              Share "{campaignName}" with others.
-            </p>
+            <p className="text-sm text-gray-500 mt-0.5">Share "{campaignName}" with others.</p>
           </div>
           <button onClick={close} className="ml-3 p-1.5 rounded-full hover:bg-gray-100 text-gray-400">
             <X className="w-5 h-5" />
@@ -94,7 +98,9 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
                   await navigator.clipboard.writeText(shareUrl);
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
-                } catch (_) { }
+                } catch {
+                  /* clipboard not available */
+                }
               }}
             >
               {copied ? <CheckCircle className="w-3.5 h-3.5 mr-1" /> : null}
@@ -106,26 +112,33 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
           <div className="grid grid-cols-2 gap-3">
             <Button
               onClick={() => {
-                const text = campaignName
-                  ? `Join me in ${campaignName}! ${shareUrl}`
-                  : `Check this out: ${shareUrl}`;
+                const text = campaignName ? `Join me in ${campaignName}! ${shareUrl}` : `Check this out: ${shareUrl}`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
               }}
               className="bg-[#25D366] hover:bg-[#20bd5a] text-white border-0 shadow-md active:scale-95 h-11"
             >
-              <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg" alt="" className="w-4 h-4 invert mr-2" />
+              <img
+                src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg"
+                alt=""
+                className="w-4 h-4 invert mr-2"
+              />
               WhatsApp
             </Button>
             <Button
               onClick={() => {
-                const text = campaignName
-                  ? `Join me in ${campaignName}!`
-                  : 'Check this out:';
-                window.open(`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(text)}`, '_blank');
+                const text = campaignName ? `Join me in ${campaignName}!` : 'Check this out:';
+                window.open(
+                  `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(text)}`,
+                  '_blank'
+                );
               }}
               className="bg-[#229ED9] hover:bg-[#1f8dbf] text-white border-0 shadow-md active:scale-95 h-11"
             >
-              <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/telegram.svg" alt="" className="w-4 h-4 invert mr-2" />
+              <img
+                src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/telegram.svg"
+                alt=""
+                className="w-4 h-4 invert mr-2"
+              />
               Telegram
             </Button>
           </div>

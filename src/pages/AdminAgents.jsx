@@ -1,28 +1,26 @@
-import { useState } from "react";
-import { agents as agentsAPI } from "@/api/client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/ui/use-toast";
-import { Plus, RefreshCw } from "lucide-react";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useState } from 'react';
+import { agents as agentsAPI } from '@/api/client';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCurrentUser } from '@/hooks/queries/useUsersQuery';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Plus, RefreshCw } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
-import AgentFilters from "../components/agents/AgentFilters";
-import AgentTable from "../components/agents/AgentTable";
-import ManagePackagesDialog from "../components/agents/ManagePackagesDialog";
-import InviteAgentDialog from "../components/agents/InviteAgentDialog";
-import AgentDetailsDialog from "../components/agents/AgentDetailsDialog";
-import AssignPackageDialog from "../components/agents/AssignPackageDialog";
-import useAgentActions from "@/hooks/useAgentActions";
+import AgentFilters from '../components/agents/AgentFilters';
+import AgentTable from '../components/agents/AgentTable';
+import ManagePackagesDialog from '../components/agents/ManagePackagesDialog';
+import InviteAgentDialog from '../components/agents/InviteAgentDialog';
+import AgentDetailsDialog from '../components/agents/AgentDetailsDialog';
+import AssignPackageDialog from '../components/agents/AssignPackageDialog';
+import useAgentActions from '@/hooks/useAgentActions';
 
 export default function AdminAgents() {
   const queryClient = useQueryClient();
-  const { toast } = useToast();
   const { data: user } = useCurrentUser();
 
   const { data: agentsData, isLoading: loading } = useQuery({
-    queryKey: ["agents", "list"],
+    queryKey: ['agents', 'list'],
     queryFn: () => agentsAPI.getAll(),
     enabled: !!user,
   });
@@ -34,31 +32,27 @@ export default function AdminAgents() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isPackageDialogOpen, setIsPackageDialogOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   // --- Actions hook ---
-  const actions = useAgentActions({ queryClient, toast });
+  const actions = useAgentActions({ queryClient });
 
   // --- Filtering ---
   const filteredAgents = agents.filter((agent) => {
-    const needle = (searchTerm || "").toLowerCase();
-    const name = (agent.fullName || agent.full_name || "").toLowerCase();
+    const needle = (searchTerm || '').toLowerCase();
+    const name = (agent.fullName || agent.full_name || '').toLowerCase();
     const matchesSearch =
-      name.includes(needle) ||
-      agent.email?.toLowerCase().includes(needle) ||
-      agent.phone?.includes(searchTerm);
+      name.includes(needle) || agent.email?.toLowerCase().includes(needle) || agent.phone?.includes(searchTerm);
 
     let matchesStatus = true;
-    if (statusFilter !== "all") {
+    if (statusFilter !== 'all') {
       const isPending =
         agent?.isActive === true &&
-        (agent?.status === "pending_registration" ||
-          !!agent?.invitationToken ||
-          agent?.emailVerified === false);
-      if (statusFilter === "pending") matchesStatus = isPending;
-      else if (statusFilter === "active") matchesStatus = agent.isActive && !isPending;
-      else if (statusFilter === "inactive") matchesStatus = !agent.isActive;
+        (agent?.status === 'pending_registration' || !!agent?.invitationToken || agent?.emailVerified === false);
+      if (statusFilter === 'pending') matchesStatus = isPending;
+      else if (statusFilter === 'active') matchesStatus = agent.isActive && !isPending;
+      else if (statusFilter === 'inactive') matchesStatus = !agent.isActive;
     }
     return matchesSearch && matchesStatus;
   });
@@ -69,9 +63,7 @@ export default function AdminAgents() {
   };
 
   const handleSelectAgent = (agentId, checked) => {
-    setSelectedAgentIds((prev) =>
-      checked ? [...prev, agentId] : prev.filter((id) => id !== agentId)
-    );
+    setSelectedAgentIds((prev) => (checked ? [...prev, agentId] : prev.filter((id) => id !== agentId)));
   };
 
   // --- Dialog openers ---
@@ -102,7 +94,7 @@ export default function AdminAgents() {
       setIsFormOpen(false);
       setSelectedAgent(null);
     } catch (error) {
-      console.error("Error saving agent:", error);
+      console.error('Error saving agent:', error);
       throw error;
     }
   };
@@ -149,8 +141,8 @@ export default function AdminAgents() {
                 </span>
               )}
               <Button variant="outline" onClick={actions.handleSyncFromLyfe} disabled={actions.syncing}>
-                <RefreshCw className={`w-4 h-4 mr-2 ${actions.syncing ? "animate-spin" : ""}`} />
-                {actions.syncing ? "Syncing..." : "Sync from Lyfe"}
+                <RefreshCw className={`w-4 h-4 mr-2 ${actions.syncing ? 'animate-spin' : ''}`} />
+                {actions.syncing ? 'Syncing...' : 'Sync from Lyfe'}
               </Button>
             </div>
             <Button onClick={() => handleOpenForm()} className="bg-blue-600 hover:bg-blue-700">
@@ -182,8 +174,8 @@ export default function AdminAgents() {
               onDeleteAgent={actions.handleDeleteAgent}
               onToggleStatus={actions.handleToggleStatus}
               onResendInvite={actions.handleResendInvite}
-              onApprove={(id) => actions.handleSetApprovalStatus(id, "approved")}
-              onReject={(id) => actions.handleSetApprovalStatus(id, "rejected")}
+              onApprove={(id) => actions.handleSetApprovalStatus(id, 'approved')}
+              onReject={(id) => actions.handleSetApprovalStatus(id, 'rejected')}
               onManagePackages={handleOpenManagePackages}
               onAssignPackage={handleOpenPackageDialog}
             />
@@ -198,11 +190,7 @@ export default function AdminAgents() {
           onSubmit={handleFormSubmit}
         />
 
-        <AgentDetailsDialog
-          open={isDetailsOpen}
-          onOpenChange={setIsDetailsOpen}
-          agent={selectedAgent}
-        />
+        <AgentDetailsDialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen} agent={selectedAgent} />
 
         <AssignPackageDialog
           open={isPackageDialogOpen}
@@ -228,11 +216,13 @@ export default function AdminAgents() {
 
         <ConfirmDialog
           open={actions.confirmDialog.open}
-          onOpenChange={(open) => { if (!open) actions.closeConfirm(); }}
+          onOpenChange={(open) => {
+            if (!open) actions.closeConfirm();
+          }}
           title={actions.confirmDialog.title}
           description={actions.confirmDialog.description}
           onConfirm={actions.confirmDialog.onConfirm}
-          confirmText={actions.confirmDialog.destructive ? "Delete" : "OK"}
+          confirmText={actions.confirmDialog.destructive ? 'Delete' : 'OK'}
           destructive={actions.confirmDialog.destructive}
         />
       </div>

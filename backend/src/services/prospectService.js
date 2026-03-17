@@ -1,17 +1,46 @@
 import { Op } from 'sequelize';
-import { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, AgentGroup, AgentGroupMember, sequelize } from '../models/index.js';
+import {
+  Prospect,
+  User,
+  Campaign,
+  QrTag,
+  Commission,
+  Attribution,
+  ProspectActivity,
+  AgentGroup,
+  AgentGroupMember,
+  sequelize,
+} from '../models/index.js';
 import { resolveAssignedAgentId, getSystemAgentId } from './systemAgent.js';
 import { deductLeadCredit } from './leadCredits.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { dispatchEvent } from './webhookService.js';
 import { logger } from '../utils/logger.js';
+import {
+  normalizePhone,
+  buildLeadCreatedPayload,
+  buildLeadAssignedPayload,
+  buildLeadUnassignedPayload,
+} from './prospectHelpers.js';
 
 const PROSPECT_UPDATE_FIELDS = [
-  'firstName', 'lastName', 'email', 'phone', 'company', 'jobTitle',
-  'leadStatus', 'priority', 'leadSource', 'notes',
-  'nextFollowUpDate', 'lastContactDate', 'assignedAgentId',
-  'demographics', 'location', 'tags'
+  'firstName',
+  'lastName',
+  'email',
+  'phone',
+  'company',
+  'jobTitle',
+  'leadStatus',
+  'priority',
+  'leadSource',
+  'notes',
+  'nextFollowUpDate',
+  'lastContactDate',
+  'assignedAgentId',
+  'demographics',
+  'location',
+  'tags',
 ];
 
 const defaultDeps = {
@@ -43,7 +72,7 @@ export function makeProspectService(overrides = {}) {
     if (sid) {
       const attribution = await m.Attribution.findOne({
         where: { sessionId: sid },
-        order: [['lastTouchAt', 'DESC']]
+        order: [['lastTouchAt', 'DESC']],
       });
       if (attribution) {
         incoming.attributionId = attribution.id;
@@ -65,27 +94,12 @@ export function makeProspectService(overrides = {}) {
       reqUser: user,
       requestedAgentId: body.assignedAgentId,
       campaignId: incoming.campaignId,
-      qrTagId: incoming.qrTagId
+      qrTagId: incoming.qrTagId,
     });
 
     // Normalize phone to E.164 format
     if (incoming.phone) {
-      let phone = String(incoming.phone).replace(/\s+/g, '');
-      // If it's just digits (no +), assume Singapore (+65)
-      if (/^\d+$/.test(phone)) {
-        if (phone.length === 8 && /^[3689]/.test(phone)) {
-          phone = `+65${phone}`;
-        } else if (phone.startsWith('65') && phone.length === 10) {
-          phone = `+${phone}`;
-        } else {
-          phone = `+${phone}`;
-        }
-      }
-      // Ensure it starts with +
-      if (!phone.startsWith('+')) {
-        phone = `+${phone}`;
-      }
-      incoming.phone = phone;
+      incoming.phone = normalizePhone(incoming.phone);
     }
 
     // Enforce: a phone can register once per campaign, but can register for different campaigns
@@ -93,8 +107,8 @@ export function makeProspectService(overrides = {}) {
       const existing = await m.Prospect.findOne({
         where: {
           campaignId: incoming.campaignId,
-          phone: incoming.phone
-        }
+          phone: incoming.phone,
+        },
       });
       if (existing) {
         throw new d.AppError('This phone number has already signed up for this campaign.', 409);
@@ -115,7 +129,7 @@ export function makeProspectService(overrides = {}) {
         incoming.demographics = {
           ...(incoming.demographics || {}),
           age: age,
-          dateOfBirth: body.date_of_birth
+          dateOfBirth: body.date_of_birth,
         };
       }
     }
@@ -125,7 +139,7 @@ export function makeProspectService(overrides = {}) {
       incoming.location = {
         ...(incoming.location || {}),
         zipCode: body.postal_code,
-        postalCode: body.postal_code
+        postalCode: body.postal_code,
       };
     }
 
@@ -141,7 +155,7 @@ export function makeProspectService(overrides = {}) {
     // Pre-load campaign and QR tag for routing resolution
     const [sourceCampaign, sourceQrTag] = await Promise.all([
       incoming.campaignId ? m.Campaign.findByPk(incoming.campaignId) : null,
-      incoming.qrTagId ? m.QrTag.findByPk(incoming.qrTagId) : null
+      incoming.qrTagId ? m.QrTag.findByPk(incoming.qrTagId) : null,
     ]);
 
     // --- Routing resolution: reads from QrTag, not Campaign ---
@@ -187,14 +201,14 @@ export function makeProspectService(overrides = {}) {
       resolvedAgent = {
         phone: sourceQrTag.assignedAgentPhone,
         email: sourceQrTag.assignedAgentEmail,
-        name: sourceQrTag.assignedAgentName
+        name: sourceQrTag.assignedAgentName,
       };
     }
 
     // Override assignedAgentId with QR-level routing result (by phone lookup)
     if (resolvedAgent?.phone) {
       const agentByPhone = await m.User.findOne({
-        where: { phone: resolvedAgent.phone, role: 'agent', isActive: true }
+        where: { phone: resolvedAgent.phone, role: 'agent', isActive: true },
       });
       if (agentByPhone) {
         assignedAgentId = agentByPhone.id;
@@ -210,39 +224,54 @@ export function makeProspectService(overrides = {}) {
       const activityDescription = `Prospect signed up for ${campaignName} campaign via ${qrTagName} QR code`;
 
       // Activity: created
-      await m.ProspectActivity.create({
-        prospectId: newProspect.id,
-        type: 'created',
-        actorUserId: user?.id || null,
-        description: activityDescription,
-        metadata: { leadSource: incoming.leadSource, campaignId: newProspect.campaignId, qrTagId: newProspect.qrTagId }
-      }, { transaction: t });
+      await m.ProspectActivity.create(
+        {
+          prospectId: newProspect.id,
+          type: 'created',
+          actorUserId: user?.id || null,
+          description: activityDescription,
+          metadata: {
+            leadSource: incoming.leadSource,
+            campaignId: newProspect.campaignId,
+            qrTagId: newProspect.qrTagId,
+          },
+        },
+        { transaction: t }
+      );
 
       // Activity: assigned
-      await m.ProspectActivity.create({
-        prospectId: newProspect.id,
-        type: 'assigned',
-        actorUserId: user?.id || null,
-        description: `Assigned to agent ${assignedAgentId}`,
-        metadata: { assignedAgentId }
-      }, { transaction: t });
+      await m.ProspectActivity.create(
+        {
+          prospectId: newProspect.id,
+          type: 'assigned',
+          actorUserId: user?.id || null,
+          description: `Assigned to agent ${assignedAgentId}`,
+          metadata: { assignedAgentId },
+        },
+        { transaction: t }
+      );
 
       // Deduct lead credit from agent's package
       if (assignedAgentId) {
-        await d.deductLeadCredit(assignedAgentId, 1, t).catch(err => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
+        await d
+          .deductLeadCredit(assignedAgentId, 1, t)
+          .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
       }
 
       // Update QR tag analytics (atomic to avoid read-modify-write race)
       if (newProspect.qrTagId && sourceQrTag) {
-        await sourceQrTag.update({
-          analytics: d.sequelize.literal(`
+        await sourceQrTag.update(
+          {
+            analytics: d.sequelize.literal(`
             jsonb_set(
               COALESCE(analytics::jsonb, '{}'),
               '{conversions}',
               to_jsonb(COALESCE((analytics->>'conversions')::int, 0) + 1)
             )
-          `)
-        }, { transaction: t });
+          `),
+          },
+          { transaction: t }
+        );
       }
 
       // Campaign metrics are now computed from real data (no JSON blob to increment)
@@ -255,63 +284,29 @@ export function makeProspectService(overrides = {}) {
     let agentForWebhook = resolvedAgent;
     if (!agentForWebhook && assignedAgentId) {
       const agentRecord = await m.User.findByPk(assignedAgentId, {
-        attributes: ['id', 'lyfeId', 'phone', 'email', 'firstName', 'lastName']
+        attributes: ['id', 'lyfeId', 'phone', 'email', 'firstName', 'lastName'],
       });
       if (agentRecord) {
         agentForWebhook = {
           phone: agentRecord.phone || null,
           email: agentRecord.email || null,
           name: `${agentRecord.firstName || ''} ${agentRecord.lastName || ''}`.trim(),
-          id: agentRecord.lyfeId || agentRecord.id
+          id: agentRecord.lyfeId || agentRecord.id,
         };
       }
     }
 
-    d.dispatchEvent('lead.created', () => ({
-      event: 'lead.created',
-      timestamp: new Date().toISOString(),
-      data: {
-        lead: {
-          externalId: prospect.id,
-          firstName: prospect.firstName,
-          lastName: prospect.lastName,
-          phone: prospect.phone,
-          email: prospect.email,
-          company: prospect.company,
-          jobTitle: prospect.jobTitle,
-          industry: prospect.industry,
-          leadSource: prospect.leadSource,
-          interests: prospect.interests,
-          budget: prospect.budget,
-          preferences: prospect.preferences,
-          demographics: prospect.demographics,
-          location: prospect.location,
-          tags: prospect.tags,
-          notes: prospect.notes,
-          sourceMetadata: prospect.sourceMetadata,
-          recordingUrl: prospect.sourceMetadata?.recordingUrl || null,
-          transcript: prospect.sourceMetadata?.retellCallId ? prospect.notes : null,
-          createdAt: prospect.createdAt
-        },
-        routing: {
-          mode: routingMode,
-          agentPhone: agentForWebhook?.phone || null,
-          agentEmail: agentForWebhook?.email || null,
-          agentName: agentForWebhook?.name || null,
-          agentExternalId: agentForWebhook?.id || assignedAgentId || null,
-          groupId: agentGroup?.id || null,
-          groupName: agentGroup?.name || null
-        },
-        campaign: {
-          externalId: sourceCampaign?.id || null,
-          name: sourceCampaign?.name || null
-        },
-        qrTag: {
-          externalId: sourceQrTag?.id || null,
-          slug: sourceQrTag?.slug || null
-        }
-      }
-    })).catch(err => {
+    d.dispatchEvent('lead.created', () =>
+      buildLeadCreatedPayload(
+        prospect,
+        routingMode,
+        agentForWebhook,
+        assignedAgentId,
+        sourceCampaign,
+        sourceQrTag,
+        agentGroup
+      )
+    ).catch((err) => {
       d.logger.error('[Webhook] dispatch error', { error: err?.message || String(err) });
     });
 
@@ -321,7 +316,7 @@ export function makeProspectService(overrides = {}) {
     if (assignedAgentId) {
       assignedAgent = await m.User.findByPk(assignedAgentId);
       prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
-        include: [{ association: 'campaign', attributes: ['id', 'name'] }]
+        include: [{ association: 'campaign', attributes: ['id', 'name'] }],
       });
     }
 
@@ -340,26 +335,26 @@ export function makeProspectService(overrides = {}) {
       include: [
         {
           association: 'assignedAgent',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phone']
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phone'],
         },
         {
           association: 'campaign',
-          attributes: ['id', 'name', 'type', 'status', 'description']
+          attributes: ['id', 'name', 'type', 'status', 'description'],
         },
         {
           association: 'qrTag',
-          attributes: ['id', 'name', 'type', 'location']
+          attributes: ['id', 'name', 'type', 'location'],
         },
         {
           association: 'commissions',
-          attributes: ['id', 'type', 'amount', 'status', 'earnedDate']
+          attributes: ['id', 'type', 'amount', 'status', 'earnedDate'],
         },
         {
           association: 'activities',
           attributes: ['id', 'type', 'description', 'metadata', 'createdAt'],
-          order: [['createdAt', 'ASC']]
-        }
-      ]
+          order: [['createdAt', 'ASC']],
+        },
+      ],
     });
 
     if (!prospect) {
@@ -378,7 +373,7 @@ export function makeProspectService(overrides = {}) {
 
     const prospect = await m.Prospect.findOne({
       where: whereConditions,
-      include: [{ association: 'assignedAgent', attributes: ['firstName', 'lastName', 'email'] }]
+      include: [{ association: 'assignedAgent', attributes: ['firstName', 'lastName', 'email'] }],
     });
 
     if (!prospect) {
@@ -389,9 +384,7 @@ export function makeProspectService(overrides = {}) {
     const oldAssignedAgentId = prospect.assignedAgentId;
     const oldAssignedAgent = prospect.assignedAgent;
 
-    const safeUpdates = Object.fromEntries(
-      Object.entries(body).filter(([k]) => PROSPECT_UPDATE_FIELDS.includes(k))
-    );
+    const safeUpdates = Object.fromEntries(Object.entries(body).filter(([k]) => PROSPECT_UPDATE_FIELDS.includes(k)));
     await prospect.update(safeUpdates);
 
     // Check for manual unassignment
@@ -407,8 +400,8 @@ export function makeProspectService(overrides = {}) {
         description: `Lead manually unassigned from ${agentName} by ${user.firstName || 'Admin'}`,
         metadata: {
           previousAssignedAgentId: oldAssignedAgentId,
-          reason: 'manual_unassignment'
-        }
+          reason: 'manual_unassignment',
+        },
       });
     }
 
@@ -424,16 +417,19 @@ export function makeProspectService(overrides = {}) {
         // Create commission for assigned agent
         if (prospect.assignedAgentId) {
           const commissionAmount = parseFloat(process.env.DEFAULT_COMMISSION_AMOUNT || '50');
-          await m.Commission.create({
-            type: 'conversion',
-            amount: commissionAmount,
-            status: 'pending',
-            description: `Lead conversion: ${prospect.firstName} ${prospect.lastName}`,
-            agentId: prospect.assignedAgentId,
-            campaignId: prospect.campaignId,
-            prospectId: prospect.id,
-            earnedDate: new Date()
-          }, { transaction: t });
+          await m.Commission.create(
+            {
+              type: 'conversion',
+              amount: commissionAmount,
+              status: 'pending',
+              description: `Lead conversion: ${prospect.firstName} ${prospect.lastName}`,
+              agentId: prospect.assignedAgentId,
+              campaignId: prospect.campaignId,
+              prospectId: prospect.id,
+              earnedDate: new Date(),
+            },
+            { transaction: t }
+          );
         }
 
         // Campaign metrics are now computed from real data (no JSON blob to increment)
@@ -483,7 +479,7 @@ export function makeProspectService(overrides = {}) {
         type: 'assigned',
         actorUserId: user?.id || null,
         description: 'Unassigned from agent',
-        metadata: { previousAgentId }
+        metadata: { previousAgentId },
       });
 
       // Fire lead.unassigned webhook — resolve lyfeId for previous agent
@@ -493,29 +489,14 @@ export function makeProspectService(overrides = {}) {
         if (prevAgent?.lyfeId) previousAgentLyfeId = prevAgent.lyfeId;
       }
 
-      d.dispatchEvent('lead.unassigned', () => ({
-        event: 'lead.unassigned',
-        timestamp: new Date().toISOString(),
-        data: {
-          lead: {
-            externalId: prospect.id,
-            firstName: prospect.firstName,
-            lastName: prospect.lastName,
-            phone: prospect.phone,
-            email: prospect.email,
-            leadSource: prospect.leadSource,
-            sourceMetadata: prospect.sourceMetadata
-          },
-          previousAgentId: previousAgentLyfeId
-        }
-      }));
+      d.dispatchEvent('lead.unassigned', () => buildLeadUnassignedPayload(prospect, previousAgentLyfeId));
 
       return { prospect, agent: null, prospectWithCampaign: prospect };
     }
 
     // ── Assign ──
     const agent = await m.User.findOne({
-      where: { id: agentId, role: 'agent', isActive: true }
+      where: { id: agentId, role: 'agent', isActive: true },
     });
 
     if (!agent) {
@@ -524,7 +505,7 @@ export function makeProspectService(overrides = {}) {
 
     await prospect.update({
       assignedAgentId: agentId,
-      lastContactDate: new Date()
+      lastContactDate: new Date(),
     });
 
     await m.ProspectActivity.create({
@@ -532,46 +513,19 @@ export function makeProspectService(overrides = {}) {
       type: 'assigned',
       actorUserId: user?.id || null,
       description: `Assigned to agent ${agent.firstName} ${agent.lastName}`.trim(),
-      metadata: { assignedAgentId: agentId, previousAgentId }
+      metadata: { assignedAgentId: agentId, previousAgentId },
     });
 
-    await d.deductLeadCredit(agentId).catch(err => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
+    await d
+      .deductLeadCredit(agentId)
+      .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
 
     const prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
-      include: [{ association: 'campaign', attributes: ['id', 'name'] }]
+      include: [{ association: 'campaign', attributes: ['id', 'name'] }],
     });
 
     // Fire lead.assigned webhook
-    const meta = prospect.sourceMetadata || {};
-    d.dispatchEvent('lead.assigned', () => ({
-      event: 'lead.assigned',
-      timestamp: new Date().toISOString(),
-      data: {
-        lead: {
-          externalId: prospect.id,
-          firstName: prospect.firstName,
-          lastName: prospect.lastName,
-          phone: prospect.phone,
-          email: prospect.email,
-          leadSource: prospect.leadSource,
-          tags: prospect.tags,
-          notes: prospect.notes,
-          sourceMetadata: meta,
-          recordingUrl: meta.recordingUrl || null,
-          transcript: meta.retellCallId ? prospect.notes : null,
-          createdAt: prospect.createdAt
-        },
-        routing: {
-          agentExternalId: agent.lyfeId || agent.id,
-          agentName: [agent.firstName, agent.lastName].filter(Boolean).join(' '),
-          agentEmail: agent.email,
-          agentPhone: agent.phone
-        },
-        campaign: prospectWithCampaign?.campaign
-          ? { externalId: prospectWithCampaign.campaign.id, name: prospectWithCampaign.campaign.name }
-          : null
-      }
-    }));
+    d.dispatchEvent('lead.assigned', () => buildLeadAssignedPayload(prospect, agent, prospectWithCampaign));
 
     return { prospect, agent, prospectWithCampaign };
   }
@@ -588,8 +542,8 @@ export function makeProspectService(overrides = {}) {
       where: {
         id: agentId,
         role: 'agent',
-        isActive: true
-      }
+        isActive: true,
+      },
     });
 
     if (!agent) {
@@ -599,20 +553,22 @@ export function makeProspectService(overrides = {}) {
     const scopeFilter = await d.buildProspectWhere(user);
     const whereConditions = {
       id: { [Op.in]: prospectIds },
-      ...scopeFilter
+      ...scopeFilter,
     };
 
     const result = await m.Prospect.update(
       {
         assignedAgentId: agentId,
-        lastContactDate: new Date()
+        lastContactDate: new Date(),
       },
       { where: whereConditions }
     );
 
     const affectedCount = result[0];
     if (affectedCount > 0) {
-      await d.deductLeadCredit(agentId, affectedCount).catch(err => d.logger.error('Failed to deduct credits', { error: err?.message || String(err) }));
+      await d
+        .deductLeadCredit(agentId, affectedCount)
+        .catch((err) => d.logger.error('Failed to deduct credits', { error: err?.message || String(err) }));
     }
 
     return { affectedCount, agent };
@@ -624,71 +580,63 @@ export function makeProspectService(overrides = {}) {
   async function getProspectStats(user) {
     const whereConditions = await d.buildProspectWhere(user);
 
-    const [totalProspects, prospectsByStatus, prospectsBySource, prospectsByPriority, recentProspects, convertedCount] = await Promise.all([
-      m.Prospect.count({ where: whereConditions }),
-      m.Prospect.findAll({
-        where: whereConditions,
-        attributes: [
-          'leadStatus',
-          [d.sequelize.fn('COUNT', d.sequelize.col('leadStatus')), 'count']
-        ],
-        group: ['leadStatus']
-      }),
-      m.Prospect.findAll({
-        where: whereConditions,
-        attributes: [
-          'leadSource',
-          [d.sequelize.fn('COUNT', d.sequelize.col('leadSource')), 'count']
-        ],
-        group: ['leadSource']
-      }),
-      m.Prospect.findAll({
-        where: whereConditions,
-        attributes: [
-          'priority',
-          [d.sequelize.fn('COUNT', d.sequelize.col('priority')), 'count']
-        ],
-        group: ['priority']
-      }),
-      m.Prospect.findAll({
-        where: {
-          ...whereConditions,
-          createdAt: {
-            [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-          }
-        },
-        limit: 10,
-        order: [['createdAt', 'DESC']],
-        attributes: ['id', 'firstName', 'lastName', 'email', 'leadStatus', 'createdAt'],
-        include: [
-          {
-            association: 'campaign',
-            attributes: ['id', 'name']
-          }
-        ]
-      }),
-      m.Prospect.count({
-        where: { ...whereConditions, leadStatus: 'won' }
-      })
-    ]);
-    const conversionRate = totalProspects > 0 ? (convertedCount / totalProspects * 100).toFixed(2) : 0;
+    const [totalProspects, prospectsByStatus, prospectsBySource, prospectsByPriority, recentProspects, convertedCount] =
+      await Promise.all([
+        m.Prospect.count({ where: whereConditions }),
+        m.Prospect.findAll({
+          where: whereConditions,
+          attributes: ['leadStatus', [d.sequelize.fn('COUNT', d.sequelize.col('leadStatus')), 'count']],
+          group: ['leadStatus'],
+        }),
+        m.Prospect.findAll({
+          where: whereConditions,
+          attributes: ['leadSource', [d.sequelize.fn('COUNT', d.sequelize.col('leadSource')), 'count']],
+          group: ['leadSource'],
+        }),
+        m.Prospect.findAll({
+          where: whereConditions,
+          attributes: ['priority', [d.sequelize.fn('COUNT', d.sequelize.col('priority')), 'count']],
+          group: ['priority'],
+        }),
+        m.Prospect.findAll({
+          where: {
+            ...whereConditions,
+            createdAt: {
+              [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+            },
+          },
+          limit: 10,
+          order: [['createdAt', 'DESC']],
+          attributes: ['id', 'firstName', 'lastName', 'email', 'leadStatus', 'createdAt'],
+          include: [
+            {
+              association: 'campaign',
+              attributes: ['id', 'name'],
+            },
+          ],
+        }),
+        m.Prospect.count({
+          where: { ...whereConditions, leadStatus: 'won' },
+        }),
+      ]);
+    const conversionRate = totalProspects > 0 ? ((convertedCount / totalProspects) * 100).toFixed(2) : 0;
 
     return {
       totalProspects,
       conversionRate: parseFloat(conversionRate),
-      byStatus: prospectsByStatus.map(item => ({
+      byStatus: prospectsByStatus.map((item) => ({
         status: item.leadStatus,
-        count: parseInt(item.dataValues.count)
+        count: parseInt(item.dataValues.count),
       })),
-      bySource: prospectsBySource.map(item => ({
+      bySource: prospectsBySource.map((item) => ({
         source: item.leadSource,
-        count: parseInt(item.dataValues.count)
+        count: parseInt(item.dataValues.count),
       })),
-      byPriority: prospectsByPriority.map(item => ({
+      byPriority: prospectsByPriority.map((item) => ({
         priority: item.priority,
-        count: parseInt(item.dataValues.count)
+        count: parseInt(item.dataValues.count),
       })),
-      recentProspects
+      recentProspects,
     };
   }
 
@@ -707,7 +655,7 @@ export function makeProspectService(overrides = {}) {
       search,
       dateFrom,
       dateTo,
-      qrTagId
+      qrTagId,
     } = params;
 
     const offset = (page - 1) * limit;
@@ -728,7 +676,7 @@ export function makeProspectService(overrides = {}) {
         { firstName: { [likeOp]: `%${sanitizedSearch}%` } },
         { lastName: { [likeOp]: `%${sanitizedSearch}%` } },
         { email: { [likeOp]: `%${sanitizedSearch}%` } },
-        { company: { [likeOp]: `%${sanitizedSearch}%` } }
+        { company: { [likeOp]: `%${sanitizedSearch}%` } },
       ];
     }
 
@@ -746,17 +694,17 @@ export function makeProspectService(overrides = {}) {
       include: [
         {
           association: 'assignedAgent',
-          attributes: ['id', 'firstName', 'lastName', 'email']
+          attributes: ['id', 'firstName', 'lastName', 'email'],
         },
         {
           association: 'campaign',
-          attributes: ['id', 'name', 'type', 'status']
+          attributes: ['id', 'name', 'type', 'status'],
         },
         {
           association: 'qrTag',
-          attributes: ['id', 'name', 'type']
-        }
-      ]
+          attributes: ['id', 'name', 'type'],
+        },
+      ],
     });
 
     return {
@@ -765,8 +713,8 @@ export function makeProspectService(overrides = {}) {
         currentPage: parseInt(page),
         totalPages: Math.ceil(count / limit),
         totalItems: count,
-        itemsPerPage: parseInt(limit)
-      }
+        itemsPerPage: parseInt(limit),
+      },
     };
   }
 
@@ -787,7 +735,7 @@ export function makeProspectService(overrides = {}) {
 
     const updateData = {
       nextFollowUpDate: new Date(nextFollowUpDate),
-      lastContactDate: new Date()
+      lastContactDate: new Date(),
     };
 
     if (notes) {
@@ -802,7 +750,7 @@ export function makeProspectService(overrides = {}) {
       type: 'updated',
       actorUserId: user?.id || null,
       description: `Prospect updated by ${user?.role || 'system'}`,
-      metadata: { before: previous, after: prospect.toJSON() }
+      metadata: { before: previous, after: prospect.toJSON() },
     });
 
     return prospect;
@@ -827,8 +775,8 @@ export function makeProspectService(overrides = {}) {
       metadata: {
         source: source || 'email_link',
         viewedAt: new Date(),
-        userAgent
-      }
+        userAgent,
+      },
     });
   }
 
