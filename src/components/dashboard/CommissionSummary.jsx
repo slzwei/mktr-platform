@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { 
   DollarSign,
   BarChart3,
@@ -42,7 +41,7 @@ export default function CommissionSummary({ commissions, userRole, period = '30d
       <CardHeader className="border-b border-border">
         <div className="flex justify-between items-center">
           <CardTitle className="text-lg font-bold">Commission Summary</CardTitle>
-          <Link to={createPageUrl("AdminCommissions")}>
+          <Link to={"/AdminCommissions"}>
             <Button variant="outline" size="sm">
               View All
               <ArrowRight className="w-4 h-4 ml-2" />

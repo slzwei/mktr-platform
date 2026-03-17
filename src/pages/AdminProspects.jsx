@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Prospect, Campaign } from "@/api/entities";
+import { Prospect } from "@/api/entities";
 import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
 import { useUpdateProspect, useDeleteProspect } from "@/hooks/queries/useProspectsQuery";
+import { useCampaignLookup } from "@/hooks/queries/useCampaignsQuery";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,51 +43,8 @@ import {
 
 import ProspectFilters from "@/components/prospects/ProspectFilters";
 import ProspectDetails from "@/components/prospects/ProspectDetails";
-
-const statusStyles = {
-  new: "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800",
-  contacted: "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800",
-  meeting: "bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-200 dark:border-violet-800",
-  won: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
-  lost: "bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800",
-  rejected: "bg-slate-50 dark:bg-slate-950/30 text-slate-700 dark:text-slate-400 border-slate-200 dark:border-slate-800"
-};
-
-const statusLabels = {
-  new: "New",
-  contacted: "Contacted",
-  meeting: "Meeting",
-  won: "Won",
-  lost: "Lost",
-  rejected: "Rejected",
-  negotiating: "Negotiating",
-  qualified: "Qualified"
-};
-
-function normalizeProspect(p) {
-  const name = [p.firstName, p.lastName].filter(Boolean).join(" ") || p.name || "";
-  const status = (p.leadStatus || p.status || "new").toLowerCase();
-  const createdDate = p.createdAt || p.created_date || new Date().toISOString();
-  const source = (p.leadSource || p.source || "other").toLowerCase();
-  let simplifiedSource = "other";
-  if (source === "qr_code") simplifiedSource = "qr";
-  else if (source === "website") simplifiedSource = "form";
-  else if (source === "call_bot") simplifiedSource = "call bot";
-
-  const assignedAgentId = p.assignedAgentId || p.assigned_agent_id || "";
-  const assignedAgentName = p.assignedAgent
-    ? ([p.assignedAgent.firstName, p.assignedAgent.lastName].filter(Boolean).join(" ") || p.assignedAgent.email || "Agent")
-    : (p.assigned_agent_name || "");
-
-  return {
-    id: p.id, name, phone: p.phone || "", email: p.email || "",
-    postal_code: p.location?.zipCode || p.postal_code || "",
-    date_of_birth: p.dateOfBirth || p.date_of_birth || null,
-    status, created_date: createdDate, source: simplifiedSource,
-    assigned_agent_id: assignedAgentId, assigned_agent_name: assignedAgentName,
-    campaign_id: p.campaignId || p.campaign_id || ""
-  };
-}
+import normalizeProspect from "@/utils/normalizeProspect";
+import { statusStyles, statusLabels } from "@/constants/statusConfig";
 
 export default function AdminProspects() {
   const location = useLocation();
@@ -138,16 +96,7 @@ export default function AdminProspects() {
     queryKey: ['prospects', 'list', queryParams],
     queryFn: () => Prospect.list(queryParams),
   });
-  const { data: campaignsRaw } = useQuery({
-    queryKey: ['campaigns', 'all-for-lookup'],
-    queryFn: () => Campaign.list({ limit: 1000 }),
-    staleTime: 60_000,
-  });
-
-  const campaigns = useMemo(() => {
-    if (!campaignsRaw) return [];
-    return Array.isArray(campaignsRaw) ? campaignsRaw : (campaignsRaw.campaigns || []);
-  }, [campaignsRaw]);
+  const { data: campaigns = [] } = useCampaignLookup();
 
   const prospects = useMemo(() => {
     const data = prospectsResponse?.prospects || prospectsResponse || [];

@@ -14,10 +14,6 @@ const API_CONFIG = {
   timeout: 30000
 };
 
-// Authentication state
-let authToken = null;
-let currentUser = null;
-
 // Storage keys
 const STORAGE_KEYS = {
   TOKEN: 'mktr_auth_token',
@@ -25,18 +21,32 @@ const STORAGE_KEYS = {
 };
 
 /**
+ * Read the auth token directly from localStorage on every call.
+ * This eliminates stale module-level variables and keeps localStorage
+ * as the single persistence layer (Zustand store is the React source of truth).
+ */
+function getToken() {
+  return localStorage.getItem(STORAGE_KEYS.TOKEN);
+}
+
+function getStoredUser() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || 'null');
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
  * HTTP Client with automatic token management
  */
 class APIClient {
   constructor(baseURL = API_CONFIG.baseURL) {
     this.baseURL = baseURL;
-    this.token = localStorage.getItem(STORAGE_KEYS.TOKEN);
   }
 
-  // Set authentication token
+  // Set authentication token (writes to localStorage only)
   setToken(token) {
-    this.token = token;
-    authToken = token;
     if (token) {
       localStorage.setItem(STORAGE_KEYS.TOKEN, token);
     } else {
@@ -44,9 +54,9 @@ class APIClient {
     }
   }
 
-  // Get current token
+  // Get current token — always reads from localStorage
   getToken() {
-    return this.token || localStorage.getItem(STORAGE_KEYS.TOKEN);
+    return getToken();
   }
 
   // Make HTTP request
@@ -81,19 +91,21 @@ class APIClient {
       // Handle authentication errors
       if (response.status === 401 && !options.skipAuth) {
         this.setToken(null);
-        currentUser = null;
         localStorage.removeItem(STORAGE_KEYS.USER);
 
         if (typeof window !== 'undefined') {
-          console.log('🔒 API: 401 Unauthorized - Dispatching global auth:unauthorized event');
           window.dispatchEvent(new Event('auth:unauthorized'));
         }
 
-        throw new Error('Authentication required');
+        const err = new Error('Authentication required');
+        err.status = 401;
+        throw err;
       }
 
       if (response.status === 401 && options.skipAuth) {
-        throw new Error('Authentication required');
+        const err = new Error('Authentication required');
+        err.status = 401;
+        throw err;
       }
 
       // Parse JSON only if Content-Type is JSON; otherwise fall back to text
@@ -127,14 +139,20 @@ class APIClient {
             validationErrors = data.details.message;
           }
 
-          throw new Error(`Validation Error: ${validationErrors}`);
+          const err = new Error(`Validation Error: ${validationErrors}`);
+          err.status = response.status;
+          throw err;
         }
 
         // For non-JSON responses (e.g., rate limits returning plain text), bubble up text
         if (!isJson) {
-          throw new Error(typeof data === 'string' ? data : `HTTP ${response.status}: ${response.statusText}`);
+          const err = new Error(typeof data === 'string' ? data : `HTTP ${response.status}: ${response.statusText}`);
+          err.status = response.status;
+          throw err;
         }
-        throw new Error(data.message || `HTTP ${response.status}: ${response.statusText}`);
+        const err = new Error(data.message || `HTTP ${response.status}: ${response.statusText}`);
+        err.status = response.status;
+        throw err;
       }
 
       return isJson ? data : { success: false, message: data };
@@ -218,7 +236,6 @@ export const auth = {
 
     if (response.success && response.data.token) {
       apiClient.setToken(response.data.token);
-      currentUser = response.data.user;
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
     }
 
@@ -227,18 +244,13 @@ export const auth = {
 
   // Google OAuth login
   async googleLogin(credential) {
-    // console.debug('🔍 AUTH: Sending Google credential to backend...');
     const response = await apiClient.post('/auth/google', { credential });
-    // console.debug('🔍 AUTH: Backend response:', response);
 
     if (response.success && response.data.token) {
-      // console.debug('✅ AUTH: Google login successful, storing token...');
       apiClient.setToken(response.data.token);
-      currentUser = response.data.user;
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
-      localStorage.setItem(STORAGE_KEYS.TOKEN, response.data.token);
     } else {
-      console.error('❌ AUTH: Google login failed:', response);
+      console.error('AUTH: Google login failed:', response);
     }
 
     return response;
@@ -250,7 +262,6 @@ export const auth = {
 
     if (response.success && response.data.token) {
       apiClient.setToken(response.data.token);
-      currentUser = response.data.user;
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
     }
 
@@ -264,9 +275,7 @@ export const auth = {
     });
     if (response.success && response.data?.token) {
       apiClient.setToken(response.data.token);
-      currentUser = response.data.user;
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
-      localStorage.setItem(STORAGE_KEYS.TOKEN, response.data.token);
     }
     return response;
   },
@@ -277,30 +286,23 @@ export const auth = {
     return response.data;
   },
 
-  // Get current user
+  // Get current user — reads from localStorage or fetches from backend
   async getCurrentUser(forceRefresh = false) {
-    if (currentUser && !forceRefresh) {
-      return currentUser;
+    if (!forceRefresh) {
+      const stored = getStoredUser();
+      if (stored) return stored;
     }
 
-    const stored = localStorage.getItem(STORAGE_KEYS.USER);
-
-    if (stored && !forceRefresh) {
-      currentUser = JSON.parse(stored);
-      return currentUser;
-    }
-
-    // console.debug('🔍 AUTH: No cached/stored user, checking with backend...');
     try {
       const response = await apiClient.get('/auth/profile');
 
       if (response.success) {
-        currentUser = response.data.user;
-        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
-        return currentUser;
+        const user = response.data.user;
+        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+        return user;
       }
     } catch (error) {
-      console.error('❌ AUTH: Failed to get current user:', error);
+      console.error('AUTH: Failed to get current user:', error);
     }
 
     return null;
@@ -311,8 +313,8 @@ export const auth = {
     const response = await apiClient.put('/auth/profile', updates);
 
     if (response.success) {
-      currentUser = { ...currentUser, ...updates };
-      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(currentUser));
+      const current = getStoredUser() || {};
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify({ ...current, ...updates }));
     }
 
     return response;
@@ -323,21 +325,16 @@ export const auth = {
     return apiClient.put('/auth/change-password', { currentPassword, newPassword });
   },
 
-  // Set current user (for OAuth callbacks)
+  // Set current user in localStorage (for OAuth callbacks)
   setCurrentUser(user) {
-    currentUser = user;
-
-    // Also ensure API client has the latest token
-    const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
-    if (token && !apiClient.getToken()) {
-      apiClient.setToken(token);
+    if (user) {
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
     }
   },
 
   // Logout
   logout() {
     apiClient.setToken(null);
-    currentUser = null;
     localStorage.removeItem(STORAGE_KEYS.USER);
     localStorage.removeItem(STORAGE_KEYS.TOKEN);
 
@@ -346,17 +343,17 @@ export const auth = {
       if (typeof window !== 'undefined' && window.google?.accounts?.id) {
         window.google.accounts.id.disableAutoSelect();
       }
-    } catch (_) { }
+    } catch (_) { /* Google SDK may not be loaded */ }
   },
 
   // Check if user is authenticated
   isAuthenticated() {
-    return !!apiClient.getToken();
+    return !!getToken();
   },
 
-  // Get current user without API call
+  // Get current user without API call — reads from localStorage only
   getUser() {
-    return currentUser || JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || 'null');
+    return getStoredUser();
   }
 };
 
@@ -773,17 +770,13 @@ export const fleet = {
   }
 };
 
-// Initialize authentication on module load
+// Initialize authentication on module load — validate stored token
 if (typeof window !== 'undefined') {
-  const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
+  const token = getToken();
   if (token) {
-    apiClient.setToken(token);
-    authToken = token; // Ensure global auth token is set
-    // Try to load user data
+    // Token is already in localStorage; verify it's still valid by loading user
     auth.getCurrentUser().catch(() => {
-      // Silently clear local auth if token is invalid, without logging out of Google globally
-      apiClient.setToken(null);
-      currentUser = null;
+      // Silently clear local auth if token is invalid
       localStorage.removeItem(STORAGE_KEYS.USER);
       localStorage.removeItem(STORAGE_KEYS.TOKEN);
     });

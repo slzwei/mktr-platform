@@ -2,12 +2,11 @@ import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Car } from "@/api/entities";
 import { Commission } from "@/api/entities";
-import { useDashboard } from "@/contexts/DashboardContext";
+import { useAuthStore } from "@/stores/authStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import {
   Car as CarIcon,
   DollarSign,
@@ -23,7 +22,7 @@ import CommissionSummary from "../components/dashboard/CommissionSummary";
 import VehiclePerformance from "../components/dashboard/VehiclePerformance";
 
 export default function FleetOwnerDashboard() {
-  const { user } = useDashboard();
+  const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState("30d");
 
@@ -95,7 +94,7 @@ export default function FleetOwnerDashboard() {
           trendUp: true,
           iconColor: "text-blue-600",
           iconBg: "bg-blue-50 dark:bg-blue-950/30",
-          linkTo: createPageUrl("AdminFleet"),
+          linkTo: "/AdminFleet",
         },
         {
           title: "Active Vehicles",
@@ -116,7 +115,7 @@ export default function FleetOwnerDashboard() {
           trendUp: metrics.earningsChange !== null ? metrics.earningsChange > 0 : true,
           iconColor: "text-purple-600",
           iconBg: "bg-purple-50 dark:bg-purple-950/30",
-          linkTo: createPageUrl("AdminCommissions"),
+          linkTo: "/AdminCommissions",
         },
         {
           title: "Total Earnings",
@@ -126,7 +125,7 @@ export default function FleetOwnerDashboard() {
           trendUp: true,
           iconColor: "text-orange-600",
           iconBg: "bg-orange-50 dark:bg-orange-950/30",
-          linkTo: createPageUrl("AdminCommissions"),
+          linkTo: "/AdminCommissions",
         },
       ]
     : [];
@@ -154,7 +153,7 @@ export default function FleetOwnerDashboard() {
             <CardHeader className="border-b border-border">
               <div className="flex justify-between items-center">
                 <CardTitle className="text-xl font-bold">My Fleet</CardTitle>
-                <Link to={createPageUrl("AdminFleet")}>
+                <Link to={"/AdminFleet"}>
                   <Button variant="outline" size="sm">
                     Manage Fleet
                     <ArrowRight className="w-4 h-4 ml-2" />
@@ -187,7 +186,7 @@ export default function FleetOwnerDashboard() {
                   ))}
                   {stats.cars.length > 5 && (
                     <div className="text-center pt-4">
-                      <Link to={createPageUrl("AdminFleet")}>
+                      <Link to={"/AdminFleet"}>
                         <Button variant="outline" size="sm">
                           View All {stats.cars.length} Vehicles
                         </Button>
@@ -216,13 +215,13 @@ export default function FleetOwnerDashboard() {
               <CardTitle className="text-lg">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Link to={createPageUrl("AdminFleet")}>
+              <Link to={"/AdminFleet"}>
                 <Button variant="outline" className="w-full justify-between">
                   Manage My Fleet
                   <ArrowRight className="w-4 h-4" />
                 </Button>
               </Link>
-              <Link to={createPageUrl("AdminCommissions")}>
+              <Link to={"/AdminCommissions"}>
                 <Button variant="outline" className="w-full justify-between">
                   View My Commissions
                   <ArrowRight className="w-4 h-4" />

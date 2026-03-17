@@ -8,7 +8,6 @@ import ShareCampaignDialog from "../components/campaigns/ShareCampaignDialog";
 import AlertTriangle from "lucide-react/icons/alert-triangle";
 import CheckCircle from "lucide-react/icons/check-circle";
 import ArrowLeft from "lucide-react/icons/arrow-left";
-import { createPageUrl } from "@/utils";
 import TypingLoader from "../components/ui/TypingLoader";
 import { apiClient } from "@/api/client";
 import LeadCaptureLayout from "../components/campaigns/LeadCaptureLayout";
@@ -180,7 +179,7 @@ export default function LeadCapture() {
     // Compute canonical long share URL (used as fallback)
     const longShareUrl = useMemo(() => {
         const baseUrl = window.location.origin;
-        return campaign ? `${baseUrl}${createPageUrl('LeadCapture?campaign_id=' + campaign.id + '&ref=1')}` : window.location.href;
+        return campaign ? `${baseUrl}/LeadCapture?campaign_id=${campaign.id}&ref=1` : window.location.href;
     }, [campaign]);
 
     // When duplicate signup detected, start countdown and then open share dialog
@@ -232,7 +231,7 @@ export default function LeadCapture() {
                             <h2 className="text-xl font-bold text-gray-900">Something went wrong</h2>
                             <p className="text-gray-500 mt-2 text-sm max-w-xs mx-auto">{error}</p>
                             <div className="mt-8">
-                                <Link to={createPageUrl("Dashboard")}>
+                                <Link to={"/Dashboard"}>
                                     <Button variant="ghost" className="text-gray-600">
                                         <ArrowLeft className="w-4 h-4 mr-2" />
                                         Back to Safe Zone

@@ -1,8 +1,6 @@
 import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { useAuthStore } from "@/stores/authStore";
-import { DashboardProvider } from "@/contexts/DashboardContext";
 import {
   LayoutDashboard,
   Users,
@@ -43,62 +41,62 @@ const getNavigationItems = (user) => {
     {
       label: "Overview",
       items: [
-        { title: "Dashboard", url: createPageUrl("AdminDashboard"), icon: LayoutDashboard }
+        { title: "Dashboard", url: "/AdminDashboard", icon: LayoutDashboard }
       ]
     },
     {
       label: "Lead Generation",
       items: [
-        { title: "Prospects", url: createPageUrl("AdminProspects"), icon: Users },
-        { title: "Agents", url: createPageUrl("AdminAgents"), icon: Users },
-        { title: "Agent Groups", url: createPageUrl("AdminAgentGroups"), icon: Users },
-        { title: "Campaigns", url: createPageUrl("AdminCampaigns"), icon: Settings },
-        { title: "Lead Packages", url: createPageUrl("AdminLeadPackages"), icon: Package },
-        { title: "QR Codes", url: createPageUrl("AdminQRCodes"), icon: QrCode },
-        { title: "Short Links", url: createPageUrl("AdminShortLinks"), icon: Link2 }
+        { title: "Prospects", url: "/AdminProspects", icon: Users },
+        { title: "Agents", url: "/AdminAgents", icon: Users },
+        { title: "Agent Groups", url: "/AdminAgentGroups", icon: Users },
+        { title: "Campaigns", url: "/AdminCampaigns", icon: Settings },
+        { title: "Lead Packages", url: "/AdminLeadPackages", icon: Package },
+        { title: "QR Codes", url: "/AdminQRCodes", icon: QrCode },
+        { title: "Short Links", url: "/AdminShortLinks", icon: Link2 }
       ]
     },
     {
       label: "Fleet",
       items: [
-        { title: "Fleet Management", url: createPageUrl("AdminFleet"), icon: Car },
-        { title: "Vehicle Fleet", url: createPageUrl("AdminVehicles"), icon: Car },
-        { title: "Fleet Map", url: createPageUrl("AdminFleetMap"), icon: Car },
-        { title: "Tablet Devices", url: createPageUrl("AdminDevices"), icon: Settings }
+        { title: "Fleet Management", url: "/AdminFleet", icon: Car },
+        { title: "Vehicle Fleet", url: "/AdminVehicles", icon: Car },
+        { title: "Fleet Map", url: "/AdminFleetMap", icon: Car },
+        { title: "Tablet Devices", url: "/AdminDevices", icon: Settings }
       ]
     },
     {
       label: "Finance",
       items: [
-        { title: "Commissions", url: createPageUrl("AdminCommissions"), icon: DollarSign }
+        { title: "Commissions", url: "/AdminCommissions", icon: DollarSign }
       ]
     },
     {
       label: "System",
       items: [
-        { title: "Users", url: createPageUrl("AdminUsers"), icon: Users },
-        { title: "App Versions", url: createPageUrl("AdminApkManager"), icon: Settings }
+        { title: "Users", url: "/AdminUsers", icon: Users },
+        { title: "App Versions", url: "/AdminApkManager", icon: Settings }
       ]
     }
   ];
 
   const agentItems = [
-    { title: "Dashboard", url: createPageUrl("AgentDashboard"), icon: LayoutDashboard },
-    { title: "My Prospects", url: createPageUrl("MyProspects"), icon: Users },
+    { title: "Dashboard", url: "/AgentDashboard", icon: LayoutDashboard },
+    { title: "My Prospects", url: "/MyProspects", icon: Users },
     { title: "Edit Profile", url: "/profile", icon: Settings }
   ];
 
   const fleetOwnerItems = [
-    { title: "Dashboard", url: createPageUrl("FleetOwnerDashboard"), icon: LayoutDashboard },
-    { title: "My Fleet", url: createPageUrl("AdminFleet"), icon: Car },
-    { title: "My Commissions", url: createPageUrl("AdminCommissions"), icon: DollarSign }
+    { title: "Dashboard", url: "/FleetOwnerDashboard", icon: LayoutDashboard },
+    { title: "My Fleet", url: "/AdminFleet", icon: Car },
+    { title: "My Commissions", url: "/AdminCommissions", icon: DollarSign }
   ];
 
   const driverPartnerItems = [
-    { title: "Dashboard", url: createPageUrl("DriverDashboard"), icon: LayoutDashboard },
-    { title: "Profile", url: createPageUrl("DriverProfile"), icon: Settings },
-    { title: "Payout History", url: createPageUrl("DriverPayoutHistory"), icon: DollarSign },
-    { title: "Payslip", url: createPageUrl("DriverPayslip"), icon: FileText }
+    { title: "Dashboard", url: "/DriverDashboard", icon: LayoutDashboard },
+    { title: "Profile", url: "/DriverProfile", icon: Settings },
+    { title: "Payout History", url: "/DriverPayoutHistory", icon: DollarSign },
+    { title: "Payslip", url: "/DriverPayslip", icon: FileText }
   ];
 
   if (user.role === 'admin') return adminSections;
@@ -257,9 +255,7 @@ export default function DashboardLayout({ children, user, userRole }) {
           </header>
 
           <div className="flex-1 overflow-auto">
-            <DashboardProvider user={localUser}>
-              {children}
-            </DashboardProvider>
+            {children}
           </div>
         </main>
         <CommandPalette user={localUser} />
