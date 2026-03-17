@@ -1,3 +1,5 @@
+import { logger } from '../utils/logger.js';
+
 const counters = new Map();
 
 function getSampleRate() {
@@ -21,7 +23,7 @@ export function logEvent(name, data = {}) {
   if (rate <= 0 || Math.random() > rate) return;
   const payload = { ts: new Date().toISOString(), event: name, ...data };
   try {
-    console.log(JSON.stringify(payload));
+    logger.info('observability event', payload);
   } catch (_) {
     // ignore
   }

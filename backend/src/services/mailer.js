@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { logger } from '../utils/logger.js';
 
 let cachedTransporter = null;
 
@@ -8,7 +9,7 @@ export function getTransporter() {
   const { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASSWORD } = process.env;
 
   if (!EMAIL_HOST || !EMAIL_PORT || !EMAIL_USER || !EMAIL_PASSWORD) {
-    console.warn('⚠️  Mailer not fully configured. Emails will be logged but not sent.');
+    logger.warn('Mailer not fully configured — emails will be logged but not sent');
     cachedTransporter = null;
     return null;
   }
@@ -33,9 +34,8 @@ export async function sendEmail({ to, subject, html, text }) {
 
   const transporter = getTransporter();
   if (!transporter) {
-    console.log('📧 [DEV Fallback] Email not sent (mailer not configured):', { to, subject });
-    console.log('— HTML Preview —');
-    console.log(html || text || '(no body)');
+    logger.info('[DEV Fallback] Email not sent (mailer not configured)', { to, subject });
+    logger.debug('Email body preview', { body: html || text || '(no body)' });
     return { success: false, message: 'Mailer not configured; logged instead.' };
   }
 
@@ -46,12 +46,12 @@ export async function sendEmail({ to, subject, html, text }) {
 export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, count = 1) {
   // Validate agent object
   if (!agent) {
-    console.error('❌ Failed to send lead assignment email: agent is null or undefined');
+    logger.error('Failed to send lead assignment email: agent is null or undefined');
     throw new Error('Agent object is required to send assignment email');
   }
 
   if (!agent.email) {
-    console.error(`❌ Failed to send lead assignment email: agent ${agent.id || 'unknown'} has no email address`);
+    logger.error('Failed to send lead assignment email: agent has no email address', { agentId: agent.id || 'unknown' });
     throw new Error(`Agent ${agent.id || 'unknown'} has no email address`);
   }
 
@@ -95,7 +95,7 @@ export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, c
     `;
   }
 
-  console.log(`📧 Sending lead assignment email to ${agent.email} (Agent ID: ${agent.id})`);
+  logger.info('Sending lead assignment email', { to: agent.email, agentId: agent.id });
 
   // REDIRECT SYSTEM AGENT EMAILS
   // The user requested that if the system agent receives a lead, the email goes to shawnleejob@gmail.com
@@ -103,7 +103,7 @@ export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, c
   let targetEmail = agent.email;
 
   if (agent.email === systemEmail || (agent.firstName === 'System' && agent.lastName === 'Agent')) {
-    console.log(`📧 Agent is System Agent (${agent.email}). Redirecting assignment email to shawnleejob@gmail.com`);
+    logger.info('Agent is System Agent — redirecting assignment email', { originalEmail: agent.email, redirectTo: 'shawnleejob@gmail.com' });
     targetEmail = 'shawnleejob@gmail.com';
   }
 
@@ -114,9 +114,9 @@ export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, c
   });
 
   if (result.success) {
-    console.log(`✅ Lead assignment email sent successfully to ${agent.email}`);
+    logger.info('Lead assignment email sent successfully', { to: agent.email });
   } else {
-    console.warn(`⚠️  Lead assignment email not sent (mailer not configured): ${agent.email}`);
+    logger.warn('Lead assignment email not sent (mailer not configured)', { to: agent.email });
   }
 
   return result;
@@ -175,7 +175,7 @@ function getModernTemplate(title, content, action) {
 
 export async function sendPackageAssignmentEmail(agent, packageDetails) {
   if (!agent || !agent.email) {
-    console.warn('⚠️ Cannot send package assignment email: Missing agent email');
+    logger.warn('Cannot send package assignment email: missing agent email');
     return { success: false };
   }
 
@@ -214,7 +214,7 @@ export async function sendPackageAssignmentEmail(agent, packageDetails) {
     url: `${process.env.FRONTEND_BASE_URL || 'http://localhost:5173'}/MyPackages`
   });
 
-  console.log(`📧 Sending package assignment email to ${agent.email}`);
+  logger.info('Sending package assignment email', { to: agent.email });
 
   return sendEmail({
     to: agent.email,
