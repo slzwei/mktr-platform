@@ -197,19 +197,20 @@ export async function assignDriver(id, driverId) {
 // ---- Statistics ----
 
 export async function getFleetStats() {
-  const totalCars = await Car.count();
-  const activeCars = await Car.count({ where: { status: 'active' } });
-  const assignedCars = await Car.count({ where: { current_driver_id: { [Op.not]: null } } });
-  const totalFleetOwners = await FleetOwner.count();
-  const totalDrivers = await User.count({ where: { role: 'driver_partner' } });
-
-  const carsByStatus = await Car.findAll({
-    attributes: [
-      'status',
-      [sequelize.fn('COUNT', sequelize.col('status')), 'count']
-    ],
-    group: ['status']
-  });
+  const [totalCars, activeCars, assignedCars, totalFleetOwners, totalDrivers, carsByStatus] = await Promise.all([
+    Car.count(),
+    Car.count({ where: { status: 'active' } }),
+    Car.count({ where: { current_driver_id: { [Op.not]: null } } }),
+    FleetOwner.count(),
+    User.count({ where: { role: 'driver_partner' } }),
+    Car.findAll({
+      attributes: [
+        'status',
+        [sequelize.fn('COUNT', sequelize.col('status')), 'count']
+      ],
+      group: ['status']
+    })
+  ]);
 
   return {
     totalCars,

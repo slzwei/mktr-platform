@@ -16,7 +16,7 @@
  */
 
 import { sequelize } from '../connection.js';
-import { User, Campaign, QrTag, AgentGroup } from '../../models/index.js';
+import { User, Campaign, QrTag, AgentGroup, AgentGroupMember } from '../../models/index.js';
 import { createQrCode } from '../../services/qrCodeService.js';
 
 const TEST_CAMPAIGN_NAME = 'QR Assignment Test';
@@ -106,16 +106,28 @@ async function seed() {
     { phone: agentC.phone, email: agentC.email, name: `${agentC.firstName} ${agentC.lastName}`.trim() }
   ];
 
-  const [group] = await AgentGroup.findOrCreate({
+  const [group, groupCreated] = await AgentGroup.findOrCreate({
     where: { name: TEST_GROUP_NAME },
     defaults: {
       name: TEST_GROUP_NAME,
       description: 'Agent B + Agent C for round-robin testing',
-      agents: groupAgents,
-      agentCount: groupAgents.length,
       createdBy: admin.id
     }
   });
+
+  // Create member rows if group was just created
+  if (groupCreated) {
+    for (let i = 0; i < groupAgents.length; i++) {
+      const a = groupAgents[i];
+      await AgentGroupMember.create({
+        agentGroupId: group.id,
+        phone: a.phone,
+        email: a.email,
+        name: a.name,
+        sortOrder: i
+      });
+    }
+  }
   console.log('Agent Group:', group.name, '(', group.id, ')');
 
   // --- Create QR #1: Direct → Agent A ---
@@ -143,14 +155,12 @@ async function seed() {
   console.log(`QR #2 (Direct → Agent B): /t/${qr2.slug}`);
 
   // --- Create QR #3: Round Robin → Group (Agent B + Agent C) ---
-  const agentPhones = groupAgents.map(a => a.phone);
   const { qrTag: qr3 } = await createQrCode({
     label: 'Test Round Robin - Group',
     type: 'promotional',
     campaignId: campaign.id,
     agentAssignmentMode: 'round_robin',
-    agentGroupId: group.id,
-    agentGroupAgentIds: agentPhones
+    agentGroupId: group.id
   }, admin);
   console.log(`QR #3 (Round Robin → B+C): /t/${qr3.slug}`);
 
