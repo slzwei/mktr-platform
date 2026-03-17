@@ -7,775 +7,749 @@ import { Input } from '../components/ui/input';
 import { apiClient as api } from '../api/client';
 import { formatDistanceToNow } from 'date-fns';
 import { Badge } from '../components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogFooter,
-} from "../components/ui/dialog";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "../components/ui/select";
-import {
-    Car,
-    Plus,
-    Link2,
-    Unlink,
-    Settings,
-    Trash2,
-    RefreshCcw,
-    MonitorSmartphone,
-    Pencil,
-    Volume2
+  Car,
+  Plus,
+  Link2,
+  Unlink,
+  Settings,
+  Trash2,
+  RefreshCcw,
+  MonitorSmartphone,
+  Pencil,
+  Volume2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function AdminVehicles() {
-    const navigate = useNavigate();
-    const [vehicles, setVehicles] = useState([]);
-    const [devices, setDevices] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [campaigns, setCampaigns] = useState([]);
+  const navigate = useNavigate();
+  const [vehicles, setVehicles] = useState([]);
+  const [devices, setDevices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [campaigns, setCampaigns] = useState([]);
 
-    // Dialogs
-    const [showCreateDialog, setShowCreateDialog] = useState(false);
-    const [showPairDialog, setShowPairDialog] = useState(false);
-    const [showAssignDialog, setShowAssignDialog] = useState(false);
-    const [selectedVehicle, setSelectedVehicle] = useState(null);
+  // Dialogs
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showPairDialog, setShowPairDialog] = useState(false);
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [selectedVehicle, setSelectedVehicle] = useState(null);
 
-    // Form state
-    const [newCarplate, setNewCarplate] = useState('');
-    const [pairMasterId, setPairMasterId] = useState('');
-    const [pairSlaveId, setPairSlaveId] = useState('');
-    const [selectedCampaignIds, setSelectedCampaignIds] = useState([]);
+  // Form state
+  const [newCarplate, setNewCarplate] = useState('');
+  const [pairMasterId, setPairMasterId] = useState('');
+  const [pairSlaveId, setPairSlaveId] = useState('');
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState([]);
 
-    // Volume Control State
-    const [showVolumeDialog, setShowVolumeDialog] = useState(false);
-    const [volumeLevel, setVolumeLevel] = useState([0]);
+  // Volume Control State
+  const [showVolumeDialog, setShowVolumeDialog] = useState(false);
+  const [volumeLevel, setVolumeLevel] = useState([0]);
 
-    useEffect(() => {
-        loadData();
-    }, []);
+  useEffect(() => {
+    loadData();
+  }, []);
 
-    const loadData = async () => {
-        try {
-            setLoading(true);
-            const [vehiclesRes, devicesRes, campaignsRes] = await Promise.all([
-                api.get('/vehicles'),
-                api.get('/devices'),
-                api.get('/campaigns?limit=100')
-            ]);
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [vehiclesRes, devicesRes, campaignsRes] = await Promise.all([
+        api.get('/vehicles'),
+        api.get('/devices'),
+        api.get('/campaigns?limit=100'),
+      ]);
 
-            // Extract devices list
-            let devicesList = [];
-            if (Array.isArray(devicesRes.data)) {
-                devicesList = devicesRes.data;
-            } else if (devicesRes.data?.data) {
-                devicesList = devicesRes.data.data;
-            }
-            setDevices(devicesList);
+      // Extract devices list
+      let devicesList = [];
+      if (Array.isArray(devicesRes.data)) {
+        devicesList = devicesRes.data;
+      } else if (devicesRes.data?.data) {
+        devicesList = devicesRes.data.data;
+      }
+      setDevices(devicesList);
 
-            // Merge live device data into vehicles
-            const vehiclesData = vehiclesRes.data?.data || vehiclesRes.data || [];
+      // Merge live device data into vehicles
+      const vehiclesData = vehiclesRes.data?.data || vehiclesRes.data || [];
 
-            // Map the latest device status to the vehicle's devices
-            const updatedVehicles = vehiclesData.map(v => {
-                const master = devicesList.find(d => d.id === v.masterDeviceId);
-                const slave = devicesList.find(d => d.id === v.slaveDeviceId);
-                return {
-                    ...v,
-                    masterDevice: master || v.masterDevice,
-                    slaveDevice: slave || v.slaveDevice
-                };
-            });
-
-            setVehicles(updatedVehicles);
-
-            // Get PHV campaigns
-            let campaignsList = [];
-            if (campaignsRes.data?.campaigns && Array.isArray(campaignsRes.data.campaigns)) {
-                campaignsList = campaignsRes.data.campaigns;
-            } else if (Array.isArray(campaignsRes.data)) {
-                campaignsList = campaignsRes.data;
-            }
-
-            // Filter for PHV campaigns only (brand_awareness or video_ad)
-            // Exclude 'lead_generation' which are regular agent campaigns
-            setCampaigns(campaignsList.filter(c => ['brand_awareness', 'video_ad'].includes(c.type)));
-        } catch (err) {
-            console.error('Failed to load data:', err);
-            toast.error('Failed to load vehicles');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // Live Fleet Status Stream (SSE)
-    useEffect(() => {
-        const token = localStorage.getItem('mktr_auth_token');
-        if (!token) return;
-
-        const url = `${import.meta.env.VITE_API_URL}/devices/events/fleet/stream?token=${token}`;
-        const sse = new EventSource(url);
-
-        sse.onopen = () => {};
-
-        sse.addEventListener('status_change', (e) => {
-            try {
-                const data = JSON.parse(e.data);
-
-                // Update devices state
-                setDevices(prevDevices => prevDevices.map(d => {
-                    if (d.id === data.deviceId) {
-                        return { ...d, status: data.status, lastSeenAt: data.lastSeenAt };
-                    }
-                    return d;
-                }));
-
-                // Update vehicles state (nested devices)
-                setVehicles(prevVehicles => prevVehicles.map(v => {
-                    let updated = false;
-                    let newMaster = v.masterDevice;
-                    let newSlave = v.slaveDevice;
-
-                    if (v.masterDeviceId === data.deviceId) {
-                        newMaster = { ...v.masterDevice, status: data.status, lastSeenAt: data.lastSeenAt };
-                        updated = true;
-                    }
-                    if (v.slaveDeviceId === data.deviceId) {
-                        newSlave = { ...v.slaveDevice, status: data.status, lastSeenAt: data.lastSeenAt };
-                        updated = true;
-                    }
-
-                    if (updated) {
-                        return { ...v, masterDevice: newMaster, slaveDevice: newSlave };
-                    }
-                    return v;
-                }));
-
-            } catch (err) {
-                console.error('Failed to parse status_change', err);
-            }
-        });
-
-        sse.onerror = (err) => {
-            console.warn('⚠️ Fleet Stream error - auto-reconnecting...', err);
+      // Map the latest device status to the vehicle's devices
+      const updatedVehicles = vehiclesData.map((v) => {
+        const master = devicesList.find((d) => d.id === v.masterDeviceId);
+        const slave = devicesList.find((d) => d.id === v.slaveDeviceId);
+        return {
+          ...v,
+          masterDevice: master || v.masterDevice,
+          slaveDevice: slave || v.slaveDevice,
         };
+      });
 
-        return () => sse.close();
-    }, []);
+      setVehicles(updatedVehicles);
 
-    const handleCreateVehicle = async () => {
-        if (!newCarplate.trim()) {
-            toast.error('Carplate is required');
-            return;
-        }
+      // Get PHV campaigns
+      let campaignsList = [];
+      if (campaignsRes.data?.campaigns && Array.isArray(campaignsRes.data.campaigns)) {
+        campaignsList = campaignsRes.data.campaigns;
+      } else if (Array.isArray(campaignsRes.data)) {
+        campaignsList = campaignsRes.data;
+      }
 
-        try {
-            await api.post('/vehicles', { carplate: newCarplate.trim() });
-            toast.success('Vehicle created');
-            setShowCreateDialog(false);
-            setNewCarplate('');
-            loadData();
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to create vehicle');
-        }
+      // Filter for PHV campaigns only (brand_awareness or video_ad)
+      // Exclude 'lead_generation' which are regular agent campaigns
+      setCampaigns(campaignsList.filter((c) => ['brand_awareness', 'video_ad'].includes(c.type)));
+    } catch (err) {
+      console.error('Failed to load data:', err);
+      toast.error('Failed to load vehicles');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Live Fleet Status Stream (SSE)
+  useEffect(() => {
+    const url = `${import.meta.env.VITE_API_URL}/devices/events/fleet/stream`;
+    const sse = new EventSource(url, { withCredentials: true });
+
+    sse.onopen = () => {};
+
+    sse.addEventListener('status_change', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+
+        // Update devices state
+        setDevices((prevDevices) =>
+          prevDevices.map((d) => {
+            if (d.id === data.deviceId) {
+              return { ...d, status: data.status, lastSeenAt: data.lastSeenAt };
+            }
+            return d;
+          })
+        );
+
+        // Update vehicles state (nested devices)
+        setVehicles((prevVehicles) =>
+          prevVehicles.map((v) => {
+            let updated = false;
+            let newMaster = v.masterDevice;
+            let newSlave = v.slaveDevice;
+
+            if (v.masterDeviceId === data.deviceId) {
+              newMaster = { ...v.masterDevice, status: data.status, lastSeenAt: data.lastSeenAt };
+              updated = true;
+            }
+            if (v.slaveDeviceId === data.deviceId) {
+              newSlave = { ...v.slaveDevice, status: data.status, lastSeenAt: data.lastSeenAt };
+              updated = true;
+            }
+
+            if (updated) {
+              return { ...v, masterDevice: newMaster, slaveDevice: newSlave };
+            }
+            return v;
+          })
+        );
+      } catch (err) {
+        console.error('Failed to parse status_change', err);
+      }
+    });
+
+    sse.onerror = (err) => {
+      console.warn('⚠️ Fleet Stream error - auto-reconnecting...', err);
     };
 
-    const handlePairDevices = async () => {
-        if (!selectedVehicle) return;
+    return () => sse.close();
+  }, []);
 
-        try {
-            await api.put(`/vehicles/${selectedVehicle.id}/pair`, {
-                masterDeviceId: pairMasterId || undefined,
-                slaveDeviceId: pairSlaveId || undefined
-            });
-            toast.success('Devices paired');
-            setShowPairDialog(false);
-            setPairMasterId('');
-            setPairSlaveId('');
-            loadData();
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to pair devices');
-        }
-    };
+  const handleCreateVehicle = async () => {
+    if (!newCarplate.trim()) {
+      toast.error('Carplate is required');
+      return;
+    }
 
-    const handleUnpair = async (vehicleId) => {
-        try {
-            await api.delete(`/vehicles/${vehicleId}/pair`);
-            toast.success('Devices unpaired');
-            loadData();
-        } catch (err) {
-            toast.error('Failed to unpair devices');
-        }
-    };
+    try {
+      await api.post('/vehicles', { carplate: newCarplate.trim() });
+      toast.success('Vehicle created');
+      setShowCreateDialog(false);
+      setNewCarplate('');
+      loadData();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to create vehicle');
+    }
+  };
 
-    const handleAssignCampaigns = async () => {
-        if (!selectedVehicle) return;
+  const handlePairDevices = async () => {
+    if (!selectedVehicle) return;
 
-        try {
-            await api.patch(`/vehicles/${selectedVehicle.id}`, {
-                campaignIds: selectedCampaignIds
-            });
-            toast.success('Campaigns assigned');
-            setShowAssignDialog(false);
-            setSelectedCampaignIds([]);
-            loadData();
-        } catch (err) {
-            toast.error('Failed to assign campaigns');
-        }
-    };
+    try {
+      await api.put(`/vehicles/${selectedVehicle.id}/pair`, {
+        masterDeviceId: pairMasterId || undefined,
+        slaveDeviceId: pairSlaveId || undefined,
+      });
+      toast.success('Devices paired');
+      setShowPairDialog(false);
+      setPairMasterId('');
+      setPairSlaveId('');
+      loadData();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to pair devices');
+    }
+  };
 
-    const handleDeleteVehicle = async (vehicleId) => {
-        if (!confirm('Delete this vehicle? Devices will be unpaired.')) return;
+  const handleUnpair = async (vehicleId) => {
+    try {
+      await api.delete(`/vehicles/${vehicleId}/pair`);
+      toast.success('Devices unpaired');
+      loadData();
+    } catch (err) {
+      toast.error('Failed to unpair devices');
+    }
+  };
 
-        try {
-            await api.delete(`/vehicles/${vehicleId}`);
-            toast.success('Vehicle deleted');
-            loadData();
-        } catch (err) {
-            toast.error('Failed to delete vehicle');
-        }
-    };
+  const handleAssignCampaigns = async () => {
+    if (!selectedVehicle) return;
 
-    const handleSetVolume = async () => {
-        if (!selectedVehicle) return;
+    try {
+      await api.patch(`/vehicles/${selectedVehicle.id}`, {
+        campaignIds: selectedCampaignIds,
+      });
+      toast.success('Campaigns assigned');
+      setShowAssignDialog(false);
+      setSelectedCampaignIds([]);
+      loadData();
+    } catch (err) {
+      toast.error('Failed to assign campaigns');
+    }
+  };
 
-        try {
-            await api.put(`/vehicles/${selectedVehicle.id}/volume`, {
-                volume: volumeLevel[0]
-            });
-            toast.success(`Volume command sent (${volumeLevel[0]}%)`);
-            loadData(); // Assuming fetchVehicles is loadData based on context
-            setShowVolumeDialog(false);
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to set volume');
-        }
-    };
+  const handleDeleteVehicle = async (vehicleId) => {
+    if (!confirm('Delete this vehicle? Devices will be unpaired.')) return;
 
-    const getDeviceStatus = (device) => {
-        if (!device) return { label: 'Empty', color: 'gray' };
-        const isStale = !device.lastSeenAt || (Date.now() - new Date(device.lastSeenAt).getTime() > 5 * 60 * 1000);
-        if (device.status === 'inactive' || device.status === 'offline' || isStale) {
-            return { label: 'OFFLINE', color: 'gray' };
-        }
-        if (device.status === 'playing' || device.status === 'active') {
-            return { label: 'LIVE', color: 'green' };
-        }
-        return { label: 'READY', color: 'blue' };
-    };
+    try {
+      await api.delete(`/vehicles/${vehicleId}`);
+      toast.success('Vehicle deleted');
+      loadData();
+    } catch (err) {
+      toast.error('Failed to delete vehicle');
+    }
+  };
 
-    // [FIX] Include devices already assigned to the CURRENT selected vehicle, plus all unpaired ones.
-    const availableDevices = devices.filter(d =>
-        !d.vehicleId || (selectedVehicle && d.vehicleId === selectedVehicle.id)
-    );
+  const handleSetVolume = async () => {
+    if (!selectedVehicle) return;
 
-    return (
-        <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
-            <div className="max-w-[1600px] mx-auto space-y-6">
-                <div className="flex justify-between items-center">
+    try {
+      await api.put(`/vehicles/${selectedVehicle.id}/volume`, {
+        volume: volumeLevel[0],
+      });
+      toast.success(`Volume command sent (${volumeLevel[0]}%)`);
+      loadData(); // Assuming fetchVehicles is loadData based on context
+      setShowVolumeDialog(false);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to set volume');
+    }
+  };
+
+  const getDeviceStatus = (device) => {
+    if (!device) return { label: 'Empty', color: 'gray' };
+    const isStale = !device.lastSeenAt || Date.now() - new Date(device.lastSeenAt).getTime() > 5 * 60 * 1000;
+    if (device.status === 'inactive' || device.status === 'offline' || isStale) {
+      return { label: 'OFFLINE', color: 'gray' };
+    }
+    if (device.status === 'playing' || device.status === 'active') {
+      return { label: 'LIVE', color: 'green' };
+    }
+    return { label: 'READY', color: 'blue' };
+  };
+
+  // [FIX] Include devices already assigned to the CURRENT selected vehicle, plus all unpaired ones.
+  const availableDevices = devices.filter(
+    (d) => !d.vehicleId || (selectedVehicle && d.vehicleId === selectedVehicle.id)
+  );
+
+  return (
+    <div className="p-6 lg:p-8 min-h-screen bg-gray-50/50 dark:bg-gray-900/50">
+      <div className="max-w-[1600px] mx-auto space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold">Vehicle Fleet</h1>
+            <p className="text-muted-foreground">Manage paired tablets by vehicle</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={loadData}>
+              <RefreshCcw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+            <Button onClick={() => setShowCreateDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Vehicle
+            </Button>
+          </div>
+        </div>
+
+        {loading ? (
+          <Card>
+            <CardContent className="py-8 text-center text-muted-foreground">Loading vehicles...</CardContent>
+          </Card>
+        ) : vehicles.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Car className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
+              <h3 className="text-lg font-medium mb-2">No Vehicles Yet</h3>
+              <p className="text-muted-foreground mb-4">Create a vehicle to start pairing tablets</p>
+              <Button onClick={() => setShowCreateDialog(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add First Vehicle
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4">
+            {vehicles.map((vehicle) => (
+              <Card key={vehicle.id} className="overflow-hidden">
+                <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-b py-4">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+                        <Car className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">{vehicle.carplate}</CardTitle>
+                        <p className="text-xs text-muted-foreground font-mono mt-0.5">WiFi: {vehicle.hotspotSsid}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedVehicle(vehicle);
+                          setVolumeLevel([Number(vehicle.volume) || 0]);
+                          setShowVolumeDialog(true);
+                        }}
+                        title="Volume Control"
+                      >
+                        <Volume2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedVehicle(vehicle);
+                          setSelectedCampaignIds(vehicle.campaignIds || []);
+                          setShowAssignDialog(true);
+                        }}
+                      >
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 dark:text-red-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                        onClick={() => handleDeleteVehicle(vehicle.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-4">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {/* Master Device */}
+                    <div className="border rounded-lg p-4 bg-white dark:bg-gray-900">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className="bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800"
+                          >
+                            MASTER
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">Left Screen</span>
+                        </div>
+                        {vehicle.masterDevice && (
+                          <Badge
+                            variant="outline"
+                            className={
+                              getDeviceStatus(vehicle.masterDevice).color === 'green'
+                                ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800'
+                                : getDeviceStatus(vehicle.masterDevice).color === 'blue'
+                                  ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+                            }
+                          >
+                            {getDeviceStatus(vehicle.masterDevice).label}
+                          </Badge>
+                        )}
+                      </div>
+                      {vehicle.masterDevice ? (
+                        <div className="space-y-1">
+                          <p className="font-medium">{vehicle.masterDevice.model || 'Tablet'}</p>
+                          <p className="text-xs text-muted-foreground font-mono">
+                            {vehicle.masterDevice.id.substring(0, 8)}...
+                          </p>
+                          {vehicle.masterDevice.lastSeenAt && (
+                            <p className="text-xs text-muted-foreground">
+                              Seen {formatDistanceToNow(new Date(vehicle.masterDevice.lastSeenAt), { addSuffix: true })}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 text-muted-foreground">
+                          <MonitorSmartphone className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                          <p className="text-sm">No device paired</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Slave Device */}
+                    <div className="border rounded-lg p-4 bg-white dark:bg-gray-900">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                            SLAVE
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">Right Screen</span>
+                        </div>
+                        {vehicle.slaveDevice && (
+                          <Badge
+                            variant="outline"
+                            className={
+                              getDeviceStatus(vehicle.slaveDevice).color === 'green'
+                                ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800'
+                                : getDeviceStatus(vehicle.slaveDevice).color === 'blue'
+                                  ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                                  : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+                            }
+                          >
+                            {getDeviceStatus(vehicle.slaveDevice).label}
+                          </Badge>
+                        )}
+                      </div>
+                      {vehicle.slaveDevice ? (
+                        <div className="space-y-1">
+                          <p className="font-medium">{vehicle.slaveDevice.model || 'Tablet'}</p>
+                          <p className="text-xs text-muted-foreground font-mono">
+                            {vehicle.slaveDevice.id.substring(0, 8)}...
+                          </p>
+                          {vehicle.slaveDevice.lastSeenAt && (
+                            <p className="text-xs text-muted-foreground">
+                              Seen {formatDistanceToNow(new Date(vehicle.slaveDevice.lastSeenAt), { addSuffix: true })}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 text-muted-foreground">
+                          <MonitorSmartphone className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                          <p className="text-sm">No device paired</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Campaign & Actions */}
+                  <div className="mt-4 pt-4 border-t flex justify-between items-center">
                     <div>
-                        <h1 className="text-2xl font-bold">Vehicle Fleet</h1>
-                        <p className="text-muted-foreground">Manage paired tablets by vehicle</p>
+                      <span className="text-sm text-muted-foreground mr-2">Campaigns:</span>
+                      {vehicle.campaigns && vehicle.campaigns.length > 0 ? (
+                        <div className="inline-flex flex-wrap gap-1">
+                          {vehicle.campaigns.map((c) => (
+                            <Badge key={c.id} variant="secondary" className="text-xs">
+                              {c.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400 dark:text-gray-500 italic">None assigned</span>
+                      )}
                     </div>
                     <div className="flex gap-2">
-                        <Button variant="outline" onClick={loadData}>
-                            <RefreshCcw className="h-4 w-4 mr-2" />
-                            Refresh
+                      {(!vehicle.masterDevice || !vehicle.slaveDevice) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedVehicle(vehicle);
+                            setPairMasterId(vehicle.masterDeviceId || '');
+                            setPairSlaveId(vehicle.slaveDeviceId || '');
+                            setShowPairDialog(true);
+                          }}
+                        >
+                          <Link2 className="h-4 w-4 mr-1" />
+                          Pair Devices
                         </Button>
-                        <Button onClick={() => setShowCreateDialog(true)}>
-                            <Plus className="h-4 w-4 mr-2" />
-                            Add Vehicle
+                      )}
+                      {(vehicle.masterDevice || vehicle.slaveDevice) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-orange-600 hover:text-orange-700"
+                          onClick={() => handleUnpair(vehicle.id)}
+                        >
+                          <Unlink className="h-4 w-4 mr-1" />
+                          Unpair
                         </Button>
+                      )}
                     </div>
-                </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
 
-                {loading ? (
-                    <Card>
-                        <CardContent className="py-8 text-center text-muted-foreground">
-                            Loading vehicles...
-                        </CardContent>
-                    </Card>
-                ) : vehicles.length === 0 ? (
-                    <Card>
-                        <CardContent className="py-12 text-center">
-                            <Car className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
-                            <h3 className="text-lg font-medium mb-2">No Vehicles Yet</h3>
-                            <p className="text-muted-foreground mb-4">
-                                Create a vehicle to start pairing tablets
-                            </p>
-                            <Button onClick={() => setShowCreateDialog(true)}>
-                                <Plus className="h-4 w-4 mr-2" />
-                                Add First Vehicle
-                            </Button>
-                        </CardContent>
-                    </Card>
-                ) : (
-                    <div className="grid gap-4">
-                        {vehicles.map(vehicle => (
-                            <Card key={vehicle.id} className="overflow-hidden">
-                                <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-b py-4">
-                                    <div className="flex justify-between items-start">
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
-                                                <Car className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                            </div>
-                                            <div>
-                                                <CardTitle className="text-lg">{vehicle.carplate}</CardTitle>
-                                                <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                                                    WiFi: {vehicle.hotspotSsid}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    setSelectedVehicle(vehicle);
-                                                    setVolumeLevel([Number(vehicle.volume) || 0]);
-                                                    setShowVolumeDialog(true);
-                                                }}
-                                                title="Volume Control"
-                                            >
-                                                <Volume2 className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    setSelectedVehicle(vehicle);
-                                                    setSelectedCampaignIds(vehicle.campaignIds || []);
-                                                    setShowAssignDialog(true);
-                                                }}
-                                            >
-                                                <Settings className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="text-red-600 dark:text-red-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
-                                                onClick={() => handleDeleteVehicle(vehicle.id)}
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="p-4">
-                                    <div className="grid md:grid-cols-2 gap-4">
-                                        {/* Master Device */}
-                                        <div className="border rounded-lg p-4 bg-white dark:bg-gray-900">
-                                            <div className="flex items-center justify-between mb-3">
-                                                <div className="flex items-center gap-2">
-                                                    <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800">
-                                                        MASTER
-                                                    </Badge>
-                                                    <span className="text-xs text-muted-foreground">Left Screen</span>
-                                                </div>
-                                                {vehicle.masterDevice && (
-                                                    <Badge
-                                                        variant="outline"
-                                                        className={
-                                                            getDeviceStatus(vehicle.masterDevice).color === 'green'
-                                                                ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800'
-                                                                : getDeviceStatus(vehicle.masterDevice).color === 'blue'
-                                                                    ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
-                                                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'
-                                                        }
-                                                    >
-                                                        {getDeviceStatus(vehicle.masterDevice).label}
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                            {vehicle.masterDevice ? (
-                                                <div className="space-y-1">
-                                                    <p className="font-medium">{vehicle.masterDevice.model || 'Tablet'}</p>
-                                                    <p className="text-xs text-muted-foreground font-mono">
-                                                        {vehicle.masterDevice.id.substring(0, 8)}...
-                                                    </p>
-                                                    {vehicle.masterDevice.lastSeenAt && (
-                                                        <p className="text-xs text-muted-foreground">
-                                                            Seen {formatDistanceToNow(new Date(vehicle.masterDevice.lastSeenAt), { addSuffix: true })}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="text-center py-4 text-muted-foreground">
-                                                    <MonitorSmartphone className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                                                    <p className="text-sm">No device paired</p>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Slave Device */}
-                                        <div className="border rounded-lg p-4 bg-white dark:bg-gray-900">
-                                            <div className="flex items-center justify-between mb-3">
-                                                <div className="flex items-center gap-2">
-                                                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                                                        SLAVE
-                                                    </Badge>
-                                                    <span className="text-xs text-muted-foreground">Right Screen</span>
-                                                </div>
-                                                {vehicle.slaveDevice && (
-                                                    <Badge
-                                                        variant="outline"
-                                                        className={
-                                                            getDeviceStatus(vehicle.slaveDevice).color === 'green'
-                                                                ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800'
-                                                                : getDeviceStatus(vehicle.slaveDevice).color === 'blue'
-                                                                    ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
-                                                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700'
-                                                        }
-                                                    >
-                                                        {getDeviceStatus(vehicle.slaveDevice).label}
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                            {vehicle.slaveDevice ? (
-                                                <div className="space-y-1">
-                                                    <p className="font-medium">{vehicle.slaveDevice.model || 'Tablet'}</p>
-                                                    <p className="text-xs text-muted-foreground font-mono">
-                                                        {vehicle.slaveDevice.id.substring(0, 8)}...
-                                                    </p>
-                                                    {vehicle.slaveDevice.lastSeenAt && (
-                                                        <p className="text-xs text-muted-foreground">
-                                                            Seen {formatDistanceToNow(new Date(vehicle.slaveDevice.lastSeenAt), { addSuffix: true })}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="text-center py-4 text-muted-foreground">
-                                                    <MonitorSmartphone className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                                                    <p className="text-sm">No device paired</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Campaign & Actions */}
-                                    <div className="mt-4 pt-4 border-t flex justify-between items-center">
-                                        <div>
-                                            <span className="text-sm text-muted-foreground mr-2">Campaigns:</span>
-                                            {vehicle.campaigns && vehicle.campaigns.length > 0 ? (
-                                                <div className="inline-flex flex-wrap gap-1">
-                                                    {vehicle.campaigns.map(c => (
-                                                        <Badge key={c.id} variant="secondary" className="text-xs">
-                                                            {c.name}
-                                                        </Badge>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <span className="text-sm text-gray-400 dark:text-gray-500 italic">None assigned</span>
-                                            )}
-                                        </div>
-                                        <div className="flex gap-2">
-                                            {(!vehicle.masterDevice || !vehicle.slaveDevice) && (
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() => {
-                                                        setSelectedVehicle(vehicle);
-                                                        setPairMasterId(vehicle.masterDeviceId || '');
-                                                        setPairSlaveId(vehicle.slaveDeviceId || '');
-                                                        setShowPairDialog(true);
-                                                    }}
-                                                >
-                                                    <Link2 className="h-4 w-4 mr-1" />
-                                                    Pair Devices
-                                                </Button>
-                                            )}
-                                            {(vehicle.masterDevice || vehicle.slaveDevice) && (
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="text-orange-600 hover:text-orange-700"
-                                                    onClick={() => handleUnpair(vehicle.id)}
-                                                >
-                                                    <Unlink className="h-4 w-4 mr-1" />
-                                                    Unpair
-                                                </Button>
-                                            )}
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
+        {/* Unpaired Devices Section */}
+        {devices.filter((d) => !d.vehicleId).length > 0 && (
+          <Card className="border-dashed">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <MonitorSmartphone className="h-5 w-5 text-muted-foreground" />
+                Unpaired Devices ({devices.filter((d) => !d.vehicleId).length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                {devices
+                  .filter((d) => !d.vehicleId)
+                  .map((device) => (
+                    <div key={device.id} className="p-3 border rounded-lg bg-gray-50/50 dark:bg-gray-800/50">
+                      <p className="font-medium text-sm">{device.model || 'Tablet'}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{device.id.substring(0, 8)}...</p>
+                      <Badge
+                        variant="outline"
+                        className={
+                          getDeviceStatus(device).color === 'green'
+                            ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 mt-2'
+                            : getDeviceStatus(device).color === 'blue'
+                              ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800 mt-2'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 mt-2'
+                        }
+                      >
+                        {getDeviceStatus(device).label}
+                      </Badge>
                     </div>
-                )}
+                  ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
-                {/* Unpaired Devices Section */}
-                {devices.filter(d => !d.vehicleId).length > 0 && (
-                    <Card className="border-dashed">
-                        <CardHeader>
-                            <CardTitle className="text-base flex items-center gap-2">
-                                <MonitorSmartphone className="h-5 w-5 text-muted-foreground" />
-                                Unpaired Devices ({devices.filter(d => !d.vehicleId).length})
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-                                {devices.filter(d => !d.vehicleId).map(device => (
-                                    <div key={device.id} className="p-3 border rounded-lg bg-gray-50/50 dark:bg-gray-800/50">
-                                        <p className="font-medium text-sm">{device.model || 'Tablet'}</p>
-                                        <p className="text-xs text-muted-foreground font-mono">
-                                            {device.id.substring(0, 8)}...
-                                        </p>
-                                        <Badge
-                                            variant="outline"
-                                            className={
-                                                getDeviceStatus(device).color === 'green'
-                                                    ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 mt-2'
-                                                    : getDeviceStatus(device).color === 'blue'
-                                                        ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800 mt-2'
-                                                        : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 mt-2'
-                                            }
-                                        >
-                                            {getDeviceStatus(device).label}
-                                        </Badge>
-                                    </div>
-                                ))}
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
+      {/* Create Vehicle Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Vehicle</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-sm font-medium">Carplate Number</label>
+              <Input
+                placeholder="e.g. SGX1234A"
+                value={newCarplate}
+                onChange={(e) => setNewCarplate(e.target.value.toUpperCase())}
+                className="mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                WiFi hotspot will be auto-generated as MKTR-{newCarplate || 'CARPLATE'}
+              </p>
             </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateVehicle}>Create Vehicle</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-            {/* Create Vehicle Dialog */}
-            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Add New Vehicle</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                        <div>
-                            <label className="text-sm font-medium">Carplate Number</label>
-                            <Input
-                                placeholder="e.g. SGX1234A"
-                                value={newCarplate}
-                                onChange={(e) => setNewCarplate(e.target.value.toUpperCase())}
-                                className="mt-1"
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">
-                                WiFi hotspot will be auto-generated as MKTR-{newCarplate || 'CARPLATE'}
-                            </p>
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleCreateVehicle}>
-                            Create Vehicle
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+      {/* Pair Devices Dialog */}
+      <Dialog open={showPairDialog} onOpenChange={setShowPairDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pair Devices to {selectedVehicle?.carplate}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-sm font-medium">Master Device (Left Screen)</label>
+              <Select
+                value={pairMasterId || '_none'}
+                onValueChange={(val) => setPairMasterId(val === '_none' ? '' : val)}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select master device" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">None</SelectItem>
+                  {availableDevices
+                    .filter((d) => d.id !== pairSlaveId)
+                    .map((device) => (
+                      <SelectItem key={device.id} value={device.id}>
+                        {device.model || 'Tablet'} ({device.id.substring(0, 8)}...)
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Slave Device (Right Screen)</label>
+              <Select
+                value={pairSlaveId || '_none'}
+                onValueChange={(val) => setPairSlaveId(val === '_none' ? '' : val)}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select slave device" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">None</SelectItem>
+                  {availableDevices
+                    .filter((d) => d.id !== pairMasterId)
+                    .map((device) => (
+                      <SelectItem key={device.id} value={device.id}>
+                        {device.model || 'Tablet'} ({device.id.substring(0, 8)}...)
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPairDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handlePairDevices} disabled={!pairMasterId && !pairSlaveId}>
+              <Link2 className="h-4 w-4 mr-2" />
+              Pair Devices
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-            {/* Pair Devices Dialog */}
-            <Dialog open={showPairDialog} onOpenChange={setShowPairDialog}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Pair Devices to {selectedVehicle?.carplate}</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                        <div>
-                            <label className="text-sm font-medium">Master Device (Left Screen)</label>
-                            <Select value={pairMasterId || '_none'} onValueChange={(val) => setPairMasterId(val === '_none' ? '' : val)}>
-                                <SelectTrigger className="mt-1">
-                                    <SelectValue placeholder="Select master device" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="_none">None</SelectItem>
-                                    {availableDevices
-                                        .filter(d => d.id !== pairSlaveId)
-                                        .map(device => (
-                                            <SelectItem key={device.id} value={device.id}>
-                                                {device.model || 'Tablet'} ({device.id.substring(0, 8)}...)
-                                            </SelectItem>
-                                        ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div>
-                            <label className="text-sm font-medium">Slave Device (Right Screen)</label>
-                            <Select value={pairSlaveId || '_none'} onValueChange={(val) => setPairSlaveId(val === '_none' ? '' : val)}>
-                                <SelectTrigger className="mt-1">
-                                    <SelectValue placeholder="Select slave device" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="_none">None</SelectItem>
-                                    {availableDevices
-                                        .filter(d => d.id !== pairMasterId)
-                                        .map(device => (
-                                            <SelectItem key={device.id} value={device.id}>
-                                                {device.model || 'Tablet'} ({device.id.substring(0, 8)}...)
-                                            </SelectItem>
-                                        ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowPairDialog(false)}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handlePairDevices} disabled={!pairMasterId && !pairSlaveId}>
-                            <Link2 className="h-4 w-4 mr-2" />
-                            Pair Devices
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+      {/* Assign Campaigns Dialog */}
+      <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign Campaigns to {selectedVehicle?.carplate}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">Select campaigns to play on both screens of this vehicle.</p>
+            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              {campaigns.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">No PHV campaigns available</p>
+              ) : (
+                campaigns.map((campaign) => {
+                  // Calculate total media duration
+                  const playlist = campaign.ad_playlist || [];
+                  let totalDuration = 0;
+                  let mediaCount = 0;
 
-            {/* Assign Campaigns Dialog */}
-            <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Assign Campaigns to {selectedVehicle?.carplate}</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                        <p className="text-sm text-muted-foreground">
-                            Select campaigns to play on both screens of this vehicle.
-                        </p>
-                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                            {campaigns.length === 0 ? (
-                                <p className="text-sm text-muted-foreground py-4 text-center">
-                                    No PHV campaigns available
-                                </p>
-                            ) : (
-                                campaigns.map(campaign => {
-                                    // Calculate total media duration
-                                    const playlist = campaign.ad_playlist || [];
-                                    let totalDuration = 0;
-                                    let mediaCount = 0;
+                  playlist.forEach((item) => {
+                    mediaCount++;
+                    if (item.type === 'image') {
+                      totalDuration += 10; // Default 10s for images
+                    } else if (item.type === 'video' && item.duration) {
+                      totalDuration += item.duration;
+                    }
+                  });
 
-                                    playlist.forEach(item => {
-                                        mediaCount++;
-                                        if (item.type === 'image') {
-                                            totalDuration += 10; // Default 10s for images
-                                        } else if (item.type === 'video' && item.duration) {
-                                            totalDuration += item.duration;
-                                        }
-                                    });
+                  // Format campaign type for display
+                  const typeLabels = {
+                    brand_awareness: 'Brand Awareness',
+                    lead_generation: 'Lead Gen',
+                    video_ad: 'Video Ad',
+                  };
+                  const typeLabel = typeLabels[campaign.type] || campaign.type;
 
-                                    // Format campaign type for display
-                                    const typeLabels = {
-                                        'brand_awareness': 'Brand Awareness',
-                                        'lead_generation': 'Lead Gen',
-                                        'video_ad': 'Video Ad'
-                                    };
-                                    const typeLabel = typeLabels[campaign.type] || campaign.type;
-
-                                    return (
-                                        <div
-                                            key={campaign.id}
-                                            className={`flex items-center gap-2 p-3 border rounded-lg transition-colors ${selectedCampaignIds.includes(campaign.id)
-                                                ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-800'
-                                                : 'hover:bg-gray-50 dark:hover:bg-gray-800 border-gray-200 dark:border-gray-700'
-                                                }`}
-                                        >
-                                            <label className="flex items-start gap-3 flex-1 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedCampaignIds.includes(campaign.id)}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) {
-                                                            setSelectedCampaignIds([...selectedCampaignIds, campaign.id]);
-                                                        } else {
-                                                            setSelectedCampaignIds(selectedCampaignIds.filter(id => id !== campaign.id));
-                                                        }
-                                                    }}
-                                                    className="h-4 w-4 rounded border-gray-300 mt-0.5"
-                                                />
-                                                <div className="flex-1">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <p className="font-medium text-sm">{campaign.name}</p>
-                                                        <Badge
-                                                            variant="outline"
-                                                            className="text-xs bg-purple-50 text-purple-700 border-purple-200"
-                                                        >
-                                                            {typeLabel}
-                                                        </Badge>
-                                                    </div>
-                                                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                                        <span className="flex items-center gap-1">
-                                                            <MonitorSmartphone className="h-3 w-3" />
-                                                            {mediaCount} media
-                                                        </span>
-                                                        {totalDuration > 0 && (
-                                                            <span className="flex items-center gap-1">
-                                                                ⏱️ {totalDuration}s loop
-                                                            </span>
-                                                        )}
-                                                        <span className={`${campaign.status === 'active' ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
-                                                            {campaign.status}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </label>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="h-8 w-8 p-0"
-                                                onClick={() => navigate(`/admin/campaigns/${campaign.id}/edit`)}
-                                                title="Edit Campaign"
-                                            >
-                                                <Pencil className="h-4 w-4 text-muted-foreground hover:text-primary" />
-                                            </Button>
-                                        </div>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowAssignDialog(false)}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleAssignCampaigns}>
-                            Save Assignments
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* Volume Control Dialog */}
-            <Dialog open={showVolumeDialog} onOpenChange={setShowVolumeDialog}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Volume Control</DialogTitle>
-                    </DialogHeader>
-                    <div className="py-6 space-y-6">
-                        <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium">Volume Level</span>
-                            <span className="text-sm text-muted-foreground">{volumeLevel[0]}%</span>
-                        </div>
-                        <Slider
-                            value={volumeLevel}
-                            onValueChange={setVolumeLevel}
-                            max={100}
-                            step={1}
+                  return (
+                    <div
+                      key={campaign.id}
+                      className={`flex items-center gap-2 p-3 border rounded-lg transition-colors ${
+                        selectedCampaignIds.includes(campaign.id)
+                          ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-800'
+                          : 'hover:bg-gray-50 dark:hover:bg-gray-800 border-gray-200 dark:border-gray-700'
+                      }`}
+                    >
+                      <label className="flex items-start gap-3 flex-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedCampaignIds.includes(campaign.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCampaignIds([...selectedCampaignIds, campaign.id]);
+                            } else {
+                              setSelectedCampaignIds(selectedCampaignIds.filter((id) => id !== campaign.id));
+                            }
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 mt-0.5"
                         />
-                        <p className="text-xs text-muted-foreground text-center">
-                            This will set the volume for both screens on {selectedVehicle?.carplate}
-                        </p>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="font-medium text-sm">{campaign.name}</p>
+                            <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                              {typeLabel}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <MonitorSmartphone className="h-3 w-3" />
+                              {mediaCount} media
+                            </span>
+                            {totalDuration > 0 && (
+                              <span className="flex items-center gap-1">⏱️ {totalDuration}s loop</span>
+                            )}
+                            <span
+                              className={`${campaign.status === 'active' ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}
+                            >
+                              {campaign.status}
+                            </span>
+                          </div>
+                        </div>
+                      </label>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => navigate(`/admin/campaigns/${campaign.id}/edit`)}
+                        title="Edit Campaign"
+                      >
+                        <Pencil className="h-4 w-4 text-muted-foreground hover:text-primary" />
+                      </Button>
                     </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowVolumeDialog(false)}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleSetVolume}>
-                            Set Volume
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-        </div>
-    );
+                  );
+                })
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAssignDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAssignCampaigns}>Save Assignments</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Volume Control Dialog */}
+      <Dialog open={showVolumeDialog} onOpenChange={setShowVolumeDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Volume Control</DialogTitle>
+          </DialogHeader>
+          <div className="py-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Volume Level</span>
+              <span className="text-sm text-muted-foreground">{volumeLevel[0]}%</span>
+            </div>
+            <Slider value={volumeLevel} onValueChange={setVolumeLevel} max={100} step={1} />
+            <p className="text-xs text-muted-foreground text-center">
+              This will set the volume for both screens on {selectedVehicle?.carplate}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowVolumeDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSetVolume}>Set Volume</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }
