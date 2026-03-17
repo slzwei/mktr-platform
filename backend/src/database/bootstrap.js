@@ -42,15 +42,17 @@ export async function bootstrapDatabase() {
     await recoverPendingRetries();
   });
 
-  // Poll for stale webhook retries every 60 seconds
-  setInterval(async () => {
-    try {
-      const { recoverPendingRetries } = await import('../services/webhookService.js');
-      await recoverPendingRetries();
-    } catch (err) {
-      logger.warn('[Webhook] periodic recovery failed', { error: err?.message });
-    }
-  }, 60_000);
+  // Poll for stale webhook retries every 60 seconds (skip in test mode)
+  if (process.env.NODE_ENV !== 'test') {
+    setInterval(async () => {
+      try {
+        const { recoverPendingRetries } = await import('../services/webhookService.js');
+        await recoverPendingRetries();
+      } catch (err) {
+        logger.warn('[Webhook] periodic recovery failed', { error: err?.message });
+      }
+    }, 60_000);
+  }
 
   logger.info('Database bootstrap complete.');
 }

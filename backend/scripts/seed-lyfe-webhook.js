@@ -11,7 +11,7 @@ import WebhookSubscriber from '../src/models/WebhookSubscriber.js';
 const LYFE_WEBHOOK = {
   name: 'Lyfe App',
   url: 'https://nvtedkyjwulkzjeoqjgx.supabase.co/functions/v1/receive-mktr-lead',
-  secret: '***REMOVED***',
+  secret: 'f53c4475013b6252870ad1614128503b89a75e0b2ce5bb60e162b11b4ae75ada',
   events: ['lead.created'],
   enabled: true,
   description: 'Push new leads to Lyfe mobile app for agent follow-up'
