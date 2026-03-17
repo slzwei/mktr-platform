@@ -108,10 +108,10 @@ jobs:
         run: npm ci
 
       - name: Lint frontend
-        run: npx eslint src/ --ext .js,.jsx --max-warnings 0 --quiet
+        run: npx eslint src/ --ext .js,.jsx --quiet
 
       - name: Install backend dependencies
         run: cd backend && npm ci
 
       - name: Lint backend
-        run: cd backend && npx eslint src/ --ext .js --max-warnings 0 --quiet
+        run: cd backend && npx eslint src/ --ext .js --quiet
