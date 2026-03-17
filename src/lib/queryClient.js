@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
-import { toast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 
 /**
  * Global error handler for React Query.
@@ -7,20 +7,12 @@ import { toast } from '@/components/ui/use-toast';
  */
 function onQueryError(error) {
   if (error?.status === 401) return;
-  toast({
-    title: 'Error',
-    description: error?.message || 'Something went wrong',
-    variant: 'destructive',
-  });
+  toast.error(error?.message || 'Something went wrong');
 }
 
 function onMutationError(error) {
   if (error?.status === 401) return;
-  toast({
-    title: 'Error',
-    description: error?.message || 'Operation failed',
-    variant: 'destructive',
-  });
+  toast.error(error?.message || 'Operation failed');
 }
 
 export const queryClient = new QueryClient({

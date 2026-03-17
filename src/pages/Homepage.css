@@ -1,0 +1,657 @@
+/* CSS Custom Properties */
+:root {
+  --heading-font: 'Mindset', 'Inter', sans-serif;
+  --body-font: 'Inter', sans-serif;
+  --mono-font: 'PT Mono', 'Courier New', monospace;
+  --black: #000000;
+  --white: #ffffff;
+  --grey: #909090;
+}
+
+.dark {
+  --black: #ffffff;
+  --white: #1a1a2e;
+  --grey: #a0a0a0;
+}
+
+/* Import Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=PT+Mono:wght@400&display=swap');
+
+/* Hero Section with GIF Background */
+.hero-section {
+  position: relative;
+  background: black;
+  overflow: hidden;
+  min-height: 100vh; /* Full height for desktop */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-section::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: url("https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExYTFzZnpzZGwzbjJ2MzZ0ejQ2bDdnYmlqbWhsdnlkcnFwazlsNnpwZyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/CKlafeh1NAxz35KTq4/giphy.gif") center/cover;
+  opacity: 0.15;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+/* Desktop Hero Padding */
+.hero-desktop-padding {
+  /* Defined globally, but intended for desktop.
+     Will be applied conditionally or overridden by mobile-specific padding. */
+  padding: 8rem 2rem;
+}
+
+/* Mobile Hero Padding */
+.hero-mobile-padding {
+  /* Defined globally, then overridden below for actual mobile */
+  padding: 6rem 1rem 4rem 1rem;
+}
+
+/* Typography - Responsive Hero Title */
+.hero-title {
+  font-family: var(--heading-font);
+  font-size: clamp(2.5rem, 8vw, 6rem); /* Default/Tablet range */
+  line-height: 0.9;
+  font-weight: 700;
+  color: var(--white);
+  margin: 0;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+
+/* Mobile Adjustments for Hero Section */
+@media (max-width: 768px) {
+  .hero-section {
+    min-height: auto; /* Remove full height constraint on mobile */
+    padding: 0; /* Reset padding, let classes handle it */
+  }
+
+  .hero-title {
+    font-size: clamp(2rem, 8vw, 3.5rem);
+    line-height: 1.1;
+  }
+
+  .hero-mobile-padding { /* Specific override for hero-mobile-padding on actual mobile */
+    padding-top: 120px; /* Account for fixed header */
+    padding-bottom: 3rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* Desktop Adjustments */
+@media (min-width: 769px) {
+  .hero-section {
+    min-height: 100vh;
+  }
+
+  .hero-title {
+    font-size: clamp(3rem, 6vw, 5rem);
+    line-height: 0.9;
+  }
+}
+
+/* Parallax Styles (retained for ParallaxSection component definition) */
+.parallax-section {
+  position: relative;
+  overflow: hidden;
+}
+
+.parallax-bg {
+  position: absolute;
+  top: -20%;
+  left: 0;
+  width: 100%;
+  height: 120%;
+  z-index: -1;
+  will-change: transform;
+}
+
+.parallax-content {
+  position: relative;
+  z-index: 1;
+}
+
+.floating-elements {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.floating-element {
+  position: absolute;
+  will-change: transform;
+  opacity: 0.3;
+}
+
+.floating-element-1 {
+  top: 20%;
+  right: 10%;
+  animation: float 6s ease-in-out infinite;
+}
+
+.floating-element-2 {
+  top: 60%;
+  left: 5%;
+  animation: float 8s ease-in-out infinite reverse;
+}
+
+.floating-element-3 {
+  top: 40%;
+  right: 5%;
+  animation: float 7s ease-in-out infinite;
+}
+
+.floating-element-4 {
+  top: 80%;
+  left: 15%;
+  animation: float 9s ease-in-out infinite reverse;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-20px) rotate(5deg); }
+}
+
+/* Decorative icons specific animations for hero section */
+/* Removed as RandomDecorativeIcons component is removed */
+
+.parallax-card {
+  transition: transform 0.3s ease;
+}
+
+.parallax-card:hover {
+  transform: translateY(-10px);
+}
+
+/* Hamburger Menu Styles */
+.hamburger {
+  padding: 15px 15px;
+  display: inline-block;
+  cursor: pointer;
+  transition-property: opacity, filter;
+  transition-duration: 0.15s;
+  transition-timing-function: linear;
+  font: inherit;
+  color: inherit;
+  text-transform: none;
+  background-color: transparent;
+  border: 0;
+  margin: 0;
+  overflow: visible;
+  z-index: 1000;
+  position: relative;
+}
+
+.hamburger:hover {
+  opacity: 0.7;
+}
+
+.hamburger-box {
+  width: 40px;
+  height: 24px;
+  display: inline-block;
+  position: relative;
+}
+
+.hamburger-inner {
+  display: block;
+  top: 50%;
+  margin-top: -2px;
+}
+
+.hamburger-inner,
+.hamburger-inner::before,
+.hamburger-inner::after {
+  width: 40px;
+  height: 4px;
+  background-color: var(--black);
+  border-radius: 4px;
+  position: absolute;
+  transition-property: transform;
+  transition-duration: 0.15s;
+  transition-timing-function: ease;
+}
+
+.hamburger-inner::before,
+.hamburger-inner::after {
+  content: "";
+  display: block;
+}
+
+.hamburger-inner::before {
+  top: -10px;
+}
+
+.hamburger-inner::after {
+  bottom: -10px;
+}
+
+/* Spring Animation */
+.hamburger--spring .hamburger-inner {
+  top: 2px;
+  transition: background-color 0s 0.13s linear;
+}
+
+.hamburger--spring .hamburger-inner::before {
+  top: 10px;
+  transition: top 0.1s 0.2s cubic-bezier(0.33333, 0.66667, 0.66667, 1), transform 0.13s cubic-bezier(0.55, 0.055, 0.675, 0.19);
+}
+
+.hamburger--spring .hamburger-inner::after {
+  top: 20px;
+  transition: top 0.2s 0.2s cubic-bezier(0.33333, 0.66667, 0.66667, 1), transform 0.13s cubic-bezier(0.55, 0.055, 0.675, 0.19);
+}
+
+.hamburger--spring.is-active .hamburger-inner {
+  transition-delay: 0.22s;
+  background-color: transparent !important;
+}
+
+.hamburger--spring.is-active .hamburger-inner::before {
+  top: 0;
+  transition: top 0.1s 0.15s cubic-bezier(0.33333, 0, 0.66667, 0.33333), transform 0.13s 0.22s cubic-bezier(0.215, 0.61, 0.355, 1);
+  transform: translate3d(0, 10px, 0) rotate(45deg);
+}
+
+.hamburger--spring.is-active .hamburger-inner::after {
+  top: 0;
+  transition: top 0.2s cubic-bezier(0.33333, 0, 0.66667, 0.33333), transform 0.13s 0.22s cubic-bezier(0.215, 0.61, 0.355, 1);
+  transform: translate3d(0, 10px, 0) rotate(-45deg);
+}
+
+/* Blinker */
+.blinking-cursor {
+  display: inline-block;
+  width: 1ch;
+  animation: blink 1s steps(2, start) infinite;
+}
+
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* Mobile Menu Overlay */
+.fixed.inset-0.bg-black.bg-opacity-50.z-998 {
+  z-index: 998;
+}
+
+/* Mobile Menu */
+.mobile-menu {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 100%; /* Default for larger screens until max-width kicks in */
+  max-width: 320px; /* Constrain width on larger screens */
+  height: 100vh;
+  background: var(--white);
+  z-index: 999;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+}
+
+.mobile-menu.open {
+  transform: translateX(0);
+}
+
+.dark .mobile-menu {
+  background: #1a1a2e;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+}
+.dark .mobile-menu-link {
+  color: #ffffff;
+}
+
+.mobile-menu-link {
+  font-family: var(--mono-font);
+  font-size: 1.1rem; /* Adjusted font size */
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--black);
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+  padding: 0.75rem 0; /* Added padding for better touch targets */
+}
+
+.mobile-menu-link:hover {
+  opacity: 0.7;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.dark .modal-overlay {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.modal-content {
+  background: var(--white);
+  padding: 2rem; /* Adjusted padding */
+  max-width: 90vw; /* Max width relative to viewport */
+  width: 100%; /* Take full width within max-width */
+  max-width: 500px; /* Absolute max-width */
+  position: relative;
+  animation: scaleIn 0.3s ease;
+}
+
+.modal-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--black);
+}
+
+.modal-title {
+  font-family: var(--heading-font);
+  font-size: 1.8rem; /* Adjusted font size */
+  margin-bottom: 1rem;
+  color: var(--black);
+}
+
+.dark .modal-content {
+  background: #1e1e2f;
+}
+.dark .modal-title {
+  color: #ffffff;
+}
+.dark .modal-close {
+  color: #ffffff;
+}
+
+.modal-text {
+  font-family: var(--body-font);
+  color: var(--grey);
+  margin-bottom: 2rem;
+  line-height: 1.6;
+}
+
+.modal-cta {
+  background: var(--black);
+  color: var(--white);
+  border: none;
+  padding: 0.75rem 1.5rem;
+  font-family: var(--mono-font);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  width: 100%; /* Made button full width */
+}
+
+.modal-cta:hover {
+  opacity: 0.8;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* Typography */
+/* These are defaults, overridden by responsive rules for hero-title */
+.section-title {
+  font-family: var(--mono-font);
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  font-size: 0.875rem;
+  color: var(--black);
+  margin-bottom: 2rem;
+}
+
+.body-text {
+  font-family: var(--body-font);
+  font-size: 1.125rem;
+  line-height: 1.7;
+  color: var(--grey);
+}
+
+/* Layout */
+.section-spacing {
+  padding: 6rem 0;
+  position: relative;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+  position: relative;
+  z-index: 2;
+}
+
+/* Buttons */
+.btn-primary {
+  background: var(--black);
+  color: var(--white);
+  border: none;
+  padding: 1rem 2rem;
+  font-family: var(--mono-font);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  width: 100%; /* Default to full width for better mobile behavior */
+  justify-content: center; /* Center content */
+}
+
+.btn-primary:hover {
+  opacity: 0.8;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--black);
+  border: 2px solid var(--black);
+  padding: 1rem 2rem;
+  font-family: var(--mono-font);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  width: 100%; /* Default to full width for better mobile behavior */
+  justify-content: center; /* Center content */
+}
+
+.btn-outline:hover {
+  background: var(--black);
+  color: var(--white);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+}
+
+/* Header */
+.header {
+  position: fixed;
+  top: 0;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  border-bottom: 1px solid var(--grey);
+  transition: all 0.3s ease;
+}
+
+.dark .header {
+  background: rgba(26, 26, 46, 0.95);
+  border-bottom-color: #2a2a3e;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 0;
+}
+
+.logo {
+  font-family: var(--heading-font);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--black);
+  text-decoration: none;
+  transition: transform 0.3s ease;
+}
+
+.logo:hover {
+  transform: scale(1.05);
+}
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+  .section-spacing {
+    padding: 3rem 0; /* Reduced padding for mobile sections */
+  }
+
+  .container {
+    padding: 0 1rem; /* Smaller horizontal padding */
+  }
+
+  .floating-elements {
+    display: none; /* Hide floating elements on smaller screens */
+  }
+
+  .mobile-menu {
+    width: 85vw; /* Adjust width for mobile menu */
+    max-width: none; /* Override max-width set for larger screens */
+  }
+
+  .btn-primary, .btn-outline {
+    padding: 0.875rem 1.5rem; /* Smaller padding for mobile buttons */
+    font-size: 0.9rem; /* Smaller font size for mobile buttons */
+    margin-bottom: 0.75rem; /* Space between stacked buttons */
+  }
+
+  .body-text {
+    font-size: 1rem; /* Smaller body text for mobile */
+    line-height: 1.6; /* Adjusted line height */
+  }
+
+  .modal-content {
+    padding: 1.5rem; /* Reduced modal padding */
+    margin: 1rem; /* Added margin to prevent edge-to-edge on very small screens */
+  }
+
+  .modal-title {
+    font-size: 1.5rem; /* Reduced modal title size */
+  }
+
+  /* New mobile-specific utility classes */
+  .mobile-button-container {
+    flex-direction: column; /* Stack buttons vertically */
+    width: 100%; /* Take full width */
+    max-width: 300px; /* Constrain stacked buttons width */
+    margin: 0 auto; /* Center stacked buttons */
+  }
+
+  .mobile-button-container .btn-primary,
+  .mobile-button-container .btn-outline {
+    width: 100%; /* Ensure buttons take full width of container */
+    margin-bottom: 1rem; /* Spacing between stacked buttons */
+  }
+
+  /* Grid Mobile Adjustments */
+  /* mobile-grid-fix CSS is no longer relevant for Lead Sources section */
+  .mobile-grid-fix {
+    grid-template-columns: 1fr !important; /* Force single column on grids */
+    gap: 2rem !important; /* Adjust gap for single column layout */
+  }
+}
+
+/* Tablet Adjustments */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .container {
+    padding: 0 1.5rem; /* Slightly smaller horizontal padding for tablets */
+  }
+
+  .mobile-grid-fix {
+    grid-template-columns: repeat(2, 1fr) !important; /* Two columns for tablets */
+  }
+}
+
+/* Small Mobile Devices */
+@media (max-width: 480px) {
+  .section-title {
+    font-size: 0.75rem; /* Smaller section title */
+    letter-spacing: 2px;
+  }
+
+  .body-text {
+    font-size: 0.95rem; /* Slightly smaller body text */
+  }
+
+  .btn-primary, .btn-outline {
+    padding: 0.75rem 1.25rem; /* Even smaller buttons */
+    font-size: 0.85rem;
+  }
+
+  .logo {
+    font-size: 1.5rem; /* Smaller logo in header */
+  }
+}
+
+/* Scroll Animations */
+@media (prefers-reduced-motion: no-preference) {
+  .parallax-card {
+    opacity: 0;
+    transform: translateY(50px);
+    animation: slideUp 0.8s ease forwards;
+  }
+
+  .parallax-card:nth-child(1) { animation-delay: 0.1s; }
+  .parallax-card:nth-child(2) { animation-delay: 0.2s; }
+  .parallax-card:nth-child(3) { animation-delay: 0.3s; }
+  .parallax-card:nth-child(4) { animation-delay: 0.4s; }
+
+  @keyframes slideUp {
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}

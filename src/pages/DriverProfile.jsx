@@ -1,17 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { apiClient } from "@/api/client";
-import { useAuthStore } from "@/stores/authStore";
-import makeModelsRaw from "@/data/mktr_make_models.json";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Mail, ShieldCheck, Loader2, AlertCircle, X, CheckCircle2 } from "lucide-react";
-import { sendOtp, verifyOtp } from "@/components/lib/customFunctions";
-import { motion } from "framer-motion";
-import { toast } from "@/components/ui/use-toast";
+import { useEffect, useMemo, useState } from 'react';
+import { apiClient } from '@/api/client';
+import { useAuthStore } from '@/stores/authStore';
+import makeModelsRaw from '@/data/mktr_make_models.json';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Mail, ShieldCheck, Loader2, AlertCircle, X, CheckCircle2 } from 'lucide-react';
+import { sendOtp, verifyOtp } from '@/components/lib/customFunctions';
+import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 
 const BANK_OPTIONS = [
   'DBS',
@@ -26,7 +26,7 @@ const BANK_OPTIONS = [
   'Bank of China',
   'ICBC',
   'RHB',
-  'State Bank of India'
+  'State Bank of India',
 ];
 
 export default function DriverProfile() {
@@ -88,7 +88,10 @@ export default function DriverProfile() {
         const detected = detectPaynowType(existing);
         setPaynowType(detected);
         if (detected === 'Number') {
-          const local8 = String(existing || '').replace(/^\+65/, '').replace(/\D/g, '').slice(0, 8);
+          const local8 = String(existing || '')
+            .replace(/^\+65/, '')
+            .replace(/\D/g, '')
+            .slice(0, 8);
           setPaynowValue(local8);
         } else {
           setPaynowValue(String(existing || '').toUpperCase());
@@ -115,7 +118,7 @@ export default function DriverProfile() {
       const me = await refreshUser();
       setUser(me);
     } catch (e) {
-      console.error("Failed to load user", e);
+      console.error('Failed to load user', e);
     } finally {
       setLoading(false);
     }
@@ -155,22 +158,60 @@ export default function DriverProfile() {
         setCarCustomMake('');
         setCarCustomModel('');
       }
-    } catch (_) { /* non-critical */ }
+    } catch (_) {
+      /* non-critical */
+    }
   };
 
   // Plate validation — align with onboarding rules (EA–EZ or SB–SN + 1–4 digits + letter)
-  const LETTERS_NO_IO = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+  const LETTERS_NO_IO = [
+    'A',
+    'B',
+    'C',
+    'D',
+    'E',
+    'F',
+    'G',
+    'H',
+    'J',
+    'K',
+    'L',
+    'M',
+    'N',
+    'P',
+    'Q',
+    'R',
+    'S',
+    'T',
+    'U',
+    'V',
+    'W',
+    'X',
+    'Y',
+    'Z',
+  ];
   const SERIES_SECOND_LETTERS = ['B', 'C', 'D', 'F', 'G', 'J', 'K', 'L', 'M', 'N'];
-  const ALLOWED_PREFIXES = useMemo(() => new Set([
-    ...LETTERS_NO_IO.map((l) => `E${l}`),
-    ...SERIES_SECOND_LETTERS.flatMap((sec) => LETTERS_NO_IO.map((third) => `S${sec}${third}`))
-  ]), []);
-  const formatPlateInputToStrict = (plate) => String(plate || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const ALLOWED_PREFIXES = useMemo(
+    () =>
+      new Set([
+        ...LETTERS_NO_IO.map((l) => `E${l}`),
+        ...SERIES_SECOND_LETTERS.flatMap((sec) => LETTERS_NO_IO.map((third) => `S${sec}${third}`)),
+      ]),
+    []
+  );
+  const formatPlateInputToStrict = (plate) =>
+    String(plate || '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
   const isValidAllowedPlateFormat = (raw) => {
-    const v = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const v = String(raw || '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
     if (!v) return false;
     let prefix = '';
-    if (v.startsWith('S')) prefix = v.slice(0, 3); else if (v.startsWith('E')) prefix = v.slice(0, 2); else return false;
+    if (v.startsWith('S')) prefix = v.slice(0, 3);
+    else if (v.startsWith('E')) prefix = v.slice(0, 2);
+    else return false;
     if (!ALLOWED_PREFIXES.has(prefix)) return false;
     const rest = v.slice(prefix.length);
     const match = rest.match(/^(\d{1,4})([A-Z])$/);
@@ -182,13 +223,15 @@ export default function DriverProfile() {
     const cleanPlate = formatPlateInputToStrict(carPlate);
     const newErrors = {};
     if (!cleanPlate) newErrors.plate = 'Car plate is required';
-    else if (!isValidAllowedPlateFormat(cleanPlate)) newErrors.plate = 'Enter valid car plate (EA–EZ or SB–SN + 1–4 digits + letter)';
+    else if (!isValidAllowedPlateFormat(cleanPlate))
+      newErrors.plate = 'Enter valid car plate (EA–EZ or SB–SN + 1–4 digits + letter)';
     if (!carMake) newErrors.make = 'Please select the car make';
     const finalMake = carMake === 'Other' ? (carCustomMake || '').trim() : carMake;
-    const finalModel = (carMake === 'Other' || carModel === 'Other') ? (carCustomModel || '').trim() : carModel;
+    const finalModel = carMake === 'Other' || carModel === 'Other' ? (carCustomModel || '').trim() : carModel;
     if (carMake === 'Other' && !finalMake) newErrors.customMake = 'Please enter the car make';
     if (carMake !== 'Other' && !carModel) newErrors.model = 'Please select the car model';
-    if ((carMake === 'Other' || carModel === 'Other') && !finalModel) newErrors.customModel = 'Please enter the car model';
+    if ((carMake === 'Other' || carModel === 'Other') && !finalModel)
+      newErrors.customModel = 'Please enter the car model';
     if (Object.keys(newErrors).length > 0) {
       setCarErrors(newErrors);
       return;
@@ -199,13 +242,13 @@ export default function DriverProfile() {
       await apiClient.put(`/fleet/cars/${carId}`, {
         plate_number: cleanPlate,
         make: finalMake,
-        model: finalModel
+        model: finalModel,
       });
-      toast({ title: 'Car updated', description: 'Your vehicle details were saved successfully.' });
+      toast.success('Your vehicle details were saved successfully.');
       setCarErrors({});
       await loadAssignedCar();
     } catch (e) {
-      toast({ title: 'Update failed', description: e?.message || 'Unable to save car details', variant: 'destructive' });
+      toast.error(e?.message || 'Unable to save car details');
     } finally {
       setCarSaving(false);
     }
@@ -348,7 +391,7 @@ export default function DriverProfile() {
       // Refresh local user cache
       const refreshed = await refreshUser(true);
       setUser(refreshed);
-      toast({ title: 'Profile updated', description: 'Your details and payout method were saved successfully.' });
+      toast.success('Your details and payout method were saved successfully.');
     } catch (e) {
       setErrorMsg(e?.message || 'Failed to update profile.');
     }
@@ -363,7 +406,9 @@ export default function DriverProfile() {
 
   // Detect PayNow id type from stored value
   const detectPaynowType = (value) => {
-    const v = String(value || '').trim().toUpperCase();
+    const v = String(value || '')
+      .trim()
+      .toUpperCase();
     if (/^\+65\d{8}$/.test(v)) return 'Number';
     if (isValidNRIC(v)) return 'NRIC';
     if (isValidUEN(v)) return 'UEN';
@@ -372,22 +417,29 @@ export default function DriverProfile() {
 
   // Validation helpers for UEN and NRIC formats
   const isValidUEN = (value) => {
-    const v = String(value || '').trim().toUpperCase();
+    const v = String(value || '')
+      .trim()
+      .toUpperCase();
     if (!/^[A-Z0-9]{8,9}[A-Z]$/.test(v)) return false;
     const patterns = [
       /^[0-9]{8}[A-Z]$/,
       /^[0-9]{9}[A-Z]$/,
       /^[ST][0-9]{2}[A-Z]{2}[0-9]{4}[A-Z]$/,
-      /^R[0-9]{2}[A-Z]{2}[0-9]{4}[A-Z]$/
+      /^R[0-9]{2}[A-Z]{2}[0-9]{4}[A-Z]$/,
     ];
     return patterns.some((re) => re.test(v));
   };
 
   const isValidNRIC = (value) => {
-    const v = String(value || '').trim().toUpperCase();
+    const v = String(value || '')
+      .trim()
+      .toUpperCase();
     if (!/^[STFGM][0-9]{7}[A-Z]$/.test(v)) return false;
     const prefix = v[0];
-    const digits = v.slice(1, 8).split('').map((c) => parseInt(c, 10));
+    const digits = v
+      .slice(1, 8)
+      .split('')
+      .map((c) => parseInt(c, 10));
     const suffix = v[8];
     const weights = [2, 7, 6, 5, 4, 3, 2];
     let sum = 0;
@@ -396,7 +448,7 @@ export default function DriverProfile() {
     const remainder = sum % 11;
     const mapST = ['J', 'Z', 'I', 'H', 'G', 'F', 'E', 'D', 'C', 'B', 'A'];
     const mapFG = ['X', 'W', 'U', 'T', 'R', 'Q', 'P', 'N', 'M', 'L', 'K'];
-    const mapping = (prefix === 'S' || prefix === 'T') ? mapST : mapFG;
+    const mapping = prefix === 'S' || prefix === 'T' ? mapST : mapFG;
     return mapping[remainder] === suffix;
   };
 
@@ -413,19 +465,29 @@ export default function DriverProfile() {
     if (digits.startsWith('65') && digits.length > 8) digits = digits.slice(2);
     const local8 = digits.slice(0, 8);
     setPaynowValue(local8);
-    if (local8.length > 0 && local8.length !== 8) setPaynowError('Enter 8 digits'); else setPaynowError('');
+    if (local8.length > 0 && local8.length !== 8) setPaynowError('Enter 8 digits');
+    else setPaynowError('');
   };
 
   const handleUENChange = (value) => {
-    const cleaned = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+    const cleaned = String(value || '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 10);
     setPaynowValue(cleaned);
-    if (cleaned.length > 0 && !isValidUEN(cleaned)) setPaynowError('Invalid UEN format. Example: 201912345Z or T18LL0001K'); else setPaynowError('');
+    if (cleaned.length > 0 && !isValidUEN(cleaned))
+      setPaynowError('Invalid UEN format. Example: 201912345Z or T18LL0001K');
+    else setPaynowError('');
   };
 
   const handleNRICChange = (value) => {
-    const cleaned = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 9);
+    const cleaned = String(value || '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 9);
     setPaynowValue(cleaned);
-    if (cleaned.length > 0 && !isValidNRIC(cleaned)) setNricError('Invalid NRIC/FIN format. Example: S1234567D'); else setNricError('');
+    if (cleaned.length > 0 && !isValidNRIC(cleaned)) setNricError('Invalid NRIC/FIN format. Example: S1234567D');
+    else setNricError('');
   };
 
   if (loading) {
@@ -434,9 +496,11 @@ export default function DriverProfile() {
         <div className="animate-pulse space-y-6">
           <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-64"></div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {Array(4).fill(0).map((_, i) => (
-              <div key={i} className="h-32 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
-            ))}
+            {Array(4)
+              .fill(0)
+              .map((_, i) => (
+                <div key={i} className="h-32 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>
+              ))}
           </div>
         </div>
       </div>
@@ -451,7 +515,12 @@ export default function DriverProfile() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Profile</h1>
           <div className="flex items-center gap-4 text-gray-600 dark:text-gray-400">
-            <Badge variant="outline" className="bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800">Driver Partner</Badge>
+            <Badge
+              variant="outline"
+              className="bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800"
+            >
+              Driver Partner
+            </Badge>
             <span className="text-sm">{user?.full_name || user?.fullName || 'Driver'}</span>
           </div>
         </div>
@@ -470,21 +539,30 @@ export default function DriverProfile() {
                     type="email"
                     className={`pl-7 h-8 text-sm ${emailError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
                     value={email}
-                    onChange={(e) => { const v = e.target.value; setEmail(v); setEmailError(v && !isValidEmail(v) ? 'Please enter a valid email address' : ''); }}
-                    onBlur={(e) => { const v = e.target.value; setEmailError(v && !isValidEmail(v) ? 'Please enter a valid email address' : ''); }}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setEmail(v);
+                      setEmailError(v && !isValidEmail(v) ? 'Please enter a valid email address' : '');
+                    }}
+                    onBlur={(e) => {
+                      const v = e.target.value;
+                      setEmailError(v && !isValidEmail(v) ? 'Please enter a valid email address' : '');
+                    }}
                     disabled
                   />
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Email is linked to Google and cannot be changed.</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Email is linked to Google and cannot be changed.
+                  </div>
                 </div>
-                {emailError && (
-                  <div className="text-xs text-red-600 mt-1">{emailError}</div>
-                )}
+                {emailError && <div className="text-xs text-red-600 mt-1">{emailError}</div>}
               </div>
               <div>
                 <Label className="text-xs font-medium">Contact Number</Label>
                 <div className="flex items-center gap-1">
                   <div className="relative flex-grow">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-700 dark:text-gray-300 text-sm whitespace-nowrap">+65</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-700 dark:text-gray-300 text-sm whitespace-nowrap">
+                      +65
+                    </span>
                     <Input
                       type="tel"
                       placeholder="9123 4567"
@@ -496,7 +574,9 @@ export default function DriverProfile() {
                     />
                     {(() => {
                       const originalRaw = (user?.phone || '').replace(/\D/g, '');
-                      const originalLocal = originalRaw.startsWith('65') ? originalRaw.slice(2, 10) : originalRaw.slice(0, 8);
+                      const originalLocal = originalRaw.startsWith('65')
+                        ? originalRaw.slice(2, 10)
+                        : originalRaw.slice(0, 8);
                       const phoneChanged = (phone || '') !== (originalLocal || '');
                       const showVerified = (!phoneChanged && otpState === 'idle') || otpState === 'verified';
                       return showVerified ? (
@@ -509,12 +589,23 @@ export default function DriverProfile() {
                   </div>
                   {(() => {
                     const originalRaw = (user?.phone || '').replace(/\D/g, '');
-                    const originalLocal = originalRaw.startsWith('65') ? originalRaw.slice(2, 10) : originalRaw.slice(0, 8);
+                    const originalLocal = originalRaw.startsWith('65')
+                      ? originalRaw.slice(2, 10)
+                      : originalRaw.slice(0, 8);
                     const phoneChanged = (phone || '') !== (originalLocal || '');
                     if (otpState === 'idle' && phoneChanged) {
                       return (
-                        <motion.div initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
-                          <Button type="button" onClick={handleSendOtp} disabled={loadingKind === 'sending' || phone.length !== 8} className="w-28 h-8 bg-black hover:bg-gray-800 text-white font-medium text-sm">
+                        <motion.div
+                          initial={{ x: 40, opacity: 0 }}
+                          animate={{ x: 0, opacity: 1 }}
+                          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                        >
+                          <Button
+                            type="button"
+                            onClick={handleSendOtp}
+                            disabled={loadingKind === 'sending' || phone.length !== 8}
+                            className="w-28 h-8 bg-black hover:bg-gray-800 text-white font-medium text-sm"
+                          >
                             {loadingKind === 'sending' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify'}
                           </Button>
                         </motion.div>
@@ -536,7 +627,13 @@ export default function DriverProfile() {
               <div className="space-y-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-medium text-gray-800 dark:text-gray-200">Enter Code</Label>
-                  <Button type="button" variant="ghost" size="sm" onClick={handleCancelOtp} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 h-6 px-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCancelOtp}
+                    className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 h-6 px-1"
+                  >
                     <X className="w-3 h-3" />
                   </Button>
                 </div>
@@ -544,16 +641,49 @@ export default function DriverProfile() {
                 <div className="flex items-center gap-2">
                   <div className="relative flex-grow">
                     <ShieldCheck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
-                    <Input id="otp" type="tel" inputMode="numeric" autoComplete="one-time-code" placeholder="123456" className="pl-8 tracking-wider h-9 text-sm" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} />
+                    <Input
+                      id="otp"
+                      type="tel"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="123456"
+                      className="pl-8 tracking-wider h-9 text-sm"
+                      maxLength={6}
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                    />
                   </div>
-                  <Button type="button" size="sm" onClick={handleVerifyOtp} disabled={loadingKind === 'verifying' || showSuccessTick} className={`h-9 px-4 text-sm w-28 transition-colors duration-300 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600' : ''}`}>
-                    {showSuccessTick ? <CheckCircle2 className="w-5 h-5 text-white" /> : (loadingKind === 'verifying' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm')}
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleVerifyOtp}
+                    disabled={loadingKind === 'verifying' || showSuccessTick}
+                    className={`h-9 px-4 text-sm w-28 transition-colors duration-300 ${showSuccessTick ? 'bg-green-500 hover:bg-green-600' : ''}`}
+                  >
+                    {showSuccessTick ? (
+                      <CheckCircle2 className="w-5 h-5 text-white" />
+                    ) : loadingKind === 'verifying' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      'Confirm'
+                    )}
                   </Button>
                 </div>
                 <div className="text-center text-xs text-gray-500 dark:text-gray-400 pt-1">
                   Didn't receive a code?{' '}
-                  <Button type="button" variant="link" size="sm" onClick={handleSendOtp} disabled={resendCooldown > 0} className="h-auto p-0 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 disabled:text-gray-500 dark:disabled:text-gray-400 disabled:no-underline">
-                    {resendCooldown > 0 ? (resendCooldown > 60 ? `Wait ${Math.ceil(resendCooldown / 60)} min` : `Resend in ${resendCooldown}s`) : 'Resend now'}
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    onClick={handleSendOtp}
+                    disabled={resendCooldown > 0}
+                    className="h-auto p-0 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 disabled:text-gray-500 dark:disabled:text-gray-400 disabled:no-underline"
+                  >
+                    {resendCooldown > 0
+                      ? resendCooldown > 60
+                        ? `Wait ${Math.ceil(resendCooldown / 60)} min`
+                        : `Resend in ${resendCooldown}s`
+                      : 'Resend now'}
                   </Button>
                 </div>
               </div>
@@ -569,7 +699,15 @@ export default function DriverProfile() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label className="text-xs font-medium">Payout Method</Label>
-                <Select value={payoutMethod} onValueChange={(v) => { setPayoutMethod(v); setPaynowValue(''); setBankName(''); setBankAccount(''); }}>
+                <Select
+                  value={payoutMethod}
+                  onValueChange={(v) => {
+                    setPayoutMethod(v);
+                    setPaynowValue('');
+                    setBankName('');
+                    setBankAccount('');
+                  }}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select method" />
                   </SelectTrigger>
@@ -583,7 +721,13 @@ export default function DriverProfile() {
                 {payoutMethod === 'PayNow' ? (
                   <div className="space-y-2">
                     <Label className="text-xs font-medium">PayNow Type</Label>
-                    <Select value={paynowType} onValueChange={(v) => { setPaynowType(v); setPaynowValue(''); }}>
+                    <Select
+                      value={paynowType}
+                      onValueChange={(v) => {
+                        setPaynowType(v);
+                        setPaynowValue('');
+                      }}
+                    >
                       <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
@@ -598,7 +742,9 @@ export default function DriverProfile() {
                         <Label className="text-xs font-medium">PayNow Number</Label>
                         <div>
                           <div className="relative h-8">
-                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-gray-700 dark:text-gray-300 text-sm whitespace-nowrap">+65</span>
+                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-gray-700 dark:text-gray-300 text-sm whitespace-nowrap">
+                              +65
+                            </span>
                             <Input
                               type="tel"
                               placeholder="9123 4567"
@@ -608,9 +754,7 @@ export default function DriverProfile() {
                               maxLength={9}
                             />
                           </div>
-                          {paynowError && (
-                            <div className="text-xs text-red-600 mt-1">{paynowError}</div>
-                          )}
+                          {paynowError && <div className="text-xs text-red-600 mt-1">{paynowError}</div>}
                         </div>
                       </div>
                     ) : (
@@ -621,7 +765,9 @@ export default function DriverProfile() {
                           className={`w-full h-8 text-sm ${paynowType === 'NRIC' && nricError ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''}`}
                           placeholder={paynowType === 'UEN' ? 'e.g., 201912345Z' : 'e.g., S1234567A'}
                           value={paynowValue}
-                          onChange={(e) => (paynowType === 'UEN' ? handleUENChange(e.target.value) : handleNRICChange(e.target.value))}
+                          onChange={(e) =>
+                            paynowType === 'UEN' ? handleUENChange(e.target.value) : handleNRICChange(e.target.value)
+                          }
                           maxLength={paynowType === 'UEN' ? 10 : 9}
                         />
                         {paynowType === 'NRIC' && nricError && (
@@ -640,7 +786,9 @@ export default function DriverProfile() {
                         </SelectTrigger>
                         <SelectContent>
                           {BANK_OPTIONS.map((b) => (
-                            <SelectItem key={b} value={b}>{b}</SelectItem>
+                            <SelectItem key={b} value={b}>
+                              {b}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -655,24 +803,37 @@ export default function DriverProfile() {
                         value={bankAccount}
                         maxLength={20}
                         onChange={(e) => {
-                          const digits = String(e.target.value || '').replace(/\D/g, '').slice(0, 20);
+                          const digits = String(e.target.value || '')
+                            .replace(/\D/g, '')
+                            .slice(0, 20);
                           setBankAccount(digits);
                         }}
                       />
-                      <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">Up to 20 digits. Please remove any dashes.</div>
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+                        Up to 20 digits. Please remove any dashes.
+                      </div>
                     </div>
                   </div>
                 ) : (
                   <div>
                     <Label className="text-xs font-medium">PayNow / Bank Details</Label>
-                    <Input type="text" className="w-full h-8 text-sm" placeholder="Select a payout method to enter details" disabled />
+                    <Input
+                      type="text"
+                      className="w-full h-8 text-sm"
+                      placeholder="Select a payout method to enter details"
+                      disabled
+                    />
                   </div>
                 )}
               </div>
             </div>
 
             <div className="pt-2">
-              <Button onClick={handleUpdateProfile} disabled={loadingKind === 'updating'} className="bg-black hover:bg-gray-800">
+              <Button
+                onClick={handleUpdateProfile}
+                disabled={loadingKind === 'updating'}
+                className="bg-black hover:bg-gray-800"
+              >
                 {loadingKind === 'updating' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Update'}
               </Button>
             </div>
@@ -697,11 +858,11 @@ export default function DriverProfile() {
                       const v = formatPlateInputToStrict(e.target.value);
                       setCarPlate(v);
                       if (v.length === 0) {
-                        setCarErrors(prev => ({ ...prev, plate: undefined }));
+                        setCarErrors((prev) => ({ ...prev, plate: undefined }));
                       } else if (!isValidAllowedPlateFormat(v)) {
-                        setCarErrors(prev => ({ ...prev, plate: 'Format: EA–EZ or SB–SN + 1–4 digits + letter' }));
+                        setCarErrors((prev) => ({ ...prev, plate: 'Format: EA–EZ or SB–SN + 1–4 digits + letter' }));
                       } else {
-                        setCarErrors(prev => ({ ...prev, plate: undefined }));
+                        setCarErrors((prev) => ({ ...prev, plate: undefined }));
                       }
                     }}
                     placeholder="e.g., SGP1234A"
@@ -713,17 +874,45 @@ export default function DriverProfile() {
                   <select
                     className={`w-full border rounded h-8 text-sm px-2 ${carErrors.make ? 'border-red-500' : ''}`}
                     value={carMake}
-                    onChange={(e) => { const val = e.target.value; setCarMake(val); setCarErrors(prev => ({ ...prev, make: undefined, customMake: undefined, model: undefined, customModel: undefined })); if (val !== 'Other') { setCarModel(''); setCarCustomMake(''); } }}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCarMake(val);
+                      setCarErrors((prev) => ({
+                        ...prev,
+                        make: undefined,
+                        customMake: undefined,
+                        model: undefined,
+                        customModel: undefined,
+                      }));
+                      if (val !== 'Other') {
+                        setCarModel('');
+                        setCarCustomMake('');
+                      }
+                    }}
                   >
-                    <option value="" disabled>Select Make</option>
-                    {Object.keys(makesToModels).sort().map(m => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
+                    <option value="" disabled>
+                      Select Make
+                    </option>
+                    {Object.keys(makesToModels)
+                      .sort()
+                      .map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
                     <option value="Other">Other</option>
                   </select>
                   {carErrors.make && <div className="text-xs text-red-600 mt-1">{carErrors.make}</div>}
                   {carMake === 'Other' && (
-                    <Input className={`h-8 mt-2 text-sm ${carErrors.customMake ? 'border-red-500' : ''}`} placeholder="Enter make" value={carCustomMake} onChange={(e) => { setCarCustomMake(e.target.value); if (carErrors.customMake) setCarErrors(prev => ({ ...prev, customMake: undefined })); }} />
+                    <Input
+                      className={`h-8 mt-2 text-sm ${carErrors.customMake ? 'border-red-500' : ''}`}
+                      placeholder="Enter make"
+                      value={carCustomMake}
+                      onChange={(e) => {
+                        setCarCustomMake(e.target.value);
+                        if (carErrors.customMake) setCarErrors((prev) => ({ ...prev, customMake: undefined }));
+                      }}
+                    />
                   )}
                   {carErrors.customMake && <div className="text-xs text-red-600 mt-1">{carErrors.customMake}</div>}
                 </div>
@@ -731,27 +920,57 @@ export default function DriverProfile() {
                   <Label className="text-xs font-medium">Model</Label>
                   {carMake === 'Other' ? (
                     <>
-                      <Input className={`h-8 text-sm ${carErrors.customModel ? 'border-red-500' : ''}`} placeholder="Enter model" value={carCustomModel} onChange={(e) => { setCarCustomModel(e.target.value); if (carErrors.customModel) setCarErrors(prev => ({ ...prev, customModel: undefined })); }} />
-                      {carErrors.customModel && <div className="text-xs text-red-600 mt-1">{carErrors.customModel}</div>}
+                      <Input
+                        className={`h-8 text-sm ${carErrors.customModel ? 'border-red-500' : ''}`}
+                        placeholder="Enter model"
+                        value={carCustomModel}
+                        onChange={(e) => {
+                          setCarCustomModel(e.target.value);
+                          if (carErrors.customModel) setCarErrors((prev) => ({ ...prev, customModel: undefined }));
+                        }}
+                      />
+                      {carErrors.customModel && (
+                        <div className="text-xs text-red-600 mt-1">{carErrors.customModel}</div>
+                      )}
                     </>
                   ) : (
                     <>
                       <select
                         className={`w-full border rounded h-8 text-sm px-2 ${carErrors.model ? 'border-red-500' : ''}`}
                         value={carModel}
-                        onChange={(e) => { setCarModel(e.target.value); if (carErrors.model) setCarErrors(prev => ({ ...prev, model: undefined })); }}
+                        onChange={(e) => {
+                          setCarModel(e.target.value);
+                          if (carErrors.model) setCarErrors((prev) => ({ ...prev, model: undefined }));
+                        }}
                       >
-                        <option value="" disabled>Select Model</option>
-                        {availableModels.slice().sort().map(mo => (
-                          <option key={mo} value={mo}>{mo}</option>
-                        ))}
+                        <option value="" disabled>
+                          Select Model
+                        </option>
+                        {availableModels
+                          .slice()
+                          .sort()
+                          .map((mo) => (
+                            <option key={mo} value={mo}>
+                              {mo}
+                            </option>
+                          ))}
                         <option value="Other">Other</option>
                       </select>
                       {carErrors.model && <div className="text-xs text-red-600 mt-1">{carErrors.model}</div>}
                       {carModel === 'Other' && (
-                        <Input className={`h-8 mt-2 text-sm ${carErrors.customModel ? 'border-red-500' : ''}`} placeholder="Enter model" value={carCustomModel} onChange={(e) => { setCarCustomModel(e.target.value); if (carErrors.customModel) setCarErrors(prev => ({ ...prev, customModel: undefined })); }} />
+                        <Input
+                          className={`h-8 mt-2 text-sm ${carErrors.customModel ? 'border-red-500' : ''}`}
+                          placeholder="Enter model"
+                          value={carCustomModel}
+                          onChange={(e) => {
+                            setCarCustomModel(e.target.value);
+                            if (carErrors.customModel) setCarErrors((prev) => ({ ...prev, customModel: undefined }));
+                          }}
+                        />
                       )}
-                      {carErrors.customModel && <div className="text-xs text-red-600 mt-1">{carErrors.customModel}</div>}
+                      {carErrors.customModel && (
+                        <div className="text-xs text-red-600 mt-1">{carErrors.customModel}</div>
+                      )}
                     </>
                   )}
                 </div>
