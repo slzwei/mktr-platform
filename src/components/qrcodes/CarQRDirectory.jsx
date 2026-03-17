@@ -148,7 +148,7 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
             const group = agentGroups.find(g => g.id === bulkAgentGroupId);
             updatePayload.agentAssignmentMode = 'round_robin';
             updatePayload.agentGroupId = bulkAgentGroupId;
-            updatePayload.agentGroupAgentIds = group ? (group.agents || []).map(a => a.phone) : [];
+            // agentGroupAgentIds no longer needed; routing reads from agent_group_members table
           } else {
             updatePayload.agentAssignmentMode = 'direct';
           }
@@ -339,10 +339,10 @@ export default function CarQRDirectory({ campaign, onAssigned }) {
                       </SelectTrigger>
                       <SelectContent>
                         {agentGroups.map((g) => (
-                          <SelectItem key={g.id} value={g.id} disabled={(g.agents || []).length === 0}>
+                          <SelectItem key={g.id} value={g.id} disabled={(g.members || []).length === 0}>
                             <div className="flex items-center gap-1">
                               <Users className="w-3 h-3" />
-                              {g.name} ({(g.agents || []).length} agents)
+                              {g.name} ({(g.members || []).length} agents)
                             </div>
                           </SelectItem>
                         ))}

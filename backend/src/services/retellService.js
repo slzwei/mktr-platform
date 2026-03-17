@@ -48,37 +48,19 @@ export function verifyRetellSignature(rawBody, signatureHeader) {
   const timestamp = parts.v;
   const signature = parts.d;
 
-  // Fallback: if no v/d format, treat entire header as plain hex (for manual/test webhooks)
-  if (!signature) {
-    const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-    try {
-      return crypto.timingSafeEqual(
-        Buffer.from(expected, 'hex'),
-        Buffer.from(signatureHeader, 'hex')
-      );
-    } catch {
-      return false;
-    }
+  // Require v=<timestamp>,d=<hex> format — reject malformed signatures
+  if (!signature || !timestamp) {
+    return false;
   }
 
-  // Try multiple signing approaches to find what Retell uses
+  // Retell docs: HMAC-SHA256 over "<timestamp>.<raw_body>" using API key
   const bodyStr = rawBody.toString();
-  const candidates = [
-    crypto.createHmac('sha256', secret).update(`${timestamp}.${bodyStr}`).digest('hex'),
-    crypto.createHmac('sha256', secret).update(bodyStr).digest('hex'),
-    crypto.createHmac('sha256', secret).update(rawBody).digest('hex'),
-    crypto.createHmac('sha256', secret).update(`${timestamp}${bodyStr}`).digest('hex'),
-  ];
-
-  for (const expected of candidates) {
-    try {
-      if (crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'))) {
-        return true;
-      }
-    } catch { /* length mismatch */ }
+  const expected = crypto.createHmac('sha256', secret).update(`${timestamp}.${bodyStr}`).digest('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'));
+  } catch {
+    return false;
   }
-
-  return false;
 }
 
 /**

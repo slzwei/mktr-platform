@@ -2,10 +2,9 @@ import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Prospect } from "@/api/entities";
 import { useUpdateProspect } from "@/hooks/queries/useProspectsQuery";
-import { useDashboard } from "@/contexts/DashboardContext";
+import { useAuthStore } from "@/stores/authStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { createPageUrl } from "@/utils";
 import {
   Users,
   Calendar,
@@ -32,7 +31,7 @@ function isActiveProspect(p) {
 }
 
 export default function AgentDashboard() {
-  const { user } = useDashboard();
+  const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState("30d");
   const [pipelineView, setPipelineView] = useState("pipeline");
@@ -121,7 +120,7 @@ export default function AgentDashboard() {
           trendUp: metrics.prospectChange !== null ? metrics.prospectChange > 0 : true,
           iconColor: "text-blue-600",
           iconBg: "bg-blue-50 dark:bg-blue-950/30",
-          linkTo: createPageUrl("MyProspects"),
+          linkTo: "/MyProspects",
           sparkData: metrics.prospectSparkline,
         },
         {

@@ -2,7 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { init } from '../src/server_internal.js';
 import { sequelize } from '../src/database/connection.js';
-import { User, Campaign, Commission, Prospect, FleetOwner, Car, QrTag, AgentGroup, Attribution, QrScan, LeadPackage, LeadPackageAssignment } from '../src/models/index.js';
+import { User, Campaign, Commission, Prospect, FleetOwner, Car, QrTag, AgentGroup, AgentGroupMember, Attribution, QrScan, LeadPackage, LeadPackageAssignment } from '../src/models/index.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 let _app = null;
@@ -136,7 +136,6 @@ export async function createTestQrTag(campaignId, ownerUserId, overrides = {}) {
     assignedAgentEmail: overrides.assignedAgentEmail || null,
     assignedAgentName: overrides.assignedAgentName || null,
     agentGroupId: overrides.agentGroupId || null,
-    agentGroupAgentIds: overrides.agentGroupAgentIds || [],
     roundRobinIndex: overrides.roundRobinIndex || 0,
     ...overrides
   });
@@ -147,14 +146,28 @@ export async function createTestQrTag(campaignId, ownerUserId, overrides = {}) {
  */
 export async function createTestAgentGroup(createdBy, agents = [], overrides = {}) {
   const n = uid();
-  return AgentGroup.create({
+  const group = await AgentGroup.create({
     name: overrides.name || `Test Group ${n}`,
     description: overrides.description || 'Test agent group',
-    agents,
-    agentCount: agents.length,
     createdBy,
     ...overrides
   });
+
+  // Create member rows in the join table
+  for (let i = 0; i < agents.length; i++) {
+    const a = agents[i];
+    if (!a.phone) continue;
+    await AgentGroupMember.create({
+      agentGroupId: group.id,
+      phone: a.phone,
+      email: a.email || null,
+      name: a.name || null,
+      lyfeId: a.lyfeId || null,
+      sortOrder: i
+    });
+  }
+
+  return group;
 }
 
 /**

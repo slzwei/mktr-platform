@@ -2,7 +2,6 @@ import { Campaign } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import ArrowLeft from "lucide-react/icons/arrow-left";
 import Eye from "lucide-react/icons/eye";
-import AlertTriangle from "lucide-react/icons/alert-triangle";
 import { toast } from "sonner";
 
 import DesignEditor from "../components/campaigns/DesignEditor";
@@ -59,17 +58,7 @@ export default function AdminCampaignDesigner() {
     );
   }
 
-  if (user?.role !== 'admin') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="flex flex-col items-center justify-center p-8 text-center">
-          <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Access Denied</h2>
-          <p className="text-gray-600 dark:text-gray-400">You do not have permission to view this page.</p>
-        </div>
-      </div>
-    );
-  }
+  // Role gating handled by ProtectedRoute; avoid double-deny here
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-gray-50 dark:bg-gray-900">

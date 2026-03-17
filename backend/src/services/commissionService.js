@@ -263,47 +263,54 @@ export async function getCommissionStats(user, query) {
   const startDate = periodToStartDate(period);
   where.earnedDate = { [Op.gte]: startDate, [Op.lte]: now };
 
-  const totalCommissions = await Commission.sum('amount', { where });
-  const totalCount = await Commission.count({ where });
+  const [totalCommissions, totalCount, commissionsByStatus, commissionsByType, topCampaigns] = await Promise.all([
+    Commission.sum('amount', { where }),
+    Commission.count({ where }),
+    Commission.findAll({
+      where,
+      attributes: [
+        'status',
+        [sequelize.fn('COUNT', sequelize.col('status')), 'count'],
+        [sequelize.fn('SUM', sequelize.col('amount')), 'total']
+      ],
+      group: ['status']
+    }),
+    Commission.findAll({
+      where,
+      attributes: [
+        'type',
+        [sequelize.fn('COUNT', sequelize.col('type')), 'count'],
+        [sequelize.fn('SUM', sequelize.col('amount')), 'total']
+      ],
+      group: ['type']
+    }),
+    Commission.findAll({
+      where,
+      attributes: [[sequelize.fn('SUM', sequelize.col('amount')), 'total']],
+      include: [{ association: 'campaign', attributes: ['id', 'name', 'type'] }],
+      group: ['campaign.id', 'campaign.name', 'campaign.type'],
+      order: [[sequelize.fn('SUM', sequelize.col('amount')), 'DESC']],
+      limit: 5
+    })
+  ]);
 
-  const commissionsByStatus = await Commission.findAll({
-    where,
-    attributes: [
-      'status',
-      [sequelize.fn('COUNT', sequelize.col('status')), 'count'],
-      [sequelize.fn('SUM', sequelize.col('amount')), 'total']
-    ],
-    group: ['status']
-  });
+  // Monthly trend (last 12 months) — single GROUP BY query
+  const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+  const agentFilter = where.agentId ? 'AND "agentId" = :trendAgentId' : '';
+  const [monthlyResults] = await sequelize.query(`
+    SELECT DATE_TRUNC('month', "earnedDate") AS month, COALESCE(SUM(amount), 0)::float AS total
+    FROM commissions
+    WHERE "earnedDate" >= :since ${agentFilter}
+    GROUP BY month ORDER BY month
+  `, { replacements: { since: twelveMonthsAgo, trendAgentId: where.agentId || null } });
 
-  const commissionsByType = await Commission.findAll({
-    where,
-    attributes: [
-      'type',
-      [sequelize.fn('COUNT', sequelize.col('type')), 'count'],
-      [sequelize.fn('SUM', sequelize.col('amount')), 'total']
-    ],
-    group: ['type']
-  });
-
-  const topCampaigns = await Commission.findAll({
-    where,
-    attributes: [[sequelize.fn('SUM', sequelize.col('amount')), 'total']],
-    include: [{ association: 'campaign', attributes: ['id', 'name', 'type'] }],
-    group: ['campaign.id', 'campaign.name', 'campaign.type'],
-    order: [[sequelize.fn('SUM', sequelize.col('amount')), 'DESC']],
-    limit: 5
-  });
-
-  // Monthly trend (last 12 months)
+  const toMonthKey = (r) => r.month instanceof Date ? r.month.toISOString().slice(0, 7) : String(r.month).slice(0, 7);
+  const monthMap = new Map(monthlyResults.map(r => [toMonthKey(r), r.total]));
   const monthlyTrend = [];
   for (let i = 11; i >= 0; i--) {
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-    const monthTotal = await Commission.sum('amount', {
-      where: { ...where, earnedDate: { [Op.gte]: monthStart, [Op.lte]: monthEnd } }
-    });
-    monthlyTrend.push({ month: monthStart.toISOString().substring(0, 7), total: monthTotal || 0 });
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = d.toISOString().slice(0, 7);
+    monthlyTrend.push({ month: key, total: monthMap.get(key) || 0 });
   }
 
   return {
@@ -351,14 +358,18 @@ export async function getAgentCommissionSummary(agentId, year = new Date().getFu
     Commission.sum('amount', { where: { ...where, status: 'pending' } })
   ]);
 
+  // Single GROUP BY query instead of 12 sequential queries
+  const [monthlyResults] = await sequelize.query(`
+    SELECT EXTRACT(MONTH FROM "earnedDate")::int AS month, COALESCE(SUM(amount), 0)::float AS total
+    FROM commissions
+    WHERE "agentId" = :agentId AND "earnedDate" >= :yearStart AND "earnedDate" <= :yearEnd
+    GROUP BY month ORDER BY month
+  `, { replacements: { agentId, yearStart, yearEnd } });
+
+  const monthTotalMap = new Map(monthlyResults.map(r => [r.month, r.total]));
   const monthlyBreakdown = [];
-  for (let month = 0; month < 12; month++) {
-    const monthStart = new Date(year, month, 1);
-    const monthEnd = new Date(year, month + 1, 0);
-    const monthTotal = await Commission.sum('amount', {
-      where: { ...where, earnedDate: { [Op.gte]: monthStart, [Op.lte]: monthEnd } }
-    });
-    monthlyBreakdown.push({ month: month + 1, total: monthTotal || 0 });
+  for (let month = 1; month <= 12; month++) {
+    monthlyBreakdown.push({ month, total: monthTotalMap.get(month) || 0 });
   }
 
   return {

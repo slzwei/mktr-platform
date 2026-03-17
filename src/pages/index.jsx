@@ -58,7 +58,7 @@ function PagesContent() {
 
   useEffect(() => {
     const handleUnauthorized = () => {
-      console.log('🔒 AUTH: Received auth:unauthorized event, redirecting to login');
+      // Redirect to login on auth failure
       // Clear any remaining stales states if needed
       navigate('/CustomerLogin');
     };
@@ -325,6 +325,15 @@ function PagesContent() {
                 <div className="p-6"><h1>Settings Page</h1><p>Settings coming soon...</p></div>
               </DashboardLayout>
             </ProtectedRoute>
+          } />
+
+          {/* 404 catch-all */}
+          <Route path="*" element={
+            <div className="flex flex-col items-center justify-center min-h-screen">
+              <h1 className="text-4xl font-bold mb-4">404</h1>
+              <p className="text-muted-foreground mb-6">Page not found</p>
+              <a href="/" className="text-primary hover:underline">Go to Dashboard</a>
+            </div>
           } />
         </Routes>
       </Suspense>

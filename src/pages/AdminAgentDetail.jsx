@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { User, Prospect, Campaign } from "@/api/entities";
+import { User, Prospect } from "@/api/entities";
+import { useCampaignLookup } from "@/hooks/queries/useCampaignsQuery";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,56 +40,8 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-
-const statusStyles = {
-    new: "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800",
-    contacted: "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800",
-    meeting: "bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-200 dark:border-violet-800",
-    close_won: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
-    won: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
-    close_lost: "bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800",
-    lost: "bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800",
-    rejected: "bg-slate-50 dark:bg-slate-950/30 text-slate-700 dark:text-slate-400 border-slate-200 dark:border-slate-800",
-    negotiating: "bg-pink-100 dark:bg-pink-950/30 text-pink-700 dark:text-pink-400 border-pink-200 dark:border-pink-800",
-    qualified: "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800"
-};
-
-const statusLabels = {
-    new: "New",
-    contacted: "Contacted",
-    meeting: "Meeting",
-    won: "Won",
-    lost: "Lost",
-    rejected: "Rejected",
-    negotiating: "Negotiating",
-    qualified: "Qualified"
-};
-
-function normalizeProspect(p) {
-    const name = [p.firstName, p.lastName].filter(Boolean).join(" ") || p.name || "";
-    const status = (p.leadStatus || p.status || "new").toLowerCase();
-    const createdDate = p.createdAt || p.created_date || new Date().toISOString();
-    const source = (p.leadSource || p.source || "other").toLowerCase();
-
-    return {
-        id: p.id,
-        firstName: p.firstName,
-        lastName: p.lastName,
-        name,
-        phone: p.phone || "",
-        email: p.email || "",
-        company: p.company || "",
-        status,
-        leadStatus: status,
-        created_date: createdDate,
-        createdAt: createdDate,
-        leadSource: source,
-        campaign_id: p.campaignId || p.campaign_id,
-        campaign: p.campaign,
-        notes: p.notes,
-        assignedAgentId: p.assignedAgentId
-    };
-}
+import normalizeProspect from "@/utils/normalizeProspect";
+import { statusStyles, statusLabels } from "@/constants/statusConfig";
 
 export default function AdminAgentDetail() {
     const { agentId } = useParams();
@@ -112,16 +65,7 @@ export default function AdminAgentDetail() {
         enabled: !!agentId
     });
 
-    const { data: campaignsRaw } = useQuery({
-        queryKey: ['campaigns', 'all-for-lookup'],
-        queryFn: () => Campaign.list({ limit: 1000 }),
-        staleTime: 60_000
-    });
-
-    const campaigns = useMemo(() => {
-        if (!campaignsRaw) return [];
-        return Array.isArray(campaignsRaw) ? campaignsRaw : (campaignsRaw.campaigns || []);
-    }, [campaignsRaw]);
+    const { data: campaigns = [] } = useCampaignLookup();
 
     const { data: prospectsRaw, isLoading: prospectsLoading } = useQuery({
         queryKey: ['prospects', 'by-agent', agentId, pagination.page, pagination.limit, filters],

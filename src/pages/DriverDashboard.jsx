@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { entities, apiClient } from "@/api/client";
-import { useDashboard } from "@/contexts/DashboardContext";
+import { useAuthStore } from "@/stores/authStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, BarChart3, TrendingUp, Activity } from "lucide-react";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
@@ -13,7 +13,7 @@ import DashboardHeader from "../components/dashboard/DashboardHeader";
 import ResponsiveStatsGrid from "../components/dashboard/ResponsiveStatsGrid";
 
 export default function DriverDashboard() {
-  const { user } = useDashboard();
+  const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState("30d");
 

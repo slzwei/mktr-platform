@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { auth, apiClient } from '@/api/client';
+import { auth } from '@/api/client';
 
 const STORAGE_KEYS = {
   TOKEN: 'mktr_auth_token',
@@ -8,7 +8,12 @@ const STORAGE_KEYS = {
 
 /**
  * Zustand auth store — single source of truth for authentication state.
- * Wraps the existing auth API from client.js.
+ *
+ * Flow:
+ *   Zustand store  ←→  localStorage  ←  API client reads token per-request
+ *
+ * The store writes to localStorage on every state change so the API client
+ * (which reads localStorage on each request) always has the latest token.
  */
 export const useAuthStore = create((set, get) => ({
   user: JSON.parse(localStorage.getItem(STORAGE_KEYS.USER) || 'null'),
@@ -21,6 +26,7 @@ export const useAuthStore = create((set, get) => ({
   login: async (email, password) => {
     const response = await auth.login(email, password);
     if (response.success && response.data.token) {
+      // auth.login() already wrote to localStorage; sync Zustand
       set({
         user: response.data.user,
         token: response.data.token
@@ -64,27 +70,32 @@ export const useAuthStore = create((set, get) => ({
 
   /** Atomically set both user and token (used by OAuth callback flows). */
   setAuth: (user, token) => {
-    apiClient.setToken(token);
-    set({ user, token });
+    // Write to localStorage so API client picks it up
+    if (token) {
+      localStorage.setItem(STORAGE_KEYS.TOKEN, token);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.TOKEN);
+    }
     if (user) {
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
-      auth.setCurrentUser(user);
     }
+    set({ user, token });
   },
 
   setUser: (user) => {
-    set({ user });
     if (user) {
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
-      auth.setCurrentUser(user);
     }
+    set({ user });
   },
 
   updateProfile: async (updates) => {
     const response = await auth.updateProfile(updates);
     if (response.success) {
       const current = get().user;
-      set({ user: { ...current, ...updates } });
+      const updated = { ...current, ...updates };
+      set({ user: updated });
+      // auth.updateProfile already writes to localStorage
     }
     return response;
   },

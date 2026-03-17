@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { GOOGLE_CLIENT_ID } from "@/config/google";
 import {
@@ -28,14 +27,13 @@ export default function AdminLogin() {
   useEffect(() => {
     // If we have a return URL in the state, save it to session storage
     if (location.state?.from) {
-      console.log('AdminLogin: Saving return URL to session storage:', location.state.from);
       sessionStorage.setItem('mktr_auth_return_url', JSON.stringify(location.state.from));
     }
   }, [location]);
 
   // Google OAuth callback handler
   const handleGoogleCallback = async (credentialResponse) => {
-    console.log('🔍 Admin Google OAuth callback triggered');
+
 
     if (!credentialResponse?.credential) {
       console.error('❌ No credential in Google response');
@@ -47,7 +45,7 @@ export default function AdminLogin() {
     setError('');
 
     try {
-      console.log('🔍 Sending Google credential to backend...');
+
 
       // Call our backend API directly
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/auth/google`, {
@@ -65,7 +63,7 @@ export default function AdminLogin() {
       }
 
       const result = await response.json();
-      console.log('🔍 Backend result:', result);
+
 
       if (result.success && result.data?.user) {
         const user = result.data.user;
@@ -164,7 +162,7 @@ export default function AdminLogin() {
   };
 
   const handleGoogleLogin = async () => {
-    console.log('🔍 Admin Google login button clicked');
+
 
     try {
       if (!GOOGLE_CLIENT_ID) {
@@ -179,7 +177,7 @@ export default function AdminLogin() {
         return;
       }
 
-      console.log('🔍 Admin Google OAuth with direct URL redirect...');
+
 
       // Instead of using One Tap, redirect directly to Google OAuth
       const clientId = GOOGLE_CLIENT_ID;
@@ -196,7 +194,7 @@ export default function AdminLogin() {
         `access_type=offline&` +
         `state=${state}`;
 
-      console.log('🔍 Admin redirecting to Google OAuth URL:', googleAuthUrl);
+
 
       // Redirect to Google OAuth
       window.location.href = googleAuthUrl;
@@ -222,9 +220,7 @@ export default function AdminLogin() {
     const initializeGoogleOAuth = () => {
       if (isInitialized) return;
 
-      console.log('🔍 Starting Admin Google OAuth initialization...');
-      console.log('🔍 Client ID available:', !!GOOGLE_CLIENT_ID);
-      console.log('🔍 Google script loaded:', !!window.google);
+
 
       if (!GOOGLE_CLIENT_ID) {
         console.error('❌ GOOGLE_CLIENT_ID not found');
@@ -247,7 +243,7 @@ export default function AdminLogin() {
         });
 
         isInitialized = true;
-        console.log('✅ Admin Google OAuth initialized successfully');
+
 
       } catch (error) {
         console.error('❌ Error initializing Admin Google OAuth:', error);
@@ -257,14 +253,12 @@ export default function AdminLogin() {
 
     // Load Google Identity Services script
     if (!window.google) {
-      console.log('🔍 Loading Google Identity Services script for Admin...');
       scriptElement = document.createElement('script');
       scriptElement.src = 'https://accounts.google.com/gsi/client';
       scriptElement.async = true;
       scriptElement.defer = true;
 
       scriptElement.onload = () => {
-        console.log('✅ Google script loaded successfully for Admin');
         setTimeout(initializeGoogleOAuth, 100);
       };
 
@@ -275,7 +269,6 @@ export default function AdminLogin() {
 
       document.head.appendChild(scriptElement);
     } else {
-      console.log('🔍 Google script already loaded for Admin');
       initializeGoogleOAuth();
     }
 
@@ -324,7 +317,7 @@ export default function AdminLogin() {
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
         {/* Simple Header with Logo and Back Button */}
         <div className="absolute top-6 left-6 z-10">
-          <Link to={createPageUrl("Homepage")}>
+          <Link to={"/Homepage"}>
             <Button variant="outline" className="gap-2">
               <ArrowLeft className="w-4 h-4" />
               Back to Home
@@ -442,7 +435,7 @@ export default function AdminLogin() {
                     Need help accessing your account?
                   </p>
                   <Link
-                    to={createPageUrl("Contact")}
+                    to={"/Contact"}
                     className="text-sm text-red-600 hover:text-red-700 font-medium"
                   >
                     Contact Support

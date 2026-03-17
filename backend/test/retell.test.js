@@ -16,9 +16,11 @@ afterAll(async () => {
   await closeDb()
 })
 
-function signPayload(body) {
-  const raw = JSON.stringify(body)
-  return crypto.createHmac('sha256', WEBHOOK_SECRET).update(raw).digest('hex')
+function signRetellPayload(body, secret) {
+  const timestamp = Math.floor(Date.now() / 1000).toString()
+  const bodyStr = typeof body === 'string' ? body : JSON.stringify(body)
+  const hmac = crypto.createHmac('sha256', secret).update(`${timestamp}.${bodyStr}`).digest('hex')
+  return `v=${timestamp},d=${hmac}`
 }
 
 function buildCallPayload(overrides = {}) {
@@ -63,23 +65,26 @@ describe('POST /api/retell/webhook', () => {
 
   it('rejects requests with invalid signature', async () => {
     const payload = buildCallPayload()
+    const bodyStr = JSON.stringify(payload)
     const res = await request(app)
       .post('/api/retell/webhook')
-      .set('x-retell-signature', 'deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567')
-      .send(payload)
+      .set('Content-Type', 'application/json')
+      .set('x-retell-signature', 'v=1700000000,d=deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567')
+      .send(bodyStr)
 
     expect(res.status).toBe(401)
-    expect(res.body.error).toBe('Invalid signature')
   })
 
   it('creates a prospect for a successful call', async () => {
     const payload = buildCallPayload()
-    const signature = signPayload(payload)
+    const bodyStr = JSON.stringify(payload)
+    const signature = signRetellPayload(bodyStr, WEBHOOK_SECRET)
 
     const res = await request(app)
       .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
       .set('x-retell-signature', signature)
-      .send(payload)
+      .send(bodyStr)
 
     expect(res.status).toBe(200)
     expect(res.body.success).toBe(true)
@@ -101,12 +106,14 @@ describe('POST /api/retell/webhook', () => {
 
   it('skips non-ended calls', async () => {
     const payload = buildCallPayload({ call_status: 'in_progress' })
-    const signature = signPayload(payload)
+    const bodyStr = JSON.stringify(payload)
+    const signature = signRetellPayload(bodyStr, WEBHOOK_SECRET)
 
     const res = await request(app)
       .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
       .set('x-retell-signature', signature)
-      .send(payload)
+      .send(bodyStr)
 
     expect(res.status).toBe(200)
     expect(res.body.status).toBe('skipped')
@@ -121,12 +128,14 @@ describe('POST /api/retell/webhook', () => {
         call_summary: 'User hung up'
       }
     })
-    const signature = signPayload(payload)
+    const bodyStr = JSON.stringify(payload)
+    const signature = signRetellPayload(bodyStr, WEBHOOK_SECRET)
 
     const res = await request(app)
       .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
       .set('x-retell-signature', signature)
-      .send(payload)
+      .send(bodyStr)
 
     expect(res.status).toBe(200)
     expect(res.body.status).toBe('skipped')
@@ -135,20 +144,26 @@ describe('POST /api/retell/webhook', () => {
 
   it('handles duplicate call_id idempotently', async () => {
     const payload = buildCallPayload()
-    const signature = signPayload(payload)
+    const bodyStr = JSON.stringify(payload)
+    const signature = signRetellPayload(bodyStr, WEBHOOK_SECRET)
 
     const res1 = await request(app)
       .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
       .set('x-retell-signature', signature)
-      .send(payload)
+      .send(bodyStr)
 
     expect(res1.status).toBe(200)
     expect(res1.body.status).toBe('created')
 
+    // Re-sign for the second request (timestamp may differ)
+    const signature2 = signRetellPayload(bodyStr, WEBHOOK_SECRET)
+
     const res2 = await request(app)
       .post('/api/retell/webhook')
-      .set('x-retell-signature', signature)
-      .send(payload)
+      .set('Content-Type', 'application/json')
+      .set('x-retell-signature', signature2)
+      .send(bodyStr)
 
     expect(res2.status).toBe(200)
     expect(res2.body.status).toBe('duplicate')
@@ -168,12 +183,14 @@ describe('POST /api/retell/webhook', () => {
         call_summary: 'Neutral call'
       }
     })
-    const signature = signPayload(payload)
+    const bodyStr = JSON.stringify(payload)
+    const signature = signRetellPayload(bodyStr, WEBHOOK_SECRET)
 
     const res = await request(app)
       .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
       .set('x-retell-signature', signature)
-      .send(payload)
+      .send(bodyStr)
 
     expect(res.status).toBe(200)
     const prospect = await Prospect.findByPk(res.body.prospectId)
@@ -184,12 +201,14 @@ describe('POST /api/retell/webhook', () => {
     const payload = buildCallPayload({
       retell_llm_dynamic_variables: {}
     })
-    const signature = signPayload(payload)
+    const bodyStr = JSON.stringify(payload)
+    const signature = signRetellPayload(bodyStr, WEBHOOK_SECRET)
 
     const res = await request(app)
       .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
       .set('x-retell-signature', signature)
-      .send(payload)
+      .send(bodyStr)
 
     expect(res.status).toBe(200)
     expect(res.body.status).toBe('created')
@@ -202,12 +221,14 @@ describe('POST /api/retell/webhook', () => {
     const payload = buildCallPayload()
     delete payload.call_id
     // Sign AFTER removing call_id so signature matches the actual body
-    const signature = signPayload(payload)
+    const bodyStr = JSON.stringify(payload)
+    const signature = signRetellPayload(bodyStr, WEBHOOK_SECRET)
 
     const res = await request(app)
       .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
       .set('x-retell-signature', signature)
-      .send(payload)
+      .send(bodyStr)
 
     expect(res.status).toBe(400)
     expect(res.body.error).toBe('Missing call_id')
@@ -215,12 +236,14 @@ describe('POST /api/retell/webhook', () => {
 
   it('stores transcript and metadata in notes', async () => {
     const payload = buildCallPayload()
-    const signature = signPayload(payload)
+    const bodyStr = JSON.stringify(payload)
+    const signature = signRetellPayload(bodyStr, WEBHOOK_SECRET)
 
     const res = await request(app)
       .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
       .set('x-retell-signature', signature)
-      .send(payload)
+      .send(bodyStr)
 
     const prospect = await Prospect.findByPk(res.body.prospectId)
     expect(prospect.notes).toContain('Retell AI Call')
@@ -230,12 +253,14 @@ describe('POST /api/retell/webhook', () => {
 
   it('tags prospects with retell and phone-call', async () => {
     const payload = buildCallPayload()
-    const signature = signPayload(payload)
+    const bodyStr = JSON.stringify(payload)
+    const signature = signRetellPayload(bodyStr, WEBHOOK_SECRET)
 
     const res = await request(app)
       .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
       .set('x-retell-signature', signature)
-      .send(payload)
+      .send(bodyStr)
 
     const prospect = await Prospect.findByPk(res.body.prospectId)
     expect(prospect.tags).toEqual(expect.arrayContaining(['retell', 'phone-call']))

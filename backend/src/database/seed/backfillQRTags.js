@@ -12,9 +12,6 @@ async function main() {
   const dryRun = process.argv.includes('--dry-run');
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-  // Ensure models are synced in dev (SQLite)
-  await sequelize.sync();
-
   const tags = await QrTag.findAll();
   let updated = 0;
 

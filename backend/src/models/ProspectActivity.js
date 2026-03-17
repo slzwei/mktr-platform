@@ -16,7 +16,7 @@ const ProspectActivity = sequelize.define('ProspectActivity', {
     }
   },
   type: {
-    type: DataTypes.ENUM('created', 'assigned', 'updated'),
+    type: DataTypes.ENUM('created', 'assigned', 'updated', 'viewed'),
     allowNull: false
   },
   actorUserId: {

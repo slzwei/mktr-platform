@@ -1,209 +1,183 @@
+import { readdir } from 'fs/promises';
+import { fileURLToPath } from 'url';
+import path from 'path';
 import { sequelize } from '../database/connection.js';
 
-// Import all models
-import User from './User.js';
-import Campaign from './Campaign.js';
-import Car from './Car.js';
-import FleetOwner from './FleetOwner.js';
-import Driver from './Driver.js';
-import Prospect from './Prospect.js';
-import QrTag from './QrTag.js';
-import Commission from './Commission.js';
-import LeadPackage from './LeadPackage.js';
-import CampaignPreview from './CampaignPreview.js';
-import LeadPackageAssignment from './LeadPackageAssignment.js';
-import QrScan from './QrScan.js';
-import Attribution from './Attribution.js';
-import SessionVisit from './SessionVisit.js';
-import ProspectActivity from './ProspectActivity.js';
-import UserPayout from './UserPayout.js';
-import Device from './Device.js';
-import BeaconEvent from './BeaconEvent.js';
-import Impression from './Impression.js'; // Added
-import IdempotencyKey from './IdempotencyKey.js';
-import ShortLink from './ShortLink.js';
-import ShortLinkClick from './ShortLinkClick.js';
-import RoundRobinCursor from './RoundRobinCursor.js';
-import Verification from './Verification.js';
-import ProvisioningSession from './ProvisioningSession.js'; // Added
-import Vehicle from './Vehicle.js'; // Added for tablet pairing
-import WebhookSubscriber from './WebhookSubscriber.js';
-import WebhookDelivery from './WebhookDelivery.js';
-import AgentGroup from './AgentGroup.js';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+// Auto-load all model files
+const models = {};
+const modelFiles = (await readdir(__dirname))
+  .filter(f => f.endsWith('.js') && f !== 'index.js')
+  .sort();
 
-// Define associations
-const defineAssociations = () => {
+for (const file of modelFiles) {
+  const mod = await import(path.join(__dirname, file));
+  const model = mod.default;
+  if (model?.name && typeof model.sync === 'function') {
+    models[model.name] = model;
+  }
+}
+
+// Define associations (MUST remain explicit -- do not auto-discover)
+function defineAssociations() {
+  const {
+    User, Campaign, Car, FleetOwner, Driver, Prospect, QrTag,
+    Commission, LeadPackage, LeadPackageAssignment, CampaignPreview,
+    QrScan, Attribution, SessionVisit, ProspectActivity, UserPayout,
+    Device, BeaconEvent, Impression, ShortLink, ShortLinkClick,
+    Vehicle, WebhookSubscriber, WebhookDelivery, AgentGroup,
+    AgentGroupMember, DeviceCampaignAssignment, VehicleCampaignAssignment,
+    CampaignMediaItem, CampaignAgentAssignment
+  } = models;
+
   // User associations
-  User.hasOne(FleetOwner, { foreignKey: 'userId', as: 'fleetOwnerProfile' });
-  User.hasOne(Driver, { foreignKey: 'userId', as: 'driverProfile' });
-  User.hasMany(Campaign, { foreignKey: 'createdBy', as: 'createdCampaigns' });
-  User.hasMany(QrTag, { foreignKey: 'ownerUserId', as: 'ownedQrTags' });
-  User.hasMany(Commission, { foreignKey: 'agentId', as: 'commissions' });
-  User.hasMany(Commission, { foreignKey: 'approvedBy', as: 'approvedCommissions' });
-  User.hasMany(Commission, { foreignKey: 'processedBy', as: 'processedCommissions' });
-  User.hasMany(Prospect, { foreignKey: 'assignedAgentId', as: 'assignedProspects' });
-  User.hasMany(LeadPackage, { foreignKey: 'createdBy', as: 'createdLeadPackages' });
-  User.hasMany(LeadPackageAssignment, { foreignKey: 'agentId', as: 'assignedPackages' });
-  User.hasOne(UserPayout, { foreignKey: 'userId', as: 'payout' });
+  User.hasOne(FleetOwner, { foreignKey: 'userId', as: 'fleetOwnerProfile', onDelete: 'CASCADE' });
+  User.hasOne(Driver, { foreignKey: 'userId', as: 'driverProfile', onDelete: 'CASCADE' });
+  User.hasMany(Campaign, { foreignKey: 'createdBy', as: 'createdCampaigns', onDelete: 'RESTRICT' });
+  User.hasMany(QrTag, { foreignKey: 'ownerUserId', as: 'ownedQrTags', onDelete: 'SET NULL' });
+  User.hasMany(Commission, { foreignKey: 'agentId', as: 'commissions', onDelete: 'RESTRICT' });
+  User.hasMany(Commission, { foreignKey: 'approvedBy', as: 'approvedCommissions', onDelete: 'SET NULL' });
+  User.hasMany(Commission, { foreignKey: 'processedBy', as: 'processedCommissions', onDelete: 'SET NULL' });
+  User.hasMany(Prospect, { foreignKey: 'assignedAgentId', as: 'assignedProspects', onDelete: 'SET NULL' });
+  User.hasMany(LeadPackage, { foreignKey: 'createdBy', as: 'createdLeadPackages', onDelete: 'RESTRICT' });
+  User.hasMany(LeadPackageAssignment, { foreignKey: 'agentId', as: 'assignedPackages', onDelete: 'CASCADE' });
+  User.hasOne(UserPayout, { foreignKey: 'userId', as: 'payout', onDelete: 'CASCADE' });
 
   // FleetOwner associations (standalone entity, not linked to User)
-  FleetOwner.hasMany(Car, { foreignKey: 'fleet_owner_id', as: 'cars' });
+  FleetOwner.hasMany(Car, { foreignKey: 'fleet_owner_id', as: 'cars', onDelete: 'RESTRICT' });
 
   // Car associations
-  Car.belongsTo(FleetOwner, { foreignKey: 'fleet_owner_id', as: 'fleetOwner' });
-  Car.belongsTo(User, { foreignKey: 'current_driver_id', as: 'currentDriver' });
-  Car.hasMany(QrTag, { foreignKey: 'carId', as: 'qrTags' });
+  Car.belongsTo(FleetOwner, { foreignKey: 'fleet_owner_id', as: 'fleetOwner', onDelete: 'RESTRICT' });
+  Car.belongsTo(User, { foreignKey: 'current_driver_id', as: 'currentDriver', onDelete: 'SET NULL' });
+  Car.hasMany(QrTag, { foreignKey: 'carId', as: 'qrTags', onDelete: 'SET NULL' });
 
   // Campaign associations
-  Campaign.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
-  Campaign.hasMany(QrTag, { foreignKey: 'campaignId', as: 'qrTags' });
-  Campaign.hasMany(Prospect, { foreignKey: 'campaignId', as: 'prospects' });
-  Campaign.hasMany(Commission, { foreignKey: 'campaignId', as: 'commissions' });
-  Campaign.hasMany(LeadPackage, { foreignKey: 'campaignId', as: 'leadPackages' });
-  Campaign.hasOne(CampaignPreview, { foreignKey: 'campaignId', as: 'preview' });
-  Campaign.hasMany(Impression, { foreignKey: 'campaignId', as: 'impressions' }); // Added
+  Campaign.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'RESTRICT' });
+  Campaign.hasMany(QrTag, { foreignKey: 'campaignId', as: 'qrTags', onDelete: 'SET NULL' });
+  Campaign.hasMany(Prospect, { foreignKey: 'campaignId', as: 'prospects', onDelete: 'SET NULL' });
+  Campaign.hasMany(Commission, { foreignKey: 'campaignId', as: 'commissions', onDelete: 'SET NULL' });
+  Campaign.hasMany(LeadPackage, { foreignKey: 'campaignId', as: 'leadPackages', onDelete: 'SET NULL' });
+  Campaign.hasOne(CampaignPreview, { foreignKey: 'campaignId', as: 'preview', onDelete: 'CASCADE' });
+  Campaign.hasMany(Impression, { foreignKey: 'campaignId', as: 'impressions', onDelete: 'SET NULL' });
+  Campaign.hasMany(CampaignMediaItem, { foreignKey: 'campaignId', as: 'mediaItems', onDelete: 'CASCADE' });
+  CampaignMediaItem.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
+  Campaign.belongsToMany(User, { through: CampaignAgentAssignment, foreignKey: 'campaignId', otherKey: 'agentId', as: 'assignedAgents' });
+  User.belongsToMany(Campaign, { through: CampaignAgentAssignment, foreignKey: 'agentId', otherKey: 'campaignId', as: 'assignedToCampaigns' });
 
   // QrTag associations
-  QrTag.belongsTo(User, { foreignKey: 'ownerUserId', as: 'owner' });
-  QrTag.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
-  QrTag.belongsTo(Car, { foreignKey: 'carId', as: 'car' });
-  QrTag.hasMany(Prospect, { foreignKey: 'qrTagId', as: 'prospects' });
-  QrTag.hasMany(QrScan, { foreignKey: 'qrTagId', as: 'scans' });
-  QrTag.hasMany(Attribution, { foreignKey: 'qrTagId', as: 'attributions' });
+  QrTag.belongsTo(User, { foreignKey: 'ownerUserId', as: 'owner', onDelete: 'SET NULL' });
+  QrTag.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
+  QrTag.belongsTo(Car, { foreignKey: 'carId', as: 'car', onDelete: 'SET NULL' });
+  QrTag.belongsTo(QrTag, { foreignKey: 'parentQrTagId', as: 'parentQrTag', onDelete: 'SET NULL' });
+  QrTag.hasMany(Prospect, { foreignKey: 'qrTagId', as: 'prospects', onDelete: 'SET NULL' });
+  QrTag.hasMany(QrScan, { foreignKey: 'qrTagId', as: 'scans', onDelete: 'CASCADE' });
+  QrTag.hasMany(Attribution, { foreignKey: 'qrTagId', as: 'attributions', onDelete: 'CASCADE' });
 
   // QrScan associations
-  QrScan.belongsTo(QrTag, { foreignKey: 'qrTagId', as: 'qrTag' });
+  QrScan.belongsTo(QrTag, { foreignKey: 'qrTagId', as: 'qrTag', onDelete: 'CASCADE' });
 
   // Prospect associations
-  Prospect.belongsTo(User, { foreignKey: 'assignedAgentId', as: 'assignedAgent' });
-  Prospect.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
-  Prospect.belongsTo(QrTag, { foreignKey: 'qrTagId', as: 'qrTag' });
-  Prospect.hasMany(Commission, { foreignKey: 'prospectId', as: 'commissions' });
-  Prospect.belongsTo(Attribution, { foreignKey: 'attributionId', as: 'attribution' });
-  Prospect.hasMany(ProspectActivity, { foreignKey: 'prospectId', as: 'activities' });
-  ProspectActivity.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect' });
-  ProspectActivity.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor' });
+  Prospect.belongsTo(User, { foreignKey: 'assignedAgentId', as: 'assignedAgent', onDelete: 'SET NULL' });
+  Prospect.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
+  Prospect.belongsTo(QrTag, { foreignKey: 'qrTagId', as: 'qrTag', onDelete: 'SET NULL' });
+  Prospect.hasMany(Commission, { foreignKey: 'prospectId', as: 'commissions', onDelete: 'SET NULL' });
+  Prospect.belongsTo(Attribution, { foreignKey: 'attributionId', as: 'attribution', onDelete: 'SET NULL' });
+  Prospect.hasMany(ProspectActivity, { foreignKey: 'prospectId', as: 'activities', onDelete: 'CASCADE' });
+  ProspectActivity.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect', onDelete: 'CASCADE' });
+  ProspectActivity.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
 
   // Commission associations
-  Commission.belongsTo(User, { foreignKey: 'agentId', as: 'agent' });
-  Commission.belongsTo(User, { foreignKey: 'approvedBy', as: 'approver' });
-  Commission.belongsTo(User, { foreignKey: 'processedBy', as: 'processor' });
-  Commission.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
-  Commission.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect' });
-  Commission.belongsTo(LeadPackage, { foreignKey: 'leadPackageId', as: 'leadPackage' });
+  Commission.belongsTo(User, { foreignKey: 'agentId', as: 'agent', onDelete: 'RESTRICT' });
+  Commission.belongsTo(User, { foreignKey: 'approvedBy', as: 'approver', onDelete: 'SET NULL' });
+  Commission.belongsTo(User, { foreignKey: 'processedBy', as: 'processor', onDelete: 'SET NULL' });
+  Commission.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
+  Commission.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect', onDelete: 'SET NULL' });
+  Commission.belongsTo(LeadPackage, { foreignKey: 'leadPackageId', as: 'leadPackage', onDelete: 'SET NULL' });
 
   // LeadPackage associations
-  LeadPackage.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
-  LeadPackage.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
-  LeadPackage.hasMany(Commission, { foreignKey: 'leadPackageId', as: 'commissions' });
-  LeadPackage.hasMany(LeadPackageAssignment, { foreignKey: 'leadPackageId', as: 'assignments' });
+  LeadPackage.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'RESTRICT' });
+  LeadPackage.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
+  LeadPackage.hasMany(Commission, { foreignKey: 'leadPackageId', as: 'commissions', onDelete: 'SET NULL' });
+  LeadPackage.hasMany(LeadPackageAssignment, { foreignKey: 'leadPackageId', as: 'assignments', onDelete: 'CASCADE' });
 
   // LeadPackageAssignment associations
-  LeadPackageAssignment.belongsTo(User, { foreignKey: 'agentId', as: 'agent' });
-  LeadPackageAssignment.belongsTo(LeadPackage, { foreignKey: 'leadPackageId', as: 'package' });
-
+  LeadPackageAssignment.belongsTo(User, { foreignKey: 'agentId', as: 'agent', onDelete: 'CASCADE' });
+  LeadPackageAssignment.belongsTo(LeadPackage, { foreignKey: 'leadPackageId', as: 'package', onDelete: 'CASCADE' });
 
   // Device associations
-  Device.hasMany(BeaconEvent, { foreignKey: 'deviceId', as: 'events' });
-  Device.hasMany(Impression, { foreignKey: 'deviceId', as: 'impressions' }); // Added
-  Device.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
-  BeaconEvent.belongsTo(Device, { foreignKey: 'deviceId', as: 'device' });
-  Impression.belongsTo(Device, { foreignKey: 'deviceId', as: 'device' }); // Added
-  Impression.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' }); // Added
+  Device.hasMany(BeaconEvent, { foreignKey: 'deviceId', as: 'events', onDelete: 'CASCADE' });
+  Device.hasMany(Impression, { foreignKey: 'deviceId', as: 'impressions', onDelete: 'CASCADE' });
+  Device.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
+  Device.belongsToMany(Campaign, { through: DeviceCampaignAssignment, foreignKey: 'deviceId', otherKey: 'campaignId', as: 'assignedCampaigns' });
+  Campaign.belongsToMany(Device, { through: DeviceCampaignAssignment, foreignKey: 'campaignId', otherKey: 'deviceId', as: 'assignedDevices' });
+  BeaconEvent.belongsTo(Device, { foreignKey: 'deviceId', as: 'device', onDelete: 'CASCADE' });
+  Impression.belongsTo(Device, { foreignKey: 'deviceId', as: 'device', onDelete: 'CASCADE' });
+  Impression.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
 
   // ShortLink associations
-  ShortLink.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
-  ShortLink.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
-  ShortLink.hasMany(ShortLinkClick, { foreignKey: 'shortLinkId', as: 'clicks' });
-  ShortLinkClick.belongsTo(ShortLink, { foreignKey: 'shortLinkId', as: 'shortLink' });
-  // RoundRobinCursor has implicit relation to Campaign via campaignId
+  ShortLink.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'SET NULL' });
+  ShortLink.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
+  ShortLink.hasMany(ShortLinkClick, { foreignKey: 'shortLinkId', as: 'clicks', onDelete: 'CASCADE' });
+  ShortLinkClick.belongsTo(ShortLink, { foreignKey: 'shortLinkId', as: 'shortLink', onDelete: 'CASCADE' });
+  // RoundRobinCursor has implicit relation to Campaign via campaignId (FK added in migration 014)
 
   // Vehicle associations
-  Vehicle.belongsTo(Device, { foreignKey: 'masterDeviceId', as: 'masterDevice' });
-  Vehicle.belongsTo(Device, { foreignKey: 'slaveDeviceId', as: 'slaveDevice' });
-  Device.belongsTo(Vehicle, { foreignKey: 'vehicleId', as: 'vehicle' });
+  Vehicle.belongsTo(Device, { foreignKey: 'masterDeviceId', as: 'masterDevice', onDelete: 'SET NULL' });
+  Vehicle.belongsTo(Device, { foreignKey: 'slaveDeviceId', as: 'slaveDevice', onDelete: 'SET NULL' });
+  Device.belongsTo(Vehicle, { foreignKey: 'vehicleId', as: 'vehicle', onDelete: 'SET NULL' });
+  Vehicle.belongsToMany(Campaign, { through: VehicleCampaignAssignment, foreignKey: 'vehicleId', otherKey: 'campaignId', as: 'assignedCampaigns' });
+  Campaign.belongsToMany(Vehicle, { through: VehicleCampaignAssignment, foreignKey: 'campaignId', otherKey: 'vehicleId', as: 'assignedVehicles' });
 
   // Webhook associations
-  WebhookSubscriber.hasMany(WebhookDelivery, { foreignKey: 'subscriberId', as: 'deliveries' });
-  WebhookDelivery.belongsTo(WebhookSubscriber, { foreignKey: 'subscriberId', as: 'subscriber' });
+  WebhookSubscriber.hasMany(WebhookDelivery, { foreignKey: 'subscriberId', as: 'deliveries', onDelete: 'SET NULL' });
+  WebhookDelivery.belongsTo(WebhookSubscriber, { foreignKey: 'subscriberId', as: 'subscriber', onDelete: 'SET NULL' });
 
   // AgentGroup associations
-  AgentGroup.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
-  User.hasMany(AgentGroup, { foreignKey: 'createdBy', as: 'agentGroups' });
-  Campaign.belongsTo(AgentGroup, { foreignKey: 'agentGroupId', as: 'agentGroup' });
-  QrTag.belongsTo(AgentGroup, { foreignKey: 'agentGroupId', as: 'agentGroup' });
-};
+  AgentGroup.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'RESTRICT' });
+  User.hasMany(AgentGroup, { foreignKey: 'createdBy', as: 'agentGroups', onDelete: 'RESTRICT' });
+  QrTag.belongsTo(AgentGroup, { foreignKey: 'agentGroupId', as: 'agentGroup', onDelete: 'SET NULL' });
+  QrTag.belongsTo(User, { foreignKey: 'assignedAgentId', as: 'assignedAgent', onDelete: 'SET NULL' });
 
-// Initialize associations
+  // AgentGroupMember associations
+  AgentGroup.hasMany(AgentGroupMember, { foreignKey: 'agentGroupId', as: 'members', onDelete: 'CASCADE' });
+  AgentGroupMember.belongsTo(AgentGroup, { foreignKey: 'agentGroupId', as: 'group' });
+  AgentGroupMember.belongsTo(User, { foreignKey: 'userId', as: 'user', onDelete: 'SET NULL' });
+}
+
 defineAssociations();
 
-// Export all models and sequelize instance
-export {
-  sequelize,
-  User,
-  Campaign,
-  Car,
-  FleetOwner,
-  Driver,
-  Prospect,
-  QrTag,
-  Commission,
-  LeadPackage,
-  LeadPackageAssignment,
-  CampaignPreview,
-  QrScan,
-  Attribution,
-  SessionVisit,
-  ProspectActivity,
-  UserPayout,
-  Device,
-  BeaconEvent,
-  Impression, // Added
-  IdempotencyKey,
-  ShortLink,
-  ShortLinkClick,
-  RoundRobinCursor,
-  Verification,
-  ProvisioningSession, // Added
-  Vehicle, // Added for tablet pairing
-  WebhookSubscriber,
-  WebhookDelivery,
-  AgentGroup
-};
+// Startup assertion: verify critical associations exist
+const criticalAssociations = [
+  ['Prospect', 'assignedAgent'],
+  ['Prospect', 'campaign'],
+  ['Prospect', 'qrTag'],
+  ['Campaign', 'creator'],
+  ['Campaign', 'assignedAgents'],
+  ['QrTag', 'owner'],
+  ['Commission', 'agent'],
+  ['WebhookDelivery', 'subscriber'],
+];
 
+for (const [modelName, alias] of criticalAssociations) {
+  if (!models[modelName]?.associations?.[alias]) {
+    throw new Error(`Missing association: ${modelName}.${alias} -- model loading may be broken`);
+  }
+}
 
-// Export default object for convenience
-export default {
-  sequelize,
-  User,
-  Campaign,
-  Car,
-  FleetOwner,
-  Driver,
-  Prospect,
-  QrTag,
-  Commission,
-  LeadPackage,
-  LeadPackageAssignment,
-  CampaignPreview,
-  QrScan,
-  Attribution,
-  SessionVisit,
-  ProspectActivity,
-  UserPayout,
-  Device,
-  BeaconEvent,
-  Impression, // Added
-  IdempotencyKey,
-  ShortLink,
-  ShortLinkClick,
-  RoundRobinCursor,
-  Verification,
-  ProvisioningSession, // Added
-  Vehicle, // Added for tablet pairing
-  WebhookSubscriber,
-  WebhookDelivery,
-  AgentGroup
-};
+// Named exports (destructured from models object for backward compatibility)
+export const {
+  User, Campaign, Car, FleetOwner, Driver, Prospect, QrTag,
+  Commission, LeadPackage, LeadPackageAssignment, CampaignPreview,
+  QrScan, Attribution, SessionVisit, ProspectActivity, UserPayout,
+  Device, BeaconEvent, Impression, IdempotencyKey, ShortLink,
+  ShortLinkClick, RoundRobinCursor, Verification, ProvisioningSession,
+  Vehicle, WebhookSubscriber, WebhookDelivery, AgentGroup,
+  AgentGroupMember, DeviceCampaignAssignment, VehicleCampaignAssignment,
+  CampaignMediaItem, CampaignAgentAssignment
+} = models;
 
+export { sequelize };
+
+export default { ...models, sequelize };

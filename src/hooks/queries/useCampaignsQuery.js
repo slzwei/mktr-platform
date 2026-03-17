@@ -15,6 +15,22 @@ export function useCampaignsList(params = {}) {
   });
 }
 
+/**
+ * Shared hook for campaign lookup (name resolution by id).
+ * Used by AdminProspects, AdminAgentDetail, MyProspects, and anywhere
+ * that needs a flat campaign list for display/filtering.
+ *
+ * Returns the raw array of campaigns (not split by status).
+ */
+export function useCampaignLookup() {
+  return useQuery({
+    queryKey: ['campaigns', 'all-for-lookup'],
+    queryFn: () => Campaign.list({ limit: 1000 }),
+    staleTime: 60_000,
+    select: (data) => (Array.isArray(data) ? data : data.campaigns || []),
+  });
+}
+
 export function useCampaign(id) {
   return useQuery({
     queryKey: ['campaigns', 'detail', id],

@@ -1,5 +1,6 @@
 import request from 'supertest'
 import { getApp, closeDb, createTestUser, createTestCampaign, createTestProspect } from './helpers.js'
+import { resetAdminStatsCache } from '../src/services/dashboardService.js'
 
 let app, adminToken, agentUser, agentToken
 
@@ -197,6 +198,8 @@ describe('Dashboard with date filters', () => {
 })
 
 describe('Dashboard overview — expanded coverage', () => {
+  beforeEach(() => resetAdminStatsCache())
+
   it('GET /api/dashboard/overview?period=7d — admin stats have recentActivities array', async () => {
     const res = await request(app)
       .get('/api/dashboard/overview?period=7d')

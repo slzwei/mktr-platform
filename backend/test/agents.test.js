@@ -99,19 +99,14 @@ describe('Agent listing auth scoping', () => {
 })
 
 describe('Agent search and filter', () => {
-  // Note: Op.iLike search tests tolerate 500 on SQLite (unsupported operator).
-  // These queries work on PostgreSQL in production.
-
-  it('GET /api/agents?search= — search endpoint responds (iLike may 500 on SQLite)', async () => {
+  it('GET /api/agents?search= — search endpoint responds', async () => {
     const res = await request(app)
       .get('/api/agents?search=AgentAlpha')
       .set('Authorization', `Bearer ${adminToken}`)
 
-    expect([200, 500]).toContain(res.status)
-    if (res.status === 200) {
-      expect(res.body.data.agents.length).toBeGreaterThanOrEqual(1)
-      expect(res.body.data.agents.some(a => a.firstName === 'AgentAlpha')).toBe(true)
-    }
+    expect(res.status).toBe(200)
+    expect(res.body.data.agents.length).toBeGreaterThanOrEqual(1)
+    expect(res.body.data.agents.some(a => a.firstName === 'AgentAlpha')).toBe(true)
   })
 
   it('GET /api/agents?status=active — filters by active status', async () => {
@@ -376,44 +371,35 @@ describe('Agent campaigns', () => {
 })
 
 describe('Agent leaderboard', () => {
-  // Note: Leaderboard queries use GROUP BY with aggregation functions that may fail
-  // on SQLite. Tests tolerate 500 from SQLite; they work on PostgreSQL.
-
-  it('GET /api/agents/leaderboard/performance — admin gets leaderboard (may 500 on SQLite)', async () => {
+  it('GET /api/agents/leaderboard/performance — admin gets leaderboard', async () => {
     const res = await request(app)
       .get('/api/agents/leaderboard/performance')
       .set('Authorization', `Bearer ${adminToken}`)
 
-    expect([200, 500]).toContain(res.status)
-    if (res.status === 200) {
-      expect(res.body.success).toBe(true)
-      expect(res.body.data.leaderboard).toBeDefined()
-      expect(Array.isArray(res.body.data.leaderboard)).toBe(true)
-      expect(res.body.data.period).toBeDefined()
-      expect(res.body.data.metric).toBeDefined()
-    }
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.data.leaderboard).toBeDefined()
+    expect(Array.isArray(res.body.data.leaderboard)).toBe(true)
+    expect(res.body.data.period).toBeDefined()
+    expect(res.body.data.metric).toBeDefined()
   })
 
-  it('GET /api/agents/leaderboard/performance?metric=prospects (may 500 on SQLite)', async () => {
+  it('GET /api/agents/leaderboard/performance?metric=prospects', async () => {
     const res = await request(app)
       .get('/api/agents/leaderboard/performance?metric=prospects&period=year')
       .set('Authorization', `Bearer ${adminToken}`)
 
-    expect([200, 500]).toContain(res.status)
-    if (res.status === 200) {
-      expect(res.body.data.metric).toBe('prospects')
-    }
+    expect(res.status).toBe(200)
+    expect(res.body.data.metric).toBe('prospects')
   })
 
-  it('GET /api/agents/leaderboard/performance?metric=conversions (may 500 on SQLite)', async () => {
+  it('GET /api/agents/leaderboard/performance?metric=conversions', async () => {
     const res = await request(app)
       .get('/api/agents/leaderboard/performance?metric=conversions&period=year')
       .set('Authorization', `Bearer ${adminToken}`)
 
-    expect([200, 500]).toContain(res.status)
-    if (res.status === 200) {
-      expect(res.body.data.metric).toBe('conversions')
-    }
+    expect(res.status).toBe(200)
+    expect(res.body.data.metric).toBe('conversions')
   })
 
   it('GET /api/agents/leaderboard/performance — agent cannot access (admin-only)', async () => {

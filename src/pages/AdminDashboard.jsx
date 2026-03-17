@@ -1,12 +1,10 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useDashboard } from "@/contexts/DashboardContext";
+import { useAuthStore } from "@/stores/authStore";
 import { useDashboardData } from "@/hooks/queries/useDashboardQuery";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { Plus, Download, Users, TrendingUp, DollarSign, Car as CarIcon, Eye } from "lucide-react";
-import { subDays, isSameDay } from "date-fns";
 
 import DashboardShell from "../components/dashboard/DashboardShell";
 import DashboardHeader from "../components/dashboard/DashboardHeader";
@@ -16,65 +14,27 @@ import RecentActivity from "../components/dashboard/RecentActivity";
 import TopPerformers from "../components/dashboard/TopPerformers";
 import AttentionNeeded from "../components/dashboard/AttentionNeeded";
 
-function buildAdminCards(stats, period) {
-  const { prospects, campaigns, commissions, cars, overview } = stats;
+function buildAdminCards(stats) {
+  const { cars, overview } = stats;
 
-  const periodDaysMap = { today: 1, "1d": 1, "7d": 7, "30d": 30, "90d": 90 };
-  const days = periodDaysMap[period] || 30;
-  const now = new Date();
-  const currentStart = subDays(now, days);
-  const previousStart = subDays(now, days * 2);
-
-  // Revenue comparison
-  const currentRevenue = commissions
-    .filter((c) => new Date(c.created_date || c.createdAt) >= currentStart)
-    .reduce((sum, c) => sum + Number(c.amount_driver || 0) + Number(c.amount_fleet || 0), 0);
-  const previousRevenue = commissions
-    .filter((c) => {
-      const d = new Date(c.created_date || c.createdAt);
-      return d >= previousStart && d < currentStart;
-    })
-    .reduce((sum, c) => sum + Number(c.amount_driver || 0) + Number(c.amount_fleet || 0), 0);
-  const revenueChange = previousRevenue > 0 ? ((currentRevenue - previousRevenue) / previousRevenue * 100).toFixed(1) : null;
-
-  // Prospects comparison
-  const currentProspects = prospects.filter((p) => new Date(p.created_date || p.createdAt || p.created_at) >= currentStart).length;
-  const previousProspects = prospects.filter((p) => {
-    const d = new Date(p.created_date || p.createdAt || p.created_at);
-    return d >= previousStart && d < currentStart;
-  }).length;
-  const prospectsChange = previousProspects > 0 ? ((currentProspects - previousProspects) / previousProspects * 100).toFixed(1) : null;
-
-  const activeCampaigns = overview.campaignsActive || campaigns.filter((c) => c.status === "active").length;
-  const totalCampaigns = overview.campaignsTotal || campaigns.length;
+  const activeCampaigns = overview.campaignsActive;
+  const totalCampaigns = overview.campaignsTotal;
   const campaignActivityRate = totalCampaigns > 0 ? Math.round((activeCampaigns / totalCampaigns) * 100) : 0;
 
-  const totalRevenue = overview.commissionsTotal || commissions.reduce((sum, c) => sum + Number(c.amount_driver || 0) + Number(c.amount_fleet || 0), 0);
-  const totalProspects = overview.prospectsTotal || prospects.length;
-
-  // Sparklines
-  const last7Days = Array.from({ length: 7 }, (_, i) => subDays(new Date(), 6 - i));
-  const revenueSparkData = last7Days.map((day) =>
-    commissions
-      .filter((c) => isSameDay(new Date(c.created_date || c.createdAt), day))
-      .reduce((sum, c) => sum + Number(c.amount_driver || 0) + Number(c.amount_fleet || 0), 0)
-  );
-  const prospectSparkData = last7Days.map((day) =>
-    prospects.filter((p) => isSameDay(new Date(p.created_date || p.createdAt), day)).length
-  );
+  const totalRevenue = overview.commissionsTotal;
+  const totalProspects = overview.prospectsTotal;
 
   return [
     {
       title: "Total Revenue",
       value: `$${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       icon: DollarSign,
-      trend: revenueChange !== null ? `${revenueChange > 0 ? "+" : ""}${revenueChange}%` : "N/A",
-      trendUp: revenueChange !== null ? revenueChange > 0 : true,
-      description: revenueChange !== null ? "vs previous period" : "no prior data",
+      trend: "N/A",
+      trendUp: true,
+      description: "all time",
       iconColor: "text-emerald-600",
       iconBg: "bg-emerald-50 dark:bg-emerald-950/30",
-      linkTo: createPageUrl("AdminCommissions"),
-      sparkData: revenueSparkData,
+      linkTo: "/AdminCommissions",
     },
     {
       title: "Active Campaigns",
@@ -85,30 +45,29 @@ function buildAdminCards(stats, period) {
       description: "active rate",
       iconColor: "text-blue-600",
       iconBg: "bg-blue-50 dark:bg-blue-950/30",
-      linkTo: createPageUrl("AdminCampaigns"),
+      linkTo: "/AdminCampaigns",
     },
     {
       title: "Total Prospects",
       value: totalProspects.toLocaleString(),
       icon: Users,
-      trend: prospectsChange !== null ? `${prospectsChange > 0 ? "+" : ""}${prospectsChange}%` : `+${overview.newProspects || 0}`,
-      trendUp: prospectsChange !== null ? prospectsChange > 0 : true,
-      description: prospectsChange !== null ? "vs previous period" : "new this month",
+      trend: `+${overview.newProspects || 0}`,
+      trendUp: true,
+      description: "new this period",
       iconColor: "text-violet-600",
       iconBg: "bg-violet-50 dark:bg-violet-950/30",
-      linkTo: createPageUrl("AdminProspects"),
-      sparkData: prospectSparkData,
+      linkTo: "/AdminProspects",
     },
     {
       title: "Fleet Size",
-      value: cars.length,
+      value: overview.fleetTotalCars ?? cars.length,
       icon: CarIcon,
       trend: "Active",
       trendUp: true,
       description: "vehicles registered",
       iconColor: "text-orange-600",
       iconBg: "bg-orange-50 dark:bg-orange-950/30",
-      linkTo: createPageUrl("AdminFleet"),
+      linkTo: "/AdminFleet",
     },
     {
       title: "Ad Impressions",
@@ -124,7 +83,7 @@ function buildAdminCards(stats, period) {
 }
 
 export default function AdminDashboard() {
-  const { user } = useDashboard();
+  const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState("30d");
 
@@ -140,13 +99,17 @@ export default function AdminDashboard() {
 
   const error = queryError?.message || null;
 
+  // The overview endpoint returns stats keyed by category.
+  // Accept both { stats: { ... } } and flat { prospects, campaigns, ... } shapes.
+  const ov = rawOverview?.stats || rawOverview || {};
   const overview = {
-    prospectsTotal: rawOverview?.stats?.prospects?.total || 0,
-    newProspects: rawOverview?.stats?.prospects?.new || 0,
-    campaignsTotal: rawOverview?.stats?.campaigns?.total || 0,
-    campaignsActive: rawOverview?.stats?.campaigns?.active || 0,
-    commissionsTotal: Number(rawOverview?.stats?.commissions?.total || 0),
-    impressionsToday: rawOverview?.stats?.impressions?.today || 0,
+    prospectsTotal: ov.prospects?.total || 0,
+    newProspects: ov.prospects?.new || 0,
+    campaignsTotal: ov.campaigns?.total || 0,
+    campaignsActive: ov.campaigns?.active || 0,
+    commissionsTotal: Number(ov.commissions?.total || 0),
+    impressionsToday: ov.impressions?.today || 0,
+    fleetTotalCars: ov.fleet?.totalCars ?? null,
   };
 
   const stats = { prospects, campaigns, commissions, cars, overview };
@@ -156,11 +119,10 @@ export default function AdminDashboard() {
   };
 
   const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     queryClient.invalidateQueries({ queryKey: ['prospects'] });
     queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-    queryClient.invalidateQueries({ queryKey: ['commissions'] });
     queryClient.invalidateQueries({ queryKey: ['cars'] });
-    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
   };
 
   const getFilteredData = (data) => {
@@ -207,7 +169,7 @@ export default function AdminDashboard() {
     URL.revokeObjectURL(url);
   };
 
-  const cards = !loading ? buildAdminCards(filteredStats, period) : [];
+  const cards = !loading ? buildAdminCards(filteredStats) : [];
 
   return (
     <DashboardShell loading={loading} error={error} onRetry={handleRefresh}>
@@ -225,7 +187,7 @@ export default function AdminDashboard() {
               <Download className="w-4 h-4 mr-2" />
               Export Report
             </Button>
-            <Link to={createPageUrl("AdminCampaigns")}>
+            <Link to={"/AdminCampaigns"}>
               <Button size="sm">
                 <Plus className="w-4 h-4 mr-2" />
                 New Campaign

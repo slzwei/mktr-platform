@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import {
   CommandDialog,
   CommandEmpty,
@@ -32,40 +31,40 @@ function getNavGroups(role) {
       {
         label: "Navigation",
         items: [
-          { title: "Dashboard", url: createPageUrl("AdminDashboard"), icon: LayoutDashboard },
-          { title: "Prospects", url: createPageUrl("AdminProspects"), icon: Users },
-          { title: "Campaigns", url: createPageUrl("AdminCampaigns"), icon: Settings },
-          { title: "Agents", url: createPageUrl("AdminAgents"), icon: UserCog },
+          { title: "Dashboard", url: "/AdminDashboard", icon: LayoutDashboard },
+          { title: "Prospects", url: "/AdminProspects", icon: Users },
+          { title: "Campaigns", url: "/AdminCampaigns", icon: Settings },
+          { title: "Agents", url: "/AdminAgents", icon: UserCog },
         ],
       },
       {
         label: "Lead Gen",
         items: [
-          { title: "Lead Packages", url: createPageUrl("AdminLeadPackages"), icon: Package },
-          { title: "QR Codes", url: createPageUrl("AdminQRCodes"), icon: QrCode },
-          { title: "Short Links", url: createPageUrl("AdminShortLinks"), icon: Link2 },
+          { title: "Lead Packages", url: "/AdminLeadPackages", icon: Package },
+          { title: "QR Codes", url: "/AdminQRCodes", icon: QrCode },
+          { title: "Short Links", url: "/AdminShortLinks", icon: Link2 },
         ],
       },
       {
         label: "Fleet",
         items: [
-          { title: "Fleet Management", url: createPageUrl("AdminFleet"), icon: Car },
-          { title: "Vehicle Fleet", url: createPageUrl("AdminVehicles"), icon: Car },
-          { title: "Fleet Map", url: createPageUrl("AdminFleetMap"), icon: Map },
-          { title: "Tablet Devices", url: createPageUrl("AdminDevices"), icon: Tablet },
+          { title: "Fleet Management", url: "/AdminFleet", icon: Car },
+          { title: "Vehicle Fleet", url: "/AdminVehicles", icon: Car },
+          { title: "Fleet Map", url: "/AdminFleetMap", icon: Map },
+          { title: "Tablet Devices", url: "/AdminDevices", icon: Tablet },
         ],
       },
       {
         label: "Finance",
         items: [
-          { title: "Commissions", url: createPageUrl("AdminCommissions"), icon: DollarSign },
+          { title: "Commissions", url: "/AdminCommissions", icon: DollarSign },
         ],
       },
       {
         label: "System",
         items: [
-          { title: "Users", url: createPageUrl("AdminUsers"), icon: Users },
-          { title: "App Versions", url: createPageUrl("AdminApkManager"), icon: AppWindow },
+          { title: "Users", url: "/AdminUsers", icon: Users },
+          { title: "App Versions", url: "/AdminApkManager", icon: AppWindow },
         ],
       },
     ];
@@ -76,8 +75,8 @@ function getNavGroups(role) {
       {
         label: "Navigation",
         items: [
-          { title: "Dashboard", url: createPageUrl("AgentDashboard"), icon: LayoutDashboard },
-          { title: "My Prospects", url: createPageUrl("MyProspects"), icon: Users },
+          { title: "Dashboard", url: "/AgentDashboard", icon: LayoutDashboard },
+          { title: "My Prospects", url: "/MyProspects", icon: Users },
           { title: "Edit Profile", url: "/profile", icon: Settings },
         ],
       },
@@ -89,9 +88,9 @@ function getNavGroups(role) {
       {
         label: "Navigation",
         items: [
-          { title: "Dashboard", url: createPageUrl("FleetOwnerDashboard"), icon: LayoutDashboard },
-          { title: "My Fleet", url: createPageUrl("AdminFleet"), icon: Car },
-          { title: "My Commissions", url: createPageUrl("AdminCommissions"), icon: DollarSign },
+          { title: "Dashboard", url: "/FleetOwnerDashboard", icon: LayoutDashboard },
+          { title: "My Fleet", url: "/AdminFleet", icon: Car },
+          { title: "My Commissions", url: "/AdminCommissions", icon: DollarSign },
         ],
       },
     ];
@@ -102,10 +101,10 @@ function getNavGroups(role) {
       {
         label: "Navigation",
         items: [
-          { title: "Dashboard", url: createPageUrl("DriverDashboard"), icon: LayoutDashboard },
-          { title: "Profile", url: createPageUrl("DriverProfile"), icon: Settings },
-          { title: "Payout History", url: createPageUrl("DriverPayoutHistory"), icon: DollarSign },
-          { title: "Payslip", url: createPageUrl("DriverPayslip"), icon: FileText },
+          { title: "Dashboard", url: "/DriverDashboard", icon: LayoutDashboard },
+          { title: "Profile", url: "/DriverProfile", icon: Settings },
+          { title: "Payout History", url: "/DriverPayoutHistory", icon: DollarSign },
+          { title: "Payslip", url: "/DriverPayslip", icon: FileText },
         ],
       },
     ];

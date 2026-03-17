@@ -5,7 +5,6 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import App from '@/App.jsx'
 import '@/index.css'
-import { apiClient } from '@/api/client'
 import { queryClient } from '@/lib/queryClient'
 import MKTRAnimatedLogo from '@/components/MKTRAnimatedLogo'
 
@@ -24,8 +23,7 @@ if (sentryDsn) {
 function Boot() {
   const [showSplash, setShowSplash] = useState(() => sessionStorage.getItem('mktr_splash_shown') !== '1')
   useEffect(() => {
-    const token = localStorage.getItem('mktr_auth_token')
-    if (token) apiClient.setToken(token)
+    // API client now reads token from localStorage on each request — no manual setToken needed
     if (showSplash) {
       const minSplashMs = 1500
       const timer = setTimeout(() => {

@@ -21,10 +21,6 @@ export default function GoogleCallback() {
         const state = searchParams.get('state');
         const error = searchParams.get('error');
 
-        console.log('🔍 Google OAuth callback received');
-        console.log('🔍 Code:', code ? 'Present' : 'Missing');
-        console.log('🔍 State:', state);
-        console.log('🔍 Error:', error);
 
         if (error) {
           console.error('❌ OAuth error:', error);
@@ -40,7 +36,7 @@ export default function GoogleCallback() {
           return;
         }
 
-        console.log('🔍 Sending authorization code to backend...');
+
         setMessage('Verifying with backend...');
 
         // Send the authorization code to our backend
@@ -55,18 +51,18 @@ export default function GoogleCallback() {
           }),
         });
 
-        console.log('🔍 Backend response status:', response.status);
+
 
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
 
         const result = await response.json();
-        console.log('🔍 Backend result:', result);
+
 
         if (result.success && result.data?.user) {
           const user = result.data.user;
-          console.log('✅ Authentication successful, user:', user);
+
 
           // Store the token and update API client + store atomically
           if (result.data.token) {
@@ -83,7 +79,6 @@ export default function GoogleCallback() {
           const storedReturnUrl = sessionStorage.getItem('mktr_auth_return_url');
           if (storedReturnUrl) {
             try {
-              console.log('🔄 Found stored return URL in session storage');
               const { pathname, search } = JSON.parse(storedReturnUrl);
               targetUrl = `${pathname}${search}`;
               sessionStorage.removeItem('mktr_auth_return_url'); // Clear it
@@ -92,7 +87,6 @@ export default function GoogleCallback() {
             }
           }
 
-          console.log('🔄 Redirecting to:', targetUrl);
           navigate(targetUrl);
 
         } else {
