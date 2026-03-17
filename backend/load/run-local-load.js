@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// NOTE: Requires Docker Postgres. Run: docker compose -f docker-compose.test.yml up -d
 
 import { spawn } from 'child_process';
 import path from 'path';
@@ -48,7 +49,7 @@ async function waitForHealth(timeoutMs = 30000) {
     try {
       const res = await fetch(`${TARGET_BASE_URL}/health`);
       if (res.ok) return true;
-    } catch {}
+    } catch { /* server not ready yet */ }
     await wait(500);
   }
   return false;
@@ -121,7 +122,7 @@ async function main() {
     console.error('load run failed:', e.message);
     process.exitCode = 1;
   } finally {
-    try { server.kill('SIGINT'); } catch {}
+    try { server.kill('SIGINT'); } catch { /* already exited */ }
   }
 }
 

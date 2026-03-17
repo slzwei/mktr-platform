@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: "20"
+  # Test-only credentials — not used in production
+  TEST_DB_HOST: localhost
+  TEST_DB_PORT: "5432"
+  TEST_DB_NAME: mktr_ci
+  TEST_DB_USER: postgres
+  TEST_DB_PASSWORD: postgres
+
+jobs:
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: mktr_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      NODE_ENV: test
+      JWT_SECRET: ${{ vars.TEST_JWT_SECRET || 'ci-placeholder-not-a-real-secret' }}
+      RETELL_WEBHOOK_SECRET: ${{ vars.TEST_RETELL_SECRET || 'ci-placeholder-retell' }}
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: mktr_ci
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      WEBHOOK_ENABLED: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: cd backend && npm ci
+
+      - name: Run unit tests
+        run: cd backend && npm test -- --testPathPattern="test/unit/"
+
+      - name: Run integration tests
+        run: cd backend && npm test -- --testPathPattern="test/(integration/|[^/]+\\.test\\.js)"
+
+      - name: Run migration tests
+        run: cd backend && npm test -- --testPathPattern="test/migrations"
+
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npx vitest run
+
+      - name: Build
+        run: npx vite build
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint frontend
+        run: npx eslint src/ --ext .js,.jsx --max-warnings 0 --quiet
+        continue-on-error: true
+
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+
+      - name: Lint backend
+        run: cd backend && npx eslint src/ --ext .js --max-warnings 0 --quiet
+        continue-on-error: true
