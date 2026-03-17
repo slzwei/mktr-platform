@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiClient as api } from '../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -25,7 +25,6 @@ import { format } from 'date-fns';
 import {
     Pagination,
     PaginationContent,
-    PaginationEllipsis,
     PaginationItem,
     PaginationLink,
     PaginationNext,
@@ -58,14 +57,12 @@ export default function AdminDeviceLogs() {
         const eventSource = new EventSource(url);
 
         eventSource.onopen = () => {
-            console.debug('[Logs] Connected to live stream');
             setStreamStatus('connected');
         };
 
         eventSource.addEventListener('status_change', (e) => {
             try {
                 const data = JSON.parse(e.data);
-                console.debug('[Logs] status_change:', data);
                 setDeviceStatus(data.status);
             } catch (err) { console.error(err); }
         });
@@ -84,7 +81,6 @@ export default function AdminDeviceLogs() {
         });
 
         eventSource.addEventListener('connected', (e) => {
-            console.debug('[Logs] Stream confirmed:', e.data);
             setStreamStatus('connected');
         });
 
@@ -101,7 +97,6 @@ export default function AdminDeviceLogs() {
         };
 
         return () => {
-            console.debug('[Logs] Closing stream');
             eventSource.close();
             setStreamStatus('disconnected');
         };

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 export default function AdminShortLinks() {
   const qc = useQueryClient();
@@ -10,6 +11,15 @@ export default function AdminShortLinks() {
   const [searchKey, setSearchKey] = useState('');
   const [selected, setSelected] = useState(null);
   const [clicks, setClicks] = useState([]);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: "", description: "", onConfirm: null, destructive: false });
+
+  const openConfirm = useCallback(({ title, description, onConfirm, destructive = true }) => {
+    setConfirmDialog({ open: true, title, description, onConfirm, destructive });
+  }, []);
+
+  const closeConfirm = useCallback(() => {
+    setConfirmDialog(prev => ({ ...prev, open: false }));
+  }, []);
 
   const { data: shortlinksData, isLoading: loading } = useQuery({
     queryKey: ['shortlinks', searchKey],
@@ -40,11 +50,17 @@ export default function AdminShortLinks() {
     qc.invalidateQueries({ queryKey: ['shortlinks'] });
   };
 
-  const remove = async (item) => {
-    if (!window.confirm(`Delete short link /share/${item.slug}? This cannot be undone.`)) return;
-    await apiClient.delete(`/shortlinks/${item.id}`);
-    if (selected?.id === item.id) setSelected(null);
-    qc.invalidateQueries({ queryKey: ['shortlinks'] });
+  const remove = (item) => {
+    openConfirm({
+      title: "Delete Short Link",
+      description: `Delete short link /share/${item.slug}? This cannot be undone.`,
+      onConfirm: async () => {
+        await apiClient.delete(`/shortlinks/${item.id}`);
+        if (selected?.id === item.id) setSelected(null);
+        qc.invalidateQueries({ queryKey: ['shortlinks'] });
+        closeConfirm();
+      },
+    });
   };
 
   return (
@@ -85,6 +101,16 @@ export default function AdminShortLinks() {
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => { if (!open) closeConfirm(); }}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        onConfirm={confirmDialog.onConfirm}
+        confirmText="Delete"
+        destructive={confirmDialog.destructive}
+      />
 
       {selected && (
         <div className="mt-6">

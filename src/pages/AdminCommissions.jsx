@@ -20,8 +20,7 @@ import {
   Users,
   Search,
   Filter,
-  TrendingUp,
-  AlertTriangle
+  TrendingUp
 } from "lucide-react";
 
 const statusColors = {
@@ -33,8 +32,8 @@ const statusColors = {
 export default function AdminCommissions() {
   const { data: user } = useCurrentUser();
   const { data: commissionsRaw, isLoading: loading } = useQuery({
-    queryKey: ['commissions', 'list', { limit: 1000 }],
-    queryFn: () => Commission.list({ limit: 1000 })
+    queryKey: ['commissions', 'list', { limit: 100 }],
+    queryFn: () => Commission.list({ limit: 100 })
   });
   const commissions = Array.isArray(commissionsRaw) ? commissionsRaw : (commissionsRaw?.commissions || []);
   const [searchTerm, setSearchTerm] = useState("");
@@ -134,15 +133,7 @@ export default function AdminCommissions() {
     );
   }
 
-  if (!user || !["admin", "agent"].includes(user.role)) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-gray-50 dark:bg-gray-800">
-        <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Access Denied</h2>
-        <p className="text-gray-600 dark:text-gray-400">You do not have permission to view this page.</p>
-      </div>
-    );
-  }
+  // Role gating handled by ProtectedRoute; avoid double-deny here
 
   return (
     <div className="p-6 lg:p-8 bg-gray-50 dark:bg-gray-900/50 min-h-screen">

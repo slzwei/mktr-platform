@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Plus, Search, Package, Edit, MoreHorizontal, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,15 @@ const AdminLeadPackages = () => {
     const [searchTerm, setSearchTerm] = useState("");
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingPackage, setEditingPackage] = useState(null);
+    const [confirmDialog, setConfirmDialog] = useState({ open: false, title: "", description: "", onConfirm: null, destructive: false });
+
+    const openConfirm = useCallback(({ title, description, onConfirm, destructive = true }) => {
+      setConfirmDialog({ open: true, title, description, onConfirm, destructive });
+    }, []);
+
+    const closeConfirm = useCallback(() => {
+      setConfirmDialog(prev => ({ ...prev, open: false }));
+    }, []);
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
@@ -62,20 +72,26 @@ const AdminLeadPackages = () => {
         }
     };
 
-    const handleDeletePackage = async (pkg) => {
-        if (!window.confirm(`Are you sure you want to delete "${pkg.name}"?`)) return;
-        try {
-            await LeadPackage.delete(pkg.id);
-            toast({ title: "Success", description: "Package deleted/archived successfully" });
-            queryClient.invalidateQueries({ queryKey: ['leadPackages'] });
-        } catch (error) {
-            console.error("Delete error:", error);
-            toast({
-                title: "Error",
-                description: "Failed to delete package",
-                variant: "destructive",
-            });
-        }
+    const handleDeletePackage = (pkg) => {
+        openConfirm({
+            title: "Delete Package",
+            description: `Are you sure you want to delete "${pkg.name}"?`,
+            onConfirm: async () => {
+                try {
+                    await LeadPackage.delete(pkg.id);
+                    toast({ title: "Success", description: "Package deleted/archived successfully" });
+                    queryClient.invalidateQueries({ queryKey: ['leadPackages'] });
+                } catch (error) {
+                    console.error("Delete error:", error);
+                    toast({
+                        title: "Error",
+                        description: "Failed to delete package",
+                        variant: "destructive",
+                    });
+                }
+                closeConfirm();
+            },
+        });
     };
 
     const filteredPackages = packages.filter(pkg =>
@@ -186,6 +202,16 @@ const AdminLeadPackages = () => {
                 onOpenChange={setIsDialogOpen}
                 onSubmit={handleSubmitPackage}
                 editingPackage={editingPackage}
+            />
+
+            <ConfirmDialog
+                open={confirmDialog.open}
+                onOpenChange={(open) => { if (!open) closeConfirm(); }}
+                title={confirmDialog.title}
+                description={confirmDialog.description}
+                onConfirm={confirmDialog.onConfirm}
+                confirmText="Delete"
+                destructive={confirmDialog.destructive}
             />
         </div>
     );

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { apiClient as api } from '../api/client';
 import { formatDistanceToNow } from 'date-fns';
-import { MapPin, Navigation, RefreshCcw, Wifi, WifiOff } from 'lucide-react';
+import { MapPin, RefreshCcw, Wifi, WifiOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // Singapore center coordinates
@@ -179,7 +179,6 @@ export default function AdminFleetMap() {
         const sse = new EventSource(url);
 
         sse.onopen = () => {
-            console.log('✅ Fleet Map SSE Connected');
             setSseConnected(true);
         };
 
