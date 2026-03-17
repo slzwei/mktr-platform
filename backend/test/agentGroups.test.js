@@ -33,7 +33,7 @@ describe('Agent Groups API', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data.name).toBe('Test Team');
-    expect(res.body.data.agentCount).toBe(2);
+    expect(res.body.data.members.length).toBe(2);
     groupId = res.body.data.id;
   });
 
@@ -59,7 +59,7 @@ describe('Agent Groups API', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.name).toBe('Updated Team');
-    expect(res.body.data.agentCount).toBe(1);
+    expect(res.body.data.members.length).toBe(1);
   });
 
   test('DELETE /api/admin/agent-groups/:id — delete group', async () => {

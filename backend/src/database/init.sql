@@ -1,6 +1,10 @@
 -- Database initialization script
 -- This script runs when the PostgreSQL container starts for the first time
 
+-- Create test database for backend tests (safe to fail if it already exists)
+SELECT 'CREATE DATABASE mktr_test'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'mktr_test')\gexec
+
 -- Create extensions if needed
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";

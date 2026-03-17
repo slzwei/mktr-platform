@@ -1,8 +1,9 @@
 import dotenv from 'dotenv';
-import { User, QrTag, Campaign, RoundRobinCursor, LeadPackageAssignment, LeadPackage, sequelize } from '../models/index.js';
+import { User, QrTag, RoundRobinCursor, LeadPackageAssignment, LeadPackage } from '../models/index.js';
 import { Op } from 'sequelize';
+import { logger } from '../utils/logger.js';
 
-// In-process queue to serialize round-robin updates per campaign (reduces SQLite lock contention)
+// In-process queue to serialize round-robin updates per campaign (prevents race conditions)
 const rrQueues = new Map();
 function enqueueCampaign(campaignId, task) {
   const chain = (rrQueues.get(campaignId) || Promise.resolve())
@@ -32,7 +33,7 @@ export async function initSystemAgent() {
       cachedSystemAgentId = existing.id;
       return cachedSystemAgentId;
     }
-    console.warn('DEFAULT_AGENT_ID provided but not a valid active agent. Falling back to SYSTEM_AGENT_EMAIL.');
+    logger.warn('DEFAULT_AGENT_ID provided but not a valid active agent — falling back to SYSTEM_AGENT_EMAIL');
   }
 
   // Find or create by email

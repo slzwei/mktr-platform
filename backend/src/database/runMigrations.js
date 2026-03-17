@@ -1,3 +1,4 @@
+import { Sequelize } from 'sequelize';
 import { sequelize } from './connection.js';
 import { logger } from '../utils/logger.js';
 import path from 'path';
@@ -11,9 +12,25 @@ const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
  * Lightweight migration runner.
  * Tracks applied migrations in a `_migrations` table.
  * Each migration module must export { up(queryInterface, Sequelize) }.
+ *
+ * The second arg passed to each migration combines:
+ *   - Sequelize class statics: DataTypes, fn(), literal(), col(), where(), cast()
+ *   - sequelize instance methods: getDialect(), query(), …
+ * This keeps both old-style (instance) and new-style (class) migrations happy.
  */
 export async function runMigrations() {
   const qi = sequelize.getQueryInterface();
+
+  // Build a merged context so migrations can use both
+  // Sequelize.DataTypes.UUID and sequelize.getDialect() / sequelize.query().
+  // Prefers Sequelize class statics (DataTypes, fn, literal); falls back to instance.
+  const SeqContext = new Proxy(Sequelize, {
+    get(target, prop, receiver) {
+      if (prop in target) return target[prop];
+      const val = sequelize[prop];
+      return typeof val === 'function' ? val.bind(sequelize) : val;
+    }
+  });
 
   // Ensure tracking table exists
   await qi.createTable('_migrations', {
@@ -38,7 +55,7 @@ export async function runMigrations() {
     logger.info(`Running migration: ${file}`);
     try {
       const mod = await import(path.join(MIGRATIONS_DIR, file));
-      await mod.up(qi, sequelize);
+      await mod.up(qi, SeqContext);
       await sequelize.query(
         'INSERT INTO "_migrations" (name) VALUES (?)',
         { replacements: [file] }

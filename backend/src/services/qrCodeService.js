@@ -3,15 +3,21 @@ import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { QrTag, Campaign, Car, QrScan, Attribution, Prospect, SessionVisit } from '../models/index.js';
+import { QrTag, Campaign, Car, QrScan, Attribution, Prospect, SessionVisit, User, sequelize } from '../models/index.js';
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadsDir = path.join(__dirname, '../../uploads/image');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+
+let _dirEnsured = false;
+function ensureQrDir() {
+  if (_dirEnsured) return;
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  _dirEnsured = true;
 }
 
 // ---- Internal helpers ----
@@ -42,6 +48,7 @@ function buildOwnerWhere(user, extra = {}) {
 }
 
 async function generateAndStorePng(linkUrl, slug) {
+  ensureQrDir();
   const pngBuffer = await QRCode.toBuffer(linkUrl, { width: 600, margin: 2 });
   const fileName = `qr-${slug}.png`;
 
@@ -98,7 +105,7 @@ export async function listQrCodes(user, query) {
 
 export async function createQrCode(body, user) {
   const { label, tags = [], type, campaignId, carId,
-          agentAssignmentMode, agentGroupId, agentGroupAgentIds,
+          agentAssignmentMode, agentGroupId,
           assignedAgentPhone, assignedAgentEmail, assignedAgentName } = body;
 
   // Validate campaign access
@@ -152,6 +159,16 @@ export async function createQrCode(body, user) {
   const svg = await generateQRCodeImage(linkUrl);
   const publicUrl = await generateAndStorePng(linkUrl, slug);
 
+  // Resolve assignedAgentId from phone for the FK (dual-write)
+  let resolvedAgentId = null;
+  if (assignedAgentPhone) {
+    const agent = await User.findOne({
+      where: { phone: assignedAgentPhone, role: 'agent', isActive: true },
+      attributes: ['id']
+    });
+    if (agent) resolvedAgentId = agent.id;
+  }
+
   const qrTag = await QrTag.create({
     slug,
     label: label || null,
@@ -165,7 +182,7 @@ export async function createQrCode(body, user) {
     qrImageUrl: publicUrl,
     agentAssignmentMode: agentAssignmentMode || 'direct',
     agentGroupId: agentGroupId || null,
-    agentGroupAgentIds: agentGroupAgentIds || [],
+    assignedAgentId: resolvedAgentId,
     assignedAgentPhone: assignedAgentPhone || null,
     assignedAgentEmail: assignedAgentEmail || null,
     assignedAgentName: assignedAgentName || null
@@ -193,8 +210,8 @@ export async function getQrCode(id, user) {
 
 const QR_UPDATE_FIELDS = [
   'label', 'tags', 'active', 'location', 'placement', 'description',
-  'agentAssignmentMode', 'agentGroupId', 'agentGroupAgentIds',
-  'assignedAgentPhone', 'assignedAgentEmail', 'assignedAgentName',
+  'agentAssignmentMode', 'agentGroupId',
+  'assignedAgentId', 'assignedAgentPhone', 'assignedAgentEmail', 'assignedAgentName',
   'campaignId'
 ];
 
@@ -208,6 +225,19 @@ export async function updateQrCode(id, body, user) {
   const updateData = Object.fromEntries(
     Object.entries(rawData).filter(([k]) => QR_UPDATE_FIELDS.includes(k))
   );
+
+  // Resolve assignedAgentId from phone when phone is being updated (dual-write)
+  if (updateData.assignedAgentPhone && !updateData.assignedAgentId) {
+    const agent = await User.findOne({
+      where: { phone: updateData.assignedAgentPhone, role: 'agent', isActive: true },
+      attributes: ['id']
+    });
+    if (agent) updateData.assignedAgentId = agent.id;
+  }
+  // Clear assignedAgentId when phone is explicitly set to null
+  if ('assignedAgentPhone' in updateData && !updateData.assignedAgentPhone) {
+    updateData.assignedAgentId = null;
+  }
 
   if (regenerateCode) {
     const publicBase = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
@@ -247,18 +277,22 @@ export async function recordScan(id, metadata = {}) {
   if (!qrTag) throw new AppError('QR code not found', 404);
   if (qrTag.status !== 'active') throw new AppError('QR code is not active', 400);
 
-  const currentAnalytics = qrTag.analytics || {};
+  // today is derived from Date, not user input — safe to interpolate
   const today = new Date().toISOString().split('T')[0];
-  if (!currentAnalytics.dailyScans) currentAnalytics.dailyScans = {};
-  currentAnalytics.dailyScans[today] = (currentAnalytics.dailyScans[today] || 0) + 1;
 
   await qrTag.update({
-    scanCount: qrTag.scanCount + 1,
+    scanCount: sequelize.literal('"scanCount" + 1'),
     lastScanned: new Date(),
-    analytics: { ...currentAnalytics, ...metadata }
+    analytics: sequelize.literal(`
+      jsonb_set(
+        COALESCE(analytics::jsonb, '{"dailyScans":{}}'),
+        ARRAY['dailyScans', '${today}'],
+        to_jsonb(COALESCE((analytics->'dailyScans'->>'${today}')::int, 0) + 1)
+      )
+    `)
   });
 
-  return { scanCount: qrTag.scanCount + 1, destinationUrl: qrTag.destinationUrl };
+  return { scanCount: (qrTag.scanCount || 0) + 1, destinationUrl: qrTag.destinationUrl };
 }
 
 export async function getAnalytics(id, user) {
@@ -332,8 +366,8 @@ export async function bulkOperateQrCodes(operation, qrTagIds, data, user) {
       break;
     case 'update': {
       // Exclude assignment fields from bulk update to prevent mass-overwrite
-      const BULK_EXCLUDE = ['agentAssignmentMode', 'agentGroupId', 'agentGroupAgentIds',
-        'assignedAgentPhone', 'assignedAgentEmail', 'assignedAgentName', 'roundRobinIndex'];
+      const BULK_EXCLUDE = ['agentAssignmentMode', 'agentGroupId',
+        'assignedAgentId', 'assignedAgentPhone', 'assignedAgentEmail', 'assignedAgentName', 'roundRobinIndex'];
       const safeData = Object.fromEntries(
         Object.entries(data || {}).filter(([k]) => !BULK_EXCLUDE.includes(k))
       );

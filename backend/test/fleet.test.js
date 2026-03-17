@@ -176,16 +176,12 @@ describe('Fleet owner deletion constraints', () => {
 })
 
 describe('Fleet owner search and filtering', () => {
-  // Note: Op.iLike search tests are skipped on SQLite (test DB) because SQLite
-  // does not support the iLike operator. These queries work on PostgreSQL in production.
-
-  it('GET /api/fleet/owners?search= — search endpoint responds (iLike may 500 on SQLite)', async () => {
+  it('GET /api/fleet/owners?search= — search endpoint responds', async () => {
     const res = await request(app)
       .get('/api/fleet/owners?search=Test')
       .set('Authorization', `Bearer ${adminToken}`)
 
-    // 200 on PostgreSQL, 500 on SQLite due to iLike unsupported
-    expect([200, 500]).toContain(res.status)
+    expect(res.status).toBe(200)
   })
 
   it('GET /api/fleet/owners — returns pagination metadata', async () => {
@@ -209,13 +205,12 @@ describe('Car search and filtering', () => {
     await createTestCar(fleetOwner.id, { make: 'BMW', model: 'X5', status: 'maintenance' })
   })
 
-  // Note: Op.iLike search tests tolerate 500 on SQLite (unsupported operator)
-  it('GET /api/fleet/cars?search= — search endpoint responds (iLike may 500 on SQLite)', async () => {
+  it('GET /api/fleet/cars?search= — search endpoint responds', async () => {
     const res = await request(app)
       .get('/api/fleet/cars?search=FilterMake')
       .set('Authorization', `Bearer ${adminToken}`)
 
-    expect([200, 500]).toContain(res.status)
+    expect(res.status).toBe(200)
   })
 
   it('GET /api/fleet/cars?status= — filters by status', async () => {

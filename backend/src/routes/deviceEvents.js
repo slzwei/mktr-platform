@@ -4,6 +4,8 @@ import { pushService } from '../services/pushService.js';
 
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 
+export const meta = { path: '/api/devices/events', priority: -1 };
+
 const router = express.Router();
 
 // Middleware to allow SSE connection with Token in Query Param

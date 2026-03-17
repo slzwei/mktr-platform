@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { User } from '../models/index.js';
 import { sendEmail } from './mailer.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Send a role-based invitation to a new user.
@@ -73,7 +74,7 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
   try {
     await sendEmail({ to: email, subject, html, text });
   } catch (emailError) {
-    console.error('Failed to send invite email:', emailError.message);
+    logger.error('Failed to send invite email', { error: emailError?.message || String(emailError) });
     // Don't fail the request; user is created and link is returned
   }
 

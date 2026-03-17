@@ -64,7 +64,7 @@ export default function AdminAgentGroups() {
         setEditingGroup(group);
         setFormName(group.name);
         setFormDescription(group.description || "");
-        setFormAgents(group.agents || []);
+        setFormAgents(group.members || []);
         setAgentSearch("");
         setDialogOpen(true);
     };
@@ -171,7 +171,7 @@ export default function AdminAgentGroups() {
                                 <TableRow key={group.id}>
                                     <TableCell className="font-medium">{group.name}</TableCell>
                                     <TableCell>
-                                        <Badge variant="secondary">{group.agentCount} agents</Badge>
+                                        <Badge variant="secondary">{(group.members || []).length} agents</Badge>
                                     </TableCell>
                                     <TableCell className="text-muted-foreground text-sm">
                                         {group.description || "-"}

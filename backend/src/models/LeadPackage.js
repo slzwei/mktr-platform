@@ -58,39 +58,9 @@ const LeadPackage = sequelize.define('LeadPackage', {
       max: 10
     }
   },
-  targetAudience: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {
-      demographics: {},
-      interests: [],
-      location: {},
-      behavior: {}
-    }
-  },
-  leadCriteria: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {
-      minScore: 0,
-      maxAge: null,
-      industries: [],
-      budgetRange: {},
-      exclusions: []
-    }
-  },
   deliveryMethod: {
     type: DataTypes.ENUM('email', 'api', 'csv_download', 'dashboard'),
     defaultValue: 'dashboard'
-  },
-  deliverySchedule: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {
-      frequency: 'immediate',
-      schedule: {},
-      timezone: 'UTC'
-    }
   },
   validityPeriod: {
     type: DataTypes.INTEGER,
@@ -101,27 +71,6 @@ const LeadPackage = sequelize.define('LeadPackage', {
     type: DataTypes.ENUM('active', 'inactive', 'draft', 'archived'),
     defaultValue: 'draft'
   },
-  features: {
-    type: DataTypes.TEXT,
-    allowNull: true,
-    defaultValue: '[]',
-    get() {
-      const value = this.getDataValue('features');
-      return value ? JSON.parse(value) : [];
-    },
-    set(value) {
-      this.setDataValue('features', JSON.stringify(value || []));
-    }
-  },
-  limitations: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {
-      maxDownloads: null,
-      maxExports: null,
-      accessDuration: null
-    }
-  },
   commissionStructure: {
     type: DataTypes.JSON,
     allowNull: true,
@@ -129,28 +78,6 @@ const LeadPackage = sequelize.define('LeadPackage', {
       agentCommission: 0,
       referralBonus: 0,
       tierBonuses: {}
-    }
-  },
-  analytics: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {
-      totalSold: 0,
-      revenue: 0,
-      averageRating: 0,
-      conversionRate: 0
-    }
-  },
-  tags: {
-    type: DataTypes.TEXT,
-    allowNull: true,
-    defaultValue: '[]',
-    get() {
-      const value = this.getDataValue('tags');
-      return value ? JSON.parse(value) : [];
-    },
-    set(value) {
-      this.setDataValue('tags', JSON.stringify(value || []));
     }
   },
   isPublic: {

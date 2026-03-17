@@ -56,16 +56,6 @@ const Commission = sequelize.define('Commission', {
     defaultValue: {},
     comment: 'Additional data about the commission'
   },
-  period: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {
-      startDate: null,
-      endDate: null,
-      month: null,
-      year: null
-    }
-  },
   paymentInfo: {
     type: DataTypes.JSON,
     allowNull: true,
@@ -81,12 +71,6 @@ const Commission = sequelize.define('Commission', {
     type: DataTypes.STRING,
     allowNull: true,
     comment: 'Commission tier level'
-  },
-  qualificationCriteria: {
-    type: DataTypes.JSON,
-    allowNull: true,
-    defaultValue: {},
-    comment: 'Criteria that must be met for commission'
   },
   earnedDate: {
     type: DataTypes.DATE,
@@ -157,8 +141,9 @@ const Commission = sequelize.define('Commission', {
     { fields: ['campaignId'] },
     { fields: ['prospectId'] },
     { fields: ['earnedDate'] },
-    { fields: ['paidDate'] }
-    // Note: avoid indexing JSON columns like 'period' in Postgres without an opclass
+    { fields: ['paidDate'] },
+    { fields: ['agentId', 'earnedDate'], name: 'idx_commissions_agent_earneddate' },
+    { fields: ['agentId', 'status'], name: 'idx_commissions_agent_status' }
   ]
 });
 

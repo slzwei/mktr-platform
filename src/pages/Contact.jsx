@@ -10,16 +10,10 @@ import {
   SelectItem
 } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
-import { Link } from "react-router-dom";
 import SiteHeader from "@/components/layout/SiteHeader";
 import { apiClient } from "@/api/client";
-import { createPageUrl } from "@/utils";
 import {
-  ArrowLeft,
-  Mail,
-  Phone,
   MapPin,
-  Clock,
   Send,
   CheckCircle
 } from "lucide-react";

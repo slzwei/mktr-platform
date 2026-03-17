@@ -23,7 +23,7 @@ async function run() {
         console.log(`Raw campaignIds from DB:`, JSON.stringify(campaignIds));
         console.log(`Type of campaignIds:`, typeof campaignIds);
 
-        // Parse if string (SQLite/Legacy safety)
+        // Parse if string (Legacy safety)
         if (typeof campaignIds === 'string') {
             try {
                 campaignIds = JSON.parse(campaignIds);

@@ -1,7 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle } from "lucide-react";
 import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
 
 export default function DriverPayslip() {
@@ -18,21 +17,7 @@ export default function DriverPayslip() {
     );
   }
 
-  if (!user || user.role !== 'driver_partner') {
-    return (
-      <div className="p-6 lg:p-8 flex items-center justify-center min-h-[calc(100vh-64px)]">
-        <Card className="max-w-md w-full text-center p-8">
-          <CardHeader>
-            <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-            <CardTitle>Access Denied</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">You do not have permission to view this page.</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // Role gating handled by ProtectedRoute; avoid double-deny here
 
   return (
     <div className="p-6 lg:p-8 bg-gray-50 dark:bg-gray-900 min-h-screen">

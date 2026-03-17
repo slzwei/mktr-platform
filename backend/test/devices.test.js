@@ -2,7 +2,7 @@ import './setup.js'
 import crypto from 'crypto'
 import request from 'supertest'
 import { getApp, closeDb, createTestUser, createTestCampaign } from './helpers.js'
-import { Device } from '../src/models/index.js'
+import { Device, DeviceCampaignAssignment, CampaignMediaItem } from '../src/models/index.js'
 
 let app, adminToken, adminUser, agentToken
 
@@ -51,10 +51,13 @@ describe('Device list and detail', () => {
   it('GET /api/devices — hydrates campaign names', async () => {
     const campaign = await createTestCampaign(adminUser.id, {
       name: 'DeviceCampaign',
-      type: 'lead_generation',
-      ad_playlist: [{ id: 'a1', url: 'http://example.com/ad.mp4', mediaType: 'video' }]
+      type: 'lead_generation'
     })
-    await device.update({ campaignIds: [campaign.id] })
+    await DeviceCampaignAssignment.create({
+      deviceId: device.id,
+      campaignId: campaign.id,
+      sortOrder: 0
+    })
 
     const res = await request(app)
       .get('/api/devices')
@@ -109,8 +112,14 @@ describe('Device update (PATCH)', () => {
   it('PATCH /api/devices/:id — assigns valid campaigns', async () => {
     const campaign = await createTestCampaign(adminUser.id, {
       name: 'AssignableDevCamp',
-      type: 'lead_generation',
-      ad_playlist: [{ id: 'a1', url: 'http://example.com/ad.mp4', mediaType: 'video' }]
+      type: 'lead_generation'
+    })
+    // Campaigns must have media to be assignable to devices
+    await CampaignMediaItem.create({
+      campaignId: campaign.id,
+      mediaType: 'video',
+      url: 'http://example.com/ad.mp4',
+      sortOrder: 0
     })
 
     const res = await request(app)

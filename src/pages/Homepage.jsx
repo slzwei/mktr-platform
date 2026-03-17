@@ -4,7 +4,6 @@ import { getDefaultRouteForRole } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import {
   Users,
   TrendingUp,
@@ -144,7 +143,7 @@ const AnnouncementModal = () => {
             Singapore's premier marketer platform for intelligent lead generation.
             Get started with smart prospect capture and campaign management.
           </p>
-          <Link to={createPageUrl("AdminDashboard")}>
+          <Link to={"/AdminDashboard"}>
             <Button className="modal-cta">
               Get Started
               <ArrowRight className="w-4 h-4 ml-2" />
@@ -913,14 +912,14 @@ export default function Homepage() {
 
       <div className="flex flex-col sm:flex-row gap-8 justify-center mobile-button-container">
         <Link
-          to={createPageUrl("AdminDashboard")}
+          to={"/AdminDashboard"}
           className="btn-primary bg-white text-black hover:bg-gray-100 dark:hover:bg-gray-200 hover:text-black transition-all duration-300"
         >
           Get Started
           <ArrowRight className="w-4 h-4" />
         </Link>
         <Link
-          to={createPageUrl("LeadCapture")}
+          to={"/LeadCapture"}
           className="btn-primary bg-white text-black hover:bg-gray-100 dark:hover:bg-gray-200 hover:text-black transition-all duration-300"
         >
           Schedule DEMO
@@ -1046,7 +1045,7 @@ export default function Homepage() {
             Join hundreds of agents already using MKTR to capture and convert more leads.
           </p>
           <div className="mt-8">
-            <Link to={createPageUrl("AdminDashboard")} className="btn-primary bg-black text-white hover:bg-gray-800 max-w-xs mx-auto">
+            <Link to={"/AdminDashboard"} className="btn-primary bg-black text-white hover:bg-gray-800 max-w-xs mx-auto">
               Get Started Now
               <ArrowRight className="w-4 h-4" />
             </Link>
@@ -1067,8 +1066,8 @@ export default function Homepage() {
             <div>
               <h4 className="section-title mb-4 !text-white">Platform</h4>
               <ul className="space-y-2">
-                <li><Link to={createPageUrl("LeadCapture")} className="body-text text-gray-300 hover:text-white">Lead Capture</Link></li>
-                <li><Link to={createPageUrl("AdminDashboard")} className="body-text text-gray-300 hover:text-white">Dashboard</Link></li>
+                <li><Link to={"/LeadCapture"} className="body-text text-gray-300 hover:text-white">Lead Capture</Link></li>
+                <li><Link to={"/AdminDashboard"} className="body-text text-gray-300 hover:text-white">Dashboard</Link></li>
               </ul>
             </div>
             <div>
@@ -1083,7 +1082,7 @@ export default function Homepage() {
               <ul className="space-y-2">
                 <li><a href="#" className="body-text text-gray-300 hover:text-white">About Us</a></li>
                 <li><a href="#" className="body-text text-gray-300 hover:text-white">Privacy Policy</a></li>
-                <li><Link to={createPageUrl("Contact")} className="body-text text-gray-300 hover:text-white">Contact</Link></li>
+                <li><Link to={"/Contact"} className="body-text text-gray-300 hover:text-white">Contact</Link></li>
               </ul>
             </div>
           </div>

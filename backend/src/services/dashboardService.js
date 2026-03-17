@@ -31,9 +31,24 @@ export async function getOverview(userId, userRole, period = '30d') {
   }
 }
 
-// ---- Admin Stats ----
+// ---- Admin Stats (with simple TTL cache) ----
+
+let adminStatsCache = null;
+let adminStatsCacheTime = 0;
+const ADMIN_CACHE_TTL_MS = 30000; // 30 seconds
+
+/** Reset admin stats cache (useful for tests that change period between calls). */
+export function resetAdminStatsCache() {
+  adminStatsCache = null;
+  adminStatsCacheTime = 0;
+}
 
 async function getAdminStats(startDate, endDate) {
+  const now = Date.now();
+  if (adminStatsCache && (now - adminStatsCacheTime) < ADMIN_CACHE_TTL_MS) {
+    return adminStatsCache;
+  }
+
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
@@ -60,7 +75,7 @@ async function getAdminStats(startDate, endDate) {
   const userGrowth = await getUserGrowthTrend(startDate, endDate);
   const recentActivities = await getRecentActivities(10);
 
-  return {
+  const result = {
     users: { total: totalUsers, active: activeUsers, growth: userGrowth },
     campaigns: { total: totalCampaigns, active: activeCampaigns },
     prospects: { total: totalProspects, new: newProspects },
@@ -70,6 +85,10 @@ async function getAdminStats(startDate, endDate) {
     impressions: { today: impressionsToday },
     recentActivities
   };
+
+  adminStatsCache = result;
+  adminStatsCacheTime = Date.now();
+  return result;
 }
 
 // ---- Agent Stats ----
@@ -240,27 +259,43 @@ export async function getDriverCommissions(userId, period = '30d') {
 // ---- Helpers ----
 
 async function getUserGrowthTrend(startDate, endDate) {
-  const days = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+  const [results] = await sequelize.query(`
+    SELECT DATE("createdAt") AS day, COUNT(*)::int AS count
+    FROM users
+    WHERE "createdAt" BETWEEN :start AND :end
+    GROUP BY DATE("createdAt")
+    ORDER BY day
+  `, { replacements: { start: startDate, end: endDate } });
+
+  // Fill in zero-count days
+  const dayMap = new Map(results.map(r => [r.day, r.count]));
   const trend = [];
-  for (let i = 0; i < days; i++) {
-    const date = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
-    const nextDate = new Date(date.getTime() + 24 * 60 * 60 * 1000);
-    const count = await User.count({ where: { createdAt: { [Op.gte]: date, [Op.lt]: nextDate } } });
-    trend.push({ date: date.toISOString().split('T')[0], count });
+  const d = new Date(startDate);
+  while (d <= endDate) {
+    const key = d.toISOString().slice(0, 10);
+    trend.push({ date: key, count: dayMap.get(key) || 0 });
+    d.setDate(d.getDate() + 1);
   }
   return trend;
 }
 
 async function getCommissionTrend(userId, startDate, endDate) {
-  const days = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+  const whereClause = userId ? 'AND "agentId" = :userId' : '';
+  const [results] = await sequelize.query(`
+    SELECT DATE("earnedDate") AS day, COALESCE(SUM(amount), 0)::float AS total
+    FROM commissions
+    WHERE "earnedDate" BETWEEN :start AND :end ${whereClause}
+    GROUP BY DATE("earnedDate")
+    ORDER BY day
+  `, { replacements: { start: startDate, end: endDate, userId } });
+
+  const dayMap = new Map(results.map(r => [r.day, parseFloat(r.total)]));
   const trend = [];
-  for (let i = 0; i < days; i++) {
-    const date = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
-    const nextDate = new Date(date.getTime() + 24 * 60 * 60 * 1000);
-    const amount = await Commission.sum('amount', {
-      where: { agentId: userId, earnedDate: { [Op.gte]: date, [Op.lt]: nextDate } }
-    }) || 0;
-    trend.push({ date: date.toISOString().split('T')[0], amount });
+  const d = new Date(startDate);
+  while (d <= endDate) {
+    const key = d.toISOString().slice(0, 10);
+    trend.push({ date: key, amount: dayMap.get(key) || 0 });
+    d.setDate(d.getDate() + 1);
   }
   return trend;
 }
@@ -369,11 +404,61 @@ async function getCampaignAnalytics(userId, userRole, startDate, endDate, filter
   if (userRole !== 'admin') where.createdBy = userId;
   if (filters.campaignId) where.id = filters.campaignId;
 
-  const campaignPerformance = await Campaign.findAll({
+  const campaigns = await Campaign.findAll({
     where,
-    attributes: ['id', 'name', 'metrics', 'status', 'type'],
+    attributes: ['id', 'name', 'status', 'type'],
     include: [{ association: 'prospects', attributes: ['leadStatus'], separate: true }]
   });
+
+  const campaignIds = campaigns.map(c => c.id);
+
+  if (campaignIds.length === 0) {
+    return { campaignPerformance: [] };
+  }
+
+  // Bulk queries grouped by campaignId instead of N calls to computeCampaignMetrics
+  const [leadCounts, conversionCounts, scanSums, revenueSums] = await Promise.all([
+    Prospect.findAll({
+      where: { campaignId: { [Op.in]: campaignIds } },
+      attributes: ['campaignId', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+      group: ['campaignId'], raw: true
+    }),
+    Prospect.findAll({
+      where: { campaignId: { [Op.in]: campaignIds }, leadStatus: 'won' },
+      attributes: ['campaignId', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+      group: ['campaignId'], raw: true
+    }),
+    QrTag.findAll({
+      where: { campaignId: { [Op.in]: campaignIds } },
+      attributes: ['campaignId', [sequelize.fn('SUM', sequelize.col('scanCount')), 'total']],
+      group: ['campaignId'], raw: true
+    }),
+    Commission.findAll({
+      where: { campaignId: { [Op.in]: campaignIds }, status: 'paid' },
+      attributes: ['campaignId', [sequelize.fn('SUM', sequelize.col('amount')), 'total']],
+      group: ['campaignId'], raw: true
+    }),
+  ]);
+
+  const leadsMap = new Map(leadCounts.map(r => [r.campaignId, parseInt(r.count)]));
+  const convsMap = new Map(conversionCounts.map(r => [r.campaignId, parseInt(r.count)]));
+  const scansMap = new Map(scanSums.map(r => [r.campaignId, parseInt(r.total) || 0]));
+  const revMap = new Map(revenueSums.map(r => [r.campaignId, parseFloat(r.total) || 0]));
+
+  const campaignPerformance = campaigns.map(c => {
+    const plain = c.toJSON();
+    const scans = scansMap.get(c.id) || 0;
+    plain.metrics = {
+      leads: leadsMap.get(c.id) || 0,
+      conversions: convsMap.get(c.id) || 0,
+      views: scans,
+      clicks: scans,
+      revenue: revMap.get(c.id) || 0,
+      referrals: 0,
+    };
+    return plain;
+  });
+
   return { campaignPerformance };
 }
 

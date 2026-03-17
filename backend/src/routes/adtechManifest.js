@@ -1,13 +1,14 @@
 import express from 'express';
-import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 import { authenticateDevice, guardFlags } from '../middleware/deviceAuth.js';
 import { incCounter, logEvent, timeMs } from '../services/observability.js';
-import { Campaign } from '../models/index.js';
+import { Campaign, DeviceCampaignAssignment, VehicleCampaignAssignment, CampaignMediaItem } from '../models/index.js';
 import { pushService } from '../services/pushService.js';
+
+export const meta = { path: '/api/adtech', flag: 'MANIFEST_ENABLED' };
 
 const router = express.Router();
 
@@ -169,11 +170,23 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
     vehicle_wifi: wifiCreds // { ssid, password }
   };
 
-  // Logic to fetch multiple campaigns
+  // Logic to fetch multiple campaigns (reads from join table, with JSON/legacy fallbacks)
   let assignedCampaigns = [];
-  let campaignIds = device.campaignIds || []; // JSON array of UUIDs
+  let campaignIds = [];
 
-  // Backward compatibility: If campaignIds is empty but legacy campaignId exists
+  // Primary source: join table
+  const deviceAssignments = await DeviceCampaignAssignment.findAll({
+    where: { deviceId: device.id },
+    order: [['sortOrder', 'ASC']]
+  });
+  campaignIds = deviceAssignments.map(a => a.campaignId);
+
+  // Fallback 1: JSON column (for rows not yet migrated)
+  if (campaignIds.length === 0 && device.campaignIds && Array.isArray(device.campaignIds) && device.campaignIds.length > 0) {
+    campaignIds = device.campaignIds;
+  }
+
+  // Fallback 2: Legacy single campaignId column
   if (campaignIds.length === 0 && device.campaignId) {
     campaignIds.push(device.campaignId);
   }
@@ -182,11 +195,23 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
   // If device is paired to a vehicle, use vehicle's campaigns instead
   if (device.vehicleId && campaignIds.length === 0) {
     try {
-      const { Vehicle } = await import('../models/index.js');
-      const vehicle = await Vehicle.findByPk(device.vehicleId);
-      if (vehicle && vehicle.campaignIds && vehicle.campaignIds.length > 0) {
-        campaignIds = vehicle.campaignIds;
-        console.log(`[Manifest] Using vehicle ${vehicle.carplate} campaigns for device ${device.id}`);
+      // Primary: join table
+      const vehicleAssignments = await VehicleCampaignAssignment.findAll({
+        where: { vehicleId: device.vehicleId },
+        order: [['sortOrder', 'ASC']]
+      });
+      campaignIds = vehicleAssignments.map(a => a.campaignId);
+
+      // Fallback: JSON column on vehicle
+      if (campaignIds.length === 0) {
+        const { Vehicle } = await import('../models/index.js');
+        const vehicle = await Vehicle.findByPk(device.vehicleId);
+        if (vehicle && vehicle.campaignIds && vehicle.campaignIds.length > 0) {
+          campaignIds = vehicle.campaignIds;
+          console.log(`[Manifest] Using vehicle ${vehicle.carplate} campaigns (JSON fallback) for device ${device.id}`);
+        }
+      } else {
+        console.log(`[Manifest] Using vehicle campaigns (join table) for device ${device.id}`);
       }
     } catch (e) {
       console.error('[Manifest] Failed to load vehicle campaigns:', e);
@@ -197,11 +222,14 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
     assignedCampaigns = await Campaign.findAll({
       where: {
         id: campaignIds,
-        status: 'active', // Only show active campaigns
-        // [FIX] REMOVED strict `type: 'brand_awareness'` filter.
-        // We now allow ALL active campaigns (including PHV/LeadGen) to be delivered to the tablet.
-        // type: 'brand_awareness' 
-      }
+        status: 'active' // Only show active campaigns
+      },
+      include: [{
+        model: CampaignMediaItem,
+        as: 'mediaItems',
+        attributes: ['id', 'mediaType', 'url', 'durationSecs', 'sortOrder'],
+        order: [['sortOrder', 'ASC']]
+      }]
     });
   }
 
@@ -218,25 +246,23 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
 
     const combinedPlaylist = [];
     assignedCampaigns.forEach(c => {
-      if (c.ad_playlist && Array.isArray(c.ad_playlist)) {
-        // Inject campaign_id into each item so we can track it
-        const itemsWithCampaign = c.ad_playlist.map(item => {
-          // [SAFETY] Skip items without URL to prevent manifest generation crashes
-          if (!item.url) return null;
-
-          return {
-            ...item,
-            campaign_id: c.id
-          };
-        }).filter(Boolean); // Filter out nulls
-
-        combinedPlaylist.push(...itemsWithCampaign);
-      }
+      const items = c.mediaItems || [];
+      // Sort by sortOrder and inject campaign_id for tracking
+      const sorted = [...items].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      sorted.forEach(item => {
+        // [SAFETY] Skip items without URL to prevent manifest generation crashes
+        if (!item.url) return;
+        combinedPlaylist.push({
+          type: item.mediaType,
+          url: item.url,
+          duration: item.durationSecs != null ? item.durationSecs : 10, // seconds
+          campaign_id: c.id
+        });
+      });
     });
 
-    // 1. Build Playlist linked to Assets
-    // We assume the DB 'ad_playlist' stores the URL directly.
-    // We need to deduplicate URLs to create the 'assets' list.
+    // Build Playlist linked to Assets
+    // Deduplicate URLs to create the 'assets' list.
     const uniqueAssets = new Map();
 
     const manifestPlaylist = combinedPlaylist.map((item, index) => {
@@ -255,7 +281,7 @@ router.get('/v1/manifest', guardFlags('MANIFEST_ENABLED'), authenticateDevice, m
         id: `pl_${index}`,
         asset_id: assetId,
         campaign_id: item.campaign_id,
-        duration_ms: (item.duration > 1000) ? item.duration : (item.duration || 10) * 1000,
+        duration_ms: (item.duration || 10) * 1000, // duration is now always in seconds
         type: item.type
       };
     });

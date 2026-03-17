@@ -4,7 +4,6 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { useNavigate } from "react-router-dom";
 import { GOOGLE_CLIENT_ID } from "@/config/google";
@@ -31,8 +30,6 @@ export default function CustomerLogin() {
 
   // Google OAuth callback handler
   const handleGoogleCallback = async (credentialResponse) => {
-    console.log('🔍 Google OAuth callback triggered');
-    console.log('🔍 Credential response:', credentialResponse);
     
     if (!credentialResponse?.credential) {
       console.error('❌ No credential in Google response');
@@ -44,7 +41,7 @@ export default function CustomerLogin() {
     setError('');
     
     try {
-      console.log('🔍 Sending Google credential to backend...');
+
       
       // Call our backend API directly
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/auth/google`, {
@@ -57,18 +54,18 @@ export default function CustomerLogin() {
         }),
       });
       
-      console.log('🔍 Backend response status:', response.status);
+
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const result = await response.json();
-      console.log('🔍 Backend result:', result);
+
       
       if (result.success && result.data?.user) {
         const user = result.data.user;
-        console.log('✅ Login successful, user:', user);
+
         
         // Sync store state
         if (result.data.token) {
@@ -121,7 +118,6 @@ export default function CustomerLogin() {
   };
 
   const handleGoogleLogin = async () => {
-    console.log('🔍 Google login button clicked');
     setError(''); // Clear any previous errors
     
     try {
@@ -137,7 +133,7 @@ export default function CustomerLogin() {
         return;
       }
       
-      console.log('🔍 Testing Google OAuth with direct URL redirect...');
+
       
       // Instead of using One Tap, redirect directly to Google OAuth
       const clientId = GOOGLE_CLIENT_ID;
@@ -156,9 +152,7 @@ export default function CustomerLogin() {
         `include_granted_scopes=false&` +
         `state=${state}`;
       
-      console.log('🔍 Redirecting to Google OAuth URL:', googleAuthUrl);
-      console.log('🔍 Current origin:', window.location.origin);
-      console.log('🔍 Redirect URI:', window.location.origin + '/auth/google/callback');
+
       
       // Redirect to Google OAuth
       window.location.href = googleAuthUrl;
@@ -191,10 +185,6 @@ export default function CustomerLogin() {
     const initializeGoogleOAuth = () => {
       if (isInitialized) return;
       
-      console.log('🔍 Starting Google OAuth initialization...');
-      console.log('🔍 Client ID available:', !!GOOGLE_CLIENT_ID);
-      console.log('🔍 Google script loaded:', !!window.google);
-      console.log('🔍 Current URL:', window.location.origin);
       
       if (!GOOGLE_CLIENT_ID) {
         console.error('❌ GOOGLE_CLIENT_ID not found');
@@ -217,7 +207,6 @@ export default function CustomerLogin() {
         });
         
         isInitialized = true;
-        console.log('✅ Google OAuth initialized successfully');
         
         // Reset any previous state that might interfere
         window.google.accounts.id.disableAutoSelect();
@@ -230,14 +219,12 @@ export default function CustomerLogin() {
 
     // Load Google Identity Services script
     if (!window.google) {
-      console.log('🔍 Loading Google Identity Services script...');
       scriptElement = document.createElement('script');
       scriptElement.src = 'https://accounts.google.com/gsi/client';
       scriptElement.async = true;
       scriptElement.defer = true;
       
       scriptElement.onload = () => {
-        console.log('✅ Google script loaded successfully');
         // Add a small delay to ensure the script is fully initialized
         setTimeout(initializeGoogleOAuth, 100);
       };
@@ -249,7 +236,6 @@ export default function CustomerLogin() {
       
       document.head.appendChild(scriptElement);
     } else {
-      console.log('🔍 Google script already loaded');
       initializeGoogleOAuth();
     }
     
@@ -331,7 +317,7 @@ export default function CustomerLogin() {
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
         {/* Simple Header with Logo and Back Button */}
         <div className="absolute top-6 left-6 z-10">
-          <Link to={createPageUrl("Homepage")}>
+          <Link to={"/Homepage"}>
             <Button variant="outline" className="gap-2">
               <ArrowLeft className="w-4 h-4" />
               Back to Home
@@ -566,7 +552,7 @@ export default function CustomerLogin() {
                   <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
                     New to MKTR?
                   </p>
-                  <Link to={createPageUrl("Contact")}>
+                  <Link to={"/Contact"}>
                     <Button variant="outline" className="w-full">
                       Contact Us to Get Started
                     </Button>

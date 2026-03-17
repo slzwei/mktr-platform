@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
-import { createPageUrl } from "@/utils";
 import { useAuthStore } from "@/stores/authStore";
 import { getDefaultRouteForRole } from "@/lib/utils";
 
@@ -143,7 +142,7 @@ export default function SiteHeader() {
         </div>
 
         <div className="flex flex-col items-center gap-6 flex-1 justify-center px-6">
-          <Link to={createPageUrl("Homepage")} className="mobile-menu-link" onClick={toggleMenu}>
+          <Link to={"/Homepage"} className="mobile-menu-link" onClick={toggleMenu}>
             Home
           </Link>
           <a
@@ -157,7 +156,7 @@ export default function SiteHeader() {
           >
             Features
           </a>
-          <Link to={createPageUrl("Contact")} className="mobile-menu-link" onClick={toggleMenu}>
+          <Link to={"/Contact"} className="mobile-menu-link" onClick={toggleMenu}>
             Contact
           </Link>
         </div>
@@ -183,7 +182,7 @@ export default function SiteHeader() {
             </>
           ) : (
             <>
-              <Link to={createPageUrl("CustomerLogin")} onClick={toggleMenu} className="block">
+              <Link to={"/CustomerLogin"} onClick={toggleMenu} className="block">
                 <button className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider hover:bg-gray-100 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:bg-gray-700 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
                   Login
                 </button>

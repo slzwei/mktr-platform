@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -28,7 +28,6 @@ import {
     Unlink,
     Settings,
     Trash2,
-    MapPin,
     RefreshCcw,
     MonitorSmartphone,
     Pencil,
@@ -124,7 +123,7 @@ export default function AdminVehicles() {
         const url = `${import.meta.env.VITE_API_URL}/devices/events/fleet/stream?token=${token}`;
         const sse = new EventSource(url);
 
-        sse.onopen = () => console.log('✅ Connected to Fleet Stream (Vehicles View)');
+        sse.onopen = () => {};
 
         sse.addEventListener('status_change', (e) => {
             try {

@@ -1,13 +1,37 @@
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
-    AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    BarChart, Bar, Cell, PieChart, Pie
+    AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { format, subDays, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
+import { dashboard } from '@/api/client';
+import { format, subDays, eachDayOfInterval } from 'date-fns';
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b'];
 
 export default function DashboardCharts({ stats, loading }) {
+    // Fetch commission trend from analytics endpoint (server-computed daily sums).
+    const { data: commissionAnalytics } = useQuery({
+        queryKey: ['dashboard', 'analytics', 'commissions', '30d'],
+        queryFn: () => dashboard.getAnalytics('commissions', '30d'),
+        enabled: !loading,
+        staleTime: 60_000,
+    });
+
+    // All hooks must be called before any early return.
+    const commissionTrend = commissionAnalytics?.commissionTrend || [];
+    const revenueData = useMemo(() => {
+        if (commissionTrend.length > 0) {
+            return commissionTrend.map(d => ({
+                date: d.date ? format(new Date(d.date), 'MMM dd') : d.date,
+                revenue: Number(d.amount || 0),
+            }));
+        }
+        // Fallback: empty 30-day grid
+        return eachDayOfInterval({ start: subDays(new Date(), 29), end: new Date() })
+            .map(date => ({ date: format(date, 'MMM dd'), revenue: 0 }));
+    }, [commissionTrend]);
+
     if (loading) {
         return (
             <div className="grid lg:grid-cols-3 gap-6 mb-8">
@@ -17,43 +41,17 @@ export default function DashboardCharts({ stats, loading }) {
         );
     }
 
-    // --- Data Processing for Charts ---
+    // 2. Campaign Status Distribution
+    // Use overview stats when available (server-computed totals), fall back to entity list.
+    const ov = stats.overview || {};
+    const campaignsActive = ov.campaignsActive ?? (stats.campaigns || []).filter(c => c.status === 'active').length;
+    const campaignsDraft = (stats.campaigns || []).filter(c => c.status === 'draft').length;
+    const campaignsCompleted = (stats.campaigns || []).filter(c => c.status === 'completed').length;
 
-    // 1. Revenue Trend (Commissions over last 30 days)
-    const last30Days = eachDayOfInterval({
-        start: subDays(new Date(), 29),
-        end: new Date()
-    });
-
-    const revenueData = last30Days.map(date => {
-        const dayCommissions = stats.commissions.filter(c =>
-            isSameDay(new Date(c.created_date || c.created_at), date)
-        );
-        const dayTotal = dayCommissions.reduce((sum, c) => sum + (Number(c.amount_driver || 0) + Number(c.amount_fleet || 0)), 0);
-        return {
-            date: format(date, 'MMM dd'),
-            revenue: dayTotal
-        };
-    });
-
-    // 2. Prospects Growth
-    const prospectsData = last30Days.map(date => {
-        const dayProspects = stats.prospects.filter(p =>
-            isSameDay(new Date(p.created_at || p.created), date)
-        );
-        return {
-            date: format(date, 'MMM dd'),
-            count: dayProspects.length
-        };
-    });
-
-    // 3. Campaign Performance (Top 5 Active)
-    // Since we don't have individual click data attached to the campaign object in this list, 
-    // we'll visualize campaign status distribution instead for the pie chart.
     const campaignStatusData = [
-        { name: 'Active', value: stats.campaigns.filter(c => c.status === 'active').length, color: '#10b981' },
-        { name: 'Draft', value: stats.campaigns.filter(c => c.status === 'draft').length, color: '#94a3b8' },
-        { name: 'Completed', value: stats.campaigns.filter(c => c.status === 'completed').length, color: '#3b82f6' },
+        { name: 'Active', value: campaignsActive, color: '#10b981' },
+        { name: 'Draft', value: campaignsDraft, color: '#94a3b8' },
+        { name: 'Completed', value: campaignsCompleted, color: '#3b82f6' },
     ].filter(d => d.value > 0);
 
     return (

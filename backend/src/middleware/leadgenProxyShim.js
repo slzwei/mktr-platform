@@ -3,9 +3,11 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 const target = process.env.GATEWAY_INTERNAL_URL || 'http://gateway:4000';
 
 function getReqHost(req) {
-  const xfHost = (req.headers['x-forwarded-host'] || '').toString().trim().toLowerCase();
-  const host = (req.headers.host || '').toString().trim().toLowerCase();
-  return xfHost || host;
+  // Only trust x-forwarded-host if trust proxy is enabled
+  if (req.app.get('trust proxy')) {
+    return (req.headers['x-forwarded-host'] || req.headers.host || '').toString().trim().toLowerCase();
+  }
+  return (req.headers.host || '').toString().trim().toLowerCase();
 }
 
 function isSelfProxy(req) {

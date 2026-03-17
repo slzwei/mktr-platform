@@ -14,44 +14,17 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 import { bootstrapDatabase } from './database/bootstrap.js';
 import { requestId } from './middleware/requestId.js';
-import './models/CampaignPreview.js';
 
-// Import routes
-import authRoutes from './routes/auth.js';
-import userRoutes from './routes/users.js';
-import campaignRoutes from './routes/campaigns.js';
-import deviceEventsRouter from './routes/deviceEvents.js';
-import campaignPreviewRoutes from './routes/campaignPreviews.js';
-import agentRoutes from './routes/agents.js';
-import fleetRoutes from './routes/fleet.js';
-import prospectRoutes from './routes/prospects.js';
-import qrRoutes from './routes/qrcodes.js';
-import trackerRoutes from './routes/tracker.js';
+// Non-autodiscoverable middleware
 import leadCaptureBind from './routes/leadCaptureBind.js';
-import commissionRoutes from './routes/commissions.js';
-import uploadRoutes from './routes/uploads.js';
-import apkRoutes from './routes/apk.js'; // Added
-import dashboardRoutes from './routes/dashboard.js';
-import notificationRoutes from './routes/notifications.js';
-import verifyRoutes from './routes/verify.js';
-import analyticsRoutes from './routes/analytics.js';
 import leadgenProxyShim from './middleware/leadgenProxyShim.js';
-import adtechManifestRoutes from './routes/adtechManifest.js';
-import adtechBeaconRoutes from './routes/adtechBeacons.js';
-import contactRoutes from './routes/contact.js';
-import shortLinkRoutes from './routes/shortlinks.js';
-import leadPackageRoutes from './routes/leadPackages.js';
-import deviceRoutes from './routes/devices.js';
-import provisioningRoutes from './routes/provisioning.js'; // Added
-import vehicleRoutes from './routes/vehicles.js'; // Added for tablet pairing
-import webhookAdminRoutes from './routes/webhookAdmin.js';
-import agentGroupRoutes from './routes/agentGroups.js';
-import lyfeAgentRoutes from './routes/lyfeAgents.js';
-import retellRoutes from './routes/retell.js';
 import { optionalAuth } from './middleware/auth.js';
 import { logger } from './utils/logger.js';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger.js';
+
+// Route auto-loader
+import { loadRoutes } from './routes/index.js';
 
 // Load environment variables
 dotenv.config();
@@ -63,10 +36,9 @@ export const init = async (app) => {
   // Request tracing
   app.use(requestId);
 
-  // Security middleware
+  // Security middleware — disable global CORP so we can set it per-route
   app.use(helmet({
-    // Allow images and other static assets to be embedded from another origin (frontend at 5173)
-    crossOriginResourcePolicy: { policy: 'cross-origin' }
+    crossOriginResourcePolicy: false
   }));
 
   app.use(compression({
@@ -149,22 +121,38 @@ export const init = async (app) => {
   // Body parsing middleware
   // The verify callback captures the raw body for webhook signature verification (Retell, Stripe, etc.)
   app.use(express.json({
-    limit: '10mb',
+    limit: '1mb',
     verify: (req, _res, buf) => {
       if (req.originalUrl.startsWith('/api/retell/')) {
         req.rawBody = buf;
       }
     }
   }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+  // CSRF protection: Not required — API uses Bearer token authentication exclusively.
+  // Cookies (cookieParser) are used only for non-auth session attribution (sid, atk).
+  // If cookie-based auth is ever added, CSRF middleware must be implemented.
   app.use(cookieParser());
 
   // Legacy LeadGen proxy shim → forwards to gateway leadgen domain
   // This preserves existing frontend calls during a one-week grace window.
   app.use(leadgenProxyShim());
 
-  // Static file serving for uploads
-  app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+  // Static file serving for uploads — allow cross-origin embedding for images
+  app.use('/uploads', (req, res, next) => {
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  }, express.static(path.join(__dirname, '../uploads'), {
+    setHeaders: (res, filePath) => {
+      res.set('X-Content-Type-Options', 'nosniff');
+      // Force download for SVG files (prevents script execution)
+      if (filePath.endsWith('.svg')) {
+        res.set('Content-Disposition', 'attachment');
+        res.set('Content-Type', 'image/svg+xml');
+      }
+    }
+  }));
 
   // Health check endpoint
   app.get('/health', (req, res) => {
@@ -180,78 +168,18 @@ export const init = async (app) => {
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
   app.get('/api-docs.json', (req, res) => res.json(swaggerSpec));
 
-  // API Routes
-  app.use('/api/auth', authRoutes);
-  app.use('/api/users', userRoutes);
-  app.use('/api/campaigns', campaignRoutes);
-  app.use('/api/campaigns', campaignPreviewRoutes);
-  app.use('/api/previews', campaignPreviewRoutes);
-  app.use('/api/agents', agentRoutes);
-  app.use('/api/fleet', fleetRoutes);
-  app.use('/api/prospects', prospectRoutes);
-  // Tracker routes must come BEFORE generic qrcodes routes to avoid '/session' and '/track' being captured by '/:id'
-  app.use('/api/qrcodes', trackerRoutes);
-  app.use('/api/qrcodes', qrRoutes);
-
-  // Bind attribution/session for SPA lead-capture page
+  // Bind attribution/session for SPA lead-capture page (path-less middleware, must precede routes)
   app.use(leadCaptureBind);
-  app.use('/api/commissions', commissionRoutes);
-  app.use('/api/uploads', uploadRoutes);
-  app.use('/api/apk', apkRoutes); // Added
-  app.use('/api/dashboard', dashboardRoutes);
-  app.use('/api/notifications', notificationRoutes);
-  app.use('/api/verify', verifyRoutes);
-  app.use('/api/analytics', analyticsRoutes);
-  app.use('/api/contact', contactRoutes);
-  // short links: admin-minted, public redirects
-  app.use('/api/shortlinks', shortLinkRoutes);
-  app.use('/share', shortLinkRoutes);
-  app.use('/api/lead-packages', leadPackageRoutes);
-  app.use('/api/devices/events', deviceEventsRouter);
-  app.use('/api/devices', deviceRoutes);
-  app.use('/api/provision', provisioningRoutes); // Added
-  app.use('/api/vehicles', vehicleRoutes); // Added for tablet pairing
-  app.use('/api/admin/webhooks', webhookAdminRoutes);
-  app.use('/api/admin/agent-groups', agentGroupRoutes);
-  app.use('/api/lyfe', lyfeAgentRoutes);
-  app.use('/api/retell', retellRoutes);
 
+  // ── Auto-discovered API routes ──────────────────────────────────────
+  await loadRoutes(app);
 
-  // Phase C: Adtech Manifest + Beacons (behind flags)
-  if (String(process.env.MANIFEST_ENABLED || 'false').toLowerCase() === 'true') {
-    app.use('/api/adtech', adtechManifestRoutes);
-  }
-  if (String(process.env.BEACONS_ENABLED || 'true').toLowerCase() === 'true') {
-    app.use('/api/adtech', adtechBeaconRoutes);
-  }
-
-
-  // Domain-prefixed routes (feature-flagged)
-  if (String(process.env.ENABLE_DOMAIN_PREFIXES).toLowerCase() === 'true') {
-    // Health endpoints per domain
+  // Domain-prefixed health endpoints (feature-flagged)
+  if (String(process.env.ENABLE_DOMAIN_PREFIXES || 'false').toLowerCase() === 'true') {
     app.get('/api/adtech/health', (req, res) => res.json({ ok: true, service: 'adtech' }));
     app.get('/api/leadgen/health', (req, res) => res.json({ ok: true, service: 'leadgen' }));
     app.get('/api/fleet/health', (req, res) => res.json({ ok: true, service: 'fleet' }));
     app.get('/api/admin/health', (req, res) => res.json({ ok: true, service: 'admin' }));
-
-    // AdTech → campaigns, analytics, previews
-    app.use('/api/adtech/campaigns', campaignRoutes);
-    app.use('/api/adtech/previews', campaignPreviewRoutes);
-    app.use('/api/adtech/analytics', analyticsRoutes);
-
-    // LeadGen → qrcodes, tracker, prospects, agents, commissions
-    app.use('/api/leadgen/qrcodes', trackerRoutes);
-    app.use('/api/leadgen/qrcodes', qrRoutes);
-    app.use('/api/leadgen/prospects', prospectRoutes);
-    app.use('/api/leadgen/agents', agentRoutes);
-    app.use('/api/leadgen/commissions', commissionRoutes);
-
-    // Fleet → fleet, cars, drivers
-    app.use('/api/fleet', fleetRoutes);
-
-    // Admin → users (admin ops), contact stub
-    app.use('/api/admin/users', userRoutes);
-    app.use('/api/admin/contact', contactRoutes);
   }
 
   // Fallback: /t/:slug → /api/qrcodes/track/:slug with noindex/no-store

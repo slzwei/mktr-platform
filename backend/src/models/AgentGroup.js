@@ -16,16 +16,6 @@ const AgentGroup = sequelize.define('AgentGroup', {
     type: DataTypes.STRING,
     allowNull: true
   },
-  agents: {
-    type: DataTypes.JSON,
-    allowNull: false,
-    defaultValue: []
-    // Array of { phone, email, name, lyfeId }
-  },
-  agentCount: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0
-  },
   createdBy: {
     type: DataTypes.UUID,
     allowNull: false,
