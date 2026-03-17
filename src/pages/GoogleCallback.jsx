@@ -21,6 +21,14 @@ export default function GoogleCallback() {
         const state = searchParams.get('state');
         const error = searchParams.get('error');
 
+        // Validate OAuth state parameter (CSRF protection)
+        const expectedState = sessionStorage.getItem('mktr_oauth_state');
+        sessionStorage.removeItem('mktr_oauth_state');
+        if (!state || state !== expectedState) {
+          setStatus('error');
+          setMessage('Invalid OAuth state parameter. Please try logging in again.');
+          return;
+        }
 
         if (error) {
           console.error('❌ OAuth error:', error);
@@ -36,22 +44,22 @@ export default function GoogleCallback() {
           return;
         }
 
-
         setMessage('Verifying with backend...');
 
         // Send the authorization code to our backend
-        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/auth/google/callback`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            code: code,
-            state: state
-          }),
-        });
-
-
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/auth/google/callback`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              code: code,
+              state: state,
+            }),
+          }
+        );
 
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
@@ -59,10 +67,8 @@ export default function GoogleCallback() {
 
         const result = await response.json();
 
-
         if (result.success && result.data?.user) {
           const user = result.data.user;
-
 
           // Store the token and update API client + store atomically
           if (result.data.token) {
@@ -88,13 +94,11 @@ export default function GoogleCallback() {
           }
 
           navigate(targetUrl);
-
         } else {
           console.error('❌ Backend authentication failed:', result.message);
           setStatus('error');
           setMessage(result.message || 'Authentication failed');
         }
-
       } catch (error) {
         console.error('❌ Callback error:', error);
         setStatus('error');
@@ -110,16 +114,14 @@ export default function GoogleCallback() {
       <div className="min-h-screen flex items-center justify-center bg-black">
         <MKTRAnimatedLogo message="Verifying your login credentials…" />
       </div>
-    )
+    );
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white flex items-center justify-center">
       <Card className="w-full max-w-md mx-4">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-gray-900 mb-2">
-            Google Authentication
-          </CardTitle>
+          <CardTitle className="text-2xl font-bold text-gray-900 mb-2">Google Authentication</CardTitle>
         </CardHeader>
         <CardContent className="text-center space-y-4">
           {status === 'success' && (
@@ -150,5 +152,5 @@ export default function GoogleCallback() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

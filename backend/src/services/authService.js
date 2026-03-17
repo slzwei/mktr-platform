@@ -5,6 +5,11 @@ import { generateToken } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 
+// Simple in-memory login attempt tracker (resets on server restart)
+const loginAttempts = new Map();
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
+
 /**
  * Register a new user.
  * @returns {{ user: object, token: string }}
@@ -23,7 +28,7 @@ export async function register({ email, password, firstName, lastName, fullName,
     fullName: fullName || undefined,
     phone,
     role: role || 'customer',
-    emailVerificationToken: uuidv4()
+    emailVerificationToken: uuidv4(),
   });
 
   const token = generateToken(user.id);
@@ -36,18 +41,39 @@ export async function register({ email, password, firstName, lastName, fullName,
  * @returns {{ user: object, token: string }}
  */
 export async function login(email, password) {
+  // Check login lockout
+  const normalizedEmail = email.toLowerCase();
+  const attempts = loginAttempts.get(normalizedEmail);
+  if (attempts && attempts.count >= MAX_ATTEMPTS) {
+    const elapsed = Date.now() - attempts.lastAttempt;
+    if (elapsed < LOCKOUT_MS) {
+      throw new AppError('Too many login attempts. Please try again in 15 minutes.', 429);
+    }
+    // Lockout expired, reset
+    loginAttempts.delete(normalizedEmail);
+  }
+
   const user = await User.scope('withPassword').findOne({
-    where: { email }
+    where: { email },
   });
 
   if (!user) {
+    // Increment failed attempts
+    const current = loginAttempts.get(normalizedEmail) || { count: 0, lastAttempt: 0 };
+    loginAttempts.set(normalizedEmail, { count: current.count + 1, lastAttempt: Date.now() });
     throw new AppError('Invalid email or password', 401);
   }
 
   const isValidPassword = await user.comparePassword(password);
   if (!isValidPassword) {
+    // Increment failed attempts
+    const current = loginAttempts.get(normalizedEmail) || { count: 0, lastAttempt: 0 };
+    loginAttempts.set(normalizedEmail, { count: current.count + 1, lastAttempt: Date.now() });
     throw new AppError('Invalid email or password', 401);
   }
+
+  // Successful login — clear attempts
+  loginAttempts.delete(normalizedEmail);
 
   if (!user.isActive) {
     throw new AppError('Account is deactivated', 401);
@@ -112,7 +138,7 @@ export async function getProfile(userId, userRole) {
   includeOptions.push({ association: 'payout', required: false });
 
   const user = await User.findByPk(userId, {
-    include: includeOptions
+    include: includeOptions,
   });
 
   return user;
@@ -140,7 +166,7 @@ export async function updateProfile(user, { firstName, lastName, phone, avatar, 
     phone: phone || user.phone,
     avatar: avatar || user.avatar,
     dateOfBirth: dateOfBirth || user.dateOfBirth,
-    companyName: companyName || user.companyName
+    companyName: companyName || user.companyName,
   });
 
   return user;
@@ -171,7 +197,7 @@ export async function googleIdTokenLogin({ email, googleSub, name, picture }) {
       googleSub,
       lastLogin: new Date(),
       emailVerified: true,
-      password: null
+      password: null,
     });
   } else {
     if (!user.googleSub) user.googleSub = googleSub;
@@ -203,10 +229,9 @@ export async function googleOAuthCallback(code, origin) {
 
   const derivedFrontendBaseUrl = isLocalhost
     ? origin
-    : (process.env.FRONTEND_BASE_URL || origin || 'http://localhost:5173');
+    : process.env.FRONTEND_BASE_URL || origin || 'http://localhost:5173';
 
-  const finalRedirectUri = explicitRedirectUri
-    || `${derivedFrontendBaseUrl}/auth/google/callback`;
+  const finalRedirectUri = explicitRedirectUri || `${derivedFrontendBaseUrl}/auth/google/callback`;
 
   logger.debug('OAuth token exchange redirect_uri', { redirectUri: finalRedirectUri });
 
@@ -251,11 +276,8 @@ export async function googleOAuthCallback(code, origin) {
   // Find or create user — check googleSub (hard link) OR email (soft link)
   let user = await User.findOne({
     where: {
-      [Op.or]: [
-        { googleSub: googleUser.id },
-        { email: googleUser.email }
-      ]
-    }
+      [Op.or]: [{ googleSub: googleUser.id }, { email: googleUser.email }],
+    },
   });
 
   if (!user) {
@@ -272,7 +294,7 @@ export async function googleOAuthCallback(code, origin) {
       role: 'customer',
       isActive: true,
       emailVerified: true,
-      googleSub: googleUser.id
+      googleSub: googleUser.id,
     });
 
     logger.info('New user created via Google OAuth');
@@ -303,7 +325,7 @@ export async function googleOAuthCallback(code, origin) {
  */
 export async function verifyEmail(token) {
   const user = await User.findOne({
-    where: { emailVerificationToken: token }
+    where: { emailVerificationToken: token },
   });
 
   if (!user) {
@@ -312,7 +334,7 @@ export async function verifyEmail(token) {
 
   await user.update({
     emailVerified: true,
-    emailVerificationToken: null
+    emailVerificationToken: null,
   });
 
   return user;
@@ -338,7 +360,7 @@ export async function forgotPassword(email) {
 
   await user.update({
     resetPasswordToken: resetToken,
-    resetPasswordExpires: resetExpires
+    resetPasswordExpires: resetExpires,
   });
 
   return { resetToken };
@@ -355,8 +377,8 @@ export async function resetPassword(token, password) {
   const user = await User.findOne({
     where: {
       resetPasswordToken: token,
-      resetPasswordExpires: { [Op.gt]: new Date() }
-    }
+      resetPasswordExpires: { [Op.gt]: new Date() },
+    },
   });
 
   if (!user) {
@@ -366,7 +388,7 @@ export async function resetPassword(token, password) {
   await user.update({
     password,
     resetPasswordToken: null,
-    resetPasswordExpires: null
+    resetPasswordExpires: null,
   });
 
   return user;
@@ -378,7 +400,7 @@ export async function resetPassword(token, password) {
 export async function getInviteInfo(token) {
   const user = await User.findOne({
     where: { invitationToken: token },
-    attributes: ['email', 'firstName', 'lastName', 'fullName', 'phone', 'invitationExpires']
+    attributes: ['email', 'firstName', 'lastName', 'fullName', 'phone', 'invitationExpires'],
   });
 
   if (!user) {
@@ -392,7 +414,7 @@ export async function getInviteInfo(token) {
   return {
     email: user.email,
     fullName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-    phone: user.phone
+    phone: user.phone,
   };
 }
 
@@ -430,7 +452,7 @@ export async function acceptInvite({ token, email, password, fullName, phone, da
     dateOfBirth: dateOfBirth || user.dateOfBirth,
     emailVerified: true,
     invitationToken: null,
-    invitationExpires: null
+    invitationExpires: null,
   });
 
   const tokenJwt = generateToken(user.id);

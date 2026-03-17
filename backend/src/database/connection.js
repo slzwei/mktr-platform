@@ -26,22 +26,26 @@ const config = {
   define: {
     timestamps: true,
     underscored: false,
-    freezeTableName: true
+    freezeTableName: true,
   },
   dialectOptions: shouldUseSSL
     ? {
         ssl: {
           require: true,
-          rejectUnauthorized: false
-        }
+          // rejectUnauthorized: false allows self-signed certs from managed DB providers
+          // (e.g., Render, DigitalOcean). To use proper CA verification, set DB_CA_CERT
+          // env var to the PEM-encoded CA certificate string.
+          rejectUnauthorized: false,
+          ...(process.env.DB_CA_CERT ? { ca: process.env.DB_CA_CERT } : {}),
+        },
       }
     : {},
   pool: {
     max: 10,
     min: 0,
     acquire: 30000,
-    idle: 10000
-  }
+    idle: 10000,
+  },
 };
 
 // Create Sequelize instance
