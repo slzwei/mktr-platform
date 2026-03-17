@@ -5,21 +5,19 @@ import { validate, schemas } from '../middleware/validation.js';
 import * as prospectController from '../controllers/prospectController.js';
 
 export const meta = {
-  mounts: [
-    { path: '/api/prospects' },
-    { path: '/api/leadgen/prospects', flag: 'ENABLE_DOMAIN_PREFIXES' },
-  ],
+  mounts: [{ path: '/api/prospects' }, { path: '/api/leadgen/prospects', flag: 'ENABLE_DOMAIN_PREFIXES' }],
 };
 
 const router = express.Router();
 
-// Rate limiter for public lead capture endpoint
+// Rate limiter for public lead capture endpoint (disabled in test)
 const leadCaptureLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: 'Too many submissions from this IP, please try again later.'
+  skip: () => process.env.NODE_ENV === 'test',
+  message: 'Too many submissions from this IP, please try again later.',
 });
 
 // Get all prospects
