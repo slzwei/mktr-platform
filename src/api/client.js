@@ -11,22 +11,25 @@ if (!baseURL) {
 
 const API_CONFIG = {
   baseURL: baseURL || 'http://localhost:3001/api',
-  timeout: 30000
+  timeout: 30000,
 };
 
 // Storage keys
 const STORAGE_KEYS = {
   TOKEN: 'mktr_auth_token',
-  USER: 'mktr_user'
+  USER: 'mktr_user',
 };
 
 /**
- * Read the auth token directly from localStorage on every call.
- * This eliminates stale module-level variables and keeps localStorage
- * as the single persistence layer (Zustand store is the React source of truth).
+ * Read a real JWT from localStorage (backward compat fallback).
+ * With httpOnly cookie auth the stored value is typically 'authenticated'
+ * (a UI-only flag), which we skip — only return an actual JWT so the
+ * Authorization header is not sent with a bogus value.
  */
 function getToken() {
-  return localStorage.getItem(STORAGE_KEYS.TOKEN);
+  const val = localStorage.getItem(STORAGE_KEYS.TOKEN);
+  // 'authenticated' is the UI-only flag, not a real JWT
+  return val && val !== 'authenticated' ? val : null;
 }
 
 function getStoredUser() {
@@ -73,11 +76,11 @@ class APIClient {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        ...((token && !options.skipAuth) && { Authorization: `Bearer ${token}` }),
-        ...options.headers
+        ...(token && !options.skipAuth && { Authorization: `Bearer ${token}` }),
+        ...options.headers,
       },
       credentials: 'include',
-      ...options
+      ...options,
     };
 
     // Add body for POST/PUT/PATCH requests
@@ -88,9 +91,9 @@ class APIClient {
     try {
       const response = await fetch(url, config);
 
-      // Handle authentication errors
+      // Handle authentication errors — cookie is server-managed, just clear UI state
       if (response.status === 401 && !options.skipAuth) {
-        this.setToken(null);
+        localStorage.removeItem(STORAGE_KEYS.TOKEN);
         localStorage.removeItem(STORAGE_KEYS.USER);
 
         if (typeof window !== 'undefined') {
@@ -117,7 +120,7 @@ class APIClient {
         console.error('API Error Details:', {
           status: response.status,
           statusText: response.statusText,
-          data: data
+          data: data,
         });
 
         // For validation errors, include the validation details
@@ -130,9 +133,9 @@ class APIClient {
 
           // Check errors field first (where actual validation details are)
           if (data.errors && Array.isArray(data.errors)) {
-            validationErrors = data.errors.map(err => `${err.field}: ${err.message}`).join(', ');
+            validationErrors = data.errors.map((err) => `${err.field}: ${err.message}`).join(', ');
           } else if (Array.isArray(data.details)) {
-            validationErrors = data.details.map(err => err.message || err).join(', ');
+            validationErrors = data.details.map((err) => err.message || err).join(', ');
           } else if (typeof data.details === 'string') {
             validationErrors = data.details;
           } else if (data.details?.message) {
@@ -165,7 +168,7 @@ class APIClient {
   // HTTP method shortcuts
   async get(endpoint, params = {}) {
     // Guard against non-object params (e.g., strings like '-created_date')
-    const safeParams = (params && typeof params === 'object' && !Array.isArray(params)) ? params : {};
+    const safeParams = params && typeof params === 'object' && !Array.isArray(params) ? params : {};
     const queryString = new URLSearchParams(safeParams).toString();
     const url = queryString ? `${endpoint}?${queryString}` : endpoint;
     return this.request(url);
@@ -195,17 +198,19 @@ class APIClient {
     const config = {
       method: 'POST',
       headers: {
-        ...(token && { Authorization: `Bearer ${token}` })
+        ...(token && { Authorization: `Bearer ${token}` }),
         // Don't set Content-Type for FormData - browser will set it with boundary
       },
-      body: formData
+      credentials: 'include',
+      body: formData,
     };
 
     try {
       const response = await fetch(url, config);
 
       if (response.status === 401) {
-        this.setToken(null);
+        localStorage.removeItem(STORAGE_KEYS.TOKEN);
+        localStorage.removeItem(STORAGE_KEYS.USER);
         throw new Error('Authentication required');
       }
 
@@ -230,24 +235,22 @@ export const apiClient = new APIClient();
  * Authentication API
  */
 export const auth = {
-  // Login user
+  // Login user — token now set as httpOnly cookie by the server
   async login(email, password) {
     const response = await apiClient.post('/auth/login', { email, password });
 
-    if (response.success && response.data.token) {
-      apiClient.setToken(response.data.token);
+    if (response.success && response.data.user) {
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
     }
 
     return response;
   },
 
-  // Google OAuth login
+  // Google OAuth login — token now set as httpOnly cookie by the server
   async googleLogin(credential) {
     const response = await apiClient.post('/auth/google', { credential });
 
-    if (response.success && response.data.token) {
-      apiClient.setToken(response.data.token);
+    if (response.success && response.data.user) {
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
     } else {
       console.error('AUTH: Google login failed:', response);
@@ -256,12 +259,11 @@ export const auth = {
     return response;
   },
 
-  // Register user
+  // Register user — token now set as httpOnly cookie by the server
   async register(userData) {
     const response = await apiClient.post('/auth/register', userData);
 
-    if (response.success && response.data.token) {
-      apiClient.setToken(response.data.token);
+    if (response.success && response.data.user) {
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
     }
 
@@ -271,10 +273,14 @@ export const auth = {
   // Accept agent invite
   async acceptInvite({ token, email, password, full_name, dateOfBirth, phone }) {
     const response = await apiClient.post('/auth/accept-invite', {
-      token, email, password, full_name, dateOfBirth, phone
+      token,
+      email,
+      password,
+      full_name,
+      dateOfBirth,
+      phone,
     });
-    if (response.success && response.data?.token) {
-      apiClient.setToken(response.data.token);
+    if (response.success && response.data?.user) {
       localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.data.user));
     }
     return response;
@@ -332,9 +338,10 @@ export const auth = {
     }
   },
 
-  // Logout
+  // Logout — server clears the httpOnly cookie; we just clean up localStorage
   logout() {
-    apiClient.setToken(null);
+    // Best-effort POST to clear the httpOnly cookie server-side
+    apiClient.post('/auth/logout', {}).catch(() => {});
     localStorage.removeItem(STORAGE_KEYS.USER);
     localStorage.removeItem(STORAGE_KEYS.TOKEN);
 
@@ -343,18 +350,20 @@ export const auth = {
       if (typeof window !== 'undefined' && window.google?.accounts?.id) {
         window.google.accounts.id.disableAutoSelect();
       }
-    } catch (_) { /* Google SDK may not be loaded */ }
+    } catch (_) {
+      /* Google SDK may not be loaded */
+    }
   },
 
-  // Check if user is authenticated
+  // Check if user is authenticated (checks for either a real JWT or the UI flag)
   isAuthenticated() {
-    return !!getToken();
+    return !!localStorage.getItem(STORAGE_KEYS.TOKEN);
   },
 
   // Get current user without API call — reads from localStorage only
   getUser() {
     return getStoredUser();
-  }
+  },
 };
 
 /**
@@ -628,7 +637,7 @@ export const entities = {
   FleetOwner: new FleetOwnerEntity(),
   Driver: new DriverEntity(),
   LeadPackage: new LeadPackageEntity(),
-  User: new UserEntity()
+  User: new UserEntity(),
 };
 
 /**
@@ -649,7 +658,7 @@ export const functions = {
   // Increment scan count
   async incrementScanCount(qrTagId, metadata = {}) {
     return entities.QrTag.recordScan(qrTagId, metadata);
-  }
+  },
 };
 
 /**
@@ -688,8 +697,8 @@ export const integrations = {
     async InvokeLLM(prompt, options = {}) {
       console.warn('InvokeLLM integration not implemented - use your AI service');
       return { success: false, message: 'LLM integration not implemented' };
-    }
-  }
+    },
+  },
 };
 
 /**
@@ -704,7 +713,7 @@ export const dashboard = {
   async getAnalytics(type, period = '30d') {
     const response = await apiClient.get('/dashboard/analytics', { type, period });
     return response.data;
-  }
+  },
 };
 
 /**
@@ -717,7 +726,7 @@ export const notifications = {
     if (since) params.since = since;
     const response = await apiClient.get('/notifications', params);
     return response.data?.notifications || [];
-  }
+  },
 };
 
 /**
@@ -757,7 +766,7 @@ export const agents = {
   async getLeaderboard(params = {}) {
     const response = await apiClient.get('/agents/leaderboard/performance', params);
     return response.data;
-  }
+  },
 };
 
 /**
@@ -767,16 +776,16 @@ export const fleet = {
   async getStats() {
     const response = await apiClient.get('/fleet/stats/overview');
     return response.data;
-  }
+  },
 };
 
-// Initialize authentication on module load — validate stored token
+// Initialize authentication on module load — validate session via cookie
 if (typeof window !== 'undefined') {
-  const token = getToken();
-  if (token) {
-    // Token is already in localStorage; verify it's still valid by loading user
-    auth.getCurrentUser().catch(() => {
-      // Silently clear local auth if token is invalid
+  const storedUser = getStoredUser();
+  if (storedUser) {
+    // User cached in localStorage; verify cookie is still valid by fetching profile
+    auth.getCurrentUser(true).catch(() => {
+      // Cookie expired or invalid — clear local UI state
       localStorage.removeItem(STORAGE_KEYS.USER);
       localStorage.removeItem(STORAGE_KEYS.TOKEN);
     });
@@ -793,7 +802,7 @@ export const mktrAPI = {
   notifications,
   agents,
   fleet,
-  client: apiClient
+  client: apiClient,
 };
 
 // Default export for convenience

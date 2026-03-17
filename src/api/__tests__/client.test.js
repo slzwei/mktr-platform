@@ -5,9 +5,15 @@ const localStorageMock = (() => {
   let store = {};
   return {
     getItem: vi.fn((key) => store[key] ?? null),
-    setItem: vi.fn((key, value) => { store[key] = String(value); }),
-    removeItem: vi.fn((key) => { delete store[key]; }),
-    clear: vi.fn(() => { store = {}; }),
+    setItem: vi.fn((key, value) => {
+      store[key] = String(value);
+    }),
+    removeItem: vi.fn((key) => {
+      delete store[key];
+    }),
+    clear: vi.fn(() => {
+      store = {};
+    }),
   };
 })();
 Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock, writable: true });
@@ -46,32 +52,25 @@ describe('auth module', () => {
   });
 
   describe('auth.login', () => {
-    it('stores token and user in localStorage on success', async () => {
+    it('stores user in localStorage on success (token via httpOnly cookie)', async () => {
       const user = { id: 'u-1', email: 'a@b.com' };
-      fetchMock.mockResolvedValueOnce(
-        fakeResponse({ success: true, data: { token: 'tok-1', user } })
-      );
+      fetchMock.mockResolvedValueOnce(fakeResponse({ success: true, data: { token: 'tok-1', user } }));
 
       const result = await auth.login('a@b.com', 'pass');
 
       expect(result.success).toBe(true);
-      expect(localStorageMock.setItem).toHaveBeenCalledWith('mktr_auth_token', 'tok-1');
+      // Token is now set as httpOnly cookie by the server, not stored in localStorage
       expect(localStorageMock.setItem).toHaveBeenCalledWith('mktr_user', JSON.stringify(user));
     });
 
     it('does not store token when login fails', async () => {
-      fetchMock.mockResolvedValueOnce(
-        fakeResponse({ success: false, message: 'Invalid credentials' })
-      );
+      fetchMock.mockResolvedValueOnce(fakeResponse({ success: false, message: 'Invalid credentials' }));
 
       const result = await auth.login('a@b.com', 'wrong');
 
       expect(result.success).toBe(false);
       // setItem should not have been called for token
-      expect(localStorageMock.setItem).not.toHaveBeenCalledWith(
-        'mktr_auth_token',
-        expect.anything()
-      );
+      expect(localStorageMock.setItem).not.toHaveBeenCalledWith('mktr_auth_token', expect.anything());
     });
   });
 
@@ -124,9 +123,7 @@ describe('APIClient request auth headers', () => {
   it('includes Authorization header when token exists', async () => {
     apiClient.setToken('my-token');
 
-    fetchMock.mockResolvedValueOnce(
-      fakeResponse({ success: true, data: {} })
-    );
+    fetchMock.mockResolvedValueOnce(fakeResponse({ success: true, data: {} }));
 
     await apiClient.get('/test');
 
@@ -135,9 +132,7 @@ describe('APIClient request auth headers', () => {
   });
 
   it('omits Authorization header when no token', async () => {
-    fetchMock.mockResolvedValueOnce(
-      fakeResponse({ success: true, data: {} })
-    );
+    fetchMock.mockResolvedValueOnce(fakeResponse({ success: true, data: {} }));
 
     await apiClient.get('/test');
 
@@ -154,9 +149,7 @@ describe('APIClient 401 handling', () => {
   });
 
   it('clears auth and throws on 401 response', async () => {
-    fetchMock.mockResolvedValueOnce(
-      fakeResponse({ message: 'Unauthorized' }, { status: 401 })
-    );
+    fetchMock.mockResolvedValueOnce(fakeResponse({ message: 'Unauthorized' }, { status: 401 }));
 
     await expect(apiClient.get('/protected')).rejects.toThrow('Authentication required');
 

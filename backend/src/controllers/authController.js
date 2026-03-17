@@ -3,6 +3,7 @@ import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import * as authService from '../services/authService.js';
 import * as onboardingService from '../services/onboardingService.js';
+import { setAuthCookie, clearAuthCookie } from '../utils/authCookie.js';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -14,7 +15,7 @@ export const googleLogin = async (req, res) => {
     if (!credential) {
       return res.status(400).json({
         success: false,
-        message: 'Missing Google credential'
+        message: 'Missing Google credential',
       });
     }
 
@@ -30,7 +31,7 @@ export const googleLogin = async (req, res) => {
     if (!email || !googleSub) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid Google token payload'
+        message: 'Invalid Google token payload',
       });
     }
 
@@ -39,9 +40,10 @@ export const googleLogin = async (req, res) => {
       email,
       googleSub,
       name: payload.name,
-      picture: payload.picture
+      picture: payload.picture,
     });
 
+    setAuthCookie(res, result.token);
     return res.json({
       success: true,
       message: 'Google authentication successful',
@@ -56,7 +58,7 @@ export const googleLogin = async (req, res) => {
           lastName: result.user.lastName,
           avatarUrl: result.user.avatarUrl,
           isActive: result.user.isActive,
-          lastLogin: result.user.lastLogin
+          lastLogin: result.user.lastLogin,
         },
       },
     });
@@ -67,14 +69,14 @@ export const googleLogin = async (req, res) => {
     if (err.message && err.message.includes('Token used too late')) {
       return res.status(401).json({
         success: false,
-        message: 'Google token has expired. Please try again.'
+        message: 'Google token has expired. Please try again.',
       });
     }
 
     if (err.message && err.message.includes('Wrong recipient')) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid Google token audience.'
+        message: 'Invalid Google token audience.',
       });
     }
 
@@ -82,13 +84,13 @@ export const googleLogin = async (req, res) => {
     if (err.statusCode && err.statusCode !== 500) {
       return res.status(err.statusCode).json({
         success: false,
-        message: err.message
+        message: err.message,
       });
     }
 
     return res.status(401).json({
       success: false,
-      message: 'Google authentication failed. Please try again.'
+      message: 'Google authentication failed. Please try again.',
     });
   }
 };
@@ -124,16 +126,17 @@ export const register = asyncHandler(async (req, res) => {
     lastName,
     fullName: fullName || full_name || undefined,
     phone,
-    role
+    role,
   });
 
+  setAuthCookie(res, result.token);
   res.status(201).json({
     success: true,
     message: 'User registered successfully',
     data: {
       user: result.user.toJSON(),
-      token: result.token
-    }
+      token: result.token,
+    },
   });
 });
 
@@ -142,13 +145,14 @@ export const login = asyncHandler(async (req, res) => {
 
   const result = await authService.login(email, password);
 
+  setAuthCookie(res, result.token);
   res.json({
     success: true,
     message: 'Login successful',
     data: {
       user: result.user.toJSON(),
-      token: result.token
-    }
+      token: result.token,
+    },
   });
 });
 
@@ -157,7 +161,7 @@ export const getProfile = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: { user }
+    data: { user },
   });
 });
 
@@ -165,13 +169,19 @@ export const updateProfile = asyncHandler(async (req, res) => {
   const { firstName, lastName, phone, avatar, dateOfBirth, companyName, email } = req.body;
 
   const user = await authService.updateProfile(req.user, {
-    firstName, lastName, phone, avatar, dateOfBirth, companyName, email
+    firstName,
+    lastName,
+    phone,
+    avatar,
+    dateOfBirth,
+    companyName,
+    email,
   });
 
   res.json({
     success: true,
     message: 'Profile updated successfully',
-    data: { user: user.toJSON() }
+    data: { user: user.toJSON() },
   });
 });
 
@@ -182,17 +192,18 @@ export const changePassword = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    message: 'Password changed successfully'
+    message: 'Password changed successfully',
   });
 });
 
 export const refreshToken = asyncHandler(async (req, res) => {
   const result = authService.refreshToken(req.user.id);
 
+  setAuthCookie(res, result.token);
   res.json({
     success: true,
     message: 'Token refreshed successfully',
-    data: { token: result.token }
+    data: { token: result.token },
   });
 });
 
@@ -211,13 +222,14 @@ export const googleOAuthCallback = asyncHandler(async (req, res) => {
     const origin = req.get('origin');
     const result = await authService.googleOAuthCallback(code, origin);
 
+    setAuthCookie(res, result.token);
     res.json({
       success: true,
       message: 'Google authentication successful',
       data: {
         user: result.user.toJSON(),
-        token: result.token
-      }
+        token: result.token,
+      },
     });
   } catch (error) {
     logger.error('Google OAuth callback error', { error: error?.message || String(error) });
@@ -228,7 +240,7 @@ export const googleOAuthCallback = asyncHandler(async (req, res) => {
 export const googleConfigCheck = (req, res) => {
   res.json({
     success: true,
-    data: { googleClientId: !!process.env.GOOGLE_CLIENT_ID }
+    data: { googleClientId: !!process.env.GOOGLE_CLIENT_ID },
   });
 };
 
@@ -239,7 +251,7 @@ export const verifyEmail = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    message: 'Email verified successfully'
+    message: 'Email verified successfully',
   });
 });
 
@@ -252,7 +264,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   // Use a generic message to prevent email enumeration
   res.json({
     success: true,
-    message: 'If an account with that email exists, a password reset link has been sent.'
+    message: 'If an account with that email exists, a password reset link has been sent.',
   });
 });
 
@@ -264,7 +276,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    message: 'Password reset successfully'
+    message: 'Password reset successfully',
   });
 });
 
@@ -275,7 +287,7 @@ export const getInviteInfo = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: info
+    data: info,
   });
 });
 
@@ -288,20 +300,22 @@ export const acceptInvite = asyncHandler(async (req, res) => {
     password,
     fullName: full_name,
     phone,
-    dateOfBirth
+    dateOfBirth,
   });
 
+  setAuthCookie(res, result.token);
   res.json({
     success: true,
     message: 'Invitation accepted',
-    data: { user: result.user.toJSON(), token: result.token }
+    data: { user: result.user.toJSON(), token: result.token },
   });
 });
 
 export const logout = asyncHandler(async (req, res) => {
+  clearAuthCookie(res);
   res.json({
     success: true,
-    message: 'Logged out successfully'
+    message: 'Logged out successfully',
   });
 });
 
@@ -319,7 +333,10 @@ export const savePayout = asyncHandler(async (req, res) => {
   const { method, paynowId, bankName, bankAccount } = req.body;
 
   const payout = await onboardingService.savePayout(req.user.id, {
-    method, paynowId, bankName, bankAccount
+    method,
+    paynowId,
+    bankName,
+    bankAccount,
   });
 
   res.json({ success: true, data: { payout } });
