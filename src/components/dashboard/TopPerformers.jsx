@@ -14,8 +14,9 @@ export default function TopPerformers({ prospects }) {
 
       const agent = p.assignedAgent || p.assigned_agent;
 
-      // Skip the system agent (fallback for unassigned prospects)
-      if (agent?.email === 'system@mktr.local') return;
+      // Skip prospects with no agent record (system agent, deleted users)
+      if (!agent) return;
+      if (agent.email === 'system@mktr.local') return;
 
       if (!agentMap[agentId]) {
         const name = formatName(agent) || `Agent ${agentId.slice(0, 8)}`;
