@@ -19,9 +19,9 @@ jobs:
       postgres:
         image: postgres:15-alpine
         env:
-          POSTGRES_DB: mktr_test
-          POSTGRES_USER: mktr
-          POSTGRES_PASSWORD: mktr
+          POSTGRES_DB: mktr_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -67,12 +67,12 @@ jobs:
         env:
           NODE_ENV: test
           DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: mktr_test
-          DB_USER: mktr
-          DB_PASSWORD: mktr
-          JWT_SECRET: test-jwt-secret
-          RETELL_WEBHOOK_SECRET: test-retell-secret
+          DB_PORT: "5432"
+          DB_NAME: mktr_ci
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          JWT_SECRET: ${{ vars.TEST_JWT_SECRET || 'ci-placeholder-not-a-real-secret' }}
+          RETELL_WEBHOOK_SECRET: ${{ vars.TEST_RETELL_SECRET || 'ci-placeholder-retell' }}
           WEBHOOK_ENABLED: "false"
 
       - name: Build frontend

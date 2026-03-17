@@ -8,6 +8,12 @@ on:
 
 env:
   NODE_VERSION: "20"
+  # Test-only credentials — not used in production
+  TEST_DB_HOST: localhost
+  TEST_DB_PORT: "5432"
+  TEST_DB_NAME: mktr_ci
+  TEST_DB_USER: postgres
+  TEST_DB_PASSWORD: postgres
 
 jobs:
   backend-test:
@@ -18,9 +24,9 @@ jobs:
       postgres:
         image: postgres:15-alpine
         env:
-          POSTGRES_DB: mktr_test
-          POSTGRES_USER: mktr
-          POSTGRES_PASSWORD: mktr
+          POSTGRES_DB: mktr_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -28,6 +34,17 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+
+    env:
+      NODE_ENV: test
+      JWT_SECRET: ${{ vars.TEST_JWT_SECRET || 'ci-placeholder-not-a-real-secret' }}
+      RETELL_WEBHOOK_SECRET: ${{ vars.TEST_RETELL_SECRET || 'ci-placeholder-retell' }}
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: mktr_ci
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      WEBHOOK_ENABLED: "false"
 
     steps:
       - uses: actions/checkout@v4
@@ -43,38 +60,12 @@ jobs:
 
       - name: Run unit tests
         run: cd backend && npm test -- --testPathPattern="test/unit/"
-        env:
-          NODE_ENV: test
-          JWT_SECRET: test-jwt-secret
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: mktr_test
-          DB_USER: mktr
-          DB_PASSWORD: mktr
 
       - name: Run integration tests
         run: cd backend && npm test -- --testPathPattern="test/(integration/|[^/]+\\.test\\.js)"
-        env:
-          NODE_ENV: test
-          JWT_SECRET: test-jwt-secret
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: mktr_test
-          DB_USER: mktr
-          DB_PASSWORD: mktr
-          RETELL_WEBHOOK_SECRET: test-retell-secret
-          WEBHOOK_ENABLED: "false"
 
       - name: Run migration tests
         run: cd backend && npm test -- --testPathPattern="test/migrations"
-        env:
-          NODE_ENV: test
-          JWT_SECRET: test-jwt-secret
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: mktr_test
-          DB_USER: mktr
-          DB_PASSWORD: mktr
 
   frontend-test:
     name: Frontend Tests
