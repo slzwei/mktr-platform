@@ -1,0 +1,213 @@
+import crypto from 'crypto';
+import fetch from 'node-fetch';
+import { Campaign, Verification } from '../models/index.js';
+import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
+import { AppError } from '../middleware/errorHandler.js';
+import { logger } from '../utils/logger.js';
+
+// Initialize SNS Client
+const snsClient = new SNSClient({
+  region: process.env.AWS_REGION || 'us-east-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+  }
+});
+
+// Helper to generate 6-digit code using cryptographically secure randomness
+const generateCode = () => crypto.randomInt(100000, 1000000).toString();
+
+// Helper to send WhatsApp via Meta Graph API
+const sendWhatsAppOtpMeta = async (phone, code) => {
+  const phoneId = process.env.META_WA_PHONE_NUMBER_ID;
+  const accessToken = process.env.META_WA_ACCESS_TOKEN;
+
+  if (!phoneId || !accessToken) {
+    throw new Error('Meta WhatsApp credentials missing');
+  }
+
+  const to = phone.replace('+', '');
+  const url = `https://graph.facebook.com/v17.0/${phoneId}/messages`;
+
+  const body = {
+    messaging_product: "whatsapp",
+    to: to,
+    type: "template",
+    template: {
+      name: "auth_otp",
+      language: { code: "en_US" },
+      components: [
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: code }
+          ]
+        },
+        {
+          type: "button",
+          sub_type: "url",
+          index: 0,
+          parameters: [
+            { type: "text", text: code }
+          ]
+        }
+      ]
+    }
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const errData = await response.json();
+    throw new Error(`Meta API Error: ${JSON.stringify(errData)}`);
+  }
+
+  return await response.json();
+};
+
+/**
+ * Send a verification code via SMS or WhatsApp.
+ */
+export async function sendVerificationCode({ phone, countryCode = '+65', campaignId }) {
+  if (!phone) throw new AppError('Phone is required', 400);
+
+  // STRICT VALIDATION: Only allow Singapore numbers (+65)
+  if (countryCode !== '+65') {
+    throw new AppError('Only Singapore (+65) phone numbers are supported.', 400);
+  }
+
+  const fullPhone = `${countryCode}${phone}`;
+
+  // Double safety check on the formatted string
+  if (!fullPhone.startsWith('+65')) {
+    throw new AppError('Invalid Singapore phone number format.', 400);
+  }
+
+  const code = generateCode();
+
+  // Determine Channel
+  let channel = 'sms';
+  if (campaignId) {
+    const campaign = await Campaign.findByPk(campaignId);
+    if (campaign?.design_config?.otpChannel === 'whatsapp') {
+      channel = 'whatsapp';
+    }
+  }
+
+  logger.info('Sending OTP', { channel: channel.toUpperCase() });
+
+  try {
+    // 1. Save to DB (upsert) - Expires in 10 minutes
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await Verification.upsert({
+      phone: fullPhone,
+      code,
+      expiresAt,
+      attempts: 0
+    });
+
+    // 2. Send via Channel
+    let messageId;
+    if (channel === 'whatsapp') {
+      const waResponse = await sendWhatsAppOtpMeta(fullPhone, code);
+      messageId = waResponse.messages?.[0]?.id;
+      logger.info('WhatsApp sent', { phone: fullPhone, messageId });
+    } else {
+      // SMS (SNS)
+      const messageAttributes = {
+        'AWS.SNS.SMS.SMSType': {
+          DataType: 'String',
+          StringValue: 'Transactional'
+        }
+      };
+
+      if (process.env.AWS_SNS_SENDER_ID) {
+        messageAttributes['AWS.SNS.SMS.SenderID'] = {
+          DataType: 'String',
+          StringValue: process.env.AWS_SNS_SENDER_ID
+        };
+      }
+
+      const command = new PublishCommand({
+        PhoneNumber: fullPhone,
+        Message: `Your verification code is: ${code}`,
+        MessageAttributes: messageAttributes
+      });
+      const response = await snsClient.send(command);
+      messageId = response.MessageId;
+      logger.info('SMS sent', { phone: fullPhone, messageId });
+    }
+
+    return { status: 'pending', messageId };
+  } catch (err) {
+    logger.error(`Failed to send ${channel}`, { error: err?.message || String(err) });
+    throw new AppError(`Failed to send code: ${err.message}`, 500);
+  }
+}
+
+/**
+ * Check a verification code against the stored record.
+ */
+export async function checkVerificationCode({ phone, code, countryCode = '+65' }) {
+  if (!phone || !code) throw new AppError('Phone and code are required', 400);
+
+  const fullPhone = `${countryCode}${phone}`;
+
+  const record = await Verification.findByPk(fullPhone);
+
+  if (!record) {
+    return {
+      valid: false,
+      reason: 'not_found',
+      message: 'Verification code not found or expired'
+    };
+  }
+
+  // Check max attempts
+  if (record.attempts >= 5) {
+    await record.destroy();
+    return {
+      valid: false,
+      reason: 'max_attempts',
+      message: 'Too many failed attempts. Request a new code.'
+    };
+  }
+
+  // Check expiration
+  if (new Date() > record.expiresAt) {
+    await record.destroy();
+    return {
+      valid: false,
+      reason: 'expired',
+      message: 'Verification code expired'
+    };
+  }
+
+  // Check code match
+  if (record.code !== code) {
+    record.attempts += 1;
+    await record.save();
+    return {
+      valid: false,
+      reason: 'mismatch',
+      message: 'Invalid verification code'
+    };
+  }
+
+  // Valid — destroy record to prevent reuse
+  await record.destroy();
+
+  return {
+    valid: true,
+    status: 'approved',
+    verified: true
+  };
+}

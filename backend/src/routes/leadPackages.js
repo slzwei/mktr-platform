@@ -1,283 +1,30 @@
 import express from 'express';
-import { Op } from 'sequelize';
-import { LeadPackage, LeadPackageAssignment, User, Campaign, sequelize } from '../models/index.js';
-import { getTenantId } from '../middleware/tenant.js';
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
-import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import * as ctrl from '../controllers/leadPackageController.js';
+
+export const meta = { path: '/api/lead-packages' };
 
 const router = express.Router();
 
-/**
- * @route GET /api/lead-packages
- * @desc Get all lead packages (Templates)
- * @access Admin only (or Agents to view catalog)
- */
-router.get('/', authenticateToken, asyncHandler(async (req, res) => {
-    const { status, campaignId } = req.query;
+// GET /api/lead-packages
+router.get('/', authenticateToken, ctrl.listPackages);
 
-    const where = {};
-    if (status) where.status = status;
-    if (campaignId) where.campaignId = campaignId;
+// POST /api/lead-packages
+router.post('/', authenticateToken, requireAgentOrAdmin, ctrl.createPackage);
 
-    // If agent, only show active and public packages
-    if (req.user.role === 'agent') {
-        where.status = 'active';
-        where.isPublic = true;
-    }
+// POST /api/lead-packages/assign
+router.post('/assign', authenticateToken, requireAgentOrAdmin, ctrl.assignPackage);
 
-    const packages = await LeadPackage.findAll({
-        where,
-        include: [
-            {
-                model: Campaign,
-                as: 'campaign',
-                attributes: ['id', 'name', 'status']
-            }
-        ],
-        order: [['createdAt', 'DESC']]
-    });
+// GET /api/lead-packages/assignments/:agentId
+router.get('/assignments/:agentId', authenticateToken, ctrl.getAgentAssignments);
 
-    res.json({
-        success: true,
-        data: { packages }
-    });
-}));
+// DELETE /api/lead-packages/assignments/:id
+router.delete('/assignments/:id', authenticateToken, requireAgentOrAdmin, ctrl.deleteAssignment);
 
-/**
- * @route POST /api/lead-packages
- * @desc Create a new lead package template
- * @access Admin only
- */
-router.post('/', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
-    if (req.user.role !== 'admin') {
-        throw new AppError('Access denied', 403);
-    }
+// PATCH /api/lead-packages/assignments/:id
+router.patch('/assignments/:id', authenticateToken, requireAgentOrAdmin, ctrl.updateAssignment);
 
-    const { name, price, leadCount, campaignId, type, start_date, end_date } = req.body;
-
-    // Basic validation
-    if (!name || price === undefined || price === null || !leadCount || !campaignId) {
-        throw new AppError('Missing required fields', 400);
-    }
-
-    const pkg = await LeadPackage.create({
-        name,
-        price,
-        leadCount,
-        campaignId,
-        type: type || 'basic',
-        // Add temporary fields if model supports them or ignore if strict
-        // Assuming backend model matches the one seen earlier (which didn't have start/end date explicitly unless in JSON/other)
-        // Actually the model I saw earlier had `validityPeriod`. `start_date` / `end_date` were in the dialog.
-        // For now we map strictly to the model. 
-        createdBy: req.user.id,
-        status: 'active'
-    });
-
-    res.status(201).json({
-        success: true,
-        data: { package: pkg }
-    });
-}));
-
-import { sendPackageAssignmentEmail } from '../services/mailer.js';
-
-/**
- * @route POST /api/lead-packages/assign
- * @desc Assign a package to an agent
- * @access Admin only
- */
-router.post('/assign', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
-    if (req.user.role !== 'admin') {
-        throw new AppError('Access denied', 403);
-    }
-
-    const { agentId, packageId } = req.body;
-
-    if (!agentId || !packageId) {
-        throw new AppError('Agent ID and Package ID are required', 400);
-    }
-
-    const agent = await User.findByPk(agentId);
-    if (!agent) throw new AppError('Agent not found', 404);
-
-    const pkg = await LeadPackage.findByPk(packageId, {
-        include: [{
-            model: Campaign,
-            as: 'campaign',
-            attributes: ['name']
-        }]
-    });
-    if (!pkg) throw new AppError('Package not found', 404);
-
-    // Snapshot values
-    const assignment = await LeadPackageAssignment.create({
-        agentId,
-        leadPackageId: packageId,
-        leadsTotal: pkg.leadCount,
-        leadsRemaining: pkg.leadCount,
-        priceSnapshot: pkg.price,
-        status: 'active',
-        purchaseDate: new Date()
-    });
-
-    // Send email notification (async, don't block response)
-    sendPackageAssignmentEmail(agent, {
-        name: pkg.name,
-        campaignName: pkg.campaign ? pkg.campaign.name : 'N/A',
-        leadCount: pkg.leadCount
-    }).catch(err => console.error('Failed to send package assignment email:', err));
-
-    res.status(201).json({
-        success: true,
-        message: 'Package assigned successfully',
-        data: { assignment }
-    });
-}));
-
-/**
- * @route GET /api/lead-packages/assignments/:agentId
- * @desc Get assignments for a specific agent
- * @access Admin or the Agent themselves
- */
-router.get('/assignments/:agentId', authenticateToken, asyncHandler(async (req, res) => {
-    const { agentId } = req.params;
-    console.log(`[DEBUG] GET assignments for agentId: ${agentId}, requester: ${req.user.id} (${req.user.role})`);
-
-    // Authorization check
-    if (req.user.role !== 'admin' && req.user.id !== agentId) {
-        console.error(`[DEBUG] Access denied. user.id ${req.user.id} !== agentId ${agentId}`);
-        throw new AppError('Access denied', 403);
-    }
-
-    const assignments = await LeadPackageAssignment.findAll({
-        where: { agentId },
-        include: [
-            {
-                model: LeadPackage,
-                as: 'package',
-                attributes: ['name', 'description'],
-                include: [{
-                    model: Campaign,
-                    as: 'campaign',
-                    attributes: ['id', 'name']
-                }]
-            }
-        ],
-        order: [['purchaseDate', 'DESC']]
-    });
-    console.log(`[DEBUG] Found ${assignments.length} assignments`);
-
-    res.json({
-        success: true,
-        data: { assignments }
-    });
-}));
-
-/**
- * @route DELETE /api/lead-packages/assignments/:id
- * @desc Delete a package assignment
- * @access Admin only
- */
-router.delete('/assignments/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
-    if (req.user.role !== 'admin') {
-        throw new AppError('Access denied', 403);
-    }
-
-    const { id } = req.params;
-    const assignment = await LeadPackageAssignment.findByPk(id);
-
-    if (!assignment) {
-        throw new AppError('Assignment not found', 404);
-    }
-
-    await assignment.destroy();
-
-    res.json({
-        success: true,
-        message: 'Assignment deleted successfully'
-    });
-}));
-
-/**
- * @route PATCH /api/lead-packages/assignments/:id
- * @desc Update a package assignment (e.g. leadsRemaining)
- * @access Admin only
- */
-router.patch('/assignments/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
-    if (req.user.role !== 'admin') {
-        throw new AppError('Access denied', 403);
-    }
-
-    const { id } = req.params;
-    const { leadsRemaining } = req.body;
-
-    const assignment = await LeadPackageAssignment.findByPk(id);
-
-    if (!assignment) {
-        throw new AppError('Assignment not found', 404);
-    }
-
-    if (leadsRemaining !== undefined) {
-        // Validation: ensures it's a number and not negative
-        const newCount = parseInt(leadsRemaining, 10);
-        if (isNaN(newCount) || newCount < 0) {
-            throw new AppError('Invalid lead count', 400);
-        }
-
-        // Update details
-        await assignment.update({
-            leadsRemaining: newCount,
-            // Auto-update status based on count
-            status: newCount === 0 ? 'exhausted' : 'active'
-        });
-    }
-
-    res.json({
-        success: true,
-        message: 'Assignment updated successfully',
-        data: { assignment }
-    });
-}));
-
-/**
- * @route DELETE /api/lead-packages/:id
- * @desc Delete or archive a lead package
- * @access Admin only
- */
-router.delete('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(async (req, res) => {
-    if (req.user.role !== 'admin') {
-        throw new AppError('Access denied', 403);
-    }
-
-    const { id } = req.params;
-    const pkg = await LeadPackage.findByPk(id);
-
-    if (!pkg) {
-        throw new AppError('Package not found', 404);
-    }
-
-    // Check for existing assignments
-    const assignmentCount = await LeadPackageAssignment.count({
-        where: { leadPackageId: id }
-    });
-
-    if (assignmentCount > 0) {
-        // Soft delete (archive) if used
-        await pkg.update({ status: 'archived' });
-        res.json({
-            success: true,
-            message: 'Package archived (assignments exist)',
-            data: { package: pkg }
-        });
-    } else {
-        // Hard delete if unused
-        await pkg.destroy();
-        res.json({
-            success: true,
-            message: 'Package deleted successfully'
-        });
-    }
-}));
+// DELETE /api/lead-packages/:id
+router.delete('/:id', authenticateToken, requireAgentOrAdmin, ctrl.deletePackage);
 
 export default router;
