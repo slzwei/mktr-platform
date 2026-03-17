@@ -23,7 +23,6 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
     description: "",
     agentAssignmentMode: campaign?.defaultAssignmentMode || 'direct',
     agentGroupId: null,
-    agentGroupAgentIds: [],
     assignedAgentPhone: null,
     assignedAgentEmail: null,
     assignedAgentName: null
@@ -72,7 +71,7 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
         return;
       }
       const group = agentGroups.find(g => g.id === formData.agentGroupId);
-      if (!group || (group.agents || []).length === 0) {
+      if (!group || (group.members || []).length === 0) {
         setError("Selected agent group must have at least 1 agent");
         return;
       }
@@ -104,7 +103,6 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
         createData.assignedAgentName = formData.assignedAgentName;
       } else {
         createData.agentGroupId = formData.agentGroupId;
-        createData.agentGroupAgentIds = formData.agentGroupAgentIds;
       }
 
       if (formData.description?.trim()) {
@@ -121,7 +119,6 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
         description: "",
         agentAssignmentMode: prev.agentAssignmentMode,
         agentGroupId: prev.agentGroupId,
-        agentGroupAgentIds: prev.agentGroupAgentIds,
         assignedAgentPhone: prev.assignedAgentPhone,
         assignedAgentEmail: prev.assignedAgentEmail,
         assignedAgentName: prev.assignedAgentName,
@@ -210,7 +207,7 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
                   ...prev,
                   agentAssignmentMode: value,
                   // Clear opposite mode's data
-                  ...(value === 'direct' ? { agentGroupId: null, agentGroupAgentIds: [] } : {}),
+                  ...(value === 'direct' ? { agentGroupId: null } : {}),
                   ...(value === 'round_robin' ? { assignedAgentPhone: null, assignedAgentEmail: null, assignedAgentName: null } : {})
                 }))}
               >
@@ -236,8 +233,7 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
                     const group = agentGroups.find(g => g.id === value);
                     setFormData(prev => ({
                       ...prev,
-                      agentGroupId: value || null,
-                      agentGroupAgentIds: group ? (group.agents || []).map(a => a.phone) : []
+                      agentGroupId: value || null
                     }));
                   }}
                 >
@@ -249,11 +245,11 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
                       <SelectItem
                         key={group.id}
                         value={group.id}
-                        disabled={(group.agents || []).length === 0}
+                        disabled={(group.members || []).length === 0}
                       >
                         <div className="flex items-center gap-2">
                           <Users className="w-3 h-3" />
-                          <span>{group.name} ({(group.agents || []).length} agents)</span>
+                          <span>{group.name} ({(group.members || []).length} agents)</span>
                         </div>
                       </SelectItem>
                     ))}
@@ -261,9 +257,9 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
                 </Select>
               </div>
 
-              {selectedGroup && (selectedGroup.agents || []).length > 0 && (
+              {selectedGroup && (selectedGroup.members || []).length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
-                  {(selectedGroup.agents || []).map(agent => (
+                  {(selectedGroup.members || []).map(agent => (
                     <Badge key={agent.phone || agent.id} variant="secondary" className="text-xs">
                       {agent.name || agent.phone}
                     </Badge>

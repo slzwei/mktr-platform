@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { QrTag } from "@/api/entities";
 import { apiClient } from "@/api/client";
-import { Prospect } from "@/api/entities";
+// N+1 fix: scanCount and uniqueScanCount come directly from the QR tag model
+// No separate analytics or prospect-list fetches needed
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,8 +48,6 @@ import UserIcon from "lucide-react/icons/user";
 export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
   const [copiedLink, setCopiedLink] = useState(null);
   const [deleting, setDeleting] = useState(false);
-  const [prospectCounts, setProspectCounts] = useState({});
-  const [loadingProspects, setLoadingProspects] = useState(true);
 
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -61,69 +60,6 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
   const [lyfeAgents, setLyfeAgents] = useState([]);
   const [agentGroups, setAgentGroups] = useState([]);
   const [agentDataLoaded, setAgentDataLoaded] = useState(false);
-
-  // Load prospect counts for all QR tags
-  useEffect(() => {
-    const loadProspectCounts = async () => {
-      if (!qrTags || qrTags.length === 0) {
-        setLoadingProspects(false);
-        return;
-      }
-
-      setLoadingProspects(true);
-      try {
-        const counts = {};
-        const allProspects = await Prospect.list();
-
-        qrTags.forEach(qrTag => {
-          const count = allProspects.filter(prospect => prospect.qr_tag_id === qrTag.id).length;
-          counts[qrTag.id] = count;
-        });
-
-        setProspectCounts(counts);
-      } catch (error) {
-        console.error("Failed to load prospect counts:", error);
-      }
-      setLoadingProspects(false);
-    };
-
-    loadProspectCounts();
-  }, [qrTags]);
-
-  const [scanTotals, setScanTotals] = useState({});
-  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
-
-  useEffect(() => {
-    const loadAnalytics = async () => {
-      if (!qrTags || qrTags.length === 0) return;
-
-      setLoadingAnalytics(true);
-      try {
-        const totals = {};
-        const analyticsPromises = qrTags.map(async (qr) => {
-          try {
-            const resp = await apiClient.get(`/qrcodes/${qr.id}/analytics`);
-            return { id: qr.id, data: resp?.data?.analytics?.summary || { totalScans: 0, landings: 0, leads: 0 } };
-          } catch (e) {
-            return { id: qr.id, data: { totalScans: 0, landings: 0, leads: 0 } };
-          }
-        });
-
-        const results = await Promise.all(analyticsPromises);
-        results.forEach(({ id, data }) => {
-          totals[id] = data;
-        });
-
-        setScanTotals(totals);
-      } catch (e) {
-        console.warn('Failed to load QR analytics:', e);
-      } finally {
-        setLoadingAnalytics(false);
-      }
-    };
-
-    loadAnalytics();
-  }, [qrTags]);
 
   const backendOrigin = apiClient.baseURL.replace(/\/api\/?$/, "");
   const trackingBase = `${backendOrigin}/t`;
@@ -191,7 +127,6 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
     setEditForm({
       agentAssignmentMode: qr.agentAssignmentMode || 'direct',
       agentGroupId: qr.agentGroupId || null,
-      agentGroupAgentIds: qr.agentGroupAgentIds || [],
       assignedAgentPhone: qr.assignedAgentPhone || null,
       assignedAgentEmail: qr.assignedAgentEmail || null,
       assignedAgentName: qr.assignedAgentName || null,
@@ -222,10 +157,8 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
         updateData.assignedAgentEmail = editForm.assignedAgentEmail;
         updateData.assignedAgentName = editForm.assignedAgentName;
         updateData.agentGroupId = null;
-        updateData.agentGroupAgentIds = [];
       } else {
         updateData.agentGroupId = editForm.agentGroupId;
-        updateData.agentGroupAgentIds = editForm.agentGroupAgentIds;
         updateData.assignedAgentPhone = null;
         updateData.assignedAgentEmail = null;
         updateData.assignedAgentName = null;
@@ -334,39 +267,22 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col space-y-1">
-                        {loadingAnalytics ? (
-                          <div className="flex items-center gap-1">
-                            <Loader2 className="w-3 h-3 animate-spin text-gray-400 dark:text-gray-500" />
-                            <span className="text-xs text-gray-500 dark:text-gray-400">Loading...</span>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">Scans:</span>
-                              <span className="font-semibold text-sm text-blue-600">{scanTotals[qr.id]?.totalScans ?? 0}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">Landings:</span>
-                              <span className="font-medium text-xs text-green-600">{scanTotals[qr.id]?.landings ?? 0}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">Leads:</span>
-                              <span className="font-medium text-xs text-purple-600">{scanTotals[qr.id]?.leads ?? 0}</span>
-                            </div>
-                          </>
-                        )}
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">Scans:</span>
+                          <span className="font-semibold text-sm text-blue-600">{qr.scanCount ?? 0}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">Unique:</span>
+                          <span className="font-medium text-xs text-green-600">{qr.uniqueScanCount ?? 0}</span>
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 text-blue-500" />
-                        {loadingProspects ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-gray-400 dark:text-gray-500" />
-                        ) : (
-                          <span className="font-semibold text-lg text-blue-600">
-                            {prospectCounts[qr.id] || 0}
-                          </span>
-                        )}
+                        <span className="font-semibold text-lg text-blue-600">
+                          {qr.scanCount ?? 0}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell className="space-x-1 flex items-center">
@@ -461,7 +377,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
               onValueChange={(value) => setEditForm(prev => ({
                 ...prev,
                 agentAssignmentMode: value,
-                ...(value === 'direct' ? { agentGroupId: null, agentGroupAgentIds: [] } : {}),
+                ...(value === 'direct' ? { agentGroupId: null } : {}),
                 ...(value === 'round_robin' ? { assignedAgentPhone: null, assignedAgentEmail: null, assignedAgentName: null } : {})
               }))}
             >
@@ -484,8 +400,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                   const group = agentGroups.find(g => g.id === value);
                   setEditForm(prev => ({
                     ...prev,
-                    agentGroupId: value || null,
-                    agentGroupAgentIds: group ? (group.agents || []).map(a => a.phone) : []
+                    agentGroupId: value || null
                   }));
                 }}
               >
@@ -497,16 +412,16 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
                     <SelectItem
                       key={group.id}
                       value={group.id}
-                      disabled={(group.agents || []).length === 0}
+                      disabled={(group.members || []).length === 0}
                     >
-                      {group.name} ({(group.agents || []).length} agents)
+                      {group.name} ({(group.members || []).length} agents)
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {selectedEditGroup && (selectedEditGroup.agents || []).length > 0 && (
+              {selectedEditGroup && (selectedEditGroup.members || []).length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-1">
-                  {(selectedEditGroup.agents || []).map(agent => (
+                  {(selectedEditGroup.members || []).map(agent => (
                     <Badge key={agent.phone || agent.id} variant="secondary" className="text-xs">
                       {agent.name || agent.phone}
                     </Badge>

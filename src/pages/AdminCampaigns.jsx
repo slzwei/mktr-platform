@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useCampaignsList, useArchiveCampaign, useRestoreCampaign, useDeleteCampaign } from "@/hooks/queries/useCampaignsQuery";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useCurrentUser } from "@/hooks/queries/useUsersQuery";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,6 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { format, parseISO } from "date-fns";
 import {
   Plus,
@@ -71,9 +71,15 @@ export default function AdminCampaigns() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // all | active | inactive
   const [isTypeSelectionOpen, setIsTypeSelectionOpen] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: "", description: "", onConfirm: null, destructive: false });
 
+  const openConfirm = useCallback(({ title, description, onConfirm, destructive = true }) => {
+    setConfirmDialog({ open: true, title, description, onConfirm, destructive });
+  }, []);
 
-
+  const closeConfirm = useCallback(() => {
+    setConfirmDialog(prev => ({ ...prev, open: false }));
+  }, []);
 
 
 
@@ -85,7 +91,7 @@ export default function AdminCampaigns() {
 
   const handleCopyLink = (campaignId) => {
     const baseUrl = window.location.origin;
-    const campaignUrl = `${baseUrl}${createPageUrl(`LeadCapture?campaign_id=${campaignId}`)}`;
+    const campaignUrl = `${baseUrl}/LeadCapture?campaign_id=${campaignId}`;
 
     navigator.clipboard.writeText(campaignUrl).then(() => {
       setCopiedId(campaignId);
@@ -93,15 +99,20 @@ export default function AdminCampaigns() {
     });
   };
 
-  const handleArchiveCampaign = async (campaignId) => {
-    if (window.confirm("Are you sure you want to archive this campaign? It will be moved to the archived campaigns section.")) {
-      try {
-        await archiveMutation.mutateAsync(campaignId);
-      } catch (error) {
-        console.error("Failed to archive campaign:", error);
-        alert("Failed to archive campaign. Please try again.");
-      }
-    }
+  const handleArchiveCampaign = (campaignId) => {
+    openConfirm({
+      title: "Archive Campaign",
+      description: "Are you sure you want to archive this campaign? It will be moved to the archived campaigns section.",
+      destructive: false,
+      onConfirm: async () => {
+        try {
+          await archiveMutation.mutateAsync(campaignId);
+        } catch (error) {
+          console.error("Failed to archive campaign:", error);
+        }
+        closeConfirm();
+      },
+    });
   };
 
   const handleRestoreCampaign = async (campaignId) => {
@@ -109,19 +120,22 @@ export default function AdminCampaigns() {
       await restoreMutation.mutateAsync(campaignId);
     } catch (error) {
       console.error("Failed to restore campaign:", error);
-      alert("Failed to restore campaign. Please try again.");
     }
   };
 
-  const handlePermanentDelete = async (campaignId) => {
-    if (window.confirm("Are you sure you want to PERMANENTLY DELETE this campaign? This action cannot be undone and will delete all associated data.")) {
-      try {
-        await deleteMutation.mutateAsync(campaignId);
-      } catch (error) {
-        console.error("Failed to delete campaign:", error);
-        alert("Failed to delete campaign. Please try again.");
-      }
-    }
+  const handlePermanentDelete = (campaignId) => {
+    openConfirm({
+      title: "Permanently Delete Campaign",
+      description: "Are you sure you want to PERMANENTLY DELETE this campaign? This action cannot be undone and will delete all associated data.",
+      onConfirm: async () => {
+        try {
+          await deleteMutation.mutateAsync(campaignId);
+        } catch (error) {
+          console.error("Failed to delete campaign:", error);
+        }
+        closeConfirm();
+      },
+    });
   };
 
   if (loading) {
@@ -167,7 +181,7 @@ export default function AdminCampaigns() {
           <span className="ml-2">{copiedId === c.id ? 'Copied!' : 'Copy Link'}</span>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link to={createPageUrl(`AdminCampaignDesigner?campaign_id=${c.id}`)} className="flex items-center">
+          <Link to={`/AdminCampaignDesigner?campaign_id=${c.id}`} className="flex items-center">
             <Palette className="w-4 h-4" />
             <span className="ml-2">Design</span>
           </Link>
@@ -216,7 +230,7 @@ export default function AdminCampaigns() {
                   <span className="text-gray-700 dark:text-gray-300">{campaign.name}</span>
                 ) : (
                   <Link
-                    to={createPageUrl(`AdminProspects?campaign=${campaign.id}`)}
+                    to={`/AdminProspects?campaign=${campaign.id}`}
                     className="text-blue-600 dark:text-blue-400 hover:underline hover:text-blue-800"
                   >
                     {campaign.name}
@@ -482,8 +496,15 @@ export default function AdminCampaigns() {
           onSelect={handleCreateCampaign}
         />
 
-
-
+        <ConfirmDialog
+          open={confirmDialog.open}
+          onOpenChange={(open) => { if (!open) closeConfirm(); }}
+          title={confirmDialog.title}
+          description={confirmDialog.description}
+          onConfirm={confirmDialog.onConfirm}
+          confirmText={confirmDialog.destructive ? "Delete" : "Continue"}
+          destructive={confirmDialog.destructive}
+        />
 
 
       </div>
