@@ -1,20 +1,27 @@
 import { ValidationError, DatabaseError, ConnectionError } from 'sequelize';
+import { logger } from '../utils/logger.js';
 
-export const errorHandler = (err, req, res, next) => {
+export const errorHandler = (err, req, res, _next) => {
   let error = { ...err };
   error.message = err.message;
 
-  // Log error for debugging
-  console.error('Error:', err);
+  // Structured error logging via pino (replaces console.error)
+  logger.error(
+    {
+      err: { message: err.message, statusCode: err.statusCode, stack: err.stack },
+      req: { method: req.method, url: req.originalUrl, id: req.id },
+    },
+    'Request error'
+  );
 
   // Sequelize validation error
   if (err instanceof ValidationError) {
-    const message = err.errors.map(error => error.message).join(', ');
+    const message = err.errors.map((error) => error.message).join(', ');
     return res.status(400).json({
       success: false,
       message: 'Validation Error',
       details: message,
-      errors: err.errors
+      errors: err.errors,
     });
   }
 
@@ -23,7 +30,7 @@ export const errorHandler = (err, req, res, next) => {
     return res.status(500).json({
       success: false,
       message: 'Database Error',
-      details: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+      details: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
     });
   }
 
@@ -32,7 +39,7 @@ export const errorHandler = (err, req, res, next) => {
     return res.status(503).json({
       success: false,
       message: 'Database Connection Error',
-      details: 'Service temporarily unavailable'
+      details: 'Service temporarily unavailable',
     });
   }
 
@@ -42,7 +49,7 @@ export const errorHandler = (err, req, res, next) => {
     return res.status(400).json({
       success: false,
       message: 'Duplicate Value Error',
-      details: `${field} already exists`
+      details: `${field} already exists`,
     });
   }
 
@@ -50,14 +57,14 @@ export const errorHandler = (err, req, res, next) => {
   if (err.name === 'JsonWebTokenError') {
     return res.status(401).json({
       success: false,
-      message: 'Invalid Token'
+      message: 'Invalid Token',
     });
   }
 
   if (err.name === 'TokenExpiredError') {
     return res.status(401).json({
       success: false,
-      message: 'Token Expired'
+      message: 'Token Expired',
     });
   }
 
@@ -66,7 +73,7 @@ export const errorHandler = (err, req, res, next) => {
     return res.status(400).json({
       success: false,
       message: 'File too large',
-      details: 'File size exceeds the maximum allowed limit'
+      details: 'File size exceeds the maximum allowed limit',
     });
   }
 
@@ -74,7 +81,7 @@ export const errorHandler = (err, req, res, next) => {
     return res.status(400).json({
       success: false,
       message: 'Invalid file upload',
-      details: 'Unexpected file field'
+      details: 'Unexpected file field',
     });
   }
 
@@ -83,7 +90,7 @@ export const errorHandler = (err, req, res, next) => {
     return res.status(err.statusCode).json({
       success: false,
       message: err.message,
-      details: err.details || null
+      details: err.details || null,
     });
   }
 
@@ -91,7 +98,7 @@ export const errorHandler = (err, req, res, next) => {
   res.status(500).json({
     success: false,
     message: 'Internal Server Error',
-    details: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+    details: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong',
   });
 };
 
