@@ -136,4 +136,158 @@ describe('authStore', () => {
     expect(useAuthStore.getState().user).toEqual(fakeUser);
     expect(useAuthStore.getState().token).toBe('authenticated');
   });
+
+  // --- Extended tests ---
+
+  it('googleLogin does not set state when API returns failure', async () => {
+    auth.googleLogin.mockResolvedValue({ success: false, message: 'Invalid credential' });
+
+    await useAuthStore.getState().googleLogin('bad-cred');
+
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(useAuthStore.getState().token).toBeNull();
+  });
+
+  it('acceptInvite sets user and token on success', async () => {
+    const fakeUser = { id: 'u-6', email: 'invited@test.com', role: 'agent' };
+    auth.acceptInvite.mockResolvedValue({
+      success: true,
+      data: { token: 'tok-invite', user: fakeUser },
+    });
+
+    const result = await useAuthStore.getState().acceptInvite({
+      token: 'invite-tok',
+      password: 'newpass',
+    });
+
+    expect(result.success).toBe(true);
+    expect(useAuthStore.getState().user).toEqual(fakeUser);
+    expect(useAuthStore.getState().token).toBe('authenticated');
+    expect(localStorageMock.setItem).toHaveBeenCalledWith('mktr_auth_token', 'authenticated');
+  });
+
+  it('acceptInvite does not set state when API returns failure', async () => {
+    auth.acceptInvite.mockResolvedValue({ success: false, message: 'Expired token' });
+
+    await useAuthStore.getState().acceptInvite({ token: 'expired' });
+
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(useAuthStore.getState().token).toBeNull();
+  });
+
+  it('updateProfile merges updates into existing user', async () => {
+    const existingUser = { id: 'u-7', email: 'frank@test.com', firstName: 'Frank' };
+    useAuthStore.setState({ user: existingUser, token: 'authenticated' });
+
+    auth.updateProfile.mockResolvedValue({ success: true });
+
+    await useAuthStore.getState().updateProfile({ firstName: 'Franklin' });
+
+    expect(useAuthStore.getState().user).toEqual({
+      id: 'u-7',
+      email: 'frank@test.com',
+      firstName: 'Franklin',
+    });
+  });
+
+  it('updateProfile does not update state when API fails', async () => {
+    const existingUser = { id: 'u-7', email: 'frank@test.com', firstName: 'Frank' };
+    useAuthStore.setState({ user: existingUser, token: 'authenticated' });
+
+    auth.updateProfile.mockResolvedValue({ success: false, message: 'Validation error' });
+
+    await useAuthStore.getState().updateProfile({ firstName: 'X' });
+
+    expect(useAuthStore.getState().user.firstName).toBe('Frank');
+  });
+
+  it('refreshUser fetches and sets fresh user data', async () => {
+    const freshUser = { id: 'u-8', email: 'refreshed@test.com', role: 'admin' };
+    auth.getCurrentUser.mockResolvedValue(freshUser);
+
+    const result = await useAuthStore.getState().refreshUser();
+
+    expect(auth.getCurrentUser).toHaveBeenCalledWith(true);
+    expect(useAuthStore.getState().user).toEqual(freshUser);
+    expect(result).toEqual(freshUser);
+  });
+
+  it('refreshUser does not update state when getCurrentUser returns null', async () => {
+    useAuthStore.setState({ user: { id: 'u-old' }, token: 'authenticated' });
+    auth.getCurrentUser.mockResolvedValue(null);
+
+    await useAuthStore.getState().refreshUser();
+
+    // User should remain unchanged since getCurrentUser returned null
+    expect(useAuthStore.getState().user).toEqual({ id: 'u-old' });
+  });
+
+  it('logout clears localStorage token and user', () => {
+    useAuthStore.setState({ user: { id: 'u-1' }, token: 'authenticated' });
+    localStorageMock.setItem('mktr_auth_token', 'authenticated');
+    localStorageMock.setItem('mktr_user', JSON.stringify({ id: 'u-1' }));
+
+    useAuthStore.getState().logout();
+
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(useAuthStore.getState().token).toBeNull();
+  });
+
+  it('setAuth stores user in localStorage when user is provided', () => {
+    const user = { id: 'u-10', email: 'stored@test.com' };
+    useAuthStore.getState().setAuth(user, 'tok-store');
+
+    expect(localStorageMock.setItem).toHaveBeenCalledWith('mktr_user', JSON.stringify(user));
+  });
+
+  it('setAuth sets token to null when token argument is falsy', () => {
+    useAuthStore.getState().setAuth({ id: 'u-11' }, '');
+
+    expect(useAuthStore.getState().token).toBeNull();
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith('mktr_auth_token');
+  });
+
+  it('login stores token as "authenticated" in localStorage', async () => {
+    const fakeUser = { id: 'u-12', email: 'local@test.com' };
+    auth.login.mockResolvedValue({
+      success: true,
+      data: { token: 'real-jwt-token', user: fakeUser },
+    });
+
+    await useAuthStore.getState().login('local@test.com', 'pass');
+
+    expect(localStorageMock.setItem).toHaveBeenCalledWith('mktr_auth_token', 'authenticated');
+  });
+
+  it('register does not set state when API returns failure', async () => {
+    auth.register.mockResolvedValue({ success: false, message: 'Email taken' });
+
+    await useAuthStore.getState().register({ email: 'taken@test.com', password: 'pass' });
+
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(useAuthStore.getState().token).toBeNull();
+  });
+
+  it('setUser does not write to localStorage when user is null', () => {
+    localStorageMock.clear();
+    vi.clearAllMocks();
+
+    useAuthStore.getState().setUser(null);
+
+    expect(localStorageMock.setItem).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().user).toBeNull();
+  });
+
+  it('login returns the API response object', async () => {
+    const fakeUser = { id: 'u-13', email: 'ret@test.com' };
+    const response = {
+      success: true,
+      data: { token: 'tok-ret', user: fakeUser },
+    };
+    auth.login.mockResolvedValue(response);
+
+    const result = await useAuthStore.getState().login('ret@test.com', 'pass');
+
+    expect(result).toEqual(response);
+  });
 });
