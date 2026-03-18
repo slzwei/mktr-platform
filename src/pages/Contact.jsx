@@ -1,22 +1,17 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { 
+import {
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
-  SelectItem
+  SelectItem,
 } from "@/components/ui/select";
-import { Card } from "@/components/ui/card";
-import SiteHeader from "@/components/layout/SiteHeader";
 import { apiClient } from "@/api/client";
-import {
-  MapPin,
-  Send,
-  CheckCircle
-} from "lucide-react";
+import { MapPin, Send, CheckCircle, MessageCircle } from "lucide-react";
+import MarketingLayout from "@/components/layout/MarketingLayout";
+import "../pages/Homepage.css";
 
 export default function Contact() {
   const [formData, setFormData] = useState({
@@ -25,7 +20,7 @@ export default function Contact() {
     phone: "",
     company: "",
     userType: "",
-    message: ""
+    message: "",
   });
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -33,25 +28,24 @@ export default function Contact() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    // Client-side validation to match backend: message must be at least 10 characters
     const messageLength = formData.message?.trim().length || 0;
     if (messageLength < 10) {
-      setError('Please enter at least 10 characters in your message.');
+      setError("Please enter at least 10 characters in your message.");
       return;
     }
     setError("");
     setLoading(true);
     try {
-      await apiClient.post('/contact', formData);
+      await apiClient.post("/contact", formData);
       setSubmitted(true);
     } catch (err) {
-      console.error('Failed to submit contact form', err);
-      // Surface validation error from API if available
-      const apiMessage = err?.message || '';
-      if (apiMessage.includes('length must be at least 10')) {
-        setError('Please enter at least 10 characters in your message.');
+      const apiMessage = err?.message || "";
+      if (apiMessage.includes("length must be at least 10")) {
+        setError("Please enter at least 10 characters in your message.");
       } else {
-        setError('There was an issue sending your message. Please try again later.');
+        setError(
+          "There was an issue sending your message. Please try again later."
+        );
       }
     } finally {
       setLoading(false);
@@ -59,352 +53,416 @@ export default function Contact() {
   };
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const inputStyle = {
+    background: "var(--mktr-bg-card)",
+    border: "1px solid var(--mktr-border)",
+    color: "var(--mktr-text)",
+    borderRadius: 12,
+    fontFamily: "var(--body-font)",
   };
 
   return (
-    <>
-      <style>{`
-        /* CSS Custom Properties */
-        :root {
-          --heading-font: 'Mindset', 'Inter', sans-serif;
-          --body-font: 'Inter', sans-serif;
-          --mono-font: 'PT Mono', 'Courier New', monospace;
-          --black: #000000;
-          --white: #ffffff;
-          --grey: #909090;
-        }
+    <MarketingLayout>
+      {/* Hero */}
+      <section className="mktr-section" style={{ paddingTop: "5rem", paddingBottom: "3rem" }}>
+        <div className="mktr-section-container" style={{ textAlign: "center" }}>
+          <p className="mktr-section-eyebrow mktr-reveal">Contact Us</p>
+          <h1
+            className="mktr-hero-title mktr-reveal mktr-reveal-delay-1"
+            style={{ marginBottom: "1.5rem" }}
+          >
+            Let's Talk <span className="accent">Business.</span>
+          </h1>
+          <p className="mktr-hero-subtitle mktr-reveal mktr-reveal-delay-2">
+            Whether you're an individual agent or running a 500-person team,
+            we'd love to hear from you. We typically respond within one business day.
+          </p>
+        </div>
+      </section>
 
-        .dark {
-          --black: #ffffff;
-          --white: #1a1a2e;
-          --grey: #a0a0a0;
-        }
-
-        /* Import Fonts */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=PT+Mono:wght@400&display=swap');
-
-        /* Typography */
-        .hero-title {
-          font-family: var(--heading-font);
-          font-size: clamp(3rem, 8vw, 6rem);
-          line-height: 0.9;
-          font-weight: 700;
-          color: var(--black);
-          margin: 0;
-          text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .section-title {
-          font-family: var(--mono-font);
-          text-transform: uppercase;
-          letter-spacing: 3px;
-          font-size: 0.875rem;
-          color: var(--black);
-          margin-bottom: 2rem;
-        }
-
-        .body-text {
-          font-family: var(--body-font);
-          font-size: 1.125rem;
-          line-height: 1.7;
-          color: var(--grey);
-        }
-
-        /* Layout */
-        .section-spacing {
-          padding: 6rem 0;
-          position: relative;
-        }
-
-        .container {
-          max-width: 1200px;
-          margin: 0 auto;
-          padding: 0 2rem;
-          position: relative;
-          z-index: 2;
-        }
-
-        /* Buttons */
-        .btn-primary {
-          background: var(--black);
-          color: var(--white);
-          border: none;
-          padding: 1rem 2rem;
-          font-family: var(--mono-font);
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          text-decoration: none;
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          transition: all 0.3s ease;
-          cursor: pointer;
-        }
-
-        .btn-primary:hover {
-          opacity: 0.8;
-          transform: translateY(-2px);
-          box-shadow: 0 10px 20px rgba(0,0,0,0.2);
-        }
-
-        .btn-outline {
-          background: transparent;
-          color: var(--black);
-          border: 2px solid var(--black);
-          padding: 1rem 2rem;
-          font-family: var(--mono-font);
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          text-decoration: none;
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          transition: all 0.3s ease;
-          cursor: pointer;
-        }
-
-        .btn-outline:hover {
-          background: var(--black);
-          color: var(--white);
-          transform: translateY(-2px);
-          box-shadow: 0 10px 20px rgba(0,0,0,0.2);
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-          .hero-title {
-            font-size: clamp(2.5rem, 10vw, 4rem);
-          }
-
-          .section-spacing {
-            padding: 4rem 0;
-          }
-
-          .container {
-            padding: 0 1rem;
-          }
-        }
-      `}</style>
-
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white dark:from-gray-900 dark:to-gray-950">
-        {/* Header */}
-        <SiteHeader />
-        <div className="h-20 md:h-24" />
-
-        {/* Hero Section */}
-        <section className="section-spacing bg-black">
-          <div className="container">
-            <div className="text-center max-w-4xl mx-auto mb-16">
-              <p className="section-title text-white">Get in Touch</p>
-              <h1 className="hero-title mb-6 text-white">Let's Talk Business</h1>
-              <p className="body-text max-w-2xl mx-auto text-white mt-4">
-                Speak with us about lead generation, campaign design, and sales enablement. We typically respond within one business day.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Contact Section */}
-        <section className="bg-white dark:bg-gray-900 py-16">
-          <div className="container">
-            <div className="grid lg:grid-cols-2 gap-16">
-              {/* Contact Form */}
-              <div>
-                {submitted ? (
-                  <Card className="p-8 text-center">
-                    <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                    <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Message Sent!</h3>
-                    <p className="text-gray-600 dark:text-gray-400">
-                      Thank you for reaching out. We'll get back to you within 24 hours.
-                    </p>
-                  </Card>
-                ) : (
-                  <Card className="p-8">
-                    <h3 className="section-title mb-6">Send us a Message</h3>
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Full Name *
-                          </label>
-                          <Input
-                            name="name"
-                            value={formData.name}
-                            onChange={handleChange}
-                            required
-                            className="w-full"
-                            placeholder="Your full name"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Company
-                          </label>
-                          <Input
-                            name="company"
-                            value={formData.company}
-                            onChange={handleChange}
-                            className="w-full"
-                            placeholder="Your company"
-                          />
-                        </div>
-                      </div>
-
-                      {/* I am an... inline with dropdown */}
+      {/* Contact Grid */}
+      <section className="mktr-section mktr-section-alt" style={{ paddingTop: "2rem" }}>
+        <div className="mktr-section-container">
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.2fr 0.8fr",
+              gap: "3rem",
+              alignItems: "start",
+            }}
+          >
+            {/* Form */}
+            <div className="mktr-reveal">
+              {submitted ? (
+                <div
+                  style={{
+                    background: "var(--mktr-bg-card)",
+                    border: "1px solid var(--mktr-border)",
+                    borderRadius: 20,
+                    padding: "4rem 3rem",
+                    textAlign: "center",
+                  }}
+                >
+                  <CheckCircle
+                    className="w-16 h-16 mx-auto mb-4"
+                    style={{ color: "#22c55e" }}
+                  />
+                  <h3
+                    style={{
+                      fontFamily: "var(--heading-font)",
+                      fontSize: "1.5rem",
+                      fontWeight: 700,
+                      color: "var(--mktr-text)",
+                      marginBottom: "0.75rem",
+                    }}
+                  >
+                    Message Sent!
+                  </h3>
+                  <p
+                    style={{
+                      fontFamily: "var(--body-font)",
+                      fontSize: "1rem",
+                      color: "var(--mktr-text-muted)",
+                      fontWeight: 300,
+                    }}
+                  >
+                    Thank you for reaching out. We'll get back to you within 24 hours.
+                  </p>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    background: "var(--mktr-bg-card)",
+                    border: "1px solid var(--mktr-border)",
+                    borderRadius: 20,
+                    padding: "2.5rem",
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontFamily: "var(--mono-font)",
+                      fontSize: "0.7rem",
+                      letterSpacing: "3px",
+                      textTransform: "uppercase",
+                      color: "var(--mktr-accent)",
+                      marginBottom: "2rem",
+                    }}
+                  >
+                    Send Us a Message
+                  </h3>
+                  <form onSubmit={handleSubmit} className="space-y-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">I am a</span>
-                          <div className="flex-1">
-                            <Select
-                              value={formData.userType}
-                              onValueChange={(val) => setFormData({ ...formData, userType: val })}
-                            >
-                              <SelectTrigger className="w-56">
-                                <SelectValue placeholder="Select one" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="advertiser">Advertiser</SelectItem>
-                                <SelectItem value="phv_driver">PHV Driver</SelectItem>
-                                <SelectItem value="fleet_owner">Fleet Owner</SelectItem>
-                                <SelectItem value="salesperson">Salesperson</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Email Address *
-                          </label>
-                          <Input
-                            name="email"
-                            type="email"
-                            value={formData.email}
-                            onChange={handleChange}
-                            required
-                            className="w-full"
-                            placeholder="your@email.com"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            Phone Number
-                          </label>
-                          <Input
-                            name="phone"
-                            value={formData.phone}
-                            onChange={handleChange}
-                            className="w-full"
-                            placeholder="+65 8123 4567"
-                          />
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Message *
+                        <label
+                          style={{
+                            display: "block",
+                            fontFamily: "var(--body-font)",
+                            fontSize: "0.85rem",
+                            color: "var(--mktr-text-muted)",
+                            marginBottom: "0.5rem",
+                            fontWeight: 400,
+                          }}
+                        >
+                          Full Name *
                         </label>
-                        <Textarea
-                          name="message"
-                          value={formData.message}
+                        <Input
+                          name="name"
+                          value={formData.name}
                           onChange={handleChange}
                           required
-                          minLength={10}
-                          rows={6}
-                          className="w-full"
-                          placeholder="Tell us about your marketing needs and how we can help..."
+                          placeholder="Your full name"
+                          style={inputStyle}
                         />
-                        {error && (
-                          <p className="mt-2 text-sm text-red-600">{error}</p>
-                        )}
-                      </div>
-                      
-                      <Button 
-                        type="submit" 
-                        disabled={loading}
-                        className="btn-primary w-full"
-                      >
-                        {loading ? 'Sending...' : (
-                          <>
-                            Send Message
-                            <Send className="w-4 h-4" />
-                          </>
-                        )}
-                      </Button>
-                    </form>
-                  </Card>
-                )}
-              </div>
-
-              {/* Contact Information */}
-              <div className="space-y-8">
-                <Card className="p-8">
-                  <h3 className="section-title mb-6">Company</h3>
-                  <div className="space-y-4">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-black text-white rounded-lg flex items-center justify-center shrink-0">
-                        <MapPin className="w-6 h-6" />
                       </div>
                       <div>
-                        <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">MKTR PTE. LTD.</h4>
-                        <p className="text-gray-600 dark:text-gray-400">Singapore</p>
+                        <label
+                          style={{
+                            display: "block",
+                            fontFamily: "var(--body-font)",
+                            fontSize: "0.85rem",
+                            color: "var(--mktr-text-muted)",
+                            marginBottom: "0.5rem",
+                            fontWeight: 400,
+                          }}
+                        >
+                          Company
+                        </label>
+                        <Input
+                          name="company"
+                          value={formData.company}
+                          onChange={handleChange}
+                          placeholder="Your company"
+                          style={inputStyle}
+                        />
                       </div>
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      For all enquiries, please use the contact form.
-                    </div>
-                  </div>
-                </Card>
-                <Card className="p-8">
-                  <h3 className="section-title mb-6">WhatsApp</h3>
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-black text-white rounded-lg flex items-center justify-center shrink-0">
-                      <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg" alt="WhatsApp" className="w-6 h-6 invert" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-1">Message us on WhatsApp</h4>
-                      <p className="text-gray-600 dark:text-gray-400">WhatsApp only</p>
-                      <a
-                        href="https://wa.me/6580790542"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn-outline mt-4 inline-flex items-center gap-2"
-                      >
-                        <span>+65 8079 0542</span>
-                        <img src="https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/whatsapp.svg" alt="WhatsApp" className="w-4 h-4" />
-                      </a>
-                    </div>
-                  </div>
-                </Card>
-              </div>
-            </div>
-          </div>
-        </section>
 
-        {/* Footer */}
-        <footer className="bg-black text-white py-12">
-          <div className="container">
-            <div className="text-center">
-              <div className="text-2xl font-bold mb-4" style={{ fontFamily: 'var(--heading-font)' }}>
-                MKTR PTE. LTD.
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontFamily: "var(--body-font)",
+                          fontSize: "0.85rem",
+                          color: "var(--mktr-text-muted)",
+                          marginBottom: "0.5rem",
+                          fontWeight: 400,
+                        }}
+                      >
+                        I am a...
+                      </label>
+                      <Select
+                        value={formData.userType}
+                        onValueChange={(val) =>
+                          setFormData({ ...formData, userType: val })
+                        }
+                      >
+                        <SelectTrigger style={{ ...inputStyle, width: "100%" }}>
+                          <SelectValue placeholder="Select one" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="insurance_agent">Insurance Agent</SelectItem>
+                          <SelectItem value="property_agent">Property Agent</SelectItem>
+                          <SelectItem value="financial_advisor">Financial Advisor</SelectItem>
+                          <SelectItem value="agency_manager">Agency Manager</SelectItem>
+                          <SelectItem value="fleet_owner">Fleet Owner</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label
+                          style={{
+                            display: "block",
+                            fontFamily: "var(--body-font)",
+                            fontSize: "0.85rem",
+                            color: "var(--mktr-text-muted)",
+                            marginBottom: "0.5rem",
+                            fontWeight: 400,
+                          }}
+                        >
+                          Email *
+                        </label>
+                        <Input
+                          name="email"
+                          type="email"
+                          value={formData.email}
+                          onChange={handleChange}
+                          required
+                          placeholder="your@email.com"
+                          style={inputStyle}
+                        />
+                      </div>
+                      <div>
+                        <label
+                          style={{
+                            display: "block",
+                            fontFamily: "var(--body-font)",
+                            fontSize: "0.85rem",
+                            color: "var(--mktr-text-muted)",
+                            marginBottom: "0.5rem",
+                            fontWeight: 400,
+                          }}
+                        >
+                          Phone
+                        </label>
+                        <Input
+                          name="phone"
+                          value={formData.phone}
+                          onChange={handleChange}
+                          placeholder="+65 8123 4567"
+                          style={inputStyle}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label
+                        style={{
+                          display: "block",
+                          fontFamily: "var(--body-font)",
+                          fontSize: "0.85rem",
+                          color: "var(--mktr-text-muted)",
+                          marginBottom: "0.5rem",
+                          fontWeight: 400,
+                        }}
+                      >
+                        Message *
+                      </label>
+                      <Textarea
+                        name="message"
+                        value={formData.message}
+                        onChange={handleChange}
+                        required
+                        minLength={10}
+                        rows={5}
+                        placeholder="Tell us about your needs..."
+                        style={inputStyle}
+                      />
+                      {error && (
+                        <p
+                          style={{
+                            marginTop: "0.5rem",
+                            fontSize: "0.85rem",
+                            color: "#ef4444",
+                          }}
+                        >
+                          {error}
+                        </p>
+                      )}
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="mktr-hero-cta"
+                      style={{
+                        width: "100%",
+                        justifyContent: "center",
+                        opacity: loading ? 0.6 : 1,
+                      }}
+                    >
+                      {loading ? "Sending..." : "Send Message"}
+                      {!loading && <Send className="w-4 h-4" />}
+                    </button>
+                  </form>
+                </div>
+              )}
+            </div>
+
+            {/* Info Cards */}
+            <div className="space-y-4 mktr-reveal mktr-reveal-delay-2">
+              <div
+                style={{
+                  background: "var(--mktr-bg-card)",
+                  border: "1px solid var(--mktr-border)",
+                  borderRadius: 16,
+                  padding: "2rem",
+                }}
+              >
+                <div className="mktr-feature-icon" style={{ marginBottom: "1rem" }}>
+                  <MapPin className="w-5 h-5" />
+                </div>
+                <h4
+                  style={{
+                    fontFamily: "var(--heading-font)",
+                    fontSize: "1.1rem",
+                    fontWeight: 600,
+                    color: "var(--mktr-text)",
+                    marginBottom: "0.5rem",
+                  }}
+                >
+                  MKTR PTE. LTD.
+                </h4>
+                <p
+                  style={{
+                    fontFamily: "var(--body-font)",
+                    fontSize: "0.9rem",
+                    color: "var(--mktr-text-muted)",
+                    lineHeight: 1.6,
+                    fontWeight: 300,
+                  }}
+                >
+                  71 Ayer Rajah Crescent
+                  <br />
+                  #06-14, Singapore 139951
+                </p>
               </div>
-              <p className="text-gray-400">
-                Singapore's leading marketer platform for intelligent lead generation.
-              </p>
-              <div className="mt-8 pt-8 border-t border-gray-700 text-gray-400 text-sm">
-                &copy; 2025 MKTR PTE. LTD., Singapore. All rights reserved.
+
+              <div
+                style={{
+                  background: "var(--mktr-bg-card)",
+                  border: "1px solid var(--mktr-border)",
+                  borderRadius: 16,
+                  padding: "2rem",
+                }}
+              >
+                <div className="mktr-feature-icon" style={{ marginBottom: "1rem" }}>
+                  <MessageCircle className="w-5 h-5" />
+                </div>
+                <h4
+                  style={{
+                    fontFamily: "var(--heading-font)",
+                    fontSize: "1.1rem",
+                    fontWeight: 600,
+                    color: "var(--mktr-text)",
+                    marginBottom: "0.5rem",
+                  }}
+                >
+                  WhatsApp
+                </h4>
+                <p
+                  style={{
+                    fontFamily: "var(--body-font)",
+                    fontSize: "0.9rem",
+                    color: "var(--mktr-text-muted)",
+                    lineHeight: 1.6,
+                    fontWeight: 300,
+                    marginBottom: "1rem",
+                  }}
+                >
+                  Fastest way to reach us — WhatsApp only.
+                </p>
+                <a
+                  href="https://wa.me/6580790542"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mktr-hero-cta-secondary"
+                  style={{ fontSize: "0.9rem", padding: "0.75rem 1.5rem" }}
+                >
+                  +65 8079 0542
+                </a>
+              </div>
+
+              <div
+                style={{
+                  background: "var(--mktr-bg-card)",
+                  border: "1px solid var(--mktr-border)",
+                  borderRadius: 16,
+                  padding: "2rem",
+                }}
+              >
+                <h4
+                  style={{
+                    fontFamily: "var(--mono-font)",
+                    fontSize: "0.7rem",
+                    letterSpacing: "3px",
+                    textTransform: "uppercase",
+                    color: "var(--mktr-accent)",
+                    marginBottom: "1rem",
+                  }}
+                >
+                  Response Time
+                </h4>
+                <p
+                  style={{
+                    fontFamily: "var(--body-font)",
+                    fontSize: "0.9rem",
+                    color: "var(--mktr-text-muted)",
+                    lineHeight: 1.6,
+                    fontWeight: 300,
+                  }}
+                >
+                  We typically respond within <strong style={{ color: "var(--mktr-text)", fontWeight: 500 }}>4 hours</strong> during
+                  business hours (Mon-Fri, 9am-6pm SGT).
+                </p>
               </div>
             </div>
           </div>
-        </footer>
-      </div>
-    </>
+
+          <style>{`
+            @media (max-width: 768px) {
+              .mktr-section-container > div[style*="grid-template-columns: 1.2fr"] {
+                grid-template-columns: 1fr !important;
+              }
+            }
+          `}</style>
+        </div>
+      </section>
+    </MarketingLayout>
   );
 }

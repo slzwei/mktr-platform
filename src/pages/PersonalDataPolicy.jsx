@@ -1,146 +1,195 @@
-const PersonalDataPolicy = () => {
+import MarketingLayout from "@/components/layout/MarketingLayout";
+import "../pages/Homepage.css";
+
+const sections = [
+  {
+    title: "1. Collection of Personal Data",
+    content: `We may collect personal data from you through various channels, including but not limited to:`,
+    list: [
+      "When you submit forms on our platform or lead capture pages.",
+      "When you interact with our agents, customer service team, or representatives.",
+      "When you sign up for our campaigns, promotions, or newsletters.",
+      "Through your usage of our website and digital services (via cookies and similar technologies).",
+    ],
+    after: `The types of personal data we may collect include: name, NRIC/FIN (partial), email address, phone number, postal code, date of birth, occupation, and other information relevant to the services we provide.`,
+  },
+  {
+    title: "2. Purpose of Data Collection",
+    content: `We collect and use your personal data for the following purposes:`,
+    list: [
+      "To provide you with our products and services.",
+      "To match you with relevant insurance or financial products.",
+      "To communicate with you about our offerings and updates.",
+      "To improve our services and user experience.",
+      "To comply with legal and regulatory requirements.",
+      "To prevent fraud and ensure the security of our platform.",
+    ],
+  },
+  {
+    title: "3. Disclosure of Personal Data",
+    content: `We may share your personal data with:`,
+    list: [
+      "Our authorised agents and representatives who will be assisting you.",
+      "Insurance companies and financial institutions for the purpose of providing quotes and services.",
+      "Service providers who help us operate our platform (e.g., cloud hosting, analytics).",
+      "Government authorities when required by law.",
+    ],
+    after: `We do not sell your personal data to any third parties.`,
+  },
+  {
+    title: "4. Data Retention",
+    content: `We retain your personal data for as long as necessary to fulfil the purposes for which it was collected, or as required by law. When data is no longer needed, it will be securely deleted or anonymised.`,
+  },
+  {
+    title: "5. Access and Correction",
+    content: `You may request access to or correction of your personal data held by us. To make such a request, please contact us using the details provided at the end of this policy. We may charge a reasonable fee for processing access requests.`,
+  },
+  {
+    title: "6. Withdrawal of Consent",
+    content: `You may withdraw your consent for us to collect, use, or disclose your personal data at any time by contacting us. Please note that withdrawal of consent may affect our ability to provide certain services to you.`,
+  },
+  {
+    title: "7. Cookies and Tracking",
+    content: `Our website uses cookies and similar technologies to improve your browsing experience and analyse website traffic. You may configure your browser to reject cookies, though some features may not function properly.`,
+  },
+  {
+    title: "8. Data Security",
+    content: `We implement appropriate technical and organisational measures to protect your personal data against unauthorised access, collection, use, disclosure, or similar risks. These measures include encryption, access controls, and regular security audits.`,
+  },
+  {
+    title: "9. Changes to This Policy",
+    content: `We may update this policy from time to time to reflect changes in our practices or legal requirements. The updated policy will be posted on our website with the revised date.`,
+  },
+  {
+    title: "10. Contact Us",
+    content: `If you have any questions about this policy or wish to exercise your rights regarding your personal data, please contact us:`,
+    after: `MKTR PTE. LTD.\n71 Ayer Rajah Crescent, #06-14\nSingapore 139951\n\nWhatsApp: +65 8079 0542`,
+  },
+];
+
+export default function PersonalDataPolicy() {
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8 font-sans">
-      <div className="max-w-4xl mx-auto bg-white shadow-lg rounded-xl overflow-hidden border border-gray-100">
-        <div className="bg-slate-900 px-8 py-6">
-          <h1 className="text-2xl font-bold text-white tracking-tight">MKTR Personal Data Policy</h1>
-          <p className="text-slate-400 text-sm mt-1">Last Updated: January 2026</p>
-        </div>
+    <MarketingLayout>
+      <section className="mktr-section" style={{ paddingTop: "5rem" }}>
+        <div className="mktr-section-container" style={{ maxWidth: 800 }}>
+          <p className="mktr-section-eyebrow mktr-reveal">Legal</p>
+          <h1
+            className="mktr-section-title mktr-reveal mktr-reveal-delay-1"
+            style={{ textAlign: "left", marginBottom: "0.5rem" }}
+          >
+            Personal Data Policy
+          </h1>
+          <p
+            className="mktr-reveal mktr-reveal-delay-2"
+            style={{
+              fontFamily: "var(--mono-font)",
+              fontSize: "0.75rem",
+              color: "var(--mktr-text-dim)",
+              letterSpacing: "1px",
+              marginBottom: "3rem",
+            }}
+          >
+            Last Updated: January 2026
+          </p>
 
-        <div className="p-8 space-y-8 text-gray-700 leading-relaxed">
-          <section>
-            <p className="text-lg">
-              At MKTR PTE. LTD. ("MKTR", "we", "us", or "our"), we take your privacy seriously. This Personal Data
-              Policy outlines how we collect, use, disclose, and manage your personal data in accordance with the
-              Personal Data Protection Act 2012 ("PDPA") of Singapore.
+          <div className="mktr-reveal mktr-reveal-delay-2" style={{ marginBottom: "2rem" }}>
+            <p
+              style={{
+                fontFamily: "var(--body-font)",
+                fontSize: "1.05rem",
+                color: "var(--mktr-text-muted)",
+                lineHeight: 1.8,
+                fontWeight: 300,
+              }}
+            >
+              At MKTR PTE. LTD. (&ldquo;MKTR&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, or
+              &ldquo;our&rdquo;), we take your privacy seriously. This Personal Data Policy
+              outlines how we collect, use, disclose, and manage your personal data in accordance
+              with the Personal Data Protection Act 2012 (&ldquo;PDPA&rdquo;) of Singapore.
             </p>
-          </section>
+          </div>
 
-          <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-4 border-b pb-2">1. Collection of Personal Data</h2>
-            <p className="mb-4">
-              We may collect personal data from you through various channels, including but not limited to:
-            </p>
-            <ul className="list-disc pl-6 space-y-2">
-              <li>When you submit forms on our platform or lead capture pages.</li>
-              <li>When you interact with our agents, customer service team, or representatives.</li>
-              <li>When you sign up for our campaigns, promotions, or newsletters.</li>
-              <li>Through your usage of our website and digital services (via cookies and similar technologies).</li>
-            </ul>
-            <p className="mt-4">
-              The types of personal data we collect may include your name, contact numbers, email address, mailing
-              address, NRIC/FIN (where necessary and permitted), and other information required to provide our services.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-4 border-b pb-2">
-              2. Purpose of Collection and Use
-            </h2>
-            <p className="mb-4">We collect and use your personal data for the following purposes:</p>
-            <ul className="list-disc pl-6 space-y-2">
-              <li>To provide, operate, and maintain our services to you.</li>
-              <li>To process your applications, transactions, and registrations.</li>
-              <li>
-                To communicate with you regarding updates, promotions, rewards, and marketing messages (where you have
-                consented).
-              </li>
-              <li>To conduct market research, analysis, and service improvements.</li>
-              <li>To comply with applicable laws, regulations, and legal obligations.</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-4 border-b pb-2">3. Disclosure to Third Parties</h2>
-            <p className="mb-4">
-              We respect your confidentiality. However, we may disclose your personal data to trusted third parties in
-              the following circumstances:
-            </p>
-            <ul className="list-disc pl-6 space-y-2">
-              <li>
-                <strong>MKTR Partners & Representatives:</strong> To our affiliates, authorised representatives, and
-                service providers who assist us in our business operations (e.g., IT support, marketing agencies, call
-                centres).
-              </li>
-              <li>
-                <strong>Legal Compliance:</strong> When required by law, regulation, or court order to disclose
-                information to government or regulatory authorities.
-              </li>
-              <li>
-                <strong>Business Transactions:</strong> In the event of a merger, acquisition, or sale of assets, where
-                personal data may be transferred as part of the transaction.
-              </li>
-            </ul>
-            <p className="mt-4">
-              We require all third parties to respect the security of your personal data and to treat it in accordance
-              with the law.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-4 border-b pb-2">4. Protection and Retention</h2>
-            <p>
-              We implement appropriate administrative, physical, and technical security measures to protect your
-              personal data from unauthorised access, misuse, disclosure, alteration, or destruction. We retain your
-              personal data only for as long as is necessary to fulfil the purposes for which it was collected, or as
-              required by law.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-4 border-b pb-2">
-              5. Your Rights: Application, Withdrawal, and Correction
-            </h2>
-            <p className="mb-4">Under the PDPA, you have the following rights regarding your personal data:</p>
-            <ul className="list-disc pl-6 space-y-2">
-              <li>
-                <strong>Access:</strong> You may request access to the personal data we hold about you.
-              </li>
-              <li>
-                <strong>Correction:</strong> You may request correction of any inaccurate or incomplete personal data.
-              </li>
-              <li>
-                <strong>Withdrawal of Consent:</strong> You may withdraw your consent for the collection, use, or
-                disclosure of your personal data at any time.
-              </li>
-            </ul>
-            <p className="mt-4">
-              Please note that withdrawing consent may affect our ability to continue providing certain services to you.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-4 border-b pb-2">
-              6. Contact Us / Data Protection Officer
-            </h2>
-            <p className="mb-4">
-              If you have any questions about this Personal Data Policy, or if you wish to exercise your rights (Access,
-              Correction, or Withdrawal of Consent), please contact us via:
-            </p>
-            <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-              <p className="font-semibold text-slate-800">Data Protection Matters</p>
-              <p className="mt-2">
-                <strong>WhatsApp:</strong>{' '}
-                <a
-                  href="https://wa.me/601154388337"
-                  className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+          {sections.map((s, i) => (
+            <div key={i} className="mktr-reveal" style={{ marginBottom: "2.5rem" }}>
+              <h2
+                style={{
+                  fontFamily: "var(--heading-font)",
+                  fontSize: "1.25rem",
+                  fontWeight: 600,
+                  color: "var(--mktr-text)",
+                  marginBottom: "1rem",
+                  paddingBottom: "0.75rem",
+                  borderBottom: "1px solid var(--mktr-border)",
+                }}
+              >
+                {s.title}
+              </h2>
+              <p
+                style={{
+                  fontFamily: "var(--body-font)",
+                  fontSize: "0.95rem",
+                  color: "var(--mktr-text-muted)",
+                  lineHeight: 1.8,
+                  fontWeight: 300,
+                  marginBottom: s.list ? "1rem" : 0,
+                }}
+              >
+                {s.content}
+              </p>
+              {s.list && (
+                <ul
+                  style={{
+                    listStyle: "none",
+                    padding: 0,
+                    margin: "0 0 1rem",
+                  }}
                 >
-                  +60 11 5438 8337
-                </a>
-              </p>
-              <p className="mt-1 text-sm text-gray-500">
-                (Please state "Data Protection" or "PDPA" in your message for faster routing.)
-              </p>
+                  {s.list.map((item, j) => (
+                    <li
+                      key={j}
+                      style={{
+                        fontFamily: "var(--body-font)",
+                        fontSize: "0.95rem",
+                        color: "var(--mktr-text-muted)",
+                        lineHeight: 1.8,
+                        fontWeight: 300,
+                        paddingLeft: "1.5rem",
+                        position: "relative",
+                        marginBottom: "0.25rem",
+                      }}
+                    >
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          color: "var(--mktr-accent)",
+                        }}
+                      >
+                        &bull;
+                      </span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {s.after && (
+                <p
+                  style={{
+                    fontFamily: "var(--body-font)",
+                    fontSize: "0.95rem",
+                    color: "var(--mktr-text-muted)",
+                    lineHeight: 1.8,
+                    fontWeight: 300,
+                    whiteSpace: "pre-line",
+                  }}
+                >
+                  {s.after}
+                </p>
+              )}
             </div>
-          </section>
+          ))}
         </div>
-
-        <div className="bg-gray-50 px-8 py-6 border-t border-gray-200 text-center">
-          <p className="text-sm text-gray-500">&copy; {new Date().getFullYear()} MKTR PTE. LTD. All rights reserved.</p>
-        </div>
-      </div>
-    </div>
+      </section>
+    </MarketingLayout>
   );
-};
-
-export default PersonalDataPolicy;
+}
