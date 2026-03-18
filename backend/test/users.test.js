@@ -309,7 +309,7 @@ describe('User List Filters', () => {
 
   it('GET /api/users?status=inactive — filters inactive users', async () => {
     // Create and deactivate a user so there is at least one inactive
-    const { user: target } = await createTestUser({ role: 'customer', isActive: false })
+    const { user: _target } = await createTestUser({ role: 'customer', isActive: false })
 
     const res = await request(app)
       .get('/api/users?status=inactive')
@@ -352,5 +352,135 @@ describe('User Pagination', () => {
     if (page1.body.data.users.length > 0 && page2.body.data.users.length > 0) {
       expect(page1.body.data.users[0].id).not.toBe(page2.body.data.users[0].id)
     }
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Error path and edge case tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('User error paths — email collision on update', () => {
+  it('PUT /api/users/:id — returns error when updating to existing email', async () => {
+    const { user: userA } = await createTestUser({ role: 'agent' })
+    const { user: userB } = await createTestUser({ role: 'agent' })
+
+    const res = await request(app)
+      .put(`/api/users/${userB.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: userA.email })
+
+    // Should reject duplicate email — 400, 409, or 500 depending on implementation
+    expect([400, 409, 500]).toContain(res.status)
+  })
+})
+
+describe('User error paths — deactivate toggle', () => {
+  it('PATCH /api/users/:id/status — deactivate then reactivate', async () => {
+    const { user: target } = await createTestUser({ role: 'customer' })
+
+    // Deactivate
+    const deactivateRes = await request(app)
+      .patch(`/api/users/${target.id}/status`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ isActive: false })
+
+    expect(deactivateRes.status).toBe(200)
+    expect(deactivateRes.body.data.user.isActive).toBe(false)
+
+    // Reactivate
+    const activateRes = await request(app)
+      .patch(`/api/users/${target.id}/status`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ isActive: true })
+
+    expect(activateRes.status).toBe(200)
+    expect(activateRes.body.data.user.isActive).toBe(true)
+  })
+
+  it('PATCH /api/users/:id/status — returns 400 for non-boolean isActive', async () => {
+    const { user: target } = await createTestUser({ role: 'customer' })
+
+    const res = await request(app)
+      .patch(`/api/users/${target.id}/status`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ isActive: 'yes' })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('PATCH /api/users/:id/status — admin cannot deactivate themselves', async () => {
+    const res = await request(app)
+      .patch(`/api/users/${adminUser.id}/status`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ isActive: false })
+
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('User error paths — invite with invalid email format', () => {
+  it('POST /api/users/invite — returns 400 for invalid email', async () => {
+    const res = await request(app)
+      .post('/api/users/invite')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        email: 'not-an-email',
+        full_name: 'Bad Email User',
+        role: 'agent'
+      })
+
+    // Should reject invalid email
+    expect([400, 500]).toContain(res.status)
+  })
+
+  it('POST /api/users/invite — returns 400 for missing required fields', async () => {
+    const res = await request(app)
+      .post('/api/users/invite')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({})
+
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /api/users/invite — returns 400 for invalid role', async () => {
+    const res = await request(app)
+      .post('/api/users/invite')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        email: `invite-invalid-role-${Date.now()}@test.com`,
+        full_name: 'Invalid Role',
+        role: 'superadmin'
+      })
+
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('User error paths — bulk delete with invalid IDs', () => {
+  it('POST /api/users/bulk-delete — returns 400 for empty ids array', async () => {
+    const res = await request(app)
+      .post('/api/users/bulk-delete')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ids: [] })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /api/users/bulk-delete — returns 400 for missing ids', async () => {
+    const res = await request(app)
+      .post('/api/users/bulk-delete')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({})
+
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /api/users/bulk-delete — returns 400 when trying to delete self', async () => {
+    const res = await request(app)
+      .post('/api/users/bulk-delete')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ids: [adminUser.id] })
+
+    expect(res.status).toBe(400)
   })
 })

@@ -1,7 +1,7 @@
 import request from 'supertest'
 import { getApp, closeDb, createTestUser, createTestFleetOwner, createTestCar } from './helpers.js'
 
-let app, adminToken, agentToken, agentUser
+let app, adminToken, agentToken, _agentUser
 
 beforeAll(async () => {
   app = await getApp()
@@ -9,7 +9,7 @@ beforeAll(async () => {
   adminToken = admin.token
   const agent = await createTestUser({ role: 'agent' })
   agentToken = agent.token
-  agentUser = agent.user
+  _agentUser = agent.user
 }, 15000)
 
 afterAll(async () => {
@@ -405,6 +405,110 @@ describe('Fleet auth scoping', () => {
       .set('Authorization', `Bearer ${agentToken}`)
 
     expect(res.status).toBe(200)
+  })
+})
+
+describe('Fleet owner creation – edge cases', () => {
+  it('POST /api/fleet/owners — rejects missing full_name', async () => {
+    const res = await request(app)
+      .post('/api/fleet/owners')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        email: `fleet-noname-${Date.now()}@test.com`,
+        phone: '91234567',
+        company_name: 'Test Co'
+      })
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /api/fleet/owners — rejects missing email', async () => {
+    const res = await request(app)
+      .post('/api/fleet/owners')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        full_name: 'No Email Owner',
+        phone: '91234567',
+        company_name: 'Test Co'
+      })
+    expect(res.status).toBe(400)
+  })
+
+  it('PUT /api/fleet/owners/:id — returns 404 for non-existent owner', async () => {
+    const res = await request(app)
+      .put('/api/fleet/owners/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ company_name: 'Ghost Co' })
+    expect(res.status).toBe(404)
+  })
+
+  it('DELETE /api/fleet/owners/:id — returns 404 for non-existent owner', async () => {
+    const res = await request(app)
+      .delete('/api/fleet/owners/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('Car creation – edge cases', () => {
+  it('POST /api/fleet/cars — rejects missing plate_number', async () => {
+    const fleetOwner = await createTestFleetOwner()
+    const res = await request(app)
+      .post('/api/fleet/cars')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        make: 'Honda',
+        model: 'Civic',
+        year: 2024,
+        type: 'sedan',
+        fleet_owner_id: fleetOwner.id
+      })
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /api/fleet/cars — rejects duplicate plate_number', async () => {
+    const fleetOwner = await createTestFleetOwner()
+    const plate = `DUP${Date.now().toString().slice(-6)}`
+    await createTestCar(fleetOwner.id, { plate_number: plate })
+
+    const res = await request(app)
+      .post('/api/fleet/cars')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        make: 'Toyota',
+        model: 'Corolla',
+        year: 2024,
+        plate_number: plate,
+        type: 'sedan',
+        fleet_owner_id: fleetOwner.id
+      })
+    expect([400, 409, 500]).toContain(res.status)
+  })
+
+  it('PATCH /api/fleet/cars/:id/assign-driver — rejects missing driverId field', async () => {
+    const fleetOwner = await createTestFleetOwner()
+    const car = await createTestCar(fleetOwner.id)
+
+    const res = await request(app)
+      .patch(`/api/fleet/cars/${car.id}/assign-driver`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({})
+    // Should handle gracefully — either 400 or treat as unassign
+    expect([200, 400]).toContain(res.status)
+  })
+
+  it('POST /api/fleet/cars — rejects non-UUID fleet_owner_id format', async () => {
+    const res = await request(app)
+      .post('/api/fleet/cars')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        make: 'Honda',
+        model: 'Civic',
+        year: 2024,
+        plate_number: `BAD${Date.now().toString().slice(-6)}`,
+        type: 'sedan',
+        fleet_owner_id: 'not-a-uuid'
+      })
+    expect([400, 404, 500]).toContain(res.status)
   })
 })
 

@@ -3,7 +3,7 @@ import { getApp, closeDb, createTestUser, createTestCampaign, createTestProspect
 
 let app, adminUser, adminToken
 let agent1, agent1Token, agent2, agent2Token
-let campaign, prospect
+let campaign, _prospect
 
 beforeAll(async () => {
   app = await getApp()
@@ -19,7 +19,7 @@ beforeAll(async () => {
 
   // Seed campaign, prospect, and commission for agent1
   campaign = await createTestCampaign(adminUser.id)
-  prospect = await createTestProspect(campaign.id, { assignedAgentId: agent1.id })
+  _prospect = await createTestProspect(campaign.id, { assignedAgentId: agent1.id })
   await createTestCommission(agent1.id, campaign.id, { amount: 100 })
 }, 15000)
 
@@ -406,6 +406,149 @@ describe('Agent leaderboard', () => {
     const res = await request(app)
       .get('/api/agents/leaderboard/performance')
       .set('Authorization', `Bearer ${agent1Token}`)
+
+    expect([401, 403]).toContain(res.status)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Error path and edge case tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Agent error paths — deactivate agent with active prospects', () => {
+  it('PUT /api/agents/:id — deactivating agent with isActive=false succeeds', async () => {
+    // agent1 has a prospect assigned from beforeAll
+    const res = await request(app)
+      .put(`/api/agents/${agent1.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ isActive: false })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.agent.isActive).toBe(false)
+
+    // Restore for subsequent tests
+    await request(app)
+      .put(`/api/agents/${agent1.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ isActive: true })
+  })
+})
+
+describe('Agent error paths — invite existing email', () => {
+  it('POST /api/agents/invite — returns 409 or 400 for already-registered email', async () => {
+    const res = await request(app)
+      .post('/api/agents/invite')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        email: agent1.email,
+        full_name: 'Duplicate Agent'
+      })
+
+    // Should reject duplicate email
+    expect([400, 409]).toContain(res.status)
+  })
+})
+
+describe('Agent error paths — update non-existent agent', () => {
+  it('PUT /api/agents/:id — returns 404 for UUID that does not exist', async () => {
+    const res = await request(app)
+      .put('/api/agents/11111111-1111-1111-1111-111111111111')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ firstName: 'Nonexistent' })
+
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('Agent error paths — invalid sort parameter', () => {
+  it('GET /api/agents?sortBy=nonexistent — handles gracefully', async () => {
+    const res = await request(app)
+      .get('/api/agents?sortBy=nonexistent&sortOrder=asc')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    // Should not crash — either ignores invalid sort or returns 400
+    expect([200, 400]).toContain(res.status)
+  })
+})
+
+describe('Agent error paths — search with special characters', () => {
+  it('GET /api/agents?search=<script> — handles special chars safely', async () => {
+    const res = await request(app)
+      .get('/api/agents?search=%3Cscript%3Ealert(1)%3C%2Fscript%3E')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    // Should return empty results, not crash
+    expect(Array.isArray(res.body.data.agents)).toBe(true)
+  })
+
+  it('GET /api/agents?search=%25 — handles SQL wildcard chars', async () => {
+    const res = await request(app)
+      .get('/api/agents?search=%25')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body.data.agents)).toBe(true)
+  })
+})
+
+describe('Agent error paths — pagination bounds', () => {
+  it('GET /api/agents?page=0&limit=1 — page 0 handles gracefully', async () => {
+    const res = await request(app)
+      .get('/api/agents?page=0&limit=1')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    // Should not crash
+    expect([200, 400]).toContain(res.status)
+  })
+
+  it('GET /api/agents?page=1&limit=-1 — negative limit handles gracefully', async () => {
+    const res = await request(app)
+      .get('/api/agents?page=1&limit=-1')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect([200, 400]).toContain(res.status)
+  })
+
+  it('GET /api/agents?page=99999 — very high page returns empty', async () => {
+    const res = await request(app)
+      .get('/api/agents?page=99999&limit=10')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.agents).toHaveLength(0)
+  })
+})
+
+describe('Agent error paths — invite missing fields', () => {
+  it('POST /api/agents/invite — returns 400 for missing email', async () => {
+    const res = await request(app)
+      .post('/api/agents/invite')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ full_name: 'No Email Agent' })
+
+    expect([400, 500]).toContain(res.status)
+  })
+
+  it('POST /api/agents/invite — returns 400 for empty body', async () => {
+    const res = await request(app)
+      .post('/api/agents/invite')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({})
+
+    expect([400, 500]).toContain(res.status)
+  })
+})
+
+describe('Agent error paths — agent cannot invite', () => {
+  it('POST /api/agents/invite — agent role gets 403', async () => {
+    const res = await request(app)
+      .post('/api/agents/invite')
+      .set('Authorization', `Bearer ${agent1Token}`)
+      .send({
+        email: `agent-invite-${Date.now()}@test.com`,
+        full_name: 'Agent Invited'
+      })
 
     expect([401, 403]).toContain(res.status)
   })

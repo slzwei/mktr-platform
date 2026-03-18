@@ -251,6 +251,87 @@ describe('POST /api/retell/webhook', () => {
     expect(prospect.notes).toContain('Test call summary')
   })
 
+  it('rejects request with malformed signature format (no v= prefix)', async () => {
+    const payload = buildCallPayload()
+    const bodyStr = JSON.stringify(payload)
+    const res = await request(app)
+      .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-retell-signature', 'not-a-valid-signature-format')
+      .send(bodyStr)
+
+    expect(res.status).toBe(401)
+  })
+
+  it('rejects request with expired timestamp in signature', async () => {
+    const payload = buildCallPayload()
+    const bodyStr = JSON.stringify(payload)
+    // Use a very old timestamp
+    const oldTimestamp = '1000000000'
+    const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET).update(`${oldTimestamp}.${bodyStr}`).digest('hex')
+    const res = await request(app)
+      .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-retell-signature', `v=${oldTimestamp},d=${hmac}`)
+      .send(bodyStr)
+
+    // May be accepted or rejected depending on timestamp tolerance
+    expect([200, 401]).toContain(res.status)
+  })
+
+  it('handles payload with unknown/extra fields gracefully', async () => {
+    const payload = buildCallPayload({
+      unknown_field: 'some_value',
+      extra_nested: { deeply: { nested: true } }
+    })
+    const bodyStr = JSON.stringify(payload)
+    const signature = signRetellPayload(bodyStr, WEBHOOK_SECRET)
+
+    const res = await request(app)
+      .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-retell-signature', signature)
+      .send(bodyStr)
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+  })
+
+  it('handles missing call_analysis field gracefully', async () => {
+    const payload = buildCallPayload()
+    delete payload.call_analysis
+    const bodyStr = JSON.stringify(payload)
+    const signature = signRetellPayload(bodyStr, WEBHOOK_SECRET)
+
+    const res = await request(app)
+      .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-retell-signature', signature)
+      .send(bodyStr)
+
+    // Without call_analysis, call_successful defaults to falsy -> skipped
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('skipped')
+  })
+
+  it('handles missing transcript gracefully', async () => {
+    const payload = buildCallPayload({ transcript: null })
+    const bodyStr = JSON.stringify(payload)
+    const signature = signRetellPayload(bodyStr, WEBHOOK_SECRET)
+
+    const res = await request(app)
+      .post('/api/retell/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-retell-signature', signature)
+      .send(bodyStr)
+
+    expect(res.status).toBe(200)
+    if (res.body.status === 'created') {
+      const prospect = await Prospect.findByPk(res.body.prospectId)
+      expect(prospect).not.toBeNull()
+    }
+  })
+
   it('tags prospects with retell and phone-call', async () => {
     const payload = buildCallPayload()
     const bodyStr = JSON.stringify(payload)

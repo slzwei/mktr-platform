@@ -226,6 +226,85 @@ describe('QR routing does not interfere with non-QR leads', () => {
   });
 });
 
+describe('QR code CRUD error paths', () => {
+  it('GET /api/qrcodes/:id — returns 404 for non-existent QR code', async () => {
+    const res = await request(app)
+      .get('/api/qrcodes/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('PUT /api/qrcodes/:id — returns 404 for non-existent QR code', async () => {
+    const res = await request(app)
+      .put('/api/qrcodes/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ label: 'Updated Label' });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('DELETE /api/qrcodes/:id — returns 404 for non-existent QR code', async () => {
+    const res = await request(app)
+      .delete('/api/qrcodes/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /api/qrcodes — rejects invalid campaignId (non-existent)', async () => {
+    const res = await request(app)
+      .post('/api/qrcodes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        label: 'Bad Campaign QR',
+        type: 'promotional',
+        campaignId: '00000000-0000-0000-0000-000000000000'
+      });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /api/qrcodes/:id/scan — returns error for non-existent QR tag', async () => {
+    const res = await request(app)
+      .post('/api/qrcodes/00000000-0000-0000-0000-000000000000/scan')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ metadata: {} });
+
+    expect([404, 500]).toContain(res.status);
+  });
+
+  it('POST /api/qrcodes/bulk — rejects missing operation field', async () => {
+    const res = await request(app)
+      .post('/api/qrcodes/bulk')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ qrTagIds: [] });
+
+    expect([400, 500]).toContain(res.status);
+  });
+
+  it('POST /api/qrcodes/bulk — rejects invalid QR tag IDs', async () => {
+    const res = await request(app)
+      .post('/api/qrcodes/bulk')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        operation: 'deactivate',
+        qrTagIds: ['00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000001']
+      });
+
+    // Should not crash, may return 200 with 0 affected or 400
+    expect([200, 400]).toContain(res.status);
+  });
+
+  it('GET /api/qrcodes/:id/analytics — returns 404 for non-existent QR', async () => {
+    const res = await request(app)
+      .get('/api/qrcodes/00000000-0000-0000-0000-000000000000/analytics')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect([404, 500]).toContain(res.status);
+  });
+});
+
 describeRR('Mixed QR modes on same campaign', () => {
   it('direct and round-robin QRs coexist correctly', async () => {
     const campaign = await createTestCampaign(adminUser.id);

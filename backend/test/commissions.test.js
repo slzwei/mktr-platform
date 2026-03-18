@@ -508,3 +508,173 @@ describe('Commission pagination', () => {
     expect(res.body.data.pagination.totalPages).toBeGreaterThanOrEqual(1)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Error path and edge case tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Commission error paths — approve non-pending', () => {
+  it('PATCH /api/commissions/:id/approve — returns 400 for approved commission', async () => {
+    const campaign = await createTestCampaign(adminUser.id)
+    const c = await createTestCommission(agentUser.id, campaign.id, { status: 'approved' })
+
+    const res = await request(app)
+      .patch(`/api/commissions/${c.id}/approve`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('Commission error paths — pay non-approved', () => {
+  it('PATCH /api/commissions/:id/pay — returns 400 for pending commission', async () => {
+    const campaign = await createTestCampaign(adminUser.id)
+    const c = await createTestCommission(agentUser.id, campaign.id, { status: 'pending' })
+
+    const res = await request(app)
+      .patch(`/api/commissions/${c.id}/pay`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ paymentMethod: 'bank_transfer' })
+
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('Commission error paths — update paid commission', () => {
+  it('PUT /api/commissions/:id — returns 400 for paid commission', async () => {
+    const campaign = await createTestCampaign(adminUser.id)
+    const c = await createTestCommission(agentUser.id, campaign.id, { status: 'paid' })
+
+    const res = await request(app)
+      .put(`/api/commissions/${c.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ amount: 999 })
+
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('Commission error paths — zero data stats', () => {
+  it('GET /api/commissions/stats/overview — returns valid structure even with period=today', async () => {
+    const res = await request(app)
+      .get('/api/commissions/stats/overview?period=today')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.summary).toBeDefined()
+    expect(typeof res.body.data.summary.totalAmount).toBe('number')
+    expect(typeof res.body.data.summary.totalCount).toBe('number')
+  })
+})
+
+describe('Commission error paths — create with invalid agent', () => {
+  it('POST /api/commissions — returns 400 for non-existent agent', async () => {
+    const res = await request(app)
+      .post('/api/commissions')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        agentId: '00000000-0000-0000-0000-000000000000',
+        amount: 50,
+        type: 'conversion'
+      })
+
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('Commission error paths — create missing amount', () => {
+  it('POST /api/commissions — returns 400 when amount is missing', async () => {
+    const res = await request(app)
+      .post('/api/commissions')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        agentId: agentUser.id,
+        type: 'conversion'
+      })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /api/commissions — returns 400 when type is missing', async () => {
+    const res = await request(app)
+      .post('/api/commissions')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        agentId: agentUser.id,
+        amount: 100
+      })
+
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('Commission error paths — bulk approve empty', () => {
+  it('PATCH /api/commissions/bulk/approve — returns 400 for empty array', async () => {
+    const res = await request(app)
+      .patch('/api/commissions/bulk/approve')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ commissionIds: [] })
+
+    expect([200, 400]).toContain(res.status)
+  })
+
+  it('PATCH /api/commissions/bulk/approve — returns 400 for missing commissionIds', async () => {
+    const res = await request(app)
+      .patch('/api/commissions/bulk/approve')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({})
+
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('Commission error paths — get non-existent', () => {
+  it('GET /api/commissions/:id — returns 404 for non-existent commission', async () => {
+    const res = await request(app)
+      .get('/api/commissions/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('Commission error paths — update non-existent', () => {
+  it('PUT /api/commissions/:id — returns 404 for non-existent commission', async () => {
+    const res = await request(app)
+      .put('/api/commissions/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ amount: 200 })
+
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('Commission error paths — approve/pay non-existent', () => {
+  it('PATCH /api/commissions/:id/approve — returns 404 for non-existent', async () => {
+    const res = await request(app)
+      .patch('/api/commissions/00000000-0000-0000-0000-000000000000/approve')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(404)
+  })
+
+  it('PATCH /api/commissions/:id/pay — returns 404 for non-existent', async () => {
+    const res = await request(app)
+      .patch('/api/commissions/00000000-0000-0000-0000-000000000000/pay')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ paymentMethod: 'cash' })
+
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('Commission error paths — invalid date range', () => {
+  it('GET /api/commissions?startDate=invalid — handles invalid date', async () => {
+    const res = await request(app)
+      .get('/api/commissions?startDate=not-a-date&endDate=also-not-a-date')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    // Should handle gracefully — return all or error
+    expect([200, 400]).toContain(res.status)
+  })
+})

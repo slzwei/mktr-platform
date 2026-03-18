@@ -99,6 +99,93 @@ describe('Auth middleware', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Auth middleware – additional edge cases
+// ---------------------------------------------------------------------------
+describe('Auth middleware – edge cases', () => {
+  it('returns 401 for Bearer with no space after it', async () => {
+    const res = await request(app)
+      .get('/api/prospects')
+      .set('Authorization', 'Bearertoken123')
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 401 for Basic auth scheme instead of Bearer', async () => {
+    const res = await request(app)
+      .get('/api/prospects')
+      .set('Authorization', 'Basic dXNlcjpwYXNz')
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 401 for a token signed with wrong secret', async () => {
+    const wrongToken = jwt.sign({ userId: adminUser.id }, 'completely-wrong-secret', { expiresIn: '1h' })
+    const res = await request(app)
+      .get('/api/prospects')
+      .set('Authorization', `Bearer ${wrongToken}`)
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 401 for a JWT with no userId claim', async () => {
+    const badToken = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '1h' })
+    const res = await request(app)
+      .get('/api/prospects')
+      .set('Authorization', `Bearer ${badToken}`)
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 401 when token references an inactive user', async () => {
+    const { user: inactiveUser } = await createTestUser({ role: 'admin', isActive: false })
+    const inactiveToken = jwt.sign({ userId: inactiveUser.id }, JWT_SECRET, { expiresIn: '1h' })
+    const res = await request(app)
+      .get('/api/prospects')
+      .set('Authorization', `Bearer ${inactiveToken}`)
+    expect(res.status).toBe(401)
+    expect(res.body.success).toBe(false)
+  })
+
+  it('returns 403 when agent accesses fleet owner create (admin-only)', async () => {
+    const res = await request(app)
+      .post('/api/fleet/owners')
+      .set('Authorization', `Bearer ${agent1Token}`)
+      .send({ full_name: 'Test', email: 'test@test.com', phone: '91234567' })
+    expect([401, 403]).toContain(res.status)
+  })
+
+  it('returns 403 when agent accesses users list (admin-only)', async () => {
+    const res = await request(app)
+      .get('/api/users')
+      .set('Authorization', `Bearer ${agent2Token}`)
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 401 for Authorization header with only "Bearer" (no token value)', async () => {
+    const res = await request(app)
+      .get('/api/prospects')
+      .set('Authorization', 'Bearer')
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 401 for a truncated/corrupted JWT', async () => {
+    const validToken = adminToken
+    const corrupted = validToken.slice(0, validToken.length / 2)
+    const res = await request(app)
+      .get('/api/prospects')
+      .set('Authorization', `Bearer ${corrupted}`)
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 401 for a JWT with tampered payload segment', async () => {
+    const parts = adminToken.split('.')
+    // Modify the payload segment
+    parts[1] = Buffer.from('{"userId":"00000000-0000-0000-0000-000000000000","iat":99999999}').toString('base64url')
+    const tamperedToken = parts.join('.')
+    const res = await request(app)
+      .get('/api/prospects')
+      .set('Authorization', `Bearer ${tamperedToken}`)
+    expect(res.status).toBe(401)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Prospect scoping (via buildProspectWhere)
 // ---------------------------------------------------------------------------
 describe('Prospect scoping', () => {

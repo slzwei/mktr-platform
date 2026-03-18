@@ -2,13 +2,13 @@ import './setup.js';
 import { getApp, closeDb, createTestUser, createTestCampaign } from './helpers.js';
 import request from 'supertest';
 
-let app, admin, token, campaign;
+let app, admin, _token, campaign;
 
 beforeAll(async () => {
   app = await getApp();
   const result = await createTestUser({ role: 'admin' });
   admin = result.user;
-  token = result.token;
+  _token = result.token;
   campaign = await createTestCampaign(admin.id);
 });
 
@@ -101,5 +101,34 @@ describe('Phone E.164 Validation', () => {
       });
 
     expect(res.status).toBe(201);
+  });
+
+  test('Normalizes 10-digit SG number starting with 65 to +65XXXXXXXX', async () => {
+    const res = await request(app)
+      .post('/api/prospects')
+      .send({
+        firstName: 'Test', lastName: 'SG65',
+        email: `sg65-${Date.now()}@test.com`,
+        phone: '6591234567',
+        leadSource: 'qr_code',
+        campaignId: campaign.id
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.prospect.phone).toBe('+6591234567');
+  });
+
+  test('Rejects phone with special characters (not digits or +)', async () => {
+    const res = await request(app)
+      .post('/api/prospects')
+      .send({
+        firstName: 'Test', lastName: 'Special',
+        email: `special-phone-${Date.now()}@test.com`,
+        phone: '+65-9123-4567!',
+        leadSource: 'qr_code',
+        campaignId: campaign.id
+      });
+
+    expect(res.status).toBe(400);
   });
 });

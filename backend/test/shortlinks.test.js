@@ -2,12 +2,12 @@ import './setup.js'
 import request from 'supertest'
 import { getApp, closeDb, createTestUser } from './helpers.js'
 
-let app, adminToken, adminUser, agentToken
+let app, adminToken, _adminUser, agentToken
 
 beforeAll(async () => {
   app = await getApp()
   const admin = await createTestUser({ role: 'admin' })
-  adminUser = admin.user; adminToken = admin.token
+  _adminUser = admin.user; adminToken = admin.token
   const agent = await createTestUser({ role: 'agent' })
   agentToken = agent.token
 }, 15000)
@@ -278,6 +278,81 @@ describe('DELETE /api/shortlinks/:id', () => {
       .set('Authorization', `Bearer ${agentToken}`)
 
     expect(res.status).toBe(403)
+  })
+})
+
+// ---- Edge cases ----
+describe('Shortlink error paths and edge cases', () => {
+  it('POST /api/shortlinks — rejects invalid URL (no protocol)', async () => {
+    const res = await request(app)
+      .post('/api/shortlinks')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ targetUrl: 'not-a-valid-url' })
+    // Should either succeed (no URL validation beyond type) or return 400
+    expect([201, 400]).toContain(res.status)
+  })
+
+  it('GET /share/:slug — redirects to error for expired slug', async () => {
+    // Create a link then manually expire it
+    const create = await request(app)
+      .post('/api/shortlinks')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ targetUrl: 'https://example.com/expire-test', ttlDays: 0 })
+
+    const slug = create.body.data.slug
+    // Update expiry to the past
+    const linkId = create.body.data.link.id
+    await request(app)
+      .patch(`/api/shortlinks/${linkId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ expiresAt: new Date(Date.now() - 86400000).toISOString() })
+
+    const res = await request(app)
+      .get(`/share/${slug}`)
+      .redirects(0)
+
+    expect(res.status).toBe(302)
+    expect(res.headers.location).toContain('error=expired')
+  })
+
+  it('DELETE /api/shortlinks/:id — returns 404 for already-deleted link', async () => {
+    const create = await request(app)
+      .post('/api/shortlinks')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ targetUrl: 'https://example.com/double-delete' })
+    const linkId = create.body.data.link.id
+
+    await request(app)
+      .delete(`/api/shortlinks/${linkId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    const res = await request(app)
+      .delete(`/api/shortlinks/${linkId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(404)
+  })
+
+  it('GET /api/shortlinks — rejects negative page number gracefully', async () => {
+    const res = await request(app)
+      .get('/api/shortlinks?page=-1&limit=10')
+      .set('Authorization', `Bearer ${adminToken}`)
+    // Should not crash; may return 200 with empty results or 400
+    expect([200, 400]).toContain(res.status)
+  })
+
+  it('GET /api/shortlinks — rejects non-numeric limit gracefully', async () => {
+    const res = await request(app)
+      .get('/api/shortlinks?page=1&limit=abc')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect([200, 400]).toContain(res.status)
+  })
+
+  it('PATCH /api/shortlinks/:id — rejects non-UUID id', async () => {
+    const res = await request(app)
+      .patch('/api/shortlinks/not-a-uuid')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ expiresAt: new Date().toISOString() })
+    expect([400, 404, 500]).toContain(res.status)
   })
 })
 

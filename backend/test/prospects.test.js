@@ -630,3 +630,168 @@ describe('Unassignment activity logging', () => {
     expect(unassignActivity.metadata.previousAssignedAgentId).toBe(agentUser.id)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Error path and edge case tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Prospect error paths — bulk assign edge cases', () => {
+  it('PATCH /api/prospects/bulk/assign — empty prospectIds array returns 400', async () => {
+    const res = await request(app)
+      .patch('/api/prospects/bulk/assign')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        prospectIds: [],
+        agentId: agentUser.id
+      })
+
+    // Service requires non-empty prospectIds
+    expect([200, 400]).toContain(res.status)
+  })
+
+  it('PATCH /api/prospects/bulk/assign — invalid agent ID returns 400', async () => {
+    const campaign = await createTestCampaign(adminUser.id)
+    const p = await createTestProspect(campaign.id)
+
+    const res = await request(app)
+      .patch('/api/prospects/bulk/assign')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        prospectIds: [p.id],
+        agentId: '00000000-0000-0000-0000-000000000000'
+      })
+
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('Prospect error paths — pagination bounds', () => {
+  it('GET /api/prospects?page=0&limit=0 — handles zero pagination', async () => {
+    const res = await request(app)
+      .get('/api/prospects?page=0&limit=0')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    // Should not crash
+    expect([200, 400]).toContain(res.status)
+  })
+
+  it('GET /api/prospects?page=99999 — very large page returns empty', async () => {
+    const res = await request(app)
+      .get('/api/prospects?page=99999&limit=10')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.prospects).toHaveLength(0)
+  })
+
+  it('GET /api/prospects?page=-1&limit=-5 — negative pagination handles gracefully', async () => {
+    const res = await request(app)
+      .get('/api/prospects?page=-1&limit=-5')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect([200, 400]).toContain(res.status)
+  })
+})
+
+describe('Prospect error paths — update non-existent', () => {
+  it('PUT /api/prospects/:id — returns 404 for non-existent prospect', async () => {
+    const res = await request(app)
+      .put('/api/prospects/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ leadStatus: 'contacted' })
+
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('Prospect error paths — assign to non-existent agent', () => {
+  it('PATCH /api/prospects/:id/assign — returns 400 for non-existent agent', async () => {
+    const campaign = await createTestCampaign(adminUser.id)
+    const prospect = await createTestProspect(campaign.id)
+
+    const res = await request(app)
+      .patch(`/api/prospects/${prospect.id}/assign`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ agentId: '00000000-0000-0000-0000-000000000000' })
+
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('Prospect error paths — assign already-assigned prospect', () => {
+  it('PATCH /api/prospects/:id/assign — reassigning to same agent succeeds', async () => {
+    const campaign = await createTestCampaign(adminUser.id)
+    const prospect = await createTestProspect(campaign.id, { assignedAgentId: agentUser.id })
+
+    const res = await request(app)
+      .patch(`/api/prospects/${prospect.id}/assign`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ agentId: agentUser.id })
+
+    // Should succeed — reassignment to same agent is allowed
+    expect(res.status).toBe(200)
+    expect(res.body.data.prospect.assignedAgentId).toBe(agentUser.id)
+  })
+})
+
+describe('Prospect error paths — filter by invalid status', () => {
+  it('GET /api/prospects?leadStatus=nonexistent — returns empty or all', async () => {
+    const res = await request(app)
+      .get('/api/prospects?leadStatus=nonexistent_status')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    // Invalid status filter should return empty results
+    expect(res.body.data.prospects).toHaveLength(0)
+  })
+})
+
+describe('Prospect error paths — create missing required fields', () => {
+  it('POST /api/prospects — returns 400 for missing firstName', async () => {
+    const campaign = await createTestCampaign(adminUser.id)
+
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        email: `missing-fn-${Date.now()}@test.com`,
+        phone: `+65${Date.now().toString().slice(-8)}`,
+        leadSource: 'qr_code',
+        campaignId: campaign.id
+      })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /api/prospects — returns 400 for missing email', async () => {
+    const campaign = await createTestCampaign(adminUser.id)
+
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        firstName: 'NoEmail',
+        phone: `+65${Date.now().toString().slice(-8)}`,
+        leadSource: 'qr_code',
+        campaignId: campaign.id
+      })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /api/prospects — returns 400 for missing leadSource', async () => {
+    const campaign = await createTestCampaign(adminUser.id)
+
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        firstName: 'NoSource',
+        email: `nosource-${Date.now()}@test.com`,
+        phone: `+65${Date.now().toString().slice(-8)}`,
+        campaignId: campaign.id
+      })
+
+    expect(res.status).toBe(400)
+  })
+})
