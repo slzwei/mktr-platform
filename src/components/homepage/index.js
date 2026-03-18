@@ -6,5 +6,7 @@ export { default as FloatingElements } from './FloatingElements';
 export { default as HeroSection } from './HeroSection';
 export { default as LeadSourcesSection } from './LeadSourcesSection';
 export { default as FeaturesSection } from './FeaturesSection';
+export { default as TestimonialSection } from './TestimonialSection';
+export { default as PricingSection } from './PricingSection';
 export { default as CTASection } from './CTASection';
 export { default as FooterSection } from './FooterSection';

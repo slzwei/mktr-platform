@@ -2,43 +2,47 @@ import { Link } from "react-router-dom";
 
 const FooterSection = () => {
   return (
-    <footer className="section-spacing border-t bg-black text-white">
-        <div className="container">
-          <div className="grid md:grid-cols-4 gap-8 mobile-grid-fix">
-            <div>
-              <h3 className="logo mb-4 !text-white">MKTR.</h3>
-              <p className="body-text text-gray-300">
-                Singapore's leading marketer platform for intelligent lead generation.
-              </p>
-            </div>
-            <div>
-              <h4 className="section-title mb-4 !text-white">Platform</h4>
-              <ul className="space-y-2">
-                <li><Link to={"/LeadCapture"} className="body-text text-gray-300 hover:text-white">Lead Capture</Link></li>
-                <li><Link to={"/AdminDashboard"} className="body-text text-gray-300 hover:text-white">Dashboard</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="section-title mb-4 !text-white">Support</h4>
-              <ul className="space-y-2">
-                <li><a href="#" className="body-text text-gray-300 hover:text-white">Documentation</a></li>
-                <li><a href="#" className="body-text text-gray-300 hover:text-white">Help Center</a></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="section-title mb-4 !text-white">Company</h4>
-              <ul className="space-y-2">
-                <li><a href="#" className="body-text text-gray-300 hover:text-white">About Us</a></li>
-                <li><a href="#" className="body-text text-gray-300 hover:text-white">Privacy Policy</a></li>
-                <li><Link to={"/Contact"} className="body-text text-gray-300 hover:text-white">Contact</Link></li>
-              </ul>
-            </div>
-          </div>
-          <div className="border-t border-gray-700 mt-12 pt-8 text-center">
-            <p className="body-text text-gray-400">&copy; 2025 MKTR. Singapore. All rights reserved.</p>
-          </div>
+    <footer className="mktr-footer">
+      <div className="mktr-footer-grid">
+        <div>
+          <div className="mktr-footer-logo">MKTR.</div>
+          <p className="mktr-footer-desc">
+            Singapore's AI-powered lead generation platform for insurance
+            and property agents. Capture, qualify, and convert prospects at scale.
+          </p>
         </div>
-      </footer>
+
+        <div>
+          <h4 className="mktr-footer-heading">Platform</h4>
+          <Link to="/LeadCapture" className="mktr-footer-link">Lead Capture</Link>
+          <Link to="/AdminDashboard" className="mktr-footer-link">Dashboard</Link>
+          <a href="#features" className="mktr-footer-link">Features</a>
+        </div>
+
+        <div>
+          <h4 className="mktr-footer-heading">Support</h4>
+          <a href="#" className="mktr-footer-link">Documentation</a>
+          <a href="#" className="mktr-footer-link">Help Center</a>
+          <Link to="/Contact" className="mktr-footer-link">Contact Us</Link>
+        </div>
+
+        <div>
+          <h4 className="mktr-footer-heading">Company</h4>
+          <a href="#" className="mktr-footer-link">About</a>
+          <Link to="/PersonalDataPolicy" className="mktr-footer-link">Privacy Policy</Link>
+          <a href="#" className="mktr-footer-link">Terms of Service</a>
+        </div>
+      </div>
+
+      <div className="mktr-footer-bottom">
+        <p className="mktr-footer-copy">
+          &copy; {new Date().getFullYear()} MKTR. Singapore. All rights reserved.
+        </p>
+        <p className="mktr-footer-copy">
+          71 Ayer Rajah Crescent, #06-14, Singapore 139951
+        </p>
+      </div>
+    </footer>
   );
 };
 

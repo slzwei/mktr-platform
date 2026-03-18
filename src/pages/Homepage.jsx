@@ -1,5 +1,4 @@
-import { useState, useEffect } from "react";
-import { getDefaultRouteForRole } from "@/lib/utils";
+import { useEffect } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import SiteHeader from "@/components/layout/SiteHeader";
 import {
@@ -7,6 +6,8 @@ import {
   HeroSection,
   LeadSourcesSection,
   FeaturesSection,
+  TestimonialSection,
+  PricingSection,
   CTASection,
   FooterSection,
   AnnouncementModal,
@@ -14,56 +15,50 @@ import {
 import './Homepage.css';
 
 export default function Homepage() {
-  const [menuOpen, setMenuOpen] = useState(false);
   const { user: authUser, token: authToken } = useAuthStore();
 
-  const toggleMenu = () => setMenuOpen(!menuOpen);
-
   useEffect(() => {
-    // Smooth scrolling behavior
+    // Smooth scrolling
     document.documentElement.style.scrollBehavior = 'smooth';
+
+    // Scroll-reveal observer
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+          }
+        });
+      },
+      { threshold: 0.1, rootMargin: '0px 0px -40px 0px' }
+    );
+
+    const observe = () =>
+      document.querySelectorAll('.mktr-reveal').forEach((el) => observer.observe(el));
+    observe();
+
+    const mo = new MutationObserver(observe);
+    mo.observe(document.body, { childList: true, subtree: true });
+
     return () => {
       document.documentElement.style.scrollBehavior = 'auto';
+      observer.disconnect();
+      mo.disconnect();
     };
   }, []);
 
-  const isAuthed = !!authToken && !!authUser;
-  const dashboardPath = authUser ? getDefaultRouteForRole(authUser.role) : '/AdminDashboard';
-
   return (
-    <>
-      {/* Floating Background Elements */}
+    <div style={{ background: 'var(--mktr-bg)' }}>
       <FloatingElements />
-
       <SiteHeader />
-
-      {/* Hero Section - Responsive Design */}
       <HeroSection />
-
-      {/* Lead Sources Section - WHITE BACKGROUND */}
       <LeadSourcesSection />
-
-      {/* Features Section - BLACK BACKGROUND */}
       <FeaturesSection />
-
-      {/* CTA Section - WHITE BACKGROUND */}
+      <TestimonialSection />
+      <PricingSection />
       <CTASection />
-
-      {/* Footer - BLACK BACKGROUND */}
       <FooterSection />
-
-      {/* Modal */}
       <AnnouncementModal />
-
-      {/* Analytics Scripts */}
-      <script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script>
-      <script dangerouslySetInnerHTML={{
-        __html: `
-          window.dataLayer = window.dataLayer || [];
-          function gtag(){dataLayer.push(arguments);}
-          gtag('config', 'GA_MEASUREMENT_ID');
-        `
-      }} />
-    </>
+    </div>
   );
 }

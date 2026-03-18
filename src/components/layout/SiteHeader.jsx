@@ -1,191 +1,263 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { X } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { X, Menu } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { getDefaultRouteForRole } from "@/lib/utils";
 
-const HamburgerMenu = ({ isOpen, toggle }) => (
-  <button
-    className={`hamburger hamburger--spring ${isOpen ? 'is-active' : ''}`}
-    type="button"
-    onClick={toggle}
-    aria-label="Menu"
-  >
-    <span className="hamburger-box">
-      <span className="hamburger-inner"></span>
-    </span>
-  </button>
-);
+const navLinks = [
+  { label: "Features", href: "/features" },
+  { label: "Pricing", href: "/pricing" },
+  { label: "About", href: "/about" },
+  { label: "Contact", href: "/Contact" },
+];
 
 export default function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const { user, token, logout } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const toggleMenu = () => setMenuOpen((v) => !v);
 
   const isAuthed = !!token && !!user;
-  const dashboardPath = user ? getDefaultRouteForRole(user.role) : '/AdminDashboard';
+  const dashboardPath = user ? getDefaultRouteForRole(user.role) : "/AdminDashboard";
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Close menu on route change
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
+
+  const isActive = (href) => location.pathname === href;
 
   return (
     <>
-      <style>{`
-        :root {
-          --heading-font: 'Mindset', 'Inter', sans-serif;
-          --black: #000000;
-          --white: #ffffff;
-          --grey: #909090;
-        }
+      <header
+        className="fixed top-0 w-full z-[100] transition-all duration-300"
+        style={{
+          background: scrolled
+            ? "rgba(6, 9, 24, 0.92)"
+            : "rgba(6, 9, 24, 0.4)",
+          backdropFilter: "blur(20px)",
+          borderBottom: scrolled
+            ? "1px solid rgba(255,255,255,0.06)"
+            : "1px solid transparent",
+        }}
+      >
+        <div className="max-w-[1200px] mx-auto px-6 flex items-center justify-between h-[72px]">
+          {/* Logo */}
+          <Link
+            to="/"
+            className="text-white text-xl font-extrabold tracking-tight hover:opacity-80 transition-opacity"
+            style={{ fontFamily: "'Outfit', sans-serif" }}
+          >
+            MKTR.
+          </Link>
 
-        .dark {
-          --black: #ffffff;
-          --white: #1a1a2e;
-          --grey: #a0a0a0;
-        }
+          {/* Desktop Nav */}
+          <nav className="hidden md:flex items-center gap-1">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                to={link.href}
+                className="px-4 py-2 text-sm font-medium transition-colors rounded-lg"
+                style={{
+                  fontFamily: "'Outfit', sans-serif",
+                  color: isActive(link.href)
+                    ? "#00c2ff"
+                    : "rgba(255,255,255,0.6)",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive(link.href))
+                    e.target.style.color = "rgba(255,255,255,0.9)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive(link.href))
+                    e.target.style.color = "rgba(255,255,255,0.6)";
+                }}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
 
-        .header {
-          position: fixed;
-          top: 0;
-          width: 100%;
-          background: rgba(255, 255, 255, 0.95);
-          backdrop-filter: blur(10px);
-          z-index: 100;
-          border-bottom: 1px solid var(--grey);
-          transition: all 0.3s ease;
-        }
-
-        .header-content {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 1rem 0;
-        }
-
-        .container {
-          max-width: 1200px;
-          margin: 0 auto;
-          padding: 0 2rem;
-          position: relative;
-          z-index: 2;
-        }
-
-        .logo {
-          font-family: var(--heading-font);
-          font-size: 2rem;
-          font-weight: 700;
-          color: var(--black);
-          text-decoration: none;
-          transition: transform 0.3s ease;
-        }
-
-        .logo:hover { transform: scale(1.05); }
-
-        .hamburger { padding: 15px 15px; display: inline-block; cursor: pointer; transition: opacity 0.15s linear; background: transparent; border: 0; position: relative; z-index: 1000; }
-        .hamburger:hover { opacity: 0.7; }
-        .hamburger-box { width: 40px; height: 24px; display: inline-block; position: relative; }
-        .hamburger-inner { display: block; top: 50%; margin-top: -2px; }
-        .hamburger-inner, .hamburger-inner::before, .hamburger-inner::after { width: 40px; height: 4px; background-color: var(--black); border-radius: 4px; position: absolute; transition: transform 0.15s ease; }
-        .hamburger-inner::before, .hamburger-inner::after { content: ""; display: block; }
-        .hamburger-inner::before { top: -10px; }
-        .hamburger-inner::after { bottom: -10px; }
-        .hamburger--spring .hamburger-inner { top: 2px; transition: background-color 0s 0.13s linear; }
-        .hamburger--spring .hamburger-inner::before { top: 10px; transition: top 0.1s 0.2s, transform 0.13s; }
-        .hamburger--spring .hamburger-inner::after { top: 20px; transition: top 0.2s 0.2s, transform 0.13s; }
-        .hamburger--spring.is-active .hamburger-inner { transition-delay: 0.22s; background-color: transparent !important; }
-        .hamburger--spring.is-active .hamburger-inner::before { top: 0; transform: translate3d(0, 10px, 0) rotate(45deg); }
-        .hamburger--spring.is-active .hamburger-inner::after { top: 0; transform: translate3d(0, 10px, 0) rotate(-45deg); }
-
-        .fixed.inset-0.bg-black.bg-opacity-50.z-998 { z-index: 998; }
-        .mobile-menu { position: fixed; top: 0; right: 0; width: 100%; max-width: 320px; height: 100vh; height: 100dvh; background: var(--white); z-index: 999; transform: translateX(100%); transition: transform 0.3s ease; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; box-shadow: -4px 0 20px rgba(0,0,0,0.15); padding-bottom: env(safe-area-inset-bottom); padding-bottom: constant(safe-area-inset-bottom); overflow-y: auto; }
-        .mobile-menu.open { transform: translateX(0); }
-        .mobile-menu-link { font-family: 'PT Mono', 'Courier New', monospace; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 2px; color: var(--black); text-decoration: none; transition: opacity 0.2s ease; padding: 0.75rem 0; }
-        .mobile-menu-link:hover { opacity: 0.7; }
-
-        .dark .header {
-          background: rgba(26, 26, 46, 0.95);
-          border-bottom-color: #2a2a3e;
-        }
-
-        .dark .mobile-menu {
-          background: #1a1a2e;
-          box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
-        }
-
-        .dark .mobile-menu-link {
-          color: #ffffff;
-        }
-
-        /* Ensure footer actions clear iOS Safari bottom bar */
-        .mobile-menu-footer { padding-bottom: calc(2rem + env(safe-area-inset-bottom)); padding-bottom: calc(2rem + constant(safe-area-inset-bottom)); }
-      `}</style>
-
-      <header className="header">
-        <div className="container">
-          <div className="header-content">
-            <Link to="/" className="logo">MKTR.</Link>
-            <HamburgerMenu isOpen={menuOpen} toggle={toggleMenu} />
+          {/* Desktop CTA */}
+          <div className="hidden md:flex items-center gap-3">
+            {isAuthed ? (
+              <Link
+                to={dashboardPath}
+                className="px-5 py-2 text-sm font-semibold text-white rounded-full transition-all"
+                style={{
+                  background: "linear-gradient(135deg, #00c2ff 0%, #0066ff 100%)",
+                  fontFamily: "'Outfit', sans-serif",
+                }}
+              >
+                Dashboard
+              </Link>
+            ) : (
+              <>
+                <Link
+                  to="/CustomerLogin"
+                  className="px-4 py-2 text-sm font-medium transition-colors"
+                  style={{
+                    color: "rgba(255,255,255,0.6)",
+                    fontFamily: "'Outfit', sans-serif",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.target.style.color = "rgba(255,255,255,0.9)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.target.style.color = "rgba(255,255,255,0.6)")
+                  }
+                >
+                  Log In
+                </Link>
+                <Link
+                  to="/AdminDashboard"
+                  className="px-5 py-2 text-sm font-semibold text-white rounded-full transition-all hover:shadow-lg hover:-translate-y-0.5"
+                  style={{
+                    background: "linear-gradient(135deg, #00c2ff 0%, #0066ff 100%)",
+                    fontFamily: "'Outfit', sans-serif",
+                  }}
+                >
+                  Get Started
+                </Link>
+              </>
+            )}
           </div>
+
+          {/* Mobile Menu Button */}
+          <button
+            className="md:hidden p-2 text-white hover:opacity-70 transition-opacity"
+            onClick={toggleMenu}
+            aria-label="Menu"
+          >
+            {menuOpen ? (
+              <X className="w-6 h-6" />
+            ) : (
+              <Menu className="w-6 h-6" />
+            )}
+          </button>
         </div>
       </header>
 
+      {/* Mobile Menu Overlay */}
       {menuOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-998" onClick={toggleMenu} />
+        <div
+          className="fixed inset-0 bg-black/50 z-[998] md:hidden"
+          onClick={toggleMenu}
+        />
       )}
 
-      <nav className={`mobile-menu ${menuOpen ? 'open' : ''}`}>
-        <button className="absolute top-4 right-4 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors" onClick={toggleMenu}>
-          <X className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-        </button>
-
-        <div className="w-full px-6 pt-8 flex justify-start">
-          <Link to="/" className="logo" onClick={toggleMenu}>MKTR.</Link>
-        </div>
-
-        <div className="flex flex-col items-center gap-6 flex-1 justify-center px-6">
-          <Link to={"/Homepage"} className="mobile-menu-link" onClick={toggleMenu}>
-            Home
-          </Link>
-          <a
-            href="#features"
-            className="mobile-menu-link"
-            onClick={(e) => {
-              e.preventDefault();
-              toggleMenu();
-              document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' });
-            }}
+      {/* Mobile Menu */}
+      <nav
+        className="fixed top-0 right-0 h-full z-[999] md:hidden transition-transform duration-300 flex flex-col"
+        style={{
+          width: "min(85vw, 320px)",
+          background: "#060918",
+          transform: menuOpen ? "translateX(0)" : "translateX(100%)",
+          paddingBottom: "env(safe-area-inset-bottom)",
+        }}
+      >
+        <div className="flex items-center justify-between px-6 h-[72px] border-b border-white/5">
+          <Link
+            to="/"
+            className="text-white text-xl font-extrabold"
+            style={{ fontFamily: "'Outfit', sans-serif" }}
+            onClick={toggleMenu}
           >
-            Features
-          </a>
-          <Link to={"/Contact"} className="mobile-menu-link" onClick={toggleMenu}>
-            Contact
+            MKTR.
           </Link>
+          <button
+            className="p-2 text-white/60 hover:text-white"
+            onClick={toggleMenu}
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        <div className="mobile-menu-footer w-full px-6 pb-8 space-y-4">
+        <div className="flex-1 flex flex-col gap-1 px-4 pt-6">
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              to={link.href}
+              onClick={toggleMenu}
+              className="px-4 py-3 rounded-lg text-base font-medium transition-colors"
+              style={{
+                fontFamily: "'Outfit', sans-serif",
+                color: isActive(link.href)
+                  ? "#00c2ff"
+                  : "rgba(255,255,255,0.6)",
+                background: isActive(link.href)
+                  ? "rgba(0, 194, 255, 0.08)"
+                  : "transparent",
+              }}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </div>
+
+        <div className="px-4 pb-8 space-y-3">
           {isAuthed ? (
             <>
-              <Link to={dashboardPath} onClick={toggleMenu} className="block">
-                <button className="w-full bg-black text-white border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider hover:bg-gray-900 dark:hover:bg-gray-100 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
-                  Go to Dashboard
-                </button>
+              <Link
+                to={dashboardPath}
+                onClick={toggleMenu}
+                className="block w-full text-center py-3 px-4 rounded-xl text-white text-sm font-semibold"
+                style={{
+                  background: "linear-gradient(135deg, #00c2ff 0%, #0066ff 100%)",
+                  fontFamily: "'Outfit', sans-serif",
+                }}
+              >
+                Go to Dashboard
               </Link>
               <button
                 onClick={() => {
                   logout();
                   toggleMenu();
-                  navigate('/');
+                  navigate("/");
                 }}
-                className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider hover:bg-gray-100 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:bg-gray-700 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200"
+                className="w-full py-3 px-4 rounded-xl text-sm font-medium border transition-colors"
+                style={{
+                  color: "rgba(255,255,255,0.6)",
+                  borderColor: "rgba(255,255,255,0.1)",
+                  fontFamily: "'Outfit', sans-serif",
+                }}
               >
-                Logout
+                Log Out
               </button>
             </>
           ) : (
             <>
-              <Link to={"/CustomerLogin"} onClick={toggleMenu} className="block">
-                <button className="w-full bg-white text-black border-2 border-black py-3 px-4 font-mono text-sm uppercase tracking-wider hover:bg-gray-100 dark:bg-gray-800 dark:text-white dark:border-gray-600 dark:hover:bg-gray-700 hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200">
-                  Login
-                </button>
+              <Link
+                to="/CustomerLogin"
+                onClick={toggleMenu}
+                className="block w-full text-center py-3 px-4 rounded-xl text-sm font-medium border transition-colors"
+                style={{
+                  color: "rgba(255,255,255,0.6)",
+                  borderColor: "rgba(255,255,255,0.1)",
+                  fontFamily: "'Outfit', sans-serif",
+                }}
+              >
+                Log In
+              </Link>
+              <Link
+                to="/AdminDashboard"
+                onClick={toggleMenu}
+                className="block w-full text-center py-3 px-4 rounded-xl text-white text-sm font-semibold"
+                style={{
+                  background: "linear-gradient(135deg, #00c2ff 0%, #0066ff 100%)",
+                  fontFamily: "'Outfit', sans-serif",
+                }}
+              >
+                Get Started Free
               </Link>
             </>
           )}
@@ -194,5 +266,3 @@ export default function SiteHeader() {
     </>
   );
 }
-
-

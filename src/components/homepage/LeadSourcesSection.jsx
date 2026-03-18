@@ -1,70 +1,78 @@
-import { Users, TrendingUp, QrCode, Car } from "lucide-react";
+import { Zap, Route, Handshake } from "lucide-react";
 
-const LeadSourcesSection = () => {
-  return (
-    <section className="section-spacing bg-white dark:bg-gray-900">
-        <div className="container">
-          <p className="section-title text-center text-black dark:text-white">Where Our Leads Come From</p>
-          <h2 className="text-center mb-16 text-black dark:text-white" style={{ fontFamily: 'var(--heading-font)', fontSize: 'clamp(1.5rem, 4vw, 3rem)', lineHeight: '1.1' }}>
-            Multi-Channel Lead<br />
-            Generation Strategy
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
-            <div className="text-center">
-              <div className="w-20 h-20 mx-auto mb-6 border-2 border-black dark:border-white flex items-center justify-center bg-white dark:bg-gray-800 hover:bg-black hover:text-white transition-all duration-300">
-                <TrendingUp className="w-8 h-8" />
-              </div>
-              <div className="mb-4">
-                <span className="section-title text-xs text-gray-500 dark:text-gray-400">01</span>
-                <h3 className="section-title mb-2 text-lg">Social Media Ads</h3>
-              </div>
-              <p className="body-text text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                Facebook, Instagram, and TikTok campaigns driving qualified prospects to your landing pages
-              </p>
-            </div>
+const SocialProofBar = () => (
+  <div className="mktr-proof-bar">
+    <div className="mktr-proof-grid mktr-reveal">
+      <div>
+        <div className="mktr-proof-number">500+</div>
+        <div className="mktr-proof-label">Active Agents</div>
+      </div>
+      <div>
+        <div className="mktr-proof-number">10,000+</div>
+        <div className="mktr-proof-label">Leads Generated</div>
+      </div>
+      <div>
+        <div className="mktr-proof-number">3x</div>
+        <div className="mktr-proof-label">Conversion Rate</div>
+      </div>
+    </div>
+  </div>
+);
 
-            <div className="text-center">
-              <div className="w-20 h-20 mx-auto mb-6 border-2 border-black dark:border-white flex items-center justify-center bg-white dark:bg-gray-800 hover:bg-black hover:text-white transition-all duration-300">
-                <QrCode className="w-8 h-8" />
-              </div>
-              <div className="mb-4">
-                <span className="section-title text-xs text-gray-500 dark:text-gray-400">02</span>
-                <h3 className="section-title mb-2 text-lg">Physical Flyers</h3>
-              </div>
-              <p className="body-text text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                QR-enabled flyers distributed at MRTs, shopping centers, and high-traffic locations
-              </p>
-            </div>
+const HowItWorks = () => (
+  <section className="mktr-section mktr-section-alt">
+    <div className="mktr-section-container">
+      <p className="mktr-section-eyebrow mktr-reveal">How It Works</p>
+      <h2 className="mktr-section-title mktr-reveal mktr-reveal-delay-1">
+        Three Steps to More Clients
+      </h2>
+      <p className="mktr-section-subtitle mktr-reveal mktr-reveal-delay-2">
+        Our AI handles the heavy lifting so you can focus on what you do best — closing deals.
+      </p>
 
-            <div className="text-center">
-              <div className="w-20 h-20 mx-auto mb-6 border-2 border-black dark:border-white flex items-center justify-center bg-white dark:bg-gray-800 hover:bg-black hover:text-white transition-all duration-300">
-                <Car className="w-8 h-8" />
-              </div>
-              <div className="mb-4">
-                <span className="section-title text-xs text-gray-500 dark:text-gray-400">03</span>
-                <h3 className="section-title mb-2 text-lg">Private Transport</h3>
-              </div>
-              <p className="body-text text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                Vehicle-mounted QR codes on Grab cars, taxis, and private hire vehicles across Singapore
-              </p>
-            </div>
-
-            <div className="text-center">
-              <div className="w-20 h-20 mx-auto mb-6 border-2 border-black dark:border-white flex items-center justify-center bg-white dark:bg-gray-800 hover:bg-black hover:text-white transition-all duration-300">
-                <Users className="w-8 h-8" />
-              </div>
-              <div className="mb-4">
-                <span className="section-title text-xs text-gray-500 dark:text-gray-400">04</span>
-                <h3 className="section-title mb-2 text-lg">Digital Campaigns</h3>
-              </div>
-              <p className="body-text text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                Targeted online advertising reaching prospects when they're actively searching
-              </p>
-            </div>
+      <div className="mktr-steps">
+        <div className="mktr-step mktr-reveal mktr-reveal-delay-1">
+          <div className="mktr-step-number">
+            <Zap className="w-6 h-6" />
           </div>
+          <h3 className="mktr-step-title">AI Prospect Discovery</h3>
+          <p className="mktr-step-desc">
+            Our AI call bot and QR campaigns capture high-intent prospects across
+            MRTs, malls, and digital channels 24/7.
+          </p>
         </div>
-      </section>
-  );
-};
+
+        <div className="mktr-step mktr-reveal mktr-reveal-delay-2">
+          <div className="mktr-step-number">
+            <Route className="w-6 h-6" />
+          </div>
+          <h3 className="mktr-step-title">Smart Lead Routing</h3>
+          <p className="mktr-step-desc">
+            Leads are scored, qualified, and routed to the right agent instantly
+            based on specialisation and location.
+          </p>
+        </div>
+
+        <div className="mktr-step mktr-reveal mktr-reveal-delay-3">
+          <div className="mktr-step-number">
+            <Handshake className="w-6 h-6" />
+          </div>
+          <h3 className="mktr-step-title">Close More Deals</h3>
+          <p className="mktr-step-desc">
+            Get real-time notifications, prospect insights, and commission tracking
+            so you never miss an opportunity.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+);
+
+const LeadSourcesSection = () => (
+  <>
+    <SocialProofBar />
+    <HowItWorks />
+  </>
+);
 
 export default LeadSourcesSection;
