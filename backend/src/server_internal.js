@@ -117,7 +117,7 @@ export const init = async (app) => {
     express.json({
       limit: '1mb',
       verify: (req, _res, buf) => {
-        if (req.originalUrl.startsWith('/api/retell/')) {
+        if (req.originalUrl.startsWith('/api/retell/') || req.originalUrl.startsWith('/api/meta/')) {
           req.rawBody = buf;
         }
       },
