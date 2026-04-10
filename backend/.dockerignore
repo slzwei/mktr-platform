@@ -18,5 +18,6 @@ uploads/temp/*
 *.db-journal
 test/
 load/
-scripts/
+scripts/*
+!scripts/sa61-weekly-reminder.js
 docker-compose*.yml
