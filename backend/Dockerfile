@@ -15,9 +15,12 @@ RUN npm install --omit=dev
 
 # Copy source code
 COPY src/ ./src/
+COPY scripts/ ./scripts/
+COPY entrypoint.sh ./entrypoint.sh
 
 # Create uploads directory and non-root user
 RUN mkdir -p uploads \
+    && chmod +x entrypoint.sh \
     && addgroup -S appgroup && adduser -S appuser -G appgroup \
     && chown -R appuser:appgroup /app
 
@@ -31,4 +34,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD node src/health-check.js
 
 # Start the application
-CMD ["npm", "start"]
+CMD ["sh", "entrypoint.sh"]
