@@ -54,6 +54,7 @@ export default function GoogleCallback() {
             headers: {
               'Content-Type': 'application/json',
             },
+            credentials: 'include',
             body: JSON.stringify({
               code: code,
               state: state,
