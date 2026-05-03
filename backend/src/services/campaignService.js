@@ -80,7 +80,7 @@ export async function listCampaigns(user, query, req) {
   if (createdBy && user.role === 'admin') where.createdBy = createdBy;
 
   if (search) {
-    const sanitizedSearch = String(search).slice(0, 100);
+    const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
     where[Op.or] = [
       { name: { [Op.iLike]: `%${sanitizedSearch}%` } },
       { description: { [Op.iLike]: `%${sanitizedSearch}%` } }

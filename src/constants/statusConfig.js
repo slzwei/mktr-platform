@@ -3,46 +3,61 @@
  *
  * Covers every status key found across AdminProspects, AdminAgentDetail,
  * MyProspects, and RecentActivity so every consumer renders consistently.
+ *
+ * Hue mapping follows the Tropic canonical semantic palette
+ * (see lyfe-master/.impeccable.md):
+ *   new         → info (dusty slate-blue)
+ *   contacted   → warning (butter)
+ *   meeting     → plum
+ *   qualified   → success (sage)
+ *   proposal    → plum
+ *   negotiating → plum (proposal-family)
+ *   won         → success (sage)
+ *   lost        → destructive (rust)
+ *   rejected    → muted (neutral)
+ *
+ * Each triplet (bg / text / border) stays in a single hue family. Terracotta
+ * (primary) is the spotlight color and never used here.
  */
 
 /** Tailwind class strings for Badge / pill styling keyed by prospect status. */
 export const statusStyles = {
-  new: "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800",
-  contacted: "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800",
-  meeting: "bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-400 border-violet-200 dark:border-violet-800",
-  qualified: "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800",
-  proposal: "bg-purple-100 dark:bg-purple-950/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800",
-  negotiating: "bg-pink-100 dark:bg-pink-950/30 text-pink-700 dark:text-pink-400 border-pink-200 dark:border-pink-800",
-  negotiation: "bg-pink-100 dark:bg-pink-950/30 text-pink-700 dark:text-pink-400 border-pink-200 dark:border-pink-800",
-  won: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
-  close_won: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800",
-  lost: "bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800",
-  close_lost: "bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800",
-  rejected: "bg-slate-50 dark:bg-slate-950/30 text-slate-700 dark:text-slate-400 border-slate-200 dark:border-slate-800",
+    new: 'bg-info/10 text-info border-info/30',
+    contacted: 'bg-warning/10 text-warning border-warning/30',
+    meeting: 'bg-plum/10 text-plum border-plum/30',
+    qualified: 'bg-success/10 text-success border-success/30',
+    proposal: 'bg-plum/10 text-plum border-plum/30',
+    negotiating: 'bg-plum/10 text-plum border-plum/30',
+    negotiation: 'bg-plum/10 text-plum border-plum/30',
+    won: 'bg-success/10 text-success border-success/30',
+    close_won: 'bg-success/10 text-success border-success/30',
+    lost: 'bg-destructive/10 text-destructive border-destructive/30',
+    close_lost: 'bg-destructive/10 text-destructive border-destructive/30',
+    rejected: 'bg-muted text-muted-foreground border-border',
 };
 
 /** Human-readable label for each status. */
 export const statusLabels = {
-  new: "New",
-  contacted: "Contacted",
-  meeting: "Meeting",
-  qualified: "Qualified",
-  proposal: "Proposal",
-  negotiating: "Negotiating",
-  negotiation: "Negotiation",
-  won: "Won",
-  close_won: "Won",
-  lost: "Lost",
-  close_lost: "Lost",
-  rejected: "Rejected",
+    new: 'New',
+    contacted: 'Contacted',
+    meeting: 'Meeting',
+    qualified: 'Qualified',
+    proposal: 'Proposal',
+    negotiating: 'Negotiating',
+    negotiation: 'Negotiation',
+    won: 'Won',
+    close_won: 'Won',
+    lost: 'Lost',
+    close_lost: 'Lost',
+    rejected: 'Rejected',
 };
 
 /**
  * Returns the Badge class string for a given prospect status.
- * Falls back to a neutral gray style for unknown statuses.
+ * Falls back to a neutral style for unknown statuses.
  */
 export function getStatusColor(status) {
-  return statusStyles[status] || "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-700";
+    return statusStyles[status] || 'bg-muted text-muted-foreground border-border';
 }
 
 /**
@@ -50,7 +65,7 @@ export function getStatusColor(status) {
  * Prefer statusLabels[status] when available; use this as a generic fallback.
  */
 export function formatStatus(status) {
-  if (!status) return "Unknown";
-  if (statusLabels[status]) return statusLabels[status];
-  return status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+    if (!status) return 'Unknown';
+    if (statusLabels[status]) return statusLabels[status];
+    return status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 }

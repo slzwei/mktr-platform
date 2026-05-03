@@ -21,6 +21,13 @@ export function validateEnv() {
     'RETELL_WEBHOOK_SECRET',
   ];
 
+  // Pipeline-critical: without these, leads never reach Lyfe
+  const pipelineCritical = [
+    'WEBHOOK_ENABLED',
+    'LYFE_WEBHOOK_URL',
+    'LYFE_WEBHOOK_SECRET',
+  ];
+
   const missing = required.filter(key => !process.env[key]);
   if (missing.length > 0) {
     throw new Error(`FATAL: Missing required environment variables: ${missing.join(', ')}`);
@@ -29,5 +36,14 @@ export function validateEnv() {
   const missingRecommended = recommended.filter(key => !process.env[key]);
   if (missingRecommended.length > 0) {
     console.warn(`⚠️ Recommended environment variables not set: ${missingRecommended.join(', ')}`);
+  }
+
+  const missingPipeline = pipelineCritical.filter(key => !process.env[key]);
+  if (missingPipeline.length > 0) {
+    console.warn(`⚠️ Pipeline-critical variables not set (leads will NOT reach Lyfe): ${missingPipeline.join(', ')}`);
+  }
+
+  if (process.env.WEBHOOK_ENABLED && String(process.env.WEBHOOK_ENABLED).toLowerCase() !== 'true') {
+    console.warn(`⚠️ WEBHOOK_ENABLED is "${process.env.WEBHOOK_ENABLED}" (not "true") — webhook delivery is disabled, leads will not reach Lyfe`);
   }
 }

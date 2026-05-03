@@ -10,7 +10,7 @@ function buildMocks() {
     id: 'prospect-1',
     firstName: 'John',
     lastName: 'Doe',
-    email: 'retell-call123@calls.mktr.sg',
+    email: null,
     phone: '+6591234567',
     leadSource: 'call_bot',
     leadStatus: 'new',
@@ -41,7 +41,14 @@ function buildMocks() {
   };
 
   const User = {
-    findByPk: jest.fn().mockResolvedValue({ email: 'agent@test.com', firstName: 'Agent' }),
+    findByPk: jest.fn().mockResolvedValue({
+      id: 'agent-1',
+      lyfeId: 'lyfe-agent-1',
+      phone: '+6590001234',
+      email: 'agent@test.com',
+      firstName: 'Agent',
+      lastName: 'Smith',
+    }),
     findOne: jest.fn().mockResolvedValue(null),
   };
 
@@ -280,7 +287,7 @@ describe('retellService (unit)', () => {
 
       expect(prospectData.firstName).toBe('John');
       expect(prospectData.lastName).toBe('Doe');
-      expect(prospectData.email).toBe('retell-call123@calls.mktr.sg');
+      expect(prospectData.email).toBeNull();
       expect(prospectData.phone).toBe('+6591234567');
       expect(prospectData.leadSource).toBe('call_bot');
       expect(prospectData.leadStatus).toBe('new');
@@ -407,6 +414,13 @@ describe('retellService (unit)', () => {
       expect(webhookPayload.data.lead.externalId).toBe('prospect-1');
       expect(webhookPayload.data.lead.leadSource).toBe('call_bot');
       expect(webhookPayload.data.lead.recordingUrl).toBe('https://recordings.retell.ai/call123.mp3');
+
+      // Verify routing block is present (B1 fix)
+      expect(webhookPayload.data.routing).toBeDefined();
+      expect(webhookPayload.data.routing.agentPhone).toBe('+6590001234');
+      expect(webhookPayload.data.routing.agentName).toBe('Agent Smith');
+      expect(webhookPayload.data.routing.agentExternalId).toBe('lyfe-agent-1');
+      expect(webhookPayload.data.routing.mode).toBe('retell_round_robin');
     });
 
     it('parses first/last name from dynamic variables', async () => {

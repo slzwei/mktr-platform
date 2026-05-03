@@ -90,7 +90,7 @@ export async function listUsers(query) {
   }
 
   if (search) {
-    const sanitizedSearch = String(search).slice(0, 100);
+    const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
     whereConditions[Op.or] = [
       { firstName: { [Op.iLike]: `%${sanitizedSearch}%` } },
       { lastName: { [Op.iLike]: `%${sanitizedSearch}%` } },

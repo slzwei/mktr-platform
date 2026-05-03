@@ -1,128 +1,127 @@
-import { useState, useEffect } from "react";
-import { QrTag } from "@/api/entities";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import ArrowLeft from "lucide-react/icons/arrow-left";
-import QrCode from "lucide-react/icons/qr-code";
-import Car from "lucide-react/icons/car";
-import Tag from "lucide-react/icons/tag";
+import { useState, useEffect } from"react";
+import { QrTag } from"@/api/entities";
+import { Button } from"@/components/ui/button";
+import { Badge } from"@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from"@/components/ui/tabs";
+import ArrowLeft from"lucide-react/icons/arrow-left";
+import QrCode from"lucide-react/icons/qr-code";
+import Car from"lucide-react/icons/car";
+import Tag from"lucide-react/icons/tag";
 
-import ExistingQRCodes from "./ExistingQRCodes";
-import PromotionalQRForm from "./PromotionalQRForm";
-import CarQRDirectory from "./CarQRDirectory";
+import ExistingQRCodes from"./ExistingQRCodes";
+import PromotionalQRForm from"./PromotionalQRForm";
+import CarQRDirectory from"./CarQRDirectory";
 
 export default function CampaignQRManager({ campaign, onBack }) {
-  const [qrTags, setQrTags] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("existing");
+ const [qrTags, setQrTags] = useState([]);
+ const [loading, setLoading] = useState(true);
+ const [activeTab, setActiveTab] = useState("existing");
 
-  useEffect(() => {
-    const loadQRTags = async () => {
-      setLoading(true);
-      try {
-        const allQRTags = await QrTag.filter({ campaignId: campaign.id });
-        setQrTags(allQRTags.filter(t => t.campaignId === campaign.id));
-      } catch (error) {
-        console.error("Error loading QR tags:", error);
-      }
-      setLoading(false);
-    };
+ useEffect(() => {
+ const loadQRTags = async () => {
+ setLoading(true);
+ try {
+ const allQRTags = await QrTag.filter({ campaignId: campaign.id });
+ setQrTags(allQRTags.filter(t => t.campaignId === campaign.id));
+ } catch (error) {
+ console.error("Error loading QR tags:", error);
+ }
+ setLoading(false);
+ };
 
-    loadQRTags();
-  }, [campaign.id]);
+ loadQRTags();
+ }, [campaign.id]);
 
-  const handleRefreshQRTags = async () => {
-    setLoading(true);
-    try {
-      const allQRTags = await QrTag.filter({ campaignId: campaign.id });
-      setQrTags(allQRTags.filter(t => t.campaignId === campaign.id));
-    } catch (error) {
-      console.error("Error loading QR tags:", error);
-    }
-    setLoading(false);
-  };
+ const handleRefreshQRTags = async () => {
+ setLoading(true);
+ try {
+ const allQRTags = await QrTag.filter({ campaignId: campaign.id });
+ setQrTags(allQRTags.filter(t => t.campaignId === campaign.id));
+ } catch (error) {
+ console.error("Error loading QR tags:", error);
+ }
+ setLoading(false);
+ };
 
-  const handleQRGenerated = () => {
-    // Refresh the QR tags list and switch to existing tab
-    handleRefreshQRTags();
-    setActiveTab("existing");
-  };
+ const handleQRGenerated = () => {
+ // Refresh the QR tags list and switch to existing tab
+ handleRefreshQRTags();
+ setActiveTab("existing");
+ };
 
-  const handleAssignedFromCar = () => {
-    // Refresh but keep user on the Car tab
-    handleRefreshQRTags();
-    setActiveTab("car");
-  };
+ const handleAssignedFromCar = () => {
+ // Refresh but keep user on the Car tab
+ handleRefreshQRTags();
+ setActiveTab("car");
+ };
 
-  const promotionalQRs = qrTags.filter(qr => qr.type === 'promo');
-  const carQRs = qrTags.filter(qr => qr.type === 'car');
+ const promotionalQRs = qrTags.filter(qr => qr.type === 'promo');
+ const carQRs = qrTags.filter(qr => qr.type === 'car');
 
-  return (
-    <div className="p-6 lg:p-8 bg-gray-50 dark:bg-gray-900/50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex items-center gap-4 mb-8">
-          <Button variant="outline" onClick={onBack}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Campaigns
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
-              QR Codes for "{campaign.name}"
-            </h1>
-            <div className="flex items-center gap-4 mt-2">
-              <Badge
-                variant={campaign.is_active ? "default" : "outline"}
-                className={campaign.is_active ? "bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-400" : "bg-red-100 text-red-800 dark:bg-red-950/30 dark:text-red-400"}
-              >
-                {campaign.is_active ? "Active" : "Inactive"}
-              </Badge>
-              <span className="text-gray-500 dark:text-gray-400 text-sm">
-                {promotionalQRs.length} Promotional • {carQRs.length} Car QRs
-              </span>
-            </div>
-          </div>
-        </div>
+ return (
+ <div className="p-6 lg:p-8 bg-muted min-h-screen">
+ <div className="max-w-7xl mx-auto">
+ <div className="flex items-center gap-4 mb-8">
+ <Button variant="outline" onClick={onBack}>
+ <ArrowLeft className="w-4 h-4 mr-2"/>
+ Back to Campaigns
+ </Button>
+ <div>
+ <h1 className="text-3xl font-bold text-foreground">
+ QR Codes for"{campaign.name}" </h1>
+ <div className="flex items-center gap-4 mt-2">
+ <Badge
+ variant={campaign.is_active ?"default":"outline"}
+ className={campaign.is_active ?"bg-success/15 text-success":"bg-destructive/15 text-destructive"}
+ >
+ {campaign.is_active ?"Active":"Inactive"}
+ </Badge>
+ <span className="text-muted-foreground text-sm">
+ {promotionalQRs.length} Promotional • {carQRs.length} Car QRs
+ </span>
+ </div>
+ </div>
+ </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3 mb-8">
-            <TabsTrigger value="existing" className="flex items-center gap-2">
-              <QrCode className="w-4 h-4" />
-              Existing QR Codes ({qrTags.length})
-            </TabsTrigger>
-            <TabsTrigger value="promotional" className="flex items-center gap-2">
-              <Tag className="w-4 h-4" />
-              Generate Promotional QR
-            </TabsTrigger>
-            <TabsTrigger value="car" className="flex items-center gap-2">
-              <Car className="w-4 h-4" />
-              Car QR Directory
-            </TabsTrigger>
-          </TabsList>
+ <Tabs value={activeTab} onValueChange={setActiveTab}>
+ <TabsList className="grid w-full grid-cols-3 mb-8">
+ <TabsTrigger value="existing" className="flex items-center gap-2">
+ <QrCode className="w-4 h-4"/>
+ Existing QR Codes ({qrTags.length})
+ </TabsTrigger>
+ <TabsTrigger value="promotional" className="flex items-center gap-2">
+ <Tag className="w-4 h-4"/>
+ Generate Promotional QR
+ </TabsTrigger>
+ <TabsTrigger value="car" className="flex items-center gap-2">
+ <Car className="w-4 h-4"/>
+ Car QR Directory
+ </TabsTrigger>
+ </TabsList>
 
-          <TabsContent value="existing">
-            <ExistingQRCodes 
-              qrTags={qrTags} 
-              loading={loading}
-              onRefresh={handleRefreshQRTags}
-            />
-          </TabsContent>
+ <TabsContent value="existing">
+ <ExistingQRCodes 
+ qrTags={qrTags} 
+ loading={loading}
+ onRefresh={handleRefreshQRTags}
+ />
+ </TabsContent>
 
-          <TabsContent value="promotional">
-            <PromotionalQRForm 
-              campaign={campaign}
-              onQRGenerated={handleQRGenerated}
-            />
-          </TabsContent>
+ <TabsContent value="promotional">
+ <PromotionalQRForm 
+ campaign={campaign}
+ onQRGenerated={handleQRGenerated}
+ />
+ </TabsContent>
 
-          <TabsContent value="car">
-            <CarQRDirectory 
-              campaign={campaign}
-              onAssigned={handleAssignedFromCar}
-            />
-          </TabsContent>
-        </Tabs>
-      </div>
-    </div>
-  );
+ <TabsContent value="car">
+ <CarQRDirectory 
+ campaign={campaign}
+ onAssigned={handleAssignedFromCar}
+ />
+ </TabsContent>
+ </Tabs>
+ </div>
+ </div>
+ );
 }

@@ -1,158 +1,158 @@
 import { useState, useEffect } from 'react';
 
 const MKTRAnimatedLogo = ({ message }) => {
-  const [borderProgress, setBorderProgress] = useState(0);
-  const [flashEffect, setFlashEffect] = useState(false);
-  const [glitchEffect, setGlitchEffect] = useState(false);
+ const [borderProgress, setBorderProgress] = useState(0);
+ const [flashEffect, setFlashEffect] = useState(false);
+ const [glitchEffect, setGlitchEffect] = useState(false);
 
-  const startAnimation = () => {
-    setBorderProgress(0);
-    setFlashEffect(false);
-    setGlitchEffect(false);
+ const startAnimation = () => {
+ setBorderProgress(0);
+ setFlashEffect(false);
+ setGlitchEffect(false);
 
-    const animateProgress = () => {
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += 2;
-        setBorderProgress(progress);
-        if (progress >= 100) {
-          clearInterval(interval);
-          setTimeout(() => setFlashEffect(true), 100);
-          setTimeout(() => setFlashEffect(false), 400);
-          setTimeout(() => setFlashEffect(true), 500);
-          setTimeout(() => setFlashEffect(false), 800);
-          setTimeout(() => setGlitchEffect(true), 900);
-          setTimeout(() => setGlitchEffect(false), 1200);
-        }
-      }, 20);
-    };
+ const animateProgress = () => {
+ let progress = 0;
+ const interval = setInterval(() => {
+ progress += 2;
+ setBorderProgress(progress);
+ if (progress >= 100) {
+ clearInterval(interval);
+ setTimeout(() => setFlashEffect(true), 100);
+ setTimeout(() => setFlashEffect(false), 400);
+ setTimeout(() => setFlashEffect(true), 500);
+ setTimeout(() => setFlashEffect(false), 800);
+ setTimeout(() => setGlitchEffect(true), 900);
+ setTimeout(() => setGlitchEffect(false), 1200);
+ }
+ }, 20);
+ };
 
-    setTimeout(animateProgress, 10);
-  };
+ setTimeout(animateProgress, 10);
+ };
 
-  useEffect(() => {
-    startAnimation();
-  }, []);
+ useEffect(() => {
+ startAnimation();
+ }, []);
 
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        backgroundColor: 'black',
-      }}
-    >
-      <div
-        style={{
-          cursor: 'pointer',
-          position: 'relative',
-          padding: '12px 20px',
-          backgroundColor: flashEffect ? 'white' : 'transparent',
-          transition: 'background-color 0.1s',
-          borderRadius: '24px',
-          border: '4px solid transparent',
-        }}
-      >
-        <div style={{ display: 'flex', position: 'relative', zIndex: 1 }}>
-          {['M', 'K', 'T', 'R'].map((letter) => (
-            <div
-              key={letter}
-              style={{
-                fontSize: '3rem',
-                fontWeight: '900',
-                color: flashEffect ? 'black' : 'white',
-                fontFamily: 'Inter, sans-serif',
-                opacity: 1,
-                transform: glitchEffect
-                  ? `translate(${Math.random() * 12 - 6}px, ${Math.random() * 12 - 6}px) skew(${Math.random() * 10 - 5}deg)`
-                  : 'translateY(0)',
-                textShadow: glitchEffect
-                  ? `
-                  ${Math.random() * 8 - 4}px ${Math.random() * 4 - 2}px red,
-                  ${Math.random() * 8 - 4}px ${Math.random() * 4 - 2}px blue,
-                  ${Math.random() * 8 - 4}px ${Math.random() * 4 - 2}px green,
-                  ${Math.random() * 12 - 6}px ${Math.random() * 6 - 3}px cyan,
-                  ${Math.random() * 10 - 5}px ${Math.random() * 5 - 2.5}px magenta
-                `
-                  : 'none',
-                transition: glitchEffect ? 'none' : 'all 0.05s',
-              }}
-            >
-              {letter}
-            </div>
-          ))}
-        </div>
+ return (
+ <div
+ style={{
+ display: 'flex',
+ alignItems: 'center',
+ justifyContent: 'center',
+ minHeight: '100vh',
+ backgroundColor: 'hsl(var(--foreground))',
+ }}
+ >
+ <div
+ style={{
+ cursor: 'pointer',
+ position: 'relative',
+ padding: '12px 20px',
+ backgroundColor: flashEffect ? 'hsl(var(--background))' : 'transparent',
+ transition: 'background-color 0.1s',
+ borderRadius: '24px',
+ border: '4px solid transparent',
+ }}
+ >
+ <div style={{ display: 'flex', position: 'relative', zIndex: 1 }}>
+ {['M', 'K', 'T', 'R'].map((letter) => (
+ <div
+ key={letter}
+ style={{
+ fontSize: '3rem',
+ fontWeight: '900',
+ color: flashEffect ? 'hsl(var(--foreground))' : 'hsl(var(--background))',
+ fontFamily: 'Albert Sans, system-ui, sans-serif',
+ letterSpacing: '-0.04em',
+ opacity: 1,
+ transform: glitchEffect
+ ? `translate(${Math.random() * 12 - 6}px, ${Math.random() * 12 - 6}px) skew(${Math.random() * 10 - 5}deg)`
+ : 'translateY(0)',
+ textShadow: glitchEffect
+ ? `
+ ${Math.random() * 8 - 4}px ${Math.random() * 4 - 2}px red,
+ ${Math.random() * 8 - 4}px ${Math.random() * 4 - 2}px blue,
+ ${Math.random() * 8 - 4}px ${Math.random() * 4 - 2}px green,
+ ${Math.random() * 12 - 6}px ${Math.random() * 6 - 3}px cyan,
+ ${Math.random() * 10 - 5}px ${Math.random() * 5 - 2.5}px magenta
+ `
+ : 'none',
+ transition: glitchEffect ? 'none' : 'all 0.05s',
+ }}
+ >
+ {letter}
+ </div>
+ ))}
+ </div>
 
-        {/* In-box glitch overlay */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 6,
-            left: 6,
-            right: 6,
-            bottom: 6,
-            borderRadius: '18px',
-            pointerEvents: 'none',
-            overflow: 'hidden',
-            opacity: glitchEffect ? 1 : 0,
-            transition: 'opacity 0.12s',
-            zIndex: 2,
-          }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background:
-                'repeating-linear-gradient( to bottom, rgba(255,0,0,0.08) 0px, rgba(0,255,255,0.08) 2px, rgba(255,0,255,0.08) 4px, transparent 6px )',
-              transform: `translateY(${Math.random() * 8 - 4}px)`,
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.07) 50%, transparent 100%)',
-              animation: 'mktr-glitch-scan 0.35s linear infinite',
-            }}
-          />
-        </div>
+ {/* In-box glitch overlay */}
+ <div
+ style={{
+ position: 'absolute',
+ top: 6,
+ left: 6,
+ right: 6,
+ bottom: 6,
+ borderRadius: '18px',
+ pointerEvents: 'none',
+ overflow: 'hidden',
+ opacity: glitchEffect ? 1 : 0,
+ transition: 'opacity 0.12s',
+ zIndex: 2,
+ }}
+ >
+ <div
+ style={{
+ position: 'absolute',
+ inset: 0,
+ background:
+ 'repeating-linear-gradient( to bottom, rgba(255,0,0,0.08) 0px, rgba(0,255,255,0.08) 2px, rgba(255,0,255,0.08) 4px, transparent 6px )',
+ transform: `translateY(${Math.random() * 8 - 4}px)`,
+ }}
+ />
+ <div
+ style={{
+ position: 'absolute',
+ inset: 0,
+ background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.07) 50%, transparent 100%)',
+ animation: 'mktr-glitch-scan 0.35s linear infinite',
+ }}
+ />
+ </div>
 
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            borderRadius: '24px',
-            background: `conic-gradient(from 0deg, ${flashEffect ? 'black' : 'white'} ${borderProgress * 3.6}deg, transparent ${borderProgress * 3.6}deg)`,
-            padding: '4px',
-            mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-            maskComposite: 'xor',
-            WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-            WebkitMaskComposite: 'xor',
-            boxShadow: glitchEffect ? '0 0 10px red, 0 0 20px blue' : 'none',
-          }}
-        />
-      </div>
+ <div
+ style={{
+ position: 'absolute',
+ top: 0,
+ left: 0,
+ right: 0,
+ bottom: 0,
+ borderRadius: '24px',
+ background: `conic-gradient(from 0deg, ${flashEffect ? 'hsl(var(--foreground))' : 'hsl(var(--background))'} ${borderProgress * 3.6}deg, transparent ${borderProgress * 3.6}deg)`,
+ padding: '4px',
+ mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+ maskComposite: 'xor',
+ WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+ WebkitMaskComposite: 'xor',
+ boxShadow: glitchEffect ? '0 0 10px red, 0 0 20px blue' : 'none',
+ }}
+ />
+ </div>
 
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@900&display=swap');
-        @keyframes mktr-glitch-scan {
-          0% { transform: translateX(-120%); }
-          100% { transform: translateX(120%); }
-        }
-      `}</style>
-      {message && (
-        <div style={{ position: 'absolute', bottom: -48, left: 0, right: 0, textAlign: 'center' }}>
-          <span style={{ color: '#E5E7EB', fontSize: 14 }}>{message}</span>
-        </div>
-      )}
-    </div>
-  );
+ <style>{`
+ @keyframes mktr-glitch-scan {
+ 0% { transform: translateX(-120%); }
+ 100% { transform: translateX(120%); }
+ }
+ `}</style>
+ {message && (
+ <div style={{ position: 'absolute', bottom: -48, left: 0, right: 0, textAlign: 'center' }}>
+ <span style={{ color: 'hsl(var(--muted-foreground))', fontSize: 14 }}>{message}</span>
+ </div>
+ )}
+ </div>
+ );
 };
 
 export default MKTRAnimatedLogo;

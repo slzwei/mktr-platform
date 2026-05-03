@@ -20,7 +20,7 @@ router.post('/invite', authenticateToken, requireAdmin, agentController.inviteAg
 // CRUD
 router.get('/', authenticateToken, requireAdmin, agentController.listAgents);
 router.get('/:id', authenticateToken, requireAgentOrAdmin, agentController.getAgent);
-router.put('/:id', authenticateToken, agentController.updateAgent);
+router.put('/:id', authenticateToken, requireAgentOrAdmin, agentController.updateAgent);
 
 // Sub-resources
 router.get('/:id/prospects', authenticateToken, requireAgentOrAdmin, agentController.getAgentProspects);

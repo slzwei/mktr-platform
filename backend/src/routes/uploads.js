@@ -15,7 +15,7 @@ const router = express.Router();
 // --- Upload hardening constants ---
 
 const ALLOWED_TYPES = [
-  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
   'application/pdf',
   'video/mp4', 'video/webm'
 ];
@@ -60,10 +60,10 @@ const fileFilter = (req, file, cb) => {
   }
 
   const allowedByCategory = {
-    image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'],
+    image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
     document: ['application/pdf'],
     video: ['video/mp4', 'video/webm'],
-    campaign_media: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'video/mp4', 'video/webm']
+    campaign_media: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm']
   };
 
   const { type = 'image' } = req.query;

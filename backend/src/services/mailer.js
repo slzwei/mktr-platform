@@ -88,7 +88,7 @@ export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, c
         <li><strong>Name:</strong> ${prospect.firstName} ${prospect.lastName}</li>
         <li><strong>Campaign:</strong> ${campaignName}</li>
         <li><strong>Signed Up:</strong> ${formattedDate} at ${formattedTime}</li>
-        <li><strong>Email:</strong> ${prospect.email}</li>
+        <li><strong>Email:</strong> ${prospect.email || 'N/A'}</li>
         <li><strong>Phone:</strong> ${prospect.phone || 'N/A'}</li>
       </ul>
       <p><a href="${process.env.FRONTEND_BASE_URL || 'http://localhost:5173'}/prospect/${prospect.id}">View Lead Details</a></p>
@@ -98,13 +98,18 @@ export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, c
   logger.info('Sending lead assignment email', { to: agent.email, agentId: agent.id });
 
   // REDIRECT SYSTEM AGENT EMAILS
-  // The user requested that if the system agent receives a lead, the email goes to shawnleejob@gmail.com
   const systemEmail = process.env.SYSTEM_AGENT_EMAIL || 'system@mktr.local';
+  const redirectEmail = process.env.SYSTEM_AGENT_REDIRECT_EMAIL;
   let targetEmail = agent.email;
 
   if (agent.email === systemEmail || (agent.firstName === 'System' && agent.lastName === 'Agent')) {
-    logger.info('Agent is System Agent — redirecting assignment email', { originalEmail: agent.email, redirectTo: 'shawnleejob@gmail.com' });
-    targetEmail = 'shawnleejob@gmail.com';
+    if (redirectEmail) {
+      logger.info('Agent is System Agent — redirecting assignment email', { originalEmail: agent.email, redirectTo: redirectEmail });
+      targetEmail = redirectEmail;
+    } else {
+      logger.warn('Agent is System Agent but SYSTEM_AGENT_REDIRECT_EMAIL not set — skipping email');
+      return { success: false, message: 'System Agent email redirect not configured' };
+    }
   }
 
   const result = await sendEmail({

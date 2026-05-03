@@ -670,7 +670,7 @@ export function makeProspectService(overrides = {}) {
     if (campaignId) whereConditions.campaignId = campaignId;
 
     if (search) {
-      const sanitizedSearch = String(search).slice(0, 100);
+      const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
       const likeOp = Op.iLike;
       whereConditions[Op.or] = [
         { firstName: { [likeOp]: `%${sanitizedSearch}%` } },

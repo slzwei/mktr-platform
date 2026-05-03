@@ -244,16 +244,19 @@ export function makeCommissionService(overrides = {}) {
       throw new _AppError('Commission IDs array is required', 400);
     }
 
+    const approvalData = JSON.stringify({
+      approvalNotes: String(notes || '').slice(0, 500),
+      approvedAt: new Date().toISOString(),
+    });
+
     const result = await m.Commission.update(
       {
         status: 'approved',
         approvedBy: userId,
-        metadata: _sequelize.literal(`
-          CASE
-            WHEN metadata IS NULL THEN '{"approvalNotes": "${notes || ''}", "approvedAt": "${new Date().toISOString()}"}'::jsonb
-            ELSE metadata || '{"approvalNotes": "${notes || ''}", "approvedAt": "${new Date().toISOString()}"}'::jsonb
-          END
-        `)
+        metadata: _sequelize.literal(
+          `CASE WHEN metadata IS NULL THEN '${approvalData.replace(/'/g, "''")}'::jsonb ` +
+          `ELSE metadata || '${approvalData.replace(/'/g, "''")}'::jsonb END`
+        )
       },
       { where: { id: { [Op.in]: commissionIds }, status: 'pending' } }
     );

@@ -56,6 +56,12 @@ export async function createAdminLink({ targetUrl, campaignId, purpose = 'share'
     throw new AppError('targetUrl is required', 400);
   }
 
+  // Prevent open redirect — only allow https URLs, block dangerous schemes
+  const parsed = new URL(targetUrl); // throws on invalid URL
+  if (!['https:', 'http:'].includes(parsed.protocol)) {
+    throw new AppError('Only http/https URLs are allowed', 400);
+  }
+
   const slug = await allocateSlug();
   const expiresAt = new Date(Date.now() + (ttlDays || 90) * 24 * 60 * 60 * 1000);
 
@@ -104,7 +110,10 @@ export async function listLinks({ page = 1, limit = 20, search = '', campaignId,
   const where = {};
   if (campaignId) where.campaignId = campaignId;
   if (purpose) where.purpose = purpose;
-  if (search) where.slug = { [Op.like]: `%${String(search).trim()}%` };
+  if (search) {
+    const sanitizedSearch = String(search).trim().slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
+    where.slug = { [Op.like]: `%${sanitizedSearch}%` };
+  }
 
   const { rows, count } = await ShortLink.findAndCountAll({
     where,

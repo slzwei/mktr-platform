@@ -25,6 +25,7 @@ router.post('/login', authLimiter, validate(schemas.userLogin), auth.login);
 // ─── Google OAuth ───────────────────────────────────────────────────────────
 router.post('/google', auth.googleLogin);
 router.get('/google/config', auth.googleConfigCheck);
+router.get('/google/state', auth.generateOAuthState);
 router.post('/google/callback', auth.googleOAuthCallback);
 
 // ─── Authenticated user ─────────────────────────────────────────────────────

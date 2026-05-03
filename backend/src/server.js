@@ -48,6 +48,39 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   }
 });
 
+// Graceful shutdown
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[Shell] ${signal} received — shutting down gracefully...`);
+
+  // 1. Stop accepting new connections
+  server.close(() => {
+    console.log('[Shell] HTTP server closed.');
+  });
+
+  // 2. Drain Sequelize pool
+  try {
+    const { sequelize } = await import('./models/index.js');
+    await sequelize.close();
+    console.log('[Shell] Database pool drained.');
+  } catch (e) {
+    console.error('[Shell] Error closing DB pool:', e.message);
+  }
+
+  // 3. Force exit after 15s if still hanging
+  setTimeout(() => {
+    console.error('[Shell] Forced exit after timeout.');
+    process.exit(1);
+  }, 15000).unref();
+
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // Keep process alive
 process.on('unhandledRejection', (err) => {
   console.error('[Shell] Unhandled Rejection:', err);

@@ -23,7 +23,7 @@ const Prospect = sequelize.define('Prospect', {
   },
   email: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
     validate: {
       isEmail: true
     }

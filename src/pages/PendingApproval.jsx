@@ -8,129 +8,127 @@ import { Button } from '@/components/ui/button';
 
 
 export default function PendingApproval() {
-  const navigate = useNavigate();
-  const [checking, setChecking] = useState(false);
-  const [lastCheckedAt, setLastCheckedAt] = useState(null);
-  const intervalRef = useRef(null);
-  const { token, refreshUser, setUser } = useAuthStore();
+ const navigate = useNavigate();
+ const [checking, setChecking] = useState(false);
+ const [lastCheckedAt, setLastCheckedAt] = useState(null);
+ const intervalRef = useRef(null);
+ const { token, refreshUser, setUser } = useAuthStore();
 
-  useEffect(() => {
-    if (!token) navigate('/');
+ useEffect(() => {
+ if (!token) navigate('/');
 
-    // Poll for approval status every 5 seconds and redirect once approved
-    const checkStatus = async () => {
-      try {
-        setChecking(true);
-        const freshUser = await refreshUser();
-        setLastCheckedAt(new Date());
-        if (freshUser && freshUser.approvalStatus !== 'pending' && freshUser.status !== 'pending_approval') {
-          setUser(freshUser);
-          const target = getPostAuthRedirectPath(freshUser);
-          navigate(target);
-        }
-      } catch (_) {
-        // no-op: stay on page
-      } finally {
-        setChecking(false);
-      }
-    };
+ // Poll for approval status every 5 seconds and redirect once approved
+ const checkStatus = async () => {
+ try {
+ setChecking(true);
+ const freshUser = await refreshUser();
+ setLastCheckedAt(new Date());
+ if (freshUser && freshUser.approvalStatus !== 'pending' && freshUser.status !== 'pending_approval') {
+ setUser(freshUser);
+ const target = getPostAuthRedirectPath(freshUser);
+ navigate(target);
+ }
+ } catch (_) {
+ // no-op: stay on page
+ } finally {
+ setChecking(false);
+ }
+ };
 
-    // Initial check immediately, then poll
-    checkStatus();
-    intervalRef.current = setInterval(checkStatus, 5000);
+ // Initial check immediately, then poll
+ checkStatus();
+ intervalRef.current = setInterval(checkStatus, 5000);
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [navigate]);
+ return () => {
+ if (intervalRef.current) clearInterval(intervalRef.current);
+ };
+ }, [navigate]);
 
-  const handleManualCheck = async () => {
-    try {
-      setChecking(true);
-      const freshUser = await refreshUser();
-      setLastCheckedAt(new Date());
-      if (freshUser && freshUser.approvalStatus !== 'pending' && freshUser.status !== 'pending_approval') {
-        setUser(freshUser);
-        const target = getPostAuthRedirectPath(freshUser);
-        navigate(target);
-      }
-    } finally {
-      setChecking(false);
-    }
-  };
+ const handleManualCheck = async () => {
+ try {
+ setChecking(true);
+ const freshUser = await refreshUser();
+ setLastCheckedAt(new Date());
+ if (freshUser && freshUser.approvalStatus !== 'pending' && freshUser.status !== 'pending_approval') {
+ setUser(freshUser);
+ const target = getPostAuthRedirectPath(freshUser);
+ navigate(target);
+ }
+ } finally {
+ setChecking(false);
+ }
+ };
 
-  return (
-    <div className="min-h-screen bg-[#F8FAFC] font-sans">
+ return (
+ <div className="min-h-screen bg-[#F8FAFC] font-sans">
 
 
-      <div className="container max-w-lg mx-auto px-4 pt-24 md:pt-32 pb-12">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"
-        >
-          <div className="p-8 text-center space-y-6">
+ <div className="container max-w-lg mx-auto px-4 pt-24 md:pt-32 pb-12">
+ <motion.div
+ initial={{ opacity: 0, y: 20 }}
+ animate={{ opacity: 1, y: 0 }}
+ transition={{ duration: 0.5 }}
+ className="bg-card rounded-2xl shadow-sm border border-border overflow-hidden" >
+ <div className="p-8 text-center space-y-6">
 
-            {/* Status Icon */}
-            <div className="mx-auto w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mb-6">
-              <Clock className="w-8 h-8 text-blue-600 animate-pulse" />
-            </div>
+ {/* Status Icon */}
+ <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-6">
+ <Clock className="w-8 h-8 text-primary animate-pulse"/>
+ </div>
 
-            {/* Content */}
-            <div className="space-y-2">
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                Application Under Review
-              </h1>
-              <p className="text-slate-500 text-base leading-relaxed">
-                Thanks for signing up! We're currently reviewing your application details. You'll hear from us within the next 24 hours.
-              </p>
-            </div>
+ {/* Content */}
+ <div className="space-y-2">
+ <h1 className="text-2xl font-bold tracking-tight text-foreground">
+ Application Under Review
+ </h1>
+ <p className="text-muted-foreground text-base leading-relaxed">
+ Thanks for signing up! We're currently reviewing your application details. You'll hear from us within the next 24 hours.
+ </p>
+ </div>
 
-            {/* Check Status Section */}
-            <div className="pt-6 border-t border-slate-100 space-y-4">
-              <p className="text-sm text-slate-500">
-                We'll automatically move you forward as soon as your account is approved.
-              </p>
+ {/* Check Status Section */}
+ <div className="pt-6 border-t border-border space-y-4">
+ <p className="text-sm text-muted-foreground">
+ We'll automatically move you forward as soon as your account is approved.
+ </p>
 
-              <div className="flex flex-col items-center gap-3">
-                <Button
-                  onClick={handleManualCheck}
-                  disabled={checking}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold h-11 transition-all shadow-md shadow-blue-100 hover:translate-y-[-1px] active:translate-y-[0px]"
-                >
-                  {checking ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Checking Status...
-                    </>
-                  ) : (
-                    <>
-                      Check Status Now
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </>
-                  )}
-                </Button>
+ <div className="flex flex-col items-center gap-3">
+ <Button
+ onClick={handleManualCheck}
+ disabled={checking}
+ className="w-full bg-primary hover:bg-primary/90 text-background font-semibold h-11 transition-colors shadow-md shadow-blue-100 hover:translate-y-[-1px] active:translate-y-[0px]" >
+ {checking ? (
+ <>
+ <Loader2 className="w-4 h-4 mr-2 animate-spin"/>
+ Checking Status...
+ </>
+ ) : (
+ <>
+ Check Status Now
+ <ArrowRight className="w-4 h-4 ml-2"/>
+ </>
+ )}
+ </Button>
 
-                {lastCheckedAt && (
-                  <span className="text-xs text-slate-400 font-medium">
-                    Last checked {lastCheckedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                )}
-              </div>
-            </div>
+ {lastCheckedAt && (
+ <span className="text-xs text-muted-foreground font-medium">
+ Last checked {lastCheckedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+ </span>
+ )}
+ </div>
+ </div>
 
-            {/* Footer Trust Indicator */}
-            <div className="pt-4 flex items-center justify-center gap-1.5 text-xs text-slate-400">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Secure Application Process</span>
-            </div>
+ {/* Footer Trust Indicator */}
+ <div className="pt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+ <ShieldCheck className="w-3.5 h-3.5"/>
+ <span>Secure Application Process</span>
+ </div>
 
-          </div>
-        </motion.div>
-      </div>
-    </div>
-  );
+ </div>
+ </motion.div>
+ </div>
+ </div>
+ );
 }
 
 

@@ -97,9 +97,11 @@ export function makeMetaLeadService(overrides = {}) {
       return null;
     }
 
-    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${leadgenId}?access_token=${accessToken}`;
+    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${leadgenId}`;
     try {
-      const response = await d.fetch(url);
+      const response = await d.fetch(url, {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      });
       if (!response.ok) {
         const body = await response.text();
         d.logger.error('[Meta] Graph API error', {

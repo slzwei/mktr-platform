@@ -28,10 +28,11 @@ export async function listFleetOwners(query) {
   const where = {};
 
   if (search) {
+    const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
     where[Op.or] = [
-      { full_name: { [Op.iLike]: `%${search}%` } },
-      { email: { [Op.iLike]: `%${search}%` } },
-      { company_name: { [Op.iLike]: `%${search}%` } }
+      { full_name: { [Op.iLike]: `%${sanitizedSearch}%` } },
+      { email: { [Op.iLike]: `%${sanitizedSearch}%` } },
+      { company_name: { [Op.iLike]: `%${sanitizedSearch}%` } }
     ];
   }
 
@@ -96,10 +97,11 @@ export async function listCars(query) {
   if (fleet_owner_id) where.fleet_owner_id = fleet_owner_id;
 
   if (search) {
+    const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
     where[Op.or] = [
-      { make: { [Op.iLike]: `%${search}%` } },
-      { model: { [Op.iLike]: `%${search}%` } },
-      { plate_number: { [Op.iLike]: `%${search}%` } }
+      { make: { [Op.iLike]: `%${sanitizedSearch}%` } },
+      { model: { [Op.iLike]: `%${sanitizedSearch}%` } },
+      { plate_number: { [Op.iLike]: `%${sanitizedSearch}%` } }
     ];
   }
 

@@ -14,14 +14,15 @@ export const errorHandler = (err, req, res, _next) => {
     'Request error'
   );
 
+  const isDev = process.env.NODE_ENV === 'development';
+
   // Sequelize validation error
   if (err instanceof ValidationError) {
     const message = err.errors.map((error) => error.message).join(', ');
     return res.status(400).json({
       success: false,
       message: 'Validation Error',
-      details: message,
-      errors: err.errors,
+      ...(isDev ? { details: message, errors: err.errors } : { details: 'Invalid input data' }),
     });
   }
 
@@ -30,7 +31,7 @@ export const errorHandler = (err, req, res, _next) => {
     return res.status(500).json({
       success: false,
       message: 'Database Error',
-      details: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
+      details: isDev ? err.message : 'Internal server error',
     });
   }
 
@@ -45,11 +46,10 @@ export const errorHandler = (err, req, res, _next) => {
 
   // Duplicate key error
   if (err.code === 11000 || err.name === 'SequelizeUniqueConstraintError') {
-    const field = Object.keys(err.keyValue || {})[0] || 'field';
     return res.status(400).json({
       success: false,
       message: 'Duplicate Value Error',
-      details: `${field} already exists`,
+      details: isDev ? `${Object.keys(err.keyValue || {})[0] || 'field'} already exists` : 'A record with this value already exists',
     });
   }
 
@@ -85,12 +85,20 @@ export const errorHandler = (err, req, res, _next) => {
     });
   }
 
-  // Custom application errors
-  if (err.statusCode) {
+  // Custom application errors (AppError instances are intentional — safe to expose)
+  if (err.statusCode && err.isOperational) {
     return res.status(err.statusCode).json({
       success: false,
       message: err.message,
-      details: err.details || null,
+      ...(isDev && err.details ? { details: err.details } : {}),
+    });
+  }
+
+  // Non-operational error with a statusCode — don't leak message in production
+  if (err.statusCode) {
+    return res.status(err.statusCode).json({
+      success: false,
+      message: isDev ? err.message : 'An error occurred',
     });
   }
 
@@ -98,7 +106,7 @@ export const errorHandler = (err, req, res, _next) => {
   res.status(500).json({
     success: false,
     message: 'Internal Server Error',
-    details: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong',
+    details: isDev ? err.message : 'Something went wrong',
   });
 };
 

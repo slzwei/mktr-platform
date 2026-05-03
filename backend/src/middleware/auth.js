@@ -210,7 +210,7 @@ export const optionalAuth = async (req, res, next) => {
 
 // Generate JWT token
 export const generateToken = (userId) => {
-  return jwt.sign({ userId }, getJwtSecret(), { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
+  return jwt.sign({ userId }, getJwtSecret(), { expiresIn: process.env.JWT_EXPIRES_IN || '24h' });
 };
 
 // Verify email token

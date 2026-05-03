@@ -6,25 +6,25 @@ import { toast } from 'sonner';
  * Skips toasting on 401 (the auth layer handles redirect).
  */
 function onQueryError(error) {
-  if (error?.status === 401) return;
-  toast.error(error?.message || 'Something went wrong');
+ if (error?.status === 401) return;
+ toast.error(error?.message || 'Something went wrong');
 }
 
 function onMutationError(error) {
-  if (error?.status === 401) return;
-  toast.error(error?.message || 'Operation failed');
+ if (error?.status === 401) return;
+ toast.error(error?.message || 'Operation failed');
 }
 
 export const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30_000,
-      retry: 1,
-      refetchOnWindowFocus: false,
-      onError: onQueryError,
-    },
-    mutations: {
-      onError: onMutationError,
-    },
-  },
+ defaultOptions: {
+ queries: {
+ staleTime: 30_000,
+ retry: 1,
+ refetchOnWindowFocus: false,
+ onError: onQueryError,
+ },
+ mutations: {
+ onError: onMutationError,
+ },
+ },
 });

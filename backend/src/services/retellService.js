@@ -6,9 +6,22 @@ import { dispatchEvent } from './webhookService.js';
 import { sendLeadAssignmentEmail } from './mailer.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { CircuitBreaker } from '../utils/circuitBreaker.js';
 
 const IDEMPOTENCY_SCOPE = 'retell:call';
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// Circuit breaker for Retell API calls (recording fetches)
+const retellApiBreaker = new CircuitBreaker(
+  async (url, headers) => {
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error(`Retell API error: ${response.status}`);
+    }
+    return response.json();
+  },
+  { name: 'retell-api', failureThreshold: 5, resetTimeoutMs: 30_000 }
+);
 
 /** Default injectable dependencies — override in tests via makeRetellService(). */
 const defaultDeps = {
@@ -50,6 +63,12 @@ export function verifyRetellSignature(rawBody, signatureHeader) {
 
   // Require v=<timestamp>,d=<hex> format — reject malformed signatures
   if (!signature || !timestamp) {
+    return false;
+  }
+
+  // Reject replays older than 5 minutes
+  const ts = Number(timestamp);
+  if (Number.isNaN(ts) || Math.abs(Date.now() - ts) > 5 * 60 * 1000) {
     return false;
   }
 
@@ -100,11 +119,13 @@ export function makeRetellService(overrides = {}) {
       if (campaign) return campaign;
     }
 
-    // Fallback: any [Retell] campaign matching this agent
-    const allRetell = await d.Campaign.findAll({
-      where: { is_active: true },
-    });
-    return allRetell.find(c => c.name?.startsWith('[Retell]')) || null;
+    // No match — log warning and return null rather than picking an arbitrary
+    // [Retell] campaign, which could misattribute leads when multiple agents exist.
+    logger.warn(
+      { retellAgentId, retellAgentName },
+      'No campaign found for Retell agent — lead will be created without campaign'
+    );
+    return null;
   }
 
   /**
@@ -221,7 +242,7 @@ export function makeRetellService(overrides = {}) {
       const prospect = await d.Prospect.create({
         firstName,
         lastName: lastName || null,
-        email: `retell-${call_id}@calls.mktr.sg`,
+        email: null,
         phone: to_number || null,
         leadSource: 'call_bot',
         leadStatus: 'new',
@@ -276,6 +297,22 @@ export function makeRetellService(overrides = {}) {
       await t.commit();
 
       // ── Fire outgoing webhooks (post-commit, fire-and-forget) ──
+      // Look up assigned agent for routing info
+      let agentForWebhook = null;
+      if (assignedAgentId) {
+        const agentRecord = await d.User.findByPk(assignedAgentId, {
+          attributes: ['id', 'lyfeId', 'phone', 'email', 'firstName', 'lastName'],
+        });
+        if (agentRecord) {
+          agentForWebhook = {
+            phone: agentRecord.phone || null,
+            email: agentRecord.email || null,
+            name: `${agentRecord.firstName || ''} ${agentRecord.lastName || ''}`.trim(),
+            id: agentRecord.lyfeId || agentRecord.id,
+          };
+        }
+      }
+
       d.dispatchEvent('lead.created', () => ({
         event: 'lead.created',
         timestamp: new Date().toISOString(),
@@ -293,6 +330,13 @@ export function makeRetellService(overrides = {}) {
             recordingUrl: recording_url || null,
             transcript: prospect.notes,
             createdAt: prospect.createdAt
+          },
+          routing: {
+            mode: 'retell_round_robin',
+            agentPhone: agentForWebhook?.phone || null,
+            agentEmail: agentForWebhook?.email || null,
+            agentName: agentForWebhook?.name || null,
+            agentExternalId: agentForWebhook?.id || assignedAgentId || null,
           },
           source: 'retell_webhook',
           campaign: campaign ? { externalId: campaign.id, name: campaign.name } : null
@@ -358,21 +402,25 @@ export function makeRetellService(overrides = {}) {
       return { recordingUrl: meta.recordingUrl };
     }
 
-    // Fetch from Retell API
+    // Fetch from Retell API (via circuit breaker)
     const apiKey = process.env.RETELL_API_KEY;
     if (!apiKey) {
       throw new d.AppError('Retell API not configured', 503);
     }
 
-    const response = await fetch(`https://api.retellai.com/v2/get-call/${meta.retellCallId}`, {
-      headers: { Authorization: `Bearer ${apiKey}` }
-    });
-
-    if (!response.ok) {
+    let call;
+    try {
+      call = await retellApiBreaker.fire(
+        `https://api.retellai.com/v2/get-call/${meta.retellCallId}`,
+        { Authorization: `Bearer ${apiKey}` }
+      );
+    } catch (err) {
+      if (err.message.includes('Circuit breaker')) {
+        throw new d.AppError('Retell API temporarily unavailable', 503);
+      }
       throw new d.AppError('Call not found in Retell', 404);
     }
 
-    const call = await response.json();
     const recordingUrl = call.recording_url || null;
 
     // Cache it in sourceMetadata for next time

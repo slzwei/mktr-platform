@@ -1,128 +1,132 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-import { Link } from "react-router-dom";
-import { ArrowUpRight, ArrowDownRight } from "lucide-react";
-import { LineChart, Line, ResponsiveContainer } from "recharts";
+import { Card, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
+import { Link } from 'react-router-dom';
+import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
+
+// Explicit map so Tailwind JIT can see every class — string templates get purged.
+const LG_COLS_CLASS = {
+    2: 'lg:grid-cols-2',
+    3: 'lg:grid-cols-3',
+    4: 'lg:grid-cols-4',
+    5: 'lg:grid-cols-5',
+    6: 'lg:grid-cols-6',
+};
+
+const MOBILE_SCROLL_STYLE = {
+    scrollbarWidth: 'none',
+    msOverflowStyle: 'none',
+    WebkitOverflowScrolling: 'touch',
+};
 
 function StatCard({ card }) {
-  const cardElement = (
-    <Card
-      className={cn(
-        "border-none shadow-sm transition-shadow duration-200 hover:shadow-md",
-        card.linkTo && "cursor-pointer"
-      )}
-    >
-      <CardContent className="p-6">
-        <div className="flex justify-between items-start mb-4">
-          <div className={cn("p-3 rounded-xl", card.iconBg)}>
-            <card.icon className={cn("w-6 h-6", card.iconColor)} />
-          </div>
-          {card.trend && (
-            <div
-              className={cn(
-                "flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full",
-                card.trendUp !== false
-                  ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400"
-                  : "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400"
-              )}
-            >
-              {card.trendUp !== false ? (
-                <ArrowUpRight className="w-3 h-3" />
-              ) : (
-                <ArrowDownRight className="w-3 h-3" />
-              )}
-              {card.trend}
-            </div>
-          )}
-        </div>
+    const cardElement = (
+        <Card
+            className={cn(
+                'border border-border bg-card shadow-none transition-colors duration-micro ease-out-quart',
+                'hover:border-foreground/20',
+                card.linkTo && 'cursor-pointer group',
+            )}
+        >
+            <CardContent className="p-5">
+                <div className="flex items-start justify-between mb-4">
+                    <div className={cn('p-2.5 rounded-xl', card.iconBg)}>
+                        <card.icon className={cn('w-5 h-5', card.iconColor)} aria-hidden="true" />
+                    </div>
+                    {card.trend && (
+                        <div
+                            className={cn(
+                                'flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-md tabular-nums',
+                                card.trendUp !== false
+                                    ? 'bg-success/10 text-success'
+                                    : 'bg-destructive/10 text-destructive',
+                            )}
+                        >
+                            {card.trendUp !== false ? (
+                                <ArrowUpRight className="w-3 h-3" aria-hidden="true" />
+                            ) : (
+                                <ArrowDownRight className="w-3 h-3" aria-hidden="true" />
+                            )}
+                            {card.trend}
+                        </div>
+                    )}
+                </div>
 
-        <p className="text-sm font-medium text-muted-foreground mb-1">
-          {card.title}
-        </p>
-        <h3 className="text-2xl font-bold text-foreground">{card.value}</h3>
-        {card.sparkData && card.sparkData.length > 0 && (
-          <div className="h-8 mt-1">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={card.sparkData.map((value) => ({ value }))}
-              >
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="currentColor"
-                  className="text-muted-foreground/50"
-                  strokeWidth={1.5}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-        {card.description && (
-          <p className="text-xs text-muted-foreground/70 mt-1">
-            {card.description}
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-
-  if (card.linkTo) {
-    return (
-      <Link to={card.linkTo} className="no-underline">
-        {cardElement}
-      </Link>
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.08em] mb-2">
+                    {card.title}
+                </p>
+                <h3 className="text-3xl font-semibold text-foreground tracking-tight leading-none tabular-nums">
+                    {card.value}
+                </h3>
+                {card.description && (
+                    <p className="text-xs text-muted-foreground mt-2 leading-snug">
+                        {card.description}
+                    </p>
+                )}
+            </CardContent>
+        </Card>
     );
-  }
-  return cardElement;
+
+    if (card.linkTo) {
+        return (
+            <Link to={card.linkTo} className="no-underline">
+                {cardElement}
+            </Link>
+        );
+    }
+    return cardElement;
 }
 
 export default function ResponsiveStatsGrid({ cards, loading, columns = 4 }) {
-  if (loading) {
+    const lgColsClass = LG_COLS_CLASS[columns] ?? LG_COLS_CLASS[4];
+    const gridClass = cn('hidden md:grid md:grid-cols-2 gap-5', lgColsClass);
+
+    if (loading) {
+        return (
+            <div className="mb-8">
+                <div className={gridClass}>
+                    {Array.from({ length: columns }, (_, i) => (
+                        <div
+                            key={i}
+                            className="h-[140px] bg-muted/60 rounded-lg border border-border animate-pulse"
+                            style={{ animationDelay: `${i * 80}ms` }}
+                        />
+                    ))}
+                </div>
+                <div
+                    className="flex md:hidden gap-4 overflow-x-auto pb-4 snap-x snap-mandatory -mx-6 px-6"
+                    style={MOBILE_SCROLL_STYLE}
+                >
+                    {Array.from({ length: columns }, (_, i) => (
+                        <div
+                            key={i}
+                            className="min-w-[260px] snap-center shrink-0 h-[140px] bg-muted/60 rounded-lg border border-border animate-pulse"
+                            style={{ animationDelay: `${i * 80}ms` }}
+                        />
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
+    if (!cards || cards.length === 0) return null;
+
     return (
-      <div className="mb-8">
-        <div className={`hidden md:grid md:grid-cols-2 lg:grid-cols-${columns} gap-6`}>
-          {Array.from({ length: columns }, (_, i) => (
-            <div key={i} className="h-32 bg-muted rounded-xl animate-pulse" />
-          ))}
+        <div className="mb-8">
+            <div className={gridClass}>
+                {cards.map((card, i) => (
+                    <StatCard key={card.title || i} card={card} />
+                ))}
+            </div>
+            <div
+                className="flex md:hidden gap-4 overflow-x-auto pb-4 snap-x snap-mandatory -mx-6 px-6"
+                style={MOBILE_SCROLL_STYLE}
+            >
+                {cards.map((card, i) => (
+                    <div key={card.title || i} className="min-w-[260px] snap-center shrink-0">
+                        <StatCard card={card} />
+                    </div>
+                ))}
+            </div>
         </div>
-        <div
-          className="flex md:hidden gap-4 overflow-x-auto pb-4 snap-x snap-mandatory -mx-6 px-6"
-          style={{ scrollbarWidth: "none", msOverflowStyle: "none", WebkitOverflowScrolling: "touch" }}
-        >
-          {Array.from({ length: columns }, (_, i) => (
-            <div key={i} className="min-w-[260px] snap-center shrink-0 h-32 bg-muted rounded-xl animate-pulse" />
-          ))}
-        </div>
-      </div>
     );
-  }
-
-  if (!cards || cards.length === 0) return null;
-
-  const gridClass = columns === 5
-    ? "hidden md:grid md:grid-cols-2 lg:grid-cols-5 gap-6"
-    : `hidden md:grid md:grid-cols-2 lg:grid-cols-${columns} gap-6`;
-
-  return (
-    <div className="mb-8">
-      {/* Desktop grid */}
-      <div className={gridClass}>
-        {cards.map((card, i) => (
-          <StatCard key={card.title || i} card={card} />
-        ))}
-      </div>
-      {/* Mobile horizontal scroll */}
-      <div
-        className="flex md:hidden gap-4 overflow-x-auto pb-4 snap-x snap-mandatory -mx-6 px-6"
-        style={{ scrollbarWidth: "none", msOverflowStyle: "none", WebkitOverflowScrolling: "touch" }}
-      >
-        {cards.map((card, i) => (
-          <div key={card.title || i} className="min-w-[260px] snap-center shrink-0">
-            <StatCard card={card} />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }

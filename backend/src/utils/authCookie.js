@@ -3,9 +3,9 @@ const COOKIE_NAME = 'mktr_token';
 const cookieOptions = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  sameSite: 'strict',
   path: '/',
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days (matches JWT_EXPIRES_IN default)
+  maxAge: 24 * 60 * 60 * 1000, // 24 hours (matches JWT_EXPIRES_IN default)
 };
 
 export function setAuthCookie(res, token) {

@@ -19,10 +19,24 @@ export function makeWebhookService(overrides = {}) {
 
   // Concurrency limiter for webhook deliveries to avoid exhausting the connection pool
   const MAX_CONCURRENT_DELIVERIES = 3;
+  const MAX_QUEUE_DEPTH = 100;
   let activeDeliveries = 0;
+  let droppedDeliveries = 0;
   const deliveryQueue = [];
 
   function enqueueDelivery(delivery, subscriber) {
+    // Backpressure: reject new deliveries when queue is full
+    if (deliveryQueue.length >= MAX_QUEUE_DEPTH) {
+      droppedDeliveries++;
+      d.logger.warn('[Webhook] queue full — dropping delivery', {
+        deliveryId: delivery.deliveryId,
+        subscriberName: subscriber.name,
+        queueDepth: deliveryQueue.length,
+        totalDropped: droppedDeliveries,
+      });
+      return Promise.resolve();
+    }
+
     return new Promise((resolve) => {
       const run = async () => {
         activeDeliveries++;
@@ -45,6 +59,10 @@ export function makeWebhookService(overrides = {}) {
         deliveryQueue.push(run);
       }
     });
+  }
+
+  function getQueueStats() {
+    return { activeDeliveries, queueDepth: deliveryQueue.length, droppedDeliveries };
   }
 
   /**
@@ -405,7 +423,7 @@ export function makeWebhookService(overrides = {}) {
   }
 
   return { dispatchEvent, attemptDelivery, retryDelivery, retryAllFailed,
-           getDeadLetterQueue, purgeDeadLetters, getDeliveryStats, recoverPendingRetries };
+           getDeadLetterQueue, purgeDeadLetters, getDeliveryStats, getQueueStats, recoverPendingRetries };
 }
 
 // --- Backward-compatible named exports ---

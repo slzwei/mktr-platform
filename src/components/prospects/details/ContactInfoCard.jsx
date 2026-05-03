@@ -1,105 +1,105 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { format } from "date-fns";
-import { Phone, Mail, MapPin, Calendar, User } from "lucide-react";
+import { Button } from"@/components/ui/button";
+import { Input } from"@/components/ui/input";
+import { Label } from"@/components/ui/label";
+import { Separator } from"@/components/ui/separator";
+import { format } from"date-fns";
+import { Phone, Mail, MapPin, Calendar, User } from"lucide-react";
 
 export default function ContactInfoCard({
-  isEditing,
-  firstName,
-  lastName,
-  email,
-  phone,
-  prospect,
-  isUpdating,
-  onFirstNameChange,
-  onLastNameChange,
-  onEmailChange,
-  onPhoneChange,
-  onSaveEdits,
-  onCancelEdit,
+ isEditing,
+ firstName,
+ lastName,
+ email,
+ phone,
+ prospect,
+ isUpdating,
+ onFirstNameChange,
+ onLastNameChange,
+ onEmailChange,
+ onPhoneChange,
+ onSaveEdits,
+ onCancelEdit,
 }) {
-  return (
-    <div className="space-y-4">
-      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 uppercase tracking-wider flex items-center gap-2">
-        <User className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-        Contact Info
-      </h3>
-      {isEditing ? (
-        <div className="space-y-3 bg-white dark:bg-gray-800 p-3 rounded-lg border dark:border-gray-600 shadow-sm">
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-xs">First Name</Label>
-              <Input value={firstName} onChange={(e) => onFirstNameChange(e.target.value)} className="h-8" />
-            </div>
-            <div>
-              <Label className="text-xs">Last Name</Label>
-              <Input value={lastName} onChange={(e) => onLastNameChange(e.target.value)} className="h-8" />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Email</Label>
-            <Input value={email} onChange={(e) => onEmailChange(e.target.value)} className="h-8" />
-          </div>
-          <div>
-            <Label className="text-xs">Phone</Label>
-            <Input value={phone} onChange={(e) => onPhoneChange(e.target.value)} className="h-8" />
-          </div>
-          <div className="pt-2 flex gap-2">
-            <Button size="sm" onClick={onSaveEdits} disabled={isUpdating} className="w-full">
-              Save
-            </Button>
-            <Button size="sm" variant="outline" onClick={onCancelEdit} className="w-full">
-              Cancel
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-600 shadow-sm p-4 space-y-3">
-          <div className="group flex items-start gap-3">
-            <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
-              <Phone className="w-4 h-4 text-blue-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Phone</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 break-all">{phone || '—'}</p>
-            </div>
-          </div>
-          <Separator />
-          <div className="group flex items-start gap-3">
-            <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
-              <Mail className="w-4 h-4 text-blue-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Email</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 break-all">{email || '—'}</p>
-            </div>
-          </div>
-          <Separator />
-          <div className="group flex items-start gap-3">
-            <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
-              <Calendar className="w-4 h-4 text-blue-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Date of Birth</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                {prospect.date_of_birth ? format(new Date(prospect.date_of_birth), 'MMM d, yyyy') : '—'}
-              </p>
-            </div>
-          </div>
-          <Separator />
-          <div className="group flex items-start gap-3">
-            <div className="h-8 w-8 rounded-full bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
-              <MapPin className="w-4 h-4 text-blue-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Postal Code</p>
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{prospect.postal_code || '—'}</p>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+ return (
+ <div className="space-y-4">
+ <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
+ <User className="w-4 h-4 text-muted-foreground"/>
+ Contact Info
+ </h3>
+ {isEditing ? (
+ <div className="space-y-3 bg-card p-3 rounded-lg border shadow-sm">
+ <div className="grid grid-cols-2 gap-2">
+ <div>
+ <Label className="text-xs">First Name</Label>
+ <Input value={firstName} onChange={(e) => onFirstNameChange(e.target.value)} className="h-8"/>
+ </div>
+ <div>
+ <Label className="text-xs">Last Name</Label>
+ <Input value={lastName} onChange={(e) => onLastNameChange(e.target.value)} className="h-8"/>
+ </div>
+ </div>
+ <div>
+ <Label className="text-xs">Email</Label>
+ <Input value={email} onChange={(e) => onEmailChange(e.target.value)} className="h-8"/>
+ </div>
+ <div>
+ <Label className="text-xs">Phone</Label>
+ <Input value={phone} onChange={(e) => onPhoneChange(e.target.value)} className="h-8"/>
+ </div>
+ <div className="pt-2 flex gap-2">
+ <Button size="sm" onClick={onSaveEdits} disabled={isUpdating} className="w-full">
+ Save
+ </Button>
+ <Button size="sm" variant="outline" onClick={onCancelEdit} className="w-full">
+ Cancel
+ </Button>
+ </div>
+ </div>
+ ) : (
+ <div className="bg-card rounded-lg border shadow-sm p-4 space-y-3">
+ <div className="group flex items-start gap-3">
+ <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+ <Phone className="w-4 h-4 text-primary"/>
+ </div>
+ <div className="flex-1 min-w-0">
+ <p className="text-xs font-medium text-muted-foreground">Phone</p>
+ <p className="text-sm font-medium text-foreground break-all">{phone || '—'}</p>
+ </div>
+ </div>
+ <Separator />
+ <div className="group flex items-start gap-3">
+ <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+ <Mail className="w-4 h-4 text-primary"/>
+ </div>
+ <div className="flex-1 min-w-0">
+ <p className="text-xs font-medium text-muted-foreground">Email</p>
+ <p className="text-sm font-medium text-foreground break-all">{email || '—'}</p>
+ </div>
+ </div>
+ <Separator />
+ <div className="group flex items-start gap-3">
+ <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+ <Calendar className="w-4 h-4 text-primary"/>
+ </div>
+ <div className="flex-1 min-w-0">
+ <p className="text-xs font-medium text-muted-foreground">Date of Birth</p>
+ <p className="text-sm font-medium text-foreground">
+ {prospect.date_of_birth ? format(new Date(prospect.date_of_birth), 'MMM d, yyyy') : '—'}
+ </p>
+ </div>
+ </div>
+ <Separator />
+ <div className="group flex items-start gap-3">
+ <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+ <MapPin className="w-4 h-4 text-primary"/>
+ </div>
+ <div className="flex-1 min-w-0">
+ <p className="text-xs font-medium text-muted-foreground">Postal Code</p>
+ <p className="text-sm font-medium text-foreground">{prospect.postal_code || '—'}</p>
+ </div>
+ </div>
+ </div>
+ )}
+ </div>
+ );
 }

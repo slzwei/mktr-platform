@@ -1,23 +1,21 @@
 /* ========================================
-   MKTR Homepage — Cinematic Dark Theme
+   MKTR Homepage — Tropic editorial, warm-dark
    ======================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
-
 :root {
-  --mktr-bg: #060918;
-  --mktr-bg-secondary: #0c1024;
-  --mktr-bg-card: #111530;
-  --mktr-accent: #00c2ff;
-  --mktr-accent-glow: rgba(0, 194, 255, 0.3);
-  --mktr-gold: #c9a84c;
-  --mktr-text: #ffffff;
-  --mktr-text-muted: #8892b0;
-  --mktr-text-dim: #4a5178;
-  --mktr-border: rgba(255, 255, 255, 0.06);
-  --mktr-gradient: linear-gradient(135deg, #00c2ff 0%, #0066ff 100%);
-  --heading-font: 'Outfit', sans-serif;
-  --body-font: 'Outfit', sans-serif;
+  --mktr-bg: #141310;
+  --mktr-bg-secondary: #1F1D18;
+  --mktr-bg-card: #2A2721;
+  --mktr-accent: #E27A4E;
+  --mktr-accent-glow: rgba(226, 122, 78, 0.28);
+  --mktr-gold: #C89B3C;
+  --mktr-text: #F5F0E6;
+  --mktr-text-muted: #D6CFBD;
+  --mktr-text-dim: #8B857A;
+  --mktr-border: rgba(245, 240, 230, 0.08);
+  --mktr-danger: #D85C4A;
+  --heading-font: 'Fraunces', Georgia, serif;
+  --body-font: 'Albert Sans', system-ui, sans-serif;
   --mono-font: 'JetBrains Mono', monospace;
 }
 
@@ -68,9 +66,9 @@
   inset: 0;
   background: linear-gradient(
     180deg,
-    rgba(6, 9, 24, 0.15) 0%,
-    rgba(6, 9, 24, 0.4) 60%,
-    rgba(6, 9, 24, 0.9) 100%
+    rgba(20, 19, 16, 0.15) 0%,
+    rgba(20, 19, 16, 0.4) 60%,
+    rgba(20, 19, 16, 0.9) 100%
   );
 }
 
@@ -114,10 +112,8 @@
 }
 
 .mktr-hero-title .accent {
-  background: var(--mktr-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--mktr-accent);
+  font-style: italic;
 }
 
 .mktr-hero-subtitle {
@@ -134,8 +130,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
-  background: var(--mktr-gradient);
-  color: #fff;
+  background: var(--mktr-accent);
+  color: var(--mktr-text);
   font-family: var(--body-font);
   font-weight: 600;
   font-size: 1rem;
@@ -211,10 +207,7 @@
   font-family: var(--heading-font);
   font-size: clamp(2rem, 4vw, 3rem);
   font-weight: 800;
-  background: var(--mktr-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--mktr-accent);
   line-height: 1;
   margin-bottom: 0.5rem;
 }
@@ -359,7 +352,7 @@
   left: 0;
   right: 0;
   height: 2px;
-  background: var(--mktr-gradient);
+  background: var(--mktr-accent);
   opacity: 0;
   transition: opacity 0.4s ease;
 }
@@ -428,9 +421,9 @@
   inset: 0;
   background: linear-gradient(
     135deg,
-    rgba(6, 9, 24, 0.7) 0%,
-    rgba(6, 9, 24, 0.45) 50%,
-    rgba(6, 9, 24, 0.7) 100%
+    rgba(20, 19, 16, 0.7) 0%,
+    rgba(20, 19, 16, 0.45) 50%,
+    rgba(20, 19, 16, 0.7) 100%
   );
 }
 
@@ -507,8 +500,8 @@
   top: -12px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--mktr-gradient);
-  color: #fff;
+  background: var(--mktr-accent);
+  color: var(--mktr-text);
   font-family: var(--mono-font);
   font-size: 0.65rem;
   letter-spacing: 2px;
@@ -583,8 +576,8 @@
 }
 
 .mktr-pricing-cta-primary {
-  background: var(--mktr-gradient);
-  color: #fff;
+  background: var(--mktr-accent);
+  color: var(--mktr-text);
   border: none;
   box-shadow: 0 0 30px var(--mktr-accent-glow);
 }
@@ -663,8 +656,8 @@
 
 .mktr-email-submit {
   padding: 1rem 2rem;
-  background: var(--mktr-gradient);
-  color: #fff;
+  background: var(--mktr-accent);
+  color: var(--mktr-text);
   border: none;
   border-radius: 12px;
   font-family: var(--body-font);
@@ -876,8 +869,7 @@
 
 /* ---- SiteHeader Dark Override ---- */
 .mktr-dark-header .header {
-  background: rgba(6, 9, 24, 0.85) !important;
-  backdrop-filter: blur(20px);
+  background: var(--mktr-bg) !important;
   border-bottom-color: var(--mktr-border) !important;
 }
 

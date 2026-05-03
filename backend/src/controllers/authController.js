@@ -1,9 +1,13 @@
+import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import * as authService from '../services/authService.js';
 import * as onboardingService from '../services/onboardingService.js';
 import { setAuthCookie, clearAuthCookie } from '../utils/authCookie.js';
+
+const OAUTH_STATE_COOKIE = 'oauth_state';
+const OAUTH_STATE_MAX_AGE = 10 * 60 * 1000; // 10 minutes
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -207,14 +211,36 @@ export const refreshToken = asyncHandler(async (req, res) => {
   });
 });
 
+export const generateOAuthState = asyncHandler(async (req, res) => {
+  const state = crypto.randomBytes(32).toString('hex');
+
+  res.cookie(OAUTH_STATE_COOKIE, state, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: OAUTH_STATE_MAX_AGE,
+  });
+
+  res.json({ success: true, data: { state } });
+});
+
 export const googleOAuthCallback = asyncHandler(async (req, res) => {
-  // TODO: Implement OAuth state nonce validation to prevent CSRF on OAuth flow
-  // See: https://datatracker.ietf.org/doc/html/rfc6749#section-10.12
   const { code, state } = req.body;
 
   if (!code) {
     throw new AppError('Missing authorization code', 400);
   }
+
+  // Validate OAuth state nonce to prevent CSRF (RFC 6749 Section 10.12)
+  const storedState = req.cookies?.[OAUTH_STATE_COOKIE];
+  if (!state || !storedState || state !== storedState) {
+    logger.warn('OAuth state mismatch', { hasState: !!state, hasStoredState: !!storedState });
+    throw new AppError('Invalid OAuth state. Please try again.', 403);
+  }
+
+  // Clear the state cookie after validation
+  res.clearCookie(OAUTH_STATE_COOKIE, { path: '/', httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
 
   logger.debug('Received OAuth callback with code');
 

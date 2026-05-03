@@ -34,11 +34,8 @@ const storage = multer.diskStorage({
         cb(null, uploadsDir);
     },
     filename: (req, file, cb) => {
-        // Keep original name, but maybe sanitize it? 
-        // User wants "latest version", so standardizing name might be good, 
-        // but preserving version info in filename is also useful for clarity.
-        // Let's keep original name for now so they can see "app-release-v1.2.apk"
-        cb(null, file.originalname);
+        const sanitized = path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_');
+        cb(null, `apk-${Date.now()}-${sanitized}`);
     }
 });
 

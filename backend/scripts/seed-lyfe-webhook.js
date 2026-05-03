@@ -17,7 +17,7 @@ const LYFE_WEBHOOK = {
   name: 'Lyfe App',
   url: process.env.LYFE_WEBHOOK_URL,
   secret: process.env.LYFE_WEBHOOK_SECRET,
-  events: ['lead.created'],
+  events: ['lead.created', 'lead.assigned', 'lead.unassigned'],
   enabled: true,
   description: 'Push new leads to Lyfe mobile app for agent follow-up'
 };
@@ -26,8 +26,8 @@ async function main() {
   await sequelize.authenticate();
   await WebhookSubscriber.sync();
 
-  // Upsert by URL to avoid duplicates
-  const existing = await WebhookSubscriber.findOne({ where: { url: LYFE_WEBHOOK.url } });
+  // Upsert by name to match bootstrap.js behavior
+  const existing = await WebhookSubscriber.findOne({ where: { name: LYFE_WEBHOOK.name } });
   if (existing) {
     await existing.update(LYFE_WEBHOOK);
     console.log('Updated existing Lyfe webhook subscriber:', existing.id);

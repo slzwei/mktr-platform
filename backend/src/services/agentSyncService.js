@@ -1,6 +1,24 @@
 import { Op } from 'sequelize';
 import User from '../models/User.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { CircuitBreaker } from '../utils/circuitBreaker.js';
+import { logger } from '../utils/logger.js';
+
+// Circuit breaker for Lyfe Supabase API calls (agent sync)
+const lyfeSupabaseBreaker = new CircuitBreaker(
+  async (url, headers) => {
+    const response = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`Lyfe Supabase error: ${response.status} ${body}`);
+    }
+    return response.json();
+  },
+  { name: 'lyfe-supabase', failureThreshold: 5, resetTimeoutMs: 60_000 }
+);
 
 // Simple TTL cache
 const cache = new Map();
@@ -46,24 +64,20 @@ export async function fetchAgents(filters = {}) {
   const roles = filters.roles || ['agent', 'director', 'manager'];
   const roleFilter = `role=in.(${roles.join(',')})`;
 
-  const response = await fetch(
-    `${url}/rest/v1/users?${roleFilter}&is_active=eq.true&select=id,full_name,email,phone,role,avatar_url,date_of_birth,created_at&order=full_name`,
-    {
-      headers: {
+  let agents;
+  try {
+    agents = await lyfeSupabaseBreaker.fire(
+      `${url}/rest/v1/users?${roleFilter}&is_active=eq.true&select=id,full_name,email,phone,role,avatar_url,date_of_birth,created_at&order=full_name`,
+      {
         apikey: key,
         Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json'
-      },
-      signal: AbortSignal.timeout(10000)
-    }
-  );
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new Error(`Lyfe Supabase error: ${response.status} ${body}`);
+      }
+    );
+  } catch (err) {
+    logger.error({ err, breaker: lyfeSupabaseBreaker.getState() }, '[AgentSync] fetchAgents failed');
+    throw err;
   }
-
-  const agents = await response.json();
 
   // Normalize to the shape the rest of the codebase expects
   const normalized = agents.map(a => ({
@@ -91,23 +105,20 @@ export async function fetchAgentById(id) {
 
   const { url, key } = getLyfeConfig();
 
-  const response = await fetch(
-    `${url}/rest/v1/users?id=eq.${id}&select=id,full_name,email,phone,role,avatar_url,date_of_birth,created_at`,
-    {
-      headers: {
+  let rows;
+  try {
+    rows = await lyfeSupabaseBreaker.fire(
+      `${url}/rest/v1/users?id=eq.${id}&select=id,full_name,email,phone,role,avatar_url,date_of_birth,created_at`,
+      {
         apikey: key,
         Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json'
-      },
-      signal: AbortSignal.timeout(10000)
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(`Lyfe Supabase error: ${response.status}`);
+      }
+    );
+  } catch (err) {
+    logger.error({ err, breaker: lyfeSupabaseBreaker.getState() }, '[AgentSync] fetchAgentById failed');
+    throw err;
   }
-
-  const rows = await response.json();
   if (!rows.length) throw new Error('Agent not found in Lyfe');
 
   const a = rows[0];

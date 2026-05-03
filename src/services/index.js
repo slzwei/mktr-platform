@@ -5,11 +5,11 @@
  * providing consistent response normalization and a single import path.
  *
  * Usage in hooks:
- *   import * as prospectService from '@/services/prospectService';
- *   queryFn: () => prospectService.listProspects(params)
+ * import * as prospectService from '@/services/prospectService';
+ * queryFn: () => prospectService.listProspects(params)
  *
  * Usage in components (for shared formatters):
- *   import { formatPhone, formatCurrency } from '@/services/formatters';
+ * import { formatPhone, formatCurrency } from '@/services/formatters';
  */
 export * as prospectService from './prospectService';
 export * as campaignService from './campaignService';

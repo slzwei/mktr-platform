@@ -74,9 +74,10 @@ export async function listQrCodes(user, query) {
   if (campaignId) where.campaignId = campaignId;
   if (carId) where.carId = carId;
   if (search) {
+    const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
     where[Op.or] = [
-      { name: { [Op.iLike]: `%${search}%` } },
-      { description: { [Op.iLike]: `%${search}%` } }
+      { name: { [Op.iLike]: `%${sanitizedSearch}%` } },
+      { description: { [Op.iLike]: `%${sanitizedSearch}%` } }
     ];
   }
 

@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import * as ctrl from '../controllers/analyticsController.js';
 
 export const meta = {
@@ -10,7 +11,14 @@ export const meta = {
 
 const router = express.Router();
 
-router.post('/events', ctrl.trackEvent);
-router.post('/referrals', ctrl.trackReferral);
+// Rate limit analytics endpoints (public, no auth) to prevent abuse
+const analyticsLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: 'Too many requests.',
+});
+
+router.post('/events', analyticsLimit, ctrl.trackEvent);
+router.post('/referrals', analyticsLimit, ctrl.trackReferral);
 
 export default router;

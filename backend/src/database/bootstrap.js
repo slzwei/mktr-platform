@@ -1,10 +1,11 @@
+import { Op } from 'sequelize';
 import { sequelize } from './connection.js';
 import { initSystemAgent } from '../services/systemAgent.js';
 import { validateEnv } from '../config/envValidation.js';
 import { validateGoogleOAuthConfig } from '../controllers/authController.js';
 import { runMigrations } from './runMigrations.js';
 import { logger } from '../utils/logger.js';
-import { WebhookSubscriber, Campaign } from '../models/index.js';
+import { WebhookSubscriber, Campaign, IdempotencyKey } from '../models/index.js';
 
 /**
  * Connect to the database, run migrations, and seed runtime data.
@@ -35,6 +36,12 @@ export async function bootstrapDatabase() {
     logger.info('System Agent ready', { systemId });
   });
   await safeRun('Lyfe webhook subscriber', ensureLyfeWebhookSubscriber);
+
+  // Warn if Lyfe webhook is configured but delivery is disabled
+  if (process.env.LYFE_WEBHOOK_URL && String(process.env.WEBHOOK_ENABLED || 'false').toLowerCase() !== 'true') {
+    logger.warn('⚠️ LYFE_WEBHOOK_URL is set but WEBHOOK_ENABLED is not "true" — leads will NOT be delivered to Lyfe');
+  }
+
   await safeRun('Retell campaigns', ensureRetellCampaigns);
 
   await safeRun('Webhook recovery', async () => {
@@ -52,6 +59,20 @@ export async function bootstrapDatabase() {
         logger.warn('[Webhook] periodic recovery failed', { error: err?.message });
       }
     }, 60_000);
+
+    // Purge expired idempotency keys every hour
+    setInterval(async () => {
+      try {
+        const deleted = await IdempotencyKey.destroy({
+          where: { expiresAt: { [Op.lt]: new Date() } }
+        });
+        if (deleted > 0) {
+          logger.info(`[cleanup] Removed ${deleted} expired idempotency keys`);
+        }
+      } catch (err) {
+        logger.error('[cleanup] Idempotency key cleanup failed:', err.message);
+      }
+    }, 60 * 60 * 1000); // every hour
   }
 
   logger.info('Database bootstrap complete.');

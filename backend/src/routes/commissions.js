@@ -12,8 +12,8 @@ export const meta = {
 
 const router = express.Router();
 
-// Get all commissions
-router.get('/', authenticateToken, asyncHandler(ctrl.listCommissions));
+// Get all commissions (agents see own, admins see all)
+router.get('/', authenticateToken, requireAgentOrAdmin, asyncHandler(ctrl.listCommissions));
 
 // Create new commission (Admin only)
 router.post('/', authenticateToken, requireAdmin, asyncHandler(ctrl.createCommission));
@@ -24,8 +24,8 @@ router.get('/stats/overview', authenticateToken, requireAgentOrAdmin, asyncHandl
 // Get agent commission summary
 router.get('/agents/:agentId/summary', authenticateToken, requireAdmin, asyncHandler(ctrl.getAgentCommissionSummary));
 
-// Get commission by ID
-router.get('/:id', authenticateToken, asyncHandler(ctrl.getCommission));
+// Get commission by ID (agents see own, admins see all)
+router.get('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(ctrl.getCommission));
 
 // Update commission (Admin only)
 router.put('/:id', authenticateToken, requireAdmin, asyncHandler(ctrl.updateCommission));

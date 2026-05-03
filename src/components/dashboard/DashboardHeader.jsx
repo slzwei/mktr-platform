@@ -1,84 +1,107 @@
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { format } from "date-fns";
-import LastUpdated from "./LastUpdated";
+import { Badge } from '@/components/ui/badge';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
+import LastUpdated from './LastUpdated';
 
 const PERIOD_OPTIONS = {
-  today: "Today",
-  "7d": "Last 7 days",
-  "30d": "Last 30 days",
-  "90d": "Last 90 days",
+    today: 'Today',
+    '7d': 'Last 7 days',
+    '30d': 'Last 30 days',
+    '90d': 'Last 90 days',
 };
 
+// Each triplet stays in a single hue family. Spotlight terracotta (primary)
+// is intentionally reserved — role badges are ambient, not focal.
 const ROLE_BADGE_STYLES = {
-  admin: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800",
-  agent: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800",
-  fleet_owner: "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800",
-  driver_partner: "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-800",
+    admin: 'bg-destructive/10 text-destructive border-destructive/30',
+    agent: 'bg-info/10 text-info border-info/30',
+    fleet_owner: 'bg-success/10 text-success border-success/30',
+    driver_partner: 'bg-warning/10 text-warning border-warning/30',
 };
 
 export default function DashboardHeader({
-  user,
-  greeting = false,
-  title,
-  roleBadge,
-  period,
-  onPeriodChange,
-  periodOptions,
-  lastUpdated,
-  onRefresh,
-  refreshLoading,
-  actions,
+    user,
+    greeting = false,
+    title,
+    subtitle,
+    roleBadge,
+    period,
+    onPeriodChange,
+    periodOptions,
+    lastUpdated,
+    onRefresh,
+    refreshLoading,
+    actions,
 }) {
-  const displayTitle = greeting && user?.full_name
-    ? `Welcome back, ${user.full_name}!`
-    : title || "Dashboard";
+    const isGreeting = greeting && user?.full_name;
+    const displayTitle = isGreeting
+        ? `Welcome back, ${user.full_name}!`
+        : title || 'Dashboard';
 
-  const options = periodOptions || PERIOD_OPTIONS;
-  const badgeStyle = ROLE_BADGE_STYLES[user?.role] || "";
+    const options = periodOptions || PERIOD_OPTIONS;
+    const badgeStyle = ROLE_BADGE_STYLES[user?.role] || '';
 
-  return (
-    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">
-          {displayTitle}
-        </h1>
-        <div className="flex flex-wrap items-center gap-3 mt-1">
-          {roleBadge && (
-            <Badge variant="outline" className={badgeStyle}>
-              {roleBadge}
-            </Badge>
-          )}
-          <span className="text-sm text-muted-foreground">
-            {format(new Date(), "EEEE, d MMMM yyyy")}
-          </span>
+    return (
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+            <div className="min-w-0">
+                <h1
+                    className={cn(
+                        'text-2xl tracking-tight text-foreground',
+                        // Fraunces is reserved for greetings and hero moments —
+                        // never used for label-like page titles.
+                        isGreeting ? 'font-serif font-medium' : 'font-sans font-bold',
+                    )}
+                >
+                    {displayTitle}
+                </h1>
+                {subtitle && (
+                    <p className="mt-1 text-sm text-muted-foreground max-w-2xl leading-relaxed">
+                        {subtitle}
+                    </p>
+                )}
+                <div className="flex flex-wrap items-center gap-3 mt-2">
+                    {roleBadge && (
+                        <Badge variant="outline" className={badgeStyle}>
+                            {roleBadge}
+                        </Badge>
+                    )}
+                    <span className="text-sm text-muted-foreground">
+                        {format(new Date(), 'EEEE, d MMMM yyyy')}
+                    </span>
+                </div>
+                {lastUpdated && (
+                    <LastUpdated
+                        lastUpdated={lastUpdated}
+                        onRefresh={onRefresh}
+                        loading={refreshLoading}
+                    />
+                )}
+            </div>
+
+            <div className="flex items-center gap-3">
+                {period && onPeriodChange && (
+                    <Select value={period} onValueChange={onPeriodChange}>
+                        <SelectTrigger className="w-[140px] bg-card" size="sm">
+                            <SelectValue placeholder="Period" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {Object.entries(options).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>
+                                    {label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                )}
+                {actions}
+            </div>
         </div>
-        {lastUpdated && (
-          <LastUpdated
-            lastUpdated={lastUpdated}
-            onRefresh={onRefresh}
-            loading={refreshLoading}
-          />
-        )}
-      </div>
-
-      <div className="flex items-center gap-3">
-        {period && onPeriodChange && (
-          <Select value={period} onValueChange={onPeriodChange}>
-            <SelectTrigger className="w-[140px] bg-card" size="sm">
-              <SelectValue placeholder="Period" />
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(options).map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        {actions}
-      </div>
-    </div>
-  );
+    );
 }
