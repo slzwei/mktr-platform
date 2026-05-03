@@ -125,7 +125,20 @@ export default function CustomerLogin() {
  const redirectUri = encodeURIComponent(window.location.origin + '/auth/google/callback');
  const scope = encodeURIComponent('openid email profile');
  const responseType = 'code';
- const state = crypto.randomUUID();
+
+ // Backend-issued state (also sets the httpOnly oauth_state cookie used to verify the callback)
+ const stateRes = await fetch(
+ `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/auth/google/state`,
+ { credentials: 'include' }
+ );
+ if (!stateRes.ok) {
+ throw new Error(`Failed to initialize Google sign-in (${stateRes.status})`);
+ }
+ const stateJson = await stateRes.json();
+ const state = stateJson?.data?.state;
+ if (!state) {
+ throw new Error('Failed to initialize Google sign-in');
+ }
  sessionStorage.setItem('mktr_oauth_state', state);
 
  const googleAuthUrl =
