@@ -6,6 +6,9 @@ import { validateGoogleOAuthConfig } from '../controllers/authController.js';
 import { runMigrations } from './runMigrations.js';
 import { logger } from '../utils/logger.js';
 import { WebhookSubscriber, Campaign, IdempotencyKey } from '../models/index.js';
+import { adapterRegistry } from '../integrations/AdapterRegistry.js';
+// Side-effect: registers all platform adapters (currently just Lyfe).
+import '../integrations/index.js';
 
 /**
  * Connect to the database, run migrations, and seed runtime data.
@@ -38,8 +41,9 @@ export async function bootstrapDatabase() {
   await safeRun('Lyfe webhook subscriber', ensureLyfeWebhookSubscriber);
 
   // Warn if Lyfe webhook is configured but delivery is disabled
-  if (process.env.LYFE_WEBHOOK_URL && String(process.env.WEBHOOK_ENABLED || 'false').toLowerCase() !== 'true') {
-    logger.warn('⚠️ LYFE_WEBHOOK_URL is set but WEBHOOK_ENABLED is not "true" — leads will NOT be delivered to Lyfe');
+  const lyfeAdapter = adapterRegistry.get('lyfe');
+  if (lyfeAdapter.outboundWebhookUrl?.() && String(process.env.WEBHOOK_ENABLED || 'false').toLowerCase() !== 'true') {
+    logger.warn('⚠️ Lyfe webhook URL is set but WEBHOOK_ENABLED is not "true" — leads will NOT be delivered to Lyfe');
   }
 
   await safeRun('Retell campaigns', ensureRetellCampaigns);
@@ -100,11 +104,12 @@ async function safeRun(label, fn) {
  * Reads URL and secret from env vars; skips silently if not configured.
  */
 async function ensureLyfeWebhookSubscriber() {
-  const url = process.env.LYFE_WEBHOOK_URL;
-  const secret = process.env.LYFE_WEBHOOK_SECRET;
+  const adapter = adapterRegistry.get('lyfe');
+  const url = adapter.outboundWebhookUrl?.();
+  const secret = adapter.outboundWebhookSecret?.();
 
   if (!url || !secret) {
-    logger.debug('Lyfe webhook not configured (LYFE_WEBHOOK_URL / LYFE_WEBHOOK_SECRET missing), skipping.');
+    logger.debug('Lyfe webhook not configured (URL/secret missing on adapter), skipping.');
     return;
   }
 
