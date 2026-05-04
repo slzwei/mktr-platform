@@ -5,12 +5,21 @@ import * as Sentry from '@sentry/node';
 // Load environment variables immediately
 dotenv.config();
 
-// Initialize Sentry before anything else
+// Initialize Sentry before anything else.
+// MKTR currently shares the `lyfe-sg` Sentry project — events are
+// distinguished by the `service` tag below. To split into a dedicated
+// project: create one in Sentry UI, swap SENTRY_DSN, no code changes
+// needed (the `service` tag is harmless on a dedicated project).
 if (process.env.SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV || 'development',
     tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+    initialScope: {
+      tags: {
+        service: 'mktr-backend',
+      },
+    },
   });
 }
 
