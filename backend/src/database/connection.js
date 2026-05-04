@@ -42,7 +42,12 @@ const config = {
     : {},
   pool: {
     max: 10,
-    min: 0,
+    // min 2 keeps a warm pair of connections open at all times. With min:0
+    // the first incoming request after an idle period had to wait ~25s
+    // to acquire a connection (observed under pg_net push load), causing
+    // queued requests to hit the 30s acquire timeout. Render starter plan
+    // tolerates 2 always-open connections without issue.
+    min: 2,
     acquire: 30000,
     idle: 10000,
   },
