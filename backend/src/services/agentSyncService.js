@@ -152,7 +152,10 @@ async function runSync(adapter, localIdField, startedAt) {
     // per-agent findOne queries.
     allAgents = await User.findAll({
       where: { role: 'agent' },
-      attributes: ['id', localIdField, 'phone', 'email', 'firstName', 'lastName', 'fullName', 'isActive'],
+      attributes: [
+        'id', localIdField, 'phone', 'email', 'firstName', 'lastName',
+        'fullName', 'isActive', 'external_role', 'pending_deletion_at',
+      ],
     });
   } catch (err) {
     logger.error({ event: 'agent_sync_failed', stage: 'fetch', err }, '[AgentSync] failed before sync loop');
