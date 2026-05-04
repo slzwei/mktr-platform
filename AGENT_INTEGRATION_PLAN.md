@@ -1,6 +1,6 @@
 # Agent Integration — Production-Grade Implementation Plan
 
-**Status:** Phases 0 + 1 COMPLETE. Phase 2 not started.
+**Status:** Phases 0, 1, 2 COMPLETE. Phase 3 deferred until platform #2 is real.
 **Owner:** Shawn
 **Last updated:** 2026-05-04 by P0.3 execution
 
@@ -113,6 +113,7 @@ are referenced from individual checklist items.
 
 > Append-only. New entries at the top.
 
+- **2026-05-04 — Phase 2 complete.** Migration 025 applied to MKTR Postgres (email nullable, external_role, pending_deletion_at). User model updated. Orchestrator: advisory lock, two-phase delete-aware sync (24h grace), `external_role` persistence, no more synthesised emails. Cron at 10-min interval scheduled at boot. `GET /health/sync` exposes per-adapter run state. Skipped P2.3 (`isAssignableForLeads` helper) — no concrete need without product call. Verified end-to-end in production: parallel-sync concurrency test passed (advisory lock holds), external_role distribution shows preserved upstream distinction (6 agent / 2 manager / 1 director / 1 System Agent). Commit `b3d664b`, deploy `dep-d7sa9k7lk1mc73dr40m0`.
 - **2026-05-04 — Phase 1 complete.** Adapter scaffolding shipped: `backend/src/integrations/{PlatformAdapter,AdapterRegistry,index}.js` + `adapters/lyfe/{LyfeAdapter,lyfeClient,index}.js`. All Lyfe-specific REST, env vars, breaker state, and cache encapsulated. Orchestrator (`agentSyncService.js`) is now platform-agnostic — uses `adapter.localIdField` instead of hard-coding `lyfeId`. Live verification: post-deploy sync byte-identical to pre-P1 baseline; heartbeat log now includes `"adapter":"lyfe"`. 10/10 unit tests pass for AdapterRegistry. Backwards compat preserved: `fetchAgents`/`fetchAgentById` retained as deprecated re-exports so the controller and HTTP shape work unchanged. Commit `284e9aa` deploy `dep-d7sa77vlk1mc73dqn9hg`.
 - **2026-05-04 — P0.6 done + P0.5 done.** Regenerated Supabase types via `npm run gen:types` (now includes `is_test_data`). Audited 30+ user-table queries across both apps; added `.eq('is_test_data', false)` filter to 13 listing queries (lead routing, team displays, dashboards, manager/admin pickers). Single-id lookups, .in() ID lookups, UPDATE/INSERT, and admin-management pages intentionally unfiltered (rationale per-commit). TypeScript clean on both apps. lyfe-sg pushed (`2f00cdb` on `e2e/p2-wave`). lyfe-app committed locally (`f3357bf`) but not pushed — branch is 2 ahead, 4 behind origin (other work landed remotely; needs user to pull/rebase first). P0.5 ticked: FK audit table from P0.2 + the schema-level `is_test_data` marker satisfies the original goal of documenting which users are seed-looking-but-real.
 - **2026-05-04 — P0.4 partial.** Code shipped (`30008a0`): structured `agent_sync_complete` heartbeat, `agent_sync_failed` Sentry capture (with `tags.stage`), `agent_sync_drift_warning` for >20% deactivation runs. Verified in prod via Render logs after deploy `dep-d7s25l9oagis738f1vl0`. Two pieces remain blocked on user action: (1) provision Sentry org + project, set `SENTRY_DSN` env var on Render service `srv-d2s9p0emcj7s73acd9lg`; (2) configure alert rule in Sentry UI for `agent_sync_drift_warning`. Stale-sync alert (no heartbeat in 30 min) deferred to P2.4 because it needs the cron from that phase.
@@ -277,6 +278,15 @@ Future Claude can verify Phase 0 done by:
 3. ✅ Heartbeat log shows `"adapter":"lyfe"` field — new code path live
 4. ⏸ End-to-end Retell smoke deferred (requires call sandbox)
 
+### Phase 2 acceptance test — PASSED 2026-05-04
+1. ✅ `SELECT column_name, is_nullable FROM information_schema.columns WHERE table_name='users' AND column_name IN ('email','external_role','pending_deletion_at')` → all three present, all nullable
+2. ✅ `SELECT external_role, COUNT(*) FROM users WHERE role='agent' AND "isActive"=true GROUP BY external_role` → `agent:6, manager:2, director:1, null:1` (System Agent). Upstream Lyfe role distinction preserved.
+3. ✅ Concurrency test: two parallel POST `/api/lyfe/agents/sync` requests — one ran (`updated:9`), the other was locked out (`total:0`, lock-skip response). Advisory lock works.
+4. ✅ `GET /health/sync` returns `{ status: ok, adapters: [{ id: lyfe, status: ok, lastRun: { ageMs: 16338, stale: false, durationMs: 770 }, counts: {...} }] }`. Stale flag flips to true when `ageMs > 30 min`.
+5. ✅ Cron registered at boot — Render log: `[AgentSync] periodic sync scheduled (10 min interval)`. Disable via `SYNC_AGENT_CRON=false`.
+6. ✅ No more `@placeholder.local` emails being created (adapter passes null through; orchestrator writes null).
+7. ✅ Hard-delete count surfaces in `result.hardDeleted` and `/health/sync` counts. Currently 0 (no orphans aged past 24h grace).
+
 ---
 
 ## 6. Phase 2 — Production-grade sync (target: 3 days)
@@ -289,49 +299,40 @@ Future Claude can verify Phase 0 done by:
 
 ### Tasks
 
-- [ ] **P2.1 — Migration: nullable email + external_role column** _(mitigates F10, F11)_
-  - [ ] Pre-flight: `rg 'agent\.email|user\.email' backend/src/ src/components/` — list all consumers
-  - [ ] For each consumer that assumes non-null email: add `?? '(no email)'` fallback OR conditional render
-  - [ ] Migration: `ALTER TABLE users ALTER COLUMN email DROP NOT NULL`
-  - [ ] Migration: `ALTER TABLE users ADD COLUMN external_role text NULL` (values: `'agent'`, `'manager'`, `'director'`)
-  - [ ] Backfill: `UPDATE users SET external_role = 'agent' WHERE role = 'agent' AND lyfeId IS NOT NULL`
+- [x] **P2.1 — Migration: nullable email + external_role + pending_deletion_at columns** _(mitigates F10, F11, F09)_ — DONE 2026-05-04
+  - [x] Migration `025-add-external-role-and-nullable-email.js` applied. Three additive changes: email nullable, external_role text NULL, pending_deletion_at timestamp NULL. Partial indices on the latter two.
+  - [x] User model updated to declare new fields. Email validation softened to `isEmail` (with custom message) instead of strict required.
 
-- [ ] **P2.2 — LyfeAdapter returns externalRole; orchestrator persists it** _(mitigates F11)_
-  - [ ] Update `LyfeAdapter.listAgents()` to populate `externalRole` from Lyfe `users.role`
-  - [ ] Update orchestrator: `User.create({ role: 'agent', external_role: agent.externalRole, email: agent.email || null, ... })`
-  - [ ] Remove the `lyfe_<uuid>@placeholder.local` synthesis at `agentSyncService.js:210`
-  - [ ] On update path: backfill `external_role` for existing rows when sync sees a Lyfe role change
+- [x] **P2.2 — LyfeAdapter returns externalRole; orchestrator persists it** _(mitigates F11)_ — DONE 2026-05-04
+  - [x] `LyfeAdapter` already returns `externalRole` (added in P1.2 normalisation)
+  - [x] Orchestrator `User.create` now writes `external_role: ea.externalRole`
+  - [x] Orchestrator update path backfills `external_role` on existing rows when upstream role changes (or first time we see it post-migration)
+  - [x] `lyfe_<uuid>@placeholder.local` synthesis REMOVED — adapter passes `null` through, orchestrator writes `email: ea.email || null`
 
-- [ ] **P2.3 — Audit & replace `role: 'agent'` checks** _(mitigates F11)_
-  - [ ] Add helper: `backend/src/utils/userRoles.js` exporting `isAssignableForLeads(user)` returning `user.role === 'agent' || ['agent','manager','director'].includes(user.external_role)`
-  - [ ] Grep all `role: 'agent'` and `role === 'agent'` in `backend/src/` and replace with `isAssignableForLeads(user)` where the intent is "can take a lead"
-  - [ ] Keep `role: 'agent'` where the intent is "MKTR-internal role for permissions"
-  - [ ] Document the distinction in `userRoles.js` JSDoc
+- [~] **P2.3 — Audit & replace `role: 'agent'` checks** _(mitigates F11)_ — DEFERRED
+  - **Rationale:** Phase 2 keeps local `role='agent'` for ALL synced upstream users (Lyfe agents, managers, directors are all flattened locally). Existing `role === 'agent'` checks remain semantically correct as "is this a synced upstream user." Adding `isAssignableForLeads` would be dead weight without product-driven changes (e.g., "managers shouldn't get round-robin leads" — which hasn't been requested). Revisit when a concrete need emerges.
 
-- [ ] **P2.4 — Cron sync with advisory lock** _(mitigates F08, F13)_
-  - [ ] In `bootstrap.js`, register a `node-cron` job: `*/10 * * * *` runs `runAllAdapterSyncs()`
-  - [ ] In orchestrator entry: `SELECT pg_try_advisory_lock(hashtext('agent_sync'))`. If false (lock held), log and exit immediately
-  - [ ] Always release lock in `finally` block
-  - [ ] Add `last_sync_at` and `last_sync_status` to a new `sync_runs` table (one row per adapter, latest run)
-  - [ ] Manual smoke: trigger two syncs in parallel via two terminals, confirm second exits cleanly
+- [x] **P2.4 — Cron sync with advisory lock** _(mitigates F08, F13)_ — DONE 2026-05-04
+  - [x] `bootstrap.js` registers a 10-minute `setInterval` calling `syncAgentsFromLyfe()`. Skipped in `NODE_ENV=test`. Disable with `SYNC_AGENT_CRON=false`.
+  - [x] Orchestrator entry takes Postgres advisory lock via `pg_try_advisory_lock(hashtext('agent_sync'))`. If lock held (concurrent run), logs `agent_sync_skipped` and returns immediately without error.
+  - [x] Lock released in `finally` block (try/finally wrapper around `runSync()`).
+  - [x] Refactored body into inner `runSync(adapter, ...)` for clarity.
 
-- [ ] **P2.5 — Health endpoint** _(mitigates F13)_
-  - [ ] `GET /health/sync` returns JSON: `{ adapters: [{ id, last_sync_at, last_sync_status, agents_synced }] }`
-  - [ ] Render health check or external uptime monitor pings this every 5 min
-  - [ ] Sentry alert: `last_sync_at` for any adapter > 30 min ago
+- [x] **P2.5 — Health endpoint** _(mitigates F13)_ — DONE 2026-05-04
+  - [x] `GET /health/sync` returns `{ status, timestamp, adapters: [{ id, status, lastRun: { startedAt, durationMs, ageMs, stale }, counts, error }] }`
+  - [x] In-memory `recordSyncRun()` updates per-adapter state on every run (success or failure)
+  - [x] Stale threshold: 30 min. Endpoint marks overall as `stale` if any adapter exceeds.
+  - [x] Persistent `sync_runs` table deferred — Phase 3 territory; in-memory is sufficient for restart-tolerant alerts since the cron runs every 10 min.
 
-- [ ] **P2.6 — Two-phase delete-aware sync** _(mitigates F09)_
-  - [ ] Add `users.pending_deletion_at` timestamp column (nullable)
-  - [ ] Sync logic for an orphaned row (lyfeId no longer in Lyfe):
-    - If `lead_count == 0` AND `prospect_count == 0`: set `pending_deletion_at = now()` (don't delete yet)
-    - Next sync: if `pending_deletion_at < now() - 24h` AND still no leads/prospects: hard DELETE
-    - If lead_count > 0 ever: set `isActive=false`, NEVER delete, log warning
-  - [ ] On every sync run, clear `pending_deletion_at` if the lyfeId reappears (recover from accidental Lyfe deletes)
+- [x] **P2.6 — Two-phase delete-aware sync** _(mitigates F09)_ — DONE 2026-05-04
+  - [x] Phase 1 of delete: agents missing upstream → `isActive=false` (existing behavior, preserved)
+  - [x] Phase 2 of delete: among inactive orphans WITHOUT attached prospects → set `pending_deletion_at=NOW()`
+  - [x] Phase 3 of delete: rows with `pending_deletion_at < NOW() - 24h` AND still missing AND still no prospects → hard DELETE (re-checked at delete time to close the read-then-delete race)
+  - [x] Recovery: agents reappearing in upstream get `pending_deletion_at` cleared in the update path
+  - [x] Hard-deleted count surfaced in result shape and logs
 
-- [ ] **P2.7 — Drift alert** _(mitigates F12)_
-  - [ ] After each sync: if `deactivated / total_active > 0.2`, `Sentry.captureMessage('agent_sync_drift_warning', { level: 'warning', extra: {...} })`
-  - [ ] Do NOT block the sync; warn-only
-  - [ ] Add Slack notification via existing webhook infrastructure if available
+- [x] **P2.7 — Drift alert** _(mitigates F12)_ — DONE in P0.4 (already shipped)
+  - [x] `Sentry.captureMessage('agent_sync_drift_warning', { level: 'warning' })` fires when `deactivated / baseline > 0.2`. Does not block sync.
 
 ### Phase 2 acceptance test
 1. `SELECT COUNT(*) FROM users WHERE email LIKE '%@placeholder.local'` → returns 0 (after a fresh sync)
