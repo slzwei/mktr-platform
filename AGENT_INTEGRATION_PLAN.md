@@ -1,6 +1,6 @@
 # Agent Integration — Production-Grade Implementation Plan
 
-**Status:** Phase 0 in progress (P0.1, P0.2, P0.3 done; P0.3 pending deploy; P0.4, P0.5, P0.6 pending)
+**Status:** Phase 0 ESSENTIALLY COMPLETE (P0.1–P0.3, P0.5, P0.6 done; P0.4 code shipped + verified, alert config blocked on Sentry DSN provisioning)
 **Owner:** Shawn
 **Last updated:** 2026-05-04 by P0.3 execution
 
@@ -113,6 +113,8 @@ are referenced from individual checklist items.
 
 > Append-only. New entries at the top.
 
+- **2026-05-04 — P0.6 done + P0.5 done.** Regenerated Supabase types via `npm run gen:types` (now includes `is_test_data`). Audited 30+ user-table queries across both apps; added `.eq('is_test_data', false)` filter to 13 listing queries (lead routing, team displays, dashboards, manager/admin pickers). Single-id lookups, .in() ID lookups, UPDATE/INSERT, and admin-management pages intentionally unfiltered (rationale per-commit). TypeScript clean on both apps. lyfe-sg pushed (`2f00cdb` on `e2e/p2-wave`). lyfe-app committed locally (`f3357bf`) but not pushed — branch is 2 ahead, 4 behind origin (other work landed remotely; needs user to pull/rebase first). P0.5 ticked: FK audit table from P0.2 + the schema-level `is_test_data` marker satisfies the original goal of documenting which users are seed-looking-but-real.
+- **2026-05-04 — P0.4 partial.** Code shipped (`30008a0`): structured `agent_sync_complete` heartbeat, `agent_sync_failed` Sentry capture (with `tags.stage`), `agent_sync_drift_warning` for >20% deactivation runs. Verified in prod via Render logs after deploy `dep-d7s25l9oagis738f1vl0`. Two pieces remain blocked on user action: (1) provision Sentry org + project, set `SENTRY_DSN` env var on Render service `srv-d2s9p0emcj7s73acd9lg`; (2) configure alert rule in Sentry UI for `agent_sync_drift_warning`. Stale-sync alert (no heartbeat in 30 min) deferred to P2.4 because it needs the cron from that phase.
 - **2026-05-04 — P0.3 executed (revised approach).** Original plan was to provision a new `lyfe-e2e` Supabase project. Discovered `lyfe-app-staging` (`ajjxkasvikeigapnzdak`) already exists with full schema — reused it. Built defense-in-depth instead of single-layer fix:
   - Lyfe migration `20260504100000_add_is_test_data_flag.sql` — adds boolean flag to `users` + `member_invitations`. Applied to PROD + staging via Supabase Management API.
   - Backfill: 3 E2E managers in PROD now `is_test_data=true`.
@@ -174,26 +176,47 @@ are referenced from individual checklist items.
   - [x] Created `lyfe-sg/.env.test.local` pointing at staging Supabase project
   - [x] Updated `lyfe-sg/playwright.config.ts` to load `.env.test.local` first, fallback `.env.local`
   - [x] Updated `lyfe-sg/tests/e2e/fixtures/supabase-admin.ts` with same loader + production safety guard: throws hard error if `SUPABASE_URL` includes `nvtedkyjwulkzjeoqjgx` (prod project ref). Override only via `E2E_ALLOW_PROD=1` for one-off debugging.
-  - [ ] **PENDING DEPLOY:** Push mktr-platform main; Render auto-deploys; re-trigger sync to drop 3 E2E rows from MKTR active list
+  - [x] **DEPLOYED 2026-05-04:** mktr-platform commit `6dc4b8b` pushed to main; Render auto-deploy `dep-d7s1ug7aqgkc73csg85g` went live within 5 min; sync re-triggered → `deactivated: 3, skipped: 9` (the 3 E2E managers dropped, 9 production agents unchanged). MKTR now shows 10 active agents (9 + System Agent).
   - [ ] **DEFERRED to P0.6 (new):** lyfe-app & lyfe-sg staff query filters (`from('users')` consumers — ~20 files). Not a data leak; the 3 currently-tagged rows will only show as cosmetic noise in staff UIs until each query is updated. Track separately.
 
-- [ ] **P0.6 (NEW) — Lyfe staff query filter audit** _(deferred from P0.3, mitigates cosmetic display of test data)_
-  - [ ] Grep `from('users')|from("users")` in `lyfe-sg/src/` and `lyfe-app/lib/`, `hooks/`, `app/` (~20 files)
-  - [ ] Categorize each query: agent-listing (filter), candidate-listing (filter), self-lookup (no filter needed)
-  - [ ] Add `.eq('is_test_data', false)` to staff-facing agent/candidate listings
-  - [ ] Verify: lyfe-sg `/admin/users` and `/admin/(dashboard)/roles` no longer show E2E test rows
-  - [ ] Verify: lyfe-app team tab, candidates tab no longer show E2E rows
+- [x] **P0.6 — Lyfe staff query filter audit** _(deferred from P0.3, mitigates cosmetic display of test data)_ — **DONE 2026-05-04**
+  - [x] Grep'd 30+ `from('users')` call sites across `lyfe-sg/src/` and `lyfe-app/{lib,hooks,app,components}/`
+  - [x] Regenerated Supabase types (`npm run gen:types` from root) — `is_test_data` column now in `lyfe-types/src/database.types.ts` and synced to both apps
+  - [x] **Filtered (added `.eq('is_test_data', false)`):**
+    - `lyfe-app/lib/leads/crud.ts` — `fetchTeamAgents` (reassign picker, lead routing critical)
+    - `lyfe-app/lib/leads/stats.ts` — 3 sites: pipeline stats agent counts
+    - `lyfe-app/lib/team.ts` — 5 sites: team listing, manager overview, performance, reassignable managers
+    - `lyfe-app/lib/recruitment/candidates.ts` — assignable manager picker
+    - `lyfe-sg/src/app/admin/(dashboard)/page.tsx` — total user count + role distribution
+    - `lyfe-sg/src/app/admin/(dashboard)/analytics/page.tsx` — user-by-role chart
+    - `lyfe-sg/src/app/staff/candidates/actions.ts` — assignable managers list
+    - `lyfe-sg/src/app/candidate/actions.ts` — admin-fallback (createdBy recovery, 2 sites)
+    - `lyfe-sg/src/lib/invitations/resolve-manager.ts` — director fallback chain
+  - [x] **Intentionally NOT filtered** (rationale documented in commits):
+    - Single-id lookups (`.eq('id', x).single()`) — caller has authorized ID
+    - `.in('id', ids)` bulk fetches — caller has authorized IDs; tagged users still have valid metadata for audit/history
+    - Admin-facing `/admin/(dashboard)/users` and `/admin/(dashboard)/roles` pages — admin needs visibility to tag/untag test users
+    - All UPDATE/INSERT operations
+    - Test files (`__tests__/*`)
+  - [x] TypeScript check passes on both apps (`npx tsc --noEmit` clean in lyfe-app and lyfe-sg)
+  - [x] **Committed and pushed:** lyfe-sg `e2e/p2-wave` → `2f00cdb`
+  - [x] **Committed locally, not pushed:** lyfe-app main → `f3357bf` (branch is 2 ahead, 4 behind origin; needs user to pull/rebase before push since other work landed remotely)
 
-- [ ] **P0.4 — Sync staleness alert with verification** _(mitigates F02, F13)_
-  - [ ] In `agentSyncService.js`, ensure every successful sync emits a Pino log with field `event: 'agent_sync_complete'` and `last_sync_at` (ms epoch)
-  - [ ] Add Sentry message capture in the orchestrator's error handler: `Sentry.captureMessage('agent_sync_failed', { extra: {...} })`
-  - [ ] Configure Sentry alert: when no `agent_sync_complete` events received in the last 30 min during business hours
-  - [ ] **Verify**: temporarily break sync (e.g. set bad `LYFE_SUPABASE_URL` on a staging instance), confirm alert fires within 30 min
-  - [ ] Restore correct config
+- [~] **P0.4 — Sync staleness alert with verification** _(mitigates F02, F13)_ — **CODE SHIPPED 2026-05-04, ALERT CONFIG BLOCKED**
+  - [x] In `agentSyncService.js`, every successful sync emits structured log `event: 'agent_sync_complete'` with `last_sync_at` (ms epoch), `durationMs`, and counts (commit `30008a0`)
+  - [x] Sentry message capture wired at three points:
+    - `agent_sync_complete` — heartbeat (info via Pino, not Sentry — Sentry is for actionable signals only)
+    - `agent_sync_failed` — `Sentry.captureMessage(level: 'error')` with `tags.stage` (`fetch` or `deactivate`)
+    - `agent_sync_drift_warning` — `Sentry.captureMessage(level: 'warning')` when a single sync deactivates >20% of active baseline (FMEA F12)
+  - [x] try/catch boundaries added around fetch and deactivate stages to ensure errors are captured before bubbling to Express error handler
+  - [ ] **BLOCKED — provision Sentry DSN.** `SENTRY_DSN` is not set on Render service `srv-d2s9p0emcj7s73acd9lg`. `server.js:9-13` already conditionally inits Sentry if DSN is present, so adding the env var is the only remaining step. lyfe-app `.env` shows `EXPO_PUBLIC_SENTRY_DSN=` (empty) — likely no Sentry org exists yet. Action: create Sentry org + project (https://sentry.io), copy DSN, set `SENTRY_DSN` on the Render service, redeploy
+  - [ ] **BLOCKED — configure alert in Sentry UI.** After DSN provisioned: alert when `agent_sync_drift_warning` events fire (immediate; doesn't depend on a cron). Stale-sync alert (no `agent_sync_complete` in 30 min) deferred to P2.4 because it requires a cron to be in place
+  - [x] **Verified 2026-05-04** in production: triggered sync after deploy `dep-d7s25l9oagis738f1vl0`, confirmed Render log line: `"event":"agent_sync_complete","last_sync_at":1777869638162,"durationMs":141,"created":0,"updated":0,"deactivated":0,"skipped":9,"total":9`. Heartbeat is real, alerts can be wired against it once Sentry DSN is set.
 
-- [ ] **P0.5 — Document the seed-looking-but-real users** _(mitigates F01 going forward)_
-  - [ ] Add a comment in `lyfe-app/supabase/migrations/` (or a new doc) listing which users have synthetic-looking phones but are real production
-  - [ ] Optionally: add a `users.is_seed_data` boolean column in Lyfe; backfill `false` for the 9 production users; reserve `true` for future actual seeds. Update MKTR `LyfeAdapter.listAgents()` to exclude `is_seed_data=true`
+- [x] **P0.5 — Document the seed-looking-but-real users** _(mitigates F01 going forward)_ — **DONE 2026-05-04**
+  - [x] FK exposure table in P0.2 above is the canonical record: 9 production users with `6590000001-9` phone range are operationally live (1–356 attachments each). Future Claude sessions: do not delete based on phone pattern alone.
+  - [x] Schema-level marker shipped via P0.3 (`users.is_test_data` column). Going forward, any genuinely test/seed data should be inserted with `is_test_data=true`. Production users default to `false`.
+  - [x] No additional `is_seed_data` column needed — `is_test_data` covers the use case.
 
 ### Phase 0 acceptance test
 Future Claude can verify Phase 0 done by:
