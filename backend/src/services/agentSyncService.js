@@ -1,8 +1,14 @@
 import { Op } from 'sequelize';
+import * as Sentry from '@sentry/node';
 import User from '../models/User.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { logger } from '../utils/logger.js';
+
+// Threshold above which a sync run is treated as suspicious (likely upstream
+// data wipe or misconfiguration). Triggers a Sentry warning, does not block.
+// Tuned to ~20% per FMEA F12.
+const SYNC_DRIFT_DEACTIVATION_RATIO = 0.2;
 
 // Circuit breaker for Lyfe Supabase API calls (agent sync)
 const lyfeSupabaseBreaker = new CircuitBreaker(
@@ -153,14 +159,27 @@ export async function fetchAgentGroups() {
  * @returns {{ created: number, updated: number, deactivated: number, skipped: number, total: number }}
  */
 export async function syncAgentsFromLyfe() {
-  invalidateCache();
-  const lyfeAgents = await fetchAgents();
+  const startedAt = Date.now();
+  let lyfeAgents;
+  let allAgents;
+  try {
+    invalidateCache();
+    lyfeAgents = await fetchAgents();
 
-  // Pre-fetch all local agents into maps for O(1) lookups instead of per-agent findOne queries
-  const allAgents = await User.findAll({
-    where: { role: 'agent' },
-    attributes: ['id', 'lyfeId', 'phone', 'email', 'firstName', 'lastName', 'fullName', 'isActive']
-  });
+    // Pre-fetch all local agents into maps for O(1) lookups instead of per-agent findOne queries
+    allAgents = await User.findAll({
+      where: { role: 'agent' },
+      attributes: ['id', 'lyfeId', 'phone', 'email', 'firstName', 'lastName', 'fullName', 'isActive']
+    });
+  } catch (err) {
+    logger.error({ event: 'agent_sync_failed', stage: 'fetch', err }, '[AgentSync] failed before sync loop');
+    Sentry.captureMessage('agent_sync_failed', {
+      level: 'error',
+      tags: { component: 'agent_sync', stage: 'fetch' },
+      extra: { error: err?.message, durationMs: Date.now() - startedAt }
+    });
+    throw err;
+  }
   const byLyfeId = new Map(allAgents.filter(a => a.lyfeId).map(a => [a.lyfeId, a]));
   const byPhone = new Map(allAgents.filter(a => a.phone).map(a => [a.phone, a]));
   const byEmail = new Map(allAgents.filter(a => a.email).map(a => [a.email.toLowerCase(), a]));
@@ -225,19 +244,57 @@ export async function syncAgentsFromLyfe() {
   const activeLyfeIds = lyfeAgents.map(a => String(a.id)).filter(Boolean);
   let deactivated = 0;
 
-  if (activeLyfeIds.length > 0) {
-    const [deactivatedCount] = await User.update(
-      { isActive: false },
-      {
-        where: {
-          role: 'agent',
-          isActive: true,
-          lyfeId: { [Op.notIn]: activeLyfeIds, [Op.ne]: null }
+  try {
+    if (activeLyfeIds.length > 0) {
+      const [deactivatedCount] = await User.update(
+        { isActive: false },
+        {
+          where: {
+            role: 'agent',
+            isActive: true,
+            lyfeId: { [Op.notIn]: activeLyfeIds, [Op.ne]: null }
+          }
         }
-      }
-    );
-    deactivated = deactivatedCount;
+      );
+      deactivated = deactivatedCount;
+    }
+  } catch (err) {
+    logger.error({ event: 'agent_sync_failed', stage: 'deactivate', err }, '[AgentSync] failed during deactivation');
+    Sentry.captureMessage('agent_sync_failed', {
+      level: 'error',
+      tags: { component: 'agent_sync', stage: 'deactivate' },
+      extra: { error: err?.message, created, updated, durationMs: Date.now() - startedAt }
+    });
+    throw err;
   }
 
-  return { created, updated, deactivated, skipped, total: lyfeAgents.length };
+  const result = { created, updated, deactivated, skipped, total: lyfeAgents.length };
+  const durationMs = Date.now() - startedAt;
+
+  // Successful sync — emit structured log for observability dashboards.
+  // Field shape (event + last_sync_at + counts) is the contract relied on by
+  // any downstream alert configured to track sync freshness.
+  logger.info(
+    { event: 'agent_sync_complete', last_sync_at: Date.now(), durationMs, ...result },
+    `[AgentSync] complete in ${durationMs}ms: ${created} created, ${updated} updated, ${deactivated} deactivated, ${skipped} skipped`
+  );
+
+  // Drift detection (FMEA F12): if a single sync run deactivates a large
+  // proportion of agents, something is wrong upstream (mass-wipe, schema
+  // change, env-var rotation pointing at wrong project). Warn, don't block.
+  const baseline = allAgents.filter(a => a.isActive && a.lyfeId).length;
+  if (baseline > 0 && deactivated / baseline > SYNC_DRIFT_DEACTIVATION_RATIO) {
+    const ratio = (deactivated / baseline).toFixed(2);
+    logger.warn(
+      { event: 'agent_sync_drift_warning', deactivated, baseline, ratio },
+      `[AgentSync] drift: ${deactivated}/${baseline} (${ratio}) agents deactivated this run`
+    );
+    Sentry.captureMessage('agent_sync_drift_warning', {
+      level: 'warning',
+      tags: { component: 'agent_sync' },
+      extra: { deactivated, baseline, ratio, ...result }
+    });
+  }
+
+  return result;
 }
