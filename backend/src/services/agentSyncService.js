@@ -67,7 +67,7 @@ export async function fetchAgents(filters = {}) {
   let agents;
   try {
     agents = await lyfeSupabaseBreaker.fire(
-      `${url}/rest/v1/users?${roleFilter}&is_active=eq.true&select=id,full_name,email,phone,role,avatar_url,date_of_birth,created_at&order=full_name`,
+      `${url}/rest/v1/users?${roleFilter}&is_active=eq.true&is_test_data=eq.false&select=id,full_name,email,phone,role,avatar_url,date_of_birth,created_at&order=full_name`,
       {
         apikey: key,
         Authorization: `Bearer ${key}`,
@@ -108,7 +108,7 @@ export async function fetchAgentById(id) {
   let rows;
   try {
     rows = await lyfeSupabaseBreaker.fire(
-      `${url}/rest/v1/users?id=eq.${id}&select=id,full_name,email,phone,role,avatar_url,date_of_birth,created_at`,
+      `${url}/rest/v1/users?id=eq.${id}&is_test_data=eq.false&select=id,full_name,email,phone,role,avatar_url,date_of_birth,created_at`,
       {
         apikey: key,
         Authorization: `Bearer ${key}`,
