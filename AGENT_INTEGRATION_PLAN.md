@@ -1,6 +1,6 @@
 # Agent Integration — Production-Grade Implementation Plan
 
-**Status:** Phases 0, 1, 2 COMPLETE. Phase 3 deferred until platform #2 is real.
+**Status:** Phases 0, 1, 2 FULLY COMPLETE — including Sentry alerting. Phase 3 deferred until platform #2 is real.
 **Owner:** Shawn
 **Last updated:** 2026-05-04 by P0.3 execution
 
@@ -204,16 +204,21 @@ are referenced from individual checklist items.
   - [x] **Committed and pushed:** lyfe-sg `e2e/p2-wave` → `2f00cdb`
   - [x] **Committed locally, not pushed:** lyfe-app main → `f3357bf` (branch is 2 ahead, 4 behind origin; needs user to pull/rebase before push since other work landed remotely)
 
-- [~] **P0.4 — Sync staleness alert with verification** _(mitigates F02, F13)_ — **CODE SHIPPED 2026-05-04, ALERT CONFIG BLOCKED**
+- [x] **P0.4 — Sync staleness alert with verification** _(mitigates F02, F13)_ — **DONE 2026-05-04**
   - [x] In `agentSyncService.js`, every successful sync emits structured log `event: 'agent_sync_complete'` with `last_sync_at` (ms epoch), `durationMs`, and counts (commit `30008a0`)
   - [x] Sentry message capture wired at three points:
     - `agent_sync_complete` — heartbeat (info via Pino, not Sentry — Sentry is for actionable signals only)
     - `agent_sync_failed` — `Sentry.captureMessage(level: 'error')` with `tags.stage` (`fetch` or `deactivate`)
     - `agent_sync_drift_warning` — `Sentry.captureMessage(level: 'warning')` when a single sync deactivates >20% of active baseline (FMEA F12)
   - [x] try/catch boundaries added around fetch and deactivate stages to ensure errors are captured before bubbling to Express error handler
-  - [ ] **BLOCKED — provision Sentry DSN.** `SENTRY_DSN` is not set on Render service `srv-d2s9p0emcj7s73acd9lg`. `server.js:9-13` already conditionally inits Sentry if DSN is present, so adding the env var is the only remaining step. lyfe-app `.env` shows `EXPO_PUBLIC_SENTRY_DSN=` (empty) — likely no Sentry org exists yet. Action: create Sentry org + project (https://sentry.io), copy DSN, set `SENTRY_DSN` on the Render service, redeploy
-  - [ ] **BLOCKED — configure alert in Sentry UI.** After DSN provisioned: alert when `agent_sync_drift_warning` events fire (immediate; doesn't depend on a cron). Stale-sync alert (no `agent_sync_complete` in 30 min) deferred to P2.4 because it requires a cron to be in place
-  - [x] **Verified 2026-05-04** in production: triggered sync after deploy `dep-d7s25l9oagis738f1vl0`, confirmed Render log line: `"event":"agent_sync_complete","last_sync_at":1777869638162,"durationMs":141,"created":0,"updated":0,"deactivated":0,"skipped":9,"total":9`. Heartbeat is real, alerts can be wired against it once Sentry DSN is set.
+  - [x] **Sentry org `mktr-pte-ltd` exists.** Org policy blocks member project creation, so MKTR shares the existing `lyfe-sg` Sentry project. Events distinguished via `service:mktr-backend` initialScope tag added in `server.js`. Trivial future migration to a dedicated project.
+  - [x] **DSN provisioned and set on Render** (env var `SENTRY_DSN` on `srv-d2s9p0emcj7s73acd9lg`). Created via Sentry API as a new key inside the `lyfe-sg` project, named `mktr-backend`.
+  - [x] **Alert rules configured in Sentry UI:**
+    - "MKTR — Agent sync failed" (rule id 564852) — fires on first-seen event matching `service:mktr-backend` + `component:agent_sync` + message `agent_sync_failed`
+    - "MKTR — Agent sync drift warning (>20% deactivations)" (rule id 564853) — fires on first-seen event matching `service:mktr-backend` + `component:agent_sync` + message `agent_sync_drift_warning`
+    - Both alerts fire immediately (no cron dependency)
+    - Stale-sync alert (no `agent_sync_complete` in 30 min) deferred — `/health/sync` endpoint exposes the data, can be wired to an external uptime monitor
+  - [x] **Verified 2026-05-04** in production: triggered sync after deploy `dep-d7s25l9oagis738f1vl0`, confirmed Render log line: `"event":"agent_sync_complete","last_sync_at":1777869638162,"durationMs":141,"created":0,"updated":0,"deactivated":0,"skipped":9,"total":9`. Heartbeat is real, alerts now wired against it.
 
 - [x] **P0.5 — Document the seed-looking-but-real users** _(mitigates F01 going forward)_ — **DONE 2026-05-04**
   - [x] FK exposure table in P0.2 above is the canonical record: 9 production users with `6590000001-9` phone range are operationally live (1–356 attachments each). Future Claude sessions: do not delete based on phone pattern alone.
