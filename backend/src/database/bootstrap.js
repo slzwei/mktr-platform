@@ -77,6 +77,22 @@ export async function bootstrapDatabase() {
         logger.error('[cleanup] Idempotency key cleanup failed:', err.message);
       }
     }, 60 * 60 * 1000); // every hour
+
+    // Periodic agent sync (FMEA F13). Every 10 minutes pulls latest state
+    // from each registered platform adapter. The orchestrator's advisory
+    // lock ensures concurrent runs (cron + manual API) coexist safely.
+    // Disable via SYNC_AGENT_CRON=false for ad-hoc deploy debugging.
+    if (String(process.env.SYNC_AGENT_CRON || 'true').toLowerCase() !== 'false') {
+      setInterval(async () => {
+        try {
+          const { syncAgentsFromLyfe } = await import('../services/agentSyncService.js');
+          await syncAgentsFromLyfe();
+        } catch (err) {
+          logger.warn('[AgentSync] periodic sync failed (non-fatal)', { error: err?.message });
+        }
+      }, 10 * 60 * 1000); // every 10 min
+      logger.info('[AgentSync] periodic sync scheduled (10 min interval)');
+    }
   }
 
   logger.info('Database bootstrap complete.');

@@ -10,10 +10,16 @@ const User = sequelize.define('User', {
   },
   email: {
     type: DataTypes.STRING,
-    allowNull: false,
+    // Nullable post-migration 025. Lyfe agents authenticate via phone OTP and
+    // frequently lack an email — pre-Phase-2 the orchestrator synthesised
+    // `lyfe_<uuid>@placeholder.local` to satisfy NOT NULL; that synthetic
+    // value leaked into UIs. Allowing NULL here lets the adapter hand back
+    // null untouched. Internal MKTR-native users (admin invitations) still
+    // require an email at the controller boundary.
+    allowNull: true,
     unique: true,
     validate: {
-      isEmail: true
+      isEmail: { msg: 'Invalid email format' }
     }
   },
   password: {
@@ -125,6 +131,21 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING,
     allowNull: true,
     unique: true
+  },
+  // Phase 2 — preserves upstream platform role (agent|manager|director).
+  // Internal MKTR `role` keeps using 'agent' for permission purposes;
+  // external_role is the lossless mirror for read-side filtering.
+  external_role: {
+    type: DataTypes.STRING(32),
+    allowNull: true
+  },
+  // Phase 2 — two-phase delete grace window. Set when sync finds an agent
+  // missing upstream AND with no attached prospects. A subsequent sync
+  // 24h+ later confirms gone, then hard-deletes. Cleared if the agent
+  // reappears in upstream.
+  pending_deletion_at: {
+    type: DataTypes.DATE,
+    allowNull: true
   }
 }, {
   tableName: 'users',

@@ -20,8 +20,10 @@
 import { Op } from 'sequelize';
 import * as Sentry from '@sentry/node';
 import User from '../models/User.js';
+import { sequelize } from '../database/connection.js';
 import { logger } from '../utils/logger.js';
 import { adapterRegistry } from '../integrations/AdapterRegistry.js';
+import { recordSyncRun } from './syncHealth.js';
 // Side-effect import: triggers LyfeAdapter self-registration. Without this
 // the registry is empty at first call and `adapterRegistry.get('lyfe')` throws.
 import '../integrations/index.js';
@@ -30,6 +32,12 @@ import '../integrations/index.js';
 // data wipe or misconfiguration). Triggers a Sentry warning, does not block.
 // Tuned to ~20% per FMEA F12.
 const SYNC_DRIFT_DEACTIVATION_RATIO = 0.2;
+
+// Grace window between marking an orphaned agent for deletion and actually
+// dropping the row. 24h gives enough time to recover from accidental upstream
+// wipes (a subsequent sync clears pending_deletion_at if the agent reappears).
+// Per FMEA F09 — closes the read-then-delete race.
+const DELETE_GRACE_HOURS = 24;
 
 // ─── Backwards-compat exports ──────────────────────────────────────────────
 // Existing callers (lyfeAgentController, prospectService, etc.) import these
@@ -96,6 +104,44 @@ export async function syncAgentsFromLyfe() {
   const localIdField = adapter.localIdField;
   const startedAt = Date.now();
 
+  // ─── Concurrency guard (FMEA F08) ────────────────────────────────────
+  // Prevents two orchestrator runs from racing — e.g., the periodic cron
+  // firing while a manual /api/lyfe/agents/sync request is in flight. The
+  // hashtext-based key is stable across sessions, scoped per-DB.
+  // Returns false if another session holds the lock; we exit cleanly and
+  // log so the cron-triggered run doesn't spam errors during manual ops.
+  const ADVISORY_LOCK_KEY = 'agent_sync';
+  const [{ locked }] = await sequelize.query(
+    `SELECT pg_try_advisory_lock(hashtext(:key)) AS locked`,
+    { replacements: { key: ADVISORY_LOCK_KEY }, type: sequelize.QueryTypes.SELECT }
+  );
+  if (!locked) {
+    logger.info(
+      { event: 'agent_sync_skipped', adapter: adapter.id, reason: 'lock_held' },
+      '[AgentSync] another sync run is in progress — skipping'
+    );
+    return { created: 0, updated: 0, deactivated: 0, hardDeleted: 0, skipped: 0, total: 0, locked: false };
+  }
+
+  try {
+    return await runSync(adapter, localIdField, startedAt);
+  } finally {
+    // Always release the advisory lock, even if runSync throws.
+    await sequelize.query(
+      `SELECT pg_advisory_unlock(hashtext(:key))`,
+      { replacements: { key: ADVISORY_LOCK_KEY } }
+    ).catch((err) => {
+      logger.warn({ err, lockKey: ADVISORY_LOCK_KEY }, '[AgentSync] failed to release advisory lock');
+    });
+  }
+}
+
+/**
+ * Inner sync — assumes the caller already holds the advisory lock.
+ * Split from `syncAgentsFromLyfe` so the outer wrapper can guarantee
+ * lock release via try/finally without indenting 200 lines.
+ */
+async function runSync(adapter, localIdField, startedAt) {
   let externalAgents;
   let allAgents;
   try {
@@ -115,6 +161,7 @@ export async function syncAgentsFromLyfe() {
       tags: { component: 'agent_sync', adapter: adapter.id, stage: 'fetch' },
       extra: { error: err?.message, durationMs: Date.now() - startedAt },
     });
+    recordSyncRun(adapter.id, { startedAt, durationMs: Date.now() - startedAt, status: 'failed', error: err?.message, stage: 'fetch' });
     throw err;
   }
 
@@ -144,11 +191,24 @@ export async function syncAgentsFromLyfe() {
       const updateData = {};
       if (ea.externalId && !existing[localIdField]) updateData[localIdField] = String(ea.externalId);
       if (ea.fullName && !existing.fullName) updateData.fullName = ea.fullName;
+      // Backfill upstream role onto pre-Phase-2 rows (external_role was
+      // null before migration 025). Once set, sync keeps it in sync if
+      // upstream changes role.
+      if (ea.externalRole && existing.external_role !== ea.externalRole) {
+        updateData.external_role = ea.externalRole;
+      }
+      // Replace synthetic @placeholder.local emails (legacy from pre-Phase-2)
+      // when upstream now provides a real one. Don't overwrite a real email.
       if (ea.email && (!existing.email || existing.email.endsWith('@placeholder.local'))) {
         updateData.email = ea.email;
       }
       if (ea.phone && !existing.phone) {
         updateData.phone = normalizedPhone;
+      }
+      // If the agent had been marked for deletion and is back in the
+      // upstream set, clear the timer.
+      if (existing.pending_deletion_at) {
+        updateData.pending_deletion_at = null;
       }
 
       if (Object.keys(updateData).length > 0) {
@@ -164,12 +224,16 @@ export async function syncAgentsFromLyfe() {
 
       await User.create({
         [localIdField]: ea.externalId ? String(ea.externalId) : null,
-        email: ea.email || `lyfe_${ea.externalId || normalizedPhone}@placeholder.local`,
+        // Post-migration 025 email is nullable. Don't fabricate
+        // @placeholder.local — leave NULL so downstream UIs render '(no
+        // email)' instead of a synthetic value that looks real.
+        email: ea.email || null,
         firstName,
         lastName,
         fullName: ea.fullName || null,
         phone: normalizedPhone,
         role: 'agent',
+        external_role: ea.externalRole || null,
         isActive: true,
         emailVerified: false,
         approvalStatus: 'approved',
@@ -178,12 +242,20 @@ export async function syncAgentsFromLyfe() {
     }
   }
 
-  // Deactivate local agents whose external id is no longer in the upstream set.
+  // ─── Two-phase delete-aware deactivation (FMEA F09) ────────────────────
+  // Phase 1: deactivate agents missing upstream. If they have no attached
+  // prospects, also mark pending_deletion_at = NOW().
+  // Phase 2: agents whose pending_deletion_at is older than DELETE_GRACE_MS
+  // AND still missing upstream AND still no prospects → hard DELETE.
+  // Agents with attached prospects are NEVER hard-deleted; they remain
+  // inactive forever to preserve lead-history FK integrity.
   const activeExternalIds = externalAgents.map((a) => String(a.externalId)).filter(Boolean);
   let deactivated = 0;
+  let hardDeleted = 0;
 
   try {
     if (activeExternalIds.length > 0) {
+      // 1. Bulk-deactivate currently-active agents missing from upstream.
       const [deactivatedCount] = await User.update(
         { isActive: false },
         {
@@ -195,6 +267,40 @@ export async function syncAgentsFromLyfe() {
         }
       );
       deactivated = deactivatedCount;
+
+      // 2. Mark fresh orphans (no prospects) for deletion. Use raw SQL
+      //    for the prospect-attachment check to avoid loading every row.
+      await sequelize.query(
+        `UPDATE users
+            SET pending_deletion_at = NOW()
+          WHERE role = 'agent'
+            AND "isActive" = false
+            AND "${localIdField}" IS NOT NULL
+            AND "${localIdField}" NOT IN (:activeExternalIds)
+            AND pending_deletion_at IS NULL
+            AND id NOT IN (SELECT DISTINCT "assignedAgentId" FROM prospects WHERE "assignedAgentId" IS NOT NULL)`,
+        { replacements: { activeExternalIds } }
+      );
+
+      // 3. Hard-delete agents whose grace window expired AND still no
+      //    prospects (re-check at delete time to close the read-then-delete
+      //    race).
+      const [{ count: deletedCount }] = await sequelize.query(
+        `WITH deleted AS (
+            DELETE FROM users
+             WHERE role = 'agent'
+               AND "isActive" = false
+               AND "${localIdField}" IS NOT NULL
+               AND "${localIdField}" NOT IN (:activeExternalIds)
+               AND pending_deletion_at IS NOT NULL
+               AND pending_deletion_at < NOW() - INTERVAL '${DELETE_GRACE_HOURS} hours'
+               AND id NOT IN (SELECT DISTINCT "assignedAgentId" FROM prospects WHERE "assignedAgentId" IS NOT NULL)
+            RETURNING id
+         )
+         SELECT COUNT(*)::int AS count FROM deleted`,
+        { replacements: { activeExternalIds }, type: sequelize.QueryTypes.SELECT }
+      );
+      hardDeleted = deletedCount || 0;
     }
   } catch (err) {
     logger.error(
@@ -206,10 +312,11 @@ export async function syncAgentsFromLyfe() {
       tags: { component: 'agent_sync', adapter: adapter.id, stage: 'deactivate' },
       extra: { error: err?.message, created, updated, durationMs: Date.now() - startedAt },
     });
+    recordSyncRun(adapter.id, { startedAt, durationMs: Date.now() - startedAt, status: 'failed', error: err?.message, stage: 'deactivate' });
     throw err;
   }
 
-  const result = { created, updated, deactivated, skipped, total: externalAgents.length };
+  const result = { created, updated, deactivated, hardDeleted, skipped, total: externalAgents.length };
   const durationMs = Date.now() - startedAt;
 
   // Successful sync — emit structured log for observability dashboards.
@@ -217,8 +324,9 @@ export async function syncAgentsFromLyfe() {
   // any downstream alert configured to track sync freshness.
   logger.info(
     { event: 'agent_sync_complete', adapter: adapter.id, last_sync_at: Date.now(), durationMs, ...result },
-    `[AgentSync] complete in ${durationMs}ms: ${created} created, ${updated} updated, ${deactivated} deactivated, ${skipped} skipped`
+    `[AgentSync] complete in ${durationMs}ms: ${created} created, ${updated} updated, ${deactivated} deactivated, ${hardDeleted} hard-deleted, ${skipped} skipped`
   );
+  recordSyncRun(adapter.id, { startedAt, durationMs, status: 'ok', counts: result });
 
   // Drift detection (FMEA F12): if a single sync run deactivates a large
   // proportion of agents, something is wrong upstream (mass-wipe, schema

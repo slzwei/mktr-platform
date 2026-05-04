@@ -167,6 +167,16 @@ export const init = async (app) => {
     });
   });
 
+  // Per-adapter sync freshness — for uptime monitors / Sentry stale-sync alert
+  app.get('/health/sync', async (req, res) => {
+    try {
+      const { getSyncHealthSnapshot } = await import('./services/syncHealth.js');
+      res.status(200).json(await getSyncHealthSnapshot());
+    } catch (err) {
+      res.status(500).json({ status: 'error', message: err?.message || 'unknown' });
+    }
+  });
+
   // Swagger API docs (restricted to non-production)
   if (process.env.NODE_ENV !== 'production') {
     app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
