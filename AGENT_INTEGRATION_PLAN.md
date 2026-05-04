@@ -1,6 +1,6 @@
 # Agent Integration — Production-Grade Implementation Plan
 
-**Status:** Phases 0, 1, 2 FULLY COMPLETE — including Sentry alerting. Phase 3 deferred until platform #2 is real.
+**Status:** Phases 0, 1, 2 FULLY COMPLETE — including Sentry alerting + Lyfe→MKTR push channel. Phase 3 deferred until platform #2 is real.
 **Owner:** Shawn
 **Last updated:** 2026-05-04 by P0.3 execution
 
@@ -127,6 +127,7 @@ are referenced from individual checklist items.
   - **NOT done:** MKTR backend deploy. Code change committed locally; needs `git push` to trigger Render auto-deploy. After deploy, re-trigger sync to drop the 3 rows from MKTR active list.
 - **2026-05-03 — P0.2 executed.** FK audit across 17 FK relationships in Lyfe. Verdict: 9 production-named users have 1–356 attachments each (Steven Teo: 356, Huixin: 69, Adrian/Costllan: 60, Jessica: 59, Samuel: 26, Ching Yi: 25, Daniel: 21, Shawn: 1) — all KEEP. The 3 E2E managers (`b3d75a58`, `10d8842a`, `efb3bd09`) have ZERO FK references — DELETE-SAFE. F01 mitigation validated: tag-don't-delete is correct default. P0.3 next, awaiting user authorisation for the destructive delete on Lyfe `auth.users` and `public.users`.
 - **2026-05-03 — P0.1 executed.** Forged admin JWT (admin user `c4a0f57a-...`, `shawnleeapps@gmail.com`) using `JWT_SECRET` from Render. Triggered `POST /api/lyfe/agents/sync`. Result: `created: 12, updated: 0, deactivated: 9, skipped: 0`. Post-state: 13 active rows (12 Lyfe-mirrored + 1 System Agent), 41 inactive. **Note:** original acceptance criterion expected `deactivated >= 29` based on 41 total; reality was that most stale rows were already inactive from prior sync attempts, only 9 active orphans existed. Adjusting acceptance text for accuracy. **Side effect:** 3 E2E test managers (`b3d75a58`, `efb3bd09`, `10d8842a`) are now in MKTR active list because P0.3 hasn't deleted them from Lyfe yet — will resolve at next sync after P0.3.
+- **2026-05-04 — Push channel added (defense-in-depth on top of polling).** Lyfe `public.users` AFTER trigger calls `net.http_post` to `https://api.mktr.sg/api/integrations/lyfe/users-webhook` on every INSERT/UPDATE/DELETE filtered to `role IN (agent,manager,director) AND is_test_data=false`. Secrets stored in Supabase Vault (`mktr_webhook_url`, `mktr_webhook_secret`). MKTR receiver verifies bearer token (timing-safe), upserts/deactivates idempotently using the same per-row logic as the polling sync — both paths converge to the same state. `recordSyncRun('lyfe-push', ...)` surfaces push events in `/health/sync`. Sentry alert "MKTR — Lyfe users webhook failed" (id 564961) wired against `component:lyfe_users_webhook`. The 10-min cron polling stays as safety net — if a push event is dropped (mktr restart, network blip, vault unreachable), the next poll catches it. Architecture is now production-grade: push for low latency, poll for guaranteed convergence. Migration `20260504150000_users_change_webhook_to_mktr.sql`. Commit `54fb9c2`.
 - _(plan drafted 2026-05-03)_
 
 ---
