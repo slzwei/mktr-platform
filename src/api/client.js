@@ -734,7 +734,13 @@ export const notifications = {
  */
 export const agents = {
  async getAll(params = {}) {
- const response = await apiClient.get('/agents', params);
+ // Default limit 200 so the AdminAgents page sees the full active set
+ // (including legacy stale rows pending two-phase delete). Backend
+ // default is 10 which truncated the list — Adrian and others past
+ // row 10 were invisible. The page has no pagination UI; if you
+ // need pagination later, expose it explicitly.
+ const merged = { limit: 200, ...params };
+ const response = await apiClient.get('/agents', merged);
  return response.data;
  },
 
