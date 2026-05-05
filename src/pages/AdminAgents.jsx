@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { agents as agentsAPI } from '@/api/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/queries/useUsersQuery';
@@ -7,6 +7,22 @@ import { Button } from '@/components/ui/button';
 import { Plus, RefreshCw } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import PageHeader from '@/components/common/PageHeader';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+  PaginationEllipsis,
+} from '@/components/ui/pagination';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 import AgentFilters from '../components/agents/AgentFilters';
 import AgentTable from '../components/agents/AgentTable';
@@ -15,6 +31,28 @@ import InviteAgentDialog from '../components/agents/InviteAgentDialog';
 import AgentDetailsDialog from '../components/agents/AgentDetailsDialog';
 import AssignPackageDialog from '../components/agents/AssignPackageDialog';
 import useAgentActions from '@/hooks/useAgentActions';
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
+/**
+ * Build a page-number list with ellipses for long ranges.
+ * Returns a mix of numbers and the literal string '…'.
+ *   buildPageList(5, 1)  → [1]
+ *   buildPageList(5, 3)  → [1, 2, 3, 4, 5]
+ *   buildPageList(20, 1) → [1, 2, 3, '…', 20]
+ *   buildPageList(20, 10)→ [1, '…', 9, 10, 11, '…', 20]
+ */
+function buildPageList(totalPages, current) {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+  const pages = new Set([1, totalPages, current, current - 1, current + 1]);
+  const sorted = [...pages].filter((p) => p >= 1 && p <= totalPages).sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push('…');
+    out.push(sorted[i]);
+  }
+  return out;
+}
 
 export default function AdminAgents() {
  const queryClient = useQueryClient();
@@ -35,6 +73,8 @@ export default function AdminAgents() {
  const [selectedAgent, setSelectedAgent] = useState(null);
  const [searchTerm, setSearchTerm] = useState('');
  const [statusFilter, setStatusFilter] = useState('all');
+ const [page, setPage] = useState(1);
+ const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
 
  // --- Actions hook ---
  const actions = useAgentActions({ queryClient });
@@ -57,6 +97,28 @@ export default function AdminAgents() {
  }
  return matchesSearch && matchesStatus;
  });
+
+ // --- Pagination (client-side; fetch already returns up to limit=200) ---
+ const totalPages = Math.max(1, Math.ceil(filteredAgents.length / pageSize));
+ const safePage = Math.min(page, totalPages);
+ const paginatedAgents = useMemo(
+ () => filteredAgents.slice((safePage - 1) * pageSize, safePage * pageSize),
+ [filteredAgents, safePage, pageSize],
+ );
+
+ // Reset to page 1 whenever the filtered set shrinks beneath the current
+ // page. Avoids a "no rows" page after filtering.
+ useEffect(() => {
+ if (page > totalPages) setPage(1);
+ }, [totalPages, page]);
+
+ // Reset to page 1 whenever filters change so users see results immediately.
+ useEffect(() => {
+ setPage(1);
+ }, [searchTerm, statusFilter, pageSize]);
+
+ const showingFrom = filteredAgents.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+ const showingTo = Math.min(safePage * pageSize, filteredAgents.length);
 
  // --- Selection handlers ---
  const handleSelectAll = (checked) => {
@@ -158,7 +220,7 @@ export default function AdminAgents() {
  </CardHeader>
  <CardContent className="p-0">
  <AgentTable
- agents={filteredAgents}
+ agents={paginatedAgents}
  selectedAgentIds={selectedAgentIds}
  onSelectAll={handleSelectAll}
  onSelectAgent={handleSelectAgent}
@@ -173,6 +235,83 @@ export default function AdminAgents() {
  onManagePackages={handleOpenManagePackages}
  onAssignPackage={handleOpenPackageDialog}
  />
+
+ {/* Pagination footer */}
+ <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-t border-border p-3 lg:px-6">
+ <div className="flex items-center gap-3 text-sm text-muted-foreground">
+ <span>
+ {filteredAgents.length === 0
+ ? 'No agents'
+ : `Showing ${showingFrom}–${showingTo} of ${filteredAgents.length}`}
+ </span>
+ <div className="flex items-center gap-2">
+ <span className="hidden sm:inline">Per page:</span>
+ <Select
+ value={String(pageSize)}
+ onValueChange={(v) => setPageSize(Number(v))}
+ >
+ <SelectTrigger className="h-8 w-20">
+ <SelectValue />
+ </SelectTrigger>
+ <SelectContent>
+ {PAGE_SIZE_OPTIONS.map((n) => (
+ <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+ ))}
+ </SelectContent>
+ </Select>
+ </div>
+ </div>
+
+ {totalPages > 1 && (
+ <Pagination className="lg:justify-end lg:mx-0">
+ <PaginationContent>
+ <PaginationItem>
+ <PaginationPrevious
+ href="#"
+ onClick={(e) => {
+ e.preventDefault();
+ if (safePage > 1) setPage(safePage - 1);
+ }}
+ className={safePage <= 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+ />
+ </PaginationItem>
+
+ {buildPageList(totalPages, safePage).map((p, i) =>
+ p === '…' ? (
+ <PaginationItem key={`ellipsis-${i}`}>
+ <PaginationEllipsis />
+ </PaginationItem>
+ ) : (
+ <PaginationItem key={p}>
+ <PaginationLink
+ href="#"
+ isActive={p === safePage}
+ onClick={(e) => {
+ e.preventDefault();
+ setPage(p);
+ }}
+ className="cursor-pointer"
+ >
+ {p}
+ </PaginationLink>
+ </PaginationItem>
+ ),
+ )}
+
+ <PaginationItem>
+ <PaginationNext
+ href="#"
+ onClick={(e) => {
+ e.preventDefault();
+ if (safePage < totalPages) setPage(safePage + 1);
+ }}
+ className={safePage >= totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+ />
+ </PaginationItem>
+ </PaginationContent>
+ </Pagination>
+ )}
+ </div>
  </CardContent>
  </Card>
 
