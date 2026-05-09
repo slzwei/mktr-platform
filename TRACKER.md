@@ -137,7 +137,7 @@ Retell AI performs the call and provides analysis natively. MKTR stores the resu
 | B6 | ~~MEDIUM~~ RESOLVED | retellService | ~~`resolveRetellCampaign` fallback finds ANY `[Retell]` campaign if name matching fails.~~ **Fixed 2026-03-23:** Removed wildcard fallback. Now returns `null` with a warning log when no campaign matches, so leads are created without a campaign rather than being misattributed. Campaign resolution still works via env map and DB name convention. | `retellService.js:103-109` |
 | B7 | ~~LOW~~ RESOLVED | mailer.js | ~~Hardcoded email redirect to `shawnleejob@gmail.com`.~~ **Fixed 2026-03-23:** Now reads `SYSTEM_AGENT_REDIRECT_EMAIL` env var. If set, redirects System Agent emails to that address. If unset, skips the email with a warning log. Added to both `backend/.env.example` and `backend/env.example`. | `mailer.js:100-112` |
 | B8 | ~~LOW~~ RESOLVED | env.example | ~~Missing critical pipeline env vars.~~ **Fixed 2026-03-23:** Added `RETELL_WEBHOOK_SECRET`, `RETELL_API_KEY`, `RETELL_AGENTS`, `RETELL_CAMPAIGN_MAP`, `WEBHOOK_ENABLED`, `LYFE_WEBHOOK_URL`, `LYFE_WEBHOOK_SECRET`, `LYFE_SUPABASE_URL`, `LYFE_SUPABASE_SERVICE_ROLE_KEY` with descriptions to all three env.example files (`backend/.env.example`, `backend/env.example`, `.env.example`). | `backend/.env.example`, `backend/env.example`, `.env.example` |
-| B9 | LOW | render.yaml | Points to `platform-v2/backend`, not the main `backend/` directory. Appears to be for an old/different service deployment. | `render.yaml:8` |
+| B9 | ~~LOW~~ RESOLVED | render.yaml | ~~Points to `platform-v2/backend`, not the main `backend/` directory.~~ **Fixed 2026-05-09:** Removed `render.yaml` along with the abandoned `platform-v2/` scaffold. Production deploys via Render's GitHub integration on the active `mktr-platform` static_site + `mktr-backend-jo6r` web_service (no Blueprint/IaC involved). Two stale Blueprints (`mktr-platform`, `mktr-backend-db`) that watched `render.yaml` were also deleted. | (removed) |
 | B10 | ~~MEDIUM~~ RESOLVED | WEBHOOK_ENABLED | ~~Defaults to `"false"`, silently disabling pipeline.~~ **Fixed 2026-03-23:** Added startup warning in bootstrap.js when `LYFE_WEBHOOK_URL` is set but `WEBHOOK_ENABLED` is not `"true"`. Also added production warning in envValidation.js when `WEBHOOK_ENABLED` is set to a non-`"true"` value. | `bootstrap.js:39-41`, `envValidation.js:46-48` |
 | B11 | ~~MEDIUM~~ RESOLVED | envValidation.js | ~~Pipeline vars not validated.~~ **Fixed 2026-03-23:** Added `WEBHOOK_ENABLED`, `LYFE_WEBHOOK_URL`, `LYFE_WEBHOOK_SECRET` as pipeline-critical vars with dedicated warning message in production. | `config/envValidation.js:24-48` |
 
@@ -176,7 +176,6 @@ Retell AI performs the call and provides analysis natively. MKTR stores the resu
 ## Priority Queue (Top 5 Next Actions)
 
 1. **FIX B5 (LOW)**: `setTimeout`-based webhook retries lost on restart. Consider persistent job queue.
-2. **FIX B9 (LOW)**: `render.yaml` points to `platform-v2/backend` instead of `backend/`.
 
 ---
 
@@ -188,7 +187,6 @@ Retell AI performs the call and provides analysis natively. MKTR stores the resu
   - `services/leadgen-service/src/lib/` (metrics, idempotency — already documented in docs/audit/leadgen.md)
   - `services/gateway/src/server.js` (routing proxy — not part of lead gen pipeline)
   - `tablet-app/` (Android ad player — not part of lead gen pipeline)
-  - `platform-v2/` (old DOOH platform — not part of lead gen pipeline)
   - Individual Retell/webhook test files (test coverage confirmed by file existence)
 - **Open questions to verify next session**:
   1. Is `WEBHOOK_ENABLED=true` in production? If not, leads are not reaching Lyfe.

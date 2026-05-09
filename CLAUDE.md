@@ -246,13 +246,11 @@ Tables read by MKTR pipeline:
 
 6. **Hardcoded email redirect**: `mailer.js:105-108` redirects System Agent emails to `shawnleejob@gmail.com`. Should be `SYSTEM_AGENT_REDIRECT_EMAIL` env var.
 
-7. **render.yaml stale**: Points to `platform-v2/backend`, not the current backend directory.
+7. **env.example incomplete**: Critical pipeline variables not documented in either `env.example` or `.env.example`.
 
-8. **env.example incomplete**: Critical pipeline variables not documented in either `env.example` or `.env.example`.
+8. **Concurrency bottleneck**: `MAX_CONCURRENT_DELIVERIES = 3` could throttle webhook delivery under high lead volume.
 
-9. **Concurrency bottleneck**: `MAX_CONCURRENT_DELIVERIES = 3` could throttle webhook delivery under high lead volume.
-
-10. **Agent sync is pull-only**: Agents must be synced manually (`POST /api/lyfe/agents/sync`) or on demand. No automatic periodic sync.
+9. **Agent sync is pull-only**: Agents must be synced manually (`POST /api/lyfe/agents/sync`) or on demand. No automatic periodic sync.
 
 ## Project Structure (Pipeline-Relevant Files)
 
