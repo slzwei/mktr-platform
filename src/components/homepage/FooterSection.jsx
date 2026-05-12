@@ -29,7 +29,7 @@ const FooterSection = () => {
  <div>
  <h4 className="mktr-footer-heading">Company</h4>
  <a href="#" className="mktr-footer-link">About</a>
- <Link to="/PersonalDataPolicy" className="mktr-footer-link">Privacy Policy</Link>
+ <Link to="/personal-data-policy" className="mktr-footer-link">Privacy Policy</Link>
  <a href="#" className="mktr-footer-link">Terms of Service</a>
  </div>
  </div>

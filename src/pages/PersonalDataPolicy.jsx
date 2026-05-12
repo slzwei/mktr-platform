@@ -61,7 +61,16 @@ const sections = [
  content: `We may update this policy from time to time to reflect changes in our practices or legal requirements. The updated policy will be posted on our website with the revised date.`,
  },
  {
- title:"10. Contact Us",
+ title:"10. Analytics and Advertising Partners",
+ content: `To measure the performance of our marketing campaigns and improve the relevance of our advertising, we work with third-party advertising platforms, including Meta Platforms, Inc. ("Meta", operator of Facebook and Instagram).`,
+ list: [
+"Hashed (SHA-256) contact information — email address and phone number — but only when you have ticked the marketing-consent checkbox above the submit button on a campaign signup form. If you decline marketing consent, no contact information is shared.",
+"Anonymous browser identifiers placed by Meta on our pages (the “_fbp” cookie and the “fbclid” / “_fbc” click identifier), your device's IP address, and your browser's user-agent string.",
+ ],
+ after: `We send these signals in two ways: (a) the Meta Pixel — a small JavaScript snippet on our public lead-capture pages that fires when you view a page and when you submit a form, and (b) the Meta Conversions API — a server-to-server transmission of the same conversion event from MKTR's servers. We pair the two methods using a shared event ID so Meta counts each real conversion only once, not twice. Meta receives only what is listed above; it does not receive your name, your NRIC, your address, your date of birth, or any free-text information you provide on the form.\n\nHow to opt out:\n• Do not tick the marketing-consent checkbox when you submit a form. You can still submit the form; we will simply not transmit your contact information to Meta.\n• Adjust “Off-Facebook activity” settings in your Meta account at facebook.com/off_facebook_activity.\n• Configure your browser to block third-party cookies, or install a browser extension that blocks ad-related scripts.\n\nInformation collected through Meta is governed by Meta's own privacy policy at facebook.com/about/privacy.`,
+ },
+ {
+ title:"11. Contact Us",
  content: `If you have any questions about this policy or wish to exercise your rights regarding your personal data, please contact us:`,
  after: `MKTR PTE. LTD.\n71 Ayer Rajah Crescent, #06-14\nSingapore 139951\n\nWhatsApp: +65 8079 0542`,
  },
@@ -87,7 +96,7 @@ export default function PersonalDataPolicy() {
  marginBottom:"3rem",
  }}
  >
- Last Updated: January 2026
+ Last Updated: May 2026
  </p>
 
  <div className="mktr-reveal mktr-reveal-delay-2" style={{ marginBottom:"2rem"}}>
