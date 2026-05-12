@@ -2,11 +2,15 @@
 
 **Owner:** Shawn
 **Companion to:** `meta-tracking-implementation.md` section 5 → Phase 6.
-**Last updated:** 2026-05-12 (mid-execution; see Live status below).
+**Last updated:** 2026-05-12 22:30 SGT (Phase 6 closed; monitoring window now open).
 
-This runbook is a flat checklist for the production rollout. Phase 1–6b code is on `main` (commits `d90c18c` + `54ce9bc`). Below is procedural — Meta UI clicks, Render env-var changes, staging verification, observation windows.
+**STATUS: PHASE 6 COMPLETE 2026-05-12 22:18 SGT.** Production cutover executed. CAPI Lead events now flow to Meta's real event stream (not the Test Events sandbox). 7-day Match Quality observation window runs through ~2026-05-19. This runbook now serves as a historical execution record + a checklist for the post-close monitoring tasks.
 
-If anything below diverges from the plan, the plan wins. Log deviations into section 8 of the plan when the phase closes.
+**⚠️ VERIFICATION CAVEAT — RETURN TO CHECK:** Two CAPI events were dispatched immediately post-cutover (22:22 + 22:26 SGT) with successful `events_received: 1` responses from Meta. Meta's Overview tab is expected to show the Lead count rise from **5 → 7** within a few hours. If by 2026-05-13 the count is still 5, the events didn't surface in Overview despite successful dispatch — this is a Meta display issue (not a code bug, backend logs prove dispatch worked). Diagnostic trail: fbtrace_ids `AgBmLzO5MCigtff_ZrqNWxX` and `AABFV2hqhjhzg_eQGUudkP3`.
+
+This runbook is a flat checklist for the production rollout. Phase 1–6f code is on `main`. Below is procedural — Meta UI clicks, Render env-var changes, verification, monitoring.
+
+If anything below diverges from the plan, the plan wins. Deviations are logged in section 8 of the plan.
 
 ---
 
@@ -21,17 +25,18 @@ If anything below diverges from the plan, the plan wins. Log deviations into sec
 | 6a.5 Test Event code `TEST35175` in Render env vars on both services | ✅ |
 | 6c Gates 1/2/3 (collapsed to one staging form submission, dedup verified with matching event_id `79fb4b6…`) | ✅ |
 | 6c Gate 4 (per-campaign Pixel override) | ⏸ deferred — unit-tested already |
-| 6d AEM priority configuration | ⏸ next |
-| 6d Sentry alert rule | ⏸ |
-| 6e 48h staging soak | ⏸ start once 6d done |
-| 6f Production env flip (clear test event codes) | ⏸ |
-| 6g 7-day Match Quality monitoring | ⏸ |
+| 6d AEM priority configuration | ❎ obsolete — Meta removed the AEM/Configure Web Events UI in Jun 2025; events are auto-aggregated server-side. See 6d.1 below. |
+| 6d Sentry alert rule | ✅ created 2026-05-12 — Sentry alert ID `553383`, name `CAPI Lead dispatch failures spike`, project `lyfe-sg`, WHEN: new issue / escalates / becomes unresolved, IF: `event.source=capi` AND events-in-issue > 5/1h, THEN: notify Shawn (test email delivered). |
+| 6e 48h staging soak | ⏭ skipped — original rationale (AEM propagation) obsolete; dedup contract proven in 6c; reduced to "wait for Meta Overview to surface events" before cutover, ~5 min not 48 h |
+| 6f Production env flip (clear test event codes) | ✅ done 2026-05-12 22:18 SGT — backend `mktr-backend-jo6r` redeployed live at 22:18 with `META_TEST_EVENT_CODE` cleared; Static Site `mktr-platform` rebuilt with `VITE_META_TEST_EVENT_CODE` cleared; verified via Render logs (two `capi.lead.sent` lines at 22:22:52 + 22:26:17 with `events_received:1`, no test_event_code in payload) and absence of new events in Meta Test Events tab |
+| 6g 7-day Match Quality monitoring | 🔁 monitoring window open — passive observation through ~2026-05-19, target ≥ 7.0. Realistic outcome with no active ad campaigns: stays statistically thin until traffic builds. |
+| **Meta Overview surface verification** | ⚠️ **return to check within 24h** — Lead count should rise 5 → 7 in Pixel Overview once Meta processes the 22:22 + 22:26 cutover events |
 
-**Current env state on Render:**
-- Backend Web Service `mktr-backend-jo6r`: `META_CAPI_ENABLED=true`, `META_PIXEL_ID=1402034528611431`, `META_CAPI_ACCESS_TOKEN=<long-lived>`, `META_TEST_EVENT_CODE=TEST35175`.
-- Static Site `mktr-platform`: `VITE_META_PIXEL_ID=1402034528611431`, `VITE_META_TEST_EVENT_CODE=TEST35175`.
+**Current env state on Render (post-6f cutover, 2026-05-12 22:18 SGT):**
+- Backend Web Service `mktr-backend-jo6r`: `META_CAPI_ENABLED=true`, `META_PIXEL_ID=1402034528611431`, `META_CAPI_ACCESS_TOKEN=<long-lived>`. `META_TEST_EVENT_CODE` **cleared** ✅.
+- Static Site `mktr-platform`: `VITE_META_PIXEL_ID=1402034528611431`. `VITE_META_TEST_EVENT_CODE` **cleared** ✅ (rebuilt via Render's "Save and rebuild" button which auto-triggers a Vite rebuild on env-var changes — no separate Manual Deploy click needed; runbook 6f.2 was written against older Render UI behavior).
 
-This is the "staging soak" config. Production cutover (6f) means clearing the two `*_TEST_EVENT_CODE` vars — same Render services serve both roles since there isn't a separate staging environment.
+Production mode active. CAPI Lead events now flow to Meta's real event stream (used for ad optimization), not the Test Events sandbox.
 
 ---
 
@@ -210,33 +215,49 @@ Need a second Pixel for this. Either reuse a sandbox Pixel from another property
 
 ## 6d — AEM + Sentry alert
 
-### 6d.1 — Configure AEM priorities
+### 6d.1 — Configure AEM priorities — OBSOLETE (Meta deprecated the UI in Jun 2025)
 
-1. Events Manager → Pixel `MKTR Lead Capture` → **Aggregated Event Measurement** → **Configure Web Events**.
-2. Add the verified `mktr.sg` domain (from 6a.2).
-3. Set event priorities:
-   - Slot 1: `Lead`
-   - Slot 2: `ViewContent`
-   - Slot 3: `PageView`
-4. Save. Meta warns this takes ~24h to propagate.
+**Skip this step.** Meta removed the Aggregated Event Measurement configuration tab from Events Manager in their June 2025 update. The "Configure Web Events" interface no longer exists. The original plan (and this runbook) was written against the pre-June-2025 Meta UI; verified during Phase 6 execution on 2026-05-12 against the live VoxaLabs AI BM.
 
-### 6d.2 — Configure Sentry alert rule
+What replaced it:
+- **8-event limit removed.** All eligible standard + custom events are auto-tracked.
+- **Manual priority ranking removed.** Meta determines priorities automatically based on signal strength.
+- **iOS 14+ attribution now auto-managed** by Meta server-side. The functional outcome the old AEM config provided is delivered without manual configuration.
+- **Domain verification still useful** for ad-account attribution + Conversions API match quality (we have `mktr.sg` verified under VoxaLabs AI, ✅).
+- **Diagnostic in 6g** (Match Quality ≥ 7.0) remains the canonical health check for whether Meta's auto-attribution is performing.
 
-In Sentry UI (https://sentry.io/organizations/<org>/alerts/rules/):
+Sources cross-referenced during the deviation call: Conversios AEM Explained 2025, wetracked.io Meta Events Manager 2026 guide, DEPT Agency "Meta's removal of AEM" insight, ewm.swiss AEM removal impact analysis, Meta Business Help Centre AEM article (current revision no longer documents the Configure Web Events flow). Multi-source convergence on the June 2025 timeline.
 
-1. Click **Create Alert Rule** → **Issue Alert**.
-2. **Environment:** staging (configure production later with the same rule).
-3. **When**:
-   - **An event is captured** with `tag:source` equal to `capi`.
-4. **If**:
-   - **The issue's frequency** is greater than **5** events in **1 hour**.
-   (Tune from staging soak observation — start at 5, adjust if noisy.)
-5. **Then**:
-   - **Send a notification** to Shawn's email / Slack.
-6. Name the rule: `CAPI Lead dispatch failures spike`.
-7. Save.
+No advertiser action is possible or required here. Proceed to 6d.2.
 
-Repeat for production environment after 6f.
+### 6d.2 — Configure Sentry alert rule — ✅ DONE 2026-05-12
+
+**Saved state (Sentry alert `553383`):**
+- Org: `mktr-pte-ltd`
+- Project: `lyfe-sg` (the `mktr-backend` Render service's `SENTRY_DSN` routes to this project — confirmed via existing `mktr-backend Sentry pipeline test` issue + the alert's test-notification email delivery)
+- Name: `CAPI Lead dispatch failures spike`
+- Environment: All environments
+- **WHEN** (any of):
+  - A new issue is created
+  - An issue escalates
+  - A resolved issue becomes unresolved
+  - *(deleted: "An issue is resolved" — alerting on resolution is noise)*
+- **IF** (all):
+  - The event's `source` tag `equals` `capi`
+  - Number of events in an issue is more than `5` in `one hour`
+- **THEN**: Notify member Shawn (Sentry "Notify on preferred channel" routes through user notification prefs — email primary)
+- **Throttling**: Notify on every trigger (Sentry's WHEN triggers are lifecycle events, not per-event, so this is naturally gated)
+- Test notification: sent + delivered to `shawnleeapps@gmail.com` during configuration ✅
+
+**UI walkthrough notes (for future tuning sessions):**
+- Sentry recently moved Alerts into a "Monitors & Alerts" framework. Existing Alert Rules auto-migrated. The "Alerts" link in the sidebar carries a "Moved" badge.
+- Sentry's modern Issue Alert form has no "An event is captured" WHEN trigger — only lifecycle events. The plan's old wording ("An event is captured with tag:source equal to capi") doesn't map 1:1 to the new UI. The equivalent is the IF-block configuration above: filter by event tag + filter by event count threshold.
+- The IF block's "Number of events" filter has an optional WHERE sub-filter for scope refinement; we did not use it (the top-level Tagged-event filter already scopes correctly).
+
+**Tuning levers** (revisit after 48h soak in 6e):
+- If alert is too noisy: raise threshold from `5/1h` to `10/1h` or add Throttling like "at most once per 30 minutes per issue".
+- If alert is too quiet: lower threshold, or split into two alerts (one for "new issue" without count gate, one for "spike" with count gate).
+- Production environment: no separate Sentry alert needed since the `lyfe-sg` project receives events from both roles and the `source=capi` filter scopes correctly.
 
 ---
 

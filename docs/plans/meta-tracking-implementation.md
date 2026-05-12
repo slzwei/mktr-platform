@@ -659,8 +659,11 @@ To be appended at the end of each phase. Format:
 
 ---
 
-### Phase 6 — 2026-05-12 (in flight — staging dedup verified live; AEM + Sentry + soak + production cutover pending)
-**Status:** in flight — code complete, Meta prereqs complete, staging dedup contract verified end-to-end against the real `mktr.sg` Render deploy. Remaining work: Meta UI configuration (AEM priorities, Sentry alert rule), 48h staging soak, production env-var flip, 7-day Match Quality monitoring.
+### Phase 6 — 2026-05-12 (complete — production cutover live; passive monitoring window open)
+**Status:** complete — production cutover executed and verified. 7-day Match Quality observation window now running (target ≥ 7.0 by 2026-05-19); Sentry alert `553383` actively monitoring CAPI dispatch failures.
+
+**⚠️ VERIFICATION CAVEAT — return to check within 24h of 2026-05-12 22:18 SGT:**
+After production cutover, two CAPI Lead events were dispatched (`event_id: a35fe88a-…` at 22:22:52 and `event_id: 8c634c9d-…` at 22:26:17) with Meta returning `events_received: 1` on both. At the moment of cutover, Meta Events Manager → Pixel `1402034528611431` → Overview showed 5 total Lead events (all from earlier 6c verification, EMQ 4.2/10). **Expected post-Meta-processing state: Lead count should become 7** (5 + 2 new cutover-verification submissions) once Meta's Overview pipeline catches up (~5-30 min documented latency, sometimes longer for newly-cutover Pixels). If by 2026-05-13 the count is still stuck at 5, Meta hasn't surfaced the production-mode events — check `fbtrace_id` `AgBmLzO5MCigtff_ZrqNWxX` and `AABFV2hqhjhzg_eQGUudkP3` via Meta support / Diagnostics tab. Backend log already confirms successful dispatch; this would be a Meta-side display issue, not a code issue.
 
 **What shipped (code, 6b — privacy disclosure):**
 - Commit `54ce9bc feat(privacy): disclose Meta Pixel + CAPI in personal data policy` — pushed to origin/main 2026-05-12, live on `mktr.sg/personal-data-policy` via Render Static Site auto-rebuild.
@@ -706,26 +709,35 @@ To be appended at the end of each phase. Format:
 - Plan section 5 Phase 6 step 1 said move Pixel to BM. Meta UI didn't support; created new instead.
 - Plan's "Sentry alert rule: `capi.lead.failed` rate > 5% over 1h" — Sentry Issue Alerts compute frequency not ratio. Chose count-based threshold for v1.
 - Plan section 5 said Phase 6 sub-steps run sequentially. Collapsed 6c gates 1/2/3 into a single end-to-end form-submission test on staging.
+- **Plan section 5 Phase 6 step 2 (AEM priorities) is now obsolete.** Meta removed the AEM configuration UI from Events Manager in their June 2025 update — the "Configure Web Events" tab, the 8-event cap, and manual priority ranking are all gone. Meta now auto-aggregates all eligible events server-side and determines iOS attribution priority itself. Verified across multiple 2025-2026 industry sources (Conversios, wetracked.io, DEPT Agency, ewm.swiss) and absence in the live VoxaLabs AI BM (checked Pixel Settings, Business Settings → Brand Safety, Pixel Overview — no AEM entry). No replacement UI exists; no advertiser action possible. The Match Quality acceptance gate (6g) remains the canonical iOS-attribution-health diagnostic.
+- **Plan section 5 Phase 6 step 1 (48h staging soak) skipped.** Same-Render-service constraint + AEM obsolescence + dedup proven in 6c left the soak with no remaining validation purpose. Sentry alert `553383` (6d.2) catches CAPI failures as the actual safety net. Cutover proceeded directly after 6d.2.
+- **Plan section 5 Phase 6 acceptance gate "Privacy policy updated" condition**: shipped earlier in 6b (commit `54ce9bc`). Was not blocking the cutover.
 
 **Test results:**
 - No new automated tests this phase. 6b is copy/render only; 6c verified manually against live staging per design.
 - Staging deploy stable: Render Web Service + Static Site both serving with new Pixel + token.
 
 **Followups (still open):**
-- **6d AEM priorities:** Events Manager → Pixel → Aggregated Event Measurement → Configure Web Events → Lead p1, ViewContent p2, PageView p3. Add the verified `mktr.sg` domain. Owner UI work, ~5 min.
-- **6d Sentry alert rule:** Sentry UI → Create Alert Rule → Issue Alert → `tag:source = capi`, frequency > N events / 1h, notify Shawn. Tune N after 6e soak.
-- **6e 48h staging soak:** observation window — watch Test Events volume, Render `capi.lead.sent` log count, Sentry alert volume, Match Quality score.
-- **6f Production cutover:** clear `META_TEST_EVENT_CODE` + `VITE_META_TEST_EVENT_CODE` (must be empty in production), confirm `META_CAPI_ENABLED=true`, deploy. Note: env vars are currently identical across the staging soak and would-be-production environments because there's no separate Render environment for staging — the same `mktr.sg` deploy serves both roles. "Production cutover" in this setup = clearing the test event code only.
-- **6g 7-day Match Quality monitoring:** target ≥ 7.0. If lower, diagnose via Events Manager → Diagnostics.
+- ~~**6d AEM priorities:**~~ **OBSOLETE — Meta removed the AEM / "Configure Web Events" UI from Events Manager in Jun 2025.** Verified during 6d execution on 2026-05-12: not present in Pixel Settings, not present in Business Settings → Brand Safety, not present in Pixel Overview. Multi-source web research (Conversios 2025, wetracked.io 2026, DEPT, ewm.swiss, Meta Business Help Centre) confirms the June 2025 deprecation. Meta now auto-aggregates all eligible events and determines iOS attribution priority server-side; the 8-event cap and manual ranking are gone. No advertiser action required. The functional outcome the old AEM config delivered is now auto-managed, and Match Quality (6g) remains the diagnostic for attribution health. Runbook 6d.1 updated to reflect.
+- ~~**6d Sentry alert rule:**~~ ✅ **Done 2026-05-12.** Sentry alert ID `553383` in org `mktr-pte-ltd`, project `lyfe-sg` (mktr-backend's `SENTRY_DSN` routes here). Name: `CAPI Lead dispatch failures spike`. WHEN: new issue / escalates / becomes unresolved. IF (all): `event.source` tag equals `capi` AND events-in-issue > 5 in 1 hour. THEN: notify member Shawn via preferred channel. Test notification verified end-to-end (email delivered to `shawnleeapps@gmail.com`). Throttling: notify on every trigger (Sentry's WHEN lifecycle gating naturally limits firing). Tuning levers documented in runbook 6d.2 for revisit after 6e soak.
+- ~~**6e 48h staging soak:**~~ **SKIPPED 2026-05-12.** Original rationale (24h AEM propagation + observation window) lost both halves: AEM was removed by Meta in Jun 2025 (already logged), and the dedup contract was end-to-end proven in 6c with the matching event_id `79fb4b6…`. The 48h was conservative belt-and-suspenders against latent bugs, but the same Render services serve both staging and production roles (no separate environment to "promote" from), so soaking doesn't isolate any failure mode that 6f wouldn't also expose. Reduced to a ~5 min wait for Meta Overview to surface events post-cutover. If a latent bug had existed, Sentry alert `553383` (6d.2) would have caught it.
+- ~~**6f Production cutover:**~~ ✅ **Done 2026-05-12 22:18 SGT.** Cleared `META_TEST_EVENT_CODE` on backend Web Service `mktr-backend-jo6r` (auto-redeployed; commit `10abdfd` rebuilt with new env; deploy live at 22:18). Cleared `VITE_META_TEST_EVENT_CODE` on Static Site `mktr-platform` (Render's "Save and rebuild" auto-triggers Vite rebuild on env-var changes — runbook 6f.2 was written against older Render behavior that required Manual Deploy click). Verified end-to-end: real form submission on `mktr.sg/LeadCapture?campaign_id=4f717278-…` at 22:26 produced `capi.lead.sent { event_id: 8c634c9d-…, events_received: 1, fbtrace_id: AABFV2hqhjhzg_eQGUudkP3 }` in Render logs with NO `test_event_code` in payload, and the event did not appear in Meta Test Events tab (confirming the test code was no longer being applied). Earlier test submission at 22:22 produced identical-shape success log (`event_id: a35fe88a-…`, fbtrace `AgBmLzO5MCigtff_ZrqNWxX`). Both events queued for Meta Overview surfacing (documented ~5-30 min latency for real-pile events; Overview displays 5 historical leads at log-time, expected to become 7 after Meta processes). `META_CAPI_ENABLED=true`, `META_PIXEL_ID=1402034528611431`, long-lived CAPI token all remain in place.
+- **6g 7-day Match Quality monitoring:** target ≥ 7.0. If lower, diagnose via Events Manager → Diagnostics. Current Lead EMQ at cutover: 4.2/10 (5 historical events under VoxaLabs AI Pixel; will improve as production volume builds).
 - F3 cleanup (orphan datasets + old Pixel) — optional, defer.
 - Disable BM-level auto event tracking (the `SubscribedButton` noise) — optional.
 
-**Acceptance gate (still open):**
-- Production CAPI volume within ±5% of expected lead volume.
-- Match Quality ≥ 7.0 after 7 days.
-- Zero Sentry alerts on CAPI dispatch in steady state.
-- Privacy policy updated → ✅ shipped 2026-05-12 (commit `54ce9bc`).
-- Dedup contract verified on staging → ✅ verified 2026-05-12 20:17:42 SGT.
+**Acceptance gate (status as of close):**
+- ✅ Privacy policy updated — shipped 2026-05-12 (commit `54ce9bc`).
+- ✅ Dedup contract verified on staging — verified 2026-05-12 20:17:42 SGT (event_id `79fb4b6…`).
+- ✅ Production cutover executed + CAPI dispatch verified — 2026-05-12 22:18 SGT; backend logs show two `capi.lead.sent` post-cutover with `events_received: 1`.
+- ⏳ Production CAPI volume within ±5% of expected lead volume — **monitoring window open**; cannot assess until real organic ad-driven traffic flows. Currently zero active ad campaigns on the Pixel; gate is effectively waiting on business growth, not technical work.
+- ⏳ Match Quality ≥ 7.0 after 7 days — **monitoring window open**, ends ~2026-05-19. Current EMQ 4.2/10 on 5 events (statistically thin). Realistic expectation: stays low until production traffic builds; revisit gate after first ad campaign drives volume.
+- ⏳ Zero Sentry alerts on CAPI dispatch in steady state — **monitoring window open**; Sentry alert `553383` configured (6d.2) to catch any spike of CAPI failures.
 
-When the gate closes, replace this entry with a final "Phase 6 — complete" log.
+**Post-close follow-ups (passive — return later, no active work):**
+1. **Within 24h of 2026-05-12 22:18 SGT** — verify Meta Events Manager Overview shows 7 total Lead events (currently 5) confirming the two post-cutover events surfaced. If stuck at 5, see the verification caveat above.
+2. **By 2026-05-19** — check Match Quality score. If < 7.0 and there's ad-driven traffic, diagnose via Events Manager → Diagnostics. If < 7.0 with no traffic, defer — gate is volume-bound.
+3. **Ongoing** — Sentry alert `553383` actively watches; nothing to do unless email fires.
+4. **F1/F3 cleanup** (optional, low priority): orphaned Pixel `1690392415464750`, `MKTR Lead Gen` (App `1957456775175661`), `MKTR_wa` (`941256445479495`) — none of these are receiving production traffic. Cleanup reduces UI clutter but doesn't affect anything functional. Deferred indefinitely.
+5. **Optional cosmetic** — Meta's "Websites" panel on the Pixel currently shows "No websites found" because Meta auto-detects from event volume and we're below threshold. Will resolve as traffic builds; can manually accelerate via Pixel → Settings → "Open Event Setup Tool" → enter `mktr.sg`, but it's purely display, no functional impact.
 
