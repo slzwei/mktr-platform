@@ -2,11 +2,36 @@
 
 **Owner:** Shawn
 **Companion to:** `meta-tracking-implementation.md` section 5 → Phase 6.
-**Last updated:** 2026-05-12
+**Last updated:** 2026-05-12 (mid-execution; see Live status below).
 
-This runbook is a flat checklist for the production rollout. Phase 1–5 code is complete on `main` (uncommitted). The 6b privacy-policy section is shipped as part of the same uncommitted change. Everything below is procedural — Meta UI clicks, Render env-var changes, staging verification, observation windows.
+This runbook is a flat checklist for the production rollout. Phase 1–6b code is on `main` (commits `d90c18c` + `54ce9bc`). Below is procedural — Meta UI clicks, Render env-var changes, staging verification, observation windows.
 
 If anything below diverges from the plan, the plan wins. Log deviations into section 8 of the plan when the phase closes.
+
+---
+
+## Live status (as of 2026-05-12 20:18 SGT)
+
+| Step | Status |
+|---|---|
+| 6a.1 Pixel in BM (pivoted: created new `1402034528611431` under VoxaLabs AI, old `1690392415464750` orphaned) | ✅ |
+| 6a.2 `mktr.sg` domain verified under VoxaLabs AI | ✅ |
+| 6a.3 Long-lived CAPI token generated, in Render env vars on both services | ✅ |
+| 6a.4 Orphan dataset cleanup (F3) | ⏸ optional, deferred |
+| 6a.5 Test Event code `TEST35175` in Render env vars on both services | ✅ |
+| 6c Gates 1/2/3 (collapsed to one staging form submission, dedup verified with matching event_id `79fb4b6…`) | ✅ |
+| 6c Gate 4 (per-campaign Pixel override) | ⏸ deferred — unit-tested already |
+| 6d AEM priority configuration | ⏸ next |
+| 6d Sentry alert rule | ⏸ |
+| 6e 48h staging soak | ⏸ start once 6d done |
+| 6f Production env flip (clear test event codes) | ⏸ |
+| 6g 7-day Match Quality monitoring | ⏸ |
+
+**Current env state on Render:**
+- Backend Web Service `mktr-backend-jo6r`: `META_CAPI_ENABLED=true`, `META_PIXEL_ID=1402034528611431`, `META_CAPI_ACCESS_TOKEN=<long-lived>`, `META_TEST_EVENT_CODE=TEST35175`.
+- Static Site `mktr-platform`: `VITE_META_PIXEL_ID=1402034528611431`, `VITE_META_TEST_EVENT_CODE=TEST35175`.
+
+This is the "staging soak" config. Production cutover (6f) means clearing the two `*_TEST_EVENT_CODE` vars — same Render services serve both roles since there isn't a separate staging environment.
 
 ---
 

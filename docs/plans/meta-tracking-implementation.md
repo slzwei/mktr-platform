@@ -659,42 +659,73 @@ To be appended at the end of each phase. Format:
 
 ---
 
-### Phase 6 — 2026-05-12 (partial — 6b code shipped; 6a/6c–g operational, tracked in runbook)
-**Status:** partial — code-shippable work for this phase is done; rest is operational (Meta UI, staging soak, production cutover, Match Quality monitoring) and tracked in a dedicated runbook for owner execution.
+### Phase 6 — 2026-05-12 (in flight — staging dedup verified live; AEM + Sentry + soak + production cutover pending)
+**Status:** in flight — code complete, Meta prereqs complete, staging dedup contract verified end-to-end against the real `mktr.sg` Render deploy. Remaining work: Meta UI configuration (AEM priorities, Sentry alert rule), 48h staging soak, production env-var flip, 7-day Match Quality monitoring.
 
 **What shipped (code, 6b — privacy disclosure):**
-- `src/pages/PersonalDataPolicy.jsx` — added a new "10. Analytics and Advertising Partners" section that names Meta explicitly, describes what's shared (hashed em/ph, fbp/fbc/IP/UA), describes the dual-channel Pixel + CAPI dispatch and event_id dedup, and lists opt-out paths (don't tick the consent checkbox, off-Facebook activity controls, browser cookie blocking). Renumbered Contact Us from 10 → 11. Bumped "Last Updated" January 2026 → May 2026.
-- Legal review of the disclosure copy is tracked outside this plan per the original scope. Section accurately reflects the implemented behaviour (hashed PII only, consent-gated, dual Pixel + CAPI with shared event_id).
+- Commit `54ce9bc feat(privacy): disclose Meta Pixel + CAPI in personal data policy` — pushed to origin/main 2026-05-12, live on `mktr.sg/personal-data-policy` via Render Static Site auto-rebuild.
+- `src/pages/PersonalDataPolicy.jsx` — new "10. Analytics and Advertising Partners" section naming Meta, describing shared signals (hashed em/ph consent-gated, fbp/fbc/IP/UA always), the dual-channel Pixel + CAPI architecture with shared event_id dedup, and opt-out paths (don't tick marketing consent, Meta off-Facebook controls, browser cookie blocking). Renumbered Contact Us 10 → 11. Bumped "Last Updated" to May 2026.
+- `src/components/homepage/FooterSection.jsx` — fixed the homepage footer link which pointed to non-existent `/PersonalDataPolicy` (PascalCase). Now points to actual route `/personal-data-policy`. Pre-existing bug found during 6b verification; fix shipped in the same commit.
 
-**Runbook for the operational work:** `docs/plans/phase-6-runbook.md` (single-purpose checklist for 6a Meta-side prereqs, 6c staging deploy + 4 deferred E2E gates from Phases 2–5, 6d AEM + Sentry alert, 6e 48h soak, 6f production cutover, 6g 7-day Match Quality monitoring). Includes rollback playbook for each failure mode.
+**Runbook for operational work:** `docs/plans/phase-6-runbook.md` (single-purpose checklist for 6a Meta prereqs, 6c staging gates, 6d AEM + Sentry, 6e 48h soak, 6f production cutover, 6g 7-day MQ monitoring). Updated with actual values discovered during execution (see runbook for current state).
 
-**Decisions confirmed mid-Phase (in scope review with Shawn):**
-- Move Pixel `1690392415464750` to a Business Manager (preserve ID) — chosen over creating a fresh Pixel. Plan section 7 followup F1.
-- Add domain verification on `mktr.sg` to Phase 6 scope — not in the original plan, but required for iOS 14+ AEM attribution. Without it, the plan's Match Quality ≥ 7.0 acceptance gate is unrealistic.
-- Sentry alert: Issue Alert in Sentry UI on `tag:source = capi` exception frequency > N events/1h. Simpler than emitting a ratio metric; tune N from staging soak data. No code change required.
-- Privacy policy as a new dedicated section ("10. Analytics and Advertising Partners") rather than expanding the existing generic Cookies section.
+**6a Meta-side prerequisites — COMPLETE (with deviations):**
+- **Pixel home (deviation from plan):** Original plan said "move existing Pixel `1690392415464750` to a Business Manager (preserve ID)". Meta's UI does not expose Pixel ownership transfer through Settings; the Owner field on the personal-account Pixel is read-only. Pivoted to **create a fresh Pixel under VoxaLabs AI BM**. New Pixel ID: **`1402034528611431`** (name: `MKTR Lead Capture`). Old Pixel `1690392415464750` is now orphaned on Shawn's personal ad account `act_1931760067413088`; no real data was on it (only Phase 0/2 test events) so lost data is negligible.
+- **Domain verification:** `mktr.sg` verified under VoxaLabs AI via DNS TXT method. Domain ID `1376789477578553`. Required for iOS 14+ AEM attribution; the Match Quality ≥ 7.0 acceptance gate would have been unreachable without it.
+- **Long-lived CAPI token:** generated under the new Pixel's Settings → Conversions API → Generate access token. Saved in password manager + Render env vars on both services. Smoke test green: `events_received: 1`, fbtrace `AFjZTN-V7v7MLHy7xtafxcB`.
+- **Orphan cleanup (F3, optional):** `MKTR Lead Gen` (App ID `1957456775175661`) and `MKTR_wa` (`941256445479495`) datasets still pending. Plus the abandoned personal-account Pixel `1690392415464750`. Deferred — not blocking.
+- **Test event code captured:** `TEST35175` (rotates per Test Events session; will need a fresh one when soak starts in a different session).
+
+**6c Staging E2E gates — Gates 1+2+3 VERIFIED via real form submission (Gate 4 deferred):**
+- Approach: collapsed three gates into one real `/LeadCapture` form submission on `mktr.sg` (OTP-verified, both consent boxes ticked). Single test exercises browser Pixel + server CAPI + dedup contract.
+- **Gate 1 (Phase 2 — server CAPI dispatch):** ✅ — Server-side Lead event arrived in Meta Test Events at 20:17:42 SGT, status Processed, manual setup, mktr.sg/LeadCapture URL, action_source `website`.
+- **Gate 2 (Phase 3 — browser Pixel + ViewContent):** ✅ — View content event arrived in Test Events at 20:16:57 SGT (mount), browser-source, processed.
+- **Gate 3 (Phase 4 — Pixel/CAPI dedup with matching event_id):** ✅ — Both the browser-side Lead and server-side Lead arrived at 20:17:42 SGT with the **same Event ID** (`79fb4b6…`). Same event_id = Meta dedupes to one conversion in production processing. The dedup contract holds end-to-end through the live Render deploy.
+- **Gate 4 (Phase 5 — per-campaign Pixel ID override):** deferred. The plumbing is already unit-tested (`prospectServiceCapi.test.js` + `metaCapiService.test.js` Phase 5 tests). Real-DB verification would require provisioning a second Pixel + token in VoxaLabs AI just for the test, then SQL-updating a test campaign's `meta_pixel_id`. Low ROI given the unit coverage; defer until a real customer needs the override.
+- Side observation: Meta is auto-tracking a `SubscribedButton` event on the form's consent-checkbox interaction (the "Automatically logged" badge). Pixel Settings → "Track events automatically without code" showed Off, so this is BM-level auto-tracking that ignores the Pixel-level setting. Not blocking; turn off in Pixel Settings or accept as noise.
+
+**Env var state on Render (as of staging cutover):**
+
+| Service | Variable | Value | Status |
+|---|---|---|---|
+| `mktr-backend-jo6r` (Web Service) | `META_CAPI_ENABLED` | `true` | live for staging |
+| `mktr-backend-jo6r` | `META_PIXEL_ID` | `1402034528611431` | live |
+| `mktr-backend-jo6r` | `META_CAPI_ACCESS_TOKEN` | *long-lived from VoxaLabs AI* | live |
+| `mktr-backend-jo6r` | `META_TEST_EVENT_CODE` | `TEST35175` | live (clear before production cutover) |
+| `mktr-platform` (Static Site) | `VITE_META_PIXEL_ID` | `1402034528611431` | live (rebuilt) |
+| `mktr-platform` | `VITE_META_TEST_EVENT_CODE` | `TEST35175` | live (clear before production cutover) |
+
+**Decisions confirmed mid-Phase:**
+- Path Y (create new Pixel in BM, abandon old) chosen after discovering Meta's Settings UI doesn't expose Pixel ownership transfer. Saves 30+ min of permissions wrestling; cost is 5 test events on the orphaned Pixel.
+- Domain verification added to scope (not in original plan section 5).
+- Sentry alert: Issue Alert in Sentry UI on `tag:source = capi` exception frequency > N/1h. Simpler than ratio-based metric alerting; tune N from soak data. No code change required.
+- Three gates (Gate 1/2/3) collapsed into one real form submission for time efficiency. Gate 4 deferred as low-risk.
+- Privacy policy added as new dedicated section rather than expanding existing Cookies section, for clearer PDPA defensibility.
 
 **Deviations from plan:**
-- Plan's 6f4 was "Sentry alert rule: notify when `capi.lead.failed` rate > 5% over a 1h window". Sentry Issue Alerts compute frequency, not ratio. Chose count-based threshold for v1 (simpler, no code change). Plan and runbook now agree on the operational reality. If ratio-based alerting becomes important, follow-up workstream emits success+failure counters via `Sentry.metrics.increment`.
-- Plan's 6a-6g sub-phases collapsed into one Phase 6 entry with a separate runbook, since the work is largely Meta UI + Render env-var changes that don't lend themselves to git-tracked execution.
+- Plan section 5 Phase 6 step 1 said move Pixel to BM. Meta UI didn't support; created new instead.
+- Plan's "Sentry alert rule: `capi.lead.failed` rate > 5% over 1h" — Sentry Issue Alerts compute frequency not ratio. Chose count-based threshold for v1.
+- Plan section 5 said Phase 6 sub-steps run sequentially. Collapsed 6c gates 1/2/3 into a single end-to-end form-submission test on staging.
 
 **Test results:**
-- No new automated tests this phase (6b is a copy change with no behaviour; existing app builds — `npm run build` would confirm but is the same surface as Phase 3 / 4 builds which were verified). Privacy text was reviewed and approved by Shawn before shipping.
+- No new automated tests this phase. 6b is copy/render only; 6c verified manually against live staging per design.
+- Staging deploy stable: Render Web Service + Static Site both serving with new Pixel + token.
 
-**Followups (tracked in runbook):**
-- 6a Pixel move + domain verify + long-lived token (owner clicks).
-- 6c Staging deploy + 4 deferred E2E gates (Phase 2/3/4/5 manual verification).
-- 6d AEM priorities + Sentry alert rule.
-- 6e 48h staging soak.
-- 6f Production env flip + smoke check.
-- 6g 7-day Match Quality monitoring; close acceptance gate.
-- F3 (clean up orphaned `MKTR Lead Gen` + `MKTR_wa` datasets) — still optional; included in 6a.4.
+**Followups (still open):**
+- **6d AEM priorities:** Events Manager → Pixel → Aggregated Event Measurement → Configure Web Events → Lead p1, ViewContent p2, PageView p3. Add the verified `mktr.sg` domain. Owner UI work, ~5 min.
+- **6d Sentry alert rule:** Sentry UI → Create Alert Rule → Issue Alert → `tag:source = capi`, frequency > N events / 1h, notify Shawn. Tune N after 6e soak.
+- **6e 48h staging soak:** observation window — watch Test Events volume, Render `capi.lead.sent` log count, Sentry alert volume, Match Quality score.
+- **6f Production cutover:** clear `META_TEST_EVENT_CODE` + `VITE_META_TEST_EVENT_CODE` (must be empty in production), confirm `META_CAPI_ENABLED=true`, deploy. Note: env vars are currently identical across the staging soak and would-be-production environments because there's no separate Render environment for staging — the same `mktr.sg` deploy serves both roles. "Production cutover" in this setup = clearing the test event code only.
+- **6g 7-day Match Quality monitoring:** target ≥ 7.0. If lower, diagnose via Events Manager → Diagnostics.
+- F3 cleanup (orphan datasets + old Pixel) — optional, defer.
+- Disable BM-level auto event tracking (the `SubscribedButton` noise) — optional.
 
-**Acceptance gate (open):**
+**Acceptance gate (still open):**
 - Production CAPI volume within ±5% of expected lead volume.
 - Match Quality ≥ 7.0 after 7 days.
 - Zero Sentry alerts on CAPI dispatch in steady state.
-- Privacy policy updated → shipped 2026-05-12.
+- Privacy policy updated → ✅ shipped 2026-05-12 (commit `54ce9bc`).
+- Dedup contract verified on staging → ✅ verified 2026-05-12 20:17:42 SGT.
 
 When the gate closes, replace this entry with a final "Phase 6 — complete" log.
 
