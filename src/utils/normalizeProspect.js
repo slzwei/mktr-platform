@@ -7,7 +7,7 @@
  * consistent object.
  */
 export default function normalizeProspect(p) {
- const name = [p.firstName, p.lastName].filter(Boolean).join("") || p.name ||"";
+ const name = [p.firstName, p.lastName].filter(Boolean).join(" ") || p.name ||"";
  let status = (p.leadStatus || p.status ||"new").toLowerCase();
 
  const createdDate = p.createdAt || p.created_date || new Date().toISOString();
@@ -22,7 +22,7 @@ export default function normalizeProspect(p) {
 
  const assignedAgentId = p.assignedAgentId || p.assigned_agent_id ||"";
  const assignedAgentName = p.assignedAgent
- ? ([p.assignedAgent.firstName, p.assignedAgent.lastName].filter(Boolean).join("") || p.assignedAgent.email ||"Agent")
+ ? ([p.assignedAgent.firstName, p.assignedAgent.lastName].filter(Boolean).join(" ") || p.assignedAgent.email ||"Agent")
  : (p.assigned_agent_name ||"");
 
  return {

@@ -231,7 +231,7 @@ export default function AdminCommissions() {
  </TableHeader>
  <TableBody>
  {agentAggregates.map((item) => {
- const fullName = [item.agent.firstName, item.agent.lastName].filter(Boolean).join("") ||"N/A";
+ const fullName = [item.agent.firstName, item.agent.lastName].filter(Boolean).join(" ") ||"N/A";
  return (
  <TableRow key={item.agent.id} className="hover:bg-muted">
  <TableCell>

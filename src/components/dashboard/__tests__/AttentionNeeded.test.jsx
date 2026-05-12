@@ -3,9 +3,11 @@ import { describe, it, expect } from 'vitest';
 import AttentionNeeded from '../AttentionNeeded';
 
 describe('AttentionNeeded', () => {
- it('shows"Everything looks good!" when there are no alerts', () => {
+ it('shows the empty-state message when there are no alerts', () => {
  render(<AttentionNeeded prospects={[]} campaigns={[]} />);
- expect(screen.getByText('Everything looks good!')).toBeInTheDocument();
+ expect(
+ screen.getByText('No overdue follow-ups or stale leads. Alerts appear here when a prospect needs attention.')
+ ).toBeInTheDocument();
  });
 
  it('shows overdue follow-ups alert', () => {
@@ -26,7 +28,9 @@ describe('AttentionNeeded', () => {
  { id: '2', nextFollowUpDate: yesterday, leadStatus: 'lost' },
  ];
  render(<AttentionNeeded prospects={prospects} campaigns={[]} />);
- expect(screen.getByText('Everything looks good!')).toBeInTheDocument();
+ expect(
+ screen.getByText('No overdue follow-ups or stale leads. Alerts appear here when a prospect needs attention.')
+ ).toBeInTheDocument();
  });
 
  it('shows stale prospects alert for 14+ day old"new" prospects', () => {
