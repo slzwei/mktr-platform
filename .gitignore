@@ -34,3 +34,6 @@ coverage/
 *credentials*.json
 *-private-key*.json
 
+# Claude Code runtime artifacts (commands/ is tracked; lock files are transient)
+.claude/*.lock
+
