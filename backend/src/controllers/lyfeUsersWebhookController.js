@@ -6,21 +6,32 @@
  * deactivations. Polling stays as the safety net (FMEA F18) — push +
  * polling is the production-grade pattern.
  *
- * ── Wire format (sent by the trigger function in Lyfe) ─────────────────
+ * ── Wire format (sent by `notify_mktr_user_change` trigger in Lyfe) ────
  *
- *   POST /api/lyfe/users-webhook
- *   Authorization: Bearer <LYFE_USERS_WEBHOOK_SECRET>
+ *   POST /api/integrations/lyfe/users-webhook
  *   Content-Type: application/json
+ *   X-Webhook-Signature: sha256=<hex hmac of raw body using LYFE_USERS_WEBHOOK_SECRET>
+ *   X-Webhook-Timestamp: <ISO 8601 timestamp; rejected if ±5 min outside server clock>
  *   {
  *     "type": "INSERT" | "UPDATE" | "DELETE",
  *     "table": "users",
- *     "record":     { id, full_name, email, phone, role, is_active, is_test_data, ... } | null,
- *     "old_record": { ... } | null
+ *     "record":     { id, full_name, email, phone, role, is_active, is_test_data } | null,
+ *     "old_record": { id, role, is_active, is_test_data } | null
  *   }
  *
  * For INSERT: record present, old_record null
  * For UPDATE: both present
  * For DELETE: record null, old_record present
+ *
+ * ── Auth (HMAC since 2026-05-12, audit Sprint 2.1) ─────────────────────
+ *
+ * The legacy `Authorization: Bearer <secret>` mode was removed because
+ * (a) it provides no body integrity — a MITM could flip is_active values
+ * without invalidating the token, (b) no replay protection, (c) the secret
+ * appears in every successful request, increasing log-leakage surface.
+ *
+ * HMAC-SHA256 over the raw body matches the inverse direction
+ * (MKTR→Lyfe via `receive-mktr-lead`) which was already hardened.
  *
  * ── Idempotency ────────────────────────────────────────────────────────
  *
@@ -35,6 +46,7 @@
  * trigger filter is loosened in the future.
  */
 
+import crypto from 'crypto';
 import * as Sentry from '@sentry/node';
 import User from '../models/User.js';
 import { logger } from '../utils/logger.js';
@@ -43,6 +55,7 @@ import { recordSyncRun } from '../services/syncHealth.js';
 import '../integrations/index.js';
 
 const ASSIGNABLE_ROLES = new Set(['agent', 'manager', 'director']);
+const TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000;
 
 function unauthorized(res, reason) {
   logger.warn({ event: 'lyfe_users_webhook_unauthorized', reason }, '[lyfe-users-webhook] auth failed');
@@ -53,14 +66,14 @@ function badRequest(res, reason) {
   return res.status(400).json({ success: false, error: reason });
 }
 
-function timingSafeEq(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+function timingSafeHexEq(receivedHex, expectedHex) {
+  if (typeof receivedHex !== 'string' || typeof expectedHex !== 'string') return false;
+  if (receivedHex.length !== expectedHex.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(receivedHex, 'hex'), Buffer.from(expectedHex, 'hex'));
+  } catch {
+    return false;
   }
-  return result === 0;
 }
 
 /**
@@ -139,16 +152,41 @@ async function applyDelete(adapter, lyfeUser) {
 }
 
 export async function handleLyfeUsersWebhook(req, res) {
-  // ── Auth ────────────────────────────────────────────────────────────
-  const expected = process.env.LYFE_USERS_WEBHOOK_SECRET;
-  if (!expected) {
+  // ── Auth: HMAC-SHA256 of raw body + timestamp window ────────────────
+  const secret = process.env.LYFE_USERS_WEBHOOK_SECRET;
+  if (!secret) {
     logger.error('[lyfe-users-webhook] LYFE_USERS_WEBHOOK_SECRET not configured');
     return res.status(500).json({ success: false, error: 'Server misconfigured' });
   }
-  const auth = req.headers.authorization || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (!timingSafeEq(token, expected)) {
-    return unauthorized(res, 'bad_token');
+
+  // rawBody is captured by the verify hook in server_internal.js for paths
+  // under /api/integrations/lyfe/. Without it we cannot compute the HMAC
+  // over the exact bytes the trigger signed.
+  if (!req.rawBody || !Buffer.isBuffer(req.rawBody)) {
+    logger.error('[lyfe-users-webhook] req.rawBody missing — verify hook not wired for this path');
+    return res.status(500).json({ success: false, error: 'Server misconfigured' });
+  }
+
+  const sigHeader = req.headers['x-webhook-signature'] || '';
+  if (typeof sigHeader !== 'string' || !sigHeader.startsWith('sha256=')) {
+    return unauthorized(res, 'missing_or_malformed_signature');
+  }
+  const receivedHex = sigHeader.slice(7);
+  const expectedHex = crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');
+  if (!timingSafeHexEq(receivedHex, expectedHex)) {
+    return unauthorized(res, 'bad_signature');
+  }
+
+  const tsHeader = req.headers['x-webhook-timestamp'];
+  if (typeof tsHeader !== 'string' || !tsHeader) {
+    return unauthorized(res, 'missing_timestamp');
+  }
+  const tsMs = Date.parse(tsHeader);
+  if (Number.isNaN(tsMs)) {
+    return unauthorized(res, 'invalid_timestamp');
+  }
+  if (Math.abs(Date.now() - tsMs) > TIMESTAMP_TOLERANCE_MS) {
+    return unauthorized(res, 'timestamp_outside_window');
   }
 
   // ── Payload validation ─────────────────────────────────────────────

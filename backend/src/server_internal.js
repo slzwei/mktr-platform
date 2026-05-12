@@ -116,12 +116,19 @@ export const init = async (app) => {
   app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
 
   // Body parsing middleware
-  // The verify callback captures the raw body for webhook signature verification (Retell, Stripe, etc.)
+  // The verify callback captures the raw body for webhook signature verification.
+  //   - /api/retell/         — Retell AI call webhooks (HMAC-signed)
+  //   - /api/meta/           — Meta CAPI signed callbacks
+  //   - /api/integrations/lyfe/ — Lyfe→MKTR push (notify_mktr_user_change trigger; HMAC since 2026-05-12)
   app.use(
     express.json({
       limit: '1mb',
       verify: (req, _res, buf) => {
-        if (req.originalUrl.startsWith('/api/retell/') || req.originalUrl.startsWith('/api/meta/')) {
+        if (
+          req.originalUrl.startsWith('/api/retell/') ||
+          req.originalUrl.startsWith('/api/meta/') ||
+          req.originalUrl.startsWith('/api/integrations/lyfe/')
+        ) {
           req.rawBody = buf;
         }
       },
