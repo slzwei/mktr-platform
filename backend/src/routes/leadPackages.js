@@ -1,5 +1,6 @@
 import express from 'express';
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
+import { validate, schemas } from '../middleware/validation.js';
 import * as ctrl from '../controllers/leadPackageController.js';
 
 export const meta = { path: '/api/lead-packages' };
@@ -10,7 +11,7 @@ const router = express.Router();
 router.get('/', authenticateToken, ctrl.listPackages);
 
 // POST /api/lead-packages
-router.post('/', authenticateToken, requireAgentOrAdmin, ctrl.createPackage);
+router.post('/', authenticateToken, requireAgentOrAdmin, validate(schemas.leadPackageCreate), ctrl.createPackage);
 
 // POST /api/lead-packages/assign
 router.post('/assign', authenticateToken, requireAgentOrAdmin, ctrl.assignPackage);

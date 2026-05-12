@@ -38,6 +38,22 @@ function periodToStartDate(period) {
   }
 }
 
+// Sortable User columns exposed via the agent listing. Anything not in this
+// set falls back to `createdAt`. Defense-in-depth against ORDER BY injection
+// — Sequelize already rejects unknown column names, but explicit whitelisting
+// produces a clean default instead of a 500 + matches the userService pattern.
+export const ALLOWED_SORT_FIELDS = Object.freeze(['createdAt', 'firstName', 'lastName', 'fullName', 'email', 'isActive', 'lastLogin']);
+
+/**
+ * Normalize user-supplied sortBy + order into safe Sequelize values.
+ * Exposed for unit testing.
+ */
+export function normalizeAgentSort(sortBy, order) {
+  const safeSortBy = ALLOWED_SORT_FIELDS.includes(String(sortBy)) ? String(sortBy) : 'createdAt';
+  const safeOrder = String(order).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+  return { sortBy: safeSortBy, order: safeOrder };
+}
+
 /**
  * List agents with pagination, search, and computed stats.
  */
@@ -66,11 +82,13 @@ export async function listAgents(query) {
     ];
   }
 
+  const { sortBy: normalizedSortBy, order: normalizedOrder } = normalizeAgentSort(sortBy, order);
+
   const { count, rows: agents } = await User.findAndCountAll({
     where: whereConditions,
     limit: parseInt(limit),
     offset: parseInt(offset),
-    order: [[sortBy, order.toUpperCase()]],
+    order: [[normalizedSortBy, normalizedOrder]],
     attributes: {
       exclude: ['password'],
       include: [

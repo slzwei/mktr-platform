@@ -1,5 +1,6 @@
 import express from 'express';
 import { authenticateToken, requireAgentOrAdmin, requireAdmin } from '../middleware/auth.js';
+import { validate, schemas } from '../middleware/validation.js';
 import * as campaignController from '../controllers/campaignController.js';
 
 export const meta = {
@@ -61,13 +62,13 @@ router.get('/', authenticateToken, campaignController.listCampaigns);
  *       403:
  *         description: Agent or admin role required
  */
-router.post('/', authenticateToken, requireAgentOrAdmin, campaignController.createCampaign);
+router.post('/', authenticateToken, requireAgentOrAdmin, validate(schemas.campaignCreate), campaignController.createCampaign);
 
 // Get campaign by ID
 router.get('/:id', authenticateToken, campaignController.getCampaign);
 
 // Update campaign
-router.put('/:id', authenticateToken, requireAgentOrAdmin, campaignController.updateCampaign);
+router.put('/:id', authenticateToken, requireAgentOrAdmin, validate(schemas.campaignUpdate), campaignController.updateCampaign);
 
 // Delete campaign (archive)
 router.delete('/:id', authenticateToken, requireAgentOrAdmin, campaignController.deleteCampaign);

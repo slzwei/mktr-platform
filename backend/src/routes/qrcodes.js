@@ -1,5 +1,6 @@
 import express from 'express';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
+import { validate, schemas } from '../middleware/validation.js';
 import * as qrCodeController from '../controllers/qrCodeController.js';
 
 export const meta = {
@@ -15,7 +16,7 @@ const router = express.Router();
 router.get('/', authenticateToken, qrCodeController.listQrCodes);
 
 // Create QR code
-router.post('/', authenticateToken, requireAdmin, qrCodeController.createQrCode);
+router.post('/', authenticateToken, requireAdmin, validate(schemas.qrTagCreate), qrCodeController.createQrCode);
 
 // Get QR code by ID
 router.get('/:id', authenticateToken, qrCodeController.getQrCode);
