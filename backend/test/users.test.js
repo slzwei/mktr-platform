@@ -95,6 +95,17 @@ describe('User Management Routes', () => {
       expect(res.status).toBe(200)
       expect(res.body.data.user.id).toBe(agentUser.id)
     })
+
+    // Regression: audit 2.2 — IDOR. Before the fix, agents could view
+    // any other user's profile by UUID. Now only admin or self.
+    it('agent cannot view another user (IDOR guard)', async () => {
+      const res = await request(app)
+        .get(`/api/users/${adminUser.id}`)
+        .set('Authorization', `Bearer ${agentToken}`)
+
+      expect(res.status).toBe(403)
+      expect(res.body.success).toBe(false)
+    })
   })
 
   // ---- PUT /api/users/:id ----

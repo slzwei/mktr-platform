@@ -76,13 +76,18 @@ export const invite = asyncHandler(async (req, res) => {
 
 /**
  * GET /api/users/:id
- * Get user by ID. Self-access allowed; admin/agent can view any user.
+ * Get user by ID. Self-access allowed; admin can view any user.
+ *
+ * Note: 'agent' was removed from the allowlist 2026-05-12 — IDOR fix per
+ * audit 2.2. The only frontend caller is `AdminAgentDetail` which is gated
+ * by `<ProtectedRoute requiredRole="admin">`. Agents fetch their own
+ * profile via `/api/auth/profile` (User.me() in api/client.js).
  */
 export const getById = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  // Access check: users can only view their own profile unless admin/agent
-  if (req.user.id !== id && !['admin', 'agent'].includes(req.user.role)) {
+  // Access check: users can only view their own profile unless admin
+  if (req.user.id !== id && req.user.role !== 'admin') {
     throw new AppError('Access denied', 403);
   }
 
