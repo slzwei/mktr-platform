@@ -52,7 +52,6 @@ export const googleLogin = async (req, res) => {
       success: true,
       message: 'Google authentication successful',
       data: {
-        token: result.token,
         user: {
           id: result.user.id,
           email: result.user.email,
@@ -139,7 +138,6 @@ export const register = asyncHandler(async (req, res) => {
     message: 'User registered successfully',
     data: {
       user: result.user.toJSON(),
-      token: result.token,
     },
   });
 });
@@ -155,7 +153,6 @@ export const login = asyncHandler(async (req, res) => {
     message: 'Login successful',
     data: {
       user: result.user.toJSON(),
-      token: result.token,
     },
   });
 });
@@ -207,7 +204,6 @@ export const refreshToken = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: 'Token refreshed successfully',
-    data: { token: result.token },
   });
 });
 
@@ -254,7 +250,6 @@ export const googleOAuthCallback = asyncHandler(async (req, res) => {
       message: 'Google authentication successful',
       data: {
         user: result.user.toJSON(),
-        token: result.token,
       },
     });
   } catch (error) {
@@ -333,7 +328,7 @@ export const acceptInvite = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: 'Invitation accepted',
-    data: { user: result.user.toJSON(), token: result.token },
+    data: { user: result.user.toJSON() },
   });
 });
 

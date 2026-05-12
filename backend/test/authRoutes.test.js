@@ -15,7 +15,7 @@ afterAll(async () => {
 describe('Auth Routes', () => {
   // ---- POST /api/auth/register ----
   describe('POST /api/auth/register', () => {
-    it('creates a new user and returns 201 with token', async () => {
+    it('creates a new user and sets the auth cookie (no body token — audit 2.9)', async () => {
       const email = `register-${Date.now()}@test.com`
       const res = await request(app)
         .post('/api/auth/register')
@@ -28,11 +28,15 @@ describe('Auth Routes', () => {
 
       expect(res.status).toBe(201)
       expect(res.body.success).toBe(true)
-      expect(res.body.data.token).toBeDefined()
       expect(res.body.data.user).toBeDefined()
       expect(res.body.data.user.email).toBe(email)
       // Password must not be returned
       expect(res.body.data.user.password).toBeUndefined()
+      // Token is now cookie-only (audit 2.9). Body must NOT contain it.
+      expect(res.body.data.token).toBeUndefined()
+      const setCookie = res.headers['set-cookie'] || []
+      expect(setCookie.some((c) => /^mktr_token=/.test(c))).toBe(true)
+      expect(setCookie.some((c) => /HttpOnly/i.test(c))).toBe(true)
     })
 
     it('returns 400 for duplicate email', async () => {
@@ -106,16 +110,20 @@ describe('Auth Routes', () => {
         })
     })
 
-    it('returns token for valid credentials', async () => {
+    it('sets the auth cookie on valid credentials (no body token — audit 2.9)', async () => {
       const res = await request(app)
         .post('/api/auth/login')
         .send({ email: loginEmail, password: loginPassword })
 
       expect(res.status).toBe(200)
       expect(res.body.success).toBe(true)
-      expect(res.body.data.token).toBeDefined()
       expect(res.body.data.user).toBeDefined()
       expect(res.body.data.user.email).toBe(loginEmail)
+      // Token is now cookie-only (audit 2.9). Body must NOT contain it.
+      expect(res.body.data.token).toBeUndefined()
+      const setCookie = res.headers['set-cookie'] || []
+      expect(setCookie.some((c) => /^mktr_token=/.test(c))).toBe(true)
+      expect(setCookie.some((c) => /HttpOnly/i.test(c))).toBe(true)
     })
 
     it('returns 401 for wrong password', async () => {

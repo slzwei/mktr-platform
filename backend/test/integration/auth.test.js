@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { getApp, closeDb, createTestUser } from '../helpers.js';
+import { getApp, closeDb, createTestUser, makeToken } from '../helpers.js';
 
 /**
  * Integration tests for the authentication pipeline.
@@ -27,7 +27,7 @@ afterAll(async () => {
 // ── Registration ─────────────────────────────────────────────────────────────
 
 describe('POST /api/auth/register', () => {
-  it('creates a user and returns a JWT token', async () => {
+  it('creates a user and sets the auth cookie (no body token — audit 2.9)', async () => {
     const email = `reg-ok-${RUN}@integ-test.com`;
     const res = await request(app)
       .post('/api/auth/register')
@@ -40,12 +40,15 @@ describe('POST /api/auth/register', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
-    expect(res.body.data.token).toBeDefined();
-    expect(typeof res.body.data.token).toBe('string');
     expect(res.body.data.user).toBeDefined();
     expect(res.body.data.user.email).toBe(email);
     // Password must never leak
     expect(res.body.data.user.password).toBeUndefined();
+    // Audit 2.9: token issued via httpOnly cookie, not response body.
+    expect(res.body.data.token).toBeUndefined();
+    const setCookie = res.headers['set-cookie'] || [];
+    expect(setCookie.some((c) => /^mktr_token=/.test(c))).toBe(true);
+    expect(setCookie.some((c) => /HttpOnly/i.test(c))).toBe(true);
   });
 
   it('rejects duplicate email', async () => {
@@ -81,15 +84,19 @@ describe('POST /api/auth/login', () => {
       .send({ email: loginEmail, password: loginPassword, firstName: 'Login', lastName: 'User' });
   });
 
-  it('returns token for valid credentials', async () => {
+  it('sets the auth cookie on valid credentials (no body token — audit 2.9)', async () => {
     const res = await request(app)
       .post('/api/auth/login')
       .send({ email: loginEmail, password: loginPassword });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.data.token).toBeDefined();
     expect(res.body.data.user.email).toBe(loginEmail);
+    // Audit 2.9: token issued via httpOnly cookie, not response body.
+    expect(res.body.data.token).toBeUndefined();
+    const setCookie = res.headers['set-cookie'] || [];
+    expect(setCookie.some((c) => /^mktr_token=/.test(c))).toBe(true);
+    expect(setCookie.some((c) => /HttpOnly/i.test(c))).toBe(true);
   });
 
   it('returns 401 for wrong password', async () => {
@@ -167,11 +174,14 @@ describe('PUT /api/auth/change-password', () => {
   let cpToken;
 
   beforeAll(async () => {
-    // Register via HTTP so password hashing is exercised end-to-end
+    // Register via HTTP so password hashing is exercised end-to-end.
+    // Token is no longer returned in body (audit 2.9 — cookie-only); mint a
+    // Bearer token from the response user.id for subsequent requests. The
+    // middleware accepts both cookie + Bearer.
     const regRes = await request(app)
       .post('/api/auth/register')
       .send({ email: cpEmail, password: cpOldPass, firstName: 'Change', lastName: 'Pass' });
-    cpToken = regRes.body.data.token;
+    cpToken = makeToken(regRes.body.data.user.id);
   });
 
   it('succeeds when current password is correct', async () => {

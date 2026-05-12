@@ -22,7 +22,10 @@ describe('Google OAuth Controller', () => {
     
     res = {
       status: jest.fn().mockReturnThis(),
-      json: jest.fn()
+      json: jest.fn(),
+      // setAuthCookie() calls res.cookie(); mock it so the controller doesn't
+      // throw. Tests assert cookie issuance separately.
+      cookie: jest.fn().mockReturnThis()
     };
 
     mockPayload = {
@@ -93,7 +96,6 @@ describe('Google OAuth Controller', () => {
         success: true,
         message: 'Google authentication successful',
         data: {
-          token: 'mock-jwt-token',
           user: {
             id: 'user-123',
             email: 'test@example.com',
@@ -107,11 +109,17 @@ describe('Google OAuth Controller', () => {
           }
         }
       });
+      // Audit 2.9: token issued via httpOnly cookie, not response body.
+      expect(res.cookie).toHaveBeenCalledWith(
+        'mktr_token',
+        'mock-jwt-token',
+        expect.objectContaining({ httpOnly: true, sameSite: 'strict' })
+      );
     });
   });
 
   describe('Happy Path - Existing User', () => {
-    it('should update existing user and return token', async () => {
+    it('should update existing user and set cookie (no body token — audit 2.9)', async () => {
       // Mock Google verification
       OAuth2Client.prototype.verifyIdToken = jest.fn().mockResolvedValue(mockTicket);
       
@@ -144,13 +152,18 @@ describe('Google OAuth Controller', () => {
         success: true,
         message: 'Google authentication successful',
         data: {
-          token: 'mock-jwt-token',
           user: expect.objectContaining({
             id: 'user-123',
             email: 'test@example.com'
           })
         }
       });
+      // Audit 2.9: token issued via httpOnly cookie, not response body.
+      expect(res.cookie).toHaveBeenCalledWith(
+        'mktr_token',
+        'mock-jwt-token',
+        expect.objectContaining({ httpOnly: true, sameSite: 'strict' })
+      );
     });
   });
 

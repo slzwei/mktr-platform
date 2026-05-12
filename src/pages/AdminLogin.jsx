@@ -59,10 +59,9 @@ export default function AdminLogin() {
 
  // Only allow admin users
  if (user.role === 'admin') {
- // Sync store state
- if (result.data.token) {
+ // Sync store state. Auth lives in the httpOnly cookie set by the
+ // server; we don't gate on a body token any more (audit 2.9).
  storeSetUser(user);
- }
  // Redirect logic
  let targetUrl = '/AdminDashboard';
 

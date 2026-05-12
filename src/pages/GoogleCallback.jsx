@@ -71,10 +71,10 @@ export default function GoogleCallback() {
  if (result.success && result.data?.user) {
  const user = result.data.user;
 
- // Store the token and update API client + store atomically
- if (result.data.token) {
- setAuth(user, result.data.token);
- }
+ // Auth lives in the httpOnly cookie set by the server (audit 2.9 —
+ // body no longer carries the JWT). Sync store with the 'authenticated'
+ // sentinel so isAuthenticated/UI state stays in lockstep.
+ setAuth(user, 'authenticated');
 
  setStatus('success');
  setMessage('Authentication successful! Redirecting...');
