@@ -28,3 +28,9 @@ backend/uploads/
 coverage/
 .junit/
 
+# Credentials / service-account keys (never commit)
+*-[0-9a-f]*.json
+*service-account*.json
+*credentials*.json
+*-private-key*.json
+

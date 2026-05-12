@@ -5,6 +5,23 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>MKTR Marketing Platform</title>
+
+    <!-- Meta Pixel base loader (gated on VITE_META_PIXEL_ID). No fbq('init') here —
+         React calls initPixel() with the resolved pixel id (env or per-campaign override). -->
+    <script>
+      (function () {
+        var PIXEL_ID = '%VITE_META_PIXEL_ID%';
+        if (!PIXEL_ID || PIXEL_ID.charAt(0) === '%') return;
+        !function(f,b,e,v,n,t,s)
+        {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+        n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+        if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+        n.queue=[];t=b.createElement(e);t.async=!0;
+        t.src=v;s=b.getElementsByTagName(e)[0];
+        s.parentNode.insertBefore(t,s)}(window, document,'script',
+        'https://connect.facebook.net/en_US/fbevents.js');
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

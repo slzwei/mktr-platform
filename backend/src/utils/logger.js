@@ -13,7 +13,16 @@ export const logger = pino({
         },
       }),
   redact: {
-    paths: ['req.headers.authorization', 'req.headers.cookie', 'password', 'confirm_password', 'token'],
+    paths: [
+      'req.headers.authorization',
+      'req.headers.cookie',
+      'password',
+      'confirm_password',
+      'token',
+      'access_token',
+      'accessToken',
+      'meta_capi_access_token',
+    ],
     censor: '[REDACTED]',
   },
   serializers: {

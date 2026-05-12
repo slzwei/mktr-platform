@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import App from '@/App.jsx'
 import '@/index.css'
 import { queryClient } from '@/lib/queryClient'
+import { scrubEvent, scrubBreadcrumb } from '@/lib/sentryScrub'
 import MKTRAnimatedLogo from '@/components/MKTRAnimatedLogo'
 
 // Initialize Sentry
@@ -17,6 +18,8 @@ if (sentryDsn) {
  tracesSampleRate: import.meta.env.PROD ? 0.1 : 1.0,
  replaysSessionSampleRate: 0,
  replaysOnErrorSampleRate: import.meta.env.PROD ? 1.0 : 0,
+ beforeSend: scrubEvent,
+ beforeBreadcrumb: scrubBreadcrumb,
  })
 }
 

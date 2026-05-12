@@ -82,7 +82,7 @@ export async function resolveSlug(slug) {
  */
 export async function getPublicCampaign(id) {
   const campaign = await Campaign.findByPk(id, {
-    attributes: ['id', 'name', 'design_config', 'is_active']
+    attributes: ['id', 'name', 'design_config', 'is_active', 'metaPixelId']
   });
 
   if (!campaign) {

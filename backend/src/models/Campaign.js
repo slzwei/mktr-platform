@@ -149,6 +149,11 @@ const Campaign = sequelize.define('Campaign', {
     validate: {
       min: 0
     }
+  },
+  metaPixelId: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    field: 'meta_pixel_id'
   }
 }, {
   tableName: 'campaigns',

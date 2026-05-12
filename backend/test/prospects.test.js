@@ -795,3 +795,94 @@ describe('Prospect error paths — create missing required fields', () => {
     expect(res.status).toBe(400)
   })
 })
+
+describe('Prospect CAPI meta-fields (Phase 2)', () => {
+  let campaign
+
+  beforeAll(async () => {
+    campaign = await createTestCampaign(adminUser.id)
+  })
+
+  it('POST /api/prospects with eventId/fbp/fbc/eventSourceUrl persists them to sourceMetadata', async () => {
+    const eventId = `evt-${Date.now()}`
+    const fbp = `fb.1.${Date.now()}.123456`
+    const fbc = `fb.1.${Date.now()}.fbclid_test`
+    const eventSourceUrl = 'https://mktr.sg/lead-capture/test'
+
+    const createRes = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('User-Agent', 'phase2-integration-test/1.0')
+      .send({
+        firstName: 'Capi',
+        lastName: 'Tester',
+        email: `capi-${Date.now()}@test.com`,
+        phone: `+65${Date.now().toString().slice(-8)}`,
+        leadSource: 'website',
+        campaignId: campaign.id,
+        eventId,
+        fbp,
+        fbc,
+        eventSourceUrl,
+      })
+
+    expect(createRes.status).toBe(201)
+    const prospectId = createRes.body.data.prospect.id
+    expect(prospectId).toBeDefined()
+
+    const getRes = await request(app)
+      .get(`/api/prospects/${prospectId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(getRes.status).toBe(200)
+    const sm = getRes.body.data.prospect.sourceMetadata || {}
+    expect(sm.eventId).toBe(eventId)
+    expect(sm.fbp).toBe(fbp)
+    expect(sm.fbc).toBe(fbc)
+    expect(sm.eventSourceUrl).toBe(eventSourceUrl)
+    // clientUserAgent should reflect the request header we set
+    expect(sm.clientUserAgent).toBe('phase2-integration-test/1.0')
+    // clientIp should be present (supertest issues from 127.0.0.1)
+    expect(sm.clientIp).toBeDefined()
+  })
+
+  it('POST /api/prospects without meta-fields still creates successfully', async () => {
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        firstName: 'NoMeta',
+        lastName: 'Tester',
+        email: `nometa-${Date.now()}@test.com`,
+        phone: `+65${Date.now().toString().slice(-8)}`,
+        leadSource: 'website',
+        campaignId: campaign.id,
+      })
+
+    expect(res.status).toBe(201)
+  })
+
+  it('POST /api/prospects with bogus CAPI fields does not leak them as Prospect attributes', async () => {
+    const res = await request(app)
+      .post('/api/prospects')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        firstName: 'Strip',
+        lastName: 'Tester',
+        email: `strip-${Date.now()}@test.com`,
+        phone: `+65${Date.now().toString().slice(-8)}`,
+        leadSource: 'website',
+        campaignId: campaign.id,
+        eventId: 'evt-strip',
+        fbp: 'fbp-strip',
+      })
+
+    expect(res.status).toBe(201)
+    const p = res.body.data.prospect
+    // The meta-fields must be stashed in sourceMetadata, not on the Prospect attributes
+    expect(p.eventId).toBeUndefined()
+    expect(p.fbp).toBeUndefined()
+    expect(p.sourceMetadata?.eventId).toBe('evt-strip')
+    expect(p.sourceMetadata?.fbp).toBe('fbp-strip')
+  })
+})

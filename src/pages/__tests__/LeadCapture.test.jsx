@@ -34,9 +34,13 @@ vi.mock('@/components/campaigns/ShareCampaignDialog', () => ({
  default: ({ open, campaignName }) => (open ? <div data-testid="share-dialog">Share: {campaignName}</div> : null),
 }));
 
-vi.mock('@/components/campaigns/LeadCaptureLayout', () => ({
+vi.mock('@/components/campaigns/LeadCaptureLayout', async (importOriginal) => {
+ const actual = await importOriginal();
+ return {
+ ...actual,
  default: ({ children }) => <div data-testid="lead-capture-layout">{children}</div>,
-}));
+ };
+});
 
 vi.mock('@/components/ui/TypingLoader', () => ({
  default: () => <div data-testid="typing-loader">Loading...</div>,
@@ -81,7 +85,7 @@ describe('LeadCapture', () => {
 
  it('renders the layout wrapper', async () => {
  renderPage();
- expect(screen.getByTestId('lead-capture-layout')).toBeInTheDocument();
+ expect(await screen.findByTestId('lead-capture-layout')).toBeInTheDocument();
  });
 
  it('shows loading state initially before campaign loads', () => {
@@ -124,7 +128,7 @@ describe('LeadCapture', () => {
  await user.click(screen.getByText('Submit'));
 
  await waitFor(() => {
- expect(screen.getByText('Success!')).toBeInTheDocument();
+ expect(screen.getByText("You're all set.")).toBeInTheDocument();
  });
  });
 
@@ -244,7 +248,7 @@ describe('LeadCapture', () => {
  await user.click(screen.getByText('Submit'));
 
  await waitFor(() => {
- expect(screen.getByText('Share with Friends')).toBeInTheDocument();
+ expect(screen.getByText('Share with friends')).toBeInTheDocument();
  });
  });
 

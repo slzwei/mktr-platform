@@ -5,9 +5,16 @@ import { BrowserRouter as Router, Route, Routes, useNavigate } from 'react-route
 import ErrorBoundary from './ErrorBoundary';
 
 const LeadCapture = lazy(() => import('./LeadCapture'));
+const LeadCaptureDemo = lazy(() => import('./LeadCaptureDemo'));
 const PublicPreview = lazy(() => import('./public/Preview'));
 const TrackRedirect = lazy(() => import('./TrackRedirect'));
 const ShareRedirect = lazy(() => import('./ShareRedirect'));
+
+// Design exploration prototypes — safe to delete src/pages/preview/ once a direction is picked
+const PreviewHub = lazy(() => import('./preview/PreviewHub'));
+const AtelierPreview = lazy(() => import('./preview/AtelierPreview'));
+const AuroraPreview = lazy(() => import('./preview/AuroraPreview'));
+const SpecimenPreview = lazy(() => import('./preview/SpecimenPreview'));
 
 const Homepage = lazy(() => import('./Homepage'));
 const Features = lazy(() => import('./Features'));
@@ -83,9 +90,16 @@ function PagesContent() {
  {/* Public routes - no protection needed */}
  <Route path="/" element={<Homepage />} />
  <Route path="/LeadCapture" element={<LeadCapture />} />
+ <Route path="/LeadCapture/demo" element={<LeadCaptureDemo />} />
  <Route path="/p/:slug" element={<PublicPreview />} />
  <Route path="/t/:slug" element={<TrackRedirect />} />
  <Route path="/share/:slug" element={<ShareRedirect />} />
+
+ {/* Design exploration prototypes */}
+ <Route path="/preview" element={<PreviewHub />} />
+ <Route path="/preview/atelier" element={<AtelierPreview />} />
+ <Route path="/preview/aurora" element={<AuroraPreview />} />
+ <Route path="/preview/specimen" element={<SpecimenPreview />} />
  <Route path="/Homepage" element={<Homepage />} />
  <Route path="/features" element={<Features />} />
  <Route path="/pricing" element={<Pricing />} />

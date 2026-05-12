@@ -1,256 +1,524 @@
-
 import { useState, useEffect } from 'react';
-import { Button } from"@/components/ui/button";
-import { Loader2, ChevronRight } from"lucide-react";
-import { apiClient } from"@/api/client";
-import FieldRenderer from"@/components/campaigns/signup/FieldRenderer";
-import ConsentSection from"@/components/campaigns/signup/ConsentSection";
-import {
- formatDateInput,
- getAgeValidationError,
- getAgeRestrictionHint,
- displayPhone,
-} from"@/components/campaigns/signup/dateUtils";
+import { apiClient } from '@/api/client';
+import FieldRenderer from '@/components/campaigns/signup/FieldRenderer';
+import OTPVerification from '@/components/campaigns/signup/OTPVerification';
+import MarketingConsentDialog from '@/components/legal/MarketingConsentDialog';
+import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
+import { formatDateInput, getAgeValidationError, getAgeRestrictionHint, displayPhone } from '@/components/campaigns/signup/dateUtils';
 
-export default function CampaignSignupForm({ themeColor, formHeadline, formSubheadline, headlineSize, campaignId, onSubmit, campaign, alignment, textColor, termsContent }) {
- const visibleFields = campaign?.design_config?.visibleFields || {};
- const requiredFields = campaign?.design_config?.requiredFields || {};
- const fieldOrder = campaign?.design_config?.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income'];
+/**
+ * Public lead-capture form. Visual style is locked to the warm-cream/Fraunces
+ * editorial aesthetic; campaign.design_config.themeColor still drives the
+ * primary action color (CTA, focus rings, checkbox fill).
+ *
+ * Form state, validation, and OTP/submit logic are unchanged from the previous
+ * version — only the rendering and the consent UX have been rewritten.
+ */
+export default function CampaignSignupForm({
+  themeColor,
+  formHeadline,
+  formSubheadline,
+  campaignId,
+  onSubmit,
+  campaign,
+  termsContent,
+  ctaLabel,
+}) {
+  const accent = themeColor || TOKENS.accent;
+  const visibleFields = campaign?.design_config?.visibleFields || {};
+  const requiredFields = campaign?.design_config?.requiredFields || {};
+  const fieldOrder = campaign?.design_config?.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income'];
+  const otpChannel = campaign?.design_config?.otpChannel || 'sms';
 
- const [formData, setFormData] = useState({
- name: '', email: '', phone: '', postal_code: '',
- date_of_birth: '', education_level: '', monthly_income: ''
- });
- const [otp, setOtp] = useState('');
- const [otpState, setOtpState] = useState('idle');
- const [loading, setLoading] = useState(null);
- const [error, setError] = useState('');
- const [ageError, setAgeError] = useState('');
- const [dobIncomplete, setDobIncomplete] = useState(false);
- const [resendCooldown, setResendCooldown] = useState(0);
- const [showSuccessTick, setShowSuccessTick] = useState(false);
- const [consentOpen, setConsentOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    postal_code: '',
+    date_of_birth: '',
+    education_level: '',
+    monthly_income: '',
+  });
+  const [otp, setOtp] = useState('');
+  const [otpState, setOtpState] = useState('idle');
+  const [loading, setLoading] = useState(null);
+  const [error, setError] = useState('');
+  const [ageError, setAgeError] = useState('');
+  const [dobIncomplete, setDobIncomplete] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [showSuccessTick, setShowSuccessTick] = useState(false);
 
- const textStyle = textColor ? { color: textColor } : {};
- const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
- const getFullPhoneNumber = () => `+65${formData.phone}`;
- const renderAgeRestrictionHint = () => getAgeRestrictionHint(campaign);
+  // Two PDPA consent checkboxes — campaign T&C is required, contact consent is opt-in
+  const [consentContact, setConsentContact] = useState(false);
+  const [consentTerms, setConsentTerms] = useState(false);
+  const [consentOpen, setConsentOpen] = useState(false);
 
- useEffect(() => {
- let timer;
- if (resendCooldown > 0) {
- timer = setTimeout(() => setResendCooldown(prev => prev - 1), 1000);
- }
- return () => clearTimeout(timer);
- }, [resendCooldown]);
+  const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const getFullPhoneNumber = () => `+65${formData.phone}`;
+  const renderAgeRestrictionHint = () => getAgeRestrictionHint(campaign);
 
- const handleDobBlur = () => {
- const digitsOnly = formData.date_of_birth.replace(/\D/g, '');
- setDobIncomplete(digitsOnly.length > 0 && digitsOnly.length !== 8);
- };
+  // Resend cooldown tick
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((p) => p - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
- const handleFormChange = (key, value) => {
- if (key === 'phone') {
- let digits = value.replace(/\D/g, '');
- if (digits.startsWith('65') && digits.length > 8) digits = digits.substring(2);
- setFormData(prev => ({ ...prev, phone: digits.slice(0, 8) }));
- } else if (key === 'date_of_birth') {
- const formattedDate = formatDateInput(value);
- setFormData(prev => ({ ...prev, [key]: formattedDate }));
- const digitsOnly = formattedDate.replace(/\D/g, '');
- if (digitsOnly.length !== 6 && dobIncomplete) setDobIncomplete(false);
- setAgeError(getAgeValidationError(formattedDate, campaign));
- } else {
- setFormData(prev => ({ ...prev, [key]: value }));
- }
- };
+  const handleDobBlur = () => {
+    const digits = formData.date_of_birth.replace(/\D/g, '');
+    setDobIncomplete(digits.length > 0 && digits.length !== 8);
+  };
 
- const handleSendOtp = async () => {
- if (formData.phone.length !== 8) {
- setError("Please enter a valid 8-digit Singapore phone number.");
- return;
- }
- if (!['3', '6', '8', '9'].includes(formData.phone[0])) {
- setError("Invalid number. Must start with 3, 6, 8, or 9.");
- return;
- }
+  const handleFormChange = (key, value) => {
+    if (key === 'phone') {
+      let digits = value.replace(/\D/g, '');
+      if (digits.startsWith('65') && digits.length > 8) digits = digits.substring(2);
+      setFormData((prev) => ({ ...prev, phone: digits.slice(0, 8) }));
+    } else if (key === 'date_of_birth') {
+      const formattedDate = formatDateInput(value);
+      setFormData((prev) => ({ ...prev, [key]: formattedDate }));
+      const digitsOnly = formattedDate.replace(/\D/g, '');
+      if (digitsOnly.length === 8 && dobIncomplete) setDobIncomplete(false);
+      setAgeError(getAgeValidationError(formattedDate, campaign));
+    } else {
+      setFormData((prev) => ({ ...prev, [key]: value }));
+    }
+  };
 
- setLoading('sending');
- setError('');
+  const handleSendOtp = async () => {
+    if (formData.phone.length !== 8) {
+      setError('Please enter a valid 8-digit Singapore phone number.');
+      return;
+    }
+    if (!['3', '6', '8', '9'].includes(formData.phone[0])) {
+      setError('Invalid number. Must start with 3, 6, 8, or 9.');
+      return;
+    }
 
- try {
- const response = await apiClient.post('/verify/send', {
- phone: formData.phone, countryCode: '+65', campaignId
- }, { skipAuth: true });
+    setLoading('sending');
+    setError('');
 
- if (response.success) {
- setOtpState('pending');
- setResendCooldown(30);
- } else {
- setError(response.message ||"Failed to send verification code. Please try again.");
- }
- } catch (err) {
- console.error('Send OTP error:', err);
- let errorMessage ="Unable to send verification code. Please try again.";
- const respData = err.response?.data || err.data;
+    try {
+      const response = await apiClient.post(
+        '/verify/send',
+        { phone: formData.phone, countryCode: '+65', campaignId },
+        { skipAuth: true }
+      );
+      if (response.success) {
+        setOtpState('pending');
+        setResendCooldown(30);
+      } else {
+        setError(response.message || 'Failed to send verification code. Please try again.');
+      }
+    } catch (err) {
+      let msg = 'Unable to send verification code. Please try again.';
+      const respData = err.response?.data || err.data;
+      if (err.response?.status === 429) {
+        msg = 'Too many verification attempts. Please wait 10 minutes before trying again.';
+        setResendCooldown(600);
+      } else if (respData?.message) {
+        msg = respData.message;
+        if (respData.retryAfter) setResendCooldown(respData.retryAfter);
+      } else if (err.message) {
+        msg = err.message;
+      }
+      setError(msg);
+    }
+    setLoading(null);
+  };
 
- if (err.response?.status === 429) {
- errorMessage ="Too many verification attempts. Please wait 10 minutes before trying again.";
- setResendCooldown(600);
- } else if (respData?.message) {
- errorMessage = respData.message;
- if (respData.retryAfter) setResendCooldown(respData.retryAfter);
- } else if (err.message) {
- errorMessage = err.message;
- }
- setError(errorMessage);
- }
- setLoading(null);
- };
+  const handleVerifyOtp = async (codeToVerify) => {
+    const code = typeof codeToVerify === 'string' ? codeToVerify : otp;
+    if (!code || code.length < 6) return;
 
- const handleVerifyOtp = async (codeToVerify) => {
- const code = (typeof codeToVerify === 'string' ? codeToVerify : otp);
- if (!code || code.length < 6) {
- setError("Please enter the 6-digit OTP.");
- return;
- }
- setLoading('verifying');
- setError('');
+    setLoading('verifying');
+    setError('');
 
- try {
- const response = await apiClient.post('/verify/check', {
- phone: formData.phone, code, countryCode: '+65'
- }, { skipAuth: true });
- const result = response;
- const isVerified = result.success && (result.data?.verified === true || result.data?.status === 'approved');
+    try {
+      const response = await apiClient.post(
+        '/verify/check',
+        { phone: formData.phone, code, countryCode: '+65' },
+        { skipAuth: true }
+      );
+      const verified = response.success && (response.data?.verified === true || response.data?.status === 'approved');
+      if (verified) {
+        setLoading(null);
+        setShowSuccessTick(true);
+        setError('');
+        setTimeout(() => {
+          setOtpState('verified');
+          setShowSuccessTick(false);
+        }, 1100);
+      } else {
+        let msg = response?.message || 'Verification failed. Please try again.';
+        if (msg.includes('incorrect') || response.data?.status === 'pending') {
+          msg = 'Incorrect code. Codes are time-sensitive — please double-check and try again.';
+        }
+        setError(msg);
+        setOtp('');
+        setLoading(null);
+      }
+    } catch (err) {
+      const respData = err.response?.data || err.data;
+      setError(respData?.message || err.message || 'Verification failed. Please try again.');
+      setOtp('');
+      setLoading(null);
+    }
+  };
 
- if (isVerified) {
- setLoading(null);
- setShowSuccessTick(true);
- setError('');
- setTimeout(() => {
- setOtpState('verified');
- setShowSuccessTick(false);
- }, 1200);
- } else {
- let userFriendlyError = result?.message ||"Verification failed. Please try again.";
- if (userFriendlyError.includes("incorrect") || result.data?.status === 'pending') {
- userFriendlyError ="Incorrect code. Please double-check and try again. Codes are time-sensitive.";
- }
- setError(userFriendlyError);
- setOtp('');
- setLoading(null);
- }
- } catch (err) {
- console.error('Verification error:', err);
- let errorMessage ="Verification failed. Please try again.";
- const respData = err.response?.data || err.data;
- if (respData?.message) errorMessage = respData.message;
- else if (err.message) errorMessage = err.message;
- else if (typeof err === 'string') errorMessage = err;
- setError(errorMessage);
- setOtp('');
- setLoading(null);
- }
- };
+  const handleCancelOtp = () => {
+    setOtpState('idle');
+    setOtp('');
+    setError('');
+    setResendCooldown(0);
+  };
 
- const handleCancelOtp = () => {
- setOtpState('idle');
- setOtp('');
- setError('');
- setResendCooldown(0);
- };
+  const handleSubmit = async (e) => {
+    e.preventDefault();
 
- const handleSubmit = async (e) => {
- e.preventDefault();
+    if (!formData.name || !formData.email) {
+      setError('Please fill in all required fields.');
+      return;
+    }
+    if (visibleFields.phone !== false && !formData.phone) {
+      setError('Please enter your phone number.');
+      return;
+    }
+    if (visibleFields.phone !== false && otpState !== 'verified') {
+      setError('Please verify your phone number before submitting.');
+      return;
+    }
+    if (visibleFields.dob !== false && formData.date_of_birth && formData.date_of_birth.length > 0 && formData.date_of_birth.length !== 10) {
+      setError('Please enter a complete date of birth (DD/MM/YYYY).');
+      return;
+    }
+    if (visibleFields.dob !== false && ageError) {
+      setError('Please correct the date of birth to meet the age requirements.');
+      return;
+    }
+    if (visibleFields.dob !== false && requiredFields.dob && (!formData.date_of_birth || formData.date_of_birth.length !== 10)) {
+      setError('Date of birth is required.');
+      return;
+    }
+    if (visibleFields.postal_code !== false && requiredFields.postal_code && !formData.postal_code) {
+      setError('Postal code is required.');
+      return;
+    }
+    if (visibleFields.education_level === true && requiredFields.education_level && !formData.education_level) {
+      setError('Highest education is required.');
+      return;
+    }
+    if (visibleFields.monthly_income === true && requiredFields.monthly_income && !formData.monthly_income) {
+      setError('Last drawn salary is required.');
+      return;
+    }
+    if (!consentTerms) {
+      setError('Please agree to the terms and conditions to continue.');
+      return;
+    }
 
- if (!formData.name || !formData.email) { setError('Please fill in all required fields.'); return; }
- if (visibleFields.phone !== false && !formData.phone) { setError('Please enter your phone number.'); return; }
- if (visibleFields.phone !== false && otpState !== 'verified') { setError('Please verify your phone number before submitting.'); return; }
- if (visibleFields.dob !== false && formData.date_of_birth && formData.date_of_birth.length > 0 && formData.date_of_birth.length !== 10) { setError('Please enter a complete date of birth (DD/MM/YYYY).'); return; }
- if (visibleFields.dob !== false && ageError) { setError('Please correct the date of birth to meet the age requirements.'); return; }
- if (visibleFields.dob !== false && dobIncomplete) { setError('Please enter a complete date of birth (DD/MM/YYYY).'); return; }
- if (visibleFields.dob !== false && requiredFields.dob && (!formData.date_of_birth || formData.date_of_birth.length !== 10)) { setError('Date of Birth is required.'); return; }
- if (visibleFields.postal_code !== false && requiredFields.postal_code && !formData.postal_code) { setError('Postal Code is required.'); return; }
- if (visibleFields.education_level === true && requiredFields.education_level && !formData.education_level) { setError('Highest Education is required.'); return; }
- if (visibleFields.monthly_income === true && requiredFields.monthly_income && !formData.monthly_income) { setError('Last Drawn Salary is required.'); return; }
+    setLoading('submitting');
+    setError('');
 
- setLoading('submitting');
- setError('');
+    let dobFormatted = null;
+    if (formData.date_of_birth && formData.date_of_birth.length === 10) {
+      const [day, month, year] = formData.date_of_birth.split('/');
+      const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+      if (parsed.getDate() === Number(day) && parsed.getMonth() === Number(month) - 1 && parsed.getFullYear() === Number(year)) {
+        dobFormatted = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      } else {
+        setError('Please enter a valid date of birth.');
+        setLoading(null);
+        return;
+      }
+    }
 
- let dobFormatted = null;
- if (formData.date_of_birth && formData.date_of_birth.length === 10) {
- const [day, month, year] = formData.date_of_birth.split('/');
- const parsedDate = new Date(Number(year), Number(month) - 1, Number(day));
- if (parsedDate.getDate() === Number(day) && parsedDate.getMonth() === Number(month) - 1 && parsedDate.getFullYear() === Number(year)) {
- dobFormatted = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
- } else {
- setError('Please enter a valid date of birth.');
- setLoading(null);
- return;
- }
- }
+    const dataToSubmit = {
+      ...formData,
+      phone: visibleFields.phone !== false ? getFullPhoneNumber() : null,
+      date_of_birth: visibleFields.dob !== false ? dobFormatted : null,
+      postal_code: visibleFields.postal_code !== false ? formData.postal_code : null,
+      education_level: visibleFields.education_level === true ? formData.education_level : null,
+      monthly_income: visibleFields.monthly_income === true ? formData.monthly_income : null,
+      campaign_id: campaignId,
+      consent_contact: consentContact,
+      consent_terms: consentTerms,
+    };
 
- const dataToSubmit = {
- ...formData,
- phone: (visibleFields.phone !== false) ? getFullPhoneNumber() : null,
- date_of_birth: (visibleFields.dob !== false) ? dobFormatted : null,
- postal_code: (visibleFields.postal_code !== false) ? formData.postal_code : null,
- education_level: (visibleFields.education_level === true) ? formData.education_level : null,
- monthly_income: (visibleFields.monthly_income === true) ? formData.monthly_income : null,
- campaign_id: campaignId
- };
+    try {
+      await onSubmit(dataToSubmit);
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || 'Submission failed.');
+    }
+    setLoading(null);
+  };
 
- try {
- await onSubmit(dataToSubmit);
- } catch (err) {
- setError(err.response?.data?.message || err.message ||"Submission failed.");
- }
- setLoading(null);
- };
+  const fieldRendererProps = {
+    formData,
+    themeColor: accent,
+    visibleFields,
+    requiredFields,
+    handleFormChange,
+    displayPhone,
+    otpState,
+    loading,
+    handleSendOtp,
+    handleDobBlur,
+    dobIncomplete,
+    ageError,
+    renderAgeRestrictionHint,
+  };
 
- const fieldProps = {
- formData, themeColor, textStyle, visibleFields, requiredFields,
- handleFormChange, displayPhone, otpState, loading, handleSendOtp,
- otp, setOtp, handleVerifyOtp, handleCancelOtp, showSuccessTick,
- resendCooldown, error, handleDobBlur, dobIncomplete, ageError,
- renderAgeRestrictionHint,
- };
+  const renderField = (fieldId) => <FieldRenderer key={fieldId} fieldId={fieldId} {...fieldRendererProps} />;
 
- const renderField = (fieldId) => <FieldRenderer key={fieldId} fieldId={fieldId} {...fieldProps} />;
+  const submitDisabled =
+    otpState !== 'verified' ||
+    loading === 'submitting' ||
+    ageError !== '' ||
+    dobIncomplete ||
+    !isValidEmail(formData.email) ||
+    !consentTerms;
 
- return (
- <form onSubmit={handleSubmit} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
- <div className={`mb-6 text-${alignment || 'center'}`}>
- <h2 className="font-bold text-foreground leading-tight" style={{ fontSize: `${headlineSize || 24}px`, ...textStyle }}>
- {formHeadline}
- </h2>
- <p className="text-base text-muted-foreground mt-2" style={textStyle}>{formSubheadline}</p>
- </div>
+  return (
+    <>
+      <form onSubmit={handleSubmit}>
+        {/* Heavy-serif heading */}
+        <h2
+          style={{
+            fontFamily: 'Fraunces, serif',
+            fontWeight: 800,
+            fontSize: 'clamp(28px, 6.5vw, 34px)',
+            lineHeight: 1.1,
+            letterSpacing: '-0.015em',
+            color: TOKENS.ink,
+            margin: 0,
+            marginBottom: 10,
+          }}
+        >
+          {formHeadline || 'Get Started'}
+        </h2>
 
- <div className="space-y-4">
- {fieldOrder.map((item, index) => {
- if (typeof item === 'string') return renderField(item);
- if (item.columns && Array.isArray(item.columns)) {
- return (
- <div key={item.id || index} className={`grid gap-4 ${item.columns.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
- {item.columns.map(colId => renderField(colId))}
- </div>
- );
- }
- return null;
- })}
- </div>
+        {formSubheadline && (
+          <p
+            style={{
+              fontFamily: 'Albert Sans, system-ui, sans-serif',
+              fontSize: 15,
+              lineHeight: 1.55,
+              color: TOKENS.body,
+              margin: 0,
+              marginBottom: 28,
+            }}
+          >
+            {formSubheadline}
+            {formSubheadline.includes('*') ? null : (
+              <>
+                {' '}All fields marked with{' '}
+                <span style={{ color: TOKENS.required, fontWeight: 600 }}>*</span> are required.
+              </>
+            )}
+          </p>
+        )}
 
- <Button
- type="submit" className="w-full h-12 text-base font-semibold shadow-lg hover:shadow-xl hover:scale-[1.01] active:scale-[0.98] transition-colors duration-200 mt-8 rounded-xl" style={{ backgroundColor: themeColor }}
- disabled={otpState !== 'verified' || loading === 'submitting' || ageError !== '' || dobIncomplete || !isValidEmail(formData.email)}
- >
- {loading === 'submitting' ? <Loader2 className="w-5 h-5 animate-spin mx-auto"/> : 'Submit Application'}
- {!loading && <ChevronRight className="w-4 h-4 ml-2 opacity-80"/>}
- </Button>
+        {/* Fields */}
+        <div>
+          {fieldOrder.map((item, index) => {
+            if (typeof item === 'string') return renderField(item);
+            if (item.columns && Array.isArray(item.columns)) {
+              return (
+                <div
+                  key={item.id || index}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: item.columns.length > 1 ? '1fr 1fr' : '1fr',
+                    gap: 12,
+                  }}
+                >
+                  {item.columns.map((colId) => renderField(colId))}
+                </div>
+              );
+            }
+            return null;
+          })}
+        </div>
 
- <ConsentSection consentOpen={consentOpen} setConsentOpen={setConsentOpen} termsContent={termsContent} />
- </form >
- );
+        {/* Inline error (form-level) */}
+        {error && otpState !== 'pending' && (
+          <div
+            style={{
+              marginTop: 4,
+              marginBottom: 16,
+              padding: '12px 16px',
+              borderRadius: 14,
+              backgroundColor: TOKENS.required + '15',
+              color: TOKENS.required,
+              fontSize: 13.5,
+              fontFamily: 'Albert Sans, system-ui, sans-serif',
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {/* Two consent checkboxes */}
+        <div style={{ marginTop: 8, marginBottom: 24 }}>
+          <ConsentCheckbox
+            checked={consentContact}
+            onChange={setConsentContact}
+            accent={accent}
+            id="consent_contact"
+          >
+            By the provision of your contact particulars in this form, you consent to be contacted by such means,
+            including by: (a) phone call and text messages at the phone number provided; and (b) email, if your
+            email address has been furnished, for the purposes identified in this form.
+          </ConsentCheckbox>
+
+          <ConsentCheckbox
+            checked={consentTerms}
+            onChange={setConsentTerms}
+            accent={accent}
+            id="consent_terms"
+            required
+          >
+            By participating in this campaign, you hereby agree to the{' '}
+            <button
+              type="button"
+              onClick={() => setConsentOpen(true)}
+              style={{
+                color: TOKENS.body,
+                fontWeight: 600,
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                textUnderlineOffset: 3,
+                fontSize: 'inherit',
+                fontFamily: 'inherit',
+              }}
+            >
+              terms and conditions
+            </button>
+            . <span style={{ color: TOKENS.required }}>*</span>
+          </ConsentCheckbox>
+        </div>
+
+        {/* Submit button — pill, left-aligned narrower (Goodies SG pattern) */}
+        <button
+          type="submit"
+          disabled={submitDisabled}
+          style={{
+            height: 56,
+            paddingLeft: 36,
+            paddingRight: 36,
+            borderRadius: RADIUS.pill,
+            backgroundColor: submitDisabled ? TOKENS.hairline : accent,
+            color: '#ffffff',
+            border: 'none',
+            cursor: submitDisabled ? 'not-allowed' : 'pointer',
+            fontFamily: 'Albert Sans, system-ui, sans-serif',
+            fontWeight: 600,
+            fontSize: 16,
+            letterSpacing: '0.005em',
+            boxShadow: submitDisabled ? 'none' : '0 4px 14px rgba(209, 112, 41, 0.18)',
+            transition: 'background-color 200ms ease, opacity 200ms ease, transform 120ms ease',
+            opacity: submitDisabled ? 0.6 : 1,
+          }}
+          onMouseEnter={(e) => {
+            if (!submitDisabled) e.currentTarget.style.backgroundColor = TOKENS.accentDeep;
+          }}
+          onMouseLeave={(e) => {
+            if (!submitDisabled) e.currentTarget.style.backgroundColor = accent;
+          }}
+        >
+          {loading === 'submitting' ? 'Submitting…' : ctaLabel || 'Submit Now'}
+        </button>
+      </form>
+
+      {/* Verification modal */}
+      <OTPVerification
+        otpState={otpState}
+        otp={otp}
+        setOtp={setOtp}
+        loading={loading}
+        error={error}
+        showSuccessTick={showSuccessTick}
+        resendCooldown={resendCooldown}
+        displayPhone={displayPhone}
+        phone={formData.phone}
+        themeColor={accent}
+        handleVerifyOtp={handleVerifyOtp}
+        handleCancelOtp={handleCancelOtp}
+        handleSendOtp={handleSendOtp}
+        channel={otpChannel}
+      />
+
+      {/* Marketing consent modal */}
+      <MarketingConsentDialog
+        open={consentOpen}
+        onOpenChange={setConsentOpen}
+        content={termsContent}
+        themeColor={accent}
+        onAgree={() => {
+          setConsentTerms(true);
+          setConsentOpen(false);
+        }}
+      />
+    </>
+  );
+}
+
+function ConsentCheckbox({ id, checked, onChange, children, accent, required }) {
+  return (
+    <label
+      htmlFor={id}
+      style={{
+        display: 'flex',
+        gap: 12,
+        marginBottom: 16,
+        cursor: 'pointer',
+        alignItems: 'flex-start',
+      }}
+    >
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        required={required}
+        style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }}
+      />
+      <span
+        aria-hidden="true"
+        style={{
+          flexShrink: 0,
+          width: 22,
+          height: 22,
+          marginTop: 1,
+          borderRadius: RADIUS.checkbox,
+          backgroundColor: checked ? accent : '#ffffff',
+          border: `1px solid ${checked ? accent : TOKENS.hairline}`,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'background-color 160ms ease, border-color 160ms ease',
+        }}
+      >
+        {checked && (
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <path d="M3 6.8L5.5 9.2L10 4" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+      <span
+        style={{
+          fontFamily: 'Albert Sans, system-ui, sans-serif',
+          fontSize: 13.5,
+          lineHeight: 1.55,
+          color: TOKENS.body,
+        }}
+      >
+        {children}
+      </span>
+    </label>
+  );
 }

@@ -1,260 +1,420 @@
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar as CalendarIcon, Phone, User, Mail, MapPin, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { motion, AnimatePresence } from 'framer-motion';
-import OTPVerification from '@/components/campaigns/signup/OTPVerification';
+import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
+
+/**
+ * Per-field renderer for the public lead-capture form.
+ *
+ * Visual style: pill-shape inputs (border-radius 999px), no inline icons,
+ * thin warm border, slight cream fill. Required asterisks use a distinct red
+ * (TOKENS.required) so they read differently from the action color.
+ *
+ * The phone field's Verify button + verified badge live here, but the OTP
+ * modal itself is rendered once at the form level — see CampaignSignupForm.
+ */
+
+const inputBaseStyle = {
+  width: '100%',
+  height: 52,
+  paddingLeft: 22,
+  paddingRight: 22,
+  fontSize: 16, // 16px to prevent iOS auto-zoom on focus
+  fontFamily: 'Albert Sans, system-ui, sans-serif',
+  color: TOKENS.ink,
+  backgroundColor: '#FFFCF6',
+  border: `1px solid ${TOKENS.hairline}`,
+  borderRadius: RADIUS.pill,
+  outline: 'none',
+  transition: 'border-color 200ms ease, box-shadow 200ms ease',
+  WebkitAppearance: 'none',
+};
+
+const focusRingStyle = (themeColor) => ({
+  borderColor: themeColor || TOKENS.accent,
+  boxShadow: `0 0 0 3px ${(themeColor || TOKENS.accent) + '22'}`,
+});
+
+const errorRingStyle = {
+  borderColor: TOKENS.required,
+  boxShadow: `0 0 0 3px ${TOKENS.required}22`,
+};
+
+function Label({ htmlFor, required, optional, children }) {
+  return (
+    <label
+      htmlFor={htmlFor}
+      style={{
+        display: 'block',
+        fontFamily: 'Albert Sans, system-ui, sans-serif',
+        fontSize: 14,
+        fontWeight: 500,
+        color: TOKENS.body,
+        marginBottom: 8,
+        marginLeft: 6,
+      }}
+    >
+      {children}
+      {required && (
+        <span style={{ color: TOKENS.required, marginLeft: 4 }} aria-hidden="true">
+          *
+        </span>
+      )}
+      {optional && (
+        <span style={{ color: TOKENS.muted, marginLeft: 6, fontSize: 12, fontWeight: 400 }}>(optional)</span>
+      )}
+    </label>
+  );
+}
+
+function ErrorText({ children }) {
+  return (
+    <div
+      style={{
+        marginTop: 6,
+        marginLeft: 6,
+        fontSize: 13,
+        color: TOKENS.required,
+        fontFamily: 'Albert Sans, system-ui, sans-serif',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function HintText({ children }) {
+  return (
+    <div
+      style={{
+        marginTop: 6,
+        marginLeft: 6,
+        fontSize: 12,
+        color: TOKENS.muted,
+        fontFamily: 'Albert Sans, system-ui, sans-serif',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 
 export default function FieldRenderer({
- fieldId,
- formData,
- themeColor,
- textStyle,
- visibleFields,
- requiredFields,
- handleFormChange,
- // Phone/OTP props
- displayPhone,
- otpState,
- loading,
- handleSendOtp,
- // OTP panel props
- otp,
- setOtp,
- handleVerifyOtp,
- handleCancelOtp,
- showSuccessTick,
- resendCooldown,
- error,
- // DOB props
- handleDobBlur,
- dobIncomplete,
- ageError,
- renderAgeRestrictionHint,
+  fieldId,
+  formData,
+  themeColor,
+  visibleFields,
+  requiredFields,
+  handleFormChange,
+  // Phone props
+  displayPhone,
+  otpState,
+  loading,
+  handleSendOtp,
+  // DOB props
+  handleDobBlur,
+  dobIncomplete,
+  ageError,
+  renderAgeRestrictionHint,
 }) {
- // Skip if field is hidden via visibleFields
- const isVisible = fieldId === 'name' || fieldId === 'email' || visibleFields[fieldId] !== false;
- if (!isVisible) return null;
+  const isVisible = fieldId === 'name' || fieldId === 'email' || visibleFields[fieldId] !== false;
+  if (!isVisible) return null;
 
- switch (fieldId) {
- case 'name':
- return (
- <div key={fieldId} className="space-y-1.5">
- <Label htmlFor="name" style={textStyle}>
- Full Name {requiredFields.name !== false && '*'}
- </Label>
- <div className="relative group">
- <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-foreground transition-colors"/>
- <Input
- id="name" placeholder="John Tan" className="pl-10 h-11 text-base bg-muted/50 border-border focus:bg-background focus:border-border focus:ring-2 focus:ring-offset-0 transition-colors rounded-xl" style={{ '--tw-ring-color': themeColor + '33' }}
- value={formData.name}
- onChange={(e) => handleFormChange('name', e.target.value)}
- required
- />
- </div>
- </div>
- );
- case 'phone':
- return (
- <div key={fieldId} className="space-y-1.5">
- <Label htmlFor="phone" style={textStyle}>
- Phone Number {requiredFields.phone !== false && '*'}
- </Label>
- <div className="flex items-center gap-2">
- <div
- className="flex-grow flex shadow-sm rounded-xl overflow-hidden active-ring focus-within:ring-2 focus-within:ring-offset-0 transition-colors" style={{ '--tw-ring-color': themeColor + '33' }}
- >
- <div className="flex items-center px-3.5 bg-muted border border-r-0 border-border text-sm font-medium text-muted-foreground whitespace-nowrap">
- 🇸🇬 +65
- </div>
- <div className="relative flex-grow group">
- <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-foreground transition-colors"/>
- <Input
- id="phone" type="tel" placeholder="9123 4567" className="pl-10 h-11 text-base rounded-l-none border-l-0 border-border focus:ring-0 bg-card" value={displayPhone(formData.phone)}
- onChange={(e) => handleFormChange('phone', e.target.value)}
- disabled={otpState !== 'idle'}
- required
- maxLength={9}
- />
- </div>
- </div>
- {otpState === 'idle' && (
- <Button
- type="button" onClick={handleSendOtp}
- disabled={loading === 'sending' || formData.phone.length !== 8}
- className="h-11 px-6 font-semibold shadow-sm hover:shadow transition-colors rounded-xl min-w-[100px]" style={{
- backgroundColor: formData.phone.length === 8 ? themeColor : '#E5E7EB',
- color: formData.phone.length === 8 ? '#fff' : '#9CA3AF',
- }}
- >
- {loading === 'sending' ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Verify'}
- </Button>
- )}
- {otpState === 'verified' && (
- <motion.div
- className="flex items-center justify-center gap-2 text-background font-medium text-sm px-4 h-11 bg-success rounded-xl shadow-sm min-w-[100px]" initial={{ scale: 0.9, opacity: 0 }}
- animate={{ scale: 1, opacity: 1 }}
- >
- <CheckCircle2 className="w-5 h-5"/>
- <span>Verified</span>
- </motion.div>
- )}
- </div>
- {/* OTP Logic */}
- <OTPVerification
- otpState={otpState}
- otp={otp}
- setOtp={setOtp}
- loading={loading}
- error={error}
- showSuccessTick={showSuccessTick}
- resendCooldown={resendCooldown}
- displayPhone={displayPhone}
- phone={formData.phone}
- themeColor={themeColor}
- textStyle={textStyle}
- handleVerifyOtp={handleVerifyOtp}
- handleCancelOtp={handleCancelOtp}
- handleSendOtp={handleSendOtp}
- />
+  const reqLevel = (key) => {
+    const v = requiredFields[key];
+    if (v === false) return { required: false, optional: true };
+    if (v === 'optional') return { required: false, optional: true };
+    if (v === true) return { required: true, optional: false };
+    return { required: true, optional: false };
+  };
 
- <AnimatePresence>
- {/* Error display for when OTP is not expanded but there is an error (e.g. failed send) */}
- {error && otpState !== 'pending' && (
- <motion.div
- className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-3 rounded-xl border border-destructive/30 mt-2" initial={{ opacity: 0, height: 0 }}
- animate={{ opacity: 1, height: 'auto' }}
- exit={{ opacity: 0, height: 0 }}
- >
- <AlertCircle className="w-4 h-4 flex-shrink-0"/>
- <span style={textStyle}>{error}</span>
- </motion.div>
- )}
- </AnimatePresence>
- </div>
- );
- case 'email':
- return (
- <div key={fieldId} className="space-y-1.5">
- <Label htmlFor="email" style={textStyle}>
- Email Address {requiredFields.email !== false && '*'}
- </Label>
- <div className="relative group">
- <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-foreground transition-colors"/>
- <Input
- id="email" type="email" placeholder="you@example.com" className="pl-10 h-11 text-base bg-muted/50 border-border focus:bg-background focus:border-border focus:ring-2 focus:ring-offset-0 transition-colors rounded-xl" style={{ '--tw-ring-color': themeColor + '33' }}
- value={formData.email}
- onChange={(e) => handleFormChange('email', e.target.value)}
- required
- />
- </div>
- </div>
- );
- case 'dob':
- return (
- <div key={fieldId} className="space-y-1.5">
- <Label htmlFor="dob" style={textStyle}>
- Date of Birth {requiredFields.dob !== false && (requiredFields.dob === 'optional' ? '(optional)' : '*')}
- </Label>
- <div className="relative group">
- <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-foreground transition-colors"/>
- <Input
- id="dob" type="tel" inputMode="numeric" placeholder="DD/MM/YYYY" className={`pl-10 h-11 text-base bg-muted/50 border-border focus:bg-background focus:border-border focus:ring-2 focus:ring-offset-0 transition-colors rounded-xl ${dobIncomplete || ageError ? 'border-destructive/60 ring-2 ring-destructive/30' : ''}`}
- style={!(dobIncomplete || ageError) ? { '--tw-ring-color': themeColor + '33' } : {}}
- value={formData.date_of_birth}
- onChange={(e) => handleFormChange('date_of_birth', e.target.value)}
- onBlur={handleDobBlur}
- maxLength={10}
- />
- </div>
- <AnimatePresence>
- {(ageError || dobIncomplete) && (
- <motion.div
- className="flex items-center gap-1.5 text-xs text-destructive font-medium ml-1" initial={{ opacity: 0, y: -5 }}
- animate={{ opacity: 1, y: 0 }}
- >
- <AlertCircle className="w-3.5 h-3.5"/>
- <span style={textStyle}>{ageError || 'Please enter full year (DDMMYYYY)'}</span>
- </motion.div>
- )}
- </AnimatePresence>
- {!ageError && !dobIncomplete && renderAgeRestrictionHint() && (
- <div className="text-[11px] text-muted-foreground pt-0.5 ml-1" style={textStyle}>
- {renderAgeRestrictionHint()}
- </div>
- )}
- </div>
- );
- case 'postal_code':
- return (
- <div key={fieldId} className="space-y-1.5">
- <Label htmlFor="postal_code" style={textStyle}>
- Postal Code{' '}
- {requiredFields.postal_code !== false && (requiredFields.postal_code === 'optional' ? '(optional)' : '*')}
- </Label>
- <div className="relative group">
- <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-foreground transition-colors"/>
- <Input
- id="postal" placeholder="520230" className="pl-10 h-11 text-base bg-muted/50 border-border focus:bg-background focus:border-border focus:ring-2 focus:ring-offset-0 transition-colors rounded-xl" style={{ '--tw-ring-color': themeColor + '33' }}
- maxLength={6}
- value={formData.postal_code}
- onChange={(e) => handleFormChange('postal_code', e.target.value.replace(/\D/g, '').slice(0, 6))}
- />
- </div>
- </div>
- );
- case 'education_level':
- return (
- <div key={fieldId} className="space-y-1.5">
- <Label htmlFor="education_level" style={textStyle}>
- Highest Education{' '}
- {requiredFields.education_level !== false &&
- (requiredFields.education_level === 'optional' ? '(optional)' : '*')}
- </Label>
- <Select
- value={formData.education_level}
- onValueChange={(value) => handleFormChange('education_level', value)}
- >
- <SelectTrigger
- className="h-11 text-base bg-muted/50 border-border focus:ring-2 focus:ring-offset-0 rounded-xl" style={{ '--tw-ring-color': themeColor + '33' }}
- >
- <SelectValue placeholder="Select education level"/>
- </SelectTrigger>
- <SelectContent>
- <SelectItem value="Secondary School or below">Secondary School or below</SelectItem>
- <SelectItem value="O Levels">O Levels</SelectItem>
- <SelectItem value="Diploma">Diploma</SelectItem>
- <SelectItem value="Degree">Degree</SelectItem>
- <SelectItem value="Masters and above">Masters and above</SelectItem>
- </SelectContent>
- </Select>
- </div>
- );
- case 'monthly_income':
- return (
- <div key={fieldId} className="space-y-1.5">
- <Label htmlFor="monthly_income" style={textStyle}>
- Last Drawn Salary{' '}
- {requiredFields.monthly_income !== false &&
- (requiredFields.monthly_income === 'optional' ? '(optional)' : '*')}
- </Label>
- <Select value={formData.monthly_income} onValueChange={(value) => handleFormChange('monthly_income', value)}>
- <SelectTrigger
- className="h-11 text-base bg-muted/50 border-border focus:ring-2 focus:ring-offset-0 rounded-xl" style={{ '--tw-ring-color': themeColor + '33' }}
- >
- <SelectValue placeholder="Select salary range"/>
- </SelectTrigger>
- <SelectContent>
- <SelectItem value="<$3000">&lt;$3000</SelectItem>
- <SelectItem value="$3000 - $4999">$3000 - $4999</SelectItem>
- <SelectItem value="$5000 - $7999">$5000 - $7999</SelectItem>
- <SelectItem value=">$8000">&gt;$8000</SelectItem>
- </SelectContent>
- </Select>
- </div>
- );
- default:
- return null;
- }
+  switch (fieldId) {
+    case 'name':
+      return (
+        <div style={{ marginBottom: 20 }}>
+          <Label htmlFor="name" required={reqLevel('name').required !== false}>
+            Full Name
+          </Label>
+          <input
+            id="name"
+            type="text"
+            placeholder="John Tan"
+            value={formData.name}
+            onChange={(e) => handleFormChange('name', e.target.value)}
+            required
+            style={inputBaseStyle}
+            onFocus={(e) => Object.assign(e.target.style, focusRingStyle(themeColor))}
+            onBlur={(e) => {
+              e.target.style.borderColor = TOKENS.hairline;
+              e.target.style.boxShadow = 'none';
+            }}
+          />
+        </div>
+      );
+
+    case 'email':
+      return (
+        <div style={{ marginBottom: 20 }}>
+          <Label htmlFor="email" {...reqLevel('email')}>
+            Email Address
+          </Label>
+          <input
+            id="email"
+            type="email"
+            placeholder="you@example.com"
+            value={formData.email}
+            onChange={(e) => handleFormChange('email', e.target.value)}
+            required
+            style={inputBaseStyle}
+            onFocus={(e) => Object.assign(e.target.style, focusRingStyle(themeColor))}
+            onBlur={(e) => {
+              e.target.style.borderColor = TOKENS.hairline;
+              e.target.style.boxShadow = 'none';
+            }}
+          />
+        </div>
+      );
+
+    case 'phone':
+      return (
+        <div style={{ marginBottom: 20 }}>
+          <Label htmlFor="phone" {...reqLevel('phone')}>
+            Phone Number
+          </Label>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <span
+                style={{
+                  position: 'absolute',
+                  left: 22,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  fontSize: 16,
+                  color: TOKENS.body,
+                  pointerEvents: 'none',
+                  fontFamily: 'Albert Sans, system-ui, sans-serif',
+                }}
+              >
+                +65
+              </span>
+              <input
+                id="phone"
+                type="tel"
+                inputMode="numeric"
+                placeholder="9123 4567"
+                value={displayPhone(formData.phone)}
+                onChange={(e) => handleFormChange('phone', e.target.value)}
+                disabled={otpState !== 'idle'}
+                required
+                maxLength={9}
+                style={{ ...inputBaseStyle, paddingLeft: 64 }}
+                onFocus={(e) => Object.assign(e.target.style, focusRingStyle(themeColor))}
+                onBlur={(e) => {
+                  e.target.style.borderColor = TOKENS.hairline;
+                  e.target.style.boxShadow = 'none';
+                }}
+              />
+            </div>
+            {otpState === 'idle' && (
+              <button
+                type="button"
+                onClick={handleSendOtp}
+                disabled={loading === 'sending' || formData.phone.length !== 8}
+                style={{
+                  height: 52,
+                  paddingLeft: 22,
+                  paddingRight: 22,
+                  borderRadius: RADIUS.pill,
+                  border: 'none',
+                  cursor: formData.phone.length === 8 ? 'pointer' : 'not-allowed',
+                  fontFamily: 'Albert Sans, system-ui, sans-serif',
+                  fontWeight: 600,
+                  fontSize: 14,
+                  color: '#ffffff',
+                  backgroundColor: formData.phone.length === 8 ? themeColor || TOKENS.accent : TOKENS.hairline,
+                  transition: 'background-color 200ms ease',
+                  whiteSpace: 'nowrap',
+                  minWidth: 100,
+                }}
+              >
+                {loading === 'sending' ? '…' : 'Verify'}
+              </button>
+            )}
+            {otpState === 'verified' && (
+              <div
+                style={{
+                  height: 52,
+                  paddingLeft: 18,
+                  paddingRight: 22,
+                  borderRadius: RADIUS.pill,
+                  backgroundColor: TOKENS.success + '22',
+                  color: TOKENS.success,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontFamily: 'Albert Sans, system-ui, sans-serif',
+                  fontWeight: 600,
+                  fontSize: 14,
+                  minWidth: 100,
+                  justifyContent: 'center',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <path
+                    d="M3 7L6 10L11 4"
+                    stroke={TOKENS.success}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span>Verified</span>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+
+    case 'dob':
+      return (
+        <div style={{ marginBottom: 20 }}>
+          <Label htmlFor="dob" {...reqLevel('dob')}>
+            Date of Birth
+          </Label>
+          <input
+            id="dob"
+            type="tel"
+            inputMode="numeric"
+            placeholder="DD / MM / YYYY"
+            value={formData.date_of_birth}
+            onChange={(e) => handleFormChange('date_of_birth', e.target.value)}
+            onBlur={handleDobBlur}
+            maxLength={10}
+            style={{
+              ...inputBaseStyle,
+              ...(ageError || dobIncomplete ? errorRingStyle : {}),
+            }}
+            onFocus={(e) => {
+              if (!ageError && !dobIncomplete) Object.assign(e.target.style, focusRingStyle(themeColor));
+            }}
+          />
+          {(ageError || dobIncomplete) && <ErrorText>{ageError || 'Please enter a complete date (DD/MM/YYYY).'}</ErrorText>}
+          {!ageError && !dobIncomplete && renderAgeRestrictionHint() && <HintText>{renderAgeRestrictionHint()}</HintText>}
+        </div>
+      );
+
+    case 'postal_code':
+      return (
+        <div style={{ marginBottom: 20 }}>
+          <Label htmlFor="postal_code" {...reqLevel('postal_code')}>
+            Postal Code
+          </Label>
+          <input
+            id="postal_code"
+            type="tel"
+            inputMode="numeric"
+            placeholder="520230"
+            maxLength={6}
+            value={formData.postal_code}
+            onChange={(e) => handleFormChange('postal_code', e.target.value.replace(/\D/g, '').slice(0, 6))}
+            style={inputBaseStyle}
+            onFocus={(e) => Object.assign(e.target.style, focusRingStyle(themeColor))}
+            onBlur={(e) => {
+              e.target.style.borderColor = TOKENS.hairline;
+              e.target.style.boxShadow = 'none';
+            }}
+          />
+        </div>
+      );
+
+    case 'education_level':
+      return (
+        <div style={{ marginBottom: 20 }}>
+          <Label htmlFor="education_level" {...reqLevel('education_level')}>
+            Highest Education
+          </Label>
+          <div style={{ position: 'relative' }}>
+            <select
+              id="education_level"
+              value={formData.education_level}
+              onChange={(e) => handleFormChange('education_level', e.target.value)}
+              style={{
+                ...inputBaseStyle,
+                appearance: 'none',
+                paddingRight: 44,
+                color: formData.education_level ? TOKENS.ink : TOKENS.muted,
+                cursor: 'pointer',
+              }}
+              onFocus={(e) => Object.assign(e.target.style, focusRingStyle(themeColor))}
+              onBlur={(e) => {
+                e.target.style.borderColor = TOKENS.hairline;
+                e.target.style.boxShadow = 'none';
+              }}
+            >
+              <option value="" disabled>
+                Select education level
+              </option>
+              <option value="Secondary School or below">Secondary School or below</option>
+              <option value="O Levels">O Levels</option>
+              <option value="Diploma">Diploma</option>
+              <option value="Degree">Degree</option>
+              <option value="Masters and above">Masters and above</option>
+            </select>
+            <SelectChevron />
+          </div>
+        </div>
+      );
+
+    case 'monthly_income':
+      return (
+        <div style={{ marginBottom: 20 }}>
+          <Label htmlFor="monthly_income" {...reqLevel('monthly_income')}>
+            Last Drawn Salary
+          </Label>
+          <div style={{ position: 'relative' }}>
+            <select
+              id="monthly_income"
+              value={formData.monthly_income}
+              onChange={(e) => handleFormChange('monthly_income', e.target.value)}
+              style={{
+                ...inputBaseStyle,
+                appearance: 'none',
+                paddingRight: 44,
+                color: formData.monthly_income ? TOKENS.ink : TOKENS.muted,
+                cursor: 'pointer',
+              }}
+              onFocus={(e) => Object.assign(e.target.style, focusRingStyle(themeColor))}
+              onBlur={(e) => {
+                e.target.style.borderColor = TOKENS.hairline;
+                e.target.style.boxShadow = 'none';
+              }}
+            >
+              <option value="" disabled>
+                Select salary range
+              </option>
+              <option value="<$3000">{'<'}$3,000</option>
+              <option value="$3000 - $4999">$3,000 – $4,999</option>
+              <option value="$5000 - $7999">$5,000 – $7,999</option>
+              <option value=">$8000">{'>'}$8,000</option>
+            </select>
+            <SelectChevron />
+          </div>
+        </div>
+      );
+
+    default:
+      return null;
+  }
+}
+
+function SelectChevron() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      aria-hidden="true"
+      style={{ position: 'absolute', right: 22, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+    >
+      <path d="M3 5L7 9L11 5" stroke={TOKENS.body} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }

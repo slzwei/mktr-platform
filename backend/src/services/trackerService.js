@@ -127,7 +127,7 @@ export async function resolveSession(sid, atkCookie) {
   let campaign = null;
   if (qrTag.campaignId) {
     campaign = await Campaign.findByPk(qrTag.campaignId, {
-      attributes: ['id', 'name', 'design_config', 'is_active']
+      attributes: ['id', 'name', 'design_config', 'is_active', 'metaPixelId']
     });
   }
 

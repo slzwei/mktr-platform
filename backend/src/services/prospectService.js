@@ -16,6 +16,7 @@ import { deductLeadCredit } from './leadCredits.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { dispatchEvent } from './webhookService.js';
+import { sendLeadEvent as metaSendLeadEvent } from './metaCapiService.js';
 import { logger } from '../utils/logger.js';
 import {
   normalizePhone,
@@ -51,6 +52,7 @@ const defaultDeps = {
   deductLeadCredit,
   buildProspectWhere,
   dispatchEvent,
+  sendLeadEvent: metaSendLeadEvent,
   AppError,
   logger,
 };
@@ -64,8 +66,41 @@ export function makeProspectService(overrides = {}) {
    * Resolves attribution, normalizes input, wraps DB writes in a transaction.
    * Returns { prospect, assignedAgentId } — caller handles email side-effect.
    */
-  async function createProspect(body, user, { cookies, headers } = {}) {
-    const incoming = { ...body };
+  async function createProspect(body, user, { cookies, headers, meta } = {}) {
+    const safeBody = body || {};
+    // Prefer controller-supplied meta context; fall back to body fields if any
+    // caller posts directly without the controller's extraction step.
+    const eventId = meta?.eventId ?? safeBody.eventId;
+    const fbp = meta?.fbp ?? safeBody.fbp;
+    const fbc = meta?.fbc ?? safeBody.fbc;
+    const eventSourceUrl = meta?.eventSourceUrl ?? safeBody.eventSourceUrl;
+    const clientIp = meta?.clientIp;
+    const clientUserAgent = meta?.clientUserAgent;
+    // Consent flags: preserve explicit `false` (user opted out) via !== undefined check.
+    const consentContact = safeBody.consent_contact;
+    const consentTerms = safeBody.consent_terms;
+
+    // Strip from body so they don't reach Sequelize as bogus Prospect attributes.
+    const {
+      eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
+      consent_contact: _cc, consent_terms: _ct,
+      ...bodyWithoutMeta
+    } = safeBody;
+    const incoming = { ...bodyWithoutMeta };
+
+    const capiSourceMetadata = {
+      ...(eventId ? { eventId } : {}),
+      ...(fbp ? { fbp } : {}),
+      ...(fbc ? { fbc } : {}),
+      ...(eventSourceUrl ? { eventSourceUrl } : {}),
+      ...(clientIp ? { clientIp } : {}),
+      ...(clientUserAgent ? { clientUserAgent } : {}),
+      ...(consentContact !== undefined ? { consent_contact: consentContact } : {}),
+      ...(consentTerms !== undefined ? { consent_terms: consentTerms } : {}),
+    };
+    if (Object.keys(capiSourceMetadata).length > 0) {
+      incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), ...capiSourceMetadata };
+    }
 
     // Bind attribution by session cookie (sid)
     const sid = cookies?.sid || headers?.['x-session-id'];
@@ -308,6 +343,19 @@ export function makeProspectService(overrides = {}) {
       )
     ).catch((err) => {
       d.logger.error('[Webhook] dispatch error', { error: err?.message || String(err) });
+    });
+
+    // Meta CAPI dispatch (fire-and-forget; post-commit; guard inside sendLeadEvent)
+    d.sendLeadEvent(prospect, {
+      eventId,
+      fbp,
+      fbc,
+      eventSourceUrl,
+      clientIp,
+      clientUserAgent,
+      pixelIdOverride: sourceCampaign?.metaPixelId || undefined,
+    }).catch((err) => {
+      d.logger.error('[CAPI] sendLeadEvent error', { error: err?.message || String(err) });
     });
 
     // Pre-load agent + prospect-with-campaign for caller's email side-effect

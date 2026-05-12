@@ -12,10 +12,19 @@ export const listProspects = asyncHandler(async (req, res) => {
 });
 
 export const createProspect = asyncHandler(async (req, res) => {
+  const meta = {
+    clientIp: req.ip,
+    clientUserAgent: req.get('user-agent') || undefined,
+    eventId: req.body?.eventId,
+    fbp: req.body?.fbp,
+    fbc: req.body?.fbc,
+    eventSourceUrl: req.body?.eventSourceUrl,
+  };
+
   const { prospect, assignedAgentId, assignedAgent, prospectWithCampaign } = await prospectService.createProspect(
     req.body,
     req.user,
-    { cookies: req.cookies, headers: req.headers }
+    { cookies: req.cookies, headers: req.headers, meta }
   );
 
   // Email sending OUTSIDE transaction (fire-and-forget, don't block response)

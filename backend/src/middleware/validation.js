@@ -60,34 +60,38 @@ export const schemas = {
     companyName: Joi.string().min(1).max(100).optional()
   }),
 
-  // Campaign schemas
+  // Campaign schemas — fields match what `campaignService.createCampaign` /
+  // `updateCampaign` actually destructure (snake_case is intentional; the
+  // table has both camelCase and snake_case columns from a half-migration).
+  // ad_playlist + assigned_agents are normalized into join tables by the
+  // service layer; we accept them as opaque arrays here.
   campaignCreate: Joi.object({
     name: Joi.string().min(1).max(100).required(),
-    description: Joi.string().optional(),
-    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing').required(),
-    budget: Joi.number().min(0).optional(),
-    targetAudience: Joi.object().optional(),
-    startDate: Joi.date().optional(),
-    endDate: Joi.date().greater(Joi.ref('startDate')).optional(),
-    landingPageUrl: Joi.string().uri().optional(),
-    callToAction: Joi.string().max(200).optional(),
-    tags: Joi.array().items(Joi.string()).optional(),
-    defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional()
+    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing').optional(),
+    min_age: Joi.number().integer().min(0).max(120).optional(),
+    max_age: Joi.number().integer().min(0).max(120).optional(),
+    start_date: Joi.date().optional(),
+    end_date: Joi.date().optional(),
+    is_active: Joi.boolean().optional(),
+    assigned_agents: Joi.array().items(Joi.string().uuid()).optional(),
+    commission_amount_driver: Joi.number().min(0).optional(),
+    commission_amount_fleet: Joi.number().min(0).optional(),
+    ad_playlist: Joi.array().items(Joi.object()).optional()
   }),
 
   campaignUpdate: Joi.object({
     name: Joi.string().min(1).max(100).optional(),
-    description: Joi.string().optional(),
-    status: Joi.string().valid('draft', 'active', 'paused', 'completed', 'archived').optional(),
-    budget: Joi.number().min(0).optional(),
-    targetAudience: Joi.object().optional(),
-    startDate: Joi.date().optional(),
-    endDate: Joi.date().optional(),
-    landingPageUrl: Joi.string().uri().optional(),
-    callToAction: Joi.string().max(200).optional(),
-    tags: Joi.array().items(Joi.string()).optional(),
-    defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional()
-  }),
+    min_age: Joi.number().integer().min(0).max(120).optional(),
+    max_age: Joi.number().integer().min(0).max(120).optional(),
+    start_date: Joi.date().optional(),
+    end_date: Joi.date().optional(),
+    is_active: Joi.boolean().optional(),
+    assigned_agents: Joi.array().items(Joi.string().uuid()).optional(),
+    design_config: Joi.object().optional(),
+    commission_amount_driver: Joi.number().min(0).optional(),
+    commission_amount_fleet: Joi.number().min(0).optional(),
+    ad_playlist: Joi.array().items(Joi.object()).optional()
+  }).min(1),
 
   // Car schemas
   carCreate: Joi.object({
@@ -147,52 +151,54 @@ export const schemas = {
     campaignId: Joi.alternatives().try(Joi.string().uuid(), Joi.valid(null)).optional(),
     qrTagId: Joi.alternatives().try(Joi.string().uuid(), Joi.valid(null)).optional(),
     // Only honored for admins at handler level; validate format only
-    assignedAgentId: Joi.string().uuid().optional()
+    assignedAgentId: Joi.string().uuid().optional(),
+    // Meta Pixel / CAPI dedup fields. Forwarded by the public lead-capture form
+    // and stashed in Prospect.sourceMetadata server-side.
+    eventId: Joi.string().max(64).optional(),
+    fbp: Joi.string().max(255).optional(),
+    fbc: Joi.string().max(255).optional(),
+    eventSourceUrl: Joi.string().uri().max(2048).optional(),
+    // PDPA consent flags from the lead-capture form. Stashed in sourceMetadata.
+    // consent_contact gates hashed PII (em/ph) in the CAPI payload — see
+    // metaCapiService._buildPayload's `marketingConsent` check.
+    consent_contact: Joi.boolean().optional(),
+    consent_terms: Joi.boolean().optional()
   }),
 
-  // QR Tag schemas
+  // QR Tag schemas — fields match `qrCodeService.createQrCode` destructure
+  // plus `description` (sent by the promotional QR form, dropped server-side).
+  // `slug`/`destinationUrl`/`qrCode`/`qrImageUrl` are server-generated.
   qrTagCreate: Joi.object({
-    name: Joi.string().min(1).max(100).required(),
-    description: Joi.string().optional(),
-    type: Joi.string().valid('campaign', 'car', 'promotional', 'event', 'location', 'other').required(),
-    destinationUrl: Joi.string().uri().required(),
-    location: Joi.object().optional(),
-    placement: Joi.object().optional(),
-    expirationDate: Joi.date().optional(),
-    maxScans: Joi.number().min(1).optional(),
+    label: Joi.string().max(128).allow('', null).optional(),
+    description: Joi.string().allow('', null).optional(),
+    type: Joi.string().max(32).optional(),
     tags: Joi.array().items(Joi.string()).optional(),
     campaignId: Joi.string().uuid().optional(),
     carId: Joi.string().uuid().optional(),
-    assignedAgentPhone: Joi.string().pattern(/^\+[1-9]\d{9,14}$/).allow(null).optional(),
-    assignedAgentEmail: Joi.string().email().allow(null).optional(),
-    assignedAgentName: Joi.string().max(100).allow(null).optional()
+    agentAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
+    agentGroupId: Joi.string().uuid().allow(null).optional(),
+    assignedAgentPhone: Joi.string().pattern(/^\+[1-9]\d{9,14}$/).allow('', null).optional(),
+    assignedAgentEmail: Joi.string().email().allow('', null).optional(),
+    assignedAgentName: Joi.string().max(100).allow('', null).optional()
   }),
 
   // NOTE: Removed duplicate fleetOwnerCreate schema that conflicted with app's current model
 
-  // Driver schemas
-  driverCreate: Joi.object({
-    licenseNumber: Joi.string().min(1).max(30).required(),
-    licenseClass: Joi.string().min(1).max(10).required(),
-    licenseExpiration: Joi.date().required(),
-    dateOfBirth: Joi.date().required(),
-    address: Joi.object().optional(),
-    emergencyContact: Joi.object().optional(),
-    experience: Joi.number().min(0).max(50).optional(),
-    certifications: Joi.array().items(Joi.string()).optional()
-  }),
+  // NOTE: `driverCreate` schema removed 2026-05-13. There is no
+  // `POST /api/fleet/drivers` (or any `/drivers`) route on the backend; the
+  // schema described a fleet-onboarding flow that was never wired and the
+  // related tablet-app project is paused. If a driver-create endpoint is
+  // ever added, define a fresh schema next to it.
 
-  // Lead Package schemas
+  // Lead Package schemas — fields match `leadPackageController.createPackage`
+  // destructure. `description` is accepted because the admin form sends it
+  // (silently dropped by the controller).
   leadPackageCreate: Joi.object({
     name: Joi.string().min(1).max(100).required(),
-    description: Joi.string().optional(),
-    type: Joi.string().valid('basic', 'premium', 'enterprise', 'custom').required(),
-    category: Joi.string().max(50).optional(),
     price: Joi.number().min(0).required(),
-    leadCount: Joi.number().min(1).required(),
-    qualityScore: Joi.number().min(1).max(10).optional(),
-    deliveryMethod: Joi.string().valid('email', 'api', 'csv_download', 'dashboard').optional(),
-    validityPeriod: Joi.number().min(1).optional(),
-    campaignId: Joi.string().uuid().optional()
+    leadCount: Joi.number().integer().min(1).required(),
+    campaignId: Joi.string().uuid().required(),
+    type: Joi.string().valid('basic', 'premium', 'enterprise', 'custom').optional(),
+    description: Joi.string().allow('', null).optional()
   })
 };

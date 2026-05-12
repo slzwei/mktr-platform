@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import * as Sentry from '@sentry/node';
+import { scrubEvent, scrubBreadcrumb } from './utils/sentryScrub.js';
 
 // Load environment variables immediately
 dotenv.config();
@@ -15,6 +16,8 @@ if (process.env.SENTRY_DSN) {
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV || 'development',
     tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+    beforeSend: scrubEvent,
+    beforeBreadcrumb: scrubBreadcrumb,
     initialScope: {
       tags: {
         service: 'mktr-backend',
