@@ -48,8 +48,11 @@ export default function CampaignSignupForm({
   const [resendCooldown, setResendCooldown] = useState(0);
   const [showSuccessTick, setShowSuccessTick] = useState(false);
 
-  // Two PDPA consent checkboxes — campaign T&C is required, contact consent is opt-in
-  const [consentContact, setConsentContact] = useState(false);
+  // Two PDPA consent checkboxes — campaign T&C is required (opt-in), contact
+  // consent defaults to ticked (opt-out). The opt-out path is documented in
+  // /PersonalDataPolicy: untick to suppress hashed em/ph in Meta CAPI payloads
+  // and direct-marketing follow-ups by agents.
+  const [consentContact, setConsentContact] = useState(true);
   const [consentTerms, setConsentTerms] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
 
