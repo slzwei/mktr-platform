@@ -34,7 +34,7 @@
 |---|---|---|
 | A1 | Sync MKTR↔Supabase webhook secret | ✅ done 2026-05-14 |
 | A2 | Ship Android FCM push fix | ✅ done 2026-05-15 |
-| A3 | Tag real test users with `is_test_data=true` | ⬜ |
+| A3 | Tag real test users with `is_test_data=true` | ✅ done 2026-05-15 |
 | A4 | Synthetic monitor for `lead.created` | ✅ done 2026-05-15 |
 | B1 | Synthetic monitors for OTP / invitation / activate-agent | ⬜ |
 | B2 | Add second MKTR admin + runbook | ⬜ |
@@ -132,9 +132,9 @@ curl -s "$SUPABASE_URL/rest/v1/users?id=eq.<AGENT_UUID>&select=push_token" \
 
 ### A3. Tag real test users with `is_test_data=true`
 
-**Status:** ⬜ todo
+**Status:** ✅ done 2026-05-15 (UI manual confirmation pending; code-level verification complete)
 
-**What:** The 9 test users in the `+6590000X` phone range (Steven, Daniel, Shawn-mgr, Samuel, Adrian, Ching Yi, Jessica, Huixin, Costllan) all have `is_test_data=false`. The only rows tagged `true` are 3 synthetic "E2E manager XXXXXX" stubs with no phones and no downline — useless for testing.
+**What:** The 9 test users in the `+6590000X` phone range (Steven, Daniel, Shawn-mgr, Samuel, Adrian, Ching Yi, Jessica, Huixin, Costllan) all had `is_test_data=false`. The only rows tagged `true` were 3 synthetic "E2E manager XXXXXX" stubs with no phones and no downline — useless for testing.
 
 **Why:** Staff-facing queries (team listings, lead routing, manager picker) don't filter these test users out. They appear in production UI alongside real staff, contaminating analytics and confusing operators.
 
@@ -170,9 +170,13 @@ ORDER BY phone;
 ```
 
 **DOD:**
-- All 9 test users tagged `is_test_data = true`
-- Lyfe app team view (as a real admin) excludes them
-- MKTR `mktr-agents` edge function still returns them when called directly (the test users still need to be syncable when we run E2E)
+- ✅ All 9 test users tagged `is_test_data = true` (verified via PATCH then GET — see commit message in this doc's repo)
+- 🟨 Lyfe app team view (as a real admin) excludes them — code-level verified (13 staff-facing query sites filter `eq('is_test_data', false)` across lyfe-app `lib/team.ts`, `lib/leads/{crud,stats}.ts`, `lib/recruitment/candidates.ts` and lyfe-sg `app/admin/(dashboard)/page.tsx`, `app/admin/(dashboard)/analytics/page.tsx`, `app/candidate/actions.ts`, `app/staff/candidates/actions.ts`, `lib/invitations/resolve-manager.ts`). UI confirmation by an admin login still pending — non-blocking for Phase D.
+- ✅ MKTR `mktr-agents` edge function still returns them when called directly (read source at `lyfe-app/supabase/functions/mktr-agents/index.ts:77-105` — filters only on `id` and `is_active=true`, no `is_test_data` filter)
+
+**Side discovery:** CLAUDE.md (root + lyfe-master) claims MKTR sync excludes `is_test_data=true` — that's wrong. The edge fn does NOT filter on it. Documentation drift; queue for B3 schema-drift CI check.
+
+**Step 2 (optional DELETE of 3 phantom E2E manager stubs) NOT performed.** The 3 rows (`E2E manager 642965`, `E2E manager 550999`, `E2E manager 892833`, all `phone=NULL`) remain. Skipped because: (a) destructive — needs explicit user confirmation per CLAUDE.md DB safety rules; (b) harmless — no phone, no downline, already excluded from staff-facing queries via `is_test_data=true`.
 
 **Notes:** _empty_
 
@@ -685,6 +689,7 @@ Append-only. Format: `YYYY-MM-DD — task ID — what changed — by whom`.
 2026-05-15 — D1 — entry-point research captured via Explore agent — Claude
 2026-05-15 — doc created — Claude
 2026-05-15 — A4 — Verified negative-path end-to-end: broke MKTR_WEBHOOK_SECRET_STAGING, confirmed run 25915829086 failed + issue #71 opened, rotated fresh secret on both staging Supabase + GH env, recovery run 25916346406 passed + issue auto-closed. Discovered `supabase secrets list` shows digests not values; documented in A4 notes. Marked ✅. — Shawn (with Claude)
+2026-05-15 — A3 — PATCHed is_test_data=true on 9 +6590000X test users via PostgREST. Code-level verified 13 staff-facing query sites filter is_test_data=false; verified mktr-agents edge fn still returns them. Surfaced doc drift: CLAUDE.md wrongly says MKTR sync excludes is_test_data — added to B3 backlog. DELETE of 3 E2E manager stubs intentionally skipped. Marked ✅ (UI confirmation pending). — Shawn (with Claude)
 ```
 
 ---
