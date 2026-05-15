@@ -36,7 +36,7 @@
 | A2 | Ship Android FCM push fix | ✅ done 2026-05-15 |
 | A3 | Tag real test users with `is_test_data=true` | ✅ done 2026-05-15 |
 | A4 | Synthetic monitor for `lead.created` | ✅ done 2026-05-15 |
-| B1 | Synthetic monitors for OTP / invitation / activate-agent | ⬜ |
+| B1 | Synthetic monitors for OTP / invitation / activate-agent | 🟨 1/4 (create-member-invitation done 2026-05-15) |
 | B2 | Add second MKTR admin + runbook | ⬜ |
 | B3 | Schema-drift CI check (CLAUDE.md vs database.types.ts) | ⬜ |
 | C1 | Fix QR single-create API (Joi vs DB phone format) | ⬜ |
@@ -228,7 +228,16 @@ ORDER BY phone;
 
 ### B1. Synthetic monitors for OTP / invitation / activate-agent paths
 
-**Status:** ⬜ todo
+**Status:** 🟨 in-progress (1/4 probes shipped 2026-05-15)
+
+**Shipped:**
+- ✅ `11-create-member-invitation.mjs` (workflow: `synthetic-create-member-invitation.yml`, hourly `15 * * * *`). Exercises `intended_role=candidate` (3-table cascade: member_invitations + candidates + invitations). Auths as `probe+admin@lyfe.sg` via PROBE_ACCOUNT_PASSWORD signin (no long-lived JWT needed). Stable phone `+6580001999` reserved; pre-cleanup self-heals orphans. Two consecutive greens verified (runs `25919085573`, `25919163452`).
+- Self-heal discovery: probe admin role had drifted from `admin` to `pa` in staging (likely from a manual test). Probe now defensively resets app_metadata.role to admin before each signin, so seed drift can't silently break it. Long-term fix: update `seed.mjs` to upsert app_metadata for existing users (deferred).
+
+**Remaining (3/4):**
+- `activate-agent` — needs a fresh test candidate per run; cleanup reverses the role flip
+- `send-email-otp` + `verify-email-otp` (paired, share OTP state)
+- `custom-sms-hook` — harder; Supabase Auth hook not directly callable, may need a different probe pattern (defer or skip)
 
 **What:** Extend the synthetic pattern (A4) to the user-creation paths.
 
