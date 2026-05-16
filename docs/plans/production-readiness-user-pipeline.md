@@ -249,7 +249,7 @@ ORDER BY phone;
 
 **Operational footnotes (worth surfacing in runbook):**
 - `supabase secrets list` shows DIGEST not VALUE (already in runbook).
-- `supabase db push --linked` against staging fails: 5 phantom remote migrations (`20260504150311`, `…321`, `…332`, `…338`, `…351`) exist in staging's schema_migrations without local files. Either revert them (`supabase migration repair --status reverted`) or pull (`supabase db pull`). Defer until B3 (schema-drift CI) handles this category.
+- Staging phantom migration repair done 2026-05-16. `20260504150311` was recovered into `lyfe-app/supabase/migrations/` as an idempotent file (`86e0ca9`). The other four phantoms (`20260504150321`, `…332`, `…338`, `…351`) were duplicates of local `20260428120000`, `20260428130000`, `20260428140000`, `20260428160000`; staging history was repaired by marking the local versions applied and the duplicate phantom rows reverted. Plain `supabase db push --linked` now fails only because older local migrations are pending before the repaired remote watermark; `supabase db push --linked --dry-run --include-all` succeeds and lists the pending migrations cleanly.
 - `oneoff-fix-bdm` and `oneoff-fix-fn-activate` patterns: deploy a temporary edge function, invoke, delete. Useful when CLI lacks `db query`/`db execute` (still missing in v2.98). Don't commit the function source.
 
 **Remaining (2/4):**
@@ -722,6 +722,7 @@ Append-only. Format: `YYYY-MM-DD — task ID — what changed — by whom`.
 2026-05-15 — A3 — PATCHed is_test_data=true on 9 +6590000X test users via PostgREST. Code-level verified 13 staff-facing query sites filter is_test_data=false; verified mktr-agents edge fn still returns them. Surfaced doc drift: CLAUDE.md wrongly says MKTR sync excludes is_test_data — added to B3 backlog. DELETE of 3 E2E manager stubs intentionally skipped. Marked ✅ (UI confirmation pending). — Shawn (with Claude)
 2026-05-16 — B1 — Reviewed production activation blocker via read-only Supabase MCP: MCP points at prod but cannot apply migrations; prod constraints already include `bdm`, migration versions are not recorded, and `fn_activate_agent` still has ambiguous unqualified milestone lookups. Tightened B1 status/DOD language. — Codex
 2026-05-16 — B1 — Enabled activate-agent hourly cron on lyfe-app main (`501218b`). Applied prod activation migrations `20260516040000` and `20260516050000` via one-shot Edge Function because Supabase MCP is read-only; verified migration records, constraint shape, and qualified function body. Supabase advisor then surfaced explicit anon/authenticated EXECUTE grants on `fn_activate_agent`; added/applied `20260516060000_restrict_fn_activate_agent_execute.sql` and pushed lyfe-app main (`c7937e5`). Verified privileges: anon=false, authenticated=false, service_role=true. — Codex
+2026-05-16 — staging migrations — Investigated 5 phantom staging migrations. Recovered `20260504150311_backfill_unique_constraints_and_exam_papers_column.sql` into lyfe-app (`86e0ca9`). Repaired staging history: marked local equivalents `20260428120000`, `20260428130000`, `20260428140000`, `20260428160000` applied and duplicate phantom rows `20260504150321`, `20260504150332`, `20260504150338`, `20260504150351` reverted. Verified `supabase db push --linked --dry-run --include-all` now succeeds. — Codex
 ```
 
 ---
