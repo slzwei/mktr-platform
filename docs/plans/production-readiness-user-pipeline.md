@@ -36,7 +36,7 @@
 | A2 | Ship Android FCM push fix | ✅ done 2026-05-15 |
 | A3 | Tag real test users with `is_test_data=true` | ✅ done 2026-05-15 |
 | A4 | Synthetic monitor for `lead.created` | ✅ done 2026-05-15 |
-| B1 | Synthetic monitors for OTP / invitation / activate-agent | 🟨 1/4 (create-member-invitation done 2026-05-15) |
+| B1 | Synthetic monitors for OTP / invitation / activate-agent | 🟨 2/4 (create-member-invitation + activate-agent done; cron pending workflow scope) |
 | B2 | Add second MKTR admin + runbook | ⬜ |
 | B3 | Schema-drift CI check (CLAUDE.md vs database.types.ts) | ⬜ |
 | C1 | Fix QR single-create API (Joi vs DB phone format) | ⬜ |
@@ -232,10 +232,18 @@ ORDER BY phone;
 
 **Shipped:**
 - ✅ `11-create-member-invitation.mjs` (workflow: `synthetic-create-member-invitation.yml`, hourly `15 * * * *`). Exercises `intended_role=candidate` (3-table cascade: member_invitations + candidates + invitations). Auths as `probe+admin@lyfe.sg` via PROBE_ACCOUNT_PASSWORD signin (no long-lived JWT needed). Stable phone `+6580001999` reserved; pre-cleanup self-heals orphans. Two consecutive greens verified (runs `25919085573`, `25919163452`).
-- Self-heal discovery: probe admin role had drifted from `admin` to `pa` in staging (likely from a manual test). Probe now defensively resets app_metadata.role to admin before each signin, so seed drift can't silently break it. Long-term fix: update `seed.mjs` to upsert app_metadata for existing users (deferred).
+- ✅ `12-activate-agent.mjs` (workflow: `synthetic-activate-agent.yml`, **cron uncommented locally; not pushed yet — blocked on `gh auth refresh -s workflow`**). Heavy fixture: stable activation user `probe+activation@lyfe.sg` (`+6580001998`) + candidate(status=licensed) + candidate_profile + 4 milestones (bdm/bes_induction completed; rnf/sales_authority issued). Asserts post-flip: `candidates.status='active_agent'`, `users.role='agent'`, `auth.users.app_metadata.role='agent'`. Reset runs in `finally` so assertion failure doesn't strand the fixture in active_agent state. Two consecutive greens (runs `25952207062` 12s, `25952223833` 10s).
 
-**Remaining (3/4):**
-- `activate-agent` — needs a fresh test candidate per run; cleanup reverses the role flip
+**Production bugs surfaced during B1.2 — fixed:**
+1. **`candidate_milestones` CHECK lacked `'bdm'` on staging.** Migration `20260418110000_bdm_as_milestone.sql` logged as applied but DDL silently no-op'd. Re-applied via one-off DDL runner; codified in new migration `20260516040000_reapply_bdm_constraint.sql` (committed `bf7f562` on lyfe-app `main`). **Prod likely has same drift — apply migration there.**
+2. **`fn_activate_agent` had ambiguous column refs.** `WHERE candidate_id = p_candidate_id` in milestone lookups shadowed the RETURNS TABLE OUT param `candidate_id` → plpgsql raised "column reference is ambiguous" at runtime; every call returned HTTP 409. Likely **no real activation has succeeded since the function deployed** (this is the first time anyone exercised it end-to-end). Fixed via one-off DDL runner; codified in `20260516050000_fix_fn_activate_agent_ambiguity.sql`. **Apply migration to prod ASAP** — this is a blocking bug for actually flipping any candidate to agent.
+
+**Operational footnotes (worth surfacing in runbook):**
+- `supabase secrets list` shows DIGEST not VALUE (already in runbook).
+- `supabase db push --linked` against staging fails: 5 phantom remote migrations (`20260504150311`, `…321`, `…332`, `…338`, `…351`) exist in staging's schema_migrations without local files. Either revert them (`supabase migration repair --status reverted`) or pull (`supabase db pull`). Defer until B3 (schema-drift CI) handles this category.
+- `oneoff-fix-bdm` and `oneoff-fix-fn-activate` patterns: deploy a temporary edge function, invoke, delete. Useful when CLI lacks `db query`/`db execute` (still missing in v2.98). Don't commit the function source.
+
+**Remaining (2/4):**
 - `send-email-otp` + `verify-email-otp` (paired, share OTP state)
 - `custom-sms-hook` — harder; Supabase Auth hook not directly callable, may need a different probe pattern (defer or skip)
 
