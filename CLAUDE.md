@@ -8,6 +8,57 @@ MKTR is a marketing lead generation platform that captures leads from multiple s
 2. **MKTR Backend** → prospect creation → agent assignment → webhook dispatch
 3. **Lyfe Edge Function** → lead upsert into Supabase → push notification to agent
 
+## Dual-Brand Frontend (`mktr.sg` + `redeem.sg`) — architecture shipped in commit `c827bc4`, 2026-05-23
+
+The same React/Vite SPA in `src/` builds into TWO Render Static Sites from the same git commit, branched by the `VITE_BRAND` env var. As of the commit date, both static sites are deployed; the `redeem.sg` DNS cutover and mktr-platform public-route 301 redirects are operational steps that follow. See `REDEEM_SG_USER_TODO.md` at the repo root for the live cutover status.
+
+| Service (Render) | Domain | `VITE_BRAND` | Purpose |
+|---|---|---|---|
+| `mktr-platform` | `mktr.sg`, `www.mktr.sg` | `mktr` (default) | Admin / agent / driver / fleet UI. Public lead-capture paths 301-redirect to redeem.sg. |
+| `redeem-frontend` | `redeem.sg`, `www.redeem.sg` | `redeem` | Public lead capture only. Admin/auth/agent/driver routes hard-redirect back to mktr.sg. |
+| `mktr-backend-jo6r` | `api.mktr.sg` | (backend) | Single Express service serves both static sites' `/api/*` and `/uploads/*` via Render proxy rewrites. |
+
+### Brand isolation in the bundle
+
+`vite.config.js` reads `VITE_BRAND` at config time and aliases `@brand-config` to either `src/lib/brandConfigs/mktr.js` or `src/lib/brandConfigs/redeem.js`. Components import `brand` from `@/lib/brand`, which re-exports the active brand's config. Result: the inactive brand's strings (wordmark, regulatory copy, consumer line, etc.) are not bundled into dist. Acceptance test: `grep MKTR dist/` on the redeem build returns only intentional D3 legal-entity references (`MKTR PTE. LTD.`, the legal data controller).
+
+Brand-aware values include: `name`, `wordmark`, `legalName`, `uen`, `consumerLine`, `logoSrc`/`logoDarkSrc`/`logoIconSrc`/`faviconSrc`, `pageTitle`, `pdpaUrl`, `publicHost`, `defaultRegulatory`, `defaultPoweredBy`, `partnersTerm`, `pdpaAbsoluteUrl`, `consentEntityClause`, plus the `show*` route gates (`showHomepage`, `showAbout`, `showFeatures`, `showPricing`).
+
+### Routing guards (D13 — internal routes are mktr.sg-only)
+
+`src/pages/index.jsx` wraps internal route elements with `IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <Real>`. `src/components/auth/ProtectedRoute.jsx` is replaced wholesale with `MktrOnlyRedirect` on the redeem build, so admin/agent/driver routes redirect at the SPA level before any auth state is touched. Render route rules on `redeem-frontend` (16 redirect rules added 2026-05-23) belt-and-brace this at the edge for paths like `/Admin*`, `/Agent*`, `/Driver*`, `/auth/*`, `/preview*`, `/CustomerLogin`, etc.
+
+### Backend host-aware behavior
+
+The single backend serves both origins. To respond correctly per origin:
+
+- **`backend/src/utils/publicHost.js`** — `publicHostFromRequest(req)` derives the *validated* public host from `Origin` / `X-Forwarded-Host` / `Host`, checked against an allowlist of `{mktr.sg, www.mktr.sg, redeem.sg, www.redeem.sg}`. Returns `undefined` for unknown hosts (never trusts raw headers). `cookieDomainForPublicHost(host)` maps to `.mktr.sg` or `.redeem.sg`.
+- **`backend/src/utils/frontendBase.js`** — `frontendBaseForHost(host)` returns `MKTR_FRONTEND_URL` or `REDEEM_FRONTEND_URL` for per-request redirect destinations.
+- **`backend/src/middleware/internalRouteHostGuard.js`** — D13 backend enforcement: rejects `/api/auth/*`, `/api/admin/*`, `/api/agents/*`, `/api/fleet/*`, `/api/devices/*`, `/api/users/*`, `/api/lyfe/*`, `/api/webhooks/*`, `/api/integrations/*` with `403` when the validated host is `redeem.sg`. Server-to-server traffic (no host header) passes through unchanged.
+- **`trackerController.js` + `leadCaptureBind.js`** — cookies set via `cookieDomainForPublicHost(publicHostFromRequest(req))`. Redirects use `frontendBaseForHost(...)` to land on the same public host the user came from. The lead-capture binder route now redirects to `/LeadCapture` (camelCase, matches SPA route) instead of `/lead-capture` (which doesn't exist on the SPA).
+- **`prospectController.js`** — derives a CAPI `event_source_url` fallback from `publicHostFromRequest(req)` when the SPA omits it; `metaCapiService.js` is unchanged (still has no req access).
+- **`mailer.js`** — `resolveEmailFrom(context)` and `sendEmail({..., context, from})` allow per-flow sender selection. `EMAIL_FROM_MKTR` / `EMAIL_FROM_REDEEM` env vars override the default `EMAIL_FROM`. No callers wired to `context: 'redeem'` yet.
+
+### Backend env vars added for dual-brand
+
+| Env var | Purpose | Default if unset |
+|---|---|---|
+| `MKTR_FRONTEND_URL` | Per-host redirect destination for mktr.sg traffic | falls back to `FRONTEND_BASE_URL`, then `https://mktr.sg` |
+| `REDEEM_FRONTEND_URL` | Per-host redirect destination for redeem.sg traffic | `https://redeem.sg` |
+| `EMAIL_FROM_MKTR` | From-address for admin / agent / lead-assignment emails | falls back to `EMAIL_FROM`, then `EMAIL_USER`, then `noreply@mktr.sg` |
+| `EMAIL_FROM_REDEEM` | From-address for lead-capture confirmation emails (when wired) | `noreply@redeem.sg` (literal — needs AWS SES domain verification before sends will work) |
+
+`CORS_ORIGIN` should include redeem-frontend.onrender.com for staging; code defaults to the apex + www of both brands.
+
+### Diagnostic endpoint (D14)
+
+`GET https://api.mktr.sg/health/public-host` returns the raw `Origin` / `Host` / `X-Forwarded-Host` / `X-Forwarded-Proto` / `req.hostname` plus the *derived* `detectedPublicHost` and `cookieDomain`. Use this to verify Render's static-site proxy preserves the original host before trusting host-based branching.
+
+### Operational env
+
+- mktr-platform Static Site (Render): `VITE_BRAND=mktr` (or unset — defaults to mktr), `VITE_API_URL=https://api.mktr.sg/api` (absolute — pre-rebrand setup, cross-origin to api.mktr.sg works because cookies live on parent `.mktr.sg`).
+- redeem-frontend Static Site (Render): `VITE_BRAND=redeem`, `VITE_API_URL=/api` (relative — Render rewrites `/api/*` → `https://api.mktr.sg/api/*` so cookies live on `.redeem.sg`). Vite plugin emits brand-aware `robots.txt` + `sitemap.xml` per build.
+
 ## Architecture — Full Data Flow
 
 ```
