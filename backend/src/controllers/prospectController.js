@@ -1,6 +1,19 @@
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { sendLeadAssignmentEmail } from '../services/mailer.js';
 import * as prospectService from '../services/prospectService.js';
+import { publicHostFromRequest } from '../utils/publicHost.js';
+
+// Build a sensible CAPI event_source_url fallback when the SPA omits it.
+// Aggregated Event Measurement requires the URL to match where the Pixel
+// fired — i.e. the SPA page on redeem.sg (or mktr.sg). We never reference
+// req inside metaCapiService.js; the request object lives only here.
+function deriveEventSourceUrl(req, publicHost) {
+  const explicit = req.body?.eventSourceUrl;
+  if (explicit) return explicit;
+  if (!publicHost) return undefined;
+  const proto = (req.get('x-forwarded-proto') || 'https').split(',')[0].trim();
+  return `${proto}://${publicHost}/LeadCapture`;
+}
 
 export const listProspects = asyncHandler(async (req, res) => {
   const result = await prospectService.listProspects(req.user, req.query);
@@ -12,13 +25,14 @@ export const listProspects = asyncHandler(async (req, res) => {
 });
 
 export const createProspect = asyncHandler(async (req, res) => {
+  const publicHost = publicHostFromRequest(req);
   const meta = {
     clientIp: req.ip,
     clientUserAgent: req.get('user-agent') || undefined,
     eventId: req.body?.eventId,
     fbp: req.body?.fbp,
     fbc: req.body?.fbc,
-    eventSourceUrl: req.body?.eventSourceUrl,
+    eventSourceUrl: deriveEventSourceUrl(req, publicHost),
   };
 
   const { prospect, assignedAgentId, assignedAgent, prospectWithCampaign } = await prospectService.createProspect(

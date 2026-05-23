@@ -2,6 +2,7 @@ import { useState } from"react";
 import { Link } from"react-router-dom";
 import { ArrowRight, ChevronDown } from"lucide-react";
 import MarketingLayout from"@/components/layout/MarketingLayout";
+import { brand } from"@/lib/brand";
 import"../pages/Homepage.css";
 
 const plans = [
@@ -228,7 +229,7 @@ export default function Pricing() {
  Frequently Asked Questions
  </h2>
  <p className="mktr-section-subtitle mktr-reveal mktr-reveal-delay-2">
- Everything you need to know about MKTR pricing.
+ Everything you need to know about {brand.name} pricing.
  </p>
  <FAQ />
  </div>

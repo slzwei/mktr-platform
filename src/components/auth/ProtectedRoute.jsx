@@ -3,8 +3,12 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import Loader2 from 'lucide-react/icons/loader-2';
 import { getDefaultRouteForRole } from '@/lib/utils';
+import { IS_REDEEM_BUILD, MktrOnlyRedirect } from '@/components/auth/BrandRouteGuards';
 
-export default function ProtectedRoute({ children, requiredRole = null }) {
+// D13: protected admin/agent/driver routes are mktr.sg-only. On the redeem
+// build we swap the entire component for the redirect so the auth-checking
+// hooks never run there (avoids running auth logic on the wrong host).
+function ProtectedRouteImpl({ children, requiredRole = null }) {
  const { user, token } = useAuthStore();
  const [isLoading, setIsLoading] = useState(true);
  const navigate = useNavigate();
@@ -46,4 +50,9 @@ export default function ProtectedRoute({ children, requiredRole = null }) {
  }
 
  return children;
+}
+
+export default function ProtectedRoute(props) {
+ if (IS_REDEEM_BUILD) return <MktrOnlyRedirect />;
+ return <ProtectedRouteImpl {...props} />;
 }

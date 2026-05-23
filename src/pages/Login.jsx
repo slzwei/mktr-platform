@@ -8,6 +8,7 @@ import { GOOGLE_CLIENT_ID } from '@/config/google';
 import { getPostAuthRedirectPath } from '@/lib/utils';
 import { LogIn, AlertCircle } from 'lucide-react';
 import SiteHeader from '@/components/layout/SiteHeader';
+import { brand } from '@/lib/brand';
 
 export default function CustomerLogin() {
  const [loading, setLoading] = useState(false);
@@ -128,7 +129,7 @@ export default function CustomerLogin() {
  <div className="w-full max-w-md">
  <Card className="bg-card border-border text-foreground shadow-2xl">
  <CardHeader className="text-center pb-2">
- <CardTitle className="text-2xl font-bold">Sign in to MKTR</CardTitle>
+ <CardTitle className="text-2xl font-bold">Sign in to {brand.name}</CardTitle>
  <p className="text-sm text-muted-foreground mt-1">Use Google or your email and password</p>
  </CardHeader>
  <CardContent className="space-y-4">
@@ -207,7 +208,7 @@ export default function CustomerLogin() {
  </form>
 
  <div className="text-center pt-4 border-t border-border">
- <p className="text-sm text-muted-foreground mb-3">New to MKTR?</p>
+ <p className="text-sm text-muted-foreground mb-3">New to {brand.name}?</p>
  <Link to={'/Contact'}>
  <Button className="w-full bg-foreground text-background hover:bg-foreground">Contact Us to Get Started</Button>
  </Link>

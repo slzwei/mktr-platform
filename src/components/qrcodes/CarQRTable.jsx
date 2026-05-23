@@ -2,6 +2,7 @@ import { useState } from"react";
 import { useQueryClient } from"@tanstack/react-query";
 import { QrTag } from"@/api/entities";
 import { apiClient } from"@/api/client";
+import { publicTrackingUrl } from"@/lib/brand";
 import { Card, CardContent, CardHeader, CardTitle } from"@/components/ui/card";
 import { Button } from"@/components/ui/button";
 import { Badge } from"@/components/ui/badge";
@@ -31,8 +32,9 @@ export default function CarQRTable({ qrTags, onRefresh, refreshing }) {
  const [copiedLink, setCopiedLink] = useState(null);
  const [deleting, setDeleting] = useState(false);
 
+ // Empty when VITE_API_URL=/api; relative /uploads/... is served by the
+ // static-site rewrite to the backend, so leaving it empty is correct.
  const backendOrigin = apiClient.baseURL.replace(/\/api\/?$/,"");
- const trackingBase = `${backendOrigin}/t`;
 
  const resolveBackendUrl = (path) => {
  if (!path) return"";
@@ -41,7 +43,7 @@ export default function CarQRTable({ qrTags, onRefresh, refreshing }) {
  };
 
  const handleCopyLink = (slug) => {
- const url = `${trackingBase}/${slug}`;
+ const url = publicTrackingUrl(slug);
  navigator.clipboard.writeText(url);
  setCopiedLink(slug);
  setTimeout(() => setCopiedLink(null), 2000);

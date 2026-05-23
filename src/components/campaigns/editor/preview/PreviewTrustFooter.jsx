@@ -1,3 +1,5 @@
+import { brand } from "@/lib/brand";
+
 export default function PreviewTrustFooter() {
  return (
  <div className="mt-8 text-center w-full max-w-[375px]">
@@ -10,7 +12,7 @@ export default function PreviewTrustFooter() {
  </div>
  </div>
  <p className="text-[10px] text-muted-foreground mt-4">
- &copy; {new Date().getFullYear()} MKTR Platform. All rights reserved.
+ &copy; {new Date().getFullYear()} {brand.name} Platform. All rights reserved.
  </p>
  </div>
  );

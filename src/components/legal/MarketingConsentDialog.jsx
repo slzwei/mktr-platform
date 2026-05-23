@@ -2,13 +2,14 @@ import { useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
+import { brand } from '@/lib/brand';
 
 /**
  * Marketing Consent dialog — editorial pattern.
  *
  *   small eyebrow ("Terms And Conditions")
  *   heavy-serif title ("Marketing Consent")
- *   scrollable body — campaign-supplied HTML or MKTR default
+ *   scrollable body — campaign-supplied HTML or brand-default fallback
  *   Cancel / I agree pill buttons
  *
  * `onAgree` is now a real consent gesture: clicking "I agree" closes the
@@ -144,20 +145,24 @@ export default function MarketingConsentDialog({ open, onOpenChange, content, th
 }
 
 function DefaultConsentCopy() {
+  // Legal data controller stays MKTR PTE. LTD. per D3. Consumer-facing brand
+  // references swap with the active build's brand (Redeem on redeem.sg).
+  const partnersTerm = brand.partnersTerm;
+  const pdpaUrl = brand.pdpaAbsoluteUrl;
   return (
     <>
       <p>
         By submitting this form, you agree to receive updates on promotions, offers, customer rewards, and other
-        marketing-related communications from MKTR PTE. LTD. (UEN: 202507548M) and its authorised representatives
-        ("MKTR Partners"). You also agree that your personal data may be collected, used, stored, and shared in
-        accordance with this consent form and the MKTR Personal Data Policy (
+        marketing-related communications from {brand.consentEntityClause}. You also agree that your personal data
+        may be collected, used, stored, and shared in accordance with this consent form and the {brand.name}{' '}
+        Personal Data Policy (
         <a
-          href="https://mktr.sg/personal-data-policy"
+          href={pdpaUrl}
           target="_blank"
           rel="noreferrer"
           style={{ color: TOKENS.body, textDecoration: 'underline' }}
         >
-          https://mktr.sg/personal-data-policy
+          {pdpaUrl}
         </a>
         ).
       </p>
@@ -165,8 +170,8 @@ function DefaultConsentCopy() {
         Your details may also be disclosed to trusted third parties and their agents, for the purposes of carrying
         out marketing campaigns, customer engagement activities, and related services.
       </p>
-      <Section title="1. Definition of MKTR Partners">
-        "MKTR Partners" include MKTR PTE. LTD., its affiliates, service providers, and appointed representatives,
+      <Section title={`1. Definition of ${partnersTerm}`}>
+        "{partnersTerm}" include {brand.legalName}, its affiliates, service providers, and appointed representatives,
         whether located in Singapore or overseas.
       </Section>
       <Section title="2. Non-Superseding Consent">
@@ -181,16 +186,16 @@ function DefaultConsentCopy() {
         messaging apps (e.g. SMS/MMS, WhatsApp).
       </Section>
       <Section title="5. Campaign and Promotion Terms">
-        For selected campaigns, your contact information may be shared with authorised MKTR representatives or
-        partner companies for the purpose of arranging a consultation, product trial, or service session. This may
-        be a requirement to redeem any rewards or gifts tied to the campaign. Eligibility criteria (such as
+        For selected campaigns, your contact information may be shared with authorised {brand.name} representatives
+        or partner companies for the purpose of arranging a consultation, product trial, or service session. This
+        may be a requirement to redeem any rewards or gifts tied to the campaign. Eligibility criteria (such as
         residency, age range, or one redemption per household) will apply and will be clearly stated in the
         campaign terms.
       </Section>
       <Section title="6. Referral Partners">
-        MKTR may collaborate with introducers or referral partners who are compensated for connecting interested
-        individuals with MKTR. Such introducers are not allowed to provide you with product advice, recommendations,
-        or ongoing service. Their role is limited to making the introduction.
+        {brand.name} may collaborate with introducers or referral partners who are compensated for connecting
+        interested individuals with {brand.name}. Such introducers are not allowed to provide you with product
+        advice, recommendations, or ongoing service. Their role is limited to making the introduction.
       </Section>
     </>
   );

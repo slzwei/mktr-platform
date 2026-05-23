@@ -19,6 +19,7 @@ import { requestId } from './middleware/requestId.js';
 import leadCaptureBind from './routes/leadCaptureBind.js';
 import leadgenProxyShim from './middleware/leadgenProxyShim.js';
 import { optionalAuth } from './middleware/auth.js';
+import { blockRedeemForInternalRoutes } from './middleware/internalRouteHostGuard.js';
 import { logger } from './utils/logger.js';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger.js';
@@ -64,11 +65,15 @@ export const init = async (app) => {
   }
 
   // CORS configuration
-  // Always allow these origins + any from environment variables
+  // Always allow these origins + any from environment variables.
+  // redeem.sg is the public-brand sibling static site (D7); both serve the
+  // same SPA against the same backend.
   const defaultOrigins = [
     ...(process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173']),
     'https://mktr.sg',
     'https://www.mktr.sg',
+    'https://redeem.sg',
+    'https://www.redeem.sg',
   ];
   const envOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()) : [];
 
@@ -111,6 +116,10 @@ export const init = async (app) => {
     logger.info('Rate limiter disabled (development mode)');
     app.use('/api', optionalAuth);
   }
+
+  // D13: reject admin/auth/agent/driver API calls that arrive carrying a
+  // redeem.sg public-host signature. CORS preflight already passed above.
+  app.use('/api', blockRedeemForInternalRoutes);
 
   // Structured request logging via Pino
   app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
@@ -171,6 +180,25 @@ export const init = async (app) => {
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       environment: process.env.NODE_ENV,
+    });
+  });
+
+  // Diagnostic: which public host does the backend see this request as?
+  // Used during the redeem.sg cutover to verify the Render proxy preserves
+  // the original Host / X-Forwarded-Host / Origin headers as expected before
+  // we enable host-based cookie/email/CAPI branching. Safe to leave on —
+  // returns only request metadata, no secrets.
+  app.get('/health/public-host', async (req, res) => {
+    const { publicHostFromRequest, cookieDomainForPublicHost } = await import('./utils/publicHost.js');
+    const detected = publicHostFromRequest(req);
+    res.status(200).json({
+      origin: req.get('origin') || null,
+      host: req.get('host') || null,
+      xForwardedHost: req.get('x-forwarded-host') || null,
+      xForwardedProto: req.get('x-forwarded-proto') || null,
+      reqHostname: req.hostname || null,
+      detectedPublicHost: detected || null,
+      cookieDomain: cookieDomainForPublicHost(detected) || null,
     });
   });
 

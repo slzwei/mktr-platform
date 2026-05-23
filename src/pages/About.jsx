@@ -1,6 +1,7 @@
 import { Link } from"react-router-dom";
 import { ArrowRight, Target, Users, Zap, Globe } from"lucide-react";
 import MarketingLayout from"@/components/layout/MarketingLayout";
+import { brand } from"@/lib/brand";
 import"../pages/Homepage.css";
 
 const values = [
@@ -17,7 +18,7 @@ const values = [
  {
  icon: Users,
  title:"Built for Teams",
- desc:"Whether you're a solo agent or a 500-person agency, MKTR scales with you. Team tools aren't an afterthought — they're core.",
+ desc:`Whether you're a solo agent or a 500-person agency, ${brand.name} scales with you. Team tools aren't an afterthought — they're core.`,
  },
  {
  icon: Globe,
@@ -27,7 +28,7 @@ const values = [
 ];
 
 const milestones = [
- { year:"2024", event:"MKTR founded in Singapore"},
+ { year:"2024", event:`${brand.name} founded in Singapore`},
  { year:"2024", event:"First insurance agency onboarded"},
  { year:"2025", event:"AI Call Bot (Retell) launched"},
  { year:"2025", event:"QR vehicle network live across Singapore"},
@@ -41,13 +42,13 @@ export default function About() {
  {/* Hero */}
  <section className="mktr-section" style={{ paddingTop:"5rem"}}>
  <div className="mktr-section-container" style={{ textAlign:"center"}}>
- <p className="mktr-section-eyebrow mktr-reveal">About MKTR</p>
+ <p className="mktr-section-eyebrow mktr-reveal">About {brand.name}</p>
  <h1 className="mktr-hero-title mktr-reveal mktr-reveal-delay-1" style={{ marginBottom:"1.5rem"}}>
  We Help Sales Pros<br />
  <span className="accent">Win More Clients.</span>
  </h1>
  <p className="mktr-hero-subtitle mktr-reveal mktr-reveal-delay-2" style={{ maxWidth: 650 }}>
- MKTR is Singapore's AI-powered lead generation platform built exclusively for
+ {brand.name} is Singapore's AI-powered lead generation platform built exclusively for
  insurance agents, financial advisors, and property agents.
  </p>
  </div>
@@ -90,7 +91,7 @@ export default function About() {
  marginBottom:"1.25rem",
  }}
  >
- We started MKTR because we saw a gap: Singapore's best sales professionals were
+ We started {brand.name} because we saw a gap: Singapore's best sales professionals were
  still relying on cold calls and referrals. Meanwhile, leads were everywhere — at
  MRT stations, in shopping malls, on the roads — but there was no system to
  capture them.
@@ -105,7 +106,7 @@ export default function About() {
  marginBottom:"1.25rem",
  }}
  >
- We built MKTR to bridge that gap — combining physical QR lead capture,
+ We built {brand.name} to bridge that gap — combining physical QR lead capture,
  AI-powered voice bots, and digital campaigns into one platform that actually
  works for the way agents sell in Singapore.
  </p>
@@ -119,7 +120,7 @@ export default function About() {
  }}
  >
  Today, hundreds of agents across insurance, financial advisory, and soon property
- use MKTR daily to fill their pipelines and close more deals.
+ use {brand.name} daily to fill their pipelines and close more deals.
  </p>
  </div>
 

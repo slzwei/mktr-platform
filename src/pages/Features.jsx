@@ -5,6 +5,7 @@ import {
  CheckCircle, Car
 } from"lucide-react";
 import MarketingLayout from"@/components/layout/MarketingLayout";
+import { brand } from"@/lib/brand";
 import"../pages/Homepage.css";
 
 const heroFeatures = [
@@ -52,7 +53,7 @@ const additionalFeatures = [
  { icon: Globe, title:"Multi-Language", desc:"Support for English, Mandarin, and Malay — matching Singapore's multilingual market."},
  { icon: Shield, title:"PDPA Compliant", desc:"Built-in consent management and data handling aligned with Singapore's Personal Data Protection Act."},
  { icon: Car, title:"Vehicle QR Network", desc:"Deploy QR codes on Grab cars, taxis, and private hire vehicles. Passive lead gen at scale."},
- { icon: Zap, title:"Webhook Integrations", desc:"Connect MKTR to your CRM, email tools, or custom systems via real-time webhook events."},
+ { icon: Zap, title:"Webhook Integrations", desc:`Connect ${brand.name} to your CRM, email tools, or custom systems via real-time webhook events.`},
 ];
 
 export default function Features() {
@@ -68,7 +69,7 @@ export default function Features() {
  </h1>
  <p className="mktr-hero-subtitle mktr-reveal mktr-reveal-delay-2">
  Every feature is purpose-built for Singapore's insurance and property agents.
- From first scan to signed policy — MKTR has you covered.
+ From first scan to signed policy — {brand.name} has you covered.
  </p>
  </div>
  </section>
@@ -189,7 +190,7 @@ export default function Features() {
  Everything Else You Need
  </h2>
  <p className="mktr-section-subtitle mktr-reveal mktr-reveal-delay-2">
- The details that make MKTR the complete platform for modern sales professionals.
+ The details that make {brand.name} the complete platform for modern sales professionals.
  </p>
 
  <div className="mktr-features-grid">

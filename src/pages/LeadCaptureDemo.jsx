@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import CampaignSignupForm from '../components/campaigns/CampaignSignupForm';
 import LeadCaptureLayout, { TOKENS, RADIUS } from '../components/campaigns/LeadCaptureLayout';
 import CheckCircle from 'lucide-react/icons/check-circle';
+import { brand } from '@/lib/brand';
 
 /**
  * Demo / preview route for the new LeadCapture design.
@@ -30,7 +31,7 @@ const MOCK_CAMPAIGN = {
     heroCtaLabel: 'Redeem Your Luggage Now',
     ctaText: 'Submit Now',
     brandWordmark: 'goodies.sg',
-    brandFooter: 'Powered by MKTR',
+    // brandFooter intentionally omitted here; demo wires brand.defaultPoweredBy via prop below
     regulatoryFooter:
       'Goodies SG (UEN: 202338805R) may be remunerated for each successful referral. By submitting, you agree to be contacted using the particulars you have provided. This form does not establish any advisory relationship.',
     themeColor: '#D17029',
@@ -98,7 +99,7 @@ export default function LeadCaptureDemo() {
       story={story}
       primaryCta={primaryCta}
       regulatoryFooter={design.regulatoryFooter}
-      brand={design.brandFooter}
+      brand={brand.defaultPoweredBy}
     >
       {submitted ? (
         <SuccessState />

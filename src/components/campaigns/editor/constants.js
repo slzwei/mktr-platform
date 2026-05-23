@@ -1,3 +1,5 @@
+import { brand } from "@/lib/brand";
+
 export const PRESET_BACKGROUNDS = {
  gradient: 'bg-paper',
  solid_slate: 'bg-muted',
@@ -7,7 +9,7 @@ export const PRESET_BACKGROUNDS = {
 export const TC_TEMPLATES = {
  default: {
  id: 'default',
- name: 'Default (MKTR Standard)',
+ name: `Default (${brand.name} Standard)`,
  content: ''
  },
  generic: {

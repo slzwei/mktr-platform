@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
+import { brand } from "@/lib/brand";
 
 export default function TypingLoader() {
  const [text, setText] = useState("");
- const fullText = "MKTR.";
- 
+ const fullText = brand.wordmark;
+
  useEffect(() => {
  let index = 0;
  const timer = setInterval(() => {
@@ -14,9 +15,9 @@ export default function TypingLoader() {
  clearInterval(timer); // Stop the animation from looping
  }
  }, 300); // Adjust speed as needed
- 
+
  return () => clearInterval(timer);
- }, []);
+ }, [fullText]);
 
  return (
  <div className="flex items-center justify-center min-h-screen bg-foreground">

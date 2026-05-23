@@ -3,6 +3,12 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { BrowserRouter as Router, Route, Routes, useNavigate } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
+import { brand } from '@/lib/brand';
+import {
+  MktrOnlyRedirect,
+  NotFoundForBrand,
+  IS_REDEEM_BUILD,
+} from '@/components/auth/BrandRouteGuards';
 
 const LeadCapture = lazy(() => import('./LeadCapture'));
 const LeadCaptureDemo = lazy(() => import('./LeadCaptureDemo'));
@@ -87,35 +93,39 @@ function PagesContent() {
  }
  >
  <Routes>
- {/* Public routes - no protection needed */}
- <Route path="/" element={<Homepage />} />
+ {/* Public routes - no protection needed. Lead capture flow stays on both brands. */}
+ <Route path="/" element={brand.showHomepage ? <Homepage /> : <LeadCapture />} />
  <Route path="/LeadCapture" element={<LeadCapture />} />
  <Route path="/LeadCapture/demo" element={<LeadCaptureDemo />} />
  <Route path="/p/:slug" element={<PublicPreview />} />
  <Route path="/t/:slug" element={<TrackRedirect />} />
  <Route path="/share/:slug" element={<ShareRedirect />} />
 
- {/* Design exploration prototypes */}
- <Route path="/preview" element={<PreviewHub />} />
- <Route path="/preview/atelier" element={<AtelierPreview />} />
- <Route path="/preview/aurora" element={<AuroraPreview />} />
- <Route path="/preview/specimen" element={<SpecimenPreview />} />
- <Route path="/Homepage" element={<Homepage />} />
- <Route path="/features" element={<Features />} />
- <Route path="/pricing" element={<Pricing />} />
- <Route path="/about" element={<About />} />
+ {/* Design exploration prototypes — mktr build only */}
+ <Route path="/preview" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <PreviewHub />} />
+ <Route path="/preview/atelier" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <AtelierPreview />} />
+ <Route path="/preview/aurora" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <AuroraPreview />} />
+ <Route path="/preview/specimen" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <SpecimenPreview />} />
+
+ {/* Public marketing — brand-aware (D2: redeem hides Homepage/Features/Pricing/About). */}
+ <Route path="/Homepage" element={brand.showHomepage ? <Homepage /> : <NotFoundForBrand />} />
+ <Route path="/features" element={brand.showFeatures ? <Features /> : <NotFoundForBrand />} />
+ <Route path="/pricing" element={brand.showPricing ? <Pricing /> : <NotFoundForBrand />} />
+ <Route path="/about" element={brand.showAbout ? <About /> : <NotFoundForBrand />} />
  <Route path="/Contact" element={<Contact />} />
- <Route path="/CustomerLogin" element={<CustomerLogin />} />
- <Route path="/AdminLogin" element={<AdminLogin />} />
- <Route path="/ForgotPassword" element={<ForgotPassword />} />
- <Route path="/auth/google/callback" element={<GoogleCallback />} />
- <Route path="/auth/accept-invite" element={<AcceptInvite />} />
- <Route path="/Onboarding" element={<Onboarding />} />
- <Route path="/PendingApproval" element={<PendingApproval />} />
  <Route path="/personal-data-policy" element={<PersonalDataPolicy />} />
 
- {/* Development routes */}
- {import.meta.env.DEV && <Route path="/*" element={<DevRoutes />} />}
+ {/* D13: internal/auth/admin/onboarding routes redirect to mktr.sg on the redeem build. */}
+ <Route path="/CustomerLogin" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <CustomerLogin />} />
+ <Route path="/AdminLogin" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <AdminLogin />} />
+ <Route path="/ForgotPassword" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <ForgotPassword />} />
+ <Route path="/auth/google/callback" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <GoogleCallback />} />
+ <Route path="/auth/accept-invite" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <AcceptInvite />} />
+ <Route path="/Onboarding" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <Onboarding />} />
+ <Route path="/PendingApproval" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <PendingApproval />} />
+
+ {/* Development routes — mktr build only */}
+ {import.meta.env.DEV && !IS_REDEEM_BUILD && <Route path="/*" element={<DevRoutes />} />}
 
  {/* Protected Admin routes */}
  <Route

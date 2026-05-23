@@ -1,6 +1,7 @@
 import { useState } from"react";
 import { QrTag } from"@/api/entities";
 import { apiClient } from"@/api/client";
+import { publicTrackingUrl } from"@/lib/brand";
 // N+1 fix: scanCount and uniqueScanCount come directly from the QR tag model
 // No separate analytics or prospect-list fetches needed
 import { Card, CardContent, CardHeader, CardTitle } from"@/components/ui/card";
@@ -61,8 +62,10 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
  const [agentGroups, setAgentGroups] = useState([]);
  const [agentDataLoaded, setAgentDataLoaded] = useState(false);
 
+ // backendOrigin is empty when VITE_API_URL=/api (relative same-origin proxy).
+ // resolveBackendUrl returns same-origin /uploads/... paths in that case,
+ // which Render rewrites to the backend.
  const backendOrigin = apiClient.baseURL.replace(/\/api\/?$/,"");
- const trackingBase = `${backendOrigin}/t`;
 
  const resolveBackendUrl = (path) => {
  if (!path) return"";
@@ -71,7 +74,9 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
  };
 
  const handleCopyLink = (slug) => {
- const url = `${trackingBase}/${slug}`;
+ // Always copy the absolute public-brand URL so end users don't end up
+ // with a relative /t/:slug string in their clipboard.
+ const url = publicTrackingUrl(slug);
  navigator.clipboard.writeText(url);
  setCopiedLink(slug);
  setTimeout(() => setCopiedLink(null), 2000);
@@ -245,7 +250,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
  </div>
  {qr.slug && (
  <div className="text-xs text-primary break-all">
- {`${trackingBase}/${qr.slug}`}
+ {publicTrackingUrl(qr.slug)}
  </div>
  )}
  {/* Assignment info */}

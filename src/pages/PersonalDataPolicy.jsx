@@ -1,4 +1,5 @@
 import MarketingLayout from"@/components/layout/MarketingLayout";
+import { brand } from"@/lib/brand";
 import"../pages/Homepage.css";
 
 const sections = [
@@ -67,11 +68,12 @@ const sections = [
 "Hashed (SHA-256) contact information — email address and phone number — unless you have unticked the marketing-consent checkbox above the submit button on a campaign signup form. The checkbox is ticked by default; if you untick it before submitting, no contact information is shared.",
 "Anonymous browser identifiers placed by Meta on our pages (the “_fbp” cookie and the “fbclid” / “_fbc” click identifier), your device's IP address, and your browser's user-agent string.",
  ],
- after: `We send these signals in two ways: (a) the Meta Pixel — a small JavaScript snippet on our public lead-capture pages that fires when you view a page and when you submit a form, and (b) the Meta Conversions API — a server-to-server transmission of the same conversion event from MKTR's servers. We pair the two methods using a shared event ID so Meta counts each real conversion only once, not twice. Meta receives only what is listed above; it does not receive your name, your NRIC, your address, your date of birth, or any free-text information you provide on the form.\n\nHow to opt out:\n• Untick the marketing-consent checkbox before you submit a form. The checkbox is ticked by default; unticking it means we will not transmit your contact information to Meta. You can still submit the form.\n• Adjust “Off-Facebook activity” settings in your Meta account at facebook.com/off_facebook_activity.\n• Configure your browser to block third-party cookies, or install a browser extension that blocks ad-related scripts.\n\nInformation collected through Meta is governed by Meta's own privacy policy at facebook.com/about/privacy.`,
+ after: `We send these signals in two ways: (a) the Meta Pixel — a small JavaScript snippet on our public lead-capture pages that fires when you view a page and when you submit a form, and (b) the Meta Conversions API — a server-to-server transmission of the same conversion event from our servers. We pair the two methods using a shared event ID so Meta counts each real conversion only once, not twice. Meta receives only what is listed above; it does not receive your name, your NRIC, your address, your date of birth, or any free-text information you provide on the form.\n\nHow to opt out:\n• Untick the marketing-consent checkbox before you submit a form. The checkbox is ticked by default; unticking it means we will not transmit your contact information to Meta. You can still submit the form.\n• Adjust “Off-Facebook activity” settings in your Meta account at facebook.com/off_facebook_activity.\n• Configure your browser to block third-party cookies, or install a browser extension that blocks ad-related scripts.\n\nInformation collected through Meta is governed by Meta's own privacy policy at facebook.com/about/privacy.`,
  },
  {
  title:"11. Contact Us",
  content: `If you have any questions about this policy or wish to exercise your rights regarding your personal data, please contact us:`,
+ // Legal entity per D3 — keep MKTR PTE. LTD. as the data controller regardless of brand.
  after: `MKTR PTE. LTD.\n71 Ayer Rajah Crescent, #06-14\nSingapore 139951\n\nWhatsApp: +65 8079 0542`,
  },
 ];
@@ -109,7 +111,7 @@ export default function PersonalDataPolicy() {
  fontWeight: 300,
  }}
  >
- At MKTR PTE. LTD. (&ldquo;MKTR&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, or
+ At MKTR PTE. LTD. (&ldquo;{brand.name}&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, or
  &ldquo;our&rdquo;), we take your privacy seriously. This Personal Data Policy
  outlines how we collect, use, disclose, and manage your personal data in accordance
  with the Personal Data Protection Act 2012 (&ldquo;PDPA&rdquo;) of Singapore.

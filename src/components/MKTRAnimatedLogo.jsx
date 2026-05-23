@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { brand } from '@/lib/brand';
 
 const MKTRAnimatedLogo = ({ message }) => {
  const [borderProgress, setBorderProgress] = useState(0);
@@ -56,9 +57,9 @@ const MKTRAnimatedLogo = ({ message }) => {
  }}
  >
  <div style={{ display: 'flex', position: 'relative', zIndex: 1 }}>
- {['M', 'K', 'T', 'R'].map((letter) => (
+ {(brand.letters || ['M', 'K', 'T', 'R']).map((letter, idx) => (
  <div
- key={letter}
+ key={`${letter}-${idx}`}
  style={{
  fontSize: '3rem',
  fontWeight: '900',

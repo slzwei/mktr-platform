@@ -1,5 +1,6 @@
 import { useState } from"react";
 import { ArrowRight } from"lucide-react";
+import { brand } from"@/lib/brand";
 
 const CTASection = () => {
  const [email, setEmail] = useState("");
@@ -21,7 +22,7 @@ const CTASection = () => {
  Ready to 3x<br />Your Pipeline?
  </h2>
  <p className="mktr-section-subtitle mktr-reveal mktr-reveal-delay-2" style={{ marginBottom: '1rem' }}>
- Join hundreds of Singapore's top insurance agents already using MKTR to close more deals.
+ Join hundreds of Singapore's top insurance agents already using {brand.name} to close more deals.
  </p>
 
  <form

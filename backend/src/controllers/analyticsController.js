@@ -4,6 +4,8 @@ import * as analyticsService from '../services/analyticsService.js';
 const allowedOrigins = new Set([
   'https://mktr.sg',
   'https://www.mktr.sg',
+  'https://redeem.sg',
+  'https://www.redeem.sg',
   'http://localhost:5173'
 ]);
 

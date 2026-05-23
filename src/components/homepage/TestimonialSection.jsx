@@ -1,3 +1,5 @@
+import { brand } from "@/lib/brand";
+
 const TestimonialSection = () => {
  return (
  <section className="mktr-testimonial">
@@ -16,7 +18,7 @@ const TestimonialSection = () => {
 
  <div className="mktr-testimonial-content mktr-reveal">
  <blockquote className="mktr-testimonial-quote">
- MKTR completely changed how I prospect. I went from cold-calling 50 people a day
+ {brand.name} completely changed how I prospect. I went from cold-calling 50 people a day
  to having qualified leads come directly to me. My closing rate tripled in two months.
  </blockquote>
  <p className="mktr-testimonial-author">Sarah Tan</p>

@@ -2,6 +2,8 @@ import express from 'express';
 import crypto from 'crypto';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { Attribution } from '../models/index.js';
+import { publicHostFromRequest, cookieDomainForPublicHost } from '../utils/publicHost.js';
+import { frontendBaseForHost } from '../utils/frontendBase.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 if (isProd && !process.env.ATTRIB_SECRET) {
@@ -14,7 +16,9 @@ const router = express.Router();
 // Middleware to bind attribution from atk cookie and ensure sid cookie
 router.get('/lead-capture', asyncHandler(async (req, res, next) => {
   const atk = req.cookies?.atk;
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProdReq = process.env.NODE_ENV === 'production';
+  const publicHost = publicHostFromRequest(req);
+  const cookieDomain = isProdReq ? cookieDomainForPublicHost(publicHost) : undefined;
   // Ensure sid cookie exists
   let sid = req.cookies?.sid;
   if (!sid) {
@@ -22,8 +26,8 @@ router.get('/lead-capture', asyncHandler(async (req, res, next) => {
     res.cookie('sid', sid, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: isProd,
-      domain: isProd ? '.mktr.sg' : undefined,
+      secure: isProdReq,
+      domain: cookieDomain,
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/'
     });
@@ -52,8 +56,10 @@ router.get('/lead-capture', asyncHandler(async (req, res, next) => {
     }
   }
 
-  // After binding, redirect to the frontend SPA route, preserving any shareable params
-  const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
+  // After binding, redirect to the SPA on the same public host the user is on
+  // (mktr.sg vs redeem.sg) so the attribution cookies stay scoped correctly.
+  // Falls back to MKTR_FRONTEND_URL / FRONTEND_BASE_URL when no host match.
+  const frontendBase = frontendBaseForHost(publicHost);
   const qs = req.url.includes('?') ? req.url.split('?')[1] : '';
   const suffix = qs ? `/LeadCapture?${qs}` : '/LeadCapture';
   return res.redirect(302, `${frontendBase}${suffix}`);

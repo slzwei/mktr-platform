@@ -19,10 +19,11 @@ import {
   trackEvent,
   trackLead,
 } from '../lib/metaPixel';
+import { brand } from '@/lib/brand';
 
-const DEFAULT_REGULATORY = `MKTR Pte. Ltd. (UEN: 202507548M) operates this referral platform. Submitting this form does not establish any advisory relationship and is not a recommendation of any product. By submitting, you agree to be contacted using the particulars provided.`;
+const DEFAULT_REGULATORY = brand.defaultRegulatory;
 
-const DEFAULT_BRAND = 'Powered by MKTR';
+const DEFAULT_BRAND = brand.defaultPoweredBy;
 
 function brandFromCampaignName(name) {
   if (!name) return null;

@@ -1,6 +1,22 @@
 import nodemailer from 'nodemailer';
 import { logger } from '../utils/logger.js';
 
+// D12: per-origin from-address. Lead-capture confirmations sent from the
+// redeem.sg flow use noreply@redeem.sg; admin / agent emails keep the
+// existing noreply@mktr.sg. The provider-side DKIM/SPF/DMARC verification
+// for redeem.sg is operational work tracked in Phase 6.1 of the plan.
+const MKTR_FROM = process.env.EMAIL_FROM_MKTR || process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@mktr.sg';
+const REDEEM_FROM = process.env.EMAIL_FROM_REDEEM || 'noreply@redeem.sg';
+
+export function resolveEmailFrom(context = 'mktr') {
+  if (context === 'redeem' || context === 'public') return REDEEM_FROM;
+  return MKTR_FROM;
+}
+
+export function brandFromContext(context = 'mktr') {
+  return context === 'redeem' || context === 'public' ? 'Redeem' : 'MKTR';
+}
+
 let cachedTransporter = null;
 
 export function getTransporter() {
@@ -29,17 +45,19 @@ export function getTransporter() {
 }
 
 
-export async function sendEmail({ to, subject, html, text }) {
-  const from = process.env.EMAIL_FROM || process.env.EMAIL_USER;
+export async function sendEmail({ to, subject, html, text, context, from }) {
+  // Resolve from-address by context (lead-capture flows pass context='redeem',
+  // admin flows omit it). An explicit `from` arg overrides both.
+  const resolvedFrom = from || resolveEmailFrom(context);
 
   const transporter = getTransporter();
   if (!transporter) {
-    logger.info('[DEV Fallback] Email not sent (mailer not configured)', { to, subject });
+    logger.info('[DEV Fallback] Email not sent (mailer not configured)', { to, subject, from: resolvedFrom });
     logger.debug('Email body preview', { body: html || text || '(no body)' });
     return { success: false, message: 'Mailer not configured; logged instead.' };
   }
 
-  await transporter.sendMail({ from, to, subject, html, text });
+  await transporter.sendMail({ from: resolvedFrom, to, subject, html, text });
   return { success: true };
 }
 

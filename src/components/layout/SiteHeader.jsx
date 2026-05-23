@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { X, Menu } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { getDefaultRouteForRole } from "@/lib/utils";
+import { brand } from "@/lib/brand";
 
 const navLinks = [
  { label: "Features", href: "/features" },
@@ -53,7 +54,7 @@ export default function SiteHeader() {
  to="/"
  className="font-serif text-background text-xl font-semibold tracking-tight hover:opacity-80 transition-opacity"
  >
- MKTR.
+ {brand.wordmark}
  </Link>
 
  {/* Desktop Nav */}
@@ -132,7 +133,7 @@ export default function SiteHeader() {
  >
  <div className="flex items-center justify-between px-6 h-[72px] border-b border-background/10">
  <Link to="/" className="font-serif text-background text-xl font-semibold" onClick={toggleMenu}>
- MKTR.
+ {brand.wordmark}
  </Link>
  <button
  className="p-2 text-background/60 hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-terracotta rounded-lg"
