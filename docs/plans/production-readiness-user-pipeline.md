@@ -36,20 +36,20 @@
 | A2 | Ship Android FCM push fix | ✅ done 2026-05-15 |
 | A3 | Tag real test users with `is_test_data=true` | ✅ done 2026-05-15 |
 | A4 | Synthetic monitor for `lead.created` | ✅ done 2026-05-15 |
-| B1 | Synthetic monitors for OTP / invitation / activate-agent | 🟨 2/4 (create-member-invitation + activate-agent done; activate-agent cron live; prod activation fix applied) |
+| B1 | Synthetic monitors for OTP / invitation / activate-agent | 🟨 2/4 active; email OTP merged but blocked by staging SES secrets |
 | B2 | Add second MKTR admin + runbook | ⬜ |
 | B3 | Schema-drift CI check (CLAUDE.md vs database.types.ts) | ⬜ |
 | C1 | Fix QR single-create API (Joi vs DB phone format) | ⬜ |
 | C2 | Refactor FCM gradle into Expo config plugin | ⬜ |
 | C3 | lyfe-app working tree decision (codex/verify-outstanding-items) | ⬜ |
 | D1 | Phase 0 — Discovery: entry-point map | ✅ done in research 2026-05-15 |
-| D2 | Phase 1 — Pre-flight | ⬜ |
-| D3 | Scenario: Director invites Manager | ⬜ |
-| D4 | Scenario: Manager invites Agent (full candidate lifecycle) | ⬜ |
-| D5 | Scenario: Public `/join-us` application | ⬜ |
-| D6 | Scenario: PA invites Candidate (pa_manager_assignments) | ⬜ |
-| D7 | Scenario: Activate-agent + MKTR sync | ⬜ |
-| D8 | Phase 8 — Cleanup | ⬜ |
+| D2 | Phase 1 — Pre-flight | 🟨 in-progress |
+| D3 | Scenario: Director invites Manager | ✅ done 2026-05-16 |
+| D4 | Scenario: Manager invites Agent (full candidate lifecycle) | ✅ fixed + retested 2026-05-16 |
+| D5 | Scenario: Public `/join-us` application | ✅ done 2026-05-16 |
+| D6 | Scenario: PA invites Candidate (pa_manager_assignments) | ✅ done 2026-05-16 |
+| D7 | Scenario: Activate-agent + MKTR sync | 🟥 blocked — MKTR credentials absent |
+| D8 | Phase 8 — Cleanup | ✅ done 2026-05-16 |
 
 ---
 
@@ -228,11 +228,14 @@ ORDER BY phone;
 
 ### B1. Synthetic monitors for OTP / invitation / activate-agent paths
 
-**Status:** 🟨 in-progress (2/4 probes shipped 2026-05-15)
+**Status:** 🟨 in-progress (2/4 probes active; 1/4 merged but blocked)
 
 **Shipped:**
 - ✅ `11-create-member-invitation.mjs` (workflow: `synthetic-create-member-invitation.yml`, hourly `15 * * * *`). Exercises `intended_role=candidate` (3-table cascade: member_invitations + candidates + invitations). Auths as `probe+admin@lyfe.sg` via PROBE_ACCOUNT_PASSWORD signin (no long-lived JWT needed). Stable phone `+6580001999` reserved; pre-cleanup self-heals orphans. Two consecutive greens verified (runs `25919085573`, `25919163452`).
 - ✅ `12-activate-agent.mjs` (workflow: `synthetic-activate-agent.yml`, hourly `30 * * * *`, pushed in `501218b`). Heavy fixture: stable activation user `probe+activation@lyfe.sg` (`+6580001998`) + candidate(status=licensed) + candidate_profile + 4 milestones (bdm/bes_induction completed; rnf/sales_authority issued). Asserts post-flip: `candidates.status='active_agent'`, `users.role='agent'`, `auth.users.app_metadata.role='agent'`. Reset runs in `finally` so assertion failure doesn't strand the fixture in active_agent state. Two consecutive greens (runs `25952207062` 12s, `25952223833` 10s).
+
+**Merged but blocked:**
+- 🟥 `13-email-otp.mjs` (workflow: `synthetic-email-otp.yml`, merged to `lyfe-app/main` in `c09c64a`, schedule paused in `4920312`). Pairs `send-email-otp` + `verify-email-otp` because verification consumes the OTP row created by send. Auths as `probe+candidate@lyfe.sg` via PROBE_ACCOUNT_PASSWORD, calls real staging edge functions, asserts `email_otp_codes` creation, checks wrong-code `failed_attempts`, verifies the recovered code, asserts `users.email_verified=true`, and cleans/restores the probe fixture. First dispatch run `25961636043` failed at `send-email-otp` with HTTP 500 and opened issue #75. Staging `supabase secrets list --project-ref ajjxkasvikeigapnzdak` shows no SES edge-function secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `SES_SENDER_EMAIL`), so this is blocked on staging email config, not code. Post-failure cleanup verified `email_otp_codes` count `0` for `probe+candidate@lyfe.sg`, with the public user restored to `email_verified=false`, `role=candidate`. Workflow is `workflow_dispatch` only until issue #75 passes.
 
 **Production bugs surfaced during B1.2 — fixed:**
 1. **`candidate_milestones` CHECK lacked `'bdm'` on staging.** Migration `20260418110000_bdm_as_milestone.sql` logged as applied but DDL silently no-op'd. Re-applied via one-off DDL runner; codified in `20260516040000_reapply_bdm_constraint.sql` (committed `bf7f562` on lyfe-app `main`) and applied to prod on 2026-05-16.
@@ -252,9 +255,9 @@ ORDER BY phone;
 - Staging phantom migration repair done 2026-05-16. `20260504150311` was recovered into `lyfe-app/supabase/migrations/` as an idempotent file (`86e0ca9`). The other four phantoms (`20260504150321`, `…332`, `…338`, `…351`) were duplicates of local `20260428120000`, `20260428130000`, `20260428140000`, `20260428160000`; staging history was repaired by marking the local versions applied and the duplicate phantom rows reverted. Plain `supabase db push --linked` now fails only because older local migrations are pending before the repaired remote watermark; `supabase db push --linked --dry-run --include-all` succeeds and lists the pending migrations cleanly.
 - `oneoff-fix-bdm` and `oneoff-fix-fn-activate` patterns: deploy a temporary edge function, invoke, delete. Useful when CLI lacks `db query`/`db execute` (still missing in v2.98). Don't commit the function source.
 
-**Remaining (2/4):**
-- `send-email-otp` + `verify-email-otp` (paired, share OTP state)
-- `custom-sms-hook` — harder; Supabase Auth hook not directly callable, may need a different probe pattern (defer or skip)
+**Remaining / blocked:**
+- `send-email-otp` + `verify-email-otp` — code/workflow merged, schedule blocked on staging SES secrets and a green dispatch.
+- `custom-sms-hook` — harder; Supabase Auth hook not directly callable, may need a different probe pattern (defer or skip). Staging edge secrets also do not currently show `SNS_AWS_ACCESS_KEY_ID` / `SNS_AWS_SECRET_ACCESS_KEY`, which the function requires at module load.
 
 **What:** Extend the synthetic pattern (A4) to the user-creation paths.
 
@@ -517,7 +520,7 @@ Out of scope: 8 (MKTR webhook prospect — covered by lead pipeline test) and 9 
 
 ### D2. Phase 1 — Pre-flight
 
-**Status:** ⬜ todo
+**Status:** 🟨 in-progress
 
 **What to verify before running scenarios:**
 1. All test users (`+6590000X`) exist, are active, and are tagged `is_test_data=true` (depends on A3)
@@ -555,11 +558,24 @@ LEFT JOIN public.users u ON u.phone = e.phone;
 
 **DOD:** all 9 fixtures verified, test admin available, MKTR sync current.
 
+**Run notes — 2026-05-16:**
+- Supabase target verified as production project `nvtedkyjwulkzjeoqjgx`.
+- Activation gate migrations `20260516040000`, `20260516050000`, and `20260516060000` are recorded in `supabase_migrations.schema_migrations`.
+- All 9 `+6590000X` test users exist, are active, have expected roles/reporting lines, and are tagged `is_test_data=true`.
+- Test admin/director availability verified: Steven Teo is active director; Shawn Lee admin row exists.
+- `pa_manager_assignments` has no rows involving the `+6590000X` test users, matching D6 setup expectations.
+- Push-token caveat: Daniel has a push token; Steven, Shawn, and all six listed test agents currently do not.
+- Synthetic gates checked via GitHub Actions on `slzwei/lyfe-app`: `create-member-invitation`, `activate-agent`, and `mktr lead.created` all had recent successful scheduled runs on 2026-05-16.
+- MKTR `/health/sync` is reachable and fresh: Lyfe adapter status `ok`, `stale=false`, last run at `2026-05-16T10:47:57.146Z`.
+- Checkout hygiene resolved for this run: used temporary detached worktree `/Users/shawnlee/lyfe-master/lyfe-app-phase-d-main` at `origin/main` commit `86e0ca9`; the dirty `lyfe-app` working tree was left untouched. Temporary worktree removed after the run.
+- Steven director OTP sign-in path verified with whitelisted test OTP `555555`.
+- Remaining gap before marking D2 green: MKTR DB/admin API credentials are not present in the shell, so row-level MKTR mirror verification and authenticated `POST /api/lyfe/agents/sync` could not be run locally.
+
 ---
 
 ### D3. Scenario: Director invites Manager
 
-**Status:** ⬜ todo
+**Status:** ✅ done 2026-05-16
 
 **Coverage:**
 - Entry point #2 (`create-member-invitation`) with `intended_role='manager'`
@@ -567,25 +583,55 @@ LEFT JOIN public.users u ON u.phone = e.phone;
 - `member_invitations` row creation
 - Notification dispatch on invite accept
 
-**Steps (filled in during Phase D execution — leave skeleton):**
-1. Call `create-member-invitation` as Steven (director) with `{ intended_role: 'manager', phone: '+65 XXX', email: '...' }`
-2. Verify `member_invitations` row created with status='pending', intended_role='manager'
-3. Negative path: same call as a manager-role caller should 403
-4. Accept the invite via the new manager's first login (phone OTP)
-5. Verify `users` row created with role='manager', reports_to=Steven's id
-6. Verify `candidate_assigned` notification fires for the new manager's manager (or whoever's notified)
+**Steps run 2026-05-16:**
+1. Signed in as Steven (`+6590000001`) via production Supabase OTP test code `555555`; JWT role=`director`.
+2. Negative path: signed in as Daniel (`+6590000002`) and called `create-member-invitation` with `intended_role='manager'`, phone `+6580000002`; got HTTP 403 `manager cannot invite manager role`; no row created.
+3. Positive path: Steven called `create-member-invitation` with `intended_role='manager'`, phone `+6580000001`, assigned manager/director=`Steven`.
+4. Verified `member_invitations` row `6f949510-07a9-46df-923e-1c31c6b9236a` created, then accepted by first OTP login for `+6580000001`.
+5. Verified auth/public user `44619fd1-dc6f-44d4-a75c-769c43fbbc03` created with role=`manager`, `reports_to=Steven`, `onboarding_complete=true`, `email_verified=true`, auth JWT role=`manager`.
+6. Tagged the new test `users` and `member_invitations` rows with `is_test_data=true` for staff-facing query exclusion and cleanup targeting.
+7. Verified invite-accept notification row `type='new_manager_joined'` sent to Steven. The skeleton expected `candidate_assigned`, but the implementation correctly uses manager-specific notification type `new_manager_joined`.
 
-**Verification queries:** to be filled in
+**Verification query used:**
+```sql
+SELECT jsonb_build_object(
+  'users', (SELECT jsonb_agg(to_jsonb(u)) FROM (
+    SELECT id, phone, full_name, role::text, reports_to, is_test_data,
+           onboarding_complete, email_verified, created_at
+    FROM public.users
+    WHERE phone = '6580000001'
+  ) u),
+  'member_invitations', (SELECT jsonb_agg(to_jsonb(mi)) FROM (
+    SELECT id, phone, full_name, intended_role::text, status,
+           invited_by_id, assigned_manager_id, accepted_by_id,
+           accepted_at, is_test_data, created_at
+    FROM public.member_invitations
+    WHERE phone = '6580000001'
+  ) mi),
+  'auth_users', (SELECT jsonb_agg(to_jsonb(au)) FROM (
+    SELECT id, phone, raw_app_meta_data->>'role' AS jwt_role, created_at
+    FROM auth.users
+    WHERE phone = '6580000001'
+  ) au),
+  'notifications_recent', (SELECT jsonb_agg(to_jsonb(n)) FROM (
+    SELECT id, user_id, type, title, body, data, created_at
+    FROM public.notifications
+    WHERE created_at >= '2026-05-16T10:55:00Z'
+      AND (user_id = '4ac16477-e844-462e-881b-6e44045b30d7'
+           OR data::text ILIKE '%44619fd1-dc6f-44d4-a75c-769c43fbbc03%')
+  ) n)
+) AS d3_assertions;
+```
 
 **DOD:** all asserts pass, negative path returns 403
 
-**Notes:** _empty_
+**Notes:** Auth/public user `44619fd1-dc6f-44d4-a75c-769c43fbbc03`, invitation `6f949510-07a9-46df-923e-1c31c6b9236a`, and notification `07faab87-ddd4-4311-8d92-8a546959b429` were deleted in D8 cleanup.
 
 ---
 
 ### D4. Scenario: Manager invites Agent (full candidate lifecycle)
 
-**Status:** ⬜ todo
+**Status:** ✅ fixed + retested 2026-05-16
 
 **Coverage:**
 - Entry point #1 (`create-candidate`) OR #2 (`create-member-invitation`)
@@ -596,25 +642,60 @@ LEFT JOIN public.users u ON u.phone = e.phone;
 - JWT refresh after role flip
 - Push notification arrival
 
-**Steps (skeleton):**
-1. Manager Daniel creates a candidate
-2. Candidate logs in via invite token, completes onboarding form
-3. Candidate completes DISC quiz, results PDF generated
-4. Daniel reviews, calls `activate-agent`
-5. New agent's JWT refreshes, app picks up new role
-6. Verify MKTR agent sync includes the new agent on next pull (depends on B1 if monitored)
+**Steps run 2026-05-16:**
+1. Daniel (`+6590000002`, role=`manager`) called `create-member-invitation` with `intended_role='candidate'`, phone `+6580000003`.
+2. Edge function created:
+   - `member_invitations.id=fe6cc7a1-f079-4020-ba95-85b213ebc680`
+   - `candidates.id=813a101c-a510-47f3-9495-ae7aa7c91a06`
+   - `invitations.id=357e8d82-f32d-4179-a3f4-270b63b67949`
+3. Opened the production token URL in Playwright: redirected to `/candidate/onboarding`.
+4. Defect found: token accept created a second candidate row `d0b9d229-251e-459b-87cf-52afd6a8992b` and second `candidate_assigned` notification instead of reusing `invitations.candidate_record_id=813a101c-a510-47f3-9495-ae7aa7c91a06`.
+5. Staged the accepted duplicate row to activation-ready state at DB level: completed profile, DISC result, `status='licensed'`, and BDM/BES/RNF/Sales Authority milestones.
+6. Daniel called `activate-agent`; got HTTP 200 with `app_metadata_updated=true`.
+7. Activation verified: accepted candidate became `active_agent`; auth JWT metadata role became `agent`.
+8. Defect found: activated `public.users` row had `phone=NULL`, `email=NULL`, and `reports_to=NULL`, so MKTR sync would not have the correct phone/reporting data.
 
-**Verification queries:** to be filled in
+**Verification query summary:** checked `public.users`, `auth.users`, `candidates`, `candidate_profiles`, `disc_results`, `candidate_milestones`, `invitations`, and recent `notifications`.
 
 **DOD:** new agent visible in MKTR `users` mirror with correct `lyfeId`
 
-**Notes:** _empty_
+**Notes:** DOD not met. Activation itself works, but the candidate-token path duplicates candidates and loses phone/reporting data on the eventual agent row. All D4 artifacts were deleted in D8 cleanup.
+
+**Fix + retest 2026-05-16:**
+1. Patched and deployed `lyfe-sg` commit `d7a9ade` (`fix(candidate): reuse linked invite candidate`) to production deployment `lyfe-d6ipgm6zs-shawnleeapps-8253s-projects.vercel.app`; `lyfe.sg` and `www.lyfe.sg` aliases point to it.
+2. GitHub Actions `Tests` run `25960896745` passed. Local checks also passed: `npm test`, `npm run test:coverage`, `npx tsc --noEmit --pretty false`, `npm run build`, and targeted ESLint on touched files.
+3. Daniel (`+6590000002`, manager) invited fresh candidate phone `+6580000103` via production `create-member-invitation`.
+4. Production token accept through `https://lyfe.sg/candidate/login?token=...` redirected to `/candidate/onboarding` and reused the pre-created candidate row:
+   - member invitation `de5c859b-b01c-4ae2-b2ca-515a669f7ef9`
+   - candidate `42feb8c8-60b7-460f-a6e1-7e5300f399fc`
+   - legacy invitation `db3a18e6-8982-43f9-9ded-6a09995cbff1`
+   - candidate profile `66a30267-eb27-4c84-9d4c-fd0e3b89ad7a`
+   - auth/public user `1328bdbb-e616-4dc7-bf6d-197ba4075a94`
+5. Verified post-accept invariants:
+   - exactly 1 `candidates` row for phone `6580000103`
+   - `invitations.candidate_record_id = 42feb8c8-60b7-460f-a6e1-7e5300f399fc`
+   - `candidate_profiles.candidate_id` points at that same row
+   - `candidate_profiles.contact_number = +6580000103`
+   - `public.users.phone = 6580000103`
+   - `public.users.reports_to = Daniel`
+   - exactly 1 recent `candidate_assigned` notification for Daniel (no duplicate)
+6. Staged the accepted candidate to activation-ready state (completed profile, DISC result, `status='licensed'`, BDM/BES/RNF/Sales Authority milestones) and called production `activate-agent` as Daniel.
+7. Activation returned HTTP 200 `{ ok: true, app_metadata_updated: true }`. Verified final state before cleanup:
+   - `candidates.status = active_agent`
+   - `public.users.role = agent`
+   - `public.users.phone = 6580000103`
+   - `public.users.email = phased-d4-retest-20260516@lyfe.internal` (profile-staged test email)
+   - `public.users.reports_to = Daniel`
+   - `auth.users.app_metadata.role = agent`
+8. Cleanup completed and post-cleanup verification returned zero residual rows for the test phone/candidate/user across `candidates`, `invitations`, `member_invitations`, `candidate_profiles`, `disc_results`, `disc_responses`, `candidate_milestones`, `notifications`, `public.users`, and `auth.users`.
+
+**Residual:** MKTR row-level mirror verification remains covered by D7 and is still blocked by missing MKTR DB/admin credentials locally. The Lyfe-side source row now has the phone/reporting data D7 needs.
 
 ---
 
 ### D5. Scenario: Public `/join-us` application
 
-**Status:** ⬜ todo
+**Status:** ✅ done 2026-05-16
 
 **Coverage:**
 - Entry point #4 (`submitApplication`)
@@ -625,18 +706,38 @@ LEFT JOIN public.users u ON u.phone = e.phone;
 - PDF generation + storage upload
 - Default assignment to STEVEN_ID
 
-**Verification:** queries TBD
+**Initial run notes — 2026-05-16:**
+- Production `/join-us` form submitted successfully via Playwright with `PhaseD D5 Organic 20260516`, phone `+6580000099`, email `phased-d5-20260516@lyfe.internal`.
+- Verified organic candidate `182b8275-80aa-429b-afd3-1c6e33de7c2b`: `source='organic'`, assigned/defaulted to Steven (`4ac16477-e844-462e-881b-6e44045b30d7`), profile completed at step 6.
+- Verified distinct `organic_application` notification to Steven.
+- Browser quiz automation answered 18/36 questions, then stopped on question 19. Completed `enneagram_responses`/`enneagram_results` directly to verify the `enneagram_completed` trigger; notification fired to Steven.
+- PDF/storage upload was not verified because the quiz server action did not complete through the browser.
+
+**Retest notes — 2026-05-16:**
+1. Reran the production public flow via Playwright after waiting for client hydration on `/join-us`.
+2. Submitted fresh applicant `PhaseD D5 Retest 20260516 C`, phone `+6580000106`, email `phased-d5-retest-20260516-c@example.com`, DOB `1995-01-15`, earliest start `2026-06-01`.
+3. Browser reached `/join-us/quiz`, answered all 36 Enneagram questions through the UI, redirected to `https://www.lyfe.sg/join-us/results`, and rendered `Application Complete` with Type `9w8` result content.
+4. Verified production rows before cleanup:
+   - candidate `196ca781-f636-4123-855e-a61c38d1a465`, `status='applied'`, `source='organic'`, `assigned_manager_id=created_by_id=4ac16477-e844-462e-881b-6e44045b30d7`, `notes='Public application via /join-us'`
+   - `candidates.phone='6580000106'`; `candidate_profiles.contact_number='+6580000106'`
+   - profile `46d722c5-dab6-4b4c-a613-f9203d538a1b`, auth/public user `64b01ffb-5cfd-42a1-b221-088c65d58eee`, `completed=true`, `onboarding_step=6`, education `Bachelor's Degree`
+   - `public.users.role='candidate'`, `full_name='PhaseD D5 Retest 20260516 C'`
+   - `enneagram_responses` present with 36 answers
+   - `enneagram_results` `9f2823cf-1aa7-4f56-b25a-d4f8061f84f3`, `primary_type=9`, `wing_type=8`, `total=36`
+   - exactly one `organic_application` notification to Steven and exactly one `enneagram_completed` notification to Steven for the candidate
+   - PDF uploaded to `candidate-pdfs/64b01ffb-5cfd-42a1-b221-088c65d58eee/enneagram-profile.pdf`, `mimetype='application/pdf'`, size `10539` bytes
+5. Cleanup deleted the PDF object, Steven notifications, Enneagram rows, candidate profile, candidate row, public user, and auth user. Post-cleanup verification returned zero residual `candidates`, `candidate_profiles`, `enneagram_responses`, `enneagram_results`, `public.users`, storage objects, and notifications for the test identity.
 
 **DOD:** organic candidate created, correct notification type, results PDF uploaded
 
 **Notes:**
-- Need to scrub test rows after — they're real-looking production data.
+- DOD met on retest. The earlier 18/36 browser stop was automation timing/hydration-related, not a product failure. The production row shape differs by table: `candidates.phone` stores `658...` while `candidate_profiles.contact_number` stores `+658...`.
 
 ---
 
 ### D6. Scenario: PA invites Candidate (pa_manager_assignments)
 
-**Status:** ⬜ todo
+**Status:** ✅ done 2026-05-16
 
 **Coverage:**
 - Entry point #10 (PA→manager link)
@@ -644,22 +745,24 @@ LEFT JOIN public.users u ON u.phone = e.phone;
 - Capability matrix: PA can only invite candidate (not agent/manager/etc.)
 - PA must be linked before invitation
 
-**Steps (skeleton):**
-1. Create a test PA user
-2. Verify PA cannot invite without `pa_manager_assignments` row (expect 403)
-3. Insert `pa_manager_assignments` linking PA to Daniel
-4. PA invites a candidate, candidate assigned to Daniel
-5. Verify negative paths (PA invites a manager = 403)
+**Steps run 2026-05-16:**
+1. Steven invited PA `+6580000004`; PA accepted by OTP and was created as role=`pa`, `reports_to=Daniel`.
+2. Before assignment row, PA tried to invite candidate `+6580000002` for Daniel; got HTTP 403 `You are not assigned to this manager`.
+3. Inserted `pa_manager_assignments.id=edcdc6de-a351-4e6f-8790-c5b856c27e74` linking PA to Daniel.
+4. PA invited candidate `+6580000002`; got HTTP 200. Candidate row `8d326267-bfff-4578-b8c7-774fad881aec` assigned to Daniel.
+5. PA tried to invite a manager; got HTTP 403 `pa cannot invite manager role`; no row created.
+6. Candidate accepted by OTP and public user was created as role=`candidate`, `reports_to=Daniel`.
+7. Verified `candidate_assigned` notification to Daniel.
 
 **DOD:** PA invite works under linked manager, fails without link, fails for higher roles
 
-**Notes:** _empty_
+**Notes:** All D6 artifacts were deleted in D8 cleanup.
 
 ---
 
 ### D7. Scenario: Activate-agent + MKTR sync
 
-**Status:** ⬜ todo
+**Status:** 🟥 blocked 2026-05-16
 
 **Coverage:**
 - Entry point #5 (activate-agent) — already in D4
@@ -674,13 +777,15 @@ LEFT JOIN public.users u ON u.phone = e.phone;
 
 **DOD:** MKTR mirror in sync with Lyfe within one sync cycle
 
-**Notes:** _empty_
+**Notes:** Blocked because MKTR admin API/DB credentials are not present locally. D4's Lyfe-side mirror-data defect has been fixed and retested; the remaining blocker is row-level MKTR access or an authenticated MKTR sync call.
+
+**Recheck 2026-05-16:** `/tmp/.mktr-db-url` is absent, the shell has no `MKTR_*` / admin / DB / JWT vars, and a hidden env-file scan found no MKTR DB/admin credentials beyond examples/frontend config. D7 remains blocked and was not inferred from `/health/sync`.
 
 ---
 
 ### D8. Phase 8 — Cleanup
 
-**Status:** ⬜ todo
+**Status:** ✅ done 2026-05-16
 
 **Coverage:**
 - Delete all test artifacts created during scenarios
@@ -703,7 +808,12 @@ WHERE created_at > '<test start time>' AND is_test_data = true;
 
 **DOD:** state restored to pre-test (modulo Phase D1 fixtures)
 
-**Notes:** _empty_
+**Cleanup run 2026-05-16:**
+- Pre-cleanup targeted counts: auth users 5, public users 5, member invitations 4, candidates 4, candidate profiles 2, invitations 2, PA assignments 1, quiz rows 3, notifications 10.
+- Deleted targeted Phase D artifacts in one transaction.
+- Post-cleanup verification counts for the same targets: all zero.
+
+**Notes:** Audit/history rows were not scrubbed; operational entities created by the test were removed.
 
 ---
 
@@ -723,6 +833,16 @@ Append-only. Format: `YYYY-MM-DD — task ID — what changed — by whom`.
 2026-05-16 — B1 — Reviewed production activation blocker via read-only Supabase MCP: MCP points at prod but cannot apply migrations; prod constraints already include `bdm`, migration versions are not recorded, and `fn_activate_agent` still has ambiguous unqualified milestone lookups. Tightened B1 status/DOD language. — Codex
 2026-05-16 — B1 — Enabled activate-agent hourly cron on lyfe-app main (`501218b`). Applied prod activation migrations `20260516040000` and `20260516050000` via one-shot Edge Function because Supabase MCP is read-only; verified migration records, constraint shape, and qualified function body. Supabase advisor then surfaced explicit anon/authenticated EXECUTE grants on `fn_activate_agent`; added/applied `20260516060000_restrict_fn_activate_agent_execute.sql` and pushed lyfe-app main (`c7937e5`). Verified privileges: anon=false, authenticated=false, service_role=true. — Codex
 2026-05-16 — staging migrations — Investigated 5 phantom staging migrations. Recovered `20260504150311_backfill_unique_constraints_and_exam_papers_column.sql` into lyfe-app (`86e0ca9`). Repaired staging history: marked local equivalents `20260428120000`, `20260428130000`, `20260428140000`, `20260428160000` applied and duplicate phantom rows `20260504150321`, `20260504150332`, `20260504150338`, `20260504150351` reverted. Verified `supabase db push --linked --dry-run --include-all` now succeeds. — Codex
+2026-05-16 — D2 — Froze Phase D execution on temporary detached `/Users/shawnlee/lyfe-master/lyfe-app-phase-d-main` worktree at `origin/main` commit `86e0ca9`; left dirty `lyfe-app` branch untouched; removed the temporary worktree after the run. Verified Steven director OTP path. MKTR row-level sync remained blocked by missing local credentials. — Codex
+2026-05-16 — D3 — Ran director-invites-manager E2E: Steven invited `+6580000001`, Daniel manager negative path returned 403, new manager accepted by OTP, `new_manager_joined` notification fired. Marked ✅. — Codex
+2026-05-16 — D4 — Ran manager-invites-candidate/token/activation path. Activation returned HTTP 200, but token accept duplicated candidates and final agent row had null phone/email/reports_to. Marked blocked. — Codex
+2026-05-16 — D5 — Ran production `/join-us` form. Organic candidate/default Steven assignment/`organic_application` notification passed; browser quiz stopped at 18/36, direct DB completion verified `enneagram_completed`; PDF not verified. Marked partial. — Codex
+2026-05-16 — D6 — Ran PA assignment scenario: unassigned PA invite denied, assignment row enabled candidate invite, PA higher-role invite denied, OTP candidate accept reported to Daniel. Marked ✅. — Codex
+2026-05-16 — D7/D8 — MKTR sync blocked by missing MKTR credentials and D4 mirror-data defects. Cleaned up all targeted Phase D production artifacts; post-cleanup counts zero. — Codex
+2026-05-16 — D4 retest — Patched/deployed lyfe-sg `d7a9ade`; reran Daniel→candidate token accept + activation on production. Token accept reused the linked candidate, emitted one `candidate_assigned`, seeded phone/reporting on `public.users`, activation returned HTTP 200 with auth metadata updated, and post-cleanup verification found zero residual D4 artifacts. Marked D4 fixed; D7 remains blocked only by missing MKTR credentials. — Codex
+2026-05-16 — D5 retest — Reran production `/join-us` form + 36-question Enneagram browser flow. Verified organic candidate/default Steven assignment, completed profile, `organic_application` + `enneagram_completed` notifications, Enneagram result, and uploaded `candidate-pdfs/{userId}/enneagram-profile.pdf`; post-cleanup verification found zero residual D5 artifacts. Marked D5 done. — Codex
+2026-05-16 — D7 recheck — Rechecked local credential availability: `/tmp/.mktr-db-url` absent, shell had no MKTR/admin DB vars, and hidden env files contained no MKTR DB/admin credentials. Kept D7 blocked; did not infer row-level sync from health checks. — Codex
+2026-05-16 — B1 email OTP — Added paired staging synthetic probe/workflow for `send-email-otp` + `verify-email-otp` in lyfe-app (`c09c64a`). Local checks passed (`node --check`, synthetic `npm ci`, Prettier, ESLint, targeted Jest email-verification tests). Dispatch run `25961636043` failed with `send-email-otp` HTTP 500 and opened issue #75; staging edge secrets lack AWS SES config, so paused the schedule in `4920312` and documented the blocker. Verified failed-run cleanup left `0` OTP rows for the probe candidate. — Codex
 ```
 
 ---
@@ -738,6 +858,8 @@ Append-only. Document any scope changes or "won't fix" decisions.
 2026-05-15 — A4 alerting — Accepted GH-Issues-only alerting for now (Slack webhook stub present but inert). Rationale: GH Issues are checked daily and the failure path is proven (issue #71). Wiring Slack is a sub-gap, not a blocker.
 2026-05-16 — B1 credential pattern — Standardised synthetic probes on short-lived sign-in using `PROBE_ACCOUNT_PASSWORD` and dedicated probe users instead of storing long-lived user JWTs in GitHub secrets.
 2026-05-16 — Phase D gate — Tightened the E2E gate to require the production activation fix, pushed activate-agent cron, green D2 pre-flight, and explicit checkout hygiene before running D3-D7.
+2026-05-16 — Phase D execution — Continued with D3-D6 after explicitly freezing `lyfe-app/main` even though MKTR row-level sync credentials were absent; MKTR-dependent D7 remains blocked rather than inferred from health checks.
+2026-05-16 — B1 email OTP schedule — Keep `synthetic-email-otp.yml` dispatch-only until staging has SES edge-function secrets and a green manual dispatch. Rationale: an hourly red monitor for known staging misconfiguration creates noise without improving detection.
 ```
 
 ---
