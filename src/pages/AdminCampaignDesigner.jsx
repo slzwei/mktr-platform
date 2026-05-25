@@ -9,6 +9,7 @@ import { apiClient } from"@/api/client";
 import { useCurrentUser } from"@/hooks/queries/useUsersQuery";
 import { useCampaign } from"@/hooks/queries/useCampaignsQuery";
 import { queryClient } from"@/lib/queryClient";
+import { customerPublicUrl } from"@/lib/brand";
 
 export default function AdminCampaignDesigner() {
  const campaignId = new URLSearchParams(window.location.search).get('campaign_id');
@@ -42,7 +43,9 @@ export default function AdminCampaignDesigner() {
  toast.error('Failed to generate preview link');
  return;
  }
- const url = `${window.location.origin}${urlPath}`;
+ // Open preview on the customer-facing redeem.sg so the admin reviews
+ // the same render the customer would see (avoiding a mktr→redeem hop).
+ const url = customerPublicUrl(urlPath);
  window.open(url, '_blank');
  } catch (e) {
  console.error('Failed to create preview:', e);

@@ -29,6 +29,7 @@ import {
  TableRow
 } from"@/components/ui/table";
 import { Link } from"react-router-dom";
+import { customerLeadCaptureUrl } from"@/lib/brand";
 import { format, parseISO } from"date-fns";
 import {
  Plus,
@@ -92,8 +93,9 @@ export default function AdminCampaigns() {
  };
 
  const handleCopyLink = (campaignId) => {
- const baseUrl = window.location.origin;
- const campaignUrl = `${baseUrl}/LeadCapture?campaign_id=${campaignId}`;
+ // Always copy the customer-facing redeem.sg URL so recipients open
+ // directly on the customer brand (no mktr.sg→redeem.sg redirect hop).
+ const campaignUrl = customerLeadCaptureUrl(campaignId);
 
  navigator.clipboard.writeText(campaignUrl).then(() => {
  setCopiedId(campaignId);
