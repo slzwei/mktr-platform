@@ -23,6 +23,7 @@ const AuroraPreview = lazy(() => import('./preview/AuroraPreview'));
 const SpecimenPreview = lazy(() => import('./preview/SpecimenPreview'));
 
 const Homepage = lazy(() => import('./Homepage'));
+const RedeemPlaceholder = lazy(() => import('./RedeemPlaceholder'));
 const Features = lazy(() => import('./Features'));
 const Pricing = lazy(() => import('./Pricing'));
 const About = lazy(() => import('./About'));
@@ -94,7 +95,7 @@ function PagesContent() {
  >
  <Routes>
  {/* Public routes - no protection needed. Lead capture flow stays on both brands. */}
- <Route path="/" element={brand.showHomepage ? <Homepage /> : <LeadCapture />} />
+ <Route path="/" element={brand.showHomepage ? <Homepage /> : (IS_REDEEM_BUILD ? <RedeemPlaceholder /> : <LeadCapture />)} />
  <Route path="/LeadCapture" element={<LeadCapture />} />
  <Route path="/LeadCapture/demo" element={<LeadCaptureDemo />} />
  <Route path="/p/:slug" element={<PublicPreview />} />
