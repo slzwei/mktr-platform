@@ -177,7 +177,11 @@ export const schemas = {
     carId: Joi.string().uuid().optional(),
     agentAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
     agentGroupId: Joi.string().uuid().allow(null).optional(),
-    assignedAgentPhone: Joi.string().pattern(/^\+[1-9]\d{9,14}$/).allow('', null).optional(),
+    // Accepts both raw digits (`65XXXXXXXX` — per `users.phone` storage contract)
+    // and E.164 (`+65XXXXXXXX`). Frontend pulls agent.phone directly from the
+    // synced Lyfe users table where + is stripped (see root CLAUDE.md "Phone
+    // format storage contract"), so allowing the raw form is required.
+    assignedAgentPhone: Joi.string().pattern(/^\+?[1-9]\d{9,14}$/).allow('', null).optional(),
     assignedAgentEmail: Joi.string().email().allow('', null).optional(),
     assignedAgentName: Joi.string().max(100).allow('', null).optional()
   }),
