@@ -11,7 +11,6 @@ import {
  Settings,
  LogOut,
  Menu,
- Shield,
  Link2,
  Package,
  Search,
@@ -19,6 +18,7 @@ import {
 import NotificationBell from './NotificationBell.jsx';
 import CommandPalette from './CommandPalette.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import MktrWordmark from '@/components/brand/MktrWordmark';
 import {
  Sidebar,
  SidebarContent,
@@ -114,12 +114,13 @@ const getUserDisplayRole = (user) => {
  return 'User';
 };
 
-// Portal title appears in both the sidebar header and the top bar.
-// Keep this a single source of truth so the two chrome surfaces can't drift.
-const getPortalTitle = (role) => {
- if (role === 'admin') return 'MKTR Admin';
- if (role === 'agent') return 'MKTR Agent';
- return 'MKTR Portal';
+// Portal role label that sits beside the brand wordmark in both the sidebar
+// header and the top bar. Keep this a single source of truth so the two
+// chrome surfaces can't drift.
+const getPortalRole = (role) => {
+ if (role === 'admin') return 'Admin';
+ if (role === 'agent') return 'Agent';
+ return 'Portal';
 };
 
 export default function DashboardLayout({ children, user }) {
@@ -154,24 +155,18 @@ export default function DashboardLayout({ children, user }) {
  }
 
  const navigationItems = getNavigationItems(localUser);
- const portalTitle = getPortalTitle(localUser?.role);
+ const portalRole = getPortalRole(localUser?.role);
 
  return (
  <SidebarProvider>
  <div className="min-h-screen flex w-full bg-background">
  <Sidebar className="border-r border-sidebar-border">
  <SidebarHeader className="border-b border-sidebar-border px-5 py-5">
- <div className="flex items-center gap-3">
- <div
- className="w-9 h-9 bg-foreground rounded-lg flex items-center justify-center" aria-hidden="true" >
- <Shield className="w-[18px] h-[18px] text-background"/>
- </div>
- <div className="min-w-0">
- <h2 className="font-semibold text-sidebar-foreground text-sm tracking-tight">
- {portalTitle}
- </h2>
- <p className="text-xs text-muted-foreground">Singapore</p>
- </div>
+ <div className="flex flex-col gap-1 min-w-0 text-sidebar-foreground">
+ <MktrWordmark size={22} />
+ <p className="text-xs text-muted-foreground tracking-tight">
+ {portalRole} <span aria-hidden="true">·</span> Singapore
+ </p>
  </div>
  </SidebarHeader>
 
@@ -243,9 +238,12 @@ export default function DashboardLayout({ children, user }) {
  className="hover:bg-accent p-2 rounded-lg transition-colors duration-micro ease-out-quart" aria-label="Toggle sidebar" >
  <Menu className="w-[18px] h-[18px]" aria-hidden="true"/>
  </SidebarTrigger>
- <h1 className="text-sm font-semibold text-foreground tracking-tight hidden sm:block">
- {portalTitle}
- </h1>
+ <div className="hidden sm:flex items-center gap-2 text-foreground">
+ <MktrWordmark size={18} />
+ <span className="text-xs font-medium text-muted-foreground tracking-tight">
+ {portalRole}
+ </span>
+ </div>
  </div>
  <div className="flex items-center gap-2">
  <button
