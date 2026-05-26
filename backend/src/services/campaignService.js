@@ -164,7 +164,7 @@ export async function getCampaign(id, req) {
  * Create a new campaign.
  */
 export async function createCampaign(body, user) {
-  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, commission_amount_driver, commission_amount_fleet, ad_playlist } = body;
+  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, commission_amount_driver, commission_amount_fleet, defaultAssignmentMode, ad_playlist } = body;
 
   const campaignData = {
     name,
@@ -179,6 +179,7 @@ export async function createCampaign(body, user) {
   };
   if (commission_amount_driver !== undefined) campaignData.commission_amount_driver = commission_amount_driver;
   if (commission_amount_fleet !== undefined) campaignData.commission_amount_fleet = commission_amount_fleet;
+  if (defaultAssignmentMode !== undefined) campaignData.defaultAssignmentMode = defaultAssignmentMode;
 
   const campaign = await Campaign.create(campaignData);
 
@@ -216,7 +217,7 @@ export async function updateCampaign(id, body, req) {
   const campaign = await Campaign.findOne({ where });
   if (!campaign) throw new AppError('Campaign not found or access denied', 404);
 
-  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, commission_amount_driver, commission_amount_fleet, ad_playlist } = body;
+  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, commission_amount_driver, commission_amount_fleet, defaultAssignmentMode, ad_playlist } = body;
 
   const updateData = {};
   if (name) updateData.name = name;
@@ -231,6 +232,7 @@ export async function updateCampaign(id, body, req) {
   if (design_config !== undefined) updateData.design_config = design_config;
   if (commission_amount_driver !== undefined) updateData.commission_amount_driver = commission_amount_driver;
   if (commission_amount_fleet !== undefined) updateData.commission_amount_fleet = commission_amount_fleet;
+  if (defaultAssignmentMode !== undefined) updateData.defaultAssignmentMode = defaultAssignmentMode;
 
   await campaign.update(updateData);
 

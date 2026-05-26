@@ -74,8 +74,9 @@ export const schemas = {
     end_date: Joi.date().optional(),
     is_active: Joi.boolean().optional(),
     assigned_agents: Joi.array().items(Joi.string().uuid()).optional(),
-    commission_amount_driver: Joi.number().min(0).optional(),
-    commission_amount_fleet: Joi.number().min(0).optional(),
+    commission_amount_driver: Joi.number().min(0).optional().allow(null),
+    commission_amount_fleet: Joi.number().min(0).optional().allow(null),
+    defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
     ad_playlist: Joi.array().items(Joi.object()).optional()
   }),
 
@@ -88,8 +89,9 @@ export const schemas = {
     is_active: Joi.boolean().optional(),
     assigned_agents: Joi.array().items(Joi.string().uuid()).optional(),
     design_config: Joi.object().optional(),
-    commission_amount_driver: Joi.number().min(0).optional(),
-    commission_amount_fleet: Joi.number().min(0).optional(),
+    commission_amount_driver: Joi.number().min(0).optional().allow(null),
+    commission_amount_fleet: Joi.number().min(0).optional().allow(null),
+    defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
     ad_playlist: Joi.array().items(Joi.object()).optional()
   }).min(1),
 
