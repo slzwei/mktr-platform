@@ -148,7 +148,9 @@ export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, c
 
 
 // --- Modern Email Template Helper ---
-function getModernTemplate(title, content, action) {
+function getModernTemplate(title, content, action, options = {}) {
+  const headerTitle = options.headerTitle || 'MKTR Platform';
+  const footerHtml = options.footerHtml || `<p>&copy; ${new Date().getFullYear()} MKTR Platform. All rights reserved.</p>`;
   const actionButton = action
     ? `<div style="margin-top: 32px;"><a href="${action.url}" class="action-btn">${action.text}</a></div>`
     : '';
@@ -180,7 +182,7 @@ function getModernTemplate(title, content, action) {
     <body>
       <div class="container">
         <div class="header">
-          <h1>MKTR Platform</h1>
+          <h1>${headerTitle}</h1>
         </div>
         <div class="content">
           <h2>${title}</h2>
@@ -188,12 +190,86 @@ function getModernTemplate(title, content, action) {
           ${actionButton}
         </div>
         <div class="footer">
-          <p>&copy; ${new Date().getFullYear()} MKTR Platform. All rights reserved.</p>
+          ${footerHtml}
         </div>
       </div>
     </body>
     </html>
   `;
+}
+
+function escapeHtml(value) {
+  if (value == null) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export async function sendLeadConfirmationEmail(prospect) {
+  if (!prospect?.email) {
+    logger.warn('Skipping lead confirmation email: prospect has no email', { prospectId: prospect?.id });
+    return { success: false, message: 'Missing prospect email' };
+  }
+
+  // Skip synthetic Retell emails (e.g. retell-{callId}@calls.mktr.sg) — those
+  // are placeholder addresses for voice-sourced leads and not real recipients.
+  if (/@calls\.mktr\.sg$/i.test(prospect.email)) {
+    return { success: false, message: 'Skipped: synthetic Retell email' };
+  }
+
+  const campaignName = prospect.campaign?.name || prospect.campaignName;
+  if (!campaignName) {
+    logger.warn('Skipping lead confirmation email: missing campaign name', { prospectId: prospect.id });
+    return { success: false, message: 'Missing campaign name' };
+  }
+
+  const firstName = prospect.firstName || 'there';
+  const safeFirstName = escapeHtml(firstName);
+  const safeCampaign = escapeHtml(campaignName);
+  const subject = `We've received your interest in ${campaignName}`;
+
+  const content = `
+    <p>Hi ${safeFirstName},</p>
+    <p>Thank you for your interest in <strong>${safeCampaign}</strong>.</p>
+    <p>We've received your submission and a member of our team will be in touch with you shortly &mdash; usually within 24 hours.</p>
+    <p>If you didn't submit this request, you can safely ignore this email.</p>
+    <p>&mdash; The Redeem team</p>
+  `;
+
+  const html = getModernTemplate(
+    "We've received your submission",
+    content,
+    null,
+    {
+      headerTitle: 'Redeem',
+      footerHtml: `<p>&copy; ${new Date().getFullYear()} Redeem &middot; A service of MKTR PTE. LTD. (UEN 202507548M)</p>`,
+    }
+  );
+
+  const text = `Hi ${firstName},
+
+Thank you for your interest in ${campaignName}.
+
+We've received your submission and a member of our team will be in touch with you shortly — usually within 24 hours.
+
+If you didn't submit this request, you can safely ignore this email.
+
+— The Redeem team
+
+© ${new Date().getFullYear()} Redeem · A service of MKTR PTE. LTD. (UEN 202507548M)`;
+
+  logger.info('Sending lead confirmation email', { to: prospect.email, prospectId: prospect.id, campaign: campaignName });
+
+  return sendEmail({
+    to: prospect.email,
+    subject,
+    html,
+    text,
+    context: 'redeem',
+  });
 }
 
 export async function sendPackageAssignmentEmail(agent, packageDetails) {

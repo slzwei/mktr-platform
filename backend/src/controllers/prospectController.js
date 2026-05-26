@@ -1,5 +1,5 @@
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { sendLeadAssignmentEmail } from '../services/mailer.js';
+import { sendLeadAssignmentEmail, sendLeadConfirmationEmail } from '../services/mailer.js';
 import * as prospectService from '../services/prospectService.js';
 import { publicHostFromRequest } from '../utils/publicHost.js';
 
@@ -47,6 +47,12 @@ export const createProspect = asyncHandler(async (req, res) => {
       console.error(`Failed to send assignment email to agent ${assignedAgentId} for prospect ${prospect.id}:`, err.message || err)
     );
   }
+
+  // Confirmation email to the lead (from noreply@redeem.sg). Fire-and-forget;
+  // the function itself filters out synthetic Retell emails and missing fields.
+  sendLeadConfirmationEmail(prospectWithCampaign || prospect).catch(err =>
+    console.error(`Failed to send confirmation email to lead for prospect ${prospect.id}:`, err.message || err)
+  );
 
   res.status(201).json({
     success: true,
