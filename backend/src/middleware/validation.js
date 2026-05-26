@@ -82,6 +82,7 @@ export const schemas = {
 
   campaignUpdate: Joi.object({
     name: Joi.string().min(1).max(100).optional(),
+    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing').optional(),
     min_age: Joi.number().integer().min(0).max(120).optional(),
     max_age: Joi.number().integer().min(0).max(120).optional(),
     start_date: Joi.date().optional(),

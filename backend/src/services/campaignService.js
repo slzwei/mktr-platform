@@ -217,10 +217,11 @@ export async function updateCampaign(id, body, req) {
   const campaign = await Campaign.findOne({ where });
   if (!campaign) throw new AppError('Campaign not found or access denied', 404);
 
-  const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, commission_amount_driver, commission_amount_fleet, defaultAssignmentMode, ad_playlist } = body;
+  const { name, type, min_age, max_age, start_date, end_date, is_active, assigned_agents, design_config, commission_amount_driver, commission_amount_fleet, defaultAssignmentMode, ad_playlist } = body;
 
   const updateData = {};
   if (name) updateData.name = name;
+  if (type !== undefined) updateData.type = type;
   if (min_age !== undefined) updateData.min_age = min_age;
   if (max_age !== undefined) updateData.max_age = max_age;
   if (start_date) updateData.start_date = start_date;
