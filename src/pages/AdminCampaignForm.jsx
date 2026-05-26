@@ -9,7 +9,6 @@ import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format, parseISO } from 'date-fns';
 import { Calendar as CalendarIcon, ArrowLeft, Upload, Trash2, Loader2, Video, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -36,7 +35,6 @@ export default function AdminCampaignForm() {
  commission_amount_driver: '',
  commission_amount_fleet: '',
  ad_playlist: [],
- defaultAssignmentMode: 'direct',
  });
 
  const [loading, setLoading] = useState(false);
@@ -64,7 +62,6 @@ export default function AdminCampaignForm() {
  commission_amount_driver: campaign.commission_amount_driver ?? '',
  commission_amount_fleet: campaign.commission_amount_fleet ?? '',
  ad_playlist: campaign.ad_playlist || [],
- defaultAssignmentMode: campaign.defaultAssignmentMode || 'direct',
  });
  } else {
  toast.error('Campaign not found');
@@ -140,7 +137,6 @@ export default function AdminCampaignForm() {
  formData.commission_amount_driver === '' ? null : Number(formData.commission_amount_driver),
  commission_amount_fleet:
  formData.commission_amount_fleet === '' ? null : Number(formData.commission_amount_fleet),
- defaultAssignmentMode: formData.defaultAssignmentMode,
  };
 
  if (isEditMode) {
@@ -281,33 +277,6 @@ export default function AdminCampaignForm() {
  onChange={handleChange}
  placeholder="0.00" />
  </div>
- </div>
- </CardContent>
- </Card>
- {/* Default Assignment Mode */}
- <Card>
- <CardHeader>
- <CardTitle>Default Assignment Mode</CardTitle>
- <CardDescription>
- This sets the default for new QR codes created under this campaign. Each QR code can override this
- setting.
- </CardDescription>
- </CardHeader>
- <CardContent>
- <div className="space-y-2">
- <Label htmlFor="defaultAssignmentMode">Mode</Label>
- <Select
- value={formData.defaultAssignmentMode}
- onValueChange={(value) => setFormData((prev) => ({ ...prev, defaultAssignmentMode: value }))}
- >
- <SelectTrigger id="defaultAssignmentMode">
- <SelectValue />
- </SelectTrigger>
- <SelectContent>
- <SelectItem value="direct">Direct — each QR routes to a specific agent</SelectItem>
- <SelectItem value="round_robin">Round Robin — QR codes rotate across agent groups</SelectItem>
- </SelectContent>
- </Select>
  </div>
  </CardContent>
  </Card>

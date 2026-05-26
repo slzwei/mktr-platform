@@ -127,7 +127,12 @@ const Campaign = sequelize.define('Campaign', {
       key: 'id'
     }
   },
-  // UX convenience: pre-fills QR forms with this default
+  // DEPRECATED 2026-05-26: no longer surfaced in the admin UI. Routing is
+  // configured per QR tag (qr_tags.agentAssignmentMode); migration 004 moved
+  // the actual decision off the campaign and this column became a UX pre-fill
+  // only. The pre-fill has since been removed from PromotionalQRForm.jsx.
+  // Safe to drop via a future migration; left in place to avoid coupling
+  // this UI cleanup with a schema change.
   defaultAssignmentMode: {
     type: DataTypes.STRING,
     allowNull: false,

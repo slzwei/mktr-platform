@@ -21,7 +21,7 @@ export default function PromotionalQRForm({ campaign, onQRGenerated }) {
  label:"",
  tagsInput:"",
  description:"",
- agentAssignmentMode: campaign?.defaultAssignmentMode || 'direct',
+ agentAssignmentMode: 'direct',
  agentGroupId: null,
  assignedAgentPhone: null,
  assignedAgentEmail: null,
