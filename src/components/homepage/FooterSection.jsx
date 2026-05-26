@@ -1,12 +1,15 @@
 import { Link } from"react-router-dom";
 import { brand } from"@/lib/brand";
+import MktrWordmark from"@/components/brand/MktrWordmark";
 
 const FooterSection = () => {
  return (
  <footer className="mktr-footer">
  <div className="mktr-footer-grid">
  <div>
- <div className="mktr-footer-logo">{brand.wordmark}</div>
+ <div className="mktr-footer-logo" style={{ color: 'var(--mktr-text)' }}>
+ <MktrWordmark size={32} />
+ </div>
  <p className="mktr-footer-desc">
  Singapore's AI-powered lead generation platform for insurance
  and property agents. Capture, qualify, and convert prospects at scale.
@@ -37,7 +40,7 @@ const FooterSection = () => {
 
  <div className="mktr-footer-bottom">
  <p className="mktr-footer-copy">
- &copy; {new Date().getFullYear()} {brand.wordmark} Singapore. All rights reserved.
+ &copy; {new Date().getFullYear()} {brand.name} Singapore. All rights reserved.
  </p>
  <p className="mktr-footer-copy">
  71 Ayer Rajah Crescent, #06-14, Singapore 139951

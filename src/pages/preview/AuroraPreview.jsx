@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import MktrWordmark from '@/components/brand/MktrWordmark';
 
 const PAGE = '#0A0A0F';
 const TEXT = '#F5F5F7';
@@ -172,7 +173,7 @@ export default function AuroraPreview() {
                   boxShadow: `0 0 12px ${PINK}`,
                 }}
               />
-              <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.02em' }}>MKTR</span>
+              <MktrWordmark size={13} />
             </div>
             <span
               style={{

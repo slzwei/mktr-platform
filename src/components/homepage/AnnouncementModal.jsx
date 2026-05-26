@@ -25,7 +25,7 @@ const AnnouncementModal = () => {
  <Dialog open={isOpen} onOpenChange={(open) => (open ? setIsOpen(true) : closeModal())}>
  <DialogContent className="sm:max-w-md">
  <DialogHeader>
- <DialogTitle className="font-serif text-xl">Welcome to {brand.wordmark}</DialogTitle>
+ <DialogTitle className="font-serif text-xl">Welcome to {brand.name}</DialogTitle>
  <DialogDescription>
  Singapore's premier marketer platform for intelligent lead generation.
  Get started with smart prospect capture and campaign management.

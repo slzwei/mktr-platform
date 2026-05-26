@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import { GOOGLE_CLIENT_ID } from '@/config/google';
 import { getPostAuthRedirectPath } from '@/lib/utils';
+import MktrWordmark from '@/components/brand/MktrWordmark';
 import { ArrowLeft, Users, Car, LogIn, AlertCircle } from 'lucide-react';
 
 export default function CustomerLogin() {
@@ -319,10 +320,8 @@ export default function CustomerLogin() {
  </Link>
  </div>
 
- <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-10">
- <h1 className="text-2xl font-bold text-foreground dark:text-background" style={{ fontFamily: 'var(--heading-font)' }}>
- MKTR.
- </h1>
+ <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-10 text-foreground dark:text-background">
+ <MktrWordmark size={26} />
  </div>
 
  {/* Login Section */}

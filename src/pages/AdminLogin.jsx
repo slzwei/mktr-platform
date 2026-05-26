@@ -5,6 +5,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { GOOGLE_CLIENT_ID } from '@/config/google';
 import { ArrowLeft, Shield, LogIn, AlertCircle } from 'lucide-react';
+import MktrWordmark from '@/components/brand/MktrWordmark';
 
 export default function AdminLogin() {
  const [loading, setLoading] = useState(false);
@@ -294,8 +295,10 @@ export default function AdminLogin() {
  />
 
  <div className="relative z-10 flex flex-col justify-between p-10 xl:p-14 w-full">
- {/* Logo — Fraunces editorial wordmark on warm-dark */}
- <h1 className="text-3xl font-semibold text-background tracking-tight font-serif">MKTR.</h1>
+ {/* Terminal wordmark on warm-dark */}
+ <div className="text-background">
+ <MktrWordmark size={32} />
+ </div>
 
  {/* Hero text */}
  <div className="my-auto py-12">

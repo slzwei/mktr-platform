@@ -1,5 +1,7 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="32" height="32" rx="6" fill="#3B82F6"/>
-  <path d="M8 12h16v2H8v-2zm0 4h16v2H8v-2zm0 4h10v2H8v-2z" fill="white"/>
-  <circle cx="24" cy="8" r="3" fill="#10B981"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="MKTR">
+  <!-- Browser tab mark: terracotta chevron + underscore cursor on warm-dark.
+       Stand-alone vector — no font dependency. -->
+  <rect width="32" height="32" rx="6" ry="6" fill="#1B1A17"/>
+  <path d="M 9 9 L 19 16 L 9 23" fill="none" stroke="#D6552B" stroke-width="3" stroke-linecap="square" stroke-linejoin="miter"/>
+  <rect x="20" y="22" width="6" height="2.5" fill="#F5F0E6"/>
 </svg>

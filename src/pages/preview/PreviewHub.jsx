@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import MktrWordmark from '@/components/brand/MktrWordmark';
 
 const cards = [
   {
@@ -228,7 +229,7 @@ function AtelierThumb() {
           marginBottom: 24,
         }}
       >
-        <span>MKTR</span>
+        <MktrWordmark size={12} />
         <span>01 / 03</span>
       </div>
       <div

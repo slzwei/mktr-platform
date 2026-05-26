@@ -1,20 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 80" width="200" height="80">
-  <defs>
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@900&amp;display=swap');
-    </style>
-  </defs>
-  
-  <!-- Background rounded rectangle with border -->
-  <rect x="4" y="4" width="192" height="72" rx="24" ry="24" fill="none" stroke="white" stroke-width="4"/>
-  
-  <!-- MKTR Text -->
-  <text x="100" y="52" 
-        font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" 
-        font-size="42" 
-        font-weight="900" 
-        fill="white" 
-        text-anchor="middle">
-    MKTR
-  </text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 80" width="200" height="80" role="img" aria-label="MKTR">
+  <!-- Terminal wordmark — light variant (cream body) for dark backgrounds. -->
+  <text x="14" y="55"
+        font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace"
+        font-size="44"
+        font-weight="600"
+        letter-spacing="-0.5"
+        fill="#D9542A">&#8250;</text>
+  <text x="40" y="55"
+        font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace"
+        font-size="44"
+        font-weight="500"
+        letter-spacing="-0.5"
+        fill="#F5F0E6">mktr</text>
+  <!-- Cursor bar: 0.5em x 0.12em (22px x 5.3px at 44px font-size). -->
+  <rect x="143" y="51" width="22" height="5.3" fill="#F5F0E6"/>
 </svg>

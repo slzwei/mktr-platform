@@ -4,6 +4,7 @@ import { X, Menu } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { getDefaultRouteForRole } from "@/lib/utils";
 import { brand } from "@/lib/brand";
+import MktrWordmark from "@/components/brand/MktrWordmark";
 
 const navLinks = [
  { label: "Features", href: "/features" },
@@ -52,9 +53,10 @@ export default function SiteHeader() {
  {/* Logo */}
  <Link
  to="/"
- className="font-serif text-background text-xl font-semibold tracking-tight hover:opacity-80 transition-opacity"
+ aria-label={brand.name}
+ className="text-background hover:opacity-80 transition-opacity"
  >
- {brand.wordmark}
+ <MktrWordmark size={26} />
  </Link>
 
  {/* Desktop Nav */}
@@ -132,8 +134,8 @@ export default function SiteHeader() {
  aria-label="Mobile navigation"
  >
  <div className="flex items-center justify-between px-6 h-[72px] border-b border-background/10">
- <Link to="/" className="font-serif text-background text-xl font-semibold" onClick={toggleMenu}>
- {brand.wordmark}
+ <Link to="/" aria-label={brand.name} className="text-background" onClick={toggleMenu}>
+ <MktrWordmark size={22} />
  </Link>
  <button
  className="p-2 text-background/60 hover:text-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-terracotta rounded-lg"
