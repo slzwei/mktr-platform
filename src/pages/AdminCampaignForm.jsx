@@ -122,6 +122,20 @@ export default function AdminCampaignForm() {
 
  const handleSubmit = async (e) => {
  e.preventDefault();
+ const startDate = formData.start_date;
+ const endDate = formData.end_date;
+ if (!(startDate instanceof Date) || isNaN(startDate)) {
+ toast.error('Please pick a valid start date');
+ return;
+ }
+ if (!(endDate instanceof Date) || isNaN(endDate)) {
+ toast.error('Please pick a valid end date');
+ return;
+ }
+ if (endDate < startDate) {
+ toast.error('End date must be on or after start date');
+ return;
+ }
  setLoading(true);
  try {
  const formattedData = {
@@ -212,7 +226,7 @@ export default function AdminCampaignForm() {
  </PopoverTrigger>
  <PopoverContent className="w-auto p-0">
  <Calendar
- mode="single" selected={formData.start_date}
+ mode="single" required selected={formData.start_date}
  onSelect={(date) => handleDateChange('start_date', date)}
  initialFocus
  />
@@ -230,8 +244,9 @@ export default function AdminCampaignForm() {
  </PopoverTrigger>
  <PopoverContent className="w-auto p-0">
  <Calendar
- mode="single" selected={formData.end_date}
+ mode="single" required selected={formData.end_date}
  onSelect={(date) => handleDateChange('end_date', date)}
+ disabled={formData.start_date instanceof Date ? { before: formData.start_date } : undefined}
  initialFocus
  />
  </PopoverContent>
