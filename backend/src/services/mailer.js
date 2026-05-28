@@ -273,7 +273,7 @@ export async function sendLeadConfirmationEmail(prospect) {
     {
       headerTitle: 'Redeem',
       headerImage: 'https://redeem.sg/email/confetti-header.gif',
-      headerImageAlt: 'Redeem',
+      headerImageAlt: 'Thank you!',
       footerHtml: `<p>&copy; ${new Date().getFullYear()} Redeem &middot; A service of MKTR PTE. LTD. (UEN 202507548M)</p>`,
     }
   );
