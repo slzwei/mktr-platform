@@ -170,6 +170,14 @@ export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, c
 function getModernTemplate(title, content, action, options = {}) {
   const headerTitle = options.headerTitle || 'MKTR Platform';
   const footerHtml = options.footerHtml || `<p>&copy; ${new Date().getFullYear()} MKTR Platform. All rights reserved.</p>`;
+  // Optional animated/static header image (e.g., the Redeem confetti GIF).
+  // Renders full-bleed in the dark header; clients that block images or
+  // can't animate GIFs (Outlook) fall back to the alt text on the same
+  // #111827 background, so it degrades to a clean wordmark look.
+  const headerInner = options.headerImage
+    ? `<img src="${options.headerImage}" alt="${options.headerImageAlt || headerTitle}" width="600" style="display:block; width:100%; max-width:600px; height:auto; border:0; margin:0 auto;" />`
+    : `<h1>${headerTitle}</h1>`;
+  const headerStyle = options.headerImage ? 'background:#111827; padding:0; text-align:center;' : '';
   const actionButton = action
     ? `<div style="margin-top: 32px;"><a href="${action.url}" class="action-btn">${action.text}</a></div>`
     : '';
@@ -200,8 +208,8 @@ function getModernTemplate(title, content, action, options = {}) {
     </head>
     <body>
       <div class="container">
-        <div class="header">
-          <h1>${headerTitle}</h1>
+        <div class="header" style="${headerStyle}">
+          ${headerInner}
         </div>
         <div class="content">
           <h2>${title}</h2>
@@ -264,6 +272,8 @@ export async function sendLeadConfirmationEmail(prospect) {
     null,
     {
       headerTitle: 'Redeem',
+      headerImage: 'https://redeem.sg/email/confetti-header.gif',
+      headerImageAlt: 'Redeem',
       footerHtml: `<p>&copy; ${new Date().getFullYear()} Redeem &middot; A service of MKTR PTE. LTD. (UEN 202507548M)</p>`,
     }
   );
