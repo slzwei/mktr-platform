@@ -85,12 +85,17 @@ export async function resolveAssignedAgentId({ reqUser, requestedAgentId, campai
     if (valid) return valid.id;
   }
 
-  // 3) Try QR tag owner if active agent
+  // 3) Try the agent the QR is directly assigned to (admin sets this via
+  //    the QR edit/create form: agentAssignmentMode='direct' + assignedAgent*).
+  //    Prefer `assignedAgentId` (the field the admin UI actually writes).
+  //    Fall back to `ownerUserId` for legacy QRs created before
+  //    assignedAgentId was dual-written from the resolved phone match.
   if (qrTagId) {
     const qr = await QrTag.findByPk(qrTagId);
-    if (qr?.ownerUserId) {
-      const owner = await User.findOne({ where: { id: qr.ownerUserId, role: 'agent', isActive: true } });
-      if (owner) return owner.id;
+    const candidateId = qr?.assignedAgentId || qr?.ownerUserId;
+    if (candidateId) {
+      const agent = await User.findOne({ where: { id: candidateId, role: 'agent', isActive: true } });
+      if (agent) return agent.id;
     }
   }
 

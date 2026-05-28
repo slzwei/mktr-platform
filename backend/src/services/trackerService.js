@@ -36,7 +36,7 @@ export async function recordScan(qrTag, { userAgent, referer, ip }) {
     isDuplicate = true;
   }
 
-  return QrScan.create({
+  const scan = await QrScan.create({
     qrTagId: qrTag.id,
     ipHash,
     ua,
@@ -46,6 +46,18 @@ export async function recordScan(qrTag, { userAgent, referer, ip }) {
     botFlag,
     isDuplicate
   });
+
+  // Bump the denormalized counters on the QR tag so the admin UI's
+  // "Scans" / "Unique" columns reflect activity. The analytics row above
+  // is the source of truth for reporting; these counters exist to avoid
+  // an N+1 count(*) in the QR list. Unique only counts non-duplicate,
+  // non-bot hits.
+  const counters = { scanCount: 1 };
+  if (!isDuplicate && !botFlag) counters.uniqueScanCount = 1;
+  await QrTag.increment(counters, { where: { id: qrTag.id } });
+  await QrTag.update({ lastScanned: new Date() }, { where: { id: qrTag.id } });
+
+  return scan;
 }
 
 /**

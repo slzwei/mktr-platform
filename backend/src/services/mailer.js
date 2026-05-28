@@ -57,8 +57,27 @@ export async function sendEmail({ to, subject, html, text, context, from }) {
     return { success: false, message: 'Mailer not configured; logged instead.' };
   }
 
-  await transporter.sendMail({ from: resolvedFrom, to, subject, html, text });
-  return { success: true };
+  try {
+    await transporter.sendMail({ from: resolvedFrom, to, subject, html, text });
+    return { success: true };
+  } catch (err) {
+    // Surface SES/SMTP rejection details — Nodemailer attaches `code`,
+    // `responseCode`, and `response` (the full SMTP message). Without
+    // logging these explicitly, callers' `.catch(err => log err.message)`
+    // only sees a generic "Mail command failed" string and the actual
+    // SES reason (e.g., "Email address is not verified") is lost.
+    logger.error('Email send failed', {
+      to,
+      from: resolvedFrom,
+      subject,
+      code: err.code,
+      responseCode: err.responseCode,
+      command: err.command,
+      response: err.response,
+      message: err.message
+    });
+    throw err;
+  }
 }
 
 export async function sendLeadAssignmentEmail(agent, prospect, isBulk = false, count = 1) {

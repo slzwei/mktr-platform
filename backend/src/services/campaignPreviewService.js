@@ -81,8 +81,12 @@ export async function resolveSlug(slug) {
  * Returns the campaign with limited attributes.
  */
 export async function getPublicCampaign(id) {
+  // min_age / max_age are exposed publicly because the LeadCapture form's
+  // inline DOB validator (`getAgeValidationError`) reads them to gate
+  // out-of-range birthdates client-side. The backend also re-checks on
+  // submit in prospectService to prevent bypass.
   const campaign = await Campaign.findByPk(id, {
-    attributes: ['id', 'name', 'design_config', 'is_active', 'metaPixelId']
+    attributes: ['id', 'name', 'design_config', 'is_active', 'metaPixelId', 'min_age', 'max_age']
   });
 
   if (!campaign) {

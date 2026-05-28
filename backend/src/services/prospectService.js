@@ -150,7 +150,9 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
-    // Handle Date of Birth -> Age mapping
+    // Handle Date of Birth -> Age mapping + campaign age gate (defense-in-depth;
+    // the LeadCapture form's getAgeValidationError already blocks client-side,
+    // but a determined caller can POST directly to /api/prospects).
     if (body.date_of_birth) {
       const dob = new Date(body.date_of_birth);
       if (!isNaN(dob.getTime())) {
@@ -159,6 +161,23 @@ export function makeProspectService(overrides = {}) {
         const m_ = today.getMonth() - dob.getMonth();
         if (m_ < 0 || (m_ === 0 && today.getDate() < dob.getDate())) {
           age--;
+        }
+
+        if (incoming.campaignId) {
+          const campaign = await m.Campaign.findByPk(incoming.campaignId, {
+            attributes: ['min_age', 'max_age']
+          });
+          if (campaign) {
+            if (campaign.min_age != null && age < campaign.min_age) {
+              throw new d.AppError(`Must be at least ${campaign.min_age} years old for this campaign.`, 422);
+            }
+            if (campaign.max_age != null && age > campaign.max_age) {
+              const range = campaign.min_age != null
+                ? `${campaign.min_age}-${campaign.max_age}`
+                : `up to ${campaign.max_age}`;
+              throw new d.AppError(`Only available for ages ${range}.`, 422);
+            }
+          }
         }
 
         incoming.demographics = {
