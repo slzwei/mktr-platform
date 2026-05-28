@@ -138,8 +138,12 @@ export async function resolveSession(sid, atkCookie) {
 
   let campaign = null;
   if (qrTag.campaignId) {
+    // min_age / max_age feed the LeadCapture form's inline DOB age gate.
+    // Must match the attribute list in campaignPreviewService.getPublicCampaign
+    // — the QR-scan path (this fn) and the direct campaign_id link path both
+    // hydrate the same form.
     campaign = await Campaign.findByPk(qrTag.campaignId, {
-      attributes: ['id', 'name', 'design_config', 'is_active', 'metaPixelId']
+      attributes: ['id', 'name', 'design_config', 'is_active', 'metaPixelId', 'min_age', 'max_age']
     });
   }
 
