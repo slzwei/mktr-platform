@@ -64,14 +64,20 @@ export async function recordScan(qrTag, { userAgent, referer, ip }) {
  * Create a short-lived attribution token (20 minutes) for the scan.
  * Returns { token, expiresAt } where token is a signed base64url payload.
  */
-export async function createAttribution(qrTag, scan) {
+export async function createAttribution(qrTag, scan, sessionId = null) {
   const expiresAt = new Date(Date.now() + 20 * 60 * 1000);
+  // Bind to the session at scan time with a fresh lastTouchAt so the most
+  // recently scanned campaign wins (last-touch). Both resolveSession() and
+  // prospectService.createProspect() order bound attributions by
+  // lastTouchAt DESC; leaving sessionId/lastTouchAt null here caused a later
+  // scan of a different campaign to be ignored, mis-attributing the lead to
+  // the first campaign the session ever scanned.
   const attrib = await Attribution.create({
     qrTagId: qrTag.id,
     qrScanId: scan.id,
-    sessionId: null,
+    sessionId,
     firstTouch: false,
-    lastTouchAt: null,
+    lastTouchAt: sessionId ? new Date() : null,
     expiresAt,
     usedOnce: false
   });

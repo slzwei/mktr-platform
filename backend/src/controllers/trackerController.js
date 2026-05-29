@@ -28,7 +28,16 @@ export const trackSlug = asyncHandler(async (req, res) => {
     ip: req.ip || req.connection.remoteAddress || ''
   });
 
-  const { token, expiresAt } = await trackerService.createAttribution(qrTag, scan);
+  // Determine the session id BEFORE creating the attribution so this scan
+  // binds to the session immediately (last-touch). Reusing an existing sid
+  // is correct — it's one session — but the latest scan must (re)bind it,
+  // otherwise a subsequent scan of a different campaign is ignored and the
+  // lead is mis-attributed to the first campaign ever scanned.
+  let sid = req.cookies?.sid;
+  const isNewSid = !sid;
+  if (isNewSid) sid = trackerService.generateSessionId();
+
+  const { token, expiresAt } = await trackerService.createAttribution(qrTag, scan, sid);
 
   res.cookie('atk', token, {
     httpOnly: true,
@@ -39,10 +48,7 @@ export const trackSlug = asyncHandler(async (req, res) => {
     path: '/'
   });
 
-  // Ensure sid cookie exists here to avoid an extra binder hop
-  let sid = req.cookies?.sid;
-  if (!sid) {
-    sid = trackerService.generateSessionId();
+  if (isNewSid) {
     res.cookie('sid', sid, {
       httpOnly: true,
       sameSite: 'lax',
