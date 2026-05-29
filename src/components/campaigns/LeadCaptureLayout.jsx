@@ -109,7 +109,6 @@ function HeroMedia({ design }) {
             if (el) el.muted = true;
           }}
           src={resolveImageUrl(design.videoUrl)}
-          poster={design.imageUrl ? resolveImageUrl(design.imageUrl) : undefined}
           className="w-full h-full object-cover"
           autoPlay
           muted
@@ -122,8 +121,9 @@ function HeroMedia({ design }) {
     );
   }
 
-  // Image
-  if (design?.imageUrl) {
+  // Image — only in image mode, so a leftover imageUrl never leaks into video
+  // mode (as a poster, a pre-upload placeholder, or a video-error fallback).
+  if (mediaType === 'image' && design?.imageUrl) {
     return (
       <div
         className="w-full relative overflow-hidden"
