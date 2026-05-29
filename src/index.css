@@ -15,6 +15,27 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* OTP success — the Verify button's checkmark pops in */
+@keyframes lc-check-pop {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* OTP success — the phone-row "Verified" badge settles in as the panel collapses */
+@keyframes lc-verified-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+.lc-verified-badge {
+  animation: lc-verified-in 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lc-verified-badge {
+    animation: none;
+  }
+}
+
 @keyframes toast-progress {
   from {
     width: 100%;

@@ -244,6 +244,7 @@ export default function FieldRenderer({
             )}
             {otpState === 'verified' && (
               <div
+                className="lc-verified-badge"
                 style={{
                   height: 52,
                   paddingLeft: 18,

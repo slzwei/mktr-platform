@@ -159,12 +159,8 @@ export default function CampaignSignupForm({
     // Preview: any 6-digit code verifies, without hitting /verify/check.
     if (previewMode) {
       setLoading(null);
-      setShowSuccessTick(true);
       setError('');
-      setTimeout(() => {
-        setOtpState('verified');
-        setShowSuccessTick(false);
-      }, 1100);
+      setShowSuccessTick(true); // panel plays the success/collapse animation, then calls onVerified()
       return;
     }
 
@@ -177,12 +173,8 @@ export default function CampaignSignupForm({
       const verified = response.success && (response.data?.verified === true || response.data?.status === 'approved');
       if (verified) {
         setLoading(null);
-        setShowSuccessTick(true);
         setError('');
-        setTimeout(() => {
-          setOtpState('verified');
-          setShowSuccessTick(false);
-        }, 1100);
+        setShowSuccessTick(true); // panel plays the success/collapse animation, then calls onVerified()
       } else {
         let msg = response?.message || 'Verification failed. Please try again.';
         if (msg.includes('incorrect') || response.data?.status === 'pending') {
@@ -303,6 +295,13 @@ export default function CampaignSignupForm({
     setOtp(value);
   };
 
+  // Called by the panel once its collapse animation finishes — flip to the
+  // verified state so the phone row's "Verified" badge takes over.
+  const handleOtpVerified = () => {
+    setOtpState('verified');
+    setShowSuccessTick(false);
+  };
+
   // Inline verification panel — slides down beneath the phone field (no modal).
   const phoneOtpPanel = (
     <OTPVerification
@@ -319,6 +318,7 @@ export default function CampaignSignupForm({
       handleVerifyOtp={handleVerifyOtp}
       handleCancelOtp={handleCancelOtp}
       handleSendOtp={handleSendOtp}
+      onVerified={handleOtpVerified}
       channel={otpChannel}
     />
   );

@@ -106,7 +106,9 @@ describe('CampaignSignupForm — previewMode sends no network traffic', () => {
     fireEvent.click(document.getElementById('consent_terms'));
 
     const submit = screen.getByRole('button', { name: 'Submit Now' });
-    await waitFor(() => expect(submit).toBeEnabled());
+    // The panel now plays a brief success + collapse animation before flipping to
+    // 'verified' (which enables submit), so allow more than the 1s default.
+    await waitFor(() => expect(submit).toBeEnabled(), { timeout: 2500 });
     await user.click(submit);
 
     // Preview short-circuits: neutral notice, no parent submit, no network at all.
