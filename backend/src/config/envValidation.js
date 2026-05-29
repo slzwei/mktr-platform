@@ -46,4 +46,12 @@ export function validateEnv() {
   if (process.env.WEBHOOK_ENABLED && String(process.env.WEBHOOK_ENABLED).toLowerCase() !== 'true') {
     console.warn(`⚠️ WEBHOOK_ENABLED is "${process.env.WEBHOOK_ENABLED}" (not "true") — webhook delivery is disabled, leads will not reach Lyfe`);
   }
+
+  // WhatsApp OTP is optional — SMS is the default channel. Warn only on a partial
+  // config: one of the pair without the other guarantees WhatsApp send failures.
+  const waId = process.env.META_WA_PHONE_NUMBER_ID;
+  const waToken = process.env.META_WA_ACCESS_TOKEN;
+  if (Boolean(waId) !== Boolean(waToken)) {
+    console.warn('⚠️ WhatsApp OTP partially configured — both META_WA_PHONE_NUMBER_ID and META_WA_ACCESS_TOKEN are required. WhatsApp sends will fail and fall back to SMS until both are set.');
+  }
 }

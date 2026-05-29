@@ -36,6 +36,7 @@ jest.unstable_mockModule('node-fetch', () => ({
 }));
 
 const { sendVerificationCode, checkVerificationCode } = await import('../../src/services/verificationService.js');
+const fetchMock = (await import('node-fetch')).default;
 
 // ── Tests ──
 
@@ -89,6 +90,20 @@ describe('verificationService (unit)', () => {
 
       expect(result.status).toBe('pending');
       expect(logger.info).toHaveBeenCalledWith('Sending OTP', { channel: 'WHATSAPP' });
+    });
+
+    it('falls back to SMS when the WhatsApp send fails', async () => {
+      Campaign.findByPk.mockResolvedValue({ id: 'camp-1', design_config: { otpChannel: 'whatsapp' } });
+      fetchMock.mockResolvedValueOnce({
+        ok: false,
+        json: () => Promise.resolve({ error: { message: 'template auth_otp not found' } }),
+      });
+
+      const result = await sendVerificationCode({ phone: '91234567', countryCode: '+65', campaignId: 'camp-1' });
+
+      expect(result.status).toBe('pending');
+      expect(result.channel).toBe('sms');       // degraded whatsapp → sms
+      expect(snsClientSend).toHaveBeenCalled();  // SMS actually dispatched
     });
 
     it('uses SMS channel when no campaignId is provided', async () => {

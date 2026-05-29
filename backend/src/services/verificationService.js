@@ -14,6 +14,11 @@ const snsClient = new SNSClient({
   }
 });
 
+// Meta WhatsApp Graph API config (version aligned with metaCapiService.js; all overridable via env)
+const META_GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || 'v21.0';
+const WA_TEMPLATE_NAME = process.env.META_WA_TEMPLATE_NAME || 'auth_otp';
+const WA_TEMPLATE_LANG = process.env.META_WA_TEMPLATE_LANG || 'en_US';
+
 // Helper to generate 6-digit code using cryptographically secure randomness
 const generateCode = () => crypto.randomInt(100000, 1000000).toString();
 
@@ -27,15 +32,15 @@ const sendWhatsAppOtpMeta = async (phone, code) => {
   }
 
   const to = phone.replace('+', '');
-  const url = `https://graph.facebook.com/v17.0/${phoneId}/messages`;
+  const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}/messages`;
 
   const body = {
     messaging_product: "whatsapp",
     to: to,
     type: "template",
     template: {
-      name: "auth_otp",
-      language: { code: "en_US" },
+      name: WA_TEMPLATE_NAME,
+      language: { code: WA_TEMPLATE_LANG },
       components: [
         {
           type: "body",
@@ -70,6 +75,26 @@ const sendWhatsAppOtpMeta = async (phone, code) => {
   }
 
   return await response.json();
+};
+
+// Helper to send OTP via SMS (AWS SNS)
+const sendSmsOtp = async (fullPhone, code) => {
+  const messageAttributes = {
+    'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' }
+  };
+  if (process.env.AWS_SNS_SENDER_ID) {
+    messageAttributes['AWS.SNS.SMS.SenderID'] = {
+      DataType: 'String',
+      StringValue: process.env.AWS_SNS_SENDER_ID
+    };
+  }
+  const command = new PublishCommand({
+    PhoneNumber: fullPhone,
+    Message: `Your verification code is: ${code}`,
+    MessageAttributes: messageAttributes
+  });
+  const response = await snsClient.send(command);
+  return response.MessageId;
 };
 
 /**
@@ -114,41 +139,32 @@ export async function sendVerificationCode({ phone, countryCode = '+65', campaig
       attempts: 0
     });
 
-    // 2. Send via Channel
+    // 2. Send via channel. WhatsApp degrades gracefully to SMS so a Meta
+    //    misconfig (missing creds, unapproved template) never blocks the user.
     let messageId;
+    let sentChannel = channel;
+
     if (channel === 'whatsapp') {
-      const waResponse = await sendWhatsAppOtpMeta(fullPhone, code);
-      messageId = waResponse.messages?.[0]?.id;
-      logger.info('WhatsApp sent', { phone: fullPhone, messageId });
-    } else {
-      // SMS (SNS)
-      const messageAttributes = {
-        'AWS.SNS.SMS.SMSType': {
-          DataType: 'String',
-          StringValue: 'Transactional'
-        }
-      };
-
-      if (process.env.AWS_SNS_SENDER_ID) {
-        messageAttributes['AWS.SNS.SMS.SenderID'] = {
-          DataType: 'String',
-          StringValue: process.env.AWS_SNS_SENDER_ID
-        };
+      try {
+        const waResponse = await sendWhatsAppOtpMeta(fullPhone, code);
+        messageId = waResponse.messages?.[0]?.id;
+        logger.info('WhatsApp sent', { phone: fullPhone, messageId });
+      } catch (waErr) {
+        logger.error('WhatsApp OTP failed — falling back to SMS', {
+          error: waErr?.message || String(waErr)
+        });
+        sentChannel = 'sms';
+        messageId = await sendSmsOtp(fullPhone, code);
+        logger.info('SMS sent (WhatsApp fallback)', { phone: fullPhone, messageId });
       }
-
-      const command = new PublishCommand({
-        PhoneNumber: fullPhone,
-        Message: `Your verification code is: ${code}`,
-        MessageAttributes: messageAttributes
-      });
-      const response = await snsClient.send(command);
-      messageId = response.MessageId;
+    } else {
+      messageId = await sendSmsOtp(fullPhone, code);
       logger.info('SMS sent', { phone: fullPhone, messageId });
     }
 
-    return { status: 'pending', messageId };
+    return { status: 'pending', messageId, channel: sentChannel };
   } catch (err) {
-    logger.error(`Failed to send ${channel}`, { error: err?.message || String(err) });
+    logger.error('Failed to send OTP', { channel, error: err?.message || String(err) });
     throw new AppError(`Failed to send code: ${err.message}`, 500);
   }
 }
