@@ -5,42 +5,36 @@ import {
  Type,
  Palette,
  LayoutTemplate,
- Sparkles,
  PanelLeftClose,
  PanelLeft
 } from"lucide-react";
 
-import TemplatesPanel from"./editor/TemplatesPanel";
 import ContentPanel from"./editor/ContentPanel";
 import DesignPanel from"./editor/DesignPanel";
 import LayoutPanel from"./editor/LayoutPanel";
 import PreviewFrame from"./editor/PreviewFrame";
-import { PAGE_TEMPLATES } from"./editor/constants";
-
-// Helper to generate row IDs
-const generateId = () => Math.random().toString(36).substr(2, 9);
+import { genId } from"./editor/constants";
 
 // Normalize legacy flat fieldOrder arrays to row structure
 const normalizeFieldOrder = (order) => {
  if (!order || !Array.isArray(order)) {
  return [
- { id: generateId(), columns: ['name'] },
- { id: generateId(), columns: ['phone'] },
- { id: generateId(), columns: ['email'] },
- { id: generateId(), columns: ['dob'] },
- { id: generateId(), columns: ['postal_code'] },
- { id: generateId(), columns: ['education_level'] },
- { id: generateId(), columns: ['monthly_income'] }
+ { id: genId(), columns: ['name'] },
+ { id: genId(), columns: ['phone'] },
+ { id: genId(), columns: ['email'] },
+ { id: genId(), columns: ['dob'] },
+ { id: genId(), columns: ['postal_code'] },
+ { id: genId(), columns: ['education_level'] },
+ { id: genId(), columns: ['monthly_income'] }
  ];
  }
  if (order.length > 0 && typeof order[0] === 'object' && order[0].columns) {
  return order;
  }
- return order.map(fieldId => ({ id: generateId(), columns: [fieldId] }));
+ return order.map(fieldId => ({ id: genId(), columns: [fieldId] }));
 };
 
 const TABS = [
- { id: 'templates', label: 'Templates', icon: Sparkles },
  { id: 'content', label: 'Content', icon: Type },
  { id: 'design', label: 'Design', icon: Palette },
  { id: 'layout', label: 'Layout', icon: LayoutTemplate }
@@ -52,27 +46,32 @@ export default function DesignEditor({ campaign, onSave }) {
 
  const design = useMemo(() => campaign.design_config || {}, [campaign.design_config]);
 
+ // Only keys the locked LeadCaptureLayout / CampaignSignupForm renderer actually
+ // honors. Removed dead style keys (backgroundStyle, alignment, spacing,
+ // headlineSize, layoutTemplate, backgroundType, backgroundColor,
+ // cardBackgroundColor, textColor) — they were ignored in production. Any such
+ // keys still sitting in a stored design_config are harmless (the renderer
+ // ignores them). Phone is forced visible: it is the pipeline's identity key.
  const [currentDesign, setCurrentDesign] = useState({
  formHeadline: design.formHeadline ||"",
  formSubheadline: design.formSubheadline ||"",
+ // Content slots the public page reads (see leadCaptureContent.js)
+ brandWordmark: design.brandWordmark || "",
+ storyText: design.storyText || "",
+ storyEmphasis: design.storyEmphasis || "",
+ heroCtaLabel: design.heroCtaLabel || "",
+ ctaText: design.ctaText || "",
+ regulatoryFooter: design.regulatoryFooter || "",
+ brandFooter: design.brandFooter || "",
  imageUrl: design.imageUrl ||"",
  themeColor: design.themeColor ||"#3B82F6",
- backgroundStyle: design.backgroundStyle ||"gradient",
- alignment: design.alignment ||"center",
  formWidth: design.formWidth || 400,
- spacing: design.spacing ||"normal",
- headlineSize: design.headlineSize || 20,
- visibleFields: design.visibleFields || { phone: true, dob: true, postal_code: true },
+ visibleFields: { ...(design.visibleFields || { dob: true, postal_code: true }), phone: true },
  requiredFields: design.requiredFields || {},
  fieldOrder: normalizeFieldOrder(design.fieldOrder),
- layoutTemplate: design.layoutTemplate || 'modern',
  otpChannel: design.otpChannel ||"sms",
- backgroundType: design.backgroundType || 'preset',
- backgroundColor: design.backgroundColor || '#ffffff',
  mediaType: design.mediaType || (design.imageUrl ? 'image' : 'none'),
  videoUrl: design.videoUrl || '',
- cardBackgroundColor: design.cardBackgroundColor || '',
- textColor: design.textColor || '',
  termsContent: design.termsContent || '',
  });
 
@@ -110,17 +109,8 @@ export default function DesignEditor({ campaign, onSave }) {
  }
  };
 
- const handleApplyTemplate = useCallback((templateId) => {
- const template = PAGE_TEMPLATES[templateId];
- if (!template) return;
- setCurrentDesign(prev => ({ ...prev, ...template.config }));
- setHasUnsavedChanges(true);
- }, []);
-
  const renderActivePanel = () => {
  switch (activeTab) {
- case 'templates':
- return <TemplatesPanel onApplyTemplate={handleApplyTemplate} />;
  case 'content':
  return <ContentPanel currentDesign={currentDesign} onDesignChange={handleDesignChange} />;
  case 'design':
@@ -198,7 +188,7 @@ export default function DesignEditor({ campaign, onSave }) {
 
  {/* Preview */}
  <div className="flex-1 min-w-0 p-4 bg-muted">
- <PreviewFrame currentDesign={currentDesign} campaign={campaign} onDesignChange={handleDesignChange} />
+ <PreviewFrame currentDesign={currentDesign} campaign={campaign} />
  </div>
  </div>
  );

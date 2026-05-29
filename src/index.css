@@ -50,3 +50,18 @@
     font-size: 16px !important;
   }
 }
+
+/* Lead-capture combined field row (e.g. DOB + Postal). Single column by default
+   so long labels never cramp on ~390px phones; two columns from 480px up.
+   minmax(0,1fr) lets columns shrink below their content width (no overflow). */
+.lc-field-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 480px) {
+  .lc-field-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

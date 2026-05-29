@@ -1,35 +1,26 @@
 import { Input } from"@/components/ui/input";
 import { Label } from"@/components/ui/label";
 import { Badge } from"@/components/ui/badge";
-import { Button } from"@/components/ui/button";
-import { Slider } from"@/components/ui/slider";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from"@/components/ui/select";
-import { X } from"lucide-react";
 import { COLOR_PRESETS } from './constants';
 
+/**
+ * Design panel — theme/accent color only.
+ *
+ * The public lead-capture page locks its visual identity (warm-cream / Fraunces)
+ * in LeadCaptureLayout. The only per-campaign visual knob the live renderer
+ * honors is `themeColor`, which drives the primary action color (CTA, focus
+ * rings, checkbox fill). Background, card, text color, headline size, and
+ * alignment were removed because production ignored them.
+ */
 export default function DesignPanel({ currentDesign, onDesignChange }) {
  return (
  <div className="space-y-6">
- {/* Background */}
- <div className="space-y-3">
- <Label className="text-sm font-semibold text-foreground">Background Color</Label>
- <div className="flex items-center gap-3">
- <Input
- type="color" value={currentDesign.backgroundColor || '#ffffff'}
- onChange={(e) => {
- onDesignChange('backgroundColor', e.target.value);
- onDesignChange('backgroundType', 'custom');
- }}
- className="w-full h-10 p-1 rounded-lg border cursor-pointer" />
- <Badge variant="outline" className="font-mono text-xs shrink-0">
- {currentDesign.backgroundColor || '#ffffff'}
- </Badge>
- </div>
- </div>
-
  {/* Theme Color */}
- <div className="space-y-3 pt-4 border-t">
+ <div className="space-y-3">
  <Label className="text-sm font-semibold text-foreground">Theme Color</Label>
+ <p className="text-xs text-muted-foreground -mt-1">
+ Drives the primary action color — submit button, focus rings, and checkboxes.
+ </p>
  <div className="space-y-4">
  <div className="grid grid-cols-4 gap-3">
  {COLOR_PRESETS.map((preset) => (
@@ -64,74 +55,6 @@ export default function DesignPanel({ currentDesign, onDesignChange }) {
  </Badge>
  </div>
  </div>
- </div>
-
- {/* Card Background */}
- <div className="space-y-3 pt-4 border-t">
- <Label className="text-sm font-semibold text-foreground">Card Background</Label>
- <div className="flex items-center gap-3">
- <Input
- type="color" value={currentDesign.cardBackgroundColor || '#ffffff'}
- onChange={(e) => onDesignChange('cardBackgroundColor', e.target.value)}
- className="w-full h-10 p-1 rounded-lg border cursor-pointer" />
- {currentDesign.cardBackgroundColor && (
- <Button variant="ghost" size="icon" aria-label="Reset card background color" onClick={() => onDesignChange('cardBackgroundColor', '')} title="Reset to default">
- <X className="w-4 h-4" aria-hidden="true" />
- </Button>
- )}
- </div>
- </div>
-
- {/* Text Color */}
- <div className="space-y-3 pt-4 border-t">
- <Label className="text-sm font-semibold text-foreground">Text Color</Label>
- <div className="flex items-center gap-3">
- <Input
- type="color" value={currentDesign.textColor || '#111827'}
- onChange={(e) => onDesignChange('textColor', e.target.value)}
- className="w-full h-10 p-1 rounded-lg border cursor-pointer" />
- {currentDesign.textColor && (
- <Button variant="ghost" size="icon" aria-label="Reset text color" onClick={() => onDesignChange('textColor', '')} title="Reset to default">
- <X className="w-4 h-4" aria-hidden="true" />
- </Button>
- )}
- </div>
- </div>
-
- {/* Headline Size */}
- <div className="space-y-3 pt-4 border-t">
- <Label className="text-sm font-semibold text-foreground">Headline Text Size</Label>
- <div className="space-y-4">
- <Slider
- value={[currentDesign.headlineSize || 20]}
- onValueChange={(value) => onDesignChange('headlineSize', value[0])}
- max={36}
- min={16}
- step={2}
- className="w-full" />
- <div className="flex justify-between text-sm text-muted-foreground">
- <span>Small (16px)</span>
- <span className="font-medium">{currentDesign.headlineSize || 20}px</span>
- <span>Large (36px)</span>
- </div>
- </div>
- </div>
-
- {/* Text Alignment */}
- <div className="space-y-3 pt-4 border-t">
- <Label className="text-sm font-semibold text-foreground">Text Alignment</Label>
- <Select
- value={currentDesign.alignment || 'center'}
- onValueChange={(value) => onDesignChange('alignment', value)}
- >
- <SelectTrigger className="w-full">
- <SelectValue />
- </SelectTrigger>
- <SelectContent>
- <SelectItem value="left">Left Aligned</SelectItem>
- <SelectItem value="center">Centered</SelectItem>
- </SelectContent>
- </Select>
  </div>
  </div>
  );

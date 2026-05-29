@@ -46,45 +46,6 @@ export const RADIUS = {
   checkbox: 6,
 };
 
-/**
- * Legacy compatibility exports — used by `editor/PreviewFrame.jsx` to render
- * the in-editor mini-preview. The new public layout no longer uses these
- * directly, but keeping them maintains backwards compat with the editor.
- */
-export function getBackgroundClass(design) {
-  if (!design) return { className: 'bg-muted', style: {} };
-  const type = design.backgroundType || 'preset';
-  if (type === 'custom') {
-    return { className: '', style: { backgroundColor: design.backgroundColor || TOKENS.pagebg } };
-  }
-  const style = design.backgroundStyle || 'gradient';
-  switch (style) {
-    case 'gradient':
-      return { className: '', style: { backgroundColor: TOKENS.pagebg } };
-    case 'solid_slate':
-      return { className: 'bg-foreground', style: {} };
-    case 'simple_gray':
-      return { className: 'bg-card', style: {} };
-    case 'pattern':
-      return { className: 'bg-muted bg-[url("https://www.transparenttextures.com/patterns/cubes.png")]', style: {} };
-    default:
-      return { className: '', style: { backgroundColor: TOKENS.pagebg } };
-  }
-}
-
-export function getCardClass(design) {
-  const template = design?.layoutTemplate || 'modern';
-  switch (template) {
-    case 'corporate':
-      return 'bg-card shadow-md border border-border rounded-lg overflow-hidden';
-    case 'simple':
-      return 'bg-transparent border-none shadow-none rounded-none overflow-visible';
-    case 'modern':
-    default:
-      return 'bg-card shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-border rounded-3xl overflow-hidden';
-  }
-}
-
 export function resolveImageUrl(url) {
   if (!url) return '';
   if (/^https?:\/\//i.test(url)) return url;

@@ -1,6 +1,6 @@
 import { Label } from"@/components/ui/label";
 import { Slider } from"@/components/ui/slider";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from"@/components/ui/select";
+import FieldOrderEditor from"./FieldOrderEditor";
 
 export default function LayoutPanel({ currentDesign, onDesignChange }) {
  return (
@@ -24,22 +24,13 @@ export default function LayoutPanel({ currentDesign, onDesignChange }) {
  </div>
  </div>
 
- {/* Vertical Spacing */}
- <div className="space-y-3">
- <Label className="text-sm font-semibold text-foreground">Vertical Spacing</Label>
- <Select
- value={currentDesign.spacing || 'normal'}
- onValueChange={(value) => onDesignChange('spacing', value)}
- >
- <SelectTrigger>
- <SelectValue />
- </SelectTrigger>
- <SelectContent>
- <SelectItem value="tight">Compact</SelectItem>
- <SelectItem value="normal">Normal</SelectItem>
- <SelectItem value="relaxed">Spacious</SelectItem>
- </SelectContent>
- </Select>
+ {/* Field Order */}
+ <div className="pt-4 border-t">
+ <FieldOrderEditor
+ fieldOrder={currentDesign.fieldOrder}
+ visibleFields={currentDesign.visibleFields}
+ onChange={(newOrder) => onDesignChange('fieldOrder', newOrder)}
+ />
  </div>
  </div>
  );

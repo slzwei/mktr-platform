@@ -11,8 +11,13 @@ import { formatDateInput, getAgeValidationError, getAgeRestrictionHint, displayP
  * editorial aesthetic; campaign.design_config.themeColor still drives the
  * primary action color (CTA, focus rings, checkbox fill).
  *
- * Form state, validation, and OTP/submit logic are unchanged from the previous
- * version — only the rendering and the consent UX have been rewritten.
+ * Phone + OTP is always required for the public form — it is the lead pipeline's
+ * identity/dedup key, so phone cannot be hidden via config.
+ *
+ * `previewMode` (used by the campaign designer's inline preview and the
+ * /p/:slug admin preview) stubs every network path: OTP send/verify are
+ * simulated locally (any 6-digit code passes) and submit short-circuits before
+ * `onSubmit`, so a preview can never send a real OTP or create a real prospect.
  */
 export default function CampaignSignupForm({
   themeColor,
@@ -23,6 +28,7 @@ export default function CampaignSignupForm({
   campaign,
   termsContent,
   ctaLabel,
+  previewMode = false,
 }) {
   const accent = themeColor || TOKENS.accent;
   const visibleFields = campaign?.design_config?.visibleFields || {};
@@ -43,6 +49,7 @@ export default function CampaignSignupForm({
   const [otpState, setOtpState] = useState('idle');
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState('');
+  const [previewNotice, setPreviewNotice] = useState('');
   const [ageError, setAgeError] = useState('');
   const [dobIncomplete, setDobIncomplete] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -101,6 +108,16 @@ export default function CampaignSignupForm({
     setLoading('sending');
     setError('');
 
+    // Preview: simulate sending without hitting /verify/send.
+    if (previewMode) {
+      setTimeout(() => {
+        setOtpState('pending');
+        setResendCooldown(30);
+        setLoading(null);
+      }, 600);
+      return;
+    }
+
     try {
       const response = await apiClient.post(
         '/verify/send',
@@ -136,6 +153,18 @@ export default function CampaignSignupForm({
 
     setLoading('verifying');
     setError('');
+
+    // Preview: any 6-digit code verifies, without hitting /verify/check.
+    if (previewMode) {
+      setLoading(null);
+      setShowSuccessTick(true);
+      setError('');
+      setTimeout(() => {
+        setOtpState('verified');
+        setShowSuccessTick(false);
+      }, 1100);
+      return;
+    }
 
     try {
       const response = await apiClient.post(
@@ -178,16 +207,18 @@ export default function CampaignSignupForm({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setPreviewNotice('');
 
     if (!formData.name || !formData.email) {
       setError('Please fill in all required fields.');
       return;
     }
-    if (visibleFields.phone !== false && !formData.phone) {
+    // Phone is always required for the public form (identity/dedup key).
+    if (!formData.phone) {
       setError('Please enter your phone number.');
       return;
     }
-    if (visibleFields.phone !== false && otpState !== 'verified') {
+    if (otpState !== 'verified') {
       setError('Please verify your phone number before submitting.');
       return;
     }
@@ -238,7 +269,7 @@ export default function CampaignSignupForm({
 
     const dataToSubmit = {
       ...formData,
-      phone: visibleFields.phone !== false ? getFullPhoneNumber() : null,
+      phone: getFullPhoneNumber(),
       date_of_birth: visibleFields.dob !== false ? dobFormatted : null,
       postal_code: visibleFields.postal_code !== false ? formData.postal_code : null,
       education_level: visibleFields.education_level === true ? formData.education_level : null,
@@ -247,6 +278,15 @@ export default function CampaignSignupForm({
       consent_contact: consentContact,
       consent_terms: consentTerms,
     };
+
+    // Preview: stop here — never call onSubmit (which would create a real
+    // prospect on the parent page). Show a neutral, non-error notice instead.
+    if (previewMode) {
+      setLoading(null);
+      setError('');
+      setPreviewNotice('Preview — your details were not submitted.');
+      return;
+    }
 
     try {
       await onSubmit(dataToSubmit);
@@ -327,18 +367,17 @@ export default function CampaignSignupForm({
           {fieldOrder.map((item, index) => {
             if (typeof item === 'string') return renderField(item);
             if (item.columns && Array.isArray(item.columns)) {
-              return (
-                <div
-                  key={item.id || index}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: item.columns.length > 1 ? '1fr 1fr' : '1fr',
-                    gap: 12,
-                  }}
-                >
-                  {item.columns.map((colId) => renderField(colId))}
-                </div>
-              );
+              // Multi-column rows collapse to one column under 480px (real
+              // phones ~390px) via .lc-field-row; minmax(0,1fr) prevents long
+              // labels overflowing. Single-column rows render as a plain block.
+              if (item.columns.length > 1) {
+                return (
+                  <div key={item.id || index} className="lc-field-row">
+                    {item.columns.map((colId) => renderField(colId))}
+                  </div>
+                );
+              }
+              return <div key={item.id || index}>{item.columns.map((colId) => renderField(colId))}</div>;
             }
             return null;
           })}
@@ -359,6 +398,25 @@ export default function CampaignSignupForm({
             }}
           >
             {error}
+          </div>
+        )}
+
+        {/* Preview notice (neutral) — only shown in previewMode after a submit attempt */}
+        {previewNotice && (
+          <div
+            style={{
+              marginTop: 4,
+              marginBottom: 16,
+              padding: '12px 16px',
+              borderRadius: 14,
+              backgroundColor: TOKENS.storyCard,
+              color: TOKENS.body,
+              border: `1px solid ${TOKENS.hairline}`,
+              fontSize: 13.5,
+              fontFamily: 'Albert Sans, system-ui, sans-serif',
+            }}
+          >
+            {previewNotice}
           </div>
         )}
 

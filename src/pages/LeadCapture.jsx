@@ -9,6 +9,7 @@ import ArrowLeft from 'lucide-react/icons/arrow-left';
 import TypingLoader from '../components/ui/TypingLoader';
 import { apiClient } from '@/api/client';
 import LeadCaptureLayout, { TOKENS, RADIUS } from '../components/campaigns/LeadCaptureLayout';
+import { deriveLeadCaptureContent } from '../components/campaigns/leadCaptureContent';
 import {
   shouldTrack,
   generateEventId,
@@ -19,27 +20,6 @@ import {
   trackEvent,
   trackLead,
 } from '../lib/metaPixel';
-import { brand } from '@/lib/brand';
-
-const DEFAULT_REGULATORY = brand.defaultRegulatory;
-
-const DEFAULT_BRAND = brand.defaultPoweredBy;
-
-function brandFromCampaignName(name) {
-  if (!name) return null;
-  // Take the first significant word, drop punctuation
-  const first = name.trim().split(/[\s—–-]+/)[0]?.toLowerCase();
-  if (!first) return null;
-  return `${first}.sg`;
-}
-
-function paragraphsFromText(text) {
-  if (!text) return [];
-  return text
-    .split(/\n{2,}/) // blank-line separates paragraphs
-    .map((p) => p.trim())
-    .filter(Boolean);
-}
 
 export default function LeadCapture() {
   const location = useLocation();
@@ -287,25 +267,19 @@ export default function LeadCapture() {
 
   const design = campaign?.design_config || {};
 
-  // Derive story-card content from campaign data
-  const wordmark = design.brandWordmark || brandFromCampaignName(campaign?.name);
-  const storyParagraphs = useMemo(
-    () => paragraphsFromText(design.storyText || design.formSubheadline),
-    [design.storyText, design.formSubheadline]
-  );
-  const story = storyParagraphs.length > 0 ? { paragraphs: storyParagraphs, emphasis: design.storyEmphasis } : null;
+  // Derive story-card / wordmark / footer slots — shared with /p/:slug preview
+  // and the campaign designer's inline preview via deriveLeadCaptureContent.
+  const content = useMemo(() => deriveLeadCaptureContent(campaign), [campaign]);
 
-  const hasHeroMedia = !!(design.imageUrl || design.videoUrl);
-  const primaryCta = hasHeroMedia
+  // The shared helper returns pure content; attach this page's own CTA behavior
+  // (scroll to the form). The story card sources from design.storyText only.
+  const primaryCta = content.primaryCtaData
     ? {
-        label: design.heroCtaLabel || 'Get Started',
-        color: design.themeColor,
+        label: content.primaryCtaData.label,
+        color: content.primaryCtaData.color,
         onClick: () => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
       }
     : null;
-
-  const regulatoryFooter = design.regulatoryFooter || DEFAULT_REGULATORY;
-  const brand = design.brandFooter || DEFAULT_BRAND;
 
   const longShareUrl = useMemo(() => {
     const baseUrl = window.location.origin;
@@ -325,11 +299,11 @@ export default function LeadCapture() {
     <LeadCaptureLayout
       design={design}
       maxWidth={design.formWidth}
-      wordmark={wordmark}
-      story={story}
+      wordmark={content.wordmark}
+      story={content.story}
       primaryCta={primaryCta}
-      regulatoryFooter={regulatoryFooter}
-      brand={brand}
+      regulatoryFooter={content.regulatoryFooter}
+      brand={content.brand}
     >
       {submitted ? (
         <SuccessState onShare={() => setShareOpen(true)} />

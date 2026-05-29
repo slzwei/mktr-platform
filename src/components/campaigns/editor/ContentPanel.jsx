@@ -1,4 +1,5 @@
 import { useRef, useState } from"react";
+import { toast } from"sonner";
 import { Input } from"@/components/ui/input";
 import { Label } from"@/components/ui/label";
 import { Textarea } from"@/components/ui/textarea";
@@ -12,10 +13,12 @@ import {
  Trash2,
  AlertCircle,
  Video,
- Link2
+ Link2,
+ Lock
 } from"lucide-react";
 import { resolveImageUrl } from"../LeadCaptureLayout";
 import { TC_TEMPLATES } from './constants';
+import { brand } from"@/lib/brand";
 
 export default function ContentPanel({ currentDesign, onDesignChange }) {
  const [uploading, setUploading] = useState(false);
@@ -32,6 +35,7 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  onDesignChange('imageUrl', relativeUrl);
  } catch (error) {
  console.error('Error uploading image:', error);
+ toast.error('Failed to upload image. Please try again.');
  }
  setUploading(false);
 
@@ -64,6 +68,46 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  onChange={(e) => onDesignChange('formSubheadline', e.target.value)}
  placeholder="e.g., Fill out the form to get started." className="resize-none h-16" maxLength={150}
  />
+ <p className="text-xs text-muted-foreground">Shown directly under the form headline.</p>
+ </div>
+
+ {/* Brand wordmark */}
+ <div className="space-y-3 pt-4 border-t">
+ <Label htmlFor="brandWordmark" className="text-sm font-semibold text-foreground">
+ Brand Wordmark
+ </Label>
+ <Input
+ id="brandWordmark" value={currentDesign.brandWordmark || ''}
+ onChange={(e) => onDesignChange('brandWordmark', e.target.value)}
+ placeholder="e.g., goodies.sg" maxLength={40}
+ />
+ <p className="text-xs text-muted-foreground">
+ Large display name at the top of the page. Leave blank to derive it from the campaign name.
+ </p>
+ </div>
+
+ {/* Hero story */}
+ <div className="space-y-3 pt-4 border-t">
+ <Label htmlFor="storyText" className="text-sm font-semibold text-foreground">
+ Hero Story
+ </Label>
+ <Textarea
+ id="storyText" value={currentDesign.storyText || ''}
+ onChange={(e) => onDesignChange('storyText', e.target.value)}
+ placeholder="Tell the customer what this is about. Leave a blank line between paragraphs." className="resize-none h-28" maxLength={1200}
+ />
+ <p className="text-xs text-muted-foreground">
+ Narrative shown in the story card (only renders when there is hero media or story text). Separate
+ paragraphs with a blank line.
+ </p>
+ <div className="space-y-1">
+ <Label htmlFor="storyEmphasis" className="text-xs text-muted-foreground">Story emphasis line (optional)</Label>
+ <Input
+ id="storyEmphasis" value={currentDesign.storyEmphasis || ''}
+ onChange={(e) => onDesignChange('storyEmphasis', e.target.value)}
+ placeholder="e.g., Limited slots — register today." maxLength={160}
+ />
+ </div>
  </div>
 
  {/* Header Media */}
@@ -178,6 +222,56 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  )}
  </div>
 
+ {/* Hero CTA label — only relevant when there is hero media */}
+ {currentDesign.mediaType && currentDesign.mediaType !== 'none' && (
+ <div className="space-y-3 pt-4 border-t animate-in fade-in slide-in-from-top-2">
+ <Label htmlFor="heroCtaLabel" className="text-sm font-semibold text-foreground">
+ Hero Button Label
+ </Label>
+ <Input
+ id="heroCtaLabel" value={currentDesign.heroCtaLabel || ''}
+ onChange={(e) => onDesignChange('heroCtaLabel', e.target.value)}
+ placeholder="Get Started" maxLength={40}
+ />
+ <p className="text-xs text-muted-foreground">
+ Button under the hero media that scrolls down to the form.
+ </p>
+ </div>
+ )}
+
+ {/* Submit button label */}
+ <div className="space-y-3 pt-4 border-t">
+ <Label htmlFor="ctaText" className="text-sm font-semibold text-foreground">
+ Submit Button Label
+ </Label>
+ <Input
+ id="ctaText" value={currentDesign.ctaText || ''}
+ onChange={(e) => onDesignChange('ctaText', e.target.value)}
+ placeholder="Submit Now" maxLength={40}
+ />
+ </div>
+
+ {/* Footer */}
+ <div className="space-y-3 pt-4 border-t">
+ <Label htmlFor="regulatoryFooter" className="text-sm font-semibold text-foreground">
+ Regulatory Footer
+ </Label>
+ <Textarea
+ id="regulatoryFooter" value={currentDesign.regulatoryFooter || ''}
+ onChange={(e) => onDesignChange('regulatoryFooter', e.target.value)}
+ placeholder={brand.defaultRegulatory} className="resize-none h-28" maxLength={1000}
+ />
+ <p className="text-xs text-muted-foreground">Small print under the form. Leave blank to use the default.</p>
+ <div className="space-y-1">
+ <Label htmlFor="brandFooter" className="text-xs text-muted-foreground">Brand footer line</Label>
+ <Input
+ id="brandFooter" value={currentDesign.brandFooter || ''}
+ onChange={(e) => onDesignChange('brandFooter', e.target.value)}
+ placeholder={brand.defaultPoweredBy} maxLength={80}
+ />
+ </div>
+ </div>
+
  {/* OTP Settings */}
  <div className="space-y-3 pt-4 border-t">
  <Label className="text-sm font-semibold text-foreground">Verification Method</Label>
@@ -207,10 +301,15 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  <Label className="text-sm font-semibold text-foreground">Form Fields</Label>
  <p className="text-xs text-muted-foreground -mt-1">Configure which fields appear and whether they're required</p>
  <div className="space-y-2">
- <FieldToggle
- id="phone" label="Phone Number" checked={currentDesign.visibleFields?.phone !== false}
- onChange={(checked) => onDesignChange('visibleFields', { ...currentDesign.visibleFields, phone: checked })}
- fixedRequired="Required for OTP" />
+ {/* Name + Email + Phone are always shown. Phone+OTP is the lead pipeline's
+ identity/dedup key, so it cannot be hidden. */}
+ <div className="flex items-center justify-between py-1">
+ <div className="flex items-center space-x-2 text-foreground">
+ <Lock className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+ <span className="text-sm">Phone Number</span>
+ </div>
+ <span className="text-xs text-muted-foreground">Always shown · Required for OTP</span>
+ </div>
  <FieldToggle
  id="dob" label="Date of Birth" checked={currentDesign.visibleFields?.dob !== false}
  onChange={(checked) => onDesignChange('visibleFields', { ...currentDesign.visibleFields, dob: checked })}

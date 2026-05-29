@@ -114,7 +114,10 @@ export default function FieldRenderer({
   ageError,
   renderAgeRestrictionHint,
 }) {
-  const isVisible = fieldId === 'name' || fieldId === 'email' || visibleFields[fieldId] !== false;
+  // name / email / phone are always visible. Phone is the lead pipeline's
+  // identity/dedup key (phone+OTP), so it can never be hidden via config.
+  const isVisible =
+    fieldId === 'name' || fieldId === 'email' || fieldId === 'phone' || visibleFields[fieldId] !== false;
   if (!isVisible) return null;
 
   const reqLevel = (key) => {
@@ -175,7 +178,7 @@ export default function FieldRenderer({
     case 'phone':
       return (
         <div style={{ marginBottom: 20 }}>
-          <Label htmlFor="phone" {...reqLevel('phone')}>
+          <Label htmlFor="phone" required>
             Phone Number
           </Label>
           <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>

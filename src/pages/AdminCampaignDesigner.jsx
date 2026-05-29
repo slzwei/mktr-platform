@@ -31,6 +31,9 @@ export default function AdminCampaignDesigner() {
  } catch (error) {
  console.error('Error saving design:', error);
  toast.error("Failed to save design");
+ // Re-throw so DesignEditor.handleManualSave's catch runs: the dirty state
+ // and unload guard stay armed, and the false "Saved" indicator is avoided.
+ throw error;
  }
  };
 

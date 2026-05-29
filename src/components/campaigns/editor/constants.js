@@ -1,10 +1,19 @@
 import { brand } from "@/lib/brand";
 
-export const PRESET_BACKGROUNDS = {
- gradient: 'bg-paper',
- solid_slate: 'bg-muted',
- simple_gray: 'bg-card',
-};
+// Single source for short, throwaway row/element IDs used by the field-order
+// editor. Prefers crypto.randomUUID() where available, with a Math.random
+// fallback for non-secure contexts. Replaces the scattered, deprecated
+// `Math.random().toString(36).substr(2, 9)` copies.
+export function genId() {
+ try {
+ if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+ return crypto.randomUUID().slice(0, 8);
+ }
+ } catch {
+ /* fall through to Math.random */
+ }
+ return Math.random().toString(36).slice(2, 11);
+}
 
 export const TC_TEMPLATES = {
  default: {
@@ -30,104 +39,6 @@ export const TC_TEMPLATES = {
  <li>To better understand my preferences and improve services.</li>
 </ul>
 <p>I may withdraw my consent at any time by contacting the Data Protection Officer.</p>`
- }
-};
-
-export const PAGE_TEMPLATES = {
- vibrant: {
- id: 'vibrant',
- name: 'Vibrant Modern',
- tagline: 'Blue gradient, glassmorphism card, rounded corners',
- preview: { bg: '#DBEAFE', accent: '#3B82F6', card: 'rgba(255,255,255,0.85)' },
- config: {
- layoutTemplate: 'modern',
- backgroundType: 'custom',
- backgroundColor: '#EFF6FF',
- cardBackgroundColor: '',
- themeColor: '#3B82F6',
- textColor: '#1E293B',
- backgroundStyle: 'gradient',
- headlineSize: 24,
- alignment: 'center',
- spacing: 'normal',
- formWidth: 400,
- }
- },
- corporate: {
- id: 'corporate',
- name: 'Corporate',
- tagline: 'Dark slate background, white card, sharp edges',
- preview: { bg: '#1E293B', accent: '#0F172A', card: '#FFFFFF' },
- config: {
- layoutTemplate: 'corporate',
- backgroundType: 'custom',
- backgroundColor: '#1E293B',
- cardBackgroundColor: '#FFFFFF',
- themeColor: '#0F172A',
- textColor: '#0F172A',
- backgroundStyle: 'solid_slate',
- headlineSize: 22,
- alignment: 'left',
- spacing: 'normal',
- formWidth: 420,
- }
- },
- clean: {
- id: 'clean',
- name: 'Clean & Simple',
- tagline: 'Pure white, borderless, minimal and focused',
- preview: { bg: '#FFFFFF', accent: '#2563EB', card: '#FFFFFF' },
- config: {
- layoutTemplate: 'simple',
- backgroundType: 'preset',
- backgroundColor: '#ffffff',
- cardBackgroundColor: '',
- themeColor: '#2563EB',
- textColor: '#111827',
- backgroundStyle: 'simple_gray',
- headlineSize: 20,
- alignment: 'center',
- spacing: 'normal',
- formWidth: 400,
- }
- },
- bold: {
- id: 'bold',
- name: 'Bold Dark',
- tagline: 'Dark card, vibrant rose accent, high contrast',
- preview: { bg: '#0F172A', accent: '#F43F5E', card: '#1E293B' },
- config: {
- layoutTemplate: 'corporate',
- backgroundType: 'custom',
- backgroundColor: '#0F172A',
- cardBackgroundColor: '#1E293B',
- themeColor: '#F43F5E',
- textColor: '#F8FAFC',
- backgroundStyle: 'solid_slate',
- headlineSize: 28,
- alignment: 'left',
- spacing: 'normal',
- formWidth: 420,
- }
- },
- warm: {
- id: 'warm',
- name: 'Warm Sunset',
- tagline: 'Soft cream background, warm orange accent',
- preview: { bg: '#FFF7ED', accent: '#F97316', card: '#FFFFFF' },
- config: {
- layoutTemplate: 'modern',
- backgroundType: 'custom',
- backgroundColor: '#FFF7ED',
- cardBackgroundColor: '#FFFFFF',
- themeColor: '#F97316',
- textColor: '#1C1917',
- backgroundStyle: 'gradient',
- headlineSize: 24,
- alignment: 'center',
- spacing: 'normal',
- formWidth: 400,
- }
  }
 };
 
