@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
+import { readableTextOn } from '@/lib/contrast';
 
 /**
  * Inline verification panel — slides down directly beneath the phone field when
@@ -115,7 +116,9 @@ export default function OTPVerification({
             height: 52,
             padding: '0 22px',
             fontSize: 16, // 16px avoids iOS auto-zoom on focus
-            letterSpacing: '0.3em',
+            // Wide tracking only on typed digits — applying it to the placeholder
+            // overflows "6-digit code" and clips it.
+            letterSpacing: otp ? '0.3em' : 'normal',
             fontFamily: 'Albert Sans, system-ui, sans-serif',
             color: TOKENS.ink,
             backgroundColor: '#ffffff',
@@ -146,7 +149,7 @@ export default function OTPVerification({
             paddingRight: 24,
             borderRadius: RADIUS.pill,
             backgroundColor: showSuccessTick ? TOKENS.success : accent,
-            color: '#ffffff',
+            color: readableTextOn(showSuccessTick ? TOKENS.success : accent),
             border: 'none',
             cursor: otp.length === 6 && !showSuccessTick ? 'pointer' : 'not-allowed',
             opacity: showSuccessTick ? 1 : otp.length === 6 && loading !== 'verifying' ? 1 : 0.5,

@@ -1,4 +1,5 @@
 import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
+import { readableTextOn } from '@/lib/contrast';
 
 /**
  * Per-field renderer for the public lead-capture form.
@@ -231,7 +232,7 @@ export default function FieldRenderer({
                   fontFamily: 'Albert Sans, system-ui, sans-serif',
                   fontWeight: 600,
                   fontSize: 14,
-                  color: '#ffffff',
+                  color: readableTextOn(formData.phone.length === 8 ? themeColor || TOKENS.accent : TOKENS.hairline),
                   backgroundColor: formData.phone.length === 8 ? themeColor || TOKENS.accent : TOKENS.hairline,
                   transition: 'background-color 200ms ease',
                   whiteSpace: 'nowrap',

@@ -189,13 +189,11 @@ export default function CampaignSignupForm({
           msg = 'Incorrect code. Codes are time-sensitive — please double-check and try again.';
         }
         setError(msg);
-        setOtp('');
         setLoading(null);
       }
     } catch (err) {
       const respData = err.response?.data || err.data;
       setError(respData?.message || err.message || 'Verification failed. Please try again.');
-      setOtp('');
       setLoading(null);
     }
   };
@@ -298,12 +296,19 @@ export default function CampaignSignupForm({
     setLoading(null);
   };
 
+  // Clear the error as soon as the user edits the code, so a failed attempt's
+  // red highlight lifts while they retype instead of lingering on the field.
+  const handleOtpChange = (value) => {
+    if (error) setError('');
+    setOtp(value);
+  };
+
   // Inline verification panel — slides down beneath the phone field (no modal).
   const phoneOtpPanel = (
     <OTPVerification
       otpState={otpState}
       otp={otp}
-      setOtp={setOtp}
+      setOtp={handleOtpChange}
       loading={loading}
       error={error}
       showSuccessTick={showSuccessTick}
