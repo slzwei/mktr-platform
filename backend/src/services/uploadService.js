@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { storageService } from './storage.js';
+import { transcodeUploadedVideoToMp4 } from './videoService.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 // Base uploads directory
@@ -12,6 +13,10 @@ const uploadsDir = path.join(process.cwd(), 'uploads');
  * Returns a fileInfo object.
  */
 export async function processSingleUpload(file, type = 'general', userId) {
+  // Videos are normalized to a silent, web-optimized MP4 before storage, so any
+  // source format (MOV/HEVC, etc.) plays cross-browser as a muted hero loop.
+  await transcodeUploadedVideoToMp4(file);
+
   let fileUrl = `/uploads/${type}/${file.filename}`;
 
   if (storageService.isEnabled()) {

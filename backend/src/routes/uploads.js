@@ -17,7 +17,8 @@ const router = express.Router();
 const ALLOWED_TYPES = [
   'image/jpeg', 'image/png', 'image/gif', 'image/webp',
   'application/pdf',
-  'video/mp4', 'video/webm'
+  // Source video formats — non-MP4 (e.g. MOV) are transcoded to web MP4 on upload.
+  'video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'video/3gpp'
 ];
 
 const MAX_SIZE = (parseInt(process.env.MAX_UPLOAD_SIZE_MB) || 10) * 1024 * 1024;
@@ -62,8 +63,8 @@ const fileFilter = (req, file, cb) => {
   const allowedByCategory = {
     image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
     document: ['application/pdf'],
-    video: ['video/mp4', 'video/webm'],
-    campaign_media: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm']
+    video: ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'video/3gpp'],
+    campaign_media: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/x-msvideo', 'video/3gpp']
   };
 
   const { type = 'image' } = req.query;

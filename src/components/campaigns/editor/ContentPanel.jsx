@@ -233,7 +233,7 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  </div>
  )}
 
- {/* Video — upload an MP4 (plays muted + looped in the hero) or paste a link */}
+ {/* Video — upload a clip (auto-converted to a muted, looping MP4) or paste a link */}
  {currentDesign.mediaType === 'video' && (
  <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
  {currentDesign.videoUrl && !/youtube|youtu\.be/.test(currentDesign.videoUrl) ? (
@@ -246,7 +246,7 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  </div>
  <div className="flex gap-2 justify-center">
  <Button variant="outline" size="sm" onClick={() => videoInputRef.current?.click()} disabled={uploadingVideo}>
- {uploadingVideo ? (<><Loader2 className="w-3 h-3 mr-1 animate-spin"/>Uploading…</>) : ('Replace')}
+ {uploadingVideo ? (<><Loader2 className="w-3 h-3 mr-1 animate-spin"/>Optimizing…</>) : ('Replace')}
  </Button>
  <Button
  variant="ghost" size="sm" onClick={() => onDesignChange('videoUrl', '')}
@@ -259,11 +259,11 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  <div className="border-2 border-dashed border-border rounded-xl p-6 text-center space-y-3">
  <Video className="w-10 h-10 text-muted-foreground mx-auto"/>
  <div>
- <p className="text-sm font-medium text-foreground mb-1">Upload an MP4</p>
- <p className="text-xs text-muted-foreground">Autoplays muted &amp; loops in the hero. Up to 10MB — keep it short for fast loading.</p>
+ <p className="text-sm font-medium text-foreground mb-1">Upload a video</p>
+ <p className="text-xs text-muted-foreground">MP4, MOV or WebM — auto-converted, muted &amp; optimized for the hero. Up to 60MB; keep it short for fast loading.</p>
  </div>
  <Button variant="outline" onClick={() => videoInputRef.current?.click()} disabled={uploadingVideo}>
- {uploadingVideo ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin"/>Uploading…</>) : (<><Upload className="w-4 h-4 mr-2"/>Choose MP4</>)}
+ {uploadingVideo ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin"/>Optimizing…</>) : (<><Upload className="w-4 h-4 mr-2"/>Choose video</>)}
  </Button>
  </div>
  )}
@@ -273,16 +273,16 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  <Input
  value={currentDesign.videoUrl || ''}
  onChange={(e) => onDesignChange('videoUrl', e.target.value)}
- placeholder="…or paste a YouTube / .mp4 link" className="pl-10" />
+ placeholder="…or paste a YouTube / video link" className="pl-10" />
  </div>
  <p className="text-xs text-muted-foreground">
- Uploaded MP4s autoplay muted &amp; loop in the hero (16:9). YouTube links show the standard player.
+ Uploaded videos autoplay muted &amp; loop in the hero (16:9). YouTube links show the standard player.
  </p>
 
  <Input
  type="file" ref={videoInputRef}
  onChange={handleVideoUpload}
- className="hidden" accept="video/mp4,video/webm" />
+ className="hidden" accept="video/*" />
  </div>
  )}
  </div>
