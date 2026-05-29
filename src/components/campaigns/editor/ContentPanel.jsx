@@ -23,7 +23,9 @@ import { HERO_FONTS, DEFAULT_HERO_FONT } from"@/lib/heroFonts";
 
 export default function ContentPanel({ currentDesign, onDesignChange }) {
  const [uploading, setUploading] = useState(false);
+ const [uploadingVideo, setUploadingVideo] = useState(false);
  const fileInputRef = useRef(null);
+ const videoInputRef = useRef(null);
 
  const handleImageUpload = async (event) => {
  const file = event.target.files[0];
@@ -42,6 +44,26 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
 
  if (fileInputRef.current) {
  fileInputRef.current.value = '';
+ }
+ };
+
+ const handleVideoUpload = async (event) => {
+ const file = event.target.files[0];
+ if (!file) return;
+
+ setUploadingVideo(true);
+ try {
+ const result = await UploadFile(file, 'campaign_media');
+ const relativeUrl = result?.file?.url || '';
+ if (relativeUrl) onDesignChange('videoUrl', relativeUrl);
+ } catch (error) {
+ console.error('Error uploading video:', error);
+ toast.error(error?.response?.data?.message || error?.message || 'Failed to upload video. Keep it under 10MB.');
+ }
+ setUploadingVideo(false);
+
+ if (videoInputRef.current) {
+ videoInputRef.current.value = '';
  }
  };
 
@@ -211,37 +233,56 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  </div>
  )}
 
- {/* Video URL */}
+ {/* Video — upload an MP4 (plays muted + looped in the hero) or paste a link */}
  {currentDesign.mediaType === 'video' && (
  <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+ {currentDesign.videoUrl && !/youtube|youtu\.be/.test(currentDesign.videoUrl) ? (
+ <div className="border-2 border-dashed border-border rounded-xl p-4 text-center space-y-3">
+ <div className="w-40 h-24 mx-auto overflow-hidden rounded-lg bg-foreground">
+ <video
+ src={resolveImageUrl(currentDesign.videoUrl)}
+ className="w-full h-full object-cover" muted loop autoPlay playsInline preload="metadata"
+ />
+ </div>
+ <div className="flex gap-2 justify-center">
+ <Button variant="outline" size="sm" onClick={() => videoInputRef.current?.click()} disabled={uploadingVideo}>
+ {uploadingVideo ? (<><Loader2 className="w-3 h-3 mr-1 animate-spin"/>Uploading…</>) : ('Replace')}
+ </Button>
+ <Button
+ variant="ghost" size="sm" onClick={() => onDesignChange('videoUrl', '')}
+ className="text-destructive hover:text-destructive" >
+ <Trash2 className="w-3 h-3 mr-1"/> Remove
+ </Button>
+ </div>
+ </div>
+ ) : (
+ <div className="border-2 border-dashed border-border rounded-xl p-6 text-center space-y-3">
+ <Video className="w-10 h-10 text-muted-foreground mx-auto"/>
+ <div>
+ <p className="text-sm font-medium text-foreground mb-1">Upload an MP4</p>
+ <p className="text-xs text-muted-foreground">Autoplays muted &amp; loops in the hero. Up to 10MB — keep it short for fast loading.</p>
+ </div>
+ <Button variant="outline" onClick={() => videoInputRef.current?.click()} disabled={uploadingVideo}>
+ {uploadingVideo ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin"/>Uploading…</>) : (<><Upload className="w-4 h-4 mr-2"/>Choose MP4</>)}
+ </Button>
+ </div>
+ )}
+
  <div className="relative">
  <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/>
  <Input
  value={currentDesign.videoUrl || ''}
  onChange={(e) => onDesignChange('videoUrl', e.target.value)}
- placeholder="https://youtube.com/watch?v=... or https://example.com/video.mp4" className="pl-10" />
+ placeholder="…or paste a YouTube / .mp4 link" className="pl-10" />
  </div>
  <p className="text-xs text-muted-foreground">
- Paste a YouTube link or a direct video URL (mp4). The video will display at 16:9 ratio.
+ Uploaded MP4s autoplay muted &amp; loop in the hero (16:9). YouTube links show the standard player.
  </p>
- {currentDesign.videoUrl && (
- <div className="flex items-center gap-2">
- <div className="w-32 h-18 rounded-lg overflow-hidden bg-foreground border">
- {/youtube|youtu\.be/.test(currentDesign.videoUrl) ? (
- <div className="w-full h-full flex items-center justify-center text-background text-xs bg-destructive">
- <Video className="w-4 h-4 mr-1"/> YouTube
- </div>
- ) : (
- <video src={currentDesign.videoUrl} className="w-full h-full object-cover" muted preload="metadata"/>
- )}
- </div>
- <Button
- variant="ghost" size="sm" onClick={() => onDesignChange('videoUrl', '')}
- className="text-destructive hover:text-destructive text-xs" >
- <Trash2 className="w-3 h-3 mr-1"/> Remove
- </Button>
- </div>
- )}
+
+ <Input
+ type="file" ref={videoInputRef}
+ onChange={handleVideoUpload}
+ className="hidden" accept="video/mp4,video/webm" />
  </div>
  )}
  </div>

@@ -68,9 +68,8 @@ function getYouTubeEmbedUrl(url) {
   return null;
 }
 
-function HeroMedia({ design, onPlay }) {
+function HeroMedia({ design }) {
   const [videoError, setVideoError] = useState(false);
-  const [showPoster, setShowPoster] = useState(true);
   const mediaType = design?.mediaType || (design?.imageUrl ? 'image' : 'none');
 
   if (mediaType === 'none') return null;
@@ -96,7 +95,9 @@ function HeroMedia({ design, onPlay }) {
     );
   }
 
-  // Hosted mp4 — image poster with play overlay until clicked
+  // Hosted mp4 — silent, auto-looping hero background. `muted` both strips the
+  // audio at playback AND is required for autoplay on iOS/Android; the ref
+  // setter guarantees the muted property is applied so autoplay isn't blocked.
   if (mediaType === 'video' && design?.videoUrl && !videoError) {
     return (
       <div
@@ -104,45 +105,19 @@ function HeroMedia({ design, onPlay }) {
         style={{ aspectRatio: '16/9', borderRadius: RADIUS.image, backgroundColor: TOKENS.ink }}
       >
         <video
+          ref={(el) => {
+            if (el) el.muted = true;
+          }}
           src={resolveImageUrl(design.videoUrl)}
           poster={design.imageUrl ? resolveImageUrl(design.imageUrl) : undefined}
           className="w-full h-full object-cover"
-          controls={!showPoster}
+          autoPlay
+          muted
+          loop
           playsInline
           preload="metadata"
           onError={() => setVideoError(true)}
         />
-        {showPoster && (
-          <button
-            type="button"
-            onClick={() => {
-              setShowPoster(false);
-              onPlay?.();
-            }}
-            aria-label="Play video"
-            className="absolute inset-0 flex items-center justify-center group cursor-pointer"
-            style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.25), rgba(0,0,0,0.05))' }}
-          >
-            <span
-              style={{
-                width: 72,
-                height: 72,
-                borderRadius: '50%',
-                backgroundColor: 'rgba(40, 30, 20, 0.85)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.25), 0 2px 8px rgba(0,0,0,0.15)',
-                transition: 'transform 240ms cubic-bezier(0.16, 1, 0.3, 1)',
-              }}
-              className="group-hover:scale-110"
-            >
-              <svg width="22" height="26" viewBox="0 0 22 26" fill="none" aria-hidden="true">
-                <path d="M2 2L20 13L2 24V2Z" fill="white" />
-              </svg>
-            </span>
-          </button>
-        )}
       </div>
     );
   }
