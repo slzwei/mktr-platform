@@ -19,6 +19,7 @@ import {
 import { resolveImageUrl } from"../LeadCaptureLayout";
 import { TC_TEMPLATES } from './constants';
 import { brand } from"@/lib/brand";
+import { HERO_FONTS, DEFAULT_HERO_FONT } from"@/lib/heroFonts";
 
 export default function ContentPanel({ currentDesign, onDesignChange }) {
  const [uploading, setUploading] = useState(false);
@@ -84,6 +85,29 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  <p className="text-xs text-muted-foreground">
  Large display name at the top of the page. Leave blank to derive it from the campaign name.
  </p>
+ </div>
+
+ {/* Hero font */}
+ <div className="space-y-3 pt-4 border-t">
+ <Label className="text-sm font-semibold text-foreground">Hero Font</Label>
+ <p className="text-xs text-muted-foreground -mt-1">
+ Display typeface for the brand wordmark and the form headline.
+ </p>
+ <Select
+ value={currentDesign.heroFont || DEFAULT_HERO_FONT}
+ onValueChange={(value) => onDesignChange('heroFont', value)}
+ >
+ <SelectTrigger className="w-full">
+ <SelectValue placeholder="Select a font"/>
+ </SelectTrigger>
+ <SelectContent>
+ {HERO_FONTS.map((f) => (
+ <SelectItem key={f.id} value={f.id}>
+ <span style={{ fontFamily: f.stack, fontSize: 15 }}>{f.label}</span>
+ </SelectItem>
+ ))}
+ </SelectContent>
+ </Select>
  </div>
 
  {/* Hero story */}

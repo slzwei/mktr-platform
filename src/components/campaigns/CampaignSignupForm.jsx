@@ -4,6 +4,7 @@ import FieldRenderer from '@/components/campaigns/signup/FieldRenderer';
 import OTPVerification from '@/components/campaigns/signup/OTPVerification';
 import MarketingConsentDialog from '@/components/legal/MarketingConsentDialog';
 import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
+import { heroFontStack } from '@/lib/heroFonts';
 import { formatDateInput, getAgeValidationError, getAgeRestrictionHint, displayPhone } from '@/components/campaigns/signup/dateUtils';
 
 /**
@@ -35,6 +36,7 @@ export default function CampaignSignupForm({
   const requiredFields = campaign?.design_config?.requiredFields || {};
   const fieldOrder = campaign?.design_config?.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income'];
   const otpChannel = campaign?.design_config?.otpChannel || 'sms';
+  const headingFont = heroFontStack(campaign?.design_config?.heroFont);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -328,7 +330,7 @@ export default function CampaignSignupForm({
         {/* Heavy-serif heading */}
         <h2
           style={{
-            fontFamily: 'Fraunces, serif',
+            fontFamily: headingFont,
             fontWeight: 800,
             fontSize: 'clamp(28px, 6.5vw, 34px)',
             lineHeight: 1.1,

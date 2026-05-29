@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { apiClient } from '@/api/client';
+import { heroFontStack } from '@/lib/heroFonts';
 
 /**
  * Shared layout shell for the public lead-capture page.
@@ -167,7 +168,7 @@ function HeroMedia({ design, onPlay }) {
   return null;
 }
 
-function BrandWordmark({ wordmark }) {
+function BrandWordmark({ wordmark, fontFamily }) {
   if (!wordmark) return null;
   return (
     <div
@@ -175,7 +176,7 @@ function BrandWordmark({ wordmark }) {
       style={{
         paddingTop: 28,
         paddingBottom: 24,
-        fontFamily: 'Fraunces, serif',
+        fontFamily: fontFamily || 'Fraunces, serif',
         fontWeight: 900,
         fontSize: 'clamp(44px, 11vw, 64px)',
         lineHeight: 0.92,
@@ -410,7 +411,7 @@ export default function LeadCaptureLayout({
       >
         {hasStory && (
           <>
-            <BrandWordmark wordmark={wordmark} />
+            <BrandWordmark wordmark={wordmark} fontFamily={heroFontStack(design?.heroFont)} />
             <HeroStoryCard design={design} story={story} primaryCta={primaryCta} />
           </>
         )}
