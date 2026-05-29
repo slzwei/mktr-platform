@@ -131,14 +131,19 @@ export function makeProspectService(overrides = {}) {
     }
 
     // Guard: when the caller specified an explicit campaign, a qrTagId — whether
-    // it arrived in the request body or via a stale session attribution — that
-    // belongs to a DIFFERENT campaign must not be used. It would mis-attribute
-    // the lead and route the agent off the wrong QR. Drop the stale QR/session
-    // linkage so the explicit campaign wins (campaign-level routing). Runs before
-    // resolveAssignedAgentId so agent resolution never sees the wrong QR.
+    // it arrived in the request body or via a stale session attribution — is
+    // honored ONLY if it provably belongs to that same campaign. Everything else
+    // is dropped: a QR for a different campaign, a QR with no campaign at all
+    // (campaignId null), or an unknown/deleted QR. Any of those could otherwise
+    // skew QR-level agent routing for a campaign the QR does not belong to. Runs
+    // before resolveAssignedAgentId so agent resolution never sees the wrong QR.
     if (explicitCampaignId != null && incoming.qrTagId) {
       const boundQr = await m.QrTag.findByPk(incoming.qrTagId);
-      if (boundQr?.campaignId != null && String(boundQr.campaignId) !== String(explicitCampaignId)) {
+      const qrBelongsToExplicitCampaign =
+        boundQr != null &&
+        boundQr.campaignId != null &&
+        String(boundQr.campaignId) === String(explicitCampaignId);
+      if (!qrBelongsToExplicitCampaign) {
         delete incoming.qrTagId;
         delete incoming.attributionId;
         delete incoming.sessionId;

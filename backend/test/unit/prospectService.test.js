@@ -436,6 +436,61 @@ describe('prospectService (unit)', () => {
           expect.objectContaining({ campaignId: 'camp-X', qrTagId: undefined })
         );
       });
+
+      it('drops a stale session QR whose campaignId is null when an explicit campaign is given', async () => {
+        // Prior scan of a no-campaign QR; a bare submit explicitly targets camp-X.
+        // A null-campaign QR does not belong to camp-X, so it must not skew routing.
+        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-null', sessionId: 'sess-1', qrTagId: 'qr-null' });
+        mocks.models.QrTag.findByPk.mockImplementation(async (id) =>
+          id === 'qr-null' ? wireQrTag('qr-null', null) : wireQrTag(id, 'camp-X')
+        );
+
+        const body = { firstName: 'Test', phone: '91234503', campaignId: 'camp-X' };
+        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+
+        const createArg = mocks.models.Prospect.create.mock.calls[0][0];
+        expect(createArg.campaignId).toBe('camp-X');
+        expect(createArg.qrTagId).toBeUndefined();
+        expect(createArg.attributionId).toBeUndefined();
+        expect(createArg.sessionId).toBeUndefined();
+        expect(mocks.resolveAssignedAgentId).toHaveBeenCalledWith(
+          expect.objectContaining({ campaignId: 'camp-X', qrTagId: undefined })
+        );
+      });
+
+      it('drops a stale body qrTagId whose campaignId is null when an explicit campaign is given', async () => {
+        mocks.models.QrTag.findByPk.mockImplementation(async (id) =>
+          id === 'qr-null' ? wireQrTag('qr-null', null) : wireQrTag(id, 'camp-X')
+        );
+
+        const body = { firstName: 'Test', phone: '91234504', campaignId: 'camp-X', qrTagId: 'qr-null' };
+        await service.createProspect(body, user, {}); // no session
+
+        const createArg = mocks.models.Prospect.create.mock.calls[0][0];
+        expect(createArg.campaignId).toBe('camp-X');
+        expect(createArg.qrTagId).toBeUndefined();
+        expect(createArg.attributionId).toBeUndefined();
+        expect(createArg.sessionId).toBeUndefined();
+        expect(mocks.resolveAssignedAgentId).toHaveBeenCalledWith(
+          expect.objectContaining({ campaignId: 'camp-X', qrTagId: undefined })
+        );
+      });
+
+      it('keeps the QR and attribution (and routes by QR) when the bound QR campaign matches', async () => {
+        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-X', sessionId: 'sess-1', qrTagId: 'qr-X' });
+        mocks.models.QrTag.findByPk.mockImplementation(async (id) => wireQrTag(id, 'camp-X'));
+
+        const body = { firstName: 'Test', phone: '91234505', campaignId: 'camp-X' };
+        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+
+        const createArg = mocks.models.Prospect.create.mock.calls[0][0];
+        expect(createArg.campaignId).toBe('camp-X');
+        expect(createArg.qrTagId).toBe('qr-X');
+        expect(createArg.attributionId).toBe('attr-X');
+        expect(mocks.resolveAssignedAgentId).toHaveBeenCalledWith(
+          expect.objectContaining({ campaignId: 'camp-X', qrTagId: 'qr-X' })
+        );
+      });
     });
 
     it('derives campaignId from qrTagId when campaignId is missing', async () => {
