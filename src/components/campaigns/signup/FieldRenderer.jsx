@@ -108,6 +108,7 @@ export default function FieldRenderer({
   otpState,
   loading,
   handleSendOtp,
+  phoneOtpPanel,
   // DOB props
   handleDobBlur,
   dobIncomplete,
@@ -272,6 +273,7 @@ export default function FieldRenderer({
               </div>
             )}
           </div>
+          {phoneOtpPanel}
         </div>
       );
 

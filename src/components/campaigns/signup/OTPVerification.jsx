@@ -1,15 +1,22 @@
 import { useEffect } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
 
 /**
- * Verification Code modal — opens when otpState === 'pending'.
+ * Inline verification panel — slides down directly beneath the phone field when
+ * otpState === 'pending'. Replaces the old modal so the user never leaves the
+ * form flow (modals add friction + fight the mobile keyboard on step inputs).
  *
- * Editorial pattern: small eyebrow → heavy-serif title → body explaining the
- * channel → 6-digit input + inline Resend timer → Cancel / Verify pill buttons.
+ * SMS-OTP best practices (web.dev / Twilio):
+ *  - a single <input> (paste-friendly — needed for the WhatsApp "Copy code" button)
+ *  - autocomplete="one-time-code" + inputmode="numeric" → iOS surfaces the SMS
+ *    code in the keyboard suggestion bar (one tap to fill)
+ *  - type="text" (not "number") so leading zeros are preserved
+ *  - auto-verify on the 6th digit, with a manual Verify button as the fallback
+ *  - resend timer + an "Edit" affordance for wrong-number recovery
  *
- * Auto-verify still fires when the user types the 6th digit, but a real Verify
- * button is always present (matches Goodies SG / AIA pattern).
+ * Stays mounted through the post-verify success tick (otpState is still
+ * 'pending' for ~1.1s while the ✓ shows), then unmounts when otpState flips to
+ * 'verified' and the phone row's "Verified" badge takes over.
  */
 export default function OTPVerification({
   otpState,
@@ -27,10 +34,9 @@ export default function OTPVerification({
   handleSendOtp,
   channel = 'sms', // 'sms' | 'whatsapp'
 }) {
-  const isOpen = otpState === 'pending';
   const accent = themeColor || TOKENS.accent;
 
-  // Auto-verify on 6 digits
+  // Auto-verify once the 6th digit lands (e.g. after iOS autofill / paste).
   useEffect(() => {
     if (otp.length === 6 && !showSuccessTick && loading !== 'verifying') {
       handleVerifyOtp(otp);
@@ -38,208 +44,166 @@ export default function OTPVerification({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [otp]);
 
+  if (otpState !== 'pending') return null;
+
+  const channelLabel = channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
+
   return (
-    <Dialog
-      open={isOpen}
-      onOpenChange={(open) => {
-        if (!open && !showSuccessTick) handleCancelOtp();
+    <div
+      style={{
+        marginTop: 12,
+        padding: 16,
+        backgroundColor: '#FFFCF6',
+        border: `1px solid ${TOKENS.hairline}`,
+        borderRadius: RADIUS.image,
+        animation: 'lc-reveal 260ms cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
-      <DialogContent
-        className="border-0 p-0 gap-0"
-        style={{
-          backgroundColor: TOKENS.modal,
-          borderRadius: RADIUS.modal,
-          maxWidth: 440,
-          width: 'calc(100vw - 32px)',
-          padding: 28,
-          boxShadow: '0 24px 64px rgba(60, 40, 20, 0.18), 0 4px 16px rgba(60, 40, 20, 0.08)',
-        }}
-      >
-        {/* Eyebrow */}
-        <div
-          style={{
-            fontFamily: 'Albert Sans, system-ui, sans-serif',
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: '0.16em',
-            textTransform: 'uppercase',
-            color: TOKENS.muted,
-            marginBottom: 8,
-          }}
-        >
-          Verification
-        </div>
-
-        {/* Heavy-serif title */}
-        <h2
-          style={{
-            fontFamily: 'Fraunces, serif',
-            fontWeight: 800,
-            fontSize: 28,
-            lineHeight: 1.1,
-            letterSpacing: '-0.01em',
-            color: TOKENS.ink,
-            margin: 0,
-            marginBottom: 12,
-          }}
-        >
-          Verification Code
-        </h2>
-
-        {/* Body */}
+      {/* Helper line + edit-number affordance */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 12 }}>
         <p
           style={{
-            fontFamily: 'Albert Sans, system-ui, sans-serif',
-            fontSize: 15,
-            lineHeight: 1.55,
-            color: TOKENS.body,
             margin: 0,
-            marginBottom: 20,
+            fontFamily: 'Albert Sans, system-ui, sans-serif',
+            fontSize: 13.5,
+            lineHeight: 1.5,
+            color: TOKENS.body,
           }}
         >
-          A verification code has been sent to you via {channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}:{' '}
-          <span style={{ fontWeight: 700, color: TOKENS.ink }}>{displayPhone(phone)}</span>.
-          <br />
-          Please check and enter the code below.
+          Enter the 6-digit code sent via {channelLabel} to{' '}
+          <span style={{ fontWeight: 700, color: TOKENS.ink, whiteSpace: 'nowrap' }}>+65 {displayPhone(phone)}</span>
         </p>
-
-        {/* Code input + resend */}
-        <div
+        <button
+          type="button"
+          onClick={handleCancelOtp}
+          disabled={showSuccessTick}
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-            marginBottom: 24,
-            flexWrap: 'wrap',
+            flexShrink: 0,
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: showSuccessTick ? 'default' : 'pointer',
+            fontFamily: 'Albert Sans, system-ui, sans-serif',
+            fontSize: 13,
+            fontWeight: 500,
+            color: TOKENS.muted,
+            textDecoration: 'underline',
+            textUnderlineOffset: 3,
           }}
         >
-          <input
-            type="tel"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            placeholder="Enter 6-digit code"
-            value={otp}
-            onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            disabled={loading === 'verifying' || showSuccessTick}
-            autoFocus
-            maxLength={6}
-            style={{
-              flex: '1 1 200px',
-              minWidth: 180,
-              height: 44,
-              padding: '0 16px',
-              fontSize: 16,
-              letterSpacing: '0.32em',
-              fontFamily: 'Albert Sans, system-ui, sans-serif',
-              color: TOKENS.ink,
-              backgroundColor: '#ffffff',
-              border: `1px solid ${error ? TOKENS.required : TOKENS.hairline}`,
-              borderRadius: RADIUS.pill,
-              outline: 'none',
-              transition: 'border-color 200ms ease, box-shadow 200ms ease',
-            }}
-            onFocus={(e) => {
-              if (!error) {
-                e.target.style.borderColor = accent;
-                e.target.style.boxShadow = `0 0 0 3px ${accent}22`;
-              }
-            }}
-            onBlur={(e) => {
-              e.target.style.borderColor = error ? TOKENS.required : TOKENS.hairline;
-              e.target.style.boxShadow = 'none';
-            }}
-          />
+          Edit
+        </button>
+      </div>
 
-          <button
-            type="button"
-            onClick={handleSendOtp}
-            disabled={resendCooldown > 0 || loading === 'sending'}
-            style={{
-              fontFamily: 'Albert Sans, system-ui, sans-serif',
-              fontSize: 13,
-              fontWeight: 500,
-              color: resendCooldown > 0 ? TOKENS.muted : TOKENS.body,
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              cursor: resendCooldown > 0 ? 'not-allowed' : 'pointer',
-              textDecoration: resendCooldown > 0 ? 'none' : 'underline',
-              textUnderlineOffset: 3,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {loading === 'sending'
-              ? 'Sending…'
-              : resendCooldown > 0
-                ? `Resend in ${resendCooldown > 60 ? `${Math.ceil(resendCooldown / 60)}m` : `${resendCooldown}s`}`
-                : 'Resend code'}
-          </button>
+      {/* Code input + verify */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
+        <input
+          type="text"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          pattern="\d{6}"
+          placeholder="6-digit code"
+          value={otp}
+          onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          disabled={loading === 'verifying' || showSuccessTick}
+          autoFocus
+          maxLength={6}
+          aria-label={`Verification code sent via ${channelLabel}`}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            height: 52,
+            padding: '0 22px',
+            fontSize: 16, // 16px avoids iOS auto-zoom on focus
+            letterSpacing: '0.3em',
+            fontFamily: 'Albert Sans, system-ui, sans-serif',
+            color: TOKENS.ink,
+            backgroundColor: '#ffffff',
+            border: `1px solid ${error ? TOKENS.required : TOKENS.hairline}`,
+            borderRadius: RADIUS.pill,
+            outline: 'none',
+            WebkitAppearance: 'none',
+            transition: 'border-color 200ms ease, box-shadow 200ms ease',
+          }}
+          onFocus={(e) => {
+            if (!error) {
+              e.target.style.borderColor = accent;
+              e.target.style.boxShadow = `0 0 0 3px ${accent}22`;
+            }
+          }}
+          onBlur={(e) => {
+            e.target.style.borderColor = error ? TOKENS.required : TOKENS.hairline;
+            e.target.style.boxShadow = 'none';
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => handleVerifyOtp(otp)}
+          disabled={otp.length !== 6 || loading === 'verifying' || showSuccessTick}
+          style={{
+            height: 52,
+            paddingLeft: 24,
+            paddingRight: 24,
+            borderRadius: RADIUS.pill,
+            backgroundColor: showSuccessTick ? TOKENS.success : accent,
+            color: '#ffffff',
+            border: 'none',
+            cursor: otp.length === 6 && !showSuccessTick ? 'pointer' : 'not-allowed',
+            opacity: showSuccessTick ? 1 : otp.length === 6 && loading !== 'verifying' ? 1 : 0.5,
+            fontFamily: 'Albert Sans, system-ui, sans-serif',
+            fontWeight: 600,
+            fontSize: 15,
+            minWidth: 96,
+            whiteSpace: 'nowrap',
+            transition: 'opacity 200ms ease, background-color 200ms ease',
+          }}
+        >
+          {showSuccessTick ? '✓' : loading === 'verifying' ? 'Verifying…' : 'Verify'}
+        </button>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div
+          role="alert"
+          style={{
+            marginTop: 10,
+            fontFamily: 'Albert Sans, system-ui, sans-serif',
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: TOKENS.required,
+          }}
+        >
+          {error}
         </div>
+      )}
 
-        {error && (
-          <div
-            style={{
-              marginBottom: 20,
-              padding: '10px 14px',
-              borderRadius: RADIUS.pill,
-              backgroundColor: TOKENS.required + '15',
-              color: TOKENS.required,
-              fontSize: 13.5,
-              fontFamily: 'Albert Sans, system-ui, sans-serif',
-            }}
-          >
-            {error}
-          </div>
-        )}
-
-        {/* Cancel + Verify buttons */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-          <button
-            type="button"
-            onClick={handleCancelOtp}
-            disabled={showSuccessTick}
-            style={{
-              height: 48,
-              paddingLeft: 24,
-              paddingRight: 24,
-              borderRadius: RADIUS.pill,
-              backgroundColor: '#ffffff',
-              color: TOKENS.body,
-              border: `1px solid ${TOKENS.hairline}`,
-              cursor: 'pointer',
-              fontFamily: 'Albert Sans, system-ui, sans-serif',
-              fontWeight: 600,
-              fontSize: 15,
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => handleVerifyOtp(otp)}
-            disabled={otp.length !== 6 || loading === 'verifying' || showSuccessTick}
-            style={{
-              height: 48,
-              paddingLeft: 28,
-              paddingRight: 28,
-              borderRadius: RADIUS.pill,
-              backgroundColor: accent,
-              color: '#ffffff',
-              border: 'none',
-              cursor: otp.length === 6 ? 'pointer' : 'not-allowed',
-              opacity: otp.length === 6 && loading !== 'verifying' && !showSuccessTick ? 1 : 0.5,
-              fontFamily: 'Albert Sans, system-ui, sans-serif',
-              fontWeight: 600,
-              fontSize: 15,
-              minWidth: 110,
-              transition: 'opacity 200ms ease',
-            }}
-          >
-            {showSuccessTick ? '✓' : loading === 'verifying' ? 'Verifying…' : 'Verify'}
-          </button>
-        </div>
-      </DialogContent>
-    </Dialog>
+      {/* Resend */}
+      <div style={{ marginTop: 12 }}>
+        <button
+          type="button"
+          onClick={handleSendOtp}
+          disabled={resendCooldown > 0 || loading === 'sending' || showSuccessTick}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: resendCooldown > 0 || showSuccessTick ? 'default' : 'pointer',
+            fontFamily: 'Albert Sans, system-ui, sans-serif',
+            fontSize: 13,
+            fontWeight: 500,
+            color: resendCooldown > 0 ? TOKENS.muted : TOKENS.body,
+            textDecoration: resendCooldown > 0 ? 'none' : 'underline',
+            textUnderlineOffset: 3,
+          }}
+        >
+          {loading === 'sending'
+            ? 'Sending…'
+            : resendCooldown > 0
+              ? `Resend code in ${resendCooldown > 60 ? `${Math.ceil(resendCooldown / 60)}m` : `${resendCooldown}s`}`
+              : 'Resend code'}
+        </button>
+      </div>
+    </div>
   );
 }

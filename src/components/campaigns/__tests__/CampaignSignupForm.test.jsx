@@ -82,8 +82,8 @@ describe('CampaignSignupForm — previewMode sends no network traffic', () => {
     await user.type(screen.getByPlaceholderText('9123 4567'), '91234567');
     await user.click(screen.getByRole('button', { name: 'Verify' }));
 
-    // Simulated send opens the OTP modal without any network call.
-    expect(await screen.findByPlaceholderText('Enter 6-digit code')).toBeInTheDocument();
+    // Simulated send reveals the inline OTP panel without any network call.
+    expect(await screen.findByPlaceholderText('6-digit code')).toBeInTheDocument();
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 
@@ -96,7 +96,7 @@ describe('CampaignSignupForm — previewMode sends no network traffic', () => {
     await user.type(screen.getByPlaceholderText('9123 4567'), '91234567');
     await user.click(screen.getByRole('button', { name: 'Verify' }));
 
-    const otpInput = await screen.findByPlaceholderText('Enter 6-digit code');
+    const otpInput = await screen.findByPlaceholderText('6-digit code');
     await user.type(otpInput, '123456'); // any 6 digits pass in preview
 
     // Phone becomes Verified (simulated) — wait out the success-tick timeout.

@@ -9,6 +9,12 @@
 /* Tropic design system — CSS variables (light + dark). Generated from lyfe-design/. */
 @import './design/tropic.css';
 
+/* Inline OTP verification panel — slide-down reveal on the lead-capture form */
+@keyframes lc-reveal {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes toast-progress {
   from {
     width: 100%;

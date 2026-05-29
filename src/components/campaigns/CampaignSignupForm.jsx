@@ -298,6 +298,26 @@ export default function CampaignSignupForm({
     setLoading(null);
   };
 
+  // Inline verification panel — slides down beneath the phone field (no modal).
+  const phoneOtpPanel = (
+    <OTPVerification
+      otpState={otpState}
+      otp={otp}
+      setOtp={setOtp}
+      loading={loading}
+      error={error}
+      showSuccessTick={showSuccessTick}
+      resendCooldown={resendCooldown}
+      displayPhone={displayPhone}
+      phone={formData.phone}
+      themeColor={accent}
+      handleVerifyOtp={handleVerifyOtp}
+      handleCancelOtp={handleCancelOtp}
+      handleSendOtp={handleSendOtp}
+      channel={otpChannel}
+    />
+  );
+
   const fieldRendererProps = {
     formData,
     themeColor: accent,
@@ -312,6 +332,7 @@ export default function CampaignSignupForm({
     dobIncomplete,
     ageError,
     renderAgeRestrictionHint,
+    phoneOtpPanel,
   };
 
   const renderField = (fieldId) => <FieldRenderer key={fieldId} fieldId={fieldId} {...fieldRendererProps} />;
@@ -337,7 +358,9 @@ export default function CampaignSignupForm({
             letterSpacing: '-0.015em',
             color: TOKENS.ink,
             margin: 0,
-            marginBottom: 10,
+            // Tight gap to the sub-headline when it's present; a comfortable gap
+            // straight to the first field when the sub-headline is hidden.
+            marginBottom: formSubheadline ? 10 : 28,
           }}
         >
           {formHeadline || 'Get Started'}
@@ -496,24 +519,6 @@ export default function CampaignSignupForm({
           {loading === 'submitting' ? 'Submitting…' : ctaLabel || 'Submit Now'}
         </button>
       </form>
-
-      {/* Verification modal */}
-      <OTPVerification
-        otpState={otpState}
-        otp={otp}
-        setOtp={setOtp}
-        loading={loading}
-        error={error}
-        showSuccessTick={showSuccessTick}
-        resendCooldown={resendCooldown}
-        displayPhone={displayPhone}
-        phone={formData.phone}
-        themeColor={accent}
-        handleVerifyOtp={handleVerifyOtp}
-        handleCancelOtp={handleCancelOtp}
-        handleSendOtp={handleSendOtp}
-        channel={otpChannel}
-      />
 
       {/* Marketing consent modal */}
       <MarketingConsentDialog
