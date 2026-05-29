@@ -23,7 +23,10 @@ export default {
   showHomepage: false,
   defaultRegulatory:
     'Redeem (a service of MKTR PTE. LTD., UEN: 202507548M) operates this referral platform. Submitting this form does not establish any advisory relationship and is not a recommendation of any product. By submitting, you agree to be contacted using the particulars provided.',
-  defaultPoweredBy: 'Powered by Redeem',
+  // Operator attribution — intentionally "MKTR" on the customer page too
+  // (Redeem is a service of MKTR), so the hero footer reads consistently
+  // with the operator-side designer preview.
+  defaultPoweredBy: 'Powered by MKTR',
   partnersTerm: 'Redeem Partners',
   pdpaAbsoluteUrl: 'https://redeem.sg/personal-data-policy',
   consentEntityClause:
