@@ -116,24 +116,49 @@ export default function LeadCapture() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const preview = params.get('preview');
+    const explicitCid = params.get('campaign_id');
+
+    // Fetch a campaign by id, preferring the public preview endpoint.
+    const fetchCampaignById = async (cid) => {
+      try {
+        const pub = await apiClient.get(`/previews/public/${cid}`);
+        if (pub?.success && pub.data?.campaign) return pub.data.campaign;
+      } catch {
+        /* fall through to entity fetch */
+      }
+      return Campaign.get(cid);
+    };
 
     (async () => {
       try {
         const resp = await apiClient.get('/qrcodes/session');
+        const session = resp?.success && resp.data ? resp.data : null;
+        const sessionCampaignId = session ? (session.campaign?.id ?? session.campaignId ?? null) : null;
+
         let fetched = null;
-        if (resp?.success && resp.data) {
-          if (resp.data.campaign) fetched = resp.data.campaign;
-          else if (resp.data.campaignId) fetched = await Campaign.get(resp.data.campaignId);
-          setQrTag({ id: resp.data.qrTagId });
-        } else if (params.get('campaign_id')) {
-          const cid = params.get('campaign_id');
-          try {
-            const pub = await apiClient.get(`/previews/public/${cid}`);
-            if (pub?.success && pub.data?.campaign) fetched = pub.data.campaign;
-            else fetched = await Campaign.get(cid);
-          } catch {
-            fetched = await Campaign.get(cid);
+
+        // Prefer an explicit campaign_id from the URL. Only trust the session
+        // (and its qrTag, which drives agent routing) when it agrees with the
+        // explicit campaign — otherwise a stale session left by an earlier scan
+        // of a different campaign would override the link the customer opened
+        // (the Copy-Link mis-attribution case).
+        if (explicitCid) {
+          const sessionMatches =
+            sessionCampaignId != null && String(sessionCampaignId) === String(explicitCid);
+          if (session && sessionMatches) {
+            fetched = session.campaign || (session.campaignId ? await Campaign.get(session.campaignId) : null);
+            setQrTag(session.qrTagId ? { id: session.qrTagId } : null);
+          } else {
+            // No session, or it names a different campaign: use the explicit URL
+            // campaign and do NOT carry over the stale qrTag.
+            fetched = await fetchCampaignById(explicitCid);
+            setQrTag(null);
           }
+        } else if (session) {
+          // No explicit campaign_id (e.g. a /t/{slug} scan that only set cookies):
+          // fall back to the session's bound campaign + qrTag.
+          fetched = session.campaign || (session.campaignId ? await Campaign.get(session.campaignId) : null);
+          setQrTag(session.qrTagId ? { id: session.qrTagId } : null);
         } else {
           setError('No campaign or QR code specified.');
           return;

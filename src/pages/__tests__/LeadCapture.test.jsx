@@ -284,4 +284,83 @@ describe('LeadCapture', () => {
  expect(apiClient.get).toHaveBeenCalledWith('/qrcodes/session');
  });
  });
+
+ it('prefers the explicit URL campaign over a stale session and drops the stale qrTag', async () => {
+ const campX = { id: 'camp-X', name: 'Campaign X', is_active: true, design_config: {} };
+ apiClient.get.mockImplementation((url) => {
+ if (url === '/qrcodes/session') {
+ // Stale session bound to a DIFFERENT campaign Y (earlier scan).
+ return Promise.resolve({
+ success: true,
+ data: { campaignId: 'camp-Y', campaign: { id: 'camp-Y', name: 'Y', is_active: true, design_config: {} }, qrTagId: 'qr-Y' },
+ });
+ }
+ if (url === '/previews/public/camp-X') {
+ return Promise.resolve({ success: true, data: { campaign: campX } });
+ }
+ return Promise.resolve({});
+ });
+
+ render(
+ <MemoryRouter initialEntries={['/LeadCapture?campaign_id=camp-X']}>
+ <LeadCapture />
+ </MemoryRouter>
+ );
+
+ await waitFor(() => expect(screen.getByTestId('signup-form')).toBeInTheDocument());
+ const user = userEvent.setup();
+ await user.click(screen.getByText('Submit'));
+
+ await waitFor(() => {
+ const call = apiClient.post.mock.calls.find((c) => c[0] === '/prospects');
+ expect(call).toBeTruthy();
+ expect(call[1].campaignId).toBe('camp-X');
+ expect(call[1].qrTagId).toBeUndefined();
+ });
+ });
+
+ it('uses the session qrTag when the session campaign matches the explicit URL campaign', async () => {
+ apiClient.get.mockImplementation((url) => {
+ if (url === '/qrcodes/session') {
+ return Promise.resolve({
+ success: true,
+ data: { campaignId: 'camp-1', campaign: mockCampaign, qrTagId: 'qr-1' },
+ });
+ }
+ return Promise.resolve({});
+ });
+
+ render(
+ <MemoryRouter initialEntries={['/LeadCapture?campaign_id=camp-1']}>
+ <LeadCapture />
+ </MemoryRouter>
+ );
+
+ await waitFor(() => expect(screen.getByTestId('signup-form')).toBeInTheDocument());
+ const user = userEvent.setup();
+ await user.click(screen.getByText('Submit'));
+
+ await waitFor(() => {
+ const call = apiClient.post.mock.calls.find((c) => c[0] === '/prospects');
+ expect(call).toBeTruthy();
+ expect(call[1].campaignId).toBe('camp-1');
+ expect(call[1].qrTagId).toBe('qr-1');
+ });
+ });
+
+ it('loads the explicit URL campaign when there is no session', async () => {
+ // beforeEach mocks session => { success: false } and previews/public/* => mockCampaign
+ renderPage('/LeadCapture?campaign_id=camp-1');
+
+ await waitFor(() => expect(screen.getByTestId('signup-form')).toBeInTheDocument());
+ const user = userEvent.setup();
+ await user.click(screen.getByText('Submit'));
+
+ await waitFor(() => {
+ const call = apiClient.post.mock.calls.find((c) => c[0] === '/prospects');
+ expect(call).toBeTruthy();
+ expect(call[1].campaignId).toBe('camp-1');
+ expect(call[1].qrTagId).toBeUndefined();
+ });
+ });
 });
