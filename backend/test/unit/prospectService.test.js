@@ -414,6 +414,28 @@ describe('prospectService (unit)', () => {
         expect(createArg.qrTagId).toBe('qr-X');
         expect(createArg.campaignId).toBe('camp-X');
       });
+
+      it('drops a stale body qrTagId (and session linkage) that names a different campaign', async () => {
+        // Direct/partial payload: body explicitly targets camp-X but carries a
+        // stale qrTagId for camp-Y, and the session is also bound to camp-Y.
+        mocks.models.Attribution.findOne.mockResolvedValue({ id: 'attr-Y', sessionId: 'sess-1', qrTagId: 'qr-Y' });
+        mocks.models.QrTag.findByPk.mockImplementation(async (id) =>
+          id === 'qr-Y' ? wireQrTag('qr-Y', 'camp-Y') : wireQrTag(id, 'camp-X')
+        );
+
+        const body = { firstName: 'Test', phone: '91234502', campaignId: 'camp-X', qrTagId: 'qr-Y' };
+        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+
+        const createArg = mocks.models.Prospect.create.mock.calls[0][0];
+        expect(createArg.campaignId).toBe('camp-X');
+        expect(createArg.qrTagId).toBeUndefined();
+        expect(createArg.attributionId).toBeUndefined();
+        expect(createArg.sessionId).toBeUndefined();
+        // Agent routing must use campaign X, not Y's QR.
+        expect(mocks.resolveAssignedAgentId).toHaveBeenCalledWith(
+          expect.objectContaining({ campaignId: 'camp-X', qrTagId: undefined })
+        );
+      });
     });
 
     it('derives campaignId from qrTagId when campaignId is missing', async () => {

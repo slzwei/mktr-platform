@@ -79,7 +79,10 @@ export async function createAttribution(qrTag, scan, sessionId = null) {
     firstTouch: false,
     lastTouchAt: sessionId ? new Date() : null,
     expiresAt,
-    usedOnce: false
+    // A scan-time bind consumes the token for its session: mark usedOnce so a
+    // leaked atk cannot later be replayed by a DIFFERENT session (the same
+    // session is still allowed to re-bind via the reuse check downstream).
+    usedOnce: !!sessionId
   });
 
   const payload = Buffer.from(JSON.stringify({ id: attrib.id, exp: Math.floor(expiresAt.getTime() / 1000) })).toString('base64url');

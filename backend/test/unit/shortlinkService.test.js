@@ -107,6 +107,23 @@ describe('shortlinkService (unit)', () => {
       expect(mocks.ShortLink.create).not.toHaveBeenCalled();
     });
 
+    it('in production rejects *.onrender.com but accepts the public brand host', async () => {
+      const prev = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      try {
+        await expect(
+          service.createShareLink({ targetUrl: 'https://attacker.onrender.com/LeadCapture?x=1' })
+        ).rejects.toThrow(/host is not allowed/i);
+
+        const ok = await service.createShareLink({
+          targetUrl: 'https://redeem.sg/LeadCapture?campaign_id=camp-1',
+        });
+        expect(ok).toHaveProperty('slug');
+      } finally {
+        process.env.NODE_ENV = prev;
+      }
+    });
+
     it('accepts lead-capture (kebab-case) URLs', async () => {
       const result = await service.createShareLink({
         targetUrl: 'https://app.mktr.sg/lead-capture?c=camp-1',

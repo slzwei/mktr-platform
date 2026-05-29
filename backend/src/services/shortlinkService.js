@@ -32,8 +32,13 @@ function isOwnedRedirectHost(hostname) {
   const h = String(hostname).toLowerCase();
   if (h === 'mktr.sg' || h.endsWith('.mktr.sg')) return true;
   if (h === 'redeem.sg' || h.endsWith('.redeem.sg')) return true;
-  if (h.endsWith('.onrender.com')) return true;
-  if (process.env.NODE_ENV !== 'production' && (h === 'localhost' || h === '127.0.0.1')) return true;
+  // Render previews + localhost are trusted only OUTSIDE production. In prod the
+  // public brands (mktr.sg / redeem.sg) are the only valid share targets, so an
+  // attacker-controlled *.onrender.com cannot be used to mint a redirect.
+  if (process.env.NODE_ENV !== 'production') {
+    if (h === 'localhost' || h === '127.0.0.1') return true;
+    if (h.endsWith('.onrender.com')) return true;
+  }
   return false;
 }
 

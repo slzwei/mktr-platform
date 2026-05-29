@@ -147,6 +147,18 @@ describe('trackerService (unit)', () => {
       expect(result.token).toContain('.');
       expect(result.expiresAt).toBeInstanceOf(Date);
     });
+
+    it('binds and marks usedOnce when a sessionId is supplied at scan time', async () => {
+      await createAttribution(mockQrTag, mockScan, 'sess-1');
+
+      expect(Attribution.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'sess-1',
+          usedOnce: true,
+          lastTouchAt: expect.any(Date),
+        })
+      );
+    });
   });
 
   // ── buildRedirectParams ──
