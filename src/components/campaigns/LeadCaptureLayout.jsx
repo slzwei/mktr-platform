@@ -258,6 +258,27 @@ function HeroStoryCard({ design, story, primaryCta }) {
   );
 }
 
+// Render the "Powered by …" footer line, linking the MKTR wordmark to mktr.sg
+// (operator attribution). Returns plain text when the line contains no "MKTR".
+function renderBrandFooter(text) {
+  if (!text || !text.includes('MKTR')) return text;
+  return text.split('MKTR').map((part, i) => (
+    <span key={i}>
+      {i > 0 && (
+        <a
+          href="https://mktr.sg"
+          target="_blank"
+          rel="noreferrer noopener"
+          style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 2 }}
+        >
+          MKTR
+        </a>
+      )}
+      {part}
+    </span>
+  ));
+}
+
 function RegulatoryFooter({ regulatoryFooter, social, brand }) {
   if (!regulatoryFooter && !social && !brand) return null;
 
@@ -321,7 +342,7 @@ function RegulatoryFooter({ regulatoryFooter, social, brand }) {
             fontWeight: 600,
           }}
         >
-          {brand}
+          {renderBrandFooter(brand)}
         </div>
       )}
     </footer>
