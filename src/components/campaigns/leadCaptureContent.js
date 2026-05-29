@@ -54,10 +54,13 @@ export function deriveLeadCaptureContent(campaign) {
   const story =
     storyParagraphs.length > 0 ? { paragraphs: storyParagraphs, emphasis: design.storyEmphasis } : null;
 
+  // Hero CTA renders only when there is hero media AND an explicit label.
+  // An empty label hides the button — operators opt in by typing a label,
+  // mirroring how an empty story / sub-headline renders nothing.
   const hasHeroMedia = !!(design.imageUrl || design.videoUrl);
-  const primaryCtaData = hasHeroMedia
-    ? { label: design.heroCtaLabel || 'Get Started', color: design.themeColor, enabled: true }
-    : null;
+  const heroCtaLabel = (design.heroCtaLabel || '').trim();
+  const primaryCtaData =
+    hasHeroMedia && heroCtaLabel ? { label: heroCtaLabel, color: design.themeColor, enabled: true } : null;
 
   const regulatoryFooter = design.regulatoryFooter || brand.defaultRegulatory;
   const brandFooter = design.brandFooter || brand.defaultPoweredBy;

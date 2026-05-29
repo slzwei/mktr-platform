@@ -116,6 +116,28 @@ describe('LeadCapture', () => {
  });
  });
 
+ it('does not inject a default sub-headline when the campaign has none', async () => {
+ // Removable sub-headline: an empty formSubheadline must render nothing,
+ // not the old hardcoded "Fill in your details below..." fallback.
+ const noSub = {
+ id: 'camp-1',
+ name: 'Test Campaign',
+ is_active: true,
+ design_config: { themeColor: '#111827', formHeadline: 'Join Now' },
+ };
+ apiClient.get.mockImplementation((url) => {
+ if (url === '/qrcodes/session') return Promise.resolve({ success: false });
+ if (url.startsWith('/previews/public/')) return Promise.resolve({ success: true, data: { campaign: noSub } });
+ return Promise.resolve({});
+ });
+
+ renderPage();
+ await waitFor(() => expect(screen.getByTestId('signup-form')).toBeInTheDocument());
+ expect(
+ screen.queryByText('Fill in your details below to complete your registration.')
+ ).not.toBeInTheDocument();
+ });
+
  it('shows success message after form submission', async () => {
  apiClient.post.mockResolvedValue({ success: true });
 

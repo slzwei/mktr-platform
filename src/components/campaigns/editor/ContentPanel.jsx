@@ -68,7 +68,7 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  onChange={(e) => onDesignChange('formSubheadline', e.target.value)}
  placeholder="e.g., Fill out the form to get started." className="resize-none h-16" maxLength={150}
  />
- <p className="text-xs text-muted-foreground">Shown directly under the form headline.</p>
+ <p className="text-xs text-muted-foreground">Shown directly under the form headline. Leave blank to hide it.</p>
  </div>
 
  {/* Brand wordmark */}
@@ -234,7 +234,7 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  placeholder="Get Started" maxLength={40}
  />
  <p className="text-xs text-muted-foreground">
- Button under the hero media that scrolls down to the form.
+ Button under the hero media that scrolls down to the form. Leave blank to hide it.
  </p>
  </div>
  )}

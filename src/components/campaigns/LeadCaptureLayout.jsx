@@ -375,6 +375,10 @@ export default function LeadCaptureLayout({
   design = {},
   maxWidth,
   showTrustFooter = false, // legacy prop — ignored; regulatoryFooter replaces it
+  // Root min-height. Defaults to the full viewport (live page / /p/ preview).
+  // The in-editor preview passes '100%' so the cream fills the preview pane
+  // instead of forcing a viewport-tall scroll region inside it.
+  rootMinHeight = '100vh',
   // New optional content slots
   wordmark,
   story,
@@ -391,7 +395,7 @@ export default function LeadCaptureLayout({
   return (
     <div
       style={{
-        minHeight: '100vh',
+        minHeight: rootMinHeight,
         backgroundColor: TOKENS.pagebg,
         paddingLeft: 'env(safe-area-inset-left)',
         paddingRight: 'env(safe-area-inset-right)',

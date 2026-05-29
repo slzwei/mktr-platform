@@ -72,12 +72,19 @@ describe('deriveLeadCaptureContent', () => {
     expect(noMedia.primaryCtaData).toBeNull();
   });
 
-  it('defaults the hero CTA label to "Get Started"', () => {
+  it('hides the hero CTA when media is present but no label is set (empty = removed)', () => {
     const { primaryCtaData } = deriveLeadCaptureContent({
       name: 'X',
       design_config: { videoUrl: 'https://youtu.be/abc' },
     });
-    expect(primaryCtaData.label).toBe('Get Started');
+    expect(primaryCtaData).toBeNull();
+
+    // Whitespace-only label also counts as "no label".
+    const blank = deriveLeadCaptureContent({
+      name: 'X',
+      design_config: { imageUrl: '/u/x.jpg', heroCtaLabel: '   ' },
+    });
+    expect(blank.primaryCtaData).toBeNull();
   });
 
   it('falls back to brand footer defaults, and explicit values win', () => {

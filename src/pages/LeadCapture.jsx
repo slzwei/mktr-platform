@@ -319,7 +319,7 @@ export default function LeadCapture() {
           <CampaignSignupForm
             themeColor={design.themeColor}
             formHeadline={design.formHeadline || 'Get Started'}
-            formSubheadline={design.formSubheadline || 'Fill in your details below to complete your registration.'}
+            formSubheadline={design.formSubheadline}
             campaignId={campaign.id}
             campaign={campaign}
             onSubmit={handleSubmit}

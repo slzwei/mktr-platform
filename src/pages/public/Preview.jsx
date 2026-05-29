@@ -97,7 +97,7 @@ export default function PublicPreview() {
  previewMode
  themeColor={design.themeColor || '#3B82F6'}
  formHeadline={design.formHeadline || 'Sign Up Now'}
- formSubheadline={design.formSubheadline || 'Fill out the form to get started.'}
+ formSubheadline={design.formSubheadline}
  campaignId={snapshot?.id}
  onSubmit={handleSubmit}
  campaign={{ ...snapshot, design_config: design, min_age: snapshot?.min_age, max_age: snapshot?.max_age }}

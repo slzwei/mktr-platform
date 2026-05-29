@@ -55,9 +55,9 @@ export default function PreviewFrame({ currentDesign, campaign }) {
  <span className="ml-auto text-xs text-muted-foreground">Read-only · OTP &amp; submit disabled</span>
  </div>
 
- <div className="border border-t-0 rounded-b-xl overflow-hidden bg-foreground/5 border-border flex-1">
+ <div className="border border-t-0 rounded-b-xl overflow-hidden bg-foreground/5 border-border flex-1 flex flex-col min-h-0">
  {/* Browser chrome */}
- <div className="bg-card border-b px-4 py-2 flex items-center gap-2">
+ <div className="bg-card border-b px-4 py-2 flex items-center gap-2 shrink-0">
  <div className="flex gap-1.5">
  <div className="w-2.5 h-2.5 rounded-full bg-destructive"/>
  <div className="w-2.5 h-2.5 rounded-full bg-warning"/>
@@ -68,12 +68,14 @@ export default function PreviewFrame({ currentDesign, campaign }) {
  </div>
  </div>
 
- {/* Light-mode isolated viewport — render the REAL page */}
- <div className="light" data-theme="light">
- <div className="h-[650px] overflow-y-auto">
+ {/* Light-mode isolated viewport — render the REAL page. Fills the
+ remaining height and scrolls; no fixed height, so the footer is
+ never clipped by the parent container. */}
+ <div className="light flex-1 min-h-0 overflow-y-auto" data-theme="light">
  <LeadCaptureLayout
  design={currentDesign}
  maxWidth={currentDesign.formWidth}
+ rootMinHeight="100%"
  wordmark={content.wordmark}
  story={content.story}
  primaryCta={primaryCta}
@@ -85,9 +87,7 @@ export default function PreviewFrame({ currentDesign, campaign }) {
  previewMode
  themeColor={currentDesign.themeColor}
  formHeadline={currentDesign.formHeadline || 'Get Started'}
- formSubheadline={
- currentDesign.formSubheadline || 'Fill in your details below to complete your registration.'
- }
+ formSubheadline={currentDesign.formSubheadline}
  campaignId={campaign?.id}
  campaign={previewCampaign}
  termsContent={currentDesign.termsContent}
@@ -96,7 +96,6 @@ export default function PreviewFrame({ currentDesign, campaign }) {
  />
  </div>
  </LeadCaptureLayout>
- </div>
  </div>
  </div>
  </div>
