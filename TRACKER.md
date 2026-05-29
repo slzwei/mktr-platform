@@ -57,6 +57,7 @@
 | Phone normalization (SG-specific) | DONE | `prospectHelpers.js:12-30` | 8-digit SG numbers get +65 prefix |
 | QR-based attribution | DONE | `prospectService.js:71-82` | Session cookie → Attribution → QR tag |
 | Round-robin routing (QR-level) | DONE | `prospectService.js:166-196` | Atomic index increment on QrTag |
+| QR routing visibility (admin UI) | DONE | `qrCodeService.js:89-112`, `src/components/qrcodes/PromotionalQRTable.jsx`, `ExistingQRCodes.jsx` | Added 2026-05-29. `listQrCodes` eager-loads `agentGroup` (+ member count via grouped COUNT, guarded). Admin QR tables show each QR's routing target: assigned agent + phone (direct) or group name + "round robin · N agents" (round-robin), with Unassigned/Group-unavailable fallbacks. QR search matches assignee. |
 | Activity audit trail | DONE | `ProspectActivity` model | created, assigned, updated, viewed events |
 
 ## Stage 3: Delivery to Lyfe App

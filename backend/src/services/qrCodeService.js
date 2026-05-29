@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { QrTag, Campaign, Car, QrScan, Attribution, Prospect, SessionVisit, User, sequelize } from '../models/index.js';
+import { QrTag, Campaign, Car, QrScan, Attribution, Prospect, SessionVisit, User, AgentGroupMember, sequelize } from '../models/index.js';
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/errorHandler.js';
 
@@ -89,9 +89,27 @@ export async function listQrCodes(user, query) {
     include: [
       { association: 'owner', attributes: ['id', 'firstName', 'lastName', 'email'] },
       { association: 'campaign', attributes: ['id', 'name', 'status'] },
-      { association: 'car', attributes: ['id', 'make', 'model', 'plate_number'] }
+      { association: 'car', attributes: ['id', 'make', 'model', 'plate_number'] },
+      // Routing target for round-robin QRs — powers the "Agent / Group" column in the admin UI
+      { association: 'agentGroup', attributes: ['id', 'name'] }
     ]
   });
+
+  // Enrich round-robin groups with a member count so the UI can show "N agents"
+  // without a second request. One grouped query, skipped entirely when no QR uses a group.
+  const groupIds = [...new Set(qrTags.map((qr) => qr.agentGroupId).filter(Boolean))];
+  if (groupIds.length > 0) {
+    const memberCounts = await AgentGroupMember.count({
+      where: { agentGroupId: { [Op.in]: groupIds } },
+      group: ['agentGroupId']
+    });
+    const countByGroup = new Map(memberCounts.map((row) => [row.agentGroupId, Number(row.count)]));
+    for (const qr of qrTags) {
+      if (qr.agentGroup) {
+        qr.agentGroup.setDataValue('memberCount', countByGroup.get(qr.agentGroupId) || 0);
+      }
+    }
+  }
 
   return {
     qrTags,

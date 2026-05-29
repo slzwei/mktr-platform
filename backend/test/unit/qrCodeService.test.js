@@ -63,6 +63,10 @@ function buildMocks() {
     findOne: jest.fn().mockResolvedValue({ id: 'agent-1' }),
   };
 
+  const AgentGroupMember = {
+    count: jest.fn().mockResolvedValue([]),
+  };
+
   const sequelize = {
     literal: jest.fn((expr) => expr),
   };
@@ -76,7 +80,7 @@ function buildMocks() {
 
   return {
     mockQrTag,
-    QrTag, Campaign, Car, QrScan, Attribution, Prospect, SessionVisit, User,
+    QrTag, Campaign, Car, QrScan, Attribution, Prospect, SessionVisit, User, AgentGroupMember,
     sequelize, AppError,
   };
 }
@@ -96,6 +100,7 @@ beforeEach(async () => {
     Prospect: mocks.Prospect,
     SessionVisit: mocks.SessionVisit,
     User: mocks.User,
+    AgentGroupMember: mocks.AgentGroupMember,
     sequelize: mocks.sequelize,
   }));
 

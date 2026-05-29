@@ -256,10 +256,17 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
  {/* Assignment info */}
  <div className="text-xs mt-1">
  {qr.agentAssignmentMode === 'round_robin' ? (
+ <span className="inline-flex items-center gap-1.5 text-muted-foreground">
  <Badge variant="secondary" className="text-xs">
  <Users className="w-3 h-3 mr-1"/>
  Round Robin
  </Badge>
+ {qr.agentGroup?.name && (
+ <span className="truncate" title={qr.agentGroup.name}>
+ {qr.agentGroup.name}{typeof qr.agentGroup?.memberCount === 'number' ? ` (${qr.agentGroup.memberCount})` : ''}
+ </span>
+ )}
+ </span>
  ) : qr.assignedAgentName ? (
  <span className="text-muted-foreground">
  <UserIcon className="w-3 h-3 inline mr-1"/>

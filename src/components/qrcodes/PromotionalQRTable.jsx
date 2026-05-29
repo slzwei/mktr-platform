@@ -25,6 +25,8 @@ import Users from"lucide-react/icons/users";
 import Loader2 from"lucide-react/icons/loader-2";
 import TagIcon from"lucide-react/icons/tag";
 import RefreshCw from"lucide-react/icons/refresh-cw";
+import UserIcon from"lucide-react/icons/user";
+import Shuffle from"lucide-react/icons/shuffle";
 
 export default function PromotionalQRTable({ qrTags, onRefresh, refreshing }) {
  const queryClient = useQueryClient();
@@ -82,7 +84,10 @@ export default function PromotionalQRTable({ qrTags, onRefresh, refreshing }) {
  const label = (qr.label || (Array.isArray(qr.tags) && qr.tags.length ? qr.tags.join(', ') : ''))?.toLowerCase();
  const slug = (qr.slug || '').toLowerCase();
  const campaignName = (qr.campaign?.name || '').toLowerCase();
- return label.includes(q) || slug.includes(q) || campaignName.includes(q);
+ const assignee = (qr.agentAssignmentMode === 'round_robin'
+ ? (qr.agentGroup?.name || '')
+ : (qr.assignedAgentName || qr.assignedAgentPhone || '')).toLowerCase();
+ return label.includes(q) || slug.includes(q) || campaignName.includes(q) || assignee.includes(q);
  });
 
  return (
@@ -110,6 +115,7 @@ export default function PromotionalQRTable({ qrTags, onRefresh, refreshing }) {
  <TableHead>QR Image</TableHead>
  <TableHead>Label / Slug</TableHead>
  <TableHead>Campaign</TableHead>
+ <TableHead>Agent / Group</TableHead>
  <TableHead>Scans</TableHead>
  <TableHead>Prospects</TableHead>
  <TableHead>Actions</TableHead>
@@ -118,7 +124,7 @@ export default function PromotionalQRTable({ qrTags, onRefresh, refreshing }) {
  <TableBody>
  {filtered.length === 0 ? (
  <TableRow>
- <TableCell colSpan="6" className="text-center py-8 text-muted-foreground">
+ <TableCell colSpan="7" className="text-center py-8 text-muted-foreground">
  {search ? `"${search}"is not found` : 'No promotional QR codes found.'}
  </TableCell>
  </TableRow>
@@ -147,6 +153,39 @@ export default function PromotionalQRTable({ qrTags, onRefresh, refreshing }) {
  <Badge variant="outline" className="bg-primary/10 text-primary">
  {qr.campaign?.name || '-'}
  </Badge>
+ </TableCell>
+ <TableCell>
+ {qr.agentAssignmentMode === 'round_robin' ? (
+ <div className="flex items-center gap-1.5">
+ <Users className="w-4 h-4 text-primary shrink-0"/>
+ <div className="min-w-0">
+ <div className="font-medium text-foreground truncate" title={qr.agentGroup?.name || 'Agent group'}>
+ {qr.agentGroup?.name || <span className="text-warning">Group unavailable</span>}
+ </div>
+ <div className="flex items-center gap-1 text-xs text-muted-foreground">
+ <Shuffle className="w-3 h-3 shrink-0"/>
+ <span>Round robin{typeof qr.agentGroup?.memberCount === 'number' ? ` · ${qr.agentGroup.memberCount} agent${qr.agentGroup.memberCount === 1 ? '' : 's'}` : ''}</span>
+ </div>
+ </div>
+ </div>
+ ) : (qr.assignedAgentName || qr.assignedAgentPhone) ? (
+ <div className="flex items-center gap-1.5">
+ <UserIcon className="w-4 h-4 text-primary shrink-0"/>
+ <div className="min-w-0">
+ <div className="font-medium text-foreground truncate" title={qr.assignedAgentName || qr.assignedAgentPhone}>
+ {qr.assignedAgentName || qr.assignedAgentPhone}
+ </div>
+ {qr.assignedAgentName && qr.assignedAgentPhone && (
+ <div className="text-xs text-muted-foreground truncate">{qr.assignedAgentPhone}</div>
+ )}
+ </div>
+ </div>
+ ) : (
+ <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
+ <UserIcon className="w-4 h-4 shrink-0"/>
+ Unassigned
+ </div>
+ )}
  </TableCell>
  <TableCell>
  <span className="font-semibold text-lg">{qr.scanCount ?? 0}</span>
