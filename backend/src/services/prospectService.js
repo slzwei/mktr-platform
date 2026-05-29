@@ -103,18 +103,35 @@ export function makeProspectService(overrides = {}) {
     }
 
     // Bind attribution by session cookie (sid). Most-recently-touched wins
-    // (last-touch); id DESC is a deterministic tiebreaker so a same-millisecond
-    // lastTouchAt tie always resolves to the same attribution row.
+    // (last-touch); createdAt then id DESC are deterministic tiebreakers for a
+    // same-millisecond lastTouchAt tie.
+    //
+    // Guard: when the caller already specifies an explicit campaign (e.g. a bare
+    // /LeadCapture?campaign_id=X link), only honor the session attribution if it
+    // belongs to that same campaign. A stale session left by an earlier scan of
+    // a *different* campaign must not override the explicit campaign — doing so
+    // mis-attributed the lead AND routed the agent off the wrong QR.
     const sid = cookies?.sid || headers?.['x-session-id'];
     if (sid) {
       const attribution = await m.Attribution.findOne({
         where: { sessionId: sid },
-        order: [['lastTouchAt', 'DESC'], ['id', 'DESC']],
+        order: [['lastTouchAt', 'DESC'], ['createdAt', 'DESC'], ['id', 'DESC']],
       });
       if (attribution) {
-        incoming.attributionId = attribution.id;
-        incoming.qrTagId = attribution.qrTagId || incoming.qrTagId;
-        incoming.sessionId = sid;
+        let campaignMismatch = false;
+        if (incoming.campaignId != null && attribution.qrTagId) {
+          const attrQr = await m.QrTag.findByPk(attribution.qrTagId);
+          if (attrQr?.campaignId != null && String(attrQr.campaignId) !== String(incoming.campaignId)) {
+            campaignMismatch = true;
+          }
+        }
+        if (!campaignMismatch) {
+          incoming.attributionId = attribution.id;
+          incoming.qrTagId = attribution.qrTagId || incoming.qrTagId;
+          incoming.sessionId = sid;
+        }
+        // On mismatch: ignore the stale attribution; the explicit campaignId
+        // stands and agent routing falls back to campaign level.
       }
     }
 

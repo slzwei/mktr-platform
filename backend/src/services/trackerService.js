@@ -106,12 +106,12 @@ export function buildRedirectParams(qrTag) {
 export async function resolveSession(sid, atkCookie) {
   if (!sid) return null;
 
-  // Most-recently-touched attribution wins (last-touch); id DESC is a
-  // deterministic tiebreaker so a same-millisecond lastTouchAt tie always
+  // Most-recently-touched attribution wins (last-touch); createdAt then id DESC
+  // are deterministic tiebreakers so a same-millisecond lastTouchAt tie always
   // resolves to the same row.
   let attrib = await Attribution.findOne({
     where: { sessionId: sid },
-    order: [['lastTouchAt', 'DESC'], ['id', 'DESC']]
+    order: [['lastTouchAt', 'DESC'], ['createdAt', 'DESC'], ['id', 'DESC']]
   });
 
   // If no bound attribution yet, bind from short-lived token (atk)
@@ -126,12 +126,16 @@ export async function resolveSession(sid, atkCookie) {
           const tokenAttrib = await Attribution.findByPk(data.id);
           if (tokenAttrib && tokenAttrib.expiresAt > new Date()) {
             const reuse = tokenAttrib.sessionId && tokenAttrib.sessionId === sid;
-            await tokenAttrib.update({
-              sessionId: sid,
-              lastTouchAt: new Date(),
-              usedOnce: reuse ? tokenAttrib.usedOnce : true
-            });
-            attrib = tokenAttrib;
+            // Enforce single-use: a token already consumed by another session
+            // must not be replayed to bind a different session.
+            if (!(tokenAttrib.usedOnce && !reuse)) {
+              await tokenAttrib.update({
+                sessionId: sid,
+                lastTouchAt: new Date(),
+                usedOnce: true
+              });
+              attrib = tokenAttrib;
+            }
           }
         }
       }

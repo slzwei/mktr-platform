@@ -101,6 +101,12 @@ describe('shortlinkService (unit)', () => {
         .rejects.toThrow('Only lead capture URLs can be shortened');
     });
 
+    it('rejects a lead-capture URL on a non-owned host (open-redirect guard)', async () => {
+      await expect(service.createShareLink({ targetUrl: 'https://evil.com/LeadCapture?c=1' }))
+        .rejects.toThrow(/host is not allowed/i);
+      expect(mocks.ShortLink.create).not.toHaveBeenCalled();
+    });
+
     it('accepts lead-capture (kebab-case) URLs', async () => {
       const result = await service.createShareLink({
         targetUrl: 'https://app.mktr.sg/lead-capture?c=camp-1',

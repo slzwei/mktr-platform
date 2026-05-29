@@ -202,7 +202,7 @@ Default if env not set: `agent_58b8bbdfb8920ce49bb2750b86` / "Luggage - CPF Care
 - **Behavior**:
   - `lead.created`: insert into `leads`, create activity, send notification
   - `lead.assigned`: reassign existing lead, create activity, send notification
-  - `lead.unassigned`: **delete** lead from Lyfe (destructive — see B2 in TRACKER.md)
+  - `lead.unassigned`: clear assignment — update `assigned_to = null` + log activity; lead record preserved (B2 fixed 2026-03-23)
 - **Idempotency**: dedup by `external_id + source_name='mktr'`
 
 ### mktr-agents (`lyfe-app/supabase/functions/mktr-agents/`)
@@ -336,7 +336,7 @@ Tables read by MKTR pipeline:
 
 4. **setTimeout-based retries**: Webhook retries are lost on restart. The 60s recovery poll mitigates but doesn't eliminate the gap. Consider a persistent job queue (pg-boss, bullmq).
 
-5. **lead.unassigned deletes leads**: The edge function deletes the Lyfe lead record on unassignment rather than updating status. This destroys history.
+5. ~~**lead.unassigned deletes leads**~~ **(RESOLVED 2026-03-23)**: `lead.unassigned` updates `assigned_to = null` and logs an activity rather than deleting — the lead record and history are preserved (`receive-mktr-lead/index.ts`).
 
 6. **Hardcoded email redirect**: `mailer.js:105-108` redirects System Agent emails to `shawnleejob@gmail.com`. Should be `SYSTEM_AGENT_REDIRECT_EMAIL` env var.
 

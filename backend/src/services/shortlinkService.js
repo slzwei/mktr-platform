@@ -21,6 +21,23 @@ async function allocateSlug() {
 }
 
 /**
+ * Open-redirect guard: a share slug 302-redirects to its targetUrl, so the
+ * target host must be one of our own domains (apex or subdomain of mktr.sg /
+ * redeem.sg), a Render preview, or localhost in dev. Without this, a public
+ * caller could mint a redeem.sg/share/{slug} link that bounces to any site
+ * (phishing).
+ */
+function isOwnedRedirectHost(hostname) {
+  if (!hostname) return false;
+  const h = String(hostname).toLowerCase();
+  if (h === 'mktr.sg' || h.endsWith('.mktr.sg')) return true;
+  if (h === 'redeem.sg' || h.endsWith('.redeem.sg')) return true;
+  if (h.endsWith('.onrender.com')) return true;
+  if (process.env.NODE_ENV !== 'production' && (h === 'localhost' || h === '127.0.0.1')) return true;
+  return false;
+}
+
+/**
  * Create a public share short link (no auth, share purpose only).
  */
 export async function createShareLink({ targetUrl, campaignId }) {
@@ -31,6 +48,17 @@ export async function createShareLink({ targetUrl, campaignId }) {
   const allowed = targetUrl.includes('/LeadCapture') || targetUrl.includes('/lead-capture');
   if (!allowed) {
     throw new AppError('Only lead capture URLs can be shortened', 400);
+  }
+
+  // Open-redirect guard: the slug 302s to targetUrl, so restrict to our hosts.
+  let parsed;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    throw new AppError('Invalid targetUrl', 400);
+  }
+  if (!['https:', 'http:'].includes(parsed.protocol) || !isOwnedRedirectHost(parsed.hostname)) {
+    throw new AppError('targetUrl host is not allowed', 400);
   }
 
   const slug = await allocateSlug();

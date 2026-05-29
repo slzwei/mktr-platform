@@ -42,13 +42,16 @@ router.get('/lead-capture', asyncHandler(async (req, res, next) => {
       if (data.exp && Date.now() / 1000 > data.exp) throw new Error('Expired');
       const attrib = await Attribution.findByPk(data.id);
       if (attrib && attrib.expiresAt > new Date()) {
-        // Allow reuse if same sid; otherwise mark usedOnce
         const reuse = attrib.sessionId && attrib.sessionId === sid;
-        await attrib.update({
-          sessionId: sid,
-          lastTouchAt: new Date(),
-          usedOnce: reuse ? attrib.usedOnce : true
-        });
+        // Enforce single-use: a token already consumed by another session must
+        // not be replayed to bind a different session.
+        if (!(attrib.usedOnce && !reuse)) {
+          await attrib.update({
+            sessionId: sid,
+            lastTouchAt: new Date(),
+            usedOnce: true
+          });
+        }
       }
       // Do not clear atk; it will expire
     } catch (e) {
