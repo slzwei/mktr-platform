@@ -256,7 +256,7 @@ describe('prospectService (unit)', () => {
 
       expect(mocks.models.Attribution.findOne).toHaveBeenCalledWith({
         where: { sessionId: 'sess-abc' },
-        order: [['lastTouchAt', 'DESC']],
+        order: [['lastTouchAt', 'DESC'], ['id', 'DESC']],
       });
 
       const createArg = mocks.models.Prospect.create.mock.calls[0][0];
@@ -275,7 +275,86 @@ describe('prospectService (unit)', () => {
 
       expect(mocks.models.Attribution.findOne).toHaveBeenCalledWith({
         where: { sessionId: 'sess-xyz' },
-        order: [['lastTouchAt', 'DESC']],
+        order: [['lastTouchAt', 'DESC'], ['id', 'DESC']],
+      });
+    });
+
+    // ── Attribution last-touch regression (QR campaign mis-attribution) ──
+    // Bug: scan attribution was sticky to the FIRST campaign a session ever
+    // scanned, so scanning campaign A then campaign B and signing up bound the
+    // lead to A. Fix: each scan rebinds the session with lastTouchAt=now, and
+    // createProspect resolves the most-recently-touched attribution
+    // (order: lastTouchAt DESC, id DESC). The mock below honors the `order`
+    // clause, so these tests fail if it is dropped, reversed, or loses the
+    // id tiebreaker.
+    describe('attribution last-touch (regression)', () => {
+      // A findOne stand-in that actually applies the `order` clause to an
+      // in-memory row set. A fixed-return mock would pass even with no order.
+      function orderedFindOne(rows) {
+        return jest.fn(async ({ where = {}, order = [] } = {}) => {
+          const matching = rows.filter((r) =>
+            Object.entries(where).every(([k, v]) => r[k] === v)
+          );
+          const sorted = [...matching].sort((a, b) => {
+            for (const [field, dir] of order) {
+              const av = a[field] instanceof Date ? a[field].getTime() : a[field];
+              const bv = b[field] instanceof Date ? b[field].getTime() : b[field];
+              let cmp = 0;
+              if (av < bv) cmp = -1;
+              else if (av > bv) cmp = 1;
+              if (cmp !== 0) return dir === 'DESC' ? -cmp : cmp;
+            }
+            return 0;
+          });
+          return sorted[0] || null;
+        });
+      }
+
+      // Two QR tags on two different campaigns, keyed for QrTag.findByPk.
+      // agentAssignmentMode null keeps routing on the simple 'direct' path.
+      function wireTwoCampaignQrTags() {
+        const base = { ...mocks.mockQrTag, agentAssignmentMode: null, assignedAgentId: null, assignedAgentPhone: null };
+        const byId = {
+          'qr-A': { ...base, id: 'qr-A', campaignId: 'camp-A' },
+          'qr-B': { ...base, id: 'qr-B', campaignId: 'camp-B' },
+        };
+        mocks.models.QrTag.findByPk.mockImplementation(async (id) => byId[id] || null);
+      }
+
+      it('binds a signup to the most recently scanned campaign (A then B -> B)', async () => {
+        wireTwoCampaignQrTags();
+        // A scanned first (older lastTouchAt), B scanned second (newer).
+        const attrA = { id: 'attr-A', sessionId: 'sess-1', qrTagId: 'qr-A', lastTouchAt: new Date('2026-05-29T10:00:00Z') };
+        const attrB = { id: 'attr-B', sessionId: 'sess-1', qrTagId: 'qr-B', lastTouchAt: new Date('2026-05-29T10:05:00Z') };
+        mocks.models.Attribution.findOne = orderedFindOne([attrA, attrB]);
+
+        // No campaignId in body — it must be derived from the bound attribution's QR tag.
+        const body = { firstName: 'Test', phone: '91234567' };
+        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+
+        const createArg = mocks.models.Prospect.create.mock.calls[0][0];
+        expect(createArg.attributionId).toBe('attr-B');
+        expect(createArg.qrTagId).toBe('qr-B');
+        expect(createArg.campaignId).toBe('camp-B');
+        // The original bug bound it to camp-A (first campaign scanned).
+        expect(createArg.campaignId).not.toBe('camp-A');
+      });
+
+      it('breaks a same-lastTouchAt tie deterministically via id DESC', async () => {
+        wireTwoCampaignQrTags();
+        // Identical lastTouchAt; the id DESC secondary key must decide.
+        const sameTs = new Date('2026-05-29T10:00:00Z');
+        const attrLow = { id: 'attr-aaa', sessionId: 'sess-1', qrTagId: 'qr-A', lastTouchAt: sameTs };
+        const attrHigh = { id: 'attr-bbb', sessionId: 'sess-1', qrTagId: 'qr-B', lastTouchAt: sameTs };
+        // Low id inserted first: without the id tiebreaker a stable sort would pick A.
+        mocks.models.Attribution.findOne = orderedFindOne([attrLow, attrHigh]);
+
+        const body = { firstName: 'Test', phone: '91234568' };
+        await service.createProspect(body, user, { cookies: { sid: 'sess-1' } });
+
+        const createArg = mocks.models.Prospect.create.mock.calls[0][0];
+        expect(createArg.attributionId).toBe('attr-bbb');
+        expect(createArg.qrTagId).toBe('qr-B');
       });
     });
 

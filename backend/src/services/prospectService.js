@@ -102,12 +102,14 @@ export function makeProspectService(overrides = {}) {
       incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), ...capiSourceMetadata };
     }
 
-    // Bind attribution by session cookie (sid)
+    // Bind attribution by session cookie (sid). Most-recently-touched wins
+    // (last-touch); id DESC is a deterministic tiebreaker so a same-millisecond
+    // lastTouchAt tie always resolves to the same attribution row.
     const sid = cookies?.sid || headers?.['x-session-id'];
     if (sid) {
       const attribution = await m.Attribution.findOne({
         where: { sessionId: sid },
-        order: [['lastTouchAt', 'DESC']],
+        order: [['lastTouchAt', 'DESC'], ['id', 'DESC']],
       });
       if (attribution) {
         incoming.attributionId = attribution.id;

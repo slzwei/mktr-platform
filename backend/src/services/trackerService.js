@@ -106,9 +106,12 @@ export function buildRedirectParams(qrTag) {
 export async function resolveSession(sid, atkCookie) {
   if (!sid) return null;
 
+  // Most-recently-touched attribution wins (last-touch); id DESC is a
+  // deterministic tiebreaker so a same-millisecond lastTouchAt tie always
+  // resolves to the same row.
   let attrib = await Attribution.findOne({
     where: { sessionId: sid },
-    order: [['lastTouchAt', 'DESC']]
+    order: [['lastTouchAt', 'DESC'], ['id', 'DESC']]
   });
 
   // If no bound attribution yet, bind from short-lived token (atk)

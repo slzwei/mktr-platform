@@ -8,7 +8,7 @@ process.env.ATTRIB_SECRET = 'test-attrib-secret';
 
 // ── Mock models ──
 
-const QrTag = { findOne: jest.fn(), findByPk: jest.fn() };
+const QrTag = { findOne: jest.fn(), findByPk: jest.fn(), increment: jest.fn(), update: jest.fn() };
 const QrScan = { findOne: jest.fn(), create: jest.fn() };
 const Attribution = { create: jest.fn(), findOne: jest.fn(), findByPk: jest.fn() };
 const Campaign = { findByPk: jest.fn() };
@@ -191,6 +191,19 @@ describe('trackerService (unit)', () => {
         slug: 'test-slug',
         active: true,
       }));
+    });
+
+    it('resolves the most-recently-touched attribution (lastTouchAt then id DESC)', async () => {
+      // Deterministic last-touch: a later scan of a different campaign must win,
+      // and a same-millisecond tie is broken by id DESC so the result is stable.
+      Attribution.findOne.mockResolvedValue({ ...mockAttribution, sessionId: 'sess-1' });
+
+      await resolveSession('sess-1', null);
+
+      expect(Attribution.findOne).toHaveBeenCalledWith({
+        where: { sessionId: 'sess-1' },
+        order: [['lastTouchAt', 'DESC'], ['id', 'DESC']],
+      });
     });
   });
 
