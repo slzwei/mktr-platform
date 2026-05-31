@@ -181,6 +181,15 @@ const Prospect = sequelize.define('Prospect', {
       key: 'id'
     }
   },
+  externalAgentId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'external_agents',
+      key: 'id'
+    },
+    comment: 'Set when this lead is assigned to an external MKTR Leads buyer (mutually exclusive with assignedAgentId).'
+  },
   qrTagId: {
     type: DataTypes.UUID,
     allowNull: true,
@@ -232,6 +241,9 @@ const Prospect = sequelize.define('Prospect', {
     },
     {
       fields: ['assignedAgentId']
+    },
+    {
+      fields: ['externalAgentId']
     },
     {
       fields: ['qrTagId']

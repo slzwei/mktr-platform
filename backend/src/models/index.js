@@ -29,7 +29,7 @@ function defineAssociations() {
     Device, BeaconEvent, Impression, ShortLink, ShortLinkClick,
     Vehicle, WebhookSubscriber, WebhookDelivery, AgentGroup,
     AgentGroupMember, DeviceCampaignAssignment, VehicleCampaignAssignment,
-    CampaignMediaItem, CampaignAgentAssignment
+    CampaignMediaItem, CampaignAgentAssignment, ExternalAgent, ExternalCampaignAgent
   } = models;
 
   // User associations
@@ -87,6 +87,16 @@ function defineAssociations() {
   Prospect.hasMany(ProspectActivity, { foreignKey: 'prospectId', as: 'activities', onDelete: 'CASCADE' });
   ProspectActivity.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect', onDelete: 'CASCADE' });
   ProspectActivity.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
+
+  // ExternalAgent associations (MKTR Leads buyers — a separate table from `users`,
+  // so Lyfe agent-sync can never see them). externalAgentId doubles as the webhook
+  // destination signal: set => MKTR Leads subscriber; null => Lyfe subscriber.
+  ExternalAgent.hasMany(Prospect, { foreignKey: 'externalAgentId', as: 'externalProspects', onDelete: 'SET NULL' });
+  Prospect.belongsTo(ExternalAgent, { foreignKey: 'externalAgentId', as: 'externalAgent', onDelete: 'SET NULL' });
+  ExternalAgent.hasMany(ExternalCampaignAgent, { foreignKey: 'externalAgentId', as: 'campaignLinks', onDelete: 'CASCADE' });
+  ExternalCampaignAgent.belongsTo(ExternalAgent, { foreignKey: 'externalAgentId', as: 'externalAgent', onDelete: 'CASCADE' });
+  Campaign.hasMany(ExternalCampaignAgent, { foreignKey: 'campaignId', as: 'externalAgentLinks', onDelete: 'CASCADE' });
+  ExternalCampaignAgent.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'CASCADE' });
 
   // Commission associations
   Commission.belongsTo(User, { foreignKey: 'agentId', as: 'agent', onDelete: 'RESTRICT' });
@@ -158,6 +168,7 @@ const criticalAssociations = [
   ['QrTag', 'owner'],
   ['Commission', 'agent'],
   ['WebhookDelivery', 'subscriber'],
+  ['Prospect', 'externalAgent'],
 ];
 
 for (const [modelName, alias] of criticalAssociations) {
@@ -175,7 +186,7 @@ export const {
   ShortLinkClick, RoundRobinCursor, Verification, ProvisioningSession,
   Vehicle, WebhookSubscriber, WebhookDelivery, AgentGroup,
   AgentGroupMember, DeviceCampaignAssignment, VehicleCampaignAssignment,
-  CampaignMediaItem, CampaignAgentAssignment
+  CampaignMediaItem, CampaignAgentAssignment, ExternalAgent, ExternalCampaignAgent
 } = models;
 
 export { sequelize };
