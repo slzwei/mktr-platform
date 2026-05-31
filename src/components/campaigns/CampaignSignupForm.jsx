@@ -363,14 +363,17 @@ export default function CampaignSignupForm({
             letterSpacing: '-0.015em',
             color: TOKENS.ink,
             margin: 0,
-            // Tight gap to the sub-headline when it's present; a comfortable gap
-            // straight to the first field when the sub-headline is hidden.
-            marginBottom: formSubheadline ? 10 : 28,
+            // Tight gap down to the sub-headline / required-fields note, which
+            // always follow the heading.
+            marginBottom: 10,
           }}
         >
           {formHeadline || 'Get Started'}
         </h2>
 
+        {/* Operator promo copy — optional. whiteSpace: pre-line honours newlines
+            typed into the multi-line sub-headline textarea (single-line copy is
+            unaffected). */}
         {formSubheadline && (
           <p
             style={{
@@ -379,31 +382,31 @@ export default function CampaignSignupForm({
               lineHeight: 1.55,
               color: TOKENS.body,
               margin: 0,
-              marginBottom: 28,
-              // Honour newlines typed into the multi-line sub-headline textarea so
-              // operators control their own line breaks (single-line copy is unaffected).
+              marginBottom: 6,
               whiteSpace: 'pre-line',
             }}
           >
             {formSubheadline}
-            {formSubheadline.includes('*') ? null : (
-              // Block-level so the required-field note always drops to its own line
-              // instead of running on after the sub-headline. Muted + smaller so it
-              // reads as a form helper, not promo copy.
-              <span
-                style={{
-                  display: 'block',
-                  marginTop: 4,
-                  fontSize: 13,
-                  color: TOKENS.muted,
-                }}
-              >
-                All fields marked with{' '}
-                <span style={{ color: TOKENS.required, fontWeight: 600 }}>*</span> are required.
-              </span>
-            )}
           </p>
         )}
+
+        {/* Required-fields note — always rendered, independent of the sub-headline
+            (clearing the promo copy must not hide it). The public form always has
+            at least one compulsory field (phone is always required), so the note
+            always has a referent. Muted + smaller so it reads as a form helper. */}
+        <p
+          style={{
+            fontFamily: 'Albert Sans, system-ui, sans-serif',
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: TOKENS.muted,
+            margin: 0,
+            marginBottom: 28,
+          }}
+        >
+          All fields marked with{' '}
+          <span style={{ color: TOKENS.required, fontWeight: 600 }}>*</span> are required.
+        </p>
 
         {/* Fields */}
         <div>
