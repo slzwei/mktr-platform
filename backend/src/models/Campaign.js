@@ -23,7 +23,7 @@ const Campaign = sequelize.define('Campaign', {
     defaultValue: 'draft'
   },
   type: {
-    type: DataTypes.ENUM('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing'),
+    type: DataTypes.ENUM('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing', 'quiz'),
     allowNull: true,
     defaultValue: 'lead_generation'
   },

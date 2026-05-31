@@ -67,7 +67,7 @@ export const schemas = {
   // service layer; we accept them as opaque arrays here.
   campaignCreate: Joi.object({
     name: Joi.string().min(1).max(100).required(),
-    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing').optional(),
+    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing', 'quiz').optional(),
     min_age: Joi.number().integer().min(0).max(120).optional(),
     max_age: Joi.number().integer().min(0).max(120).optional(),
     start_date: Joi.date().optional(),
@@ -82,7 +82,7 @@ export const schemas = {
 
   campaignUpdate: Joi.object({
     name: Joi.string().min(1).max(100).optional(),
-    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing').optional(),
+    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing', 'quiz').optional(),
     min_age: Joi.number().integer().min(0).max(120).optional(),
     max_age: Joi.number().integer().min(0).max(120).optional(),
     start_date: Joi.date().optional(),
@@ -165,7 +165,28 @@ export const schemas = {
     // consent_contact gates hashed PII (em/ph) in the CAPI payload — see
     // metaCapiService._buildPayload's `marketingConsent` check.
     consent_contact: Joi.boolean().optional(),
-    consent_terms: Joi.boolean().optional()
+    consent_terms: Joi.boolean().optional(),
+    // Quiz funnel: raw answers + an advisory client-computed result. The server
+    // RE-SCORES authoritatively from campaign.design_config.quiz (see
+    // prospectService.createProspect) and stashes the result in
+    // sourceMetadata.quiz — the client-supplied `result` is never trusted.
+    quizResult: Joi.object({
+      quizId: Joi.string().max(64).optional(),
+      version: Joi.number().integer().optional(),
+      answers: Joi.array().items(Joi.object({
+        qid: Joi.string().max(64).required(),
+        value: Joi.alternatives().try(Joi.string().max(64), Joi.number()).required()
+      })).max(50).optional(),
+      result: Joi.object().optional()
+    }).optional(),
+    // Ad attribution (IG/TikTok). Captured from the landing URL, stashed in
+    // sourceMetadata.utm for per-ad-set reporting. Previously dropped (the
+    // schema rejected unknown keys), so these were lost before this change.
+    utm_source: Joi.string().max(128).optional(),
+    utm_medium: Joi.string().max(128).optional(),
+    utm_campaign: Joi.string().max(190).optional(),
+    utm_content: Joi.string().max(190).optional(),
+    utm_term: Joi.string().max(190).optional()
   }),
 
   // QR Tag schemas — fields match `qrCodeService.createQrCode` destructure
