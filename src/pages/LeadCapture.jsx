@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { Campaign } from '@/api/entities';
 import CampaignSignupForm from '../components/campaigns/CampaignSignupForm';
+import { QuizGate } from '../components/campaigns/CampaignQuiz';
 import ShareCampaignDialog from '../components/campaigns/ShareCampaignDialog';
 import AlertTriangle from 'lucide-react/icons/alert-triangle';
 import CheckCircle from 'lucide-react/icons/check-circle';
@@ -35,6 +36,9 @@ export default function LeadCapture() {
   const [referralMarked, setReferralMarked] = useState(false);
   const [duplicateDetected, setDuplicateDetected] = useState(false);
   const [duplicateCountdown, setDuplicateCountdown] = useState(5);
+  // Quiz funnel result (answers + client-scored result). Set when the in-front
+  // quiz completes; its answers are threaded into the prospect submit below.
+  const [quizResult, setQuizResult] = useState(null);
 
   // Meta Pixel: generate stable event IDs + capture fbclid on first mount.
   // These must persist across re-renders so the ViewContent event_id matches
@@ -200,6 +204,12 @@ export default function LeadCapture() {
         fbp: readFbp(),
         fbc: readFbc(),
         eventSourceUrl: typeof window !== 'undefined' ? window.location.href : undefined,
+        // Quiz funnel: raw answers only (the server re-scores authoritatively
+        // from the campaign's quiz def). The object survives the null/empty
+        // filter below; undefined when this campaign has no quiz.
+        quizResult: quizResult
+          ? { quizId: quizResult.quizId, version: quizResult.version, answers: quizResult.answers }
+          : undefined,
       };
 
       const payload = Object.fromEntries(
@@ -316,16 +326,18 @@ export default function LeadCapture() {
         />
       ) : (
         <div ref={formRef}>
-          <CampaignSignupForm
-            themeColor={design.themeColor}
-            formHeadline={design.formHeadline || 'Get Started'}
-            formSubheadline={design.formSubheadline}
-            campaignId={campaign.id}
-            campaign={campaign}
-            onSubmit={handleSubmit}
-            termsContent={design.termsContent}
-            ctaLabel={design.ctaText || 'Submit Now'}
-          />
+          <QuizGate quiz={design.quiz} themeColor={design.themeColor} onComplete={setQuizResult}>
+            <CampaignSignupForm
+              themeColor={design.themeColor}
+              formHeadline={design.formHeadline || 'Get Started'}
+              formSubheadline={design.formSubheadline}
+              campaignId={campaign.id}
+              campaign={campaign}
+              onSubmit={handleSubmit}
+              termsContent={design.termsContent}
+              ctaLabel={design.ctaText || 'Submit Now'}
+            />
+          </QuizGate>
         </div>
       )}
 
