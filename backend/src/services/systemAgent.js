@@ -175,9 +175,16 @@ export async function resolveAssignedAgentId({ reqUser, requestedAgentId, campai
  * gate, and where an external campaign with no eligible paid buyer quarantines
  * the lead instead of dropping it onto the System Agent.
  *
+ * `allowExternal` MUST be computed by the caller as
+ *   (campaign.externalEligible === true) && hasValidExternalConsent(prospect)
+ * and defaults to false. When false the external pool is not even queried, so
+ * the resolver is byte-for-byte internal-only — identical to resolveAssignedAgentId
+ * behavior. This is the fail-safe that keeps the live pipeline unchanged until a
+ * caller opts a consented, external-eligible lead in.
+ *
  *   returns { kind: 'internal', internalAgentId } | { kind: 'external', externalAgentId }
  */
-export async function resolveLeadAssignment({ reqUser, requestedAgentId, campaignId, qrTagId }) {
+export async function resolveLeadAssignment({ reqUser, requestedAgentId, campaignId, qrTagId, allowExternal = false }) {
   // 1) Requester is an agent → self-assign (internal)
   if (reqUser && reqUser.role === 'agent') {
     return { kind: 'internal', internalAgentId: reqUser.id };
@@ -215,20 +222,25 @@ export async function resolveLeadAssignment({ reqUser, requestedAgentId, campaig
         })).map((u) => u.id)
       : [];
 
-    const extLinks = await ExternalCampaignAgent.findAll({
-      where: { campaignId, isActive: true },
-      include: [{
-        model: ExternalAgent,
-        as: 'externalAgent',
-        where: { isActive: true, leadBalance: { [Op.gt]: 0 } },
-        required: true,
-        attributes: ['id', 'createdAt'],
-      }],
-    });
-    const externalActive = extLinks
-      .map((l) => l.externalAgent)
-      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-      .map((a) => a.id);
+    // External pool is queried ONLY when the caller opted this consented,
+    // external-eligible lead in. Default (false) => internal-only resolver.
+    let externalActive = [];
+    if (allowExternal) {
+      const extLinks = await ExternalCampaignAgent.findAll({
+        where: { campaignId, isActive: true },
+        include: [{
+          model: ExternalAgent,
+          as: 'externalAgent',
+          where: { isActive: true, leadBalance: { [Op.gt]: 0 } },
+          required: true,
+          attributes: ['id', 'createdAt'],
+        }],
+      });
+      externalActive = extLinks
+        .map((l) => l.externalAgent)
+        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+        .map((a) => a.id);
+    }
 
     const ring = [
       ...internalActive.map((id) => ({ kind: 'internal', internalAgentId: id })),

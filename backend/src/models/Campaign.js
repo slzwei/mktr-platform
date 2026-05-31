@@ -159,6 +159,13 @@ const Campaign = sequelize.define('Campaign', {
     type: DataTypes.STRING(64),
     allowNull: true,
     field: 'meta_pixel_id'
+  },
+  externalEligible: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'external_eligible',
+    comment: 'When true, leads for this campaign may route to external MKTR Leads buyers (consent-gated).'
   }
 }, {
   tableName: 'campaigns',
