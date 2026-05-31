@@ -16,7 +16,10 @@ import { deductLeadCredit } from './leadCredits.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { dispatchEvent } from './webhookService.js';
-import { sendLeadEvent as metaSendLeadEvent } from './metaCapiService.js';
+import {
+  sendLeadEvent as metaSendLeadEvent,
+  sendCompleteRegistrationEvent as metaSendCompleteRegistrationEvent,
+} from './metaCapiService.js';
 import { logger } from '../utils/logger.js';
 import {
   normalizePhone,
@@ -54,6 +57,7 @@ const defaultDeps = {
   buildProspectWhere,
   dispatchEvent,
   sendLeadEvent: metaSendLeadEvent,
+  sendCompleteRegistrationEvent: metaSendCompleteRegistrationEvent,
   AppError,
   logger,
 };
@@ -77,6 +81,10 @@ export function makeProspectService(overrides = {}) {
     const eventSourceUrl = meta?.eventSourceUrl ?? safeBody.eventSourceUrl;
     const clientIp = meta?.clientIp;
     const clientUserAgent = meta?.clientUserAgent;
+    // Quiz CompleteRegistration dedup id (Meta CAPI) + TikTok attribution ids.
+    const registrationEventId = meta?.registrationEventId ?? safeBody.registrationEventId;
+    const ttclid = meta?.ttclid ?? safeBody.ttclid;
+    const ttp = meta?.ttp ?? safeBody.ttp;
     // Consent flags: preserve explicit `false` (user opted out) via !== undefined check.
     const consentContact = safeBody.consent_contact;
     const consentTerms = safeBody.consent_terms;
@@ -95,6 +103,7 @@ export function makeProspectService(overrides = {}) {
     // Strip from body so they don't reach Sequelize as bogus Prospect attributes.
     const {
       eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
+      registrationEventId: _re, ttclid: _tc, ttp: _tp,
       consent_contact: _cc, consent_terms: _ct,
       quizResult: _qr,
       utm_source: _us, utm_medium: _um, utm_campaign: _ucmp, utm_content: _ucnt, utm_term: _utm,
@@ -109,6 +118,9 @@ export function makeProspectService(overrides = {}) {
       ...(eventSourceUrl ? { eventSourceUrl } : {}),
       ...(clientIp ? { clientIp } : {}),
       ...(clientUserAgent ? { clientUserAgent } : {}),
+      ...(registrationEventId ? { registrationEventId } : {}),
+      ...(ttclid ? { ttclid } : {}),
+      ...(ttp ? { ttp } : {}),
       ...(consentContact !== undefined ? { consent_contact: consentContact } : {}),
       ...(consentTerms !== undefined ? { consent_terms: consentTerms } : {}),
       ...(Object.keys(utm).length > 0 ? { utm } : {}),
@@ -457,6 +469,24 @@ export function makeProspectService(overrides = {}) {
     }).catch((err) => {
       d.logger.error('[CAPI] sendLeadEvent error', { error: err?.message || String(err) });
     });
+
+    // Meta CAPI CompleteRegistration (quiz funnel). Fired server-side only when
+    // the browser sent a registrationEventId (the quiz reveal happened), using
+    // that same id so Meta dedups it against the Pixel CompleteRegistration fired
+    // at the reveal. No-op for non-quiz leads. Guard inside sendCompleteRegistrationEvent.
+    if (registrationEventId) {
+      d.sendCompleteRegistrationEvent(prospect, {
+        eventId: registrationEventId,
+        fbp,
+        fbc,
+        eventSourceUrl,
+        clientIp,
+        clientUserAgent,
+        pixelIdOverride: sourceCampaign?.metaPixelId || undefined,
+      }).catch((err) => {
+        d.logger.error('[CAPI] sendCompleteRegistrationEvent error', { error: err?.message || String(err) });
+      });
+    }
 
     // Pre-load agent + prospect-with-campaign for caller's email side-effect
     let assignedAgent = null;

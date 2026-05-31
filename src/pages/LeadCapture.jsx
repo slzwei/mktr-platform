@@ -20,14 +20,32 @@ import {
   initPixel,
   trackEvent,
   trackLead,
+  trackCompleteRegistration,
 } from '../lib/metaPixel';
+import {
+  shouldTrackTikTok,
+  captureTtclidFromUrl,
+  readTtclid,
+  readTtp,
+  initTikTokPixel,
+  trackTikTokViewContent,
+  trackTikTokCompleteRegistration,
+  trackTikTokLead,
+} from '../lib/tiktokPixel';
 
 export default function LeadCapture() {
   const location = useLocation();
   const formRef = useRef(null);
   const viewEventIdRef = useRef(null);
   const leadEventIdRef = useRef(null);
-  const viewContentFiredRef = useRef(false);
+  // Stable id for the quiz-reveal CompleteRegistration event — shared by the Meta
+  // Pixel, TikTok Pixel, and (threaded into submit) the server-side CAPI so all
+  // three dedup against one another.
+  const registrationEventIdRef = useRef(null);
+  const viewContentFiredRef = useRef(false); // Meta ViewContent fire-once
+  const ttViewContentFiredRef = useRef(false); // TikTok ViewContent fire-once
+  // UTM params captured from the landing URL once (per-ad-set attribution).
+  const utmRef = useRef(null);
   const [campaign, setCampaign] = useState(null);
   const [qrTag, setQrTag] = useState(null);
   const [error, setError] = useState(null);
@@ -46,29 +64,88 @@ export default function LeadCapture() {
   useEffect(() => {
     if (!viewEventIdRef.current) viewEventIdRef.current = generateEventId();
     if (!leadEventIdRef.current) leadEventIdRef.current = generateEventId();
+    if (!registrationEventIdRef.current) registrationEventIdRef.current = generateEventId();
     captureFbcFromUrl(location.search);
+    captureTtclidFromUrl(location.search);
+    // Snapshot UTM params from the landing URL (only present keys), forwarded
+    // into the prospect submit and stored server-side in sourceMetadata.utm.
+    if (!utmRef.current) {
+      const p = new URLSearchParams(location.search);
+      const utm = {};
+      ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].forEach((k) => {
+        const v = p.get(k);
+        if (v) utm[k] = v;
+      });
+      utmRef.current = utm;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Meta Pixel: fire ViewContent once the campaign is loaded and we're allowed
-  // to track. Fire-once guard prevents re-emission on re-renders / HMR.
+  // Meta + TikTok Pixel: fire ViewContent once the campaign is loaded and we're
+  // allowed to track. Each platform is gated + fired independently (TikTok must
+  // still fire when Meta is unconfigured, and vice-versa). Fire-once guards
+  // prevent re-emission on re-renders / HMR. For a quiz campaign the page loads
+  // straight into the quiz intro, so on-load ViewContent IS the quiz-start signal.
   useEffect(() => {
-    if (viewContentFiredRef.current) return;
     if (!campaign) return;
-    if (!shouldTrack({ campaign, pathname: location.pathname, search: location.search })) return;
-    const pixelId = campaign.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
-    if (!pixelId) return;
-    initPixel(pixelId);
-    trackEvent(
-      'ViewContent',
-      {
-        content_name: campaign.name,
-        content_category: 'lead_capture',
-      },
-      { eventID: viewEventIdRef.current }
-    );
-    viewContentFiredRef.current = true;
+    const trackCtx = { campaign, pathname: location.pathname, search: location.search };
+
+    if (!viewContentFiredRef.current && shouldTrack(trackCtx)) {
+      const pixelId = campaign.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
+      if (pixelId) {
+        initPixel(pixelId);
+        trackEvent(
+          'ViewContent',
+          { content_name: campaign.name, content_category: 'lead_capture' },
+          { eventID: viewEventIdRef.current }
+        );
+        viewContentFiredRef.current = true;
+      }
+    }
+
+    if (!ttViewContentFiredRef.current && shouldTrackTikTok(trackCtx)) {
+      const ttPixelId = import.meta.env.VITE_TIKTOK_PIXEL_ID;
+      if (ttPixelId) {
+        initTikTokPixel(ttPixelId);
+        trackTikTokViewContent(
+          { content_name: campaign.name, content_type: 'lead_capture' },
+          viewEventIdRef.current
+        );
+        ttViewContentFiredRef.current = true;
+      }
+    }
   }, [campaign, location.pathname, location.search]);
+
+  // Quiz result reveal → fire CompleteRegistration on both platforms (strongest
+  // mid-funnel optimisation signal). Uses the shared registrationEventId so the
+  // server-side CAPI CompleteRegistration (fired at submit) dedups against it.
+  // Gated by shouldTrack / shouldTrackTikTok, so it never fires on preview pages.
+  const handleQuizReveal = (result) => {
+    const trackCtx = { campaign, pathname: location.pathname, search: location.search };
+    const status = result?.title || result?.profileId || undefined;
+
+    if (shouldTrack(trackCtx)) {
+      const pixelId = campaign?.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
+      if (pixelId) {
+        initPixel(pixelId);
+        trackCompleteRegistration(
+          { content_name: campaign?.name, status },
+          registrationEventIdRef.current
+        );
+      }
+    }
+
+    if (shouldTrackTikTok(trackCtx)) {
+      const ttPixelId = import.meta.env.VITE_TIKTOK_PIXEL_ID;
+      if (ttPixelId) {
+        initTikTokPixel(ttPixelId);
+        trackTikTokCompleteRegistration(
+          { content_name: campaign?.name, content_type: 'lead_capture' },
+          registrationEventIdRef.current
+        );
+      }
+    }
+  };
 
   // Ensure legacy preview page isn't indexed
   useEffect(() => {
@@ -210,6 +287,17 @@ export default function LeadCapture() {
         quizResult: quizResult
           ? { quizId: quizResult.quizId, version: quizResult.version, answers: quizResult.answers }
           : undefined,
+        // CompleteRegistration dedup id — only when a quiz reveal happened. Lets
+        // the server fire a CAPI CompleteRegistration that dedups against the
+        // browser Pixel one fired at the reveal.
+        registrationEventId: quizResult ? registrationEventIdRef.current : undefined,
+        // TikTok attribution identifiers (server-side Events API consumes these in
+        // Phase 6). Captured from the landing URL / pixel cookie.
+        ttclid: readTtclid() || undefined,
+        ttp: readTtp() || undefined,
+        // UTM params from the landing URL (only present keys). Stored server-side
+        // in sourceMetadata.utm for per-ad-set reporting.
+        ...(utmRef.current || {}),
       };
 
       const payload = Object.fromEntries(
@@ -222,10 +310,11 @@ export default function LeadCapture() {
       const result = await apiClient.post('/prospects', payload, { skipAuth: true });
       if (result?.success) {
         // Fire Pixel Lead with the same eventId we sent to the backend so Meta
-        // deduplicates this against the CAPI Lead dispatch. The OTP gate is
-        // enforced upstream in CampaignSignupForm; reaching this branch means
-        // the conversion is real.
-        if (shouldTrack({ campaign, pathname: location.pathname, search: location.search })) {
+        // (and TikTok) deduplicate this against the server-side dispatch. The OTP
+        // gate is enforced upstream in CampaignSignupForm; reaching this branch
+        // means the conversion is real.
+        const trackCtx = { campaign, pathname: location.pathname, search: location.search };
+        if (shouldTrack(trackCtx)) {
           const pixelId = campaign?.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
           if (pixelId) {
             initPixel(pixelId);
@@ -235,6 +324,16 @@ export default function LeadCapture() {
                 value: 0,
                 currency: 'SGD',
               },
+              leadEventIdRef.current
+            );
+          }
+        }
+        if (shouldTrackTikTok(trackCtx)) {
+          const ttPixelId = import.meta.env.VITE_TIKTOK_PIXEL_ID;
+          if (ttPixelId) {
+            initTikTokPixel(ttPixelId);
+            trackTikTokLead(
+              { content_name: campaign?.name, value: 0, currency: 'SGD' },
               leadEventIdRef.current
             );
           }
@@ -326,7 +425,12 @@ export default function LeadCapture() {
         />
       ) : (
         <div ref={formRef}>
-          <QuizGate quiz={design.quiz} themeColor={design.themeColor} onComplete={setQuizResult}>
+          <QuizGate
+            quiz={design.quiz}
+            themeColor={design.themeColor}
+            onReveal={handleQuizReveal}
+            onComplete={setQuizResult}
+          >
             <CampaignSignupForm
               themeColor={design.themeColor}
               formHeadline={design.formHeadline || 'Get Started'}

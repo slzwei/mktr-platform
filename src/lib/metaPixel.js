@@ -18,30 +18,16 @@
  * All functions are SSR-safe (defensive against missing window/document/sessionStorage).
  */
 
+import { isTrackableLeadCapture } from './pixelSuppression';
+
 const FBC_STORAGE_KEY = '_mktr_fbc';
 const initialisedPixelIds = new Set();
 
 export function shouldTrack({ campaign, pathname, search } = {}) {
   if (!import.meta.env.VITE_META_PIXEL_ID) return false;
   if (!import.meta.env.PROD && !import.meta.env.VITE_META_TEST_EVENT_CODE) return false;
-
-  const path = (pathname || '').toLowerCase();
-  if (path === '/preview' || path.startsWith('/preview/')) return false;
-  if (path.startsWith('/leadcapture/demo')) return false;
-  if (path.startsWith('/p/')) return false;
-
-  if (search) {
-    try {
-      const params = new URLSearchParams(search);
-      if (params.get('preview') === 'true') return false;
-    } catch {
-      /* malformed query — ignore */
-    }
-  }
-
-  if (campaign?.is_test_data === true) return false;
-
-  return path === '/leadcapture';
+  // Shared page/preview/test-data suppression (kept in lock-step with TikTok).
+  return isTrackableLeadCapture({ campaign, pathname, search });
 }
 
 export function generateEventId() {
@@ -99,4 +85,14 @@ export function trackEvent(eventName, params = {}, options) {
 
 export function trackLead(params = {}, eventId) {
   trackEvent('Lead', params, eventId ? { eventID: eventId } : undefined);
+}
+
+/**
+ * Fire a CompleteRegistration Pixel event. Used at the quiz result reveal — the
+ * strongest mid-funnel optimisation signal for paid social. Pass the stable
+ * registration event id so it dedups against the server-side CAPI
+ * CompleteRegistration (sendCompleteRegistrationEvent) fired at form submit.
+ */
+export function trackCompleteRegistration(params = {}, eventId) {
+  trackEvent('CompleteRegistration', params, eventId ? { eventID: eventId } : undefined);
 }

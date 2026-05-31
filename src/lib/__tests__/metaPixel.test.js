@@ -8,6 +8,7 @@ import {
   initPixel,
   trackEvent,
   trackLead,
+  trackCompleteRegistration,
 } from '../metaPixel.js';
 
 const PIXEL_ID = '1690392415464750';
@@ -296,5 +297,30 @@ describe('trackLead', () => {
   it('omits the options arg when no eventId is provided (falls back to fbq 3-arg form)', () => {
     trackLead({ content_name: 'X' });
     expect(window.fbq).toHaveBeenCalledWith('track', 'Lead', { content_name: 'X' });
+  });
+});
+
+describe('trackCompleteRegistration', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fbq', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('calls fbq track CompleteRegistration with params and eventID for Pixel/CAPI dedup', () => {
+    trackCompleteRegistration({ content_name: 'Protection Personality', status: 'The Protector' }, 'reg-evt-1');
+    expect(window.fbq).toHaveBeenCalledWith(
+      'track',
+      'CompleteRegistration',
+      { content_name: 'Protection Personality', status: 'The Protector' },
+      { eventID: 'reg-evt-1' }
+    );
+  });
+
+  it('omits the options arg when no eventId is provided', () => {
+    trackCompleteRegistration({ content_name: 'X' });
+    expect(window.fbq).toHaveBeenCalledWith('track', 'CompleteRegistration', { content_name: 'X' });
   });
 });

@@ -56,6 +56,7 @@ function buildDeps(overrides = {}) {
     buildProspectWhere: jest.fn(),
     dispatchEvent: jest.fn().mockResolvedValue(),
     sendLeadEvent: jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' }),
+    sendCompleteRegistrationEvent: jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' }),
     AppError: class AppError extends Error { constructor(m, s) { super(m); this.statusCode = s; } },
     logger: silentLogger,
     createdProspects,
@@ -392,5 +393,129 @@ describe('createProspect → per-campaign Pixel override (Phase 5)', () => {
 
     const [, ctxArg] = deps.sendLeadEvent.mock.calls[0];
     expect(ctxArg.pixelIdOverride).toBeUndefined();
+  });
+});
+
+describe('createProspect → CompleteRegistration CAPI (Phase 5)', () => {
+  const baseBody = {
+    firstName: 'Quiz',
+    lastName: 'Taker',
+    email: 'quiz@example.com',
+    leadSource: 'website',
+  };
+
+  it('fires sendCompleteRegistrationEvent with the registrationEventId as ctx.eventId when present', async () => {
+    const deps = buildDeps();
+    const svc = makeProspectService(deps);
+
+    await svc.createProspect(
+      { ...baseBody },
+      { id: 'admin-1', role: 'admin' },
+      { meta: { eventId: 'lead-evt', registrationEventId: 'reg-evt-9', fbp: 'fbp-1', clientIp: '1.2.3.4' } }
+    );
+
+    expect(deps.sendCompleteRegistrationEvent).toHaveBeenCalledTimes(1);
+    const [prospectArg, ctxArg] = deps.sendCompleteRegistrationEvent.mock.calls[0];
+    expect(prospectArg.id).toMatch(/^pros-/);
+    // The CR event_id is the registration id (NOT the lead eventId) — dedup contract.
+    expect(ctxArg.eventId).toBe('reg-evt-9');
+    expect(ctxArg.fbp).toBe('fbp-1');
+    expect(ctxArg.clientIp).toBe('1.2.3.4');
+    // Lead still fires with its own eventId.
+    expect(deps.sendLeadEvent).toHaveBeenCalledTimes(1);
+    expect(deps.sendLeadEvent.mock.calls[0][1].eventId).toBe('lead-evt');
+  });
+
+  it('does NOT fire sendCompleteRegistrationEvent when no registrationEventId (non-quiz lead)', async () => {
+    const deps = buildDeps();
+    const svc = makeProspectService(deps);
+
+    await svc.createProspect(
+      { ...baseBody },
+      { id: 'admin-1', role: 'admin' },
+      { meta: { eventId: 'lead-evt' } }
+    );
+
+    expect(deps.sendCompleteRegistrationEvent).not.toHaveBeenCalled();
+    expect(deps.sendLeadEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw when sendCompleteRegistrationEvent rejects (fire-and-forget)', async () => {
+    const deps = buildDeps({
+      sendCompleteRegistrationEvent: jest.fn().mockRejectedValue(new Error('boom')),
+    });
+    const svc = makeProspectService(deps);
+
+    await expect(
+      svc.createProspect(
+        { ...baseBody },
+        { id: 'admin-1', role: 'admin' },
+        { meta: { eventId: 'lead-evt', registrationEventId: 'reg-1' } }
+      )
+    ).resolves.toBeDefined();
+  });
+});
+
+describe('createProspect → TikTok identifiers + registrationEventId persistence (Phase 5)', () => {
+  const baseBody = {
+    firstName: 'Quiz',
+    lastName: 'Taker',
+    email: 'quiz@example.com',
+    leadSource: 'website',
+  };
+
+  it('persists ttclid, ttp, and registrationEventId into sourceMetadata', async () => {
+    const deps = buildDeps();
+    const svc = makeProspectService(deps);
+
+    await svc.createProspect(
+      { ...baseBody },
+      { id: 'admin-1', role: 'admin' },
+      { meta: { eventId: 'lead-evt', registrationEventId: 'reg-1', ttclid: 'ttclid-abc', ttp: 'ttp-xyz' } }
+    );
+
+    const created = deps.models.Prospect.create.mock.calls[0][0];
+    expect(created.sourceMetadata).toMatchObject({
+      eventId: 'lead-evt',
+      registrationEventId: 'reg-1',
+      ttclid: 'ttclid-abc',
+      ttp: 'ttp-xyz',
+    });
+  });
+
+  it('reads ttclid/ttp/registrationEventId from the body when meta is absent, and strips them from Prospect attributes', async () => {
+    const deps = buildDeps();
+    const svc = makeProspectService(deps);
+
+    await svc.createProspect(
+      { ...baseBody, ttclid: 'tt-body', ttp: 'ttp-body', registrationEventId: 'reg-body' },
+      { id: 'admin-1', role: 'admin' },
+      {}
+    );
+
+    const created = deps.models.Prospect.create.mock.calls[0][0];
+    expect(created.sourceMetadata).toMatchObject({
+      ttclid: 'tt-body',
+      ttp: 'ttp-body',
+      registrationEventId: 'reg-body',
+    });
+    // Not leaked as top-level Sequelize attributes.
+    expect(created.ttclid).toBeUndefined();
+    expect(created.ttp).toBeUndefined();
+    expect(created.registrationEventId).toBeUndefined();
+  });
+
+  it('omits ttclid/ttp/registrationEventId from sourceMetadata when not provided', async () => {
+    const deps = buildDeps();
+    const svc = makeProspectService(deps);
+
+    await svc.createProspect(
+      { ...baseBody },
+      { id: 'admin-1', role: 'admin' },
+      { meta: { eventId: 'lead-evt' } }
+    );
+
+    const created = deps.models.Prospect.create.mock.calls[0][0];
+    expect(created.sourceMetadata).toEqual({ eventId: 'lead-evt' });
   });
 });
