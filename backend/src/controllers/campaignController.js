@@ -1,5 +1,6 @@
 import { asyncHandler } from '../middleware/errorHandler.js';
 import * as campaignService from '../services/campaignService.js';
+import { loadCampaignReadiness } from '../services/campaignReadinessService.js';
 
 export const listCampaigns = asyncHandler(async (req, res) => {
   // TODO: extract tenantId instead of passing req
@@ -48,6 +49,12 @@ export const getCampaignAnalytics = asyncHandler(async (req, res) => {
   const analytics = await campaignService.getCampaignAnalytics(req.params.id, req);
 
   res.json({ success: true, data: { analytics } });
+});
+
+export const getCampaignReadiness = asyncHandler(async (req, res) => {
+  const readiness = await loadCampaignReadiness(req.params.id);
+
+  res.json({ success: true, data: { readiness } });
 });
 
 export const updateCampaignMetrics = asyncHandler(async (req, res) => {

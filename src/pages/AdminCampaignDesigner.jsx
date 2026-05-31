@@ -5,6 +5,7 @@ import Eye from"lucide-react/icons/eye";
 import { toast } from"sonner";
 
 import DesignEditor from"../components/campaigns/DesignEditor";
+import CampaignReadinessBanner from"../components/campaigns/CampaignReadinessBanner";
 import { apiClient } from"@/api/client";
 import { useCurrentUser } from"@/hooks/queries/useUsersQuery";
 import { useCampaign } from"@/hooks/queries/useCampaignsQuery";
@@ -91,6 +92,8 @@ export default function AdminCampaignDesigner() {
  Preview
  </Button>
  </div>
+
+ {campaign && <CampaignReadinessBanner campaignId={campaign.id} />}
 
  {/* Editor fills remaining space */}
  {campaign ? (
