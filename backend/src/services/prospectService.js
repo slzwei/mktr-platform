@@ -20,6 +20,10 @@ import {
   sendLeadEvent as metaSendLeadEvent,
   sendCompleteRegistrationEvent as metaSendCompleteRegistrationEvent,
 } from './metaCapiService.js';
+import {
+  sendTikTokLeadEvent,
+  sendTikTokCompleteRegistrationEvent,
+} from './tiktokEventsService.js';
 import { logger } from '../utils/logger.js';
 import {
   normalizePhone,
@@ -58,6 +62,8 @@ const defaultDeps = {
   dispatchEvent,
   sendLeadEvent: metaSendLeadEvent,
   sendCompleteRegistrationEvent: metaSendCompleteRegistrationEvent,
+  sendTikTokLeadEvent,
+  sendTikTokCompleteRegistrationEvent,
   AppError,
   logger,
 };
@@ -485,6 +491,28 @@ export function makeProspectService(overrides = {}) {
         pixelIdOverride: sourceCampaign?.metaPixelId || undefined,
       }).catch((err) => {
         d.logger.error('[CAPI] sendCompleteRegistrationEvent error', { error: err?.message || String(err) });
+      });
+    }
+
+    // TikTok Events API dispatch (fire-and-forget; post-commit; guard inside the
+    // sender). Mirrors the Meta CAPI pair: a Lead at submit, plus a
+    // CompleteRegistration when the quiz reveal fired one — each deduped against
+    // the browser ttq pixel via the shared event ids. Per-campaign tiktokPixelId
+    // overrides env TIKTOK_PIXEL_ID.
+    const tiktokCtxBase = {
+      ttclid,
+      ttp,
+      eventSourceUrl,
+      clientIp,
+      clientUserAgent,
+      pixelIdOverride: sourceCampaign?.tiktokPixelId || undefined,
+    };
+    d.sendTikTokLeadEvent(prospect, { eventId, ...tiktokCtxBase }).catch((err) => {
+      d.logger.error('[TikTok] sendTikTokLeadEvent error', { error: err?.message || String(err) });
+    });
+    if (registrationEventId) {
+      d.sendTikTokCompleteRegistrationEvent(prospect, { eventId: registrationEventId, ...tiktokCtxBase }).catch((err) => {
+        d.logger.error('[TikTok] sendTikTokCompleteRegistrationEvent error', { error: err?.message || String(err) });
       });
     }
 

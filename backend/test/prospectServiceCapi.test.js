@@ -57,6 +57,8 @@ function buildDeps(overrides = {}) {
     dispatchEvent: jest.fn().mockResolvedValue(),
     sendLeadEvent: jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' }),
     sendCompleteRegistrationEvent: jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' }),
+    sendTikTokLeadEvent: jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' }),
+    sendTikTokCompleteRegistrationEvent: jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' }),
     AppError: class AppError extends Error { constructor(m, s) { super(m); this.statusCode = s; } },
     logger: silentLogger,
     createdProspects,
@@ -517,5 +519,100 @@ describe('createProspect → TikTok identifiers + registrationEventId persistenc
 
     const created = deps.models.Prospect.create.mock.calls[0][0];
     expect(created.sourceMetadata).toEqual({ eventId: 'lead-evt' });
+  });
+});
+
+describe('createProspect → TikTok Events API wire-up (Phase 6)', () => {
+  const baseBody = {
+    firstName: 'Quiz',
+    lastName: 'Taker',
+    email: 'quiz@example.com',
+    leadSource: 'website',
+    campaignId: 'campaign-uuid-1',
+  };
+
+  it('fires sendTikTokLeadEvent post-commit with eventId + ttclid/ttp ctx', async () => {
+    const deps = buildDeps();
+    deps.models.Campaign.findByPk = jest.fn().mockResolvedValue({
+      id: 'campaign-uuid-1', name: 'Quiz Campaign', tiktokPixelId: 'CAMPAIGN_TT_PIXEL',
+    });
+    const svc = makeProspectService(deps);
+
+    await svc.createProspect(
+      { ...baseBody },
+      { id: 'admin-1', role: 'admin' },
+      { meta: { eventId: 'lead-evt', ttclid: 'tt-1', ttp: 'ttp-1', clientIp: '1.2.3.4' } }
+    );
+
+    expect(deps.sendTikTokLeadEvent).toHaveBeenCalledTimes(1);
+    const [prospectArg, ctxArg] = deps.sendTikTokLeadEvent.mock.calls[0];
+    expect(prospectArg.id).toMatch(/^pros-/);
+    expect(ctxArg.eventId).toBe('lead-evt');
+    expect(ctxArg.ttclid).toBe('tt-1');
+    expect(ctxArg.ttp).toBe('ttp-1');
+    // Per-campaign TikTok pixel override is threaded through.
+    expect(ctxArg.pixelIdOverride).toBe('CAMPAIGN_TT_PIXEL');
+  });
+
+  it('fires sendTikTokCompleteRegistrationEvent with the registrationEventId when present', async () => {
+    const deps = buildDeps();
+    const svc = makeProspectService(deps);
+
+    await svc.createProspect(
+      { ...baseBody },
+      { id: 'admin-1', role: 'admin' },
+      { meta: { eventId: 'lead-evt', registrationEventId: 'reg-9', ttclid: 'tt-1' } }
+    );
+
+    expect(deps.sendTikTokCompleteRegistrationEvent).toHaveBeenCalledTimes(1);
+    const [, ctxArg] = deps.sendTikTokCompleteRegistrationEvent.mock.calls[0];
+    expect(ctxArg.eventId).toBe('reg-9');
+    expect(ctxArg.ttclid).toBe('tt-1');
+  });
+
+  it('does NOT fire sendTikTokCompleteRegistrationEvent for a non-quiz lead', async () => {
+    const deps = buildDeps();
+    const svc = makeProspectService(deps);
+
+    await svc.createProspect(
+      { ...baseBody },
+      { id: 'admin-1', role: 'admin' },
+      { meta: { eventId: 'lead-evt' } }
+    );
+
+    expect(deps.sendTikTokLeadEvent).toHaveBeenCalledTimes(1);
+    expect(deps.sendTikTokCompleteRegistrationEvent).not.toHaveBeenCalled();
+  });
+
+  it('passes pixelIdOverride: undefined when campaign has no tiktokPixelId', async () => {
+    const deps = buildDeps();
+    deps.models.Campaign.findByPk = jest.fn().mockResolvedValue({
+      id: 'campaign-uuid-1', name: 'Quiz Campaign', tiktokPixelId: null,
+    });
+    const svc = makeProspectService(deps);
+
+    await svc.createProspect(
+      { ...baseBody },
+      { id: 'admin-1', role: 'admin' },
+      { meta: { eventId: 'lead-evt' } }
+    );
+
+    expect(deps.sendTikTokLeadEvent.mock.calls[0][1].pixelIdOverride).toBeUndefined();
+  });
+
+  it('does not throw when TikTok senders reject (fire-and-forget)', async () => {
+    const deps = buildDeps({
+      sendTikTokLeadEvent: jest.fn().mockRejectedValue(new Error('boom')),
+      sendTikTokCompleteRegistrationEvent: jest.fn().mockRejectedValue(new Error('boom')),
+    });
+    const svc = makeProspectService(deps);
+
+    await expect(
+      svc.createProspect(
+        { ...baseBody },
+        { id: 'admin-1', role: 'admin' },
+        { meta: { eventId: 'lead-evt', registrationEventId: 'reg-1' } }
+      )
+    ).resolves.toBeDefined();
   });
 });

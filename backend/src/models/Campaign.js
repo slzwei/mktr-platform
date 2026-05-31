@@ -159,6 +159,11 @@ const Campaign = sequelize.define('Campaign', {
     type: DataTypes.STRING(64),
     allowNull: true,
     field: 'meta_pixel_id'
+  },
+  tiktokPixelId: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    field: 'tiktok_pixel_id'
   }
 }, {
   tableName: 'campaigns',
