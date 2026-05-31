@@ -216,6 +216,11 @@ const Prospect = sequelize.define('Prospect', {
     defaultValue: {},
     comment: 'Additional data about the lead source (referrer URL, QR code location, etc.)'
   },
+  consentMetadata: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'Third-party-disclosure consent evidence; consentMetadata.external gates external (MKTR Leads) delivery.'
+  },
   retellCallId: {
     type: DataTypes.STRING,
     allowNull: true,
