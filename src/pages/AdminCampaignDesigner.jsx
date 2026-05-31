@@ -6,6 +6,7 @@ import { toast } from"sonner";
 
 import DesignEditor from"../components/campaigns/DesignEditor";
 import CampaignReadinessBanner from"../components/campaigns/CampaignReadinessBanner";
+import QuizAnalyticsCard from"../components/campaigns/QuizAnalyticsCard";
 import { apiClient } from"@/api/client";
 import { useCurrentUser } from"@/hooks/queries/useUsersQuery";
 import { useCampaign } from"@/hooks/queries/useCampaignsQuery";
@@ -94,6 +95,10 @@ export default function AdminCampaignDesigner() {
  </div>
 
  {campaign && <CampaignReadinessBanner campaignId={campaign.id} />}
+
+ {campaign && campaign.type === 'quiz' && (
+ <QuizAnalyticsCard campaignId={campaign.id} profiles={campaign.design_config?.quiz?.resultProfiles} />
+ )}
 
  {/* Editor fills remaining space */}
  {campaign ? (
