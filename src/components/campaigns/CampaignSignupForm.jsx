@@ -380,14 +380,27 @@ export default function CampaignSignupForm({
               color: TOKENS.body,
               margin: 0,
               marginBottom: 28,
+              // Honour newlines typed into the multi-line sub-headline textarea so
+              // operators control their own line breaks (single-line copy is unaffected).
+              whiteSpace: 'pre-line',
             }}
           >
             {formSubheadline}
             {formSubheadline.includes('*') ? null : (
-              <>
-                {' '}All fields marked with{' '}
+              // Block-level so the required-field note always drops to its own line
+              // instead of running on after the sub-headline. Muted + smaller so it
+              // reads as a form helper, not promo copy.
+              <span
+                style={{
+                  display: 'block',
+                  marginTop: 4,
+                  fontSize: 13,
+                  color: TOKENS.muted,
+                }}
+              >
+                All fields marked with{' '}
                 <span style={{ color: TOKENS.required, fontWeight: 600 }}>*</span> are required.
-              </>
+              </span>
             )}
           </p>
         )}
