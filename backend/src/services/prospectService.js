@@ -11,8 +11,9 @@ import {
   AgentGroupMember,
   sequelize,
 } from '../models/index.js';
-import { resolveAssignedAgentId, getSystemAgentId } from './systemAgent.js';
-import { deductLeadCredit } from './leadCredits.js';
+import { resolveAssignedAgentId, getSystemAgentId, resolveLeadAssignment } from './systemAgent.js';
+import { deductLeadCredit, deductExternalLeadBalance } from './leadCredits.js';
+import { hasValidExternalConsent } from './externalConsent.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { dispatchEvent } from './webhookService.js';
@@ -50,7 +51,10 @@ const defaultDeps = {
   sequelize,
   resolveAssignedAgentId,
   getSystemAgentId,
+  resolveLeadAssignment,
   deductLeadCredit,
+  deductExternalLeadBalance,
+  hasValidExternalConsent,
   buildProspectWhere,
   dispatchEvent,
   sendLeadEvent: metaSendLeadEvent,
@@ -350,9 +354,33 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
+    // External (MKTR Leads) routing decision. INERT until per-source consent
+    // capture writes consentMetadata.external — hasValidExternalConsent returns
+    // false for all current data, so allowExternal is false and this whole block
+    // is skipped, leaving the internal path byte-for-byte unchanged.
+    let externalAgentId = null;
+    const allowExternal =
+      sourceCampaign?.externalEligible === true &&
+      d.hasValidExternalConsent({ consentMetadata: incoming.consentMetadata });
+    if (allowExternal) {
+      const decision = await d.resolveLeadAssignment({
+        reqUser: user,
+        requestedAgentId: body.assignedAgentId,
+        campaignId: incoming.campaignId,
+        qrTagId: incoming.qrTagId,
+        allowExternal: true,
+      });
+      if (decision?.kind === 'external') {
+        externalAgentId = decision.externalAgentId;
+        assignedAgentId = null; // mutually exclusive (DB CHECK enforces this)
+      } else if (decision?.kind === 'internal' && decision.internalAgentId) {
+        assignedAgentId = decision.internalAgentId;
+      }
+    }
+
     // Wrap all DB writes in a transaction for data integrity
     const prospect = await d.sequelize.transaction(async (t) => {
-      const newProspect = await m.Prospect.create({ ...incoming, assignedAgentId }, { transaction: t });
+      const newProspect = await m.Prospect.create({ ...incoming, assignedAgentId, externalAgentId }, { transaction: t });
 
       const campaignName = sourceCampaign?.name || 'Unknown Campaign';
       const qrTagName = sourceQrTag?.name || sourceQrTag?.label || 'Unknown QR';
@@ -386,8 +414,17 @@ export function makeProspectService(overrides = {}) {
         { transaction: t }
       );
 
-      // Deduct lead credit from agent's package
-      if (assignedAgentId) {
+      // Deduct lead credit. External buyers are PAID leads: the deduction is
+      // authoritative — if we cannot charge the buyer's prepaid balance, abort
+      // the whole create (rollback) rather than hand over a lead we can't bill.
+      // Internal stays best-effort (a missing internal credit must not block a
+      // Lyfe agent's lead), unchanged from before.
+      if (externalAgentId) {
+        const charged = await d.deductExternalLeadBalance(externalAgentId, 1, t);
+        if (!charged) {
+          throw new d.AppError('No paid external buyer balance available for this lead.', 409);
+        }
+      } else if (assignedAgentId) {
         await d
           .deductLeadCredit(assignedAgentId, 1, t)
           .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
@@ -431,19 +468,25 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
-    d.dispatchEvent('lead.created', () =>
-      buildLeadCreatedPayload(
-        prospect,
-        routingMode,
-        agentForWebhook,
-        assignedAgentId,
-        sourceCampaign,
-        sourceQrTag,
-        agentGroup
-      )
-    ).catch((err) => {
-      d.logger.error('[Webhook] dispatch error', { error: err?.message || String(err) });
-    });
+    // Destination safety: the existing 'lead.created' subscriber is the Lyfe app.
+    // An external (MKTR Leads) lead must NEVER be dispatched to it. Until
+    // destination-aware routing lands in webhookService, external leads simply
+    // do not fire this event (no external subscriber exists yet either).
+    if (!externalAgentId) {
+      d.dispatchEvent('lead.created', () =>
+        buildLeadCreatedPayload(
+          prospect,
+          routingMode,
+          agentForWebhook,
+          assignedAgentId,
+          sourceCampaign,
+          sourceQrTag,
+          agentGroup
+        )
+      ).catch((err) => {
+        d.logger.error('[Webhook] dispatch error', { error: err?.message || String(err) });
+      });
+    }
 
     // Meta CAPI dispatch (fire-and-forget; post-commit; guard inside sendLeadEvent)
     d.sendLeadEvent(prospect, {
