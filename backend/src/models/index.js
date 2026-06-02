@@ -175,7 +175,7 @@ export const {
   ShortLinkClick, RoundRobinCursor, Verification, ProvisioningSession,
   Vehicle, WebhookSubscriber, WebhookDelivery, AgentGroup,
   AgentGroupMember, DeviceCampaignAssignment, VehicleCampaignAssignment,
-  CampaignMediaItem, CampaignAgentAssignment
+  CampaignMediaItem, CampaignAgentAssignment, WaitlistSignup
 } = models;
 
 export { sequelize };

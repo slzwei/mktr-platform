@@ -15,11 +15,13 @@ const brandConfigPath = path.resolve(__dirname, `./src/lib/brandConfigs/${BRAND}
 const BRAND_HTML_DEFAULTS = BRAND === 'redeem'
   ? {
       VITE_PAGE_TITLE: 'Redeem — Lead Capture',
+      VITE_META_DESCRIPTION: 'Redeem — a lead-capture service of MKTR PTE. LTD.',
       VITE_FAVICON_SRC: '/redeem-favicon.svg',
       VITE_CANONICAL_BASE: 'https://redeem.sg/',
     }
   : {
-      VITE_PAGE_TITLE: 'MKTR Marketing Platform',
+      VITE_PAGE_TITLE: 'MKTR — Lead Generation for Singapore Insurance Agents',
+      VITE_META_DESCRIPTION: 'MKTR captures qualified insurance leads across Singapore and routes them to the right agent in seconds. Join the waitlist.',
       VITE_FAVICON_SRC: '/favicon.svg',
       VITE_CANONICAL_BASE: 'https://mktr.sg/',
     }
@@ -36,7 +38,9 @@ function brandSeoFiles() {
   const base = `https://${host}`
   // Routes that should be indexed on each brand.
   const sharedRoutes = ['/', '/LeadCapture', '/personal-data-policy', '/Contact']
-  const mktrOnlyRoutes = ['/features', '/pricing', '/about']
+  // /features, /pricing, /about are hidden (show* flags false) pending a rewrite,
+  // so they're intentionally excluded from the sitemap to avoid advertising 404s.
+  const mktrOnlyRoutes = []
   const routes = BRAND === 'redeem' ? sharedRoutes : [...sharedRoutes, ...mktrOnlyRoutes]
 
   const robots = [
