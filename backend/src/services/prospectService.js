@@ -1035,5 +1035,6 @@ export const assignProspect = _default.assignProspect;
 export const bulkAssignProspects = _default.bulkAssignProspects;
 export const getProspectStats = _default.getProspectStats;
 export const listProspects = _default.listProspects;
+export const listHeldProspects = _default.listHeldProspects;
 export const scheduleFollowUp = _default.scheduleFollowUp;
 export const trackProspectView = _default.trackProspectView;

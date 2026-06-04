@@ -23,7 +23,7 @@ const nextPhone = () => `+6590${String(++seq).padStart(6, '0')}`; // globally un
 function postLead(campaignId, extra = {}) {
   return request(app).post('/api/prospects').send({
     firstName: 'Lead',
-    email: `lead-${++seq}-${Date.now()}@quota.test`,
+    email: `lead-${++seq}-${Date.now()}@test.com`,
     phone: nextPhone(),
     leadSource: 'website',
     campaignId,
@@ -42,7 +42,10 @@ async function fundedAgent(campaignId, credits = 1) {
 }
 
 const quotaCampaign = (over = {}) => createTestCampaign(admin.id, { enforceLeadQuota: true, ...over });
-const prospectFromRes = (res) => Prospect.findByPk(res.body.data.prospect.id);
+const prospectFromRes = (res) => {
+  if (!res.body?.data?.prospect) throw new Error(`POST not 201: status=${res.status} body=${JSON.stringify(res.body).slice(0, 300)}`);
+  return Prospect.findByPk(res.body.data.prospect.id);
+};
 
 beforeAll(async () => {
   app = await getApp();
