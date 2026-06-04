@@ -12,6 +12,8 @@ import { Prospect as ProspectEntity, User as UserEntity } from"@/api/entities";
 import { apiClient } from"@/api/client";
 import ContactInfoCard from"@/components/prospects/details/ContactInfoCard";
 import ActivityTimeline from"@/components/prospects/details/ActivityTimeline";
+import QuizResultCard from"@/components/prospects/details/QuizResultCard";
+import { extractQuizSummary } from"@/lib/quizDisplay";
 
 const statusOptions = [
  { value:"new", label:"New", color:"bg-info/15 text-info border-info/30", dot:"bg-primary"},
@@ -276,6 +278,9 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
  </CardContent>
  </Card>
  )}
+
+ {/* Quiz Result (lead-capture quiz funnel) — renders nothing for non-quiz leads */}
+ <QuizResultCard summary={extractQuizSummary(details?.sourceMetadata)} />
 
  {/* Notes */}
  <Card className="border-border shadow-sm">

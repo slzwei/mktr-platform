@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiClient } from '@/api/client';
 import CampaignSignupForm from '@/components/campaigns/CampaignSignupForm';
+import { QuizGate } from '@/components/campaigns/CampaignQuiz';
 import TypingLoader from '@/components/ui/TypingLoader';
 import AlertTriangle from 'lucide-react/icons/alert-triangle';
 import ShareCampaignDialog from '@/components/campaigns/ShareCampaignDialog';
@@ -93,6 +94,7 @@ export default function PublicPreview() {
  >
  <Title title={`Preview • ${snapshot?.name || 'Campaign'}`} />
  <div ref={formRef}>
+ <QuizGate quiz={design.quiz} themeColor={design.themeColor || '#3B82F6'} previewMode>
  <CampaignSignupForm
  previewMode
  themeColor={design.themeColor || '#3B82F6'}
@@ -104,6 +106,7 @@ export default function PublicPreview() {
  termsContent={design.termsContent}
  ctaLabel={design.ctaText || 'Submit Now'}
  />
+ </QuizGate>
  </div>
  <ShareCampaignDialog
  open={shareOpen}

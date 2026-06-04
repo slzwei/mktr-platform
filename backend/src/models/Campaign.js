@@ -23,7 +23,7 @@ const Campaign = sequelize.define('Campaign', {
     defaultValue: 'draft'
   },
   type: {
-    type: DataTypes.ENUM('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing'),
+    type: DataTypes.ENUM('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing', 'quiz'),
     allowNull: true,
     defaultValue: 'lead_generation'
   },
@@ -159,6 +159,11 @@ const Campaign = sequelize.define('Campaign', {
     type: DataTypes.STRING(64),
     allowNull: true,
     field: 'meta_pixel_id'
+  },
+  tiktokPixelId: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    field: 'tiktok_pixel_id'
   }
 }, {
   tableName: 'campaigns',

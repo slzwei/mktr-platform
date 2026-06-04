@@ -76,6 +76,12 @@ router.delete('/:id', authenticateToken, requireAgentOrAdmin, campaignController
 // Get campaign analytics
 router.get('/:id/analytics', authenticateToken, campaignController.getCampaignAnalytics);
 
+// Get campaign go-live readiness (assignable agent pool + webhook + quiz config)
+router.get('/:id/readiness', authenticateToken, campaignController.getCampaignReadiness);
+
+// Get quiz results analytics (profile + lead-score mix over submitted leads)
+router.get('/:id/quiz-analytics', authenticateToken, campaignController.getCampaignQuizAnalytics);
+
 // Update campaign metrics
 router.patch('/:id/metrics', authenticateToken, requireAgentOrAdmin, campaignController.updateCampaignMetrics);
 

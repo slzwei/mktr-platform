@@ -2,6 +2,7 @@ import { useMemo, useRef } from"react";
 import { Eye } from"lucide-react";
 import LeadCaptureLayout from"../LeadCaptureLayout";
 import CampaignSignupForm from"../CampaignSignupForm";
+import { QuizGate } from"../CampaignQuiz";
 import { deriveLeadCaptureContent } from"../leadCaptureContent";
 import { customerPublicUrl } from"@/lib/brand";
 
@@ -83,6 +84,7 @@ export default function PreviewFrame({ currentDesign, campaign }) {
  brand={content.brand}
  >
  <div ref={formRef}>
+ <QuizGate quiz={currentDesign.quiz} themeColor={currentDesign.themeColor} previewMode>
  <CampaignSignupForm
  previewMode
  themeColor={currentDesign.themeColor}
@@ -94,6 +96,7 @@ export default function PreviewFrame({ currentDesign, campaign }) {
  ctaLabel={currentDesign.ctaText || 'Submit Now'}
  onSubmit={() => {}}
  />
+ </QuizGate>
  </div>
  </LeadCaptureLayout>
  </div>
