@@ -186,16 +186,12 @@ export function makeWebhookService(overrides = {}) {
       updateData.nextRetryAt = new Date(Date.now() + delayMs);
       await delivery.update(updateData);
 
-      // Schedule retry
+      // Schedule the retry through the concurrency limiter so retries respect
+      // MAX_CONCURRENT_DELIVERIES (a retry storm must not exhaust the pool).
+      // The row stays status:'pending' with nextRetryAt set, so if the process
+      // restarts before this timer fires, recoverPendingRetries() picks it up.
       setTimeout(() => {
-        attemptDelivery(delivery, subscriber).catch(err => {
-          d.logger.error('[Webhook] retry error', {
-            subscriberName: subscriber.name,
-            deliveryId: delivery.deliveryId,
-            attempt: newAttempts + 1,
-            error: err.message
-          });
-        });
+        enqueueDelivery(delivery, subscriber);
       }, delayMs);
     } else {
       updateData.status = 'failed';
@@ -264,45 +260,31 @@ export function makeWebhookService(overrides = {}) {
   }
 
   /**
-   * Auto-disable a subscriber if it has 10+ consecutive failed deliveries
-   * (no successful delivery more recent than the oldest of the last 10 failures).
+   * Auto-disable a subscriber when its most recent AUTO_DISABLE_THRESHOLD
+   * deliveries are ALL failed — i.e. genuinely CONSECUTIVE failures with no
+   * interleaved success. (Counting all-time failures, as this previously did,
+   * would wrongly disable a healthy subscriber that has merely accumulated old
+   * failures over weeks.)
    */
   async function checkAutoDisable(subscriber) {
     try {
-      const recentFailed = await d.WebhookDelivery.count({
-        where: {
-          subscriberId: subscriber.id,
-          status: 'failed'
-        }
-      });
-
-      if (recentFailed < AUTO_DISABLE_THRESHOLD) return;
-
-      // Check if there's any success more recent than the 10th-oldest failure
-      const tenthFailure = await d.WebhookDelivery.findOne({
-        where: { subscriberId: subscriber.id, status: 'failed' },
+      const recent = await d.WebhookDelivery.findAll({
+        where: { subscriberId: subscriber.id },
         order: [['createdAt', 'DESC']],
-        offset: AUTO_DISABLE_THRESHOLD - 1
+        limit: AUTO_DISABLE_THRESHOLD,
+        attributes: ['status']
       });
 
-      if (!tenthFailure) return;
+      // Not enough history yet, or the streak is broken by a non-failure.
+      if (recent.length < AUTO_DISABLE_THRESHOLD) return;
+      if (!recent.every(r => r.status === 'failed')) return;
 
-      const recentSuccess = await d.WebhookDelivery.count({
-        where: {
-          subscriberId: subscriber.id,
-          status: 'success',
-          createdAt: { [Op.gte]: tenthFailure.createdAt }
-        }
+      await subscriber.update({ enabled: false });
+      d.logger.warn('[Webhook] subscriber auto-disabled after consecutive failures', {
+        subscriberId: subscriber.id,
+        subscriberName: subscriber.name,
+        consecutiveFailures: AUTO_DISABLE_THRESHOLD
       });
-
-      if (recentSuccess === 0) {
-        await subscriber.update({ enabled: false });
-        d.logger.warn('[Webhook] subscriber auto-disabled after consecutive failures', {
-          subscriberId: subscriber.id,
-          subscriberName: subscriber.name,
-          consecutiveFailures: AUTO_DISABLE_THRESHOLD
-        });
-      }
     } catch (err) {
       d.logger.error('[Webhook] checkAutoDisable error', {
         subscriberId: subscriber.id,
@@ -394,25 +376,32 @@ export function makeWebhookService(overrides = {}) {
   }
 
   /**
-   * Recover stale pending deliveries that were lost on server restart.
-   * Picks up deliveries where nextRetryAt has passed and attempts < maxAttempts.
+   * Recover stale pending deliveries that were lost on server restart. Picks up:
+   *  (a) scheduled retries whose nextRetryAt has passed (setTimeout lost on restart), and
+   *  (b) STRANDED FIRST ATTEMPTS — a delivery whose first attempt never completed
+   *      (process died mid-fetch): status still 'pending', nextRetryAt never set,
+   *      created more than 60s ago. The old query (nextRetryAt < now) silently
+   *      skipped these because NULL fails the comparison, losing the lead forever.
+   * Retries go through enqueueDelivery() to respect the concurrency limiter.
    */
   async function recoverPendingRetries() {
+    const now = new Date();
     const staleDeliveries = await d.WebhookDelivery.findAll({
       where: {
         status: 'pending',
-        nextRetryAt: { [Op.lt]: new Date() },
-        attempts: { [Op.lt]: sequelize.col('maxAttempts') }
+        attempts: { [Op.lt]: sequelize.col('maxAttempts') },
+        [Op.or]: [
+          { nextRetryAt: { [Op.lt]: now } },
+          { nextRetryAt: null, createdAt: { [Op.lt]: new Date(now.getTime() - 60_000) } }
+        ]
       },
       include: [{ association: 'subscriber', where: { enabled: true } }],
       limit: 50,
-      order: [['nextRetryAt', 'ASC']]
+      order: [['createdAt', 'ASC']]
     });
 
     for (const delivery of staleDeliveries) {
-      attemptDelivery(delivery, delivery.subscriber).catch(err => {
-        d.logger.error('[Webhook] recovery retry error', { deliveryId: delivery.deliveryId, error: err.message });
-      });
+      enqueueDelivery(delivery, delivery.subscriber);
       // Small delay between retries to avoid hammering
       await new Promise(resolve => setTimeout(resolve, 200));
     }
