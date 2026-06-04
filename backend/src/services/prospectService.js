@@ -11,8 +11,9 @@ import {
   AgentGroupMember,
   sequelize,
 } from '../models/index.js';
-import { resolveAssignedAgentId, getSystemAgentId } from './systemAgent.js';
-import { deductLeadCredit } from './leadCredits.js';
+import { resolveAssignedAgentId, resolveLeadRouting, getSystemAgentId } from './systemAgent.js';
+import { deductLeadCredit, chargeLeadCredit } from './leadCredits.js';
+import { decideAssignment } from './leadQuota.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { dispatchEvent } from './webhookService.js';
@@ -46,7 +47,10 @@ const PROSPECT_UPDATE_FIELDS = [
   'notes',
   'nextFollowUpDate',
   'lastContactDate',
-  'assignedAgentId',
+  // assignedAgentId is intentionally NOT updatable via PUT. Reassignment must go through
+  // assignProspect (PATCH /:id/assign), which charges, fires the correct webhook, and
+  // releases held leads. A raw PUT could otherwise silently reassign with no charge or
+  // webhook — and bypass the lead-quota gate.
   'demographics',
   'location',
   'tags',
@@ -56,8 +60,11 @@ const defaultDeps = {
   models: { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, AgentGroup, AgentGroupMember },
   sequelize,
   resolveAssignedAgentId,
+  resolveLeadRouting,
   getSystemAgentId,
   deductLeadCredit,
+  chargeLeadCredit,
+  decideAssignment,
   buildProspectWhere,
   dispatchEvent,
   sendLeadEvent: metaSendLeadEvent,
@@ -184,13 +191,17 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
-    // Resolve secure assignment (agent/admin override -> qr owner -> campaign -> system)
-    let assignedAgentId = await d.resolveAssignedAgentId({
+    // Resolve secure assignment (agent/admin override -> qr owner -> campaign -> system).
+    // resolveLeadRouting also reports the route taken (via), which lead-quota uses to
+    // tell exempt (self/admin) from gated (qr/package/fallback) delivery.
+    const routing = await d.resolveLeadRouting({
       reqUser: user,
       requestedAgentId: body.assignedAgentId,
       campaignId: incoming.campaignId,
       qrTagId: incoming.qrTagId,
     });
+    let assignedAgentId = routing.agentId;
+    let routeVia = routing.via;
 
     // Normalize phone to E.164 format
     if (incoming.phone) {
@@ -349,6 +360,7 @@ export function makeProspectService(overrides = {}) {
     } else if (sourceQrTag?.assignedAgentId) {
       // Direct FK lookup — faster than phone-based search
       assignedAgentId = sourceQrTag.assignedAgentId;
+      routeVia = 'qr';
     } else if (sourceQrTag?.assignedAgentPhone) {
       // Fallback for QR tags not yet backfilled
       resolvedAgent = {
@@ -365,12 +377,37 @@ export function makeProspectService(overrides = {}) {
       });
       if (agentByPhone) {
         assignedAgentId = agentByPhone.id;
+        routeVia = 'qr';
       }
     }
 
-    // Wrap all DB writes in a transaction for data integrity
+    // Wrap all DB writes in a transaction for data integrity.
+    // Lead-quota gate: decideAssignment may QUARANTINE (hold) the lead, and for a
+    // funded gated route it charges a credit authoritatively (charged:true ⇒ skip the
+    // best-effort deduct below to avoid double-charging). Soft/exempt routes are
+    // unchanged: assign + best-effort deduct.
+    let quarantined = false;
+    let finalAgentId = assignedAgentId;
     const prospect = await d.sequelize.transaction(async (t) => {
-      const newProspect = await m.Prospect.create({ ...incoming, assignedAgentId }, { transaction: t });
+      const decision = await d.decideAssignment({
+        campaign: sourceCampaign,
+        routing: { agentId: assignedAgentId, via: routeVia },
+        campaignId: incoming.campaignId,
+        transaction: t,
+        charge: d.chargeLeadCredit,
+      });
+      quarantined = decision.action === 'quarantine';
+      finalAgentId = quarantined ? null : (decision.assignedAgentId ?? null);
+
+      const newProspect = await m.Prospect.create(
+        {
+          ...incoming,
+          assignedAgentId: finalAgentId,
+          quarantinedAt: quarantined ? new Date() : null,
+          quarantineReason: quarantined ? decision.quarantineReason : null,
+        },
+        { transaction: t }
+      );
 
       const campaignName = sourceCampaign?.name || 'Unknown Campaign';
       const qrTagName = sourceQrTag?.name || sourceQrTag?.label || 'Unknown QR';
@@ -392,26 +429,41 @@ export function makeProspectService(overrides = {}) {
         { transaction: t }
       );
 
-      // Activity: assigned
-      await m.ProspectActivity.create(
-        {
-          prospectId: newProspect.id,
-          type: 'assigned',
-          actorUserId: user?.id || null,
-          description: `Assigned to agent ${assignedAgentId}`,
-          metadata: { assignedAgentId },
-        },
-        { transaction: t }
-      );
+      // Activity: assignment outcome (assigned, or held under quota)
+      if (quarantined) {
+        await m.ProspectActivity.create(
+          {
+            prospectId: newProspect.id,
+            type: 'updated',
+            actorUserId: user?.id || null,
+            description: 'Held — no funded agent (lead quota)',
+            metadata: { quarantined: true, reason: decision.quarantineReason, via: routeVia },
+          },
+          { transaction: t }
+        );
+      } else {
+        await m.ProspectActivity.create(
+          {
+            prospectId: newProspect.id,
+            type: 'assigned',
+            actorUserId: user?.id || null,
+            description: `Assigned to agent ${finalAgentId}`,
+            metadata: { assignedAgentId: finalAgentId },
+          },
+          { transaction: t }
+        );
 
-      // Deduct lead credit from agent's package
-      if (assignedAgentId) {
-        await d
-          .deductLeadCredit(assignedAgentId, 1, t)
-          .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
+        // Deduct lead credit. Skip when decideAssignment already charged authoritatively
+        // (charged:true) — otherwise the soft/exempt path does the best-effort deduct.
+        if (finalAgentId && decision.charged !== true) {
+          await d
+            .deductLeadCredit(finalAgentId, 1, t)
+            .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
+        }
       }
 
-      // Update QR tag analytics (atomic to avoid read-modify-write race)
+      // Update QR tag analytics (atomic to avoid read-modify-write race).
+      // A quarantined lead is still a captured conversion, so we count it.
       if (newProspect.qrTagId && sourceQrTag) {
         await sourceQrTag.update(
           {
@@ -432,6 +484,10 @@ export function makeProspectService(overrides = {}) {
       return newProspect;
     });
 
+    // Reflect the committed outcome (null when quarantined) for the rest of the
+    // function — webhook dispatch, agent load, and the returned payload.
+    assignedAgentId = finalAgentId;
+
     // --- Webhook dispatch (AFTER transaction commits, fire-and-forget) ---
     // Load assigned agent record if we have an assignedAgentId but no resolvedAgent
     let agentForWebhook = resolvedAgent;
@@ -449,19 +505,23 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
-    d.dispatchEvent('lead.created', () =>
-      buildLeadCreatedPayload(
-        prospect,
-        routingMode,
-        agentForWebhook,
-        assignedAgentId,
-        sourceCampaign,
-        sourceQrTag,
-        agentGroup
-      )
-    ).catch((err) => {
-      d.logger.error('[Webhook] dispatch error', { error: err?.message || String(err) });
-    });
+    // Suppress the Lyfe delivery webhook for quarantined (held) leads — there is no
+    // agent to deliver to. It fires on release (slice 4) as the first lead.created.
+    if (!quarantined) {
+      d.dispatchEvent('lead.created', () =>
+        buildLeadCreatedPayload(
+          prospect,
+          routingMode,
+          agentForWebhook,
+          assignedAgentId,
+          sourceCampaign,
+          sourceQrTag,
+          agentGroup
+        )
+      ).catch((err) => {
+        d.logger.error('[Webhook] dispatch error', { error: err?.message || String(err) });
+      });
+    }
 
     // Meta CAPI dispatch (fire-and-forget; post-commit; guard inside sendLeadEvent)
     d.sendLeadEvent(prospect, {
@@ -526,7 +586,7 @@ export function makeProspectService(overrides = {}) {
       });
     }
 
-    return { prospect, assignedAgentId, assignedAgent, prospectWithCampaign };
+    return { prospect, assignedAgentId, assignedAgent, prospectWithCampaign, quarantined };
   }
 
   /**
@@ -593,23 +653,8 @@ export function makeProspectService(overrides = {}) {
     const safeUpdates = Object.fromEntries(Object.entries(body).filter(([k]) => PROSPECT_UPDATE_FIELDS.includes(k)));
     await prospect.update(safeUpdates);
 
-    // Check for manual unassignment
-    if (oldAssignedAgentId && body.assignedAgentId === null) {
-      const agentName = oldAssignedAgent
-        ? `${oldAssignedAgent.firstName} ${oldAssignedAgent.lastName}`.trim() || oldAssignedAgent.email
-        : 'Unknown Agent';
-
-      await m.ProspectActivity.create({
-        prospectId: prospect.id,
-        type: 'updated',
-        actorUserId: user.id,
-        description: `Lead manually unassigned from ${agentName} by ${user.firstName || 'Admin'}`,
-        metadata: {
-          previousAssignedAgentId: oldAssignedAgentId,
-          reason: 'manual_unassignment',
-        },
-      });
-    }
+    // (Reassignment / unassignment is handled exclusively by assignProspect — see the
+    // PROSPECT_UPDATE_FIELDS note — so PUT no longer needs unassignment side-effects.)
 
     // If status changed to 'won', create commission and update metrics atomically
     if (oldStatus !== 'won' && safeUpdates.leadStatus === 'won') {
@@ -688,14 +733,17 @@ export function makeProspectService(overrides = {}) {
         metadata: { previousAgentId },
       });
 
-      // Fire lead.unassigned webhook — resolve lyfeId for previous agent
-      let previousAgentLyfeId = previousAgentId;
-      if (previousAgentId) {
-        const prevAgent = await m.User.findByPk(previousAgentId, { attributes: ['lyfeId'] });
-        if (prevAgent?.lyfeId) previousAgentLyfeId = prevAgent.lyfeId;
+      // Fire lead.unassigned webhook — but NOT for a HELD (quarantined) lead: Lyfe never
+      // received a lead.created for it (the create webhook was suppressed), so an
+      // unassigned event would reference a lead Lyfe does not know about.
+      if (!prospect.quarantinedAt) {
+        let previousAgentLyfeId = previousAgentId;
+        if (previousAgentId) {
+          const prevAgent = await m.User.findByPk(previousAgentId, { attributes: ['lyfeId'] });
+          if (prevAgent?.lyfeId) previousAgentLyfeId = prevAgent.lyfeId;
+        }
+        d.dispatchEvent('lead.unassigned', () => buildLeadUnassignedPayload(prospect, previousAgentLyfeId));
       }
-
-      d.dispatchEvent('lead.unassigned', () => buildLeadUnassignedPayload(prospect, previousAgentLyfeId));
 
       return { prospect, agent: null, prospectWithCampaign: prospect };
     }
@@ -709,6 +757,60 @@ export function makeProspectService(overrides = {}) {
       throw new d.AppError('Invalid or inactive agent', 400);
     }
 
+    // A manual admin assign is an EXEMPT route (decision a): it always delivers and does
+    // a best-effort deduct. If the prospect is currently HELD under lead-quota, this is a
+    // RELEASE — clear the hold ATOMICALLY (so a double-click / concurrent sweep can't
+    // deliver twice) and fire lead.created, the FIRST delivery to Lyfe (which never saw
+    // the suppressed create webhook), NOT lead.assigned.
+    if (prospect.quarantinedAt) {
+      const [releaseRows] = await d.sequelize.query(
+        `UPDATE prospects
+            SET "assignedAgentId" = :agentId, "lastContactDate" = NOW(),
+                "quarantinedAt" = NULL, "quarantineReason" = NULL, "updatedAt" = NOW()
+          WHERE id = :prospectId AND "quarantinedAt" IS NOT NULL
+          RETURNING id`,
+        { replacements: { agentId, prospectId: prospect.id } }
+      );
+      const released = Array.isArray(releaseRows) && releaseRows.length > 0;
+      await prospect.reload();
+
+      if (!released) {
+        // Lost the race — already released elsewhere. Do not double-deliver, and return
+        // agent:null so the controller does not email an agent about a lead a concurrent
+        // release/sweep already assigned (possibly to a different agent).
+        return { prospect, agent: null, prospectWithCampaign: prospect };
+      }
+
+      await m.ProspectActivity.create({
+        prospectId: prospect.id,
+        type: 'assigned',
+        actorUserId: user?.id || null,
+        description: `Released from hold and assigned to ${agent.firstName} ${agent.lastName}`.trim(),
+        metadata: { assignedAgentId: agentId, previousAgentId, released: true },
+      });
+
+      await d
+        .deductLeadCredit(agentId)
+        .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
+
+      const prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
+        include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+      });
+
+      const agentForWebhook = {
+        phone: agent.phone || null,
+        email: agent.email || null,
+        name: `${agent.firstName || ''} ${agent.lastName || ''}`.trim(),
+        id: agent.lyfeId || agent.id,
+      };
+      d.dispatchEvent('lead.created', () =>
+        buildLeadCreatedPayload(prospect, 'direct', agentForWebhook, agentId, prospectWithCampaign?.campaign || null, null, null)
+      );
+
+      return { prospect, agent, prospectWithCampaign };
+    }
+
+    // ── Normal reassign (not held) ──
     await prospect.update({
       assignedAgentId: agentId,
       lastContactDate: new Date(),
@@ -759,6 +861,10 @@ export function makeProspectService(overrides = {}) {
     const scopeFilter = await d.buildProspectWhere(user);
     const whereConditions = {
       id: { [Op.in]: prospectIds },
+      // Bulk assign skips HELD leads — releasing a held lead must deliver it to Lyfe,
+      // which bulk update can't do per-lead. Release held leads via single assign
+      // (PATCH /:id/assign) or the auto-release sweep.
+      quarantinedAt: null,
       ...scopeFilter,
     };
 
@@ -986,6 +1092,42 @@ export function makeProspectService(overrides = {}) {
     });
   }
 
+  /**
+   * List HELD (quarantined) leads, FIFO by quarantinedAt (the release order). Scoped to
+   * the caller's access; optionally filtered by campaign. Release is done via the
+   * existing assignProspect (PATCH /:id/assign) or the auto-release sweep on top-up.
+   */
+  async function listHeldProspects(user, params = {}) {
+    const { campaignId } = params;
+    const limit = Math.min(parseInt(params.limit, 10) || 100, 500);
+    const scopeFilter = await d.buildProspectWhere(user);
+    const where = { ...scopeFilter, quarantinedAt: { [Op.ne]: null } };
+    if (campaignId) where.campaignId = campaignId;
+
+    const { count, rows } = await m.Prospect.findAndCountAll({
+      where,
+      include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+      order: [['quarantinedAt', 'ASC']], // FIFO — oldest held first (the release order)
+      limit,
+    });
+
+    const held = rows.map((p) => ({
+      id: p.id,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      phone: p.phone,
+      email: p.email,
+      leadSource: p.leadSource,
+      campaignId: p.campaignId,
+      campaignName: p.campaign?.name || null,
+      quarantinedAt: p.quarantinedAt,
+      quarantineReason: p.quarantineReason,
+      createdAt: p.createdAt,
+    }));
+
+    return { count, held };
+  }
+
   return {
     createProspect,
     getProspect,
@@ -995,6 +1137,7 @@ export function makeProspectService(overrides = {}) {
     bulkAssignProspects,
     getProspectStats,
     listProspects,
+    listHeldProspects,
     scheduleFollowUp,
     trackProspectView,
   };
@@ -1009,5 +1152,6 @@ export const assignProspect = _default.assignProspect;
 export const bulkAssignProspects = _default.bulkAssignProspects;
 export const getProspectStats = _default.getProspectStats;
 export const listProspects = _default.listProspects;
+export const listHeldProspects = _default.listHeldProspects;
 export const scheduleFollowUp = _default.scheduleFollowUp;
 export const trackProspectView = _default.trackProspectView;

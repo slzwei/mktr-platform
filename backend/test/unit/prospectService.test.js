@@ -122,8 +122,10 @@ function buildMocks() {
   };
 
   const resolveAssignedAgentId = jest.fn().mockResolvedValue('agent-1');
+  const resolveLeadRouting = jest.fn().mockResolvedValue({ agentId: 'agent-1', via: 'admin' });
   const getSystemAgentId = jest.fn().mockResolvedValue('system-agent-id');
   const deductLeadCredit = jest.fn().mockResolvedValue(true);
+  const chargeLeadCredit = jest.fn().mockResolvedValue(true);
   const buildProspectWhere = jest.fn().mockResolvedValue({});
   const dispatchEvent = jest.fn().mockResolvedValue(undefined);
 
@@ -150,8 +152,10 @@ function buildMocks() {
     models: { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, AgentGroup, AgentGroupMember },
     sequelize,
     resolveAssignedAgentId,
+    resolveLeadRouting,
     getSystemAgentId,
     deductLeadCredit,
+    chargeLeadCredit,
     buildProspectWhere,
     dispatchEvent,
     AppError,
@@ -164,8 +168,10 @@ function makeService(mocks) {
     models: mocks.models,
     sequelize: mocks.sequelize,
     resolveAssignedAgentId: mocks.resolveAssignedAgentId,
+    resolveLeadRouting: mocks.resolveLeadRouting,
     getSystemAgentId: mocks.getSystemAgentId,
     deductLeadCredit: mocks.deductLeadCredit,
+    chargeLeadCredit: mocks.chargeLeadCredit,
     buildProspectWhere: mocks.buildProspectWhere,
     dispatchEvent: mocks.dispatchEvent,
     AppError: mocks.AppError,
@@ -432,7 +438,7 @@ describe('prospectService (unit)', () => {
         expect(createArg.attributionId).toBeUndefined();
         expect(createArg.sessionId).toBeUndefined();
         // Agent routing must use campaign X, not Y's QR.
-        expect(mocks.resolveAssignedAgentId).toHaveBeenCalledWith(
+        expect(mocks.resolveLeadRouting).toHaveBeenCalledWith(
           expect.objectContaining({ campaignId: 'camp-X', qrTagId: undefined })
         );
       });
@@ -453,7 +459,7 @@ describe('prospectService (unit)', () => {
         expect(createArg.qrTagId).toBeUndefined();
         expect(createArg.attributionId).toBeUndefined();
         expect(createArg.sessionId).toBeUndefined();
-        expect(mocks.resolveAssignedAgentId).toHaveBeenCalledWith(
+        expect(mocks.resolveLeadRouting).toHaveBeenCalledWith(
           expect.objectContaining({ campaignId: 'camp-X', qrTagId: undefined })
         );
       });
@@ -471,7 +477,7 @@ describe('prospectService (unit)', () => {
         expect(createArg.qrTagId).toBeUndefined();
         expect(createArg.attributionId).toBeUndefined();
         expect(createArg.sessionId).toBeUndefined();
-        expect(mocks.resolveAssignedAgentId).toHaveBeenCalledWith(
+        expect(mocks.resolveLeadRouting).toHaveBeenCalledWith(
           expect.objectContaining({ campaignId: 'camp-X', qrTagId: undefined })
         );
       });
@@ -487,7 +493,7 @@ describe('prospectService (unit)', () => {
         expect(createArg.campaignId).toBe('camp-X');
         expect(createArg.qrTagId).toBe('qr-X');
         expect(createArg.attributionId).toBe('attr-X');
-        expect(mocks.resolveAssignedAgentId).toHaveBeenCalledWith(
+        expect(mocks.resolveLeadRouting).toHaveBeenCalledWith(
           expect.objectContaining({ campaignId: 'camp-X', qrTagId: 'qr-X' })
         );
       });
@@ -512,7 +518,7 @@ describe('prospectService (unit)', () => {
     });
 
     it('deducts lead credit for assigned agent', async () => {
-      mocks.resolveAssignedAgentId.mockResolvedValue('agent-1');
+      mocks.resolveLeadRouting.mockResolvedValue({ agentId: 'agent-1', via: 'admin' });
 
       const body = { firstName: 'Test', campaignId: 'camp-1' };
 
@@ -526,7 +532,7 @@ describe('prospectService (unit)', () => {
     });
 
     it('does not deduct lead credit when no agent is assigned', async () => {
-      mocks.resolveAssignedAgentId.mockResolvedValue(null);
+      mocks.resolveLeadRouting.mockResolvedValue({ agentId: null, via: 'fallback' });
 
       const body = { firstName: 'Test', campaignId: 'camp-1' };
 
