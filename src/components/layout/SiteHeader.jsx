@@ -6,11 +6,13 @@ import { getDefaultRouteForRole } from "@/lib/utils";
 import { brand } from "@/lib/brand";
 import MktrWordmark from "@/components/brand/MktrWordmark";
 
+// Pre-launch one-pager: nav points at homepage section anchors (path-qualified
+// so they also work from other marketing pages that render this shared header).
+// The /features, /pricing, /about, /Contact pages are intentionally not linked
+// here (hidden pending rewrite; Contact moves to the footer email/WhatsApp link).
 const navLinks = [
- { label: "Features", href: "/features" },
- { label: "Pricing", href: "/pricing" },
- { label: "About", href: "/about" },
- { label: "Contact", href: "/Contact" },
+ { label: "How it works", href: "/#how-it-works" },
+ { label: "What you get", href: "/#features" },
 ];
 
 export default function SiteHeader() {
@@ -35,13 +37,6 @@ export default function SiteHeader() {
  setMenuOpen(false);
  }, [location.pathname]);
 
- const isActive = (href) => location.pathname === href;
-
- const linkColorClass = (href) =>
- isActive(href)
- ? "text-terracotta"
- : "text-background/60 hover:text-background/90";
-
  return (
  <>
  <header
@@ -62,14 +57,13 @@ export default function SiteHeader() {
  {/* Desktop Nav */}
  <nav className=" hidden md:flex items-center gap-1">
  {navLinks.map((link) => (
- <Link
+ <a
  key={link.href}
- to={link.href}
- aria-current={isActive(link.href) ? "page" : undefined}
- className={`px-4 py-2 text-sm font-medium transition-colors rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-terracotta ${linkColorClass(link.href)}`}
+ href={link.href}
+ className="px-4 py-2 text-sm font-medium transition-colors rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-terracotta text-background/60 hover:text-background/90"
  >
  {link.label}
- </Link>
+ </a>
  ))}
  </nav>
 
@@ -90,12 +84,12 @@ export default function SiteHeader() {
  >
  Log In
  </Link>
- <Link
- to="/AdminDashboard"
+ <a
+ href="/#waitlist"
  className="px-5 py-2 text-sm font-semibold text-background rounded-full bg-terracotta hover:bg-terracotta-dark transition-colors hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-terracotta focus-visible:ring-offset-2 focus-visible:ring-offset-ink"
  >
- Get Started
- </Link>
+ Join the waitlist
+ </a>
  </>
  )}
  </div>
@@ -148,17 +142,14 @@ export default function SiteHeader() {
 
  <div className="flex-1 flex flex-col gap-1 px-4 pt-6">
  {navLinks.map((link) => (
- <Link
+ <a
  key={link.href}
- to={link.href}
+ href={link.href}
  onClick={toggleMenu}
- aria-current={isActive(link.href) ? "page" : undefined}
- className={`px-4 py-3 rounded-lg text-base font-medium transition-colors ${
- isActive(link.href) ? "text-terracotta bg-terracotta/10" : "text-background/60 hover:text-background/90"
- }`}
+ className="px-4 py-3 rounded-lg text-base font-medium transition-colors text-background/60 hover:text-background/90"
  >
  {link.label}
- </Link>
+ </a>
  ))}
  </div>
 
@@ -192,13 +183,13 @@ export default function SiteHeader() {
  >
  Log In
  </Link>
- <Link
- to="/AdminDashboard"
+ <a
+ href="/#waitlist"
  onClick={toggleMenu}
  className="block w-full text-center py-3 px-4 rounded-xl text-background text-sm font-semibold bg-terracotta hover:bg-terracotta-dark transition-colors"
  >
- Get Started Free
- </Link>
+ Join the waitlist
+ </a>
  </>
  )}
  </div>
