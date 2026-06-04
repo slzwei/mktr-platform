@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/node';
-import { hashEmail, hashPhone, hashExternalId } from '../utils/piiHashing.js';
+import { hashEmail, hashPhoneE164, hashExternalId } from '../utils/piiHashing.js';
 import { logger } from '../utils/logger.js';
 
 // TikTok Events API ("Events API 2.0"). Mirror of metaCapiService.js — the
@@ -10,8 +10,8 @@ const TIKTOK_API_BASE = 'https://business-api.tiktok.com/open_api/v1.3/event/tra
 /**
  * Guard: which prospects are eligible for TikTok Events API dispatch?
  *
- * Mirrors shouldFireCapi exactly — origin gates dispatch, not the funnel event:
- *   - Master switch off / missing credentials (token, pixel id)
+ * Mirrors shouldFireCapi in spirit — origin gates dispatch, not the funnel event:
+ *   - Master switch off / missing access token
  *   - Retell-source prospects (no ad-attribution chain)
  *   - Meta Lead Ads-source prospects (originated inside Meta, not TikTok)
  *
@@ -23,7 +23,6 @@ const TIKTOK_API_BASE = 'https://business-api.tiktok.com/open_api/v1.3/event/tra
 export function shouldFireTikTok(prospect) {
   if (process.env.TIKTOK_EVENTS_API_ENABLED !== 'true') return false;
   if (!process.env.TIKTOK_ACCESS_TOKEN) return false;
-  if (!process.env.TIKTOK_PIXEL_ID) return false;
   if (!prospect) return false;
   if (prospect.leadSource === 'call_bot') return false;
   if (prospect.retellCallId) return false;
@@ -61,7 +60,7 @@ export function _buildPayload(prospect, ctx, options) {
 
   if (marketingConsent) {
     user.email = hashEmail(prospect.email);
-    user.phone = hashPhone(prospect.phone);
+    user.phone = hashPhoneE164(prospect.phone);
   }
 
   // Strip undefined/null/empty so we don't send placeholder hashes / empty ids
@@ -118,6 +117,14 @@ export async function sendConversionEvent(prospect, ctx = {}, options = {}, deps
     return { sent: false, reason: 'guarded' };
   }
 
+  // Resolve the pixel id: per-campaign override first, then env. A campaign-level
+  // tiktokPixelId can fire even when env TIKTOK_PIXEL_ID is unset; bail only if
+  // neither is present (mirrors the browser's campaign.tiktokPixelId || env).
+  const pixelId = ctx.pixelIdOverride || process.env.TIKTOK_PIXEL_ID;
+  if (!pixelId) {
+    return { sent: false, reason: 'no_pixel_id' };
+  }
+
   const accessToken = process.env.TIKTOK_ACCESS_TOKEN;
   const testEventCode = process.env.TIKTOK_TEST_EVENT_CODE || undefined;
   const payload = _buildPayload(prospect, ctx, { testEventCode, eventName });
@@ -129,8 +136,10 @@ export async function sendConversionEvent(prospect, ctx = {}, options = {}, deps
       body: JSON.stringify(payload),
     });
     const body = await res.json().catch(() => ({}));
-    // TikTok signals logical errors via a non-zero `code` even on HTTP 200.
-    const ok = res.ok && (body.code === 0 || body.code === undefined);
+    // TikTok signals logical errors via a non-zero `code` even on HTTP 200, so
+    // success requires HTTP 2xx AND body.code === 0 (a missing/unparseable code
+    // is treated as a failure).
+    const ok = res.ok && body.code === 0;
 
     if (!ok) {
       Sentry.captureException(new Error(`TikTok Events API failed: HTTP ${res.status} code ${body.code}`), {
