@@ -10,8 +10,9 @@
  * Mirrors 026-add-campaign-meta-pixel-id.js. Additive nullable column with no
  * default — instant on any table size, safe rollback.
  *
- * Numbered 033 to avoid colliding with the concurrent external-agents feature
- * (027,028,030,031,032) and the quiz-type migration (029).
+ * Numbered 034: main's homepage/waitlist PR (#20) already shipped
+ * 033-create-waitlist-signups; the quiz-type migration is 029; the external-agents
+ * feature occupies 027,028,030,031,032.
  */
 export async function up(queryInterface, Sequelize) {
   await queryInterface
