@@ -3,6 +3,8 @@ import { brand } from"@/lib/brand";
 import MktrWordmark from"@/components/brand/MktrWordmark";
 
 const FooterSection = () => {
+ const whatsappDigits = (brand.contactWhatsapp || "").replace(/\D/g,"");
+
  return (
  <footer className="mktr-footer">
  <div className="mktr-footer-grid">
@@ -11,30 +13,32 @@ const FooterSection = () => {
  <MktrWordmark size={32} />
  </div>
  <p className="mktr-footer-desc">
- Singapore's AI-powered lead generation platform for insurance
- and property agents. Capture, qualify, and convert prospects at scale.
+ Singapore's lead generation service for insurance agents. We capture,
+ qualify, and route exclusive leads straight to your phone.
  </p>
  </div>
 
  <div>
- <h4 className="mktr-footer-heading">Platform</h4>
- <Link to="/LeadCapture" className="mktr-footer-link">Lead Capture</Link>
- <Link to="/AdminDashboard" className="mktr-footer-link">Dashboard</Link>
- <a href="#features" className="mktr-footer-link">Features</a>
- </div>
-
- <div>
- <h4 className="mktr-footer-heading">Support</h4>
- <a href="#" className="mktr-footer-link">Documentation</a>
- <a href="#" className="mktr-footer-link">Help Center</a>
- <Link to="/Contact" className="mktr-footer-link">Contact Us</Link>
+ <h4 className="mktr-footer-heading">Product</h4>
+ <a href="/#how-it-works" className="mktr-footer-link">How it works</a>
+ <a href="/#features" className="mktr-footer-link">What you get</a>
+ <a href="/#waitlist" className="mktr-footer-link">Join the waitlist</a>
  </div>
 
  <div>
  <h4 className="mktr-footer-heading">Company</h4>
- <a href="#" className="mktr-footer-link">About</a>
+ {brand.contactEmail && (
+ <a href={`mailto:${brand.contactEmail}`} className="mktr-footer-link">Contact us</a>
+ )}
+ {whatsappDigits && (
+ <a
+ href={`https://wa.me/${whatsappDigits}`}
+ target="_blank" rel="noopener noreferrer" className="mktr-footer-link"
+ >
+ WhatsApp
+ </a>
+ )}
  <Link to="/personal-data-policy" className="mktr-footer-link">Privacy Policy</Link>
- <a href="#" className="mktr-footer-link">Terms of Service</a>
  </div>
  </div>
 

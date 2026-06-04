@@ -96,3 +96,11 @@ export function trackLead(params = {}, eventId) {
 export function trackCompleteRegistration(params = {}, eventId) {
   trackEvent('CompleteRegistration', params, eventId ? { eventID: eventId } : undefined);
 }
+
+/**
+ * Standard Meta "Subscribe" event for the pre-launch homepage waitlist. Distinct
+ * from `trackLead` so waitlist signups don't pollute lead-capture conversion stats.
+ */
+export function trackSubscribe(params = {}) {
+  trackEvent('Subscribe', params);
+}

@@ -1,22 +1,16 @@
 import { useEffect } from"react";
-import { useAuthStore } from"@/stores/authStore";
 import SiteHeader from"@/components/layout/SiteHeader";
 import {
  FloatingElements,
  HeroSection,
  LeadSourcesSection,
  FeaturesSection,
- TestimonialSection,
- PricingSection,
  CTASection,
  FooterSection,
- AnnouncementModal,
 } from"@/components/homepage";
 import './Homepage.css';
 
 export default function Homepage() {
- const { user: authUser, token: authToken } = useAuthStore();
-
  useEffect(() => {
  // Smooth scrolling
  document.documentElement.style.scrollBehavior = 'smooth';
@@ -54,11 +48,8 @@ export default function Homepage() {
  <HeroSection />
  <LeadSourcesSection />
  <FeaturesSection />
- <TestimonialSection />
- <PricingSection />
  <CTASection />
  <FooterSection />
- <AnnouncementModal />
  </div>
  );
 }
