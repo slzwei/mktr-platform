@@ -73,16 +73,27 @@ async function findFirstActiveAgentByIds(candidateIds = []) {
   return null;
 }
 
-export async function resolveAssignedAgentId({ reqUser, requestedAgentId, campaignId, qrTagId }) {
+/**
+ * Resolve a lead's agent AND report which route chose it, so lead-quota enforcement
+ * can tell an exempt route (authenticated self / admin-explicit) from a gated route
+ * (qr / package / fallback).
+ *
+ * Returns { agentId, via } with via ∈ 'self' | 'admin' | 'qr' | 'package' | 'fallback'.
+ * 'fallback' means nothing matched and agentId is the System Agent (or DEFAULT_AGENT_ID).
+ * The tier logic is byte-for-byte the previous resolveAssignedAgentId; that function is
+ * now a thin wrapper that returns `.agentId`, so retell / meta / createProspect are
+ * unchanged until they opt into routing-aware behaviour.
+ */
+export async function resolveLeadRouting({ reqUser, requestedAgentId, campaignId, qrTagId }) {
   // 1) If requester is an agent, they self-assign
   if (reqUser && reqUser.role === 'agent') {
-    return reqUser.id;
+    return { agentId: reqUser.id, via: 'self' };
   }
 
   // 2) If requester is admin and provided a valid active agent, accept it
   if (reqUser && reqUser.role === 'admin' && requestedAgentId) {
     const valid = await User.findOne({ where: { id: requestedAgentId, role: 'agent', isActive: true } });
-    if (valid) return valid.id;
+    if (valid) return { agentId: valid.id, via: 'admin' };
   }
 
   // 3) Try the agent the QR is directly assigned to (admin sets this via
@@ -95,7 +106,7 @@ export async function resolveAssignedAgentId({ reqUser, requestedAgentId, campai
     const candidateId = qr?.assignedAgentId || qr?.ownerUserId;
     if (candidateId) {
       const agent = await User.findOne({ where: { id: candidateId, role: 'agent', isActive: true } });
-      if (agent) return agent.id;
+      if (agent) return { agentId: agent.id, via: 'qr' };
     }
   }
 
@@ -158,14 +169,23 @@ export async function resolveAssignedAgentId({ reqUser, requestedAgentId, campai
           const fallback = activeAgents[Math.floor(Math.random() * activeAgents.length)];
           return fallback;
         });
-        if (result) return result;
+        if (result) return { agentId: result, via: 'package' };
       }
     }
   }
 
   // 5) Fallback to System Agent
   const systemId = await getSystemAgentId();
-  return systemId;
+  return { agentId: systemId, via: 'fallback' };
+}
+
+/**
+ * Back-compat wrapper: returns just the resolved agent id (System Agent on fallback),
+ * exactly as before. Existing callers (retell / meta / createProspect) are unchanged.
+ */
+export async function resolveAssignedAgentId(ctx) {
+  const { agentId } = await resolveLeadRouting(ctx);
+  return agentId;
 }
 
 
