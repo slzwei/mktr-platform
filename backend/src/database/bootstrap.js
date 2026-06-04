@@ -93,6 +93,18 @@ export async function bootstrapDatabase() {
       }, 10 * 60 * 1000); // every 10 min
       logger.info('[AgentSync] periodic sync scheduled (10 min interval)');
     }
+
+    // Lead-quota safety net: drain held queues every 2 minutes in case a package
+    // top-up did not fire its inline release sweep.
+    setInterval(async () => {
+      try {
+        const { sweepAll } = await import('../services/releaseSweep.js');
+        const n = await sweepAll();
+        if (n > 0) logger.info(`[ReleaseSweep] periodic sweep released ${n} held lead(s)`);
+      } catch (err) {
+        logger.warn('[ReleaseSweep] periodic sweep failed', { error: err?.message });
+      }
+    }, 2 * 60 * 1000); // every 2 min
   }
 
   logger.info('Database bootstrap complete.');

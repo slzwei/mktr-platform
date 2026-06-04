@@ -1,6 +1,7 @@
 import { LeadPackage, LeadPackageAssignment, User, Campaign } from '../models/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { sweepCampaign } from './releaseSweep.js';
 
 /**
  * List lead packages with optional filters.
@@ -82,6 +83,14 @@ export async function assignPackage({ agentId, packageId }) {
     purchaseDate: new Date()
   });
 
+  // New funded package → drain any held lead-quota queue for its campaign (async,
+  // fire-and-forget; the assignment response must not wait on the sweep).
+  if (pkg.campaignId) {
+    sweepCampaign(pkg.campaignId).catch((err) =>
+      logger.error('[ReleaseSweep] assignPackage trigger failed', { error: err?.message || String(err) })
+    );
+  }
+
   return {
     assignment,
     agent,
@@ -152,10 +161,21 @@ export async function updateAssignment(id, { leadsRemaining }) {
       throw new AppError('Invalid lead count', 400);
     }
 
+    const prevCount = assignment.leadsRemaining;
     await assignment.update({
       leadsRemaining: newCount,
       status: newCount === 0 ? 'exhausted' : 'active'
     });
+
+    // Top-up (credits increased) → drain the held queue for this assignment's campaign.
+    if (newCount > prevCount) {
+      const pkg = await LeadPackage.findByPk(assignment.leadPackageId, { attributes: ['campaignId'] });
+      if (pkg?.campaignId) {
+        sweepCampaign(pkg.campaignId).catch((err) =>
+          logger.error('[ReleaseSweep] updateAssignment trigger failed', { error: err?.message || String(err) })
+        );
+      }
+    }
   }
 
   return { assignment };
