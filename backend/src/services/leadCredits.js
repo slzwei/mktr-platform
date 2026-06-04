@@ -84,3 +84,86 @@ export async function deductLeadCredit(agentId, amount = 1, externalTransaction 
         return false;
     }
 }
+
+/**
+ * Authoritatively charge ONE lead credit to an agent, scoped to a campaign.
+ *
+ * This is the GATE for hard-quota campaigns. Unlike `deductLeadCredit` (best-effort,
+ * campaign-agnostic, returns true even on a partial/zero charge), this:
+ *   - draws ONLY from packages tied to `campaignId` (so the charge matches the
+ *     campaign that made the agent eligible in the round-robin),
+ *   - is atomic & race-safe: a CTE picks the oldest eligible package
+ *     `FOR UPDATE SKIP LOCKED` and decrements it in one statement, so the last credit
+ *     is never double-spent and `leadsRemaining` never goes negative,
+ *   - returns true ONLY if a full credit was charged. A `false` MUST block delivery —
+ *     the caller quarantines the lead rather than hand it out unpaid.
+ *
+ * Falls back to the agent's campaign-agnostic `owed_leads_count` bucket. When a caller
+ * transaction is passed it is used (NOT committed); otherwise this owns its own.
+ * A clean "no credit" outcome returns false WITHOUT poisoning the caller's transaction
+ * (the guarded UPDATEs simply match zero rows); only real DB errors propagate.
+ *
+ * @param {string} agentId
+ * @param {string} campaignId
+ * @param {import('sequelize').Transaction|null} externalTransaction
+ * @returns {Promise<boolean>} true iff exactly one credit was charged
+ */
+export async function chargeLeadCredit(agentId, campaignId, externalTransaction = null) {
+    if (!agentId || !campaignId) return false;
+
+    const ownTransaction = !externalTransaction;
+    const t = externalTransaction || await sequelize.transaction();
+    try {
+        // 1) Oldest active package for THIS campaign that still has a credit.
+        //    SKIP LOCKED so concurrent charges pick different rows (or skip) — the
+        //    last credit is taken by exactly one caller, never double-spent.
+        const [pkgRows] = await sequelize.query(
+            `WITH picked AS (
+                 SELECT a.id
+                   FROM lead_package_assignments a
+                   JOIN lead_packages p ON p.id = a."leadPackageId"
+                  WHERE a."agentId" = :agentId
+                    AND a.status = 'active'
+                    AND a."leadsRemaining" >= 1
+                    AND p."campaignId" = :campaignId
+                  ORDER BY a."purchaseDate" ASC
+                  LIMIT 1
+                  FOR UPDATE OF a SKIP LOCKED
+             )
+             UPDATE lead_package_assignments lpa
+                SET "leadsRemaining" = lpa."leadsRemaining" - 1,
+                    status = CASE WHEN lpa."leadsRemaining" - 1 = 0 THEN 'completed' ELSE lpa.status END,
+                    "updatedAt" = NOW()
+               FROM picked
+              WHERE lpa.id = picked.id
+              RETURNING lpa.id`,
+            { replacements: { agentId, campaignId }, transaction: t }
+        );
+
+        let charged = Array.isArray(pkgRows) && pkgRows.length > 0;
+
+        // 2) Fallback: the agent's campaign-agnostic owed_leads_count bucket.
+        if (!charged) {
+            const [owedRows] = await sequelize.query(
+                `UPDATE users
+                    SET owed_leads_count = owed_leads_count - 1, "updatedAt" = NOW()
+                  WHERE id = :agentId AND owed_leads_count >= 1
+                  RETURNING id`,
+                { replacements: { agentId }, transaction: t }
+            );
+            charged = Array.isArray(owedRows) && owedRows.length > 0;
+        }
+
+        if (ownTransaction) await t.commit();
+        return charged;
+    } catch (error) {
+        logger.error('Error charging lead credit', { error: error?.message || String(error), agentId, campaignId });
+        if (ownTransaction) {
+            await t.rollback().catch(() => {});
+            return false;
+        }
+        // Caller owns the transaction — surface the error so it rolls back rather than
+        // continuing on a poisoned transaction.
+        throw error;
+    }
+}

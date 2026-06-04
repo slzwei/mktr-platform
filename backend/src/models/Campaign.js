@@ -159,6 +159,15 @@ const Campaign = sequelize.define('Campaign', {
     type: DataTypes.STRING(64),
     allowNull: true,
     field: 'meta_pixel_id'
+  },
+  // Hard lead-quota gate. When true, a lead on this campaign is only delivered if a
+  // funded lead-package credit can be charged; otherwise it is quarantined (held),
+  // never delivered free via the System-Agent fallback. Default false = soft behaviour.
+  enforceLeadQuota: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'enforce_lead_quota'
   }
 }, {
   tableName: 'campaigns',
