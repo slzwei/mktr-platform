@@ -39,7 +39,10 @@ const PROSPECT_UPDATE_FIELDS = [
   'notes',
   'nextFollowUpDate',
   'lastContactDate',
-  'assignedAgentId',
+  // assignedAgentId is intentionally NOT updatable via PUT. Reassignment must go through
+  // assignProspect (PATCH /:id/assign), which charges, fires the correct webhook, and
+  // releases held leads. A raw PUT could otherwise silently reassign with no charge or
+  // webhook — and bypass the lead-quota gate.
   'demographics',
   'location',
   'tags',
@@ -538,23 +541,8 @@ export function makeProspectService(overrides = {}) {
     const safeUpdates = Object.fromEntries(Object.entries(body).filter(([k]) => PROSPECT_UPDATE_FIELDS.includes(k)));
     await prospect.update(safeUpdates);
 
-    // Check for manual unassignment
-    if (oldAssignedAgentId && body.assignedAgentId === null) {
-      const agentName = oldAssignedAgent
-        ? `${oldAssignedAgent.firstName} ${oldAssignedAgent.lastName}`.trim() || oldAssignedAgent.email
-        : 'Unknown Agent';
-
-      await m.ProspectActivity.create({
-        prospectId: prospect.id,
-        type: 'updated',
-        actorUserId: user.id,
-        description: `Lead manually unassigned from ${agentName} by ${user.firstName || 'Admin'}`,
-        metadata: {
-          previousAssignedAgentId: oldAssignedAgentId,
-          reason: 'manual_unassignment',
-        },
-      });
-    }
+    // (Reassignment / unassignment is handled exclusively by assignProspect — see the
+    // PROSPECT_UPDATE_FIELDS note — so PUT no longer needs unassignment side-effects.)
 
     // If status changed to 'won', create commission and update metrics atomically
     if (oldStatus !== 'won' && safeUpdates.leadStatus === 'won') {
@@ -654,6 +642,58 @@ export function makeProspectService(overrides = {}) {
       throw new d.AppError('Invalid or inactive agent', 400);
     }
 
+    // A manual admin assign is an EXEMPT route (decision a): it always delivers and does
+    // a best-effort deduct. If the prospect is currently HELD under lead-quota, this is a
+    // RELEASE — clear the hold ATOMICALLY (so a double-click / concurrent sweep can't
+    // deliver twice) and fire lead.created, the FIRST delivery to Lyfe (which never saw
+    // the suppressed create webhook), NOT lead.assigned.
+    if (prospect.quarantinedAt) {
+      const [releaseRows] = await d.sequelize.query(
+        `UPDATE prospects
+            SET "assignedAgentId" = :agentId, "lastContactDate" = NOW(),
+                "quarantinedAt" = NULL, "quarantineReason" = NULL, "updatedAt" = NOW()
+          WHERE id = :prospectId AND "quarantinedAt" IS NOT NULL
+          RETURNING id`,
+        { replacements: { agentId, prospectId: prospect.id } }
+      );
+      const released = Array.isArray(releaseRows) && releaseRows.length > 0;
+      await prospect.reload();
+
+      if (!released) {
+        // Lost the race — already released elsewhere. Do not double-deliver.
+        return { prospect, agent, prospectWithCampaign: prospect };
+      }
+
+      await m.ProspectActivity.create({
+        prospectId: prospect.id,
+        type: 'assigned',
+        actorUserId: user?.id || null,
+        description: `Released from hold and assigned to ${agent.firstName} ${agent.lastName}`.trim(),
+        metadata: { assignedAgentId: agentId, previousAgentId, released: true },
+      });
+
+      await d
+        .deductLeadCredit(agentId)
+        .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
+
+      const prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
+        include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+      });
+
+      const agentForWebhook = {
+        phone: agent.phone || null,
+        email: agent.email || null,
+        name: `${agent.firstName || ''} ${agent.lastName || ''}`.trim(),
+        id: agent.lyfeId || agent.id,
+      };
+      d.dispatchEvent('lead.created', () =>
+        buildLeadCreatedPayload(prospect, 'direct', agentForWebhook, agentId, prospectWithCampaign?.campaign || null, null, null)
+      );
+
+      return { prospect, agent, prospectWithCampaign };
+    }
+
+    // ── Normal reassign (not held) ──
     await prospect.update({
       assignedAgentId: agentId,
       lastContactDate: new Date(),
@@ -704,6 +744,10 @@ export function makeProspectService(overrides = {}) {
     const scopeFilter = await d.buildProspectWhere(user);
     const whereConditions = {
       id: { [Op.in]: prospectIds },
+      // Bulk assign skips HELD leads — releasing a held lead must deliver it to Lyfe,
+      // which bulk update can't do per-lead. Release held leads via single assign
+      // (PATCH /:id/assign) or the auto-release sweep.
+      quarantinedAt: null,
       ...scopeFilter,
     };
 

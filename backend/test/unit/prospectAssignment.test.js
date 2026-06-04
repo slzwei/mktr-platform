@@ -92,6 +92,7 @@ function buildMocks() {
 
   const sequelize = {
     transaction: jest.fn(async (callback) => callback(mockTransaction)),
+    query: jest.fn().mockResolvedValue([[{ id: 'prospect-1' }]]),
     fn: jest.fn((fnName, col) => `${fnName}(${col})`),
     col: jest.fn((name) => name),
     literal: jest.fn((expr) => expr),
@@ -315,6 +316,32 @@ describe('prospectAssignment (unit)', () => {
       const builder = mocks.dispatchEvent.mock.calls[0][1];
       const payload = builder();
       expect(payload.data.routing.agentExternalId).toBe('lyfe-agent-1');
+    });
+
+    it('releases a HELD lead: clears quarantine atomically, deducts, fires lead.created (not lead.assigned)', async () => {
+      const held = { ...mocks.mockProspect, quarantinedAt: new Date(), reload: jest.fn().mockResolvedValue(true) };
+      mocks.models.Prospect.findByPk
+        .mockResolvedValueOnce(held)
+        .mockResolvedValueOnce({ ...held, campaign: { id: 'camp-1', name: 'C' } });
+      mocks.sequelize.query.mockResolvedValue([[{ id: 'prospect-1' }]]); // claim won
+
+      await service.assignProspect('prospect-1', 'agent-1', admin);
+
+      expect(mocks.sequelize.query).toHaveBeenCalled();
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith('agent-1');
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+      expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.assigned', expect.any(Function));
+    });
+
+    it('release race lost (claim returns 0 rows) → no deduct, no double delivery', async () => {
+      const held = { ...mocks.mockProspect, quarantinedAt: new Date(), reload: jest.fn().mockResolvedValue(true) };
+      mocks.models.Prospect.findByPk.mockResolvedValue(held);
+      mocks.sequelize.query.mockResolvedValue([[]]); // lost the race
+
+      await service.assignProspect('prospect-1', 'agent-1', admin);
+
+      expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.created', expect.any(Function));
+      expect(mocks.deductLeadCredit).not.toHaveBeenCalled();
     });
   });
 
