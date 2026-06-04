@@ -24,6 +24,15 @@ export const listProspects = asyncHandler(async (req, res) => {
   });
 });
 
+export const listHeldProspects = asyncHandler(async (req, res) => {
+  const result = await prospectService.listHeldProspects(req.user, req.query);
+
+  res.json({
+    success: true,
+    data: result
+  });
+});
+
 export const createProspect = asyncHandler(async (req, res) => {
   const publicHost = publicHostFromRequest(req);
   const meta = {

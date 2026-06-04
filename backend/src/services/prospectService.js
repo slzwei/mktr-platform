@@ -975,6 +975,42 @@ export function makeProspectService(overrides = {}) {
     });
   }
 
+  /**
+   * List HELD (quarantined) leads, FIFO by quarantinedAt (the release order). Scoped to
+   * the caller's access; optionally filtered by campaign. Release is done via the
+   * existing assignProspect (PATCH /:id/assign) or the auto-release sweep on top-up.
+   */
+  async function listHeldProspects(user, params = {}) {
+    const { campaignId } = params;
+    const limit = Math.min(parseInt(params.limit, 10) || 100, 500);
+    const scopeFilter = await d.buildProspectWhere(user);
+    const where = { ...scopeFilter, quarantinedAt: { [Op.ne]: null } };
+    if (campaignId) where.campaignId = campaignId;
+
+    const { count, rows } = await m.Prospect.findAndCountAll({
+      where,
+      include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+      order: [['quarantinedAt', 'ASC']], // FIFO — oldest held first (the release order)
+      limit,
+    });
+
+    const held = rows.map((p) => ({
+      id: p.id,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      phone: p.phone,
+      email: p.email,
+      leadSource: p.leadSource,
+      campaignId: p.campaignId,
+      campaignName: p.campaign?.name || null,
+      quarantinedAt: p.quarantinedAt,
+      quarantineReason: p.quarantineReason,
+      createdAt: p.createdAt,
+    }));
+
+    return { count, held };
+  }
+
   return {
     createProspect,
     getProspect,
@@ -984,6 +1020,7 @@ export function makeProspectService(overrides = {}) {
     bulkAssignProspects,
     getProspectStats,
     listProspects,
+    listHeldProspects,
     scheduleFollowUp,
     trackProspectView,
   };
