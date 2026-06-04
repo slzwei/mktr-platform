@@ -11,8 +11,9 @@ import {
   AgentGroupMember,
   sequelize,
 } from '../models/index.js';
-import { resolveAssignedAgentId, getSystemAgentId } from './systemAgent.js';
-import { deductLeadCredit } from './leadCredits.js';
+import { resolveAssignedAgentId, resolveLeadRouting, getSystemAgentId } from './systemAgent.js';
+import { deductLeadCredit, chargeLeadCredit } from './leadCredits.js';
+import { decideAssignment } from './leadQuota.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { dispatchEvent } from './webhookService.js';
@@ -48,8 +49,11 @@ const defaultDeps = {
   models: { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, AgentGroup, AgentGroupMember },
   sequelize,
   resolveAssignedAgentId,
+  resolveLeadRouting,
   getSystemAgentId,
   deductLeadCredit,
+  chargeLeadCredit,
+  decideAssignment,
   buildProspectWhere,
   dispatchEvent,
   sendLeadEvent: metaSendLeadEvent,
@@ -151,13 +155,17 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
-    // Resolve secure assignment (agent/admin override -> qr owner -> campaign -> system)
-    let assignedAgentId = await d.resolveAssignedAgentId({
+    // Resolve secure assignment (agent/admin override -> qr owner -> campaign -> system).
+    // resolveLeadRouting also reports the route taken (via), which lead-quota uses to
+    // tell exempt (self/admin) from gated (qr/package/fallback) delivery.
+    const routing = await d.resolveLeadRouting({
       reqUser: user,
       requestedAgentId: body.assignedAgentId,
       campaignId: incoming.campaignId,
       qrTagId: incoming.qrTagId,
     });
+    let assignedAgentId = routing.agentId;
+    let routeVia = routing.via;
 
     // Normalize phone to E.164 format
     if (incoming.phone) {
@@ -277,6 +285,7 @@ export function makeProspectService(overrides = {}) {
     } else if (sourceQrTag?.assignedAgentId) {
       // Direct FK lookup — faster than phone-based search
       assignedAgentId = sourceQrTag.assignedAgentId;
+      routeVia = 'qr';
     } else if (sourceQrTag?.assignedAgentPhone) {
       // Fallback for QR tags not yet backfilled
       resolvedAgent = {
@@ -293,12 +302,37 @@ export function makeProspectService(overrides = {}) {
       });
       if (agentByPhone) {
         assignedAgentId = agentByPhone.id;
+        routeVia = 'qr';
       }
     }
 
-    // Wrap all DB writes in a transaction for data integrity
+    // Wrap all DB writes in a transaction for data integrity.
+    // Lead-quota gate: decideAssignment may QUARANTINE (hold) the lead, and for a
+    // funded gated route it charges a credit authoritatively (charged:true ⇒ skip the
+    // best-effort deduct below to avoid double-charging). Soft/exempt routes are
+    // unchanged: assign + best-effort deduct.
+    let quarantined = false;
+    let finalAgentId = assignedAgentId;
     const prospect = await d.sequelize.transaction(async (t) => {
-      const newProspect = await m.Prospect.create({ ...incoming, assignedAgentId }, { transaction: t });
+      const decision = await d.decideAssignment({
+        campaign: sourceCampaign,
+        routing: { agentId: assignedAgentId, via: routeVia },
+        campaignId: incoming.campaignId,
+        transaction: t,
+        charge: d.chargeLeadCredit,
+      });
+      quarantined = decision.action === 'quarantine';
+      finalAgentId = quarantined ? null : (decision.assignedAgentId ?? null);
+
+      const newProspect = await m.Prospect.create(
+        {
+          ...incoming,
+          assignedAgentId: finalAgentId,
+          quarantinedAt: quarantined ? new Date() : null,
+          quarantineReason: quarantined ? decision.quarantineReason : null,
+        },
+        { transaction: t }
+      );
 
       const campaignName = sourceCampaign?.name || 'Unknown Campaign';
       const qrTagName = sourceQrTag?.name || sourceQrTag?.label || 'Unknown QR';
@@ -320,26 +354,41 @@ export function makeProspectService(overrides = {}) {
         { transaction: t }
       );
 
-      // Activity: assigned
-      await m.ProspectActivity.create(
-        {
-          prospectId: newProspect.id,
-          type: 'assigned',
-          actorUserId: user?.id || null,
-          description: `Assigned to agent ${assignedAgentId}`,
-          metadata: { assignedAgentId },
-        },
-        { transaction: t }
-      );
+      // Activity: assignment outcome (assigned, or held under quota)
+      if (quarantined) {
+        await m.ProspectActivity.create(
+          {
+            prospectId: newProspect.id,
+            type: 'updated',
+            actorUserId: user?.id || null,
+            description: 'Held — no funded agent (lead quota)',
+            metadata: { quarantined: true, reason: decision.quarantineReason, via: routeVia },
+          },
+          { transaction: t }
+        );
+      } else {
+        await m.ProspectActivity.create(
+          {
+            prospectId: newProspect.id,
+            type: 'assigned',
+            actorUserId: user?.id || null,
+            description: `Assigned to agent ${finalAgentId}`,
+            metadata: { assignedAgentId: finalAgentId },
+          },
+          { transaction: t }
+        );
 
-      // Deduct lead credit from agent's package
-      if (assignedAgentId) {
-        await d
-          .deductLeadCredit(assignedAgentId, 1, t)
-          .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
+        // Deduct lead credit. Skip when decideAssignment already charged authoritatively
+        // (charged:true) — otherwise the soft/exempt path does the best-effort deduct.
+        if (finalAgentId && decision.charged !== true) {
+          await d
+            .deductLeadCredit(finalAgentId, 1, t)
+            .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
+        }
       }
 
-      // Update QR tag analytics (atomic to avoid read-modify-write race)
+      // Update QR tag analytics (atomic to avoid read-modify-write race).
+      // A quarantined lead is still a captured conversion, so we count it.
       if (newProspect.qrTagId && sourceQrTag) {
         await sourceQrTag.update(
           {
@@ -360,6 +409,10 @@ export function makeProspectService(overrides = {}) {
       return newProspect;
     });
 
+    // Reflect the committed outcome (null when quarantined) for the rest of the
+    // function — webhook dispatch, agent load, and the returned payload.
+    assignedAgentId = finalAgentId;
+
     // --- Webhook dispatch (AFTER transaction commits, fire-and-forget) ---
     // Load assigned agent record if we have an assignedAgentId but no resolvedAgent
     let agentForWebhook = resolvedAgent;
@@ -377,19 +430,23 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
-    d.dispatchEvent('lead.created', () =>
-      buildLeadCreatedPayload(
-        prospect,
-        routingMode,
-        agentForWebhook,
-        assignedAgentId,
-        sourceCampaign,
-        sourceQrTag,
-        agentGroup
-      )
-    ).catch((err) => {
-      d.logger.error('[Webhook] dispatch error', { error: err?.message || String(err) });
-    });
+    // Suppress the Lyfe delivery webhook for quarantined (held) leads — there is no
+    // agent to deliver to. It fires on release (slice 4) as the first lead.created.
+    if (!quarantined) {
+      d.dispatchEvent('lead.created', () =>
+        buildLeadCreatedPayload(
+          prospect,
+          routingMode,
+          agentForWebhook,
+          assignedAgentId,
+          sourceCampaign,
+          sourceQrTag,
+          agentGroup
+        )
+      ).catch((err) => {
+        d.logger.error('[Webhook] dispatch error', { error: err?.message || String(err) });
+      });
+    }
 
     // Meta CAPI dispatch (fire-and-forget; post-commit; guard inside sendLeadEvent)
     d.sendLeadEvent(prospect, {
@@ -414,7 +471,7 @@ export function makeProspectService(overrides = {}) {
       });
     }
 
-    return { prospect, assignedAgentId, assignedAgent, prospectWithCampaign };
+    return { prospect, assignedAgentId, assignedAgent, prospectWithCampaign, quarantined };
   }
 
   /**
