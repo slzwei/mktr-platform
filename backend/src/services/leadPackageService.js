@@ -1,7 +1,6 @@
 import { LeadPackage, LeadPackageAssignment, User, Campaign } from '../models/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
-import { sweepCampaign } from './releaseSweep.js';
 
 /**
  * List lead packages with optional filters.
@@ -86,9 +85,11 @@ export async function assignPackage({ agentId, packageId }) {
   // New funded package → drain any held lead-quota queue for its campaign (async,
   // fire-and-forget; the assignment response must not wait on the sweep).
   if (pkg.campaignId) {
-    sweepCampaign(pkg.campaignId).catch((err) =>
-      logger.error('[ReleaseSweep] assignPackage trigger failed', { error: err?.message || String(err) })
-    );
+    // Dynamic import keeps releaseSweep (and its systemAgent/webhook graph) out of this
+    // module's static dependency graph — avoids coupling and keeps unit-test mocks lean.
+    import('./releaseSweep.js')
+      .then((m) => m.sweepCampaign(pkg.campaignId))
+      .catch((err) => logger.error('[ReleaseSweep] assignPackage trigger failed', { error: err?.message || String(err) }));
   }
 
   return {
@@ -171,9 +172,9 @@ export async function updateAssignment(id, { leadsRemaining }) {
     if (newCount > prevCount) {
       const pkg = await LeadPackage.findByPk(assignment.leadPackageId, { attributes: ['campaignId'] });
       if (pkg?.campaignId) {
-        sweepCampaign(pkg.campaignId).catch((err) =>
-          logger.error('[ReleaseSweep] updateAssignment trigger failed', { error: err?.message || String(err) })
-        );
+        import('./releaseSweep.js')
+          .then((m) => m.sweepCampaign(pkg.campaignId))
+          .catch((err) => logger.error('[ReleaseSweep] updateAssignment trigger failed', { error: err?.message || String(err) }));
       }
     }
   }
