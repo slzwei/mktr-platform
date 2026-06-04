@@ -21,6 +21,10 @@ export default {
   showFeatures: false,
   showPricing: false,
   showHomepage: false,
+  // Parity with mktr config (shared marketing footer reads these); redeem
+  // surfaces don't currently expose a contact link.
+  contactEmail: 'hello@redeem.sg',
+  contactWhatsapp: '',
   defaultRegulatory:
     'Redeem (a service of MKTR PTE. LTD., UEN: 202507548M) operates this referral platform. Submitting this form does not establish any advisory relationship and is not a recommendation of any product. By submitting, you agree to be contacted using the particulars provided.',
   // Operator attribution — intentionally "MKTR" on the customer page too
