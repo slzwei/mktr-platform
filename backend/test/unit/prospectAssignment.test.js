@@ -338,10 +338,20 @@ describe('prospectAssignment (unit)', () => {
       mocks.models.Prospect.findByPk.mockResolvedValue(held);
       mocks.sequelize.query.mockResolvedValue([[]]); // lost the race
 
-      await service.assignProspect('prospect-1', 'agent-1', admin);
+      const res = await service.assignProspect('prospect-1', 'agent-1', admin);
 
+      expect(res.agent).toBeNull(); // don't email an agent for a lead released elsewhere
       expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.created', expect.any(Function));
       expect(mocks.deductLeadCredit).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fire lead.unassigned when unassigning a HELD lead (Lyfe never saw a create)', async () => {
+      const held = { ...mocks.mockProspect, assignedAgentId: null, quarantinedAt: new Date(), update: jest.fn().mockResolvedValue(true) };
+      mocks.models.Prospect.findByPk.mockResolvedValue(held);
+
+      await service.assignProspect('prospect-1', null, admin);
+
+      expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.unassigned', expect.any(Function));
     });
   });
 

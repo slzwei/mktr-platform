@@ -15,6 +15,14 @@
  * Numbered 035 — above main's latest (034-add-campaign-tiktok-pixel-id) after merging
  * the quiz/TikTok work, so there is no filename collision.
  */
+// Swallow ONLY "already exists" errors (idempotent re-run — e.g. when the columns were
+// created from the models via sequelize.sync in tests); re-throw any other DDL failure so
+// the runner does NOT record a half-applied migration as successfully applied.
+function ignoreExists(e) {
+  const msg = String(e?.message || e || '');
+  if (!/already exists|duplicate/i.test(msg)) throw e;
+}
+
 export async function up(queryInterface, Sequelize) {
   await queryInterface
     .addColumn('campaigns', 'enforce_lead_quota', {
@@ -23,7 +31,7 @@ export async function up(queryInterface, Sequelize) {
       defaultValue: false,
       comment: 'When true, leads require a funded lead-package credit; unfunded leads are quarantined, not delivered free.',
     })
-    .catch(() => {});
+    .catch(ignoreExists);
 
   await queryInterface
     .addColumn('prospects', 'quarantinedAt', {
@@ -31,7 +39,7 @@ export async function up(queryInterface, Sequelize) {
       allowNull: true,
       comment: 'Set when held under lead-quota (no funded agent). NULL = not quarantined. The ONLY quarantine signal.',
     })
-    .catch(() => {});
+    .catch(ignoreExists);
 
   await queryInterface
     .addColumn('prospects', 'quarantineReason', {
@@ -39,11 +47,11 @@ export async function up(queryInterface, Sequelize) {
       allowNull: true,
       comment: 'Why the lead was quarantined, e.g. no_funded_agent.',
     })
-    .catch(() => {});
+    .catch(ignoreExists);
 
   await queryInterface
     .addIndex('prospects', ['quarantinedAt'], { name: 'idx_prospects_quarantinedat' })
-    .catch(() => {});
+    .catch(ignoreExists);
 }
 
 export async function down(queryInterface) {

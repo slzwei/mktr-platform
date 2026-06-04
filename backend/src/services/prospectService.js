@@ -733,14 +733,17 @@ export function makeProspectService(overrides = {}) {
         metadata: { previousAgentId },
       });
 
-      // Fire lead.unassigned webhook — resolve lyfeId for previous agent
-      let previousAgentLyfeId = previousAgentId;
-      if (previousAgentId) {
-        const prevAgent = await m.User.findByPk(previousAgentId, { attributes: ['lyfeId'] });
-        if (prevAgent?.lyfeId) previousAgentLyfeId = prevAgent.lyfeId;
+      // Fire lead.unassigned webhook — but NOT for a HELD (quarantined) lead: Lyfe never
+      // received a lead.created for it (the create webhook was suppressed), so an
+      // unassigned event would reference a lead Lyfe does not know about.
+      if (!prospect.quarantinedAt) {
+        let previousAgentLyfeId = previousAgentId;
+        if (previousAgentId) {
+          const prevAgent = await m.User.findByPk(previousAgentId, { attributes: ['lyfeId'] });
+          if (prevAgent?.lyfeId) previousAgentLyfeId = prevAgent.lyfeId;
+        }
+        d.dispatchEvent('lead.unassigned', () => buildLeadUnassignedPayload(prospect, previousAgentLyfeId));
       }
-
-      d.dispatchEvent('lead.unassigned', () => buildLeadUnassignedPayload(prospect, previousAgentLyfeId));
 
       return { prospect, agent: null, prospectWithCampaign: prospect };
     }
@@ -772,8 +775,10 @@ export function makeProspectService(overrides = {}) {
       await prospect.reload();
 
       if (!released) {
-        // Lost the race — already released elsewhere. Do not double-deliver.
-        return { prospect, agent, prospectWithCampaign: prospect };
+        // Lost the race — already released elsewhere. Do not double-deliver, and return
+        // agent:null so the controller does not email an agent about a lead a concurrent
+        // release/sweep already assigned (possibly to a different agent).
+        return { prospect, agent: null, prospectWithCampaign: prospect };
       }
 
       await m.ProspectActivity.create({

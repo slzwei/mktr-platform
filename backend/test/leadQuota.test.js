@@ -13,7 +13,7 @@ import {
   getApp, closeDb, createTestUser, createTestCampaign,
   createTestLeadPackage, createTestLeadPackageAssignment,
 } from './helpers.js';
-import { sequelize, Prospect, LeadPackageAssignment } from '../src/models/index.js';
+import { sequelize, Prospect, LeadPackageAssignment, Campaign } from '../src/models/index.js';
 import { sweepCampaign } from '../src/services/releaseSweep.js';
 
 let app, admin, adminToken;
@@ -67,6 +67,29 @@ describe('schema', () => {
     expect(campaigns.enforce_lead_quota).toBeDefined();
     expect(prospects.quarantinedAt).toBeDefined();
     expect(prospects.quarantineReason).toBeDefined();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+describe('enforceLeadQuota enablement via the campaign API', () => {
+  it('POST /api/campaigns persists enforceLeadQuota; PUT toggles it', async () => {
+    const name = `QuotaEnable-${++seq}`;
+    const created = await request(app)
+      .post('/api/campaigns')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name, enforceLeadQuota: true });
+    expect(created.status).toBe(201);
+
+    const c = await Campaign.findOne({ where: { name } });
+    expect(c.enforceLeadQuota).toBe(true);
+
+    const updated = await request(app)
+      .put(`/api/campaigns/${c.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ enforceLeadQuota: false });
+    expect(updated.status).toBe(200);
+    await c.reload();
+    expect(c.enforceLeadQuota).toBe(false);
   });
 });
 
