@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { hashEmail, hashPhone, hashExternalId } from '../src/utils/piiHashing.js';
+import { hashEmail, hashPhone, hashPhoneE164, hashExternalId } from '../src/utils/piiHashing.js';
 
 const sha256Hex = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
@@ -51,6 +51,26 @@ describe('piiHashing.hashPhone', () => {
   });
   it('matches reference SHA-256 over digit-only normalized phone', () => {
     expect(hashPhone('+65 8123 4567')).toBe(sha256Hex('6581234567'));
+  });
+});
+
+describe('piiHashing.hashPhoneE164 (TikTok — keeps the leading +)', () => {
+  it('returns undefined for null/empty/non-string and no-digit input', () => {
+    expect(hashPhoneE164(null)).toBeUndefined();
+    expect(hashPhoneE164('')).toBeUndefined();
+    expect(hashPhoneE164(65812345)).toBeUndefined();
+    expect(hashPhoneE164('+')).toBeUndefined();
+  });
+  it('hashes E.164 WITH the leading + (differs from digit-only hashPhone)', () => {
+    expect(hashPhoneE164('+6581234567')).toBe(sha256Hex('+6581234567'));
+    expect(hashPhoneE164('+6581234567')).not.toBe(hashPhone('+6581234567'));
+  });
+  it('normalizes separators and ensures the + form', () => {
+    expect(hashPhoneE164('+65 8123 4567')).toBe(sha256Hex('+6581234567'));
+    expect(hashPhoneE164('6581234567')).toBe(sha256Hex('+6581234567'));
+  });
+  it('returns a 64-char hex string', () => {
+    expect(hashPhoneE164('+6581234567')).toMatch(/^[a-f0-9]{64}$/);
   });
 });
 

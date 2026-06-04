@@ -15,10 +15,10 @@ jest.unstable_mockModule('../src/utils/logger.js', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-let shouldFireCapi, _buildPayload, sendLeadEvent;
+let shouldFireCapi, _buildPayload, sendLeadEvent, sendCompleteRegistrationEvent, sendConversionEvent;
 
 beforeAll(async () => {
-  ({ shouldFireCapi, _buildPayload, sendLeadEvent } = await import(
+  ({ shouldFireCapi, _buildPayload, sendLeadEvent, sendCompleteRegistrationEvent, sendConversionEvent } = await import(
     '../src/services/metaCapiService.js'
   ));
 });
@@ -220,6 +220,18 @@ describe('_buildPayload', () => {
     expect(event.event_name).toBe('Lead');
   });
 
+  it('defaults event_name to Lead when options.eventName is absent', () => {
+    const event = _buildPayload(webProspect(), ctx, { testEventCode: 'X' }).data[0];
+    expect(event.event_name).toBe('Lead');
+  });
+
+  it('overrides event_name when options.eventName is provided (CompleteRegistration)', () => {
+    const event = _buildPayload(webProspect(), ctx, { eventName: 'CompleteRegistration' }).data[0];
+    expect(event.event_name).toBe('CompleteRegistration');
+    // The dedup id still flows from ctx.eventId so Pixel↔CAPI dedup is preserved.
+    expect(event.event_id).toBe('evt-1');
+  });
+
   it('includes campaign_id and lead_source in custom_data', () => {
     const event = _buildPayload(webProspect(), ctx, {}).data[0];
     expect(event.custom_data).toEqual({
@@ -299,5 +311,77 @@ describe('sendLeadEvent', () => {
     await sendLeadEvent(webProspect(), { eventId: 'evt-1' }, { fetch: fetchSpy });
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(body.test_event_code).toBe('TEST_ABC');
+  });
+});
+
+// ============================================================
+// sendCompleteRegistrationEvent (quiz funnel reveal)
+// ============================================================
+describe('sendCompleteRegistrationEvent', () => {
+  it('returns { sent: false, reason: "guarded" } when shouldFireCapi is false; does NOT call fetch', async () => {
+    process.env.META_CAPI_ENABLED = 'false';
+    const fetchSpy = okFetch();
+    const result = await sendCompleteRegistrationEvent(
+      webProspect(),
+      { eventId: 'reg-1' },
+      { fetch: fetchSpy }
+    );
+    expect(result).toEqual({ sent: false, reason: 'guarded' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('posts event_name=CompleteRegistration with the registration event_id (dedup contract)', async () => {
+    const fetchSpy = okFetch();
+    await sendCompleteRegistrationEvent(webProspect(), { eventId: 'reg-evt-123' }, { fetch: fetchSpy });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.data[0].event_name).toBe('CompleteRegistration');
+    expect(body.data[0].event_id).toBe('reg-evt-123');
+  });
+
+  it('uses the same pixel/token URL as Lead and honors pixelIdOverride', async () => {
+    const fetchSpy = okFetch();
+    await sendCompleteRegistrationEvent(
+      webProspect(),
+      { eventId: 'reg-1', pixelIdOverride: 'override-pixel-777' },
+      { fetch: fetchSpy }
+    );
+    const [url] = fetchSpy.mock.calls[0];
+    expect(url).toContain('/override-pixel-777/events?access_token=TEST_TOKEN');
+  });
+
+  it('returns { sent: true } on 200 and captures Sentry on non-2xx', async () => {
+    const okSpy = okFetch();
+    const ok = await sendCompleteRegistrationEvent(webProspect(), { eventId: 'reg-1' }, { fetch: okSpy });
+    expect(ok.sent).toBe(true);
+
+    const badSpy = jest.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({}) });
+    const bad = await sendCompleteRegistrationEvent(webProspect(), { eventId: 'reg-1' }, { fetch: badSpy });
+    expect(bad.sent).toBe(false);
+    expect(captureExceptionMock).toHaveBeenCalled();
+  });
+});
+
+// ============================================================
+// sendConversionEvent (generic core)
+// ============================================================
+describe('sendConversionEvent', () => {
+  it('defaults to event_name=Lead when no eventName option is given', async () => {
+    const fetchSpy = okFetch();
+    await sendConversionEvent(webProspect(), { eventId: 'evt-1' }, {}, { fetch: fetchSpy });
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.data[0].event_name).toBe('Lead');
+  });
+
+  it('passes through an arbitrary eventName', async () => {
+    const fetchSpy = okFetch();
+    await sendConversionEvent(
+      webProspect(),
+      { eventId: 'evt-1' },
+      { eventName: 'CompleteRegistration' },
+      { fetch: fetchSpy }
+    );
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.data[0].event_name).toBe('CompleteRegistration');
   });
 });

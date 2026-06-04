@@ -12,9 +12,8 @@
  *   - prospects.quarantineReason (varchar(64), null) → e.g. 'no_funded_agent'.
  *   - partial-ish index on quarantinedAt for the held-leads queue + FIFO release.
  *
- * Numbered 034 (main is at 026) to stay above the unmerged external-buyer migrations
- * 027–033 on feat/mktr-quiz-campaign-phase1, so there is no filename collision when
- * that work later lands on main.
+ * Numbered 035 — above main's latest (034-add-campaign-tiktok-pixel-id) after merging
+ * the quiz/TikTok work, so there is no filename collision.
  */
 export async function up(queryInterface, Sequelize) {
   await queryInterface

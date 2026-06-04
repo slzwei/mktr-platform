@@ -1,35 +1,30 @@
-import { QrCode, Phone, BarChart3, Target, DollarSign, Users } from"lucide-react";
+import { QrCode, Smartphone, Route, ShieldCheck, BarChart3 } from"lucide-react";
 
 const features = [
  {
  icon: QrCode,
- title:"QR Lead Capture",
- desc:"Generate trackable QR codes for flyers, vehicles, and events. Every scan becomes a lead with full attribution.",
+ title:"Exclusive, qualified leads",
+ desc:"Prospects captured from QR codes and forms across Singapore — and every lead is yours alone, never resold to another agent.",
  },
  {
- icon: Phone,
- title:"AI Call Bot",
- desc:"Retell-powered voice AI qualifies prospects around the clock. Conversations are transcribed and leads auto-created.",
+ icon: Smartphone,
+ title:"Delivered to your phone",
+ desc:"New leads arrive in seconds via push notification, with the source, campaign, and details you need to follow up fast.",
  },
  {
- icon: Target,
- title:"Campaign Management",
- desc:"Launch multi-channel campaigns across social, physical, and digital. Track ROI from a single dashboard.",
+ icon: Route,
+ title:"Matched to the right agent",
+ desc:"Smart routing assigns each lead automatically, so the right person reaches out first — no manual sorting.",
+ },
+ {
+ icon: ShieldCheck,
+ title:"Consent-first & PDPA-compliant",
+ desc:"Every capture is permission-based and compliant, so you can follow up with confidence.",
  },
  {
  icon: BarChart3,
- title:"Real-time Analytics",
- desc:"Live dashboards show conversion rates, lead sources, and agent performance so you can double down on what works.",
- },
- {
- icon: DollarSign,
- title:"Commission Tracking",
- desc:"Automated commission calculations, payout history, and transparent reporting for every deal closed.",
- },
- {
- icon: Users,
- title:"Fleet Management",
- desc:"Manage agent teams, assign territories, track vehicle deployments, and monitor field performance in real time.",
+ title:"Clear lead insights",
+ desc:"See where your leads come from and how each campaign performs — no guesswork.",
  },
 ];
 
@@ -37,12 +32,12 @@ const FeaturesSection = () => {
  return (
  <section id="features" className="mktr-section">
  <div className="mktr-section-container">
- <p className="mktr-section-eyebrow mktr-reveal">Platform Features</p>
+ <p className="mktr-section-eyebrow mktr-reveal">What You Get</p>
  <h2 className="mktr-section-title mktr-reveal mktr-reveal-delay-1">
- Everything You Need to<br />Scale Your Pipeline
+ Built for agents who'd<br />rather be closing
  </h2>
  <p className="mktr-section-subtitle mktr-reveal mktr-reveal-delay-2">
- Purpose-built tools for Singapore's insurance agents — from first touch to closed deal.
+ Everything an insurance agent needs from a lead source — and nothing they don't.
  </p>
 
  <div className="mktr-features-grid">

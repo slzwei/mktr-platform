@@ -5,6 +5,7 @@ import {
  Type,
  Palette,
  LayoutTemplate,
+ ListChecks,
  PanelLeftClose,
  PanelLeft
 } from"lucide-react";
@@ -12,6 +13,7 @@ import {
 import ContentPanel from"./editor/ContentPanel";
 import DesignPanel from"./editor/DesignPanel";
 import LayoutPanel from"./editor/LayoutPanel";
+import QuizPanel from"./editor/QuizPanel";
 import PreviewFrame from"./editor/PreviewFrame";
 import { genId } from"./editor/constants";
 
@@ -37,7 +39,8 @@ const normalizeFieldOrder = (order) => {
 const TABS = [
  { id: 'content', label: 'Content', icon: Type },
  { id: 'design', label: 'Design', icon: Palette },
- { id: 'layout', label: 'Layout', icon: LayoutTemplate }
+ { id: 'layout', label: 'Layout', icon: LayoutTemplate },
+ { id: 'quiz', label: 'Quiz', icon: ListChecks }
 ];
 
 export default function DesignEditor({ campaign, onSave }) {
@@ -73,6 +76,7 @@ export default function DesignEditor({ campaign, onSave }) {
  mediaType: design.mediaType || (design.imageUrl ? 'image' : 'none'),
  videoUrl: design.videoUrl || '',
  termsContent: design.termsContent || '',
+ quiz: design.quiz || null,
  });
 
  const [saving, setSaving] = useState(false);
@@ -117,6 +121,8 @@ export default function DesignEditor({ campaign, onSave }) {
  return <DesignPanel currentDesign={currentDesign} onDesignChange={handleDesignChange} />;
  case 'layout':
  return <LayoutPanel currentDesign={currentDesign} onDesignChange={handleDesignChange} />;
+ case 'quiz':
+ return <QuizPanel currentDesign={currentDesign} onDesignChange={handleDesignChange} />;
  default:
  return null;
  }

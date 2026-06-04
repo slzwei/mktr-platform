@@ -17,7 +17,14 @@ import { decideAssignment } from './leadQuota.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { dispatchEvent } from './webhookService.js';
-import { sendLeadEvent as metaSendLeadEvent } from './metaCapiService.js';
+import {
+  sendLeadEvent as metaSendLeadEvent,
+  sendCompleteRegistrationEvent as metaSendCompleteRegistrationEvent,
+} from './metaCapiService.js';
+import {
+  sendTikTokLeadEvent,
+  sendTikTokCompleteRegistrationEvent,
+} from './tiktokEventsService.js';
 import { logger } from '../utils/logger.js';
 import {
   normalizePhone,
@@ -25,6 +32,7 @@ import {
   buildLeadAssignedPayload,
   buildLeadUnassignedPayload,
 } from './prospectHelpers.js';
+import { scoreQuiz } from './quizScoringService.js';
 
 const PROSPECT_UPDATE_FIELDS = [
   'firstName',
@@ -60,6 +68,9 @@ const defaultDeps = {
   buildProspectWhere,
   dispatchEvent,
   sendLeadEvent: metaSendLeadEvent,
+  sendCompleteRegistrationEvent: metaSendCompleteRegistrationEvent,
+  sendTikTokLeadEvent,
+  sendTikTokCompleteRegistrationEvent,
   AppError,
   logger,
 };
@@ -83,14 +94,32 @@ export function makeProspectService(overrides = {}) {
     const eventSourceUrl = meta?.eventSourceUrl ?? safeBody.eventSourceUrl;
     const clientIp = meta?.clientIp;
     const clientUserAgent = meta?.clientUserAgent;
+    // Quiz CompleteRegistration dedup id (Meta CAPI) + TikTok attribution ids.
+    const registrationEventId = meta?.registrationEventId ?? safeBody.registrationEventId;
+    const ttclid = meta?.ttclid ?? safeBody.ttclid;
+    const ttp = meta?.ttp ?? safeBody.ttp;
     // Consent flags: preserve explicit `false` (user opted out) via !== undefined check.
     const consentContact = safeBody.consent_contact;
     const consentTerms = safeBody.consent_terms;
 
+    // Quiz funnel submission (re-scored server-side after the campaign loads) and
+    // ad attribution (UTM). Both stashed in sourceMetadata; neither is a Prospect column.
+    const quizSubmission = safeBody.quizResult;
+    const utm = {
+      ...(safeBody.utm_source ? { utm_source: safeBody.utm_source } : {}),
+      ...(safeBody.utm_medium ? { utm_medium: safeBody.utm_medium } : {}),
+      ...(safeBody.utm_campaign ? { utm_campaign: safeBody.utm_campaign } : {}),
+      ...(safeBody.utm_content ? { utm_content: safeBody.utm_content } : {}),
+      ...(safeBody.utm_term ? { utm_term: safeBody.utm_term } : {}),
+    };
+
     // Strip from body so they don't reach Sequelize as bogus Prospect attributes.
     const {
       eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
+      registrationEventId: _re, ttclid: _tc, ttp: _tp,
       consent_contact: _cc, consent_terms: _ct,
+      quizResult: _qr,
+      utm_source: _us, utm_medium: _um, utm_campaign: _ucmp, utm_content: _ucnt, utm_term: _utm,
       ...bodyWithoutMeta
     } = safeBody;
     const incoming = { ...bodyWithoutMeta };
@@ -102,8 +131,12 @@ export function makeProspectService(overrides = {}) {
       ...(eventSourceUrl ? { eventSourceUrl } : {}),
       ...(clientIp ? { clientIp } : {}),
       ...(clientUserAgent ? { clientUserAgent } : {}),
+      ...(registrationEventId ? { registrationEventId } : {}),
+      ...(ttclid ? { ttclid } : {}),
+      ...(ttp ? { ttp } : {}),
       ...(consentContact !== undefined ? { consent_contact: consentContact } : {}),
       ...(consentTerms !== undefined ? { consent_terms: consentTerms } : {}),
+      ...(Object.keys(utm).length > 0 ? { utm } : {}),
     };
     if (Object.keys(capiSourceMetadata).length > 0) {
       incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), ...capiSourceMetadata };
@@ -249,6 +282,45 @@ export function makeProspectService(overrides = {}) {
       incoming.campaignId ? m.Campaign.findByPk(incoming.campaignId) : null,
       incoming.qrTagId ? m.QrTag.findByPk(incoming.qrTagId) : null,
     ]);
+
+    // --- Quiz funnel: re-score server-side (anti-tamper) and stash on the lead ---
+    // The client sends raw answers (+ an advisory result we ignore). We recompute
+    // the authoritative profile/readiness/leadScore from the campaign's own quiz
+    // definition so a tampered client cannot fake a result. Stored under
+    // sourceMetadata.quiz; forwarded verbatim to Lyfe in the lead.created webhook.
+    if (quizSubmission && Array.isArray(quizSubmission.answers) && quizSubmission.answers.length > 0) {
+      const quizDef = sourceCampaign?.design_config?.quiz;
+      let quizMeta;
+      if (quizDef && quizDef.enabled) {
+        let scored = null;
+        try {
+          scored = scoreQuiz(quizDef, quizSubmission.answers);
+        } catch (err) {
+          d.logger.error('[Quiz] scoring failed', { error: err?.message || String(err) });
+        }
+        quizMeta = {
+          quizId: quizDef.quizId || quizSubmission.quizId || null,
+          version: quizDef.version ?? quizSubmission.version ?? null,
+          answers: quizSubmission.answers,
+          result: scored
+            ? { profileId: scored.profileId, title: scored.title, readiness: scored.readiness, agentAngle: scored.agentAngle }
+            : (quizSubmission.result || null),
+          leadScore: scored?.leadScore || null,
+          scoredBy: scored ? 'server' : 'client-unverified',
+        };
+      } else {
+        // No quiz definition on the campaign (or disabled): keep the raw answers
+        // and the advisory client result, clearly marked unverified.
+        quizMeta = {
+          quizId: quizSubmission.quizId || null,
+          version: quizSubmission.version ?? null,
+          answers: quizSubmission.answers,
+          result: quizSubmission.result || null,
+          scoredBy: 'client-unverified',
+        };
+      }
+      incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), quiz: quizMeta };
+    }
 
     // --- Routing resolution: reads from QrTag, not Campaign ---
     let routingMode = 'direct';
@@ -463,6 +535,46 @@ export function makeProspectService(overrides = {}) {
     }).catch((err) => {
       d.logger.error('[CAPI] sendLeadEvent error', { error: err?.message || String(err) });
     });
+
+    // Meta CAPI CompleteRegistration (quiz funnel). Fired server-side only when
+    // the browser sent a registrationEventId (the quiz reveal happened), using
+    // that same id so Meta dedups it against the Pixel CompleteRegistration fired
+    // at the reveal. No-op for non-quiz leads. Guard inside sendCompleteRegistrationEvent.
+    if (registrationEventId) {
+      d.sendCompleteRegistrationEvent(prospect, {
+        eventId: registrationEventId,
+        fbp,
+        fbc,
+        eventSourceUrl,
+        clientIp,
+        clientUserAgent,
+        pixelIdOverride: sourceCampaign?.metaPixelId || undefined,
+      }).catch((err) => {
+        d.logger.error('[CAPI] sendCompleteRegistrationEvent error', { error: err?.message || String(err) });
+      });
+    }
+
+    // TikTok Events API dispatch (fire-and-forget; post-commit; guard inside the
+    // sender). Mirrors the Meta CAPI pair: a Lead at submit, plus a
+    // CompleteRegistration when the quiz reveal fired one — each deduped against
+    // the browser ttq pixel via the shared event ids. Per-campaign tiktokPixelId
+    // overrides env TIKTOK_PIXEL_ID.
+    const tiktokCtxBase = {
+      ttclid,
+      ttp,
+      eventSourceUrl,
+      clientIp,
+      clientUserAgent,
+      pixelIdOverride: sourceCampaign?.tiktokPixelId || undefined,
+    };
+    d.sendTikTokLeadEvent(prospect, { eventId, ...tiktokCtxBase }).catch((err) => {
+      d.logger.error('[TikTok] sendTikTokLeadEvent error', { error: err?.message || String(err) });
+    });
+    if (registrationEventId) {
+      d.sendTikTokCompleteRegistrationEvent(prospect, { eventId: registrationEventId, ...tiktokCtxBase }).catch((err) => {
+        d.logger.error('[TikTok] sendTikTokCompleteRegistrationEvent error', { error: err?.message || String(err) });
+      });
+    }
 
     // Pre-load agent + prospect-with-campaign for caller's email side-effect
     let assignedAgent = null;
