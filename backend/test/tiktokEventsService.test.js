@@ -72,9 +72,9 @@ describe('shouldFireTikTok', () => {
     expect(shouldFireTikTok(webProspect())).toBe(false);
   });
 
-  it('returns false when TIKTOK_PIXEL_ID is missing', () => {
+  it('stays eligible without env TIKTOK_PIXEL_ID (a per-campaign override may supply it; the sender resolves the id and bails if neither is present)', () => {
     delete process.env.TIKTOK_PIXEL_ID;
-    expect(shouldFireTikTok(webProspect())).toBe(false);
+    expect(shouldFireTikTok(webProspect())).toBe(true);
   });
 
   it('returns false for null/undefined prospect', () => {
@@ -223,6 +223,29 @@ describe('sendTikTokLeadEvent', () => {
     const result = await sendTikTokLeadEvent(webProspect(), { eventId: 'evt-1' }, { fetch: fetchSpy });
     expect(result.sent).toBe(false);
     expect(captureExceptionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a 200 with a missing/unparseable code as a failure (strict code===0)', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    const result = await sendTikTokLeadEvent(webProspect(), { eventId: 'evt-1' }, { fetch: fetchSpy });
+    expect(result.sent).toBe(false);
+  });
+
+  it('does NOT send when no pixel id is resolvable (env unset + no override)', async () => {
+    delete process.env.TIKTOK_PIXEL_ID;
+    const fetchSpy = okFetch();
+    const result = await sendTikTokLeadEvent(webProspect(), { eventId: 'evt-1' }, { fetch: fetchSpy });
+    expect(result).toEqual({ sent: false, reason: 'no_pixel_id' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('sends with ctx.pixelIdOverride even when env TIKTOK_PIXEL_ID is unset (per-campaign pixel)', async () => {
+    delete process.env.TIKTOK_PIXEL_ID;
+    const fetchSpy = okFetch();
+    await sendTikTokLeadEvent(webProspect(), { eventId: 'evt-1', pixelIdOverride: 'CAMP_PIXEL' }, { fetch: fetchSpy });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.event_source_id).toBe('CAMP_PIXEL');
   });
 
   it('returns { sent: false } and captures Sentry on non-2xx', async () => {

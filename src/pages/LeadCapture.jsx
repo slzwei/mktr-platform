@@ -104,7 +104,7 @@ export default function LeadCapture() {
     }
 
     if (!ttViewContentFiredRef.current && shouldTrackTikTok(trackCtx)) {
-      const ttPixelId = import.meta.env.VITE_TIKTOK_PIXEL_ID;
+      const ttPixelId = campaign?.tiktokPixelId || import.meta.env.VITE_TIKTOK_PIXEL_ID;
       if (ttPixelId) {
         initTikTokPixel(ttPixelId);
         trackTikTokViewContent(
@@ -136,7 +136,7 @@ export default function LeadCapture() {
     }
 
     if (shouldTrackTikTok(trackCtx)) {
-      const ttPixelId = import.meta.env.VITE_TIKTOK_PIXEL_ID;
+      const ttPixelId = campaign?.tiktokPixelId || import.meta.env.VITE_TIKTOK_PIXEL_ID;
       if (ttPixelId) {
         initTikTokPixel(ttPixelId);
         trackTikTokCompleteRegistration(
@@ -329,7 +329,7 @@ export default function LeadCapture() {
           }
         }
         if (shouldTrackTikTok(trackCtx)) {
-          const ttPixelId = import.meta.env.VITE_TIKTOK_PIXEL_ID;
+          const ttPixelId = campaign?.tiktokPixelId || import.meta.env.VITE_TIKTOK_PIXEL_ID;
           if (ttPixelId) {
             initTikTokPixel(ttPixelId);
             trackTikTokLead(
