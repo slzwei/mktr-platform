@@ -80,6 +80,30 @@ export function readFbp() {
   return match ? match[1] : null;
 }
 
+/**
+ * Returns the Meta browser id (`_fbp`), creating a durable first-party cookie
+ * when the Pixel hasn't set one yet. Mirrors fbevents.js's own format
+ * (`fb.1.{creationTime}.{random}`) and 90-day TTL, and is host-scoped (no
+ * explicit domain) so it works on whichever public host renders the flow.
+ *
+ * Guarantees the server-side CAPI Lead event carries an `fbp` even when the
+ * form is submitted before fbevents.js has written its cookie (fast submits,
+ * slow or blocked pixel load). fbevents.js adopts an existing valid `_fbp`, so
+ * the browser Pixel and the CAPI event stay in sync on the same id.
+ */
+export function ensureFbp() {
+  const existing = readFbp();
+  if (existing) return existing;
+  if (typeof document === 'undefined') return null;
+  try {
+    const fbp = `fb.1.${Date.now()}.${Math.floor(Math.random() * 1e16)}`;
+    document.cookie = `_fbp=${fbp}; path=/; max-age=7776000; SameSite=Lax`;
+    return fbp;
+  } catch {
+    return null;
+  }
+}
+
 export function initPixel(pixelId) {
   if (!pixelId) return;
   if (typeof window === 'undefined' || typeof window.fbq !== 'function') return;
