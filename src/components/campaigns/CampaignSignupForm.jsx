@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { apiClient } from '@/api/client';
 import FieldRenderer from '@/components/campaigns/signup/FieldRenderer';
 import OTPVerification from '@/components/campaigns/signup/OTPVerification';
@@ -37,6 +38,7 @@ export default function CampaignSignupForm({
   const fieldOrder = campaign?.design_config?.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income'];
   const otpChannel = campaign?.design_config?.otpChannel || 'sms';
   const headingFont = heroFontStack(campaign?.design_config?.heroFont);
+  const sgPrOnly = campaign?.design_config?.sgPrOnly === true;
 
   const [formData, setFormData] = useState({
     name: '',
@@ -56,6 +58,8 @@ export default function CampaignSignupForm({
   const [dobIncomplete, setDobIncomplete] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [showSuccessTick, setShowSuccessTick] = useState(false);
+  // SG/PR eligibility gate: null = not answered, 'eligible' = show form, 'no' = blocked.
+  const [eligibility, setEligibility] = useState(null);
 
   // Two PDPA consent checkboxes — campaign T&C is required (opt-in), contact
   // consent defaults to ticked (opt-out). The opt-out path is documented in
@@ -350,8 +354,148 @@ export default function CampaignSignupForm({
     !isValidEmail(formData.email) ||
     !consentTerms;
 
+  // SG/PR eligibility gate (campaign.design_config.sgPrOnly): a Yes/No screening
+  // card shown before the form. "Yes" reveals + animates the form in; "No" shows a
+  // polite, reversible ineligible message. No gate when sgPrOnly is off.
+  if (sgPrOnly && eligibility !== 'eligible') {
+    return (
+      <AnimatePresence mode="wait">
+        {eligibility === 'no' ? (
+          <motion.div
+            key="ineligible"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+          >
+            <h2
+              style={{
+                fontFamily: headingFont,
+                fontWeight: 800,
+                fontSize: 'clamp(24px, 5.5vw, 30px)',
+                lineHeight: 1.15,
+                color: TOKENS.ink,
+                margin: 0,
+                marginBottom: 12,
+              }}
+            >
+              Thanks for your interest
+            </h2>
+            <p
+              style={{
+                fontFamily: 'Albert Sans, system-ui, sans-serif',
+                fontSize: 16,
+                lineHeight: 1.55,
+                color: TOKENS.body,
+                margin: 0,
+                marginBottom: 20,
+              }}
+            >
+              This promotion is only open to Singapore Citizens and Permanent Residents.
+            </p>
+            <button
+              type="button"
+              onClick={() => setEligibility(null)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                color: TOKENS.muted,
+                fontSize: 14,
+                fontFamily: 'Albert Sans, system-ui, sans-serif',
+                textDecoration: 'underline',
+                textUnderlineOffset: 3,
+              }}
+            >
+              ← I picked the wrong option
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="gate"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+          >
+            <h2
+              style={{
+                fontFamily: headingFont,
+                fontWeight: 800,
+                fontSize: 'clamp(24px, 5.5vw, 30px)',
+                lineHeight: 1.15,
+                color: TOKENS.ink,
+                margin: 0,
+                marginBottom: 10,
+              }}
+            >
+              Quick question first
+            </h2>
+            <p
+              style={{
+                fontFamily: 'Albert Sans, system-ui, sans-serif',
+                fontSize: 16,
+                lineHeight: 1.55,
+                color: TOKENS.body,
+                margin: 0,
+                marginBottom: 24,
+              }}
+            >
+              Are you a Singapore Citizen or Permanent Resident?
+            </p>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button
+                type="button"
+                onClick={() => setEligibility('eligible')}
+                style={{
+                  flex: 1,
+                  height: 56,
+                  borderRadius: RADIUS.pill,
+                  backgroundColor: accent,
+                  color: '#ffffff',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontFamily: 'Albert Sans, system-ui, sans-serif',
+                  fontWeight: 600,
+                  fontSize: 16,
+                  boxShadow: '0 4px 14px rgba(209, 112, 41, 0.18)',
+                }}
+              >
+                Yes, I am
+              </button>
+              <button
+                type="button"
+                onClick={() => setEligibility('no')}
+                style={{
+                  flex: 1,
+                  height: 56,
+                  borderRadius: RADIUS.pill,
+                  backgroundColor: '#ffffff',
+                  color: TOKENS.body,
+                  border: `1px solid ${TOKENS.hairline}`,
+                  cursor: 'pointer',
+                  fontFamily: 'Albert Sans, system-ui, sans-serif',
+                  fontWeight: 600,
+                  fontSize: 16,
+                }}
+              >
+                No
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  }
+
   return (
     <>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+      >
       <form onSubmit={handleSubmit}>
         {/* Heavy-serif heading */}
         <h2
@@ -540,6 +684,7 @@ export default function CampaignSignupForm({
           {loading === 'submitting' ? 'Submitting…' : ctaLabel || 'Submit Now'}
         </button>
       </form>
+      </motion.div>
 
       {/* Marketing consent modal */}
       <MarketingConsentDialog

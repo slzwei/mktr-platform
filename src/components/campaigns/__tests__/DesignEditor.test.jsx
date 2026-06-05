@@ -47,3 +47,47 @@ describe('DesignEditor — save failure keeps the dirty state', () => {
     expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument();
   });
 });
+
+describe('DesignEditor — SG/PR only toggle persistence', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('renders the SG/PR only toggle, off by default', () => {
+    render(<DesignEditor campaign={campaign} onSave={vi.fn()} />);
+    expect(screen.getByText('SG / PR only')).toBeInTheDocument();
+    expect(screen.getByRole('switch')).not.toBeChecked();
+  });
+
+  it('persists sgPrOnly:false when the toggle is left off', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<DesignEditor campaign={campaign} onSave={onSave} />);
+    // Dirty the design without touching the toggle.
+    await user.type(screen.getByPlaceholderText('e.g., Get Started Now!'), '!');
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ sgPrOnly: false });
+  });
+
+  it('persists sgPrOnly:true after switching it on', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<DesignEditor campaign={campaign} onSave={onSave} />);
+    await user.click(screen.getByRole('switch'));
+    expect(screen.getByRole('switch')).toBeChecked();
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ sgPrOnly: true });
+  });
+
+  it('initializes the toggle ON for a campaign with sgPrOnly:true and preserves it on save', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const gated = { id: 'camp-2', name: 'Gated', design_config: { formHeadline: 'Hi', sgPrOnly: true } };
+    render(<DesignEditor campaign={gated} onSave={onSave} />);
+    expect(screen.getByRole('switch')).toBeChecked();
+    await user.type(screen.getByPlaceholderText('e.g., Get Started Now!'), '!');
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ sgPrOnly: true });
+  });
+});

@@ -117,3 +117,128 @@ describe('CampaignSignupForm — previewMode sends no network traffic', () => {
     expect(apiClient.post).not.toHaveBeenCalled();
   });
 });
+
+describe('CampaignSignupForm — SG/PR eligibility gate', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('shows the form directly when sgPrOnly is off (default)', () => {
+    renderForm();
+    expect(screen.getByRole('button', { name: 'Submit Now' })).toBeInTheDocument();
+    expect(screen.queryByText(/Singapore Citizen or Permanent Resident/i)).toBeNull();
+  });
+
+  it('gates the form behind a Yes/No screening question when sgPrOnly is on', () => {
+    renderForm({ design: { sgPrOnly: true } });
+    expect(screen.getByText('Are you a Singapore Citizen or Permanent Resident?')).toBeInTheDocument();
+    // Form stays hidden until they answer Yes.
+    expect(screen.queryByRole('button', { name: 'Submit Now' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Yes, I am' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'No' })).toBeInTheDocument();
+  });
+
+  it('reveals the form after answering Yes', async () => {
+    const user = userEvent.setup();
+    renderForm({ design: { sgPrOnly: true } });
+    await user.click(screen.getByRole('button', { name: 'Yes, I am' }));
+    expect(await screen.findByRole('button', { name: 'Submit Now' })).toBeInTheDocument();
+    expect(screen.queryByText('Are you a Singapore Citizen or Permanent Resident?')).toBeNull();
+  });
+
+  it('blocks the form with an ineligible message after answering No, and is reversible', async () => {
+    const user = userEvent.setup();
+    renderForm({ design: { sgPrOnly: true } });
+    await user.click(screen.getByRole('button', { name: 'No' }));
+    expect(await screen.findByText(/only open to Singapore Citizens/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit Now' })).toBeNull();
+    // Mis-tap recovery: back to the screening question.
+    await user.click(screen.getByRole('button', { name: /picked the wrong option/i }));
+    expect(await screen.findByText('Are you a Singapore Citizen or Permanent Resident?')).toBeInTheDocument();
+  });
+});
+
+describe('CampaignSignupForm — SG/PR gate edge cases & integration', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('does not gate when sgPrOnly is explicitly false', () => {
+    renderForm({ design: { sgPrOnly: false } });
+    expect(screen.getByRole('button', { name: 'Submit Now' })).toBeInTheDocument();
+    expect(screen.queryByText('Are you a Singapore Citizen or Permanent Resident?')).toBeNull();
+  });
+
+  it('only gates on boolean true — a stale string "true" must NOT gate', () => {
+    renderForm({ design: { sgPrOnly: 'true' } });
+    expect(screen.getByRole('button', { name: 'Submit Now' })).toBeInTheDocument();
+    expect(screen.queryByText('Are you a Singapore Citizen or Permanent Resident?')).toBeNull();
+  });
+
+  it('only gates on boolean true — a numeric 1 must NOT gate', () => {
+    renderForm({ design: { sgPrOnly: 1 } });
+    expect(screen.getByRole('button', { name: 'Submit Now' })).toBeInTheDocument();
+  });
+
+  it('screening buttons are type="button" so they never submit the form', () => {
+    renderForm({ design: { sgPrOnly: true } });
+    expect(screen.getByRole('button', { name: 'Yes, I am' })).toHaveAttribute('type', 'button');
+    expect(screen.getByRole('button', { name: 'No' })).toHaveAttribute('type', 'button');
+  });
+
+  it('uses the campaign theme color on the Yes button', () => {
+    renderForm({ design: { sgPrOnly: true } });
+    expect(screen.getByRole('button', { name: 'Yes, I am' })).toHaveStyle({ backgroundColor: '#D17029' });
+  });
+
+  it('renders none of the form internals while gated (phone/name/submit hidden)', () => {
+    renderForm({ design: { sgPrOnly: true } });
+    expect(screen.queryByPlaceholderText('9123 4567')).toBeNull();
+    expect(screen.queryByPlaceholderText('John Tan')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Submit Now' })).toBeNull();
+  });
+
+  it('keeps the form hidden after answering No', async () => {
+    const user = userEvent.setup();
+    renderForm({ design: { sgPrOnly: true } });
+    await user.click(screen.getByRole('button', { name: 'No' }));
+    expect(await screen.findByText(/only open to Singapore Citizens/i)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('9123 4567')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Submit Now' })).toBeNull();
+  });
+
+  it('supports the full recovery path: No → wrong option → Yes → form', async () => {
+    const user = userEvent.setup();
+    renderForm({ design: { sgPrOnly: true } });
+    await user.click(screen.getByRole('button', { name: 'No' }));
+    await user.click(await screen.findByRole('button', { name: /picked the wrong option/i }));
+    await user.click(await screen.findByRole('button', { name: 'Yes, I am' }));
+    expect(await screen.findByRole('button', { name: 'Submit Now' })).toBeInTheDocument();
+  });
+
+  it('shows the gate in previewMode (designer / admin preview)', () => {
+    renderForm({ previewMode: true, design: { sgPrOnly: true } });
+    expect(screen.getByText('Are you a Singapore Citizen or Permanent Resident?')).toBeInTheDocument();
+  });
+
+  it('gate ON + previewMode: Yes reveals the form and the full submit flow still works', async () => {
+    const user = userEvent.setup();
+    const { onSubmit } = renderForm({ previewMode: true, design: { sgPrOnly: true } });
+
+    await user.click(screen.getByRole('button', { name: 'Yes, I am' }));
+
+    await user.type(await screen.findByPlaceholderText('John Tan'), 'Jane Tan');
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'jane@example.com');
+    await user.type(screen.getByPlaceholderText('9123 4567'), '91234567');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+
+    const otpInput = await screen.findByPlaceholderText('6-digit code');
+    await user.type(otpInput, '123456');
+    await waitFor(() => expect(screen.getByText('Verified')).toBeInTheDocument(), { timeout: 2500 });
+
+    fireEvent.click(document.getElementById('consent_terms'));
+    const submit = screen.getByRole('button', { name: 'Submit Now' });
+    await waitFor(() => expect(submit).toBeEnabled(), { timeout: 2500 });
+    await user.click(submit);
+
+    expect(await screen.findByText('Preview — your details were not submitted.')).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+});
