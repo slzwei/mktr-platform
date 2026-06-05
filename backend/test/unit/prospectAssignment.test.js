@@ -92,14 +92,17 @@ function buildMocks() {
 
   const sequelize = {
     transaction: jest.fn(async (callback) => callback(mockTransaction)),
+    query: jest.fn().mockResolvedValue([[{ id: 'prospect-1' }]]),
     fn: jest.fn((fnName, col) => `${fnName}(${col})`),
     col: jest.fn((name) => name),
     literal: jest.fn((expr) => expr),
   };
 
   const resolveAssignedAgentId = jest.fn().mockResolvedValue('agent-1');
+  const resolveLeadRouting = jest.fn().mockResolvedValue({ agentId: 'agent-1', via: 'admin' });
   const getSystemAgentId = jest.fn().mockResolvedValue('system-agent-id');
   const deductLeadCredit = jest.fn().mockResolvedValue(true);
+  const chargeLeadCredit = jest.fn().mockResolvedValue(true);
   const buildProspectWhere = jest.fn().mockResolvedValue({});
   const dispatchEvent = jest.fn().mockResolvedValue(undefined);
 
@@ -126,8 +129,10 @@ function buildMocks() {
     models: { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, AgentGroup, AgentGroupMember },
     sequelize,
     resolveAssignedAgentId,
+    resolveLeadRouting,
     getSystemAgentId,
     deductLeadCredit,
+    chargeLeadCredit,
     buildProspectWhere,
     dispatchEvent,
     AppError,
@@ -140,8 +145,10 @@ function makeService(mocks) {
     models: mocks.models,
     sequelize: mocks.sequelize,
     resolveAssignedAgentId: mocks.resolveAssignedAgentId,
+    resolveLeadRouting: mocks.resolveLeadRouting,
     getSystemAgentId: mocks.getSystemAgentId,
     deductLeadCredit: mocks.deductLeadCredit,
+    chargeLeadCredit: mocks.chargeLeadCredit,
     buildProspectWhere: mocks.buildProspectWhere,
     dispatchEvent: mocks.dispatchEvent,
     AppError: mocks.AppError,
@@ -310,6 +317,42 @@ describe('prospectAssignment (unit)', () => {
       const payload = builder();
       expect(payload.data.routing.agentExternalId).toBe('lyfe-agent-1');
     });
+
+    it('releases a HELD lead: clears quarantine atomically, deducts, fires lead.created (not lead.assigned)', async () => {
+      const held = { ...mocks.mockProspect, quarantinedAt: new Date(), reload: jest.fn().mockResolvedValue(true) };
+      mocks.models.Prospect.findByPk
+        .mockResolvedValueOnce(held)
+        .mockResolvedValueOnce({ ...held, campaign: { id: 'camp-1', name: 'C' } });
+      mocks.sequelize.query.mockResolvedValue([[{ id: 'prospect-1' }]]); // claim won
+
+      await service.assignProspect('prospect-1', 'agent-1', admin);
+
+      expect(mocks.sequelize.query).toHaveBeenCalled();
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith('agent-1');
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+      expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.assigned', expect.any(Function));
+    });
+
+    it('release race lost (claim returns 0 rows) → no deduct, no double delivery', async () => {
+      const held = { ...mocks.mockProspect, quarantinedAt: new Date(), reload: jest.fn().mockResolvedValue(true) };
+      mocks.models.Prospect.findByPk.mockResolvedValue(held);
+      mocks.sequelize.query.mockResolvedValue([[]]); // lost the race
+
+      const res = await service.assignProspect('prospect-1', 'agent-1', admin);
+
+      expect(res.agent).toBeNull(); // don't email an agent for a lead released elsewhere
+      expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.created', expect.any(Function));
+      expect(mocks.deductLeadCredit).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fire lead.unassigned when unassigning a HELD lead (Lyfe never saw a create)', async () => {
+      const held = { ...mocks.mockProspect, assignedAgentId: null, quarantinedAt: new Date(), update: jest.fn().mockResolvedValue(true) };
+      mocks.models.Prospect.findByPk.mockResolvedValue(held);
+
+      await service.assignProspect('prospect-1', null, admin);
+
+      expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.unassigned', expect.any(Function));
+    });
   });
 
   // ────────────────────────────────────────────────
@@ -361,7 +404,7 @@ describe('prospectAssignment (unit)', () => {
 
   describe('createProspect (assignment integration)', () => {
     it('assigns agent during creation when resolved', async () => {
-      mocks.resolveAssignedAgentId.mockResolvedValue('agent-1');
+      mocks.resolveLeadRouting.mockResolvedValue({ agentId: 'agent-1', via: 'admin' });
 
       const body = { firstName: 'Test', campaignId: 'camp-1' };
       await service.createProspect(body, admin, {});
@@ -371,7 +414,7 @@ describe('prospectAssignment (unit)', () => {
     });
 
     it('creates prospect without agent when none resolved', async () => {
-      mocks.resolveAssignedAgentId.mockResolvedValue(null);
+      mocks.resolveLeadRouting.mockResolvedValue({ agentId: null, via: 'fallback' });
 
       const body = { firstName: 'Test', campaignId: 'camp-1' };
       await service.createProspect(body, admin, {});
@@ -380,7 +423,7 @@ describe('prospectAssignment (unit)', () => {
     });
 
     it('deducts lead credit during creation when agent assigned', async () => {
-      mocks.resolveAssignedAgentId.mockResolvedValue('agent-1');
+      mocks.resolveLeadRouting.mockResolvedValue({ agentId: 'agent-1', via: 'admin' });
 
       const body = { firstName: 'Test', campaignId: 'camp-1' };
       await service.createProspect(body, admin, {});
@@ -400,7 +443,7 @@ describe('prospectAssignment (unit)', () => {
     });
 
     it('creates activity records for created + assigned', async () => {
-      mocks.resolveAssignedAgentId.mockResolvedValue('agent-1');
+      mocks.resolveLeadRouting.mockResolvedValue({ agentId: 'agent-1', via: 'admin' });
 
       const body = { firstName: 'Test', campaignId: 'camp-1' };
       await service.createProspect(body, admin, {});
@@ -412,7 +455,7 @@ describe('prospectAssignment (unit)', () => {
     });
 
     it('creates assigned activity even when agent is null (records assignment state)', async () => {
-      mocks.resolveAssignedAgentId.mockResolvedValue(null);
+      mocks.resolveLeadRouting.mockResolvedValue({ agentId: null, via: 'fallback' });
 
       const body = { firstName: 'Test', campaignId: 'camp-1' };
       await service.createProspect(body, admin, {});
@@ -422,6 +465,82 @@ describe('prospectAssignment (unit)', () => {
       expect(calls).toHaveLength(2);
       expect(calls[0][0].type).toBe('created');
       expect(calls[1][0].type).toBe('assigned');
+    });
+  });
+
+  // ────────────────────────────────────────────────
+  // createProspect — lead quota (enforceLeadQuota)
+  // ────────────────────────────────────────────────
+
+  describe('createProspect (lead quota)', () => {
+    const quotaCampaign = { id: 'camp-1', name: 'Quota Campaign', is_active: true, enforceLeadQuota: true };
+    const admin = { id: 'admin-1', role: 'admin', firstName: 'Admin' };
+
+    beforeEach(() => {
+      mocks.models.Campaign.findByPk.mockResolvedValue(quotaCampaign);
+    });
+
+    it('gated route + charge succeeds → assigns, charges once, no best-effort deduct, fires lead.created', async () => {
+      mocks.resolveLeadRouting.mockResolvedValue({ agentId: 'agent-1', via: 'package' });
+      mocks.chargeLeadCredit.mockResolvedValue(true);
+
+      await service.createProspect({ firstName: 'Q', campaignId: 'camp-1' }, admin, {});
+
+      const createArg = mocks.models.Prospect.create.mock.calls[0][0];
+      expect(createArg.assignedAgentId).toBe('agent-1');
+      expect(createArg.quarantinedAt).toBeNull();
+      expect(mocks.chargeLeadCredit).toHaveBeenCalledWith('agent-1', 'camp-1', mocks.mockTransaction);
+      expect(mocks.deductLeadCredit).not.toHaveBeenCalled(); // no double-charge
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+    });
+
+    it('gated route + charge fails → quarantines: no agent, quarantinedAt set, no webhook, no deduct', async () => {
+      mocks.resolveLeadRouting.mockResolvedValue({ agentId: 'agent-1', via: 'package' });
+      mocks.chargeLeadCredit.mockResolvedValue(false);
+
+      const res = await service.createProspect({ firstName: 'Q', campaignId: 'camp-1' }, admin, {});
+
+      const createArg = mocks.models.Prospect.create.mock.calls[0][0];
+      expect(createArg.assignedAgentId).toBeNull();
+      expect(createArg.quarantinedAt).toBeInstanceOf(Date);
+      expect(createArg.quarantineReason).toBe('no_funded_agent');
+      expect(res.quarantined).toBe(true);
+      expect(mocks.deductLeadCredit).not.toHaveBeenCalled();
+      expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.created', expect.any(Function));
+    });
+
+    it('fallback route → quarantines WITHOUT charging', async () => {
+      mocks.resolveLeadRouting.mockResolvedValue({ agentId: 'system-agent', via: 'fallback' });
+
+      const res = await service.createProspect({ firstName: 'Q', campaignId: 'camp-1' }, admin, {});
+
+      expect(res.quarantined).toBe(true);
+      expect(mocks.chargeLeadCredit).not.toHaveBeenCalled();
+      expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.created', expect.any(Function));
+    });
+
+    it('exempt admin route on a quota campaign → assigns + best-effort deduct, no authoritative charge', async () => {
+      mocks.resolveLeadRouting.mockResolvedValue({ agentId: 'agent-1', via: 'admin' });
+
+      await service.createProspect({ firstName: 'Q', campaignId: 'camp-1' }, admin, {});
+
+      const createArg = mocks.models.Prospect.create.mock.calls[0][0];
+      expect(createArg.assignedAgentId).toBe('agent-1');
+      expect(mocks.chargeLeadCredit).not.toHaveBeenCalled();
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith('agent-1', 1, mocks.mockTransaction);
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+    });
+
+    it('logs a held activity (type updated) when quarantined', async () => {
+      mocks.resolveLeadRouting.mockResolvedValue({ agentId: 'agent-1', via: 'package' });
+      mocks.chargeLeadCredit.mockResolvedValue(false);
+
+      await service.createProspect({ firstName: 'Q', campaignId: 'camp-1' }, admin, {});
+
+      const calls = mocks.models.ProspectActivity.create.mock.calls;
+      expect(calls[0][0].type).toBe('created');
+      expect(calls[1][0].type).toBe('updated');
+      expect(calls[1][0].metadata.quarantined).toBe(true);
     });
   });
 });

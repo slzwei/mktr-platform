@@ -225,6 +225,20 @@ const Prospect = sequelize.define('Prospect', {
     type: DataTypes.STRING,
     allowNull: true,
     comment: 'Retell AI call_id for idempotent webhook processing'
+  },
+  // Lead-quota hold. Set when a hard-quota campaign had no funded agent at capture
+  // time. This is the ONLY quarantine signal — a null assignedAgentId alone does NOT
+  // mean quarantined (manual unassign / no-campaign Retell+Meta leads also null it).
+  // Cleared on release. Held leads are NOT dispatched to Lyfe until released.
+  quarantinedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'Set when held under lead-quota (no funded agent). NULL = not quarantined.'
+  },
+  quarantineReason: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    comment: 'Why the lead was quarantined, e.g. no_funded_agent.'
   }
 }, {
   tableName: 'prospects',

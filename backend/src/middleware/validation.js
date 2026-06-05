@@ -77,7 +77,8 @@ export const schemas = {
     commission_amount_driver: Joi.number().min(0).optional().allow(null),
     commission_amount_fleet: Joi.number().min(0).optional().allow(null),
     defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
-    ad_playlist: Joi.array().items(Joi.object()).optional()
+    ad_playlist: Joi.array().items(Joi.object()).optional(),
+    enforceLeadQuota: Joi.boolean().optional()
   }),
 
   campaignUpdate: Joi.object({
@@ -93,7 +94,8 @@ export const schemas = {
     commission_amount_driver: Joi.number().min(0).optional().allow(null),
     commission_amount_fleet: Joi.number().min(0).optional().allow(null),
     defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
-    ad_playlist: Joi.array().items(Joi.object()).optional()
+    ad_playlist: Joi.array().items(Joi.object()).optional(),
+    enforceLeadQuota: Joi.boolean().optional()
   }).min(1),
 
   // Car schemas
@@ -161,6 +163,14 @@ export const schemas = {
     fbp: Joi.string().max(255).optional(),
     fbc: Joi.string().max(255).optional(),
     eventSourceUrl: Joi.string().uri().max(2048).optional(),
+    // CompleteRegistration dedup id — set when a quiz reveal fired the browser
+    // CompleteRegistration; the server fires a matching CAPI event with this id.
+    registrationEventId: Joi.string().max(64).optional(),
+    // TikTok attribution identifiers (ttclid click id + _ttp first-party cookie).
+    // Captured at the landing page, stashed in sourceMetadata for the Phase 6
+    // server-side TikTok Events API. Whitelisted here so they don't 400.
+    ttclid: Joi.string().max(512).optional(),
+    ttp: Joi.string().max(255).optional(),
     // PDPA consent flags from the lead-capture form. Stashed in sourceMetadata.
     // consent_contact gates hashed PII (em/ph) in the CAPI payload — see
     // metaCapiService._buildPayload's `marketingConsent` check.

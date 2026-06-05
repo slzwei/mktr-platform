@@ -166,6 +166,20 @@ const Campaign = sequelize.define('Campaign', {
     defaultValue: false,
     field: 'external_eligible',
     comment: 'When true, leads for this campaign may route to external MKTR Leads buyers (consent-gated).'
+  },
+  // Hard lead-quota gate. When true, a lead on this campaign is only delivered if a
+  // funded lead-package credit can be charged; otherwise it is quarantined (held),
+  // never delivered free via the System-Agent fallback. Default false = soft behaviour.
+  enforceLeadQuota: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'enforce_lead_quota'
+  },
+  tiktokPixelId: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    field: 'tiktok_pixel_id'
   }
 }, {
   tableName: 'campaigns',

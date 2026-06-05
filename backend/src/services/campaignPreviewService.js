@@ -86,7 +86,7 @@ export async function getPublicCampaign(id) {
   // out-of-range birthdates client-side. The backend also re-checks on
   // submit in prospectService to prevent bypass.
   const campaign = await Campaign.findByPk(id, {
-    attributes: ['id', 'name', 'design_config', 'is_active', 'metaPixelId', 'min_age', 'max_age']
+    attributes: ['id', 'name', 'design_config', 'is_active', 'metaPixelId', 'tiktokPixelId', 'min_age', 'max_age']
   });
 
   if (!campaign) {
