@@ -34,7 +34,7 @@ export default function normalizeProspect(p) {
  email: p.email ||"",
  company: p.company ||"",
  postal_code: p.location?.zipCode || p.postal_code ||"",
- date_of_birth: p.dateOfBirth || p.date_of_birth || null,
+ date_of_birth: p.dateOfBirth || p.date_of_birth || p.demographics?.dateOfBirth || null,
  status,
  leadStatus: status,
  created_date: createdDate,
