@@ -102,6 +102,43 @@ Nameservers at Cloudflare (`chance.ns.cloudflare.com`, `liv.ns.cloudflare.com`) 
 - mktr-platform Static Site (Render): `VITE_BRAND=mktr` (or unset — defaults to mktr), `VITE_API_URL=https://api.mktr.sg/api` (absolute — pre-rebrand setup, cross-origin to api.mktr.sg works because cookies live on parent `.mktr.sg`).
 - redeem-frontend Static Site (Render): `VITE_BRAND=redeem`, `VITE_API_URL=/api` (relative — Render rewrites `/api/*` → `https://api.mktr.sg/api/*` so cookies live on `.redeem.sg`). Vite plugin emits brand-aware `robots.txt` + `sitemap.xml` per build.
 
+## Meta Ads — Advertising Account, Pixel & CAPI
+
+Paid acquisition (Facebook/Instagram) for the lead-capture funnel. All assets live under one Meta **business portfolio**. Topology verified 2026-06-04:
+
+| Asset | ID | Notes |
+|---|---|---|
+| Business portfolio | `645399914612858` ("VoxaLabs AI") | Owns the ad account, Pixel, and Page below. |
+| **Ad account — advertise from this** | `2170132703771607` ("MKTR", SGD) | `act_2170132703771607` for the Graph API. The only ad account the team should use. Payment method (MasterCard) attached. |
+| Pixel / Dataset | `1402034528611431` ("MKTR Lead Capture") | Browser Pixel **+** CAPI, both live on `redeem.sg` and receiving events. Connected to the ad account. |
+| Facebook Page | `1162230786970311` ("MKTR Campaigns") | The advertiser identity prospects see in-feed. |
+
+**Gotcha — billing ID ≠ ad-account ID:** the MKTR ad account's **billing/payment-account ID is `6976122706429`**. It is the *same account* as `2170132703771607`, not a second one — it appears only in Billing-hub URLs, is **absent from the Ads Manager account picker**, and the Graph API returns `could not resolve ad account` for it. Always use `2170132703771607` in Ads Manager and the API.
+
+**Ignore these accounts:** an empty portfolio "SG Health" (0 ad accounts), and the personal ad account `1931760067413088` ("Shawn Lee") — wrong identity for brand ads; don't attach the card or run campaigns there.
+
+**Brand identity:** ads currently run as the "MKTR Campaigns" Page. Per the operator-vs-customer split, consider a **Redeem**-branded Page so consumer ads match the `redeem.sg` landing page. Link an Instagram professional account to the Page for IG placements.
+
+**Tracking code:**
+- `src/lib/metaPixel.js` — Pixel init + `ViewContent`/`Lead` with stable event IDs for Pixel⇄CAPI dedup; captures `_fbc` from `fbclid` and reads/synthesizes `_fbp` (`ensureFbp()` mints a first-party `_fbp` cookie when the Pixel hasn't set one yet, so server `Lead` events carry it). `shouldTrack` suppresses preview/demo/test-data routes and dev-without-test-code.
+- `index.html` — base Pixel loader, gated on `VITE_META_PIXEL_ID`.
+- `backend/src/services/metaCapiService.js` — fire-and-forget CAPI `Lead` (`sendLeadEvent`), gated by `shouldFireCapi` (skips Retell + Meta-Lead-Ads-origin prospects to avoid double-counting); per-campaign override via `Campaign.metaPixelId`, else `META_PIXEL_ID`.
+- Full design: `docs/plans/meta-tracking-implementation.md`.
+
+**Env vars** (pixel/page IDs are public — embedded in page source; the access token is the only secret):
+
+| Var | Component | Value / Notes |
+|---|---|---|
+| `VITE_META_PIXEL_ID` | Frontend build | `1402034528611431` |
+| `META_PIXEL_ID` | Backend (CAPI) | `1402034528611431` |
+| `META_CAPI_ENABLED` | Backend | Must be `"true"` to fire CAPI |
+| `META_CAPI_ACCESS_TOKEN` | Backend | **Secret** — Pino-redacted, never commit |
+| `META_TEST_EVENT_CODE` / `VITE_META_TEST_EVENT_CODE` | Both | Routes events to Test Events (staging/dev) |
+
+`redeem.sg` is domain-verified in Meta (see the `facebook-domain-verification` TXT in the DNS section above).
+
+**Running a paid campaign** (drives clicks into the existing round-robin pipeline): objective **Leads** (`OUTCOME_LEADS`), conversion location **Website**, optimize for the **Lead** event; destination = a `redeem.sg/LeadCapture?campaign_id={id}` link for the specific MKTR campaign so leads attribute + auto-assign. No native Meta Lead Forms — the funnel uses the `redeem.sg` landing page.
+
 ## Architecture — Full Data Flow
 
 ```
