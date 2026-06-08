@@ -41,9 +41,12 @@ export function makeReleaseSweep(overrides = {}) {
 
     let released = 0;
     for (let i = 0; i < MAX_RELEASE_PER_SWEEP; i++) {
-      // Oldest held lead for this campaign (FIFO).
+      // Oldest held lead for this campaign (FIFO). Only INTERNAL lead-quota holds
+      // (quarantineReason 'no_funded_agent') are eligible — external holds
+      // ('no_funded_external_buyer') must NEVER be released to Lyfe by this internal
+      // sweep; they can only ever be delivered via the external (MKTR Leads) channel.
       const held = await d.Prospect.findOne({
-        where: { campaignId, quarantinedAt: { [Op.ne]: null } },
+        where: { campaignId, quarantinedAt: { [Op.ne]: null }, quarantineReason: 'no_funded_agent' },
         order: [['quarantinedAt', 'ASC']],
       });
       if (!held) break; // queue drained
@@ -123,7 +126,8 @@ export function makeReleaseSweep(overrides = {}) {
   async function sweepAll() {
     const rows = await d.Prospect.findAll({
       attributes: ['campaignId'],
-      where: { quarantinedAt: { [Op.ne]: null }, campaignId: { [Op.ne]: null } },
+      // Internal lead-quota holds only — external holds are not releasable here.
+      where: { quarantinedAt: { [Op.ne]: null }, quarantineReason: 'no_funded_agent', campaignId: { [Op.ne]: null } },
       group: ['campaignId'],
     });
     let total = 0;

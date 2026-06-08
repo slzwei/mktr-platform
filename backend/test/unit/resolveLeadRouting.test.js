@@ -133,4 +133,12 @@ describe('resolveLeadAssignment (unit) — via labels + external pool', () => {
     expect(r.via).toBe('fallback');
     expect(ExternalCampaignAgent.findAll).not.toHaveBeenCalled();
   });
+
+  it('tier 5 — allowExternal + no funded internal/external pool → {kind:hold} (never System Agent)', async () => {
+    LeadPackageAssignment.findAll.mockResolvedValue([]); // no funded internal pool
+    User.findAll.mockResolvedValue([]);
+    ExternalCampaignAgent.findAll.mockResolvedValue([]); // no funded external buyer
+    const r = await resolveLeadAssignment({ campaignId: 'c-empty', allowExternal: true });
+    expect(r).toEqual({ kind: 'hold', via: 'fallback', holdReason: 'no_funded_external_buyer' });
+  });
 });

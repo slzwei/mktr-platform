@@ -217,6 +217,8 @@ export function makeProspectService(overrides = {}) {
     //   - everyone else (the live path) → internal-only resolveLeadRouting, unchanged.
     let assignedAgentId = null;
     let externalAgentId = null;
+    let externalHold = false; // external-eligible + consented, but no funded buyer → HOLD
+    let externalHoldReason = null;
     let routeVia;
     if (allowExternal) {
       const r = await d.resolveLeadAssignment({
@@ -229,6 +231,11 @@ export function makeProspectService(overrides = {}) {
       routeVia = r.via;
       if (r.kind === 'external') {
         externalAgentId = r.externalAgentId; // assignedAgentId stays null (mutually exclusive)
+      } else if (r.kind === 'hold') {
+        // No funded buyer AND no funded internal pool agent — never hand a monetized,
+        // consented lead to the free System Agent. Quarantine it (held) below.
+        externalHold = true;
+        externalHoldReason = r.holdReason || 'no_funded_external_buyer';
       } else {
         assignedAgentId = r.internalAgentId ?? null;
       }
@@ -434,7 +441,12 @@ export function makeProspectService(overrides = {}) {
       // leads default to a plain "assign" directive so the shared activity/deduct
       // code below stays correct (external is charged authoritatively, not metered).
       let decision = { action: 'assign', assignedAgentId, charged: false, via: routeVia };
-      if (!externalAgentId) {
+      if (externalHold) {
+        // External-eligible + consented but no funded buyer → HOLD (never System Agent,
+        // never charged). The distinct quarantineReason fences this lead off from the
+        // internal release sweep so it can never be delivered to Lyfe.
+        decision = { action: 'quarantine', quarantineReason: externalHoldReason, charged: false, via: routeVia };
+      } else if (!externalAgentId) {
         decision = await d.decideAssignment({
           campaign: sourceCampaign,
           routing: { agentId: assignedAgentId, via: routeVia },
@@ -484,7 +496,10 @@ export function makeProspectService(overrides = {}) {
             prospectId: newProspect.id,
             type: 'updated',
             actorUserId: user?.id || null,
-            description: 'Held — no funded agent (lead quota)',
+            description:
+              decision.quarantineReason === 'no_funded_external_buyer'
+                ? 'Held — no funded MKTR Leads (external) buyer'
+                : 'Held — no funded agent (lead quota)',
             metadata: { quarantined: true, reason: decision.quarantineReason, via: routeVia },
           },
           { transaction: t }
@@ -821,6 +836,17 @@ export function makeProspectService(overrides = {}) {
 
     if (!agent) {
       throw new d.AppError('Invalid or inactive agent', 400);
+    }
+
+    // An external hold (no funded MKTR Leads buyer) must NEVER be manually released to an
+    // internal agent / Lyfe — it was captured for the external buyer pool and can only be
+    // delivered via the external channel (or a dedicated conversion flow, not built yet).
+    // The auto release-sweep is already fenced off these holds; close the manual path too.
+    if (prospect.quarantineReason === 'no_funded_external_buyer') {
+      throw new d.AppError(
+        'This lead is held for the MKTR Leads (external) buyer pool and cannot be manually assigned to an internal agent.',
+        409
+      );
     }
 
     // A manual admin assign is an EXEMPT route (decision a): it always delivers and does

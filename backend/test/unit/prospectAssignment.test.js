@@ -334,6 +334,23 @@ describe('prospectAssignment (unit)', () => {
       expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.assigned', expect.any(Function));
     });
 
+    it('refuses to manually release an EXTERNAL hold (no_funded_external_buyer) to an internal agent', async () => {
+      const extHeld = {
+        ...mocks.mockProspect,
+        quarantinedAt: new Date(),
+        quarantineReason: 'no_funded_external_buyer',
+        reload: jest.fn().mockResolvedValue(true),
+      };
+      mocks.models.Prospect.findByPk.mockResolvedValue(extHeld);
+
+      await expect(service.assignProspect('prospect-1', 'agent-1', admin)).rejects.toThrow(/MKTR Leads/);
+
+      // No release, no charge, no Lyfe delivery — the external-hold fence holds on the manual path too.
+      expect(mocks.sequelize.query).not.toHaveBeenCalled();
+      expect(mocks.deductLeadCredit).not.toHaveBeenCalled();
+      expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.created', expect.any(Function));
+    });
+
     it('release race lost (claim returns 0 rows) → no deduct, no double delivery', async () => {
       const held = { ...mocks.mockProspect, quarantinedAt: new Date(), reload: jest.fn().mockResolvedValue(true) };
       mocks.models.Prospect.findByPk.mockResolvedValue(held);
@@ -598,5 +615,44 @@ describe('createProspect — single-pass external routing (W1)', () => {
 
     expect(mocks.resolveLeadRouting).toHaveBeenCalledTimes(1);
     expect(resolveLeadAssignment).not.toHaveBeenCalled();
+  });
+
+  it('external-eligible + consented but NO funded buyer → HELD (quarantined), not assigned, not charged, webhook suppressed', async () => {
+    const mocks = buildMocks();
+    mocks.mockCampaign.externalEligible = true;
+    const resolveLeadAssignment = jest
+      .fn()
+      .mockResolvedValue({ kind: 'hold', via: 'fallback', holdReason: 'no_funded_external_buyer' });
+    const deductExternalLeadBalance = jest.fn();
+    const service = makeService(mocks, {
+      hasValidExternalConsent: () => true,
+      resolveLeadAssignment,
+      deductExternalLeadBalance,
+    });
+
+    await service.createProspect(
+      {
+        firstName: 'Held',
+        campaignId: 'camp-1',
+        consentMetadata: { external: { version: 'v1', consentedAt: '2026-01-01T00:00:00Z', channels: ['phone'] } },
+      },
+      admin,
+      {}
+    );
+
+    // Held: quarantined, neither assignee set, distinct external reason.
+    expect(mocks.models.Prospect.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assignedAgentId: null,
+        externalAgentId: null,
+        quarantineReason: 'no_funded_external_buyer',
+      }),
+      expect.anything()
+    );
+    expect(mocks.models.Prospect.create.mock.calls[0][0].quarantinedAt).toBeInstanceOf(Date);
+    // Never charged (no buyer), internal quota gate skipped, Lyfe webhook suppressed.
+    expect(deductExternalLeadBalance).not.toHaveBeenCalled();
+    expect(mocks.chargeLeadCredit).not.toHaveBeenCalled();
+    expect(mocks.dispatchEvent).not.toHaveBeenCalled();
   });
 });

@@ -36,6 +36,18 @@ describe('releaseSweep.sweepCampaign (unit)', () => {
     expect(deps.Prospect.findOne).not.toHaveBeenCalled();
   });
 
+  it('fences off external holds: the FIFO query matches only internal quota holds', async () => {
+    const { deps } = buildMocks();
+    deps.Prospect.findOne.mockResolvedValue(null); // empty queue — we only inspect the query shape
+    await makeReleaseSweep(deps).sweepCampaign('camp-1');
+    expect(deps.Prospect.findOne).toHaveBeenCalled();
+    // Must filter to the internal reason so external holds ('no_funded_external_buyer')
+    // can never be released to Lyfe by this internal sweep.
+    expect(deps.Prospect.findOne.mock.calls[0][0].where).toMatchObject({
+      quarantineReason: 'no_funded_agent',
+    });
+  });
+
   it('drains the held queue FIFO: releases each funded lead, charges, fires lead.created', async () => {
     const { deps, mockTx } = buildMocks();
     deps.Prospect.findOne
