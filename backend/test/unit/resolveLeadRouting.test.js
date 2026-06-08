@@ -22,7 +22,7 @@ jest.unstable_mockModule('../../src/utils/logger.js', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-const { resolveLeadRouting } = await import('../../src/services/systemAgent.js');
+const { resolveLeadRouting, resolveLeadAssignment } = await import('../../src/services/systemAgent.js');
 
 describe('resolveLeadRouting (unit) — route labelling for quota gating', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -77,5 +77,60 @@ describe('resolveLeadRouting (unit) — route labelling for quota gating', () =>
     User.findOne.mockResolvedValue({ id: 'system', email: 'system@mktr.local', role: 'agent', isActive: true });
     const r = await resolveLeadRouting({ campaignId: 'camp-empty' });
     expect(r.via).toBe('fallback');
+  });
+});
+
+describe('resolveLeadAssignment (unit) — via labels + external pool', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('tier 1 — agent self → {kind:internal, via:self}', async () => {
+    const r = await resolveLeadAssignment({ reqUser: { id: 'me', role: 'agent' } });
+    expect(r).toEqual({ kind: 'internal', internalAgentId: 'me', via: 'self' });
+  });
+
+  it('tier 2 — admin explicit agent → {kind:internal, via:admin}', async () => {
+    User.findOne.mockResolvedValue({ id: 'tgt' });
+    const r = await resolveLeadAssignment({ reqUser: { role: 'admin' }, requestedAgentId: 'tgt' });
+    expect(r).toEqual({ kind: 'internal', internalAgentId: 'tgt', via: 'admin' });
+  });
+
+  it('tier 3 — QR-owner agent → {kind:internal, via:qr}', async () => {
+    QrTag.findByPk.mockResolvedValue({ assignedAgentId: 'qr-owner' });
+    User.findOne.mockResolvedValue({ id: 'qr-owner' });
+    const r = await resolveLeadAssignment({ qrTagId: 'qr-1' });
+    expect(r).toEqual({ kind: 'internal', internalAgentId: 'qr-owner', via: 'qr' });
+  });
+
+  it('tier 4 internal — package agent → {kind:internal, via:package}', async () => {
+    LeadPackageAssignment.findAll.mockResolvedValue([{ agentId: 'pkg-agent' }]);
+    User.findAll.mockResolvedValue([{ id: 'pkg-agent' }]);
+    ExternalCampaignAgent.findAll.mockResolvedValue([]);
+    RoundRobinCursor.findOrCreate.mockResolvedValue([{ campaignId: 'c1', cursor: 0 }, false]);
+    RoundRobinCursor.update.mockResolvedValue([1, [{ cursor: 1 }]]);
+    const r = await resolveLeadAssignment({ campaignId: 'c1', allowExternal: true });
+    expect(r).toEqual({ kind: 'internal', internalAgentId: 'pkg-agent', via: 'package' });
+  });
+
+  it('tier 4 external — funded external buyer (allowExternal) → {kind:external, via:external}', async () => {
+    LeadPackageAssignment.findAll.mockResolvedValue([]); // no internal pool
+    User.findAll.mockResolvedValue([]);
+    ExternalCampaignAgent.findAll.mockResolvedValue([
+      { externalAgent: { id: 'ext-1', createdAt: '2026-01-01T00:00:00Z' } },
+    ]);
+    RoundRobinCursor.findOrCreate.mockResolvedValue([{ campaignId: 'c1', cursor: 0 }, false]);
+    RoundRobinCursor.update.mockResolvedValue([1, [{ cursor: 1 }]]);
+    const r = await resolveLeadAssignment({ campaignId: 'c1', allowExternal: true });
+    expect(r).toEqual({ kind: 'external', externalAgentId: 'ext-1', via: 'external' });
+  });
+
+  it('external pool is NOT queried when allowExternal is false', async () => {
+    LeadPackageAssignment.findAll.mockResolvedValue([]);
+    User.findAll.mockResolvedValue([]);
+    process.env.DEFAULT_AGENT_ID = '';
+    User.findOne.mockResolvedValue({ id: 'system', email: 'system@mktr.local', role: 'agent', isActive: true });
+    const r = await resolveLeadAssignment({ campaignId: 'c1', allowExternal: false });
+    expect(r.kind).toBe('internal');
+    expect(r.via).toBe('fallback');
+    expect(ExternalCampaignAgent.findAll).not.toHaveBeenCalled();
   });
 });

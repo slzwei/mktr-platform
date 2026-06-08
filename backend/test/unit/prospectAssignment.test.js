@@ -140,7 +140,7 @@ function buildMocks() {
   };
 }
 
-function makeService(mocks) {
+function makeService(mocks, overrides = {}) {
   return makeProspectService({
     models: mocks.models,
     sequelize: mocks.sequelize,
@@ -153,6 +153,7 @@ function makeService(mocks) {
     dispatchEvent: mocks.dispatchEvent,
     AppError: mocks.AppError,
     logger: mocks.logger,
+    ...overrides,
   });
 }
 
@@ -542,5 +543,60 @@ describe('prospectAssignment (unit)', () => {
       expect(calls[1][0].type).toBe('updated');
       expect(calls[1][0].metadata.quarantined).toBe(true);
     });
+  });
+});
+
+describe('createProspect — single-pass external routing (W1)', () => {
+  const admin = { id: 'admin-1', role: 'admin', firstName: 'Admin' };
+
+  it('external-eligible + consented lead routes via resolveLeadAssignment ONLY (no resolveLeadRouting double-pass), writes externalAgentId, and suppresses the Lyfe webhook', async () => {
+    const mocks = buildMocks();
+    mocks.mockCampaign.externalEligible = true; // Campaign.findByPk returns this row
+    const resolveLeadAssignment = jest
+      .fn()
+      .mockResolvedValue({ kind: 'external', externalAgentId: 'ext-1', via: 'external' });
+    const deductExternalLeadBalance = jest.fn().mockResolvedValue(true);
+    const service = makeService(mocks, {
+      hasValidExternalConsent: () => true,
+      resolveLeadAssignment,
+      deductExternalLeadBalance,
+    });
+
+    await service.createProspect(
+      {
+        firstName: 'Ext',
+        campaignId: 'camp-1',
+        consentMetadata: { external: { version: 'v1', consentedAt: '2026-01-01T00:00:00Z', channels: ['phone'] } },
+      },
+      admin,
+      {}
+    );
+
+    // Exactly one routing pass: the unified resolver, never the internal-only one.
+    expect(resolveLeadAssignment).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveLeadRouting).not.toHaveBeenCalled();
+    // Written as an external lead (mutually exclusive with assignedAgentId).
+    expect(mocks.models.Prospect.create).toHaveBeenCalledWith(
+      expect.objectContaining({ externalAgentId: 'ext-1', assignedAgentId: null }),
+      expect.anything()
+    );
+    // Paid external buyer charged authoritatively; the internal quota gate is skipped.
+    expect(deductExternalLeadBalance).toHaveBeenCalledWith('ext-1', 1, expect.anything());
+    expect(mocks.chargeLeadCredit).not.toHaveBeenCalled();
+    // External leads must NOT fire the Lyfe lead.created webhook.
+    expect(mocks.dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('non-external-eligible lead still routes via resolveLeadRouting only (live path unchanged)', async () => {
+    const mocks = buildMocks();
+    mocks.mockCampaign.externalEligible = false;
+    const resolveLeadAssignment = jest.fn();
+    const service = makeService(mocks, { hasValidExternalConsent: () => true, resolveLeadAssignment });
+    mocks.resolveLeadRouting.mockResolvedValue({ agentId: 'agent-1', via: 'admin' });
+
+    await service.createProspect({ firstName: 'Int', campaignId: 'camp-1' }, admin, {});
+
+    expect(mocks.resolveLeadRouting).toHaveBeenCalledTimes(1);
+    expect(resolveLeadAssignment).not.toHaveBeenCalled();
   });
 });
