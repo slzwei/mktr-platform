@@ -293,8 +293,14 @@ export async function resolveLeadAssignment({ reqUser, requestedAgentId, campaig
     }
   }
 
-  // 5) Fallback → System Agent (internal). NOTE: the cutover must NOT let an
-  //    external-only campaign reach here — no eligible paid buyer => quarantine.
+  // 5) Fallback. For an external-eligible (allowExternal) lead with no funded buyer AND
+  //    no funded internal pool agent, HOLD it — never hand a monetized, consented lead to
+  //    the free System Agent (plan §0.7). The caller quarantines it; the internal release
+  //    sweep is fenced off from these holds. Internal-only callers (allowExternal=false,
+  //    e.g. resolveAssignedAgentId/retell/meta) keep the System-Agent fallback unchanged.
+  if (allowExternal) {
+    return { kind: 'hold', via: 'fallback', holdReason: 'no_funded_external_buyer' };
+  }
   const systemId = await getSystemAgentId();
   return { kind: 'internal', internalAgentId: systemId, via: 'fallback' };
 }
