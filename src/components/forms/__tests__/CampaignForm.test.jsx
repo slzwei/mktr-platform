@@ -127,9 +127,9 @@ describe('AdminCampaignForm', () => {
  expect(screen.getByText('Commissions')).toBeInTheDocument();
  });
 
- it('renders Default Assignment Mode card', () => {
+ it('no longer renders the (removed) Default Assignment Mode card — assignment moved to QR tags', () => {
  renderForm();
- expect(screen.getByText('Default Assignment Mode')).toBeInTheDocument();
+ expect(screen.queryByText('Default Assignment Mode')).not.toBeInTheDocument();
  });
 
  it('allows entering campaign name', () => {

@@ -1,7 +1,8 @@
 import dotenv from 'dotenv';
-import { User, QrTag, RoundRobinCursor, LeadPackageAssignment, LeadPackage } from '../models/index.js';
+import { User, QrTag, RoundRobinCursor, LeadPackageAssignment, LeadPackage, ExternalAgent, ExternalCampaignAgent, sequelize } from '../models/index.js';
 import { Op } from 'sequelize';
 import { logger } from '../utils/logger.js';
+import { pickFromRing } from './leadRing.js';
 
 // In-process queue to serialize round-robin updates per campaign (prevents race conditions)
 const rrQueues = new Map();
@@ -141,33 +142,26 @@ export async function resolveLeadRouting({ reqUser, requestedAgentId, campaignId
       })).map(u => u.id);
 
       if (activeAgents.length > 0) {
-        // Use transaction to avoid race under load
-        // Serialize updates in-process; do a simple read-modify-write with retries
+        // Round-robin via a per-campaign MONOTONIC counter. The increment is a
+        // single atomic `UPDATE ... RETURNING` — correct under concurrent
+        // webhooks AND multiple backend instances. Modulo is applied only at
+        // READ time, so rotation stays fair when the agent roster grows/shrinks
+        // (storing the modulo'd value would pin the cursor to the smallest
+        // roster ever seen and starve later-added agents). enqueueCampaign still
+        // serializes in-process to reduce contention, but correctness no longer
+        // depends on it.
         const result = await enqueueCampaign(campaignId, async () => {
-          let attempts = 0;
-          while (attempts < 5) {
-            try {
-              let cursor = await RoundRobinCursor.findOne({ where: { campaignId } });
-              if (!cursor) {
-                cursor = await RoundRobinCursor.create({ campaignId, cursor: 0 });
-              }
-              const index = cursor.cursor % activeAgents.length;
-              const chosen = activeAgents[index];
-              await cursor.update({ cursor: (cursor.cursor + 1) % activeAgents.length });
-              return chosen;
-            } catch (e) {
-              const msg = String(e?.message || '').toLowerCase();
-              if (msg.includes('busy') || msg.includes('locked')) {
-                attempts++;
-                await new Promise(r => setTimeout(r, 50 * attempts));
-                continue;
-              }
-              throw e;
-            }
-          }
-          // As a last resort, pick deterministically to avoid failing lead creation
-          const fallback = activeAgents[Math.floor(Math.random() * activeAgents.length)];
-          return fallback;
+          // campaignId is UNIQUE on round_robin_cursor, so findOrCreate is race-safe.
+          await RoundRobinCursor.findOrCreate({
+            where: { campaignId },
+            defaults: { campaignId, cursor: 0 },
+          });
+          const [, [updated]] = await RoundRobinCursor.update(
+            { cursor: sequelize.literal('"cursor" + 1') },
+            { where: { campaignId }, returning: true }
+          );
+          const nextCursor = updated?.cursor ?? 1;
+          return activeAgents[(nextCursor - 1) % activeAgents.length];
         });
         if (result) return { agentId: result, via: 'package' };
       }
@@ -186,6 +180,112 @@ export async function resolveLeadRouting({ reqUser, requestedAgentId, campaignId
 export async function resolveAssignedAgentId(ctx) {
   const { agentId } = await resolveLeadRouting(ctx);
   return agentId;
+}
+
+/**
+ * Cross-pool assignment resolver (Phase 0.7). Like resolveAssignedAgentId, but
+ * the campaign round-robin spans BOTH internal Lyfe agents (lead packages) AND
+ * external buyers (eligible for the campaign with leadBalance > 0). Returns a
+ * tagged result so the caller knows which table the assignee lives in — which
+ * also drives webhook destination (internal -> Lyfe app, external -> MKTR Leads).
+ *
+ * ADDITIVE: not yet wired into the live capture path. createProspect / retell /
+ * meta are cut over in the Phase 0.7 + 0.5 change, where the external branch also
+ * atomically deducts balance (deductExternalLeadBalance) and runs the consent
+ * gate, and where an external campaign with no eligible paid buyer quarantines
+ * the lead instead of dropping it onto the System Agent.
+ *
+ * `allowExternal` MUST be computed by the caller as
+ *   (campaign.externalEligible === true) && hasValidExternalConsent(prospect)
+ * and defaults to false. When false the external pool is not even queried, so
+ * the resolver is byte-for-byte internal-only — identical to resolveAssignedAgentId
+ * behavior. This is the fail-safe that keeps the live pipeline unchanged until a
+ * caller opts a consented, external-eligible lead in.
+ *
+ *   returns { kind: 'internal', internalAgentId } | { kind: 'external', externalAgentId }
+ */
+export async function resolveLeadAssignment({ reqUser, requestedAgentId, campaignId, qrTagId, allowExternal = false }) {
+  // 1) Requester is an agent → self-assign (internal)
+  if (reqUser && reqUser.role === 'agent') {
+    return { kind: 'internal', internalAgentId: reqUser.id };
+  }
+
+  // 2) Admin-requested explicit agent (internal)
+  if (reqUser && reqUser.role === 'admin' && requestedAgentId) {
+    const valid = await User.findOne({ where: { id: requestedAgentId, role: 'agent', isActive: true } });
+    if (valid) return { kind: 'internal', internalAgentId: valid.id };
+  }
+
+  // 3) QR directly assigned to an internal agent
+  if (qrTagId) {
+    const qr = await QrTag.findByPk(qrTagId);
+    const candidateId = qr?.assignedAgentId || qr?.ownerUserId;
+    if (candidateId) {
+      const agent = await User.findOne({ where: { id: candidateId, role: 'agent', isActive: true } });
+      if (agent) return { kind: 'internal', internalAgentId: agent.id };
+    }
+  }
+
+  // 4) Unified round-robin across internal lead-package agents + external buyers
+  if (campaignId) {
+    const assignments = await LeadPackageAssignment.findAll({
+      where: { status: 'active', leadsRemaining: { [Op.gt]: 0 } },
+      include: [{ model: LeadPackage, as: 'package', where: { campaignId }, required: true, attributes: [] }],
+      attributes: ['agentId'],
+    });
+    const internalCandidateIds = [...new Set(assignments.map((a) => a.agentId))];
+    const internalActive = internalCandidateIds.length
+      ? (await User.findAll({
+          where: { id: internalCandidateIds, role: 'agent', isActive: true },
+          attributes: ['id'],
+          order: [['createdAt', 'ASC']],
+        })).map((u) => u.id)
+      : [];
+
+    // External pool is queried ONLY when the caller opted this consented,
+    // external-eligible lead in. Default (false) => internal-only resolver.
+    let externalActive = [];
+    if (allowExternal) {
+      const extLinks = await ExternalCampaignAgent.findAll({
+        where: { campaignId, isActive: true },
+        include: [{
+          model: ExternalAgent,
+          as: 'externalAgent',
+          where: { isActive: true, leadBalance: { [Op.gt]: 0 } },
+          required: true,
+          attributes: ['id', 'createdAt'],
+        }],
+      });
+      externalActive = extLinks
+        .map((l) => l.externalAgent)
+        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+        .map((a) => a.id);
+    }
+
+    const ring = [
+      ...internalActive.map((id) => ({ kind: 'internal', internalAgentId: id })),
+      ...externalActive.map((id) => ({ kind: 'external', externalAgentId: id })),
+    ];
+
+    if (ring.length > 0) {
+      const selected = await enqueueCampaign(campaignId, async () => {
+        // campaignId is UNIQUE on round_robin_cursor, so findOrCreate is race-safe.
+        await RoundRobinCursor.findOrCreate({ where: { campaignId }, defaults: { campaignId, cursor: 0 } });
+        const [, [updated]] = await RoundRobinCursor.update(
+          { cursor: sequelize.literal('"cursor" + 1') },
+          { where: { campaignId }, returning: true }
+        );
+        const nextCursor = updated?.cursor ?? 1;
+        return pickFromRing(ring, nextCursor);
+      });
+      if (selected) return selected;
+    }
+  }
+
+  // 5) Fallback → System Agent (internal). NOTE: the cutover must NOT let an
+  //    external-only campaign reach here — no eligible paid buyer => quarantine.
+  const systemId = await getSystemAgentId();
+  return { kind: 'internal', internalAgentId: systemId };
 }
 
 

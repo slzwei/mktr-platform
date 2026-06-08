@@ -17,7 +17,6 @@ import { requestId } from './middleware/requestId.js';
 
 // Non-autodiscoverable middleware
 import leadCaptureBind from './routes/leadCaptureBind.js';
-import leadgenProxyShim from './middleware/leadgenProxyShim.js';
 import { optionalAuth } from './middleware/auth.js';
 import { blockRedeemForInternalRoutes } from './middleware/internalRouteHostGuard.js';
 import { logger } from './utils/logger.js';
@@ -149,10 +148,6 @@ export const init = async (app) => {
   // Cookies (cookieParser) are used only for non-auth session attribution (sid, atk).
   // If cookie-based auth is ever added, CSRF middleware must be implemented.
   app.use(cookieParser());
-
-  // Legacy LeadGen proxy shim → forwards to gateway leadgen domain
-  // This preserves existing frontend calls during a one-week grace window.
-  app.use(leadgenProxyShim());
 
   // Static file serving for uploads — allow cross-origin embedding for images
   app.use(

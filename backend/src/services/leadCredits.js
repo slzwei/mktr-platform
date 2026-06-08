@@ -86,6 +86,47 @@ export async function deductLeadCredit(agentId, amount = 1, externalTransaction 
 }
 
 /**
+ * Atomically deduct `amount` from an external agent's GLOBAL prepaid balance.
+ *
+ * The check-and-decrement is a single conditional UPDATE (... WHERE
+ * "leadBalance" >= amount RETURNING id), so it is race-safe under concurrent
+ * assignments and across multiple backend instances. Returns true only if the
+ * balance was actually decremented.
+ *
+ * IMPORTANT: unlike deductLeadCredit (internal, best-effort), a `false` here
+ * MUST block delivery to that buyer — external leads are paid, so a lead is
+ * never handed to a buyer whose balance we could not charge.
+ *
+ * @param {string} externalAgentId
+ * @param {number} amount
+ * @param {import('sequelize').Transaction|null} externalTransaction
+ * @returns {Promise<boolean>}
+ */
+export async function deductExternalLeadBalance(externalAgentId, amount = 1, externalTransaction = null) {
+    if (!externalAgentId || amount <= 0) return false;
+
+    const ownTransaction = !externalTransaction;
+    const t = externalTransaction || await sequelize.transaction();
+    try {
+        const [rows] = await sequelize.query(
+            `UPDATE external_agents
+                SET "leadBalance" = "leadBalance" - :amount, "updatedAt" = NOW()
+              WHERE id = :id AND "leadBalance" >= :amount
+              RETURNING id`,
+            { replacements: { id: externalAgentId, amount }, transaction: t }
+        );
+        const ok = Array.isArray(rows) && rows.length > 0;
+
+        if (ownTransaction) await t.commit();
+        return ok;
+    } catch (error) {
+        if (ownTransaction) await t.rollback();
+        logger.error('Error deducting external lead balance', { error: error?.message || String(error) });
+        return false;
+    }
+}
+
+/**
  * Authoritatively charge ONE lead credit to an agent, scoped to a campaign.
  *
  * This is the GATE for hard-quota campaigns. Unlike `deductLeadCredit` (best-effort,

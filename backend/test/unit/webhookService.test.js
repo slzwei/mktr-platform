@@ -351,14 +351,11 @@ describe('webhookService (unit)', () => {
         text: jest.fn().mockResolvedValue('error'),
       });
 
-      // Simulate threshold consecutive failures
-      mocks.WebhookDelivery.count
-        .mockResolvedValueOnce(50)   // recentFailed >= AUTO_DISABLE_THRESHOLD
-        .mockResolvedValueOnce(0);   // recentSuccess === 0
-
-      mocks.WebhookDelivery.findOne.mockResolvedValue({
-        createdAt: new Date('2024-01-01'),
-      });
+      // The most recent AUTO_DISABLE_THRESHOLD deliveries are ALL failed
+      // (genuinely consecutive — what the corrected logic checks).
+      mocks.WebhookDelivery.findAll.mockResolvedValueOnce(
+        Array.from({ length: 50 }, () => ({ status: 'failed' }))
+      );
 
       await service.attemptDelivery(delivery, subscriberWithUpdate);
 
@@ -369,7 +366,7 @@ describe('webhookService (unit)', () => {
       );
     });
 
-    it('does NOT disable when recent successes exist within the threshold window', async () => {
+    it('does NOT disable when a recent success breaks the failure streak', async () => {
       const subscriberWithUpdate = {
         ...mocks.mockSubscriber,
         update: jest.fn().mockResolvedValue(true),
@@ -388,13 +385,12 @@ describe('webhookService (unit)', () => {
         text: jest.fn().mockResolvedValue('error'),
       });
 
-      mocks.WebhookDelivery.count
-        .mockResolvedValueOnce(50)  // recentFailed >= threshold
-        .mockResolvedValueOnce(2);  // recentSuccess > 0 — should NOT disable
-
-      mocks.WebhookDelivery.findOne.mockResolvedValue({
-        createdAt: new Date('2024-01-01'),
-      });
+      // 50 recent deliveries, but a success is interleaved → not consecutive.
+      mocks.WebhookDelivery.findAll.mockResolvedValueOnce([
+        { status: 'failed' },
+        { status: 'success' },
+        ...Array.from({ length: 48 }, () => ({ status: 'failed' })),
+      ]);
 
       await service.attemptDelivery(delivery, subscriberWithUpdate);
 

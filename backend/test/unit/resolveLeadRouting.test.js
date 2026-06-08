@@ -4,12 +4,19 @@ import '../setup.js';
 // Mock the models + logger imports so resolveLeadRouting runs with no real DB.
 const User = { findOne: jest.fn(), findAll: jest.fn() };
 const QrTag = { findByPk: jest.fn() };
-const RoundRobinCursor = { findOne: jest.fn(), create: jest.fn() };
+const RoundRobinCursor = { findOne: jest.fn(), create: jest.fn(), findOrCreate: jest.fn(), update: jest.fn() };
 const LeadPackageAssignment = { findAll: jest.fn() };
 const LeadPackage = {};
+// systemAgent.js now also imports these (resolveLeadAssignment + the external
+// MKTR-Leads pool). resolveLeadRouting itself doesn't use them, but the ESM
+// linker requires every named import the module declares to exist on the mock.
+const ExternalAgent = { findOne: jest.fn(), findAll: jest.fn() };
+const ExternalCampaignAgent = { findOne: jest.fn(), findAll: jest.fn() };
+const sequelize = { transaction: jest.fn(), literal: jest.fn((sql) => sql) };
 
 jest.unstable_mockModule('../../src/models/index.js', () => ({
   User, QrTag, RoundRobinCursor, LeadPackageAssignment, LeadPackage,
+  ExternalAgent, ExternalCampaignAgent, sequelize,
 }));
 jest.unstable_mockModule('../../src/utils/logger.js', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -49,13 +56,16 @@ describe('resolveLeadRouting (unit) — route labelling for quota gating', () =>
   it('tier 4 — lead-package round-robin → via:package, and advances the cursor', async () => {
     LeadPackageAssignment.findAll.mockResolvedValue([{ agentId: 'pkg-agent' }]);
     User.findAll.mockResolvedValue([{ id: 'pkg-agent' }]);
-    const cursorRow = { cursor: 0, update: jest.fn().mockResolvedValue(undefined) };
-    RoundRobinCursor.findOne.mockResolvedValue(cursorRow);
+    // Merged cursor mechanics (PR branch's race-safe path): findOrCreate seeds the
+    // row, then a single atomic monotonic `UPDATE ... RETURNING` advances it,
+    // resolving to [affectedCount, [updatedRow]]. Modulo is applied at read time.
+    RoundRobinCursor.findOrCreate.mockResolvedValue([{ campaignId: 'camp-1', cursor: 0 }, false]);
+    RoundRobinCursor.update.mockResolvedValue([1, [{ cursor: 1 }]]);
 
     const r = await resolveLeadRouting({ campaignId: 'camp-1' });
 
-    expect(r).toEqual({ agentId: 'pkg-agent', via: 'package' });
-    expect(cursorRow.update).toHaveBeenCalledWith({ cursor: 0 }); // (0+1) % 1
+    expect(r).toEqual({ agentId: 'pkg-agent', via: 'package' }); // (1-1) % 1 → pkg-agent
+    expect(RoundRobinCursor.update).toHaveBeenCalled(); // cursor advanced atomically
   });
 
   it('tier 4 falls through when the campaign has no funded package agents (→ not package)', async () => {

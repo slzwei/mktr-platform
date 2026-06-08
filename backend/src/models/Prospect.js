@@ -181,6 +181,15 @@ const Prospect = sequelize.define('Prospect', {
       key: 'id'
     }
   },
+  externalAgentId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'external_agents',
+      key: 'id'
+    },
+    comment: 'Set when this lead is assigned to an external MKTR Leads buyer (mutually exclusive with assignedAgentId).'
+  },
   qrTagId: {
     type: DataTypes.UUID,
     allowNull: true,
@@ -206,6 +215,11 @@ const Prospect = sequelize.define('Prospect', {
     allowNull: true,
     defaultValue: {},
     comment: 'Additional data about the lead source (referrer URL, QR code location, etc.)'
+  },
+  consentMetadata: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'Third-party-disclosure consent evidence; consentMetadata.external gates external (MKTR Leads) delivery.'
   },
   retellCallId: {
     type: DataTypes.STRING,
@@ -246,6 +260,9 @@ const Prospect = sequelize.define('Prospect', {
     },
     {
       fields: ['assignedAgentId']
+    },
+    {
+      fields: ['externalAgentId']
     },
     {
       fields: ['qrTagId']

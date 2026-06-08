@@ -11,9 +11,10 @@ import {
   AgentGroupMember,
   sequelize,
 } from '../models/index.js';
-import { resolveAssignedAgentId, resolveLeadRouting, getSystemAgentId } from './systemAgent.js';
-import { deductLeadCredit, chargeLeadCredit } from './leadCredits.js';
+import { resolveAssignedAgentId, resolveLeadRouting, getSystemAgentId, resolveLeadAssignment } from './systemAgent.js';
+import { deductLeadCredit, chargeLeadCredit, deductExternalLeadBalance } from './leadCredits.js';
 import { decideAssignment } from './leadQuota.js';
+import { hasValidExternalConsent } from './externalConsent.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { dispatchEvent } from './webhookService.js';
@@ -62,7 +63,10 @@ const defaultDeps = {
   resolveAssignedAgentId,
   resolveLeadRouting,
   getSystemAgentId,
+  resolveLeadAssignment,
   deductLeadCredit,
+  deductExternalLeadBalance,
+  hasValidExternalConsent,
   chargeLeadCredit,
   decideAssignment,
   buildProspectWhere,
@@ -381,21 +385,55 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
+    // External (MKTR Leads) routing decision. INERT until per-source consent
+    // capture writes consentMetadata.external — hasValidExternalConsent returns
+    // false for all current data, so allowExternal is false and this whole block
+    // is skipped, leaving the internal path byte-for-byte unchanged.
+    let externalAgentId = null;
+    const allowExternal =
+      sourceCampaign?.externalEligible === true &&
+      d.hasValidExternalConsent({ consentMetadata: incoming.consentMetadata });
+    if (allowExternal) {
+      const extDecision = await d.resolveLeadAssignment({
+        reqUser: user,
+        requestedAgentId: body.assignedAgentId,
+        campaignId: incoming.campaignId,
+        qrTagId: incoming.qrTagId,
+        allowExternal: true,
+      });
+      if (extDecision?.kind === 'external') {
+        externalAgentId = extDecision.externalAgentId;
+        assignedAgentId = null; // mutually exclusive (DB CHECK enforces this)
+      } else if (extDecision?.kind === 'internal' && extDecision.internalAgentId) {
+        assignedAgentId = extDecision.internalAgentId;
+      }
+    }
+
     // Wrap all DB writes in a transaction for data integrity.
-    // Lead-quota gate: decideAssignment may QUARANTINE (hold) the lead, and for a
-    // funded gated route it charges a credit authoritatively (charged:true ⇒ skip the
-    // best-effort deduct below to avoid double-charging). Soft/exempt routes are
-    // unchanged: assign + best-effort deduct.
+    // Two orthogonal gates compose here:
+    //   - External (MKTR Leads): a PAID third-party buyer lead. It bypasses the
+    //     internal lead-package quota (a separate pool) and is charged against the
+    //     buyer's prepaid balance below — never quarantined here.
+    //   - Internal: the lead-quota gate (decideAssignment) may QUARANTINE (hold) the
+    //     lead, and for a funded gated route charges a credit authoritatively
+    //     (charged:true ⇒ skip the best-effort deduct below to avoid double-charging).
+    //     Soft/exempt routes are unchanged: assign + best-effort deduct.
     let quarantined = false;
     let finalAgentId = assignedAgentId;
     const prospect = await d.sequelize.transaction(async (t) => {
-      const decision = await d.decideAssignment({
-        campaign: sourceCampaign,
-        routing: { agentId: assignedAgentId, via: routeVia },
-        campaignId: incoming.campaignId,
-        transaction: t,
-        charge: d.chargeLeadCredit,
-      });
+      // The internal quota gate applies ONLY to the internal path. For external
+      // leads default to a plain "assign" directive so the shared activity/deduct
+      // code below stays correct (external is charged authoritatively, not metered).
+      let decision = { action: 'assign', assignedAgentId, charged: false, via: routeVia };
+      if (!externalAgentId) {
+        decision = await d.decideAssignment({
+          campaign: sourceCampaign,
+          routing: { agentId: assignedAgentId, via: routeVia },
+          campaignId: incoming.campaignId,
+          transaction: t,
+          charge: d.chargeLeadCredit,
+        });
+      }
       quarantined = decision.action === 'quarantine';
       finalAgentId = quarantined ? null : (decision.assignedAgentId ?? null);
 
@@ -403,6 +441,7 @@ export function makeProspectService(overrides = {}) {
         {
           ...incoming,
           assignedAgentId: finalAgentId,
+          externalAgentId,
           quarantinedAt: quarantined ? new Date() : null,
           quarantineReason: quarantined ? decision.quarantineReason : null,
         },
@@ -447,15 +486,28 @@ export function makeProspectService(overrides = {}) {
             prospectId: newProspect.id,
             type: 'assigned',
             actorUserId: user?.id || null,
-            description: `Assigned to agent ${finalAgentId}`,
-            metadata: { assignedAgentId: finalAgentId },
+            description: externalAgentId
+              ? `Routed to external buyer ${externalAgentId} (MKTR Leads)`
+              : `Assigned to agent ${finalAgentId}`,
+            metadata: externalAgentId
+              ? { externalAgentId }
+              : { assignedAgentId: finalAgentId },
           },
           { transaction: t }
         );
 
-        // Deduct lead credit. Skip when decideAssignment already charged authoritatively
-        // (charged:true) — otherwise the soft/exempt path does the best-effort deduct.
-        if (finalAgentId && decision.charged !== true) {
+        // Deduct lead credit.
+        //  - External (MKTR Leads) buyers are PAID leads: the charge is authoritative
+        //    — if the buyer's prepaid balance can't be charged, abort the whole create
+        //    (rollback) rather than hand over a lead we can't bill.
+        //  - Internal stays best-effort, and is skipped when decideAssignment already
+        //    charged authoritatively (charged:true) to avoid double-charging.
+        if (externalAgentId) {
+          const extCharged = await d.deductExternalLeadBalance(externalAgentId, 1, t);
+          if (!extCharged) {
+            throw new d.AppError('No paid external buyer balance available for this lead.', 409);
+          }
+        } else if (finalAgentId && decision.charged !== true) {
           await d
             .deductLeadCredit(finalAgentId, 1, t)
             .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
@@ -505,9 +557,14 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
-    // Suppress the Lyfe delivery webhook for quarantined (held) leads — there is no
-    // agent to deliver to. It fires on release (slice 4) as the first lead.created.
-    if (!quarantined) {
+    // Suppress the Lyfe 'lead.created' delivery webhook when there is no internal
+    // agent to deliver to:
+    //  - quarantined (held under lead quota) — no agent yet; it fires on release
+    //    (slice 4) as the first lead.created.
+    //  - external (MKTR Leads) — the existing subscriber is the Lyfe app, and an
+    //    external buyer lead must NEVER be dispatched to it (no external subscriber
+    //    exists yet; destination-aware routing lands later in webhookService).
+    if (!quarantined && !externalAgentId) {
       d.dispatchEvent('lead.created', () =>
         buildLeadCreatedPayload(
           prospect,

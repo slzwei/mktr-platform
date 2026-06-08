@@ -5,6 +5,7 @@ import { Label } from"@/components/ui/label";
 import { Textarea } from"@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from"@/components/ui/select";
 import { Button } from"@/components/ui/button";
+import { Switch } from"@/components/ui/switch";
 import { UploadFile } from"@/api/integrations";
 import {
  Upload,
@@ -402,7 +403,23 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  </div>
  </div>
 
- {/* Terms & Conditions */}
+ {/* Eligibility — SG/PR screening gate */}
+        <div className="space-y-3 pt-4 border-t">
+          <Label className="text-sm font-semibold text-foreground">Eligibility</Label>
+          <p className="text-xs text-muted-foreground -mt-1">Screen visitors before the form appears.</p>
+          <div className="flex items-center justify-between gap-3 py-1">
+            <div className="flex flex-col">
+              <span className="text-sm text-foreground">SG / PR only</span>
+              <span className="text-xs text-muted-foreground">Adds a Singapore Citizen / PR question before the form — only Yes reveals it.</span>
+            </div>
+            <Switch
+              checked={currentDesign.sgPrOnly === true}
+              onCheckedChange={(checked) => onDesignChange('sgPrOnly', checked)}
+            />
+          </div>
+        </div>
+
+        {/* Terms & Conditions */}
  <div className="space-y-3 pt-4 border-t">
  <Label className="text-sm font-semibold text-foreground">Terms & Conditions</Label>
  <p className="text-xs text-muted-foreground -mt-1">Customize the legal text displayed in the consent dialog.</p>

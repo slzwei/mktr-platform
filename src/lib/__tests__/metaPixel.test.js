@@ -5,6 +5,7 @@ import {
   captureFbcFromUrl,
   readFbc,
   readFbp,
+  ensureFbp,
   initPixel,
   trackEvent,
   trackLead,
@@ -197,6 +198,42 @@ describe('readFbp', () => {
       configurable: true,
     });
     expect(readFbp()).toBe(null);
+  });
+});
+
+describe('ensureFbp', () => {
+  let originalCookieDescriptor;
+
+  beforeEach(() => {
+    originalCookieDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie');
+  });
+
+  afterEach(() => {
+    if (originalCookieDescriptor) {
+      Object.defineProperty(Document.prototype, 'cookie', originalCookieDescriptor);
+    }
+  });
+
+  it('returns the existing _fbp without overwriting it', () => {
+    Object.defineProperty(document, 'cookie', {
+      value: '_fbp=fb.1.999888.7777; otherKey=value',
+      writable: true,
+      configurable: true,
+    });
+    expect(ensureFbp()).toBe('fb.1.999888.7777');
+    // unchanged — no new cookie written over the existing one
+    expect(document.cookie).toBe('_fbp=fb.1.999888.7777; otherKey=value');
+  });
+
+  it('generates and persists a fb.1.{ts}.{rand} cookie when _fbp is absent', () => {
+    Object.defineProperty(document, 'cookie', {
+      value: '',
+      writable: true,
+      configurable: true,
+    });
+    const result = ensureFbp();
+    expect(result).toMatch(/^fb\.1\.\d+\.\d+$/);
+    expect(document.cookie).toContain(`_fbp=${result}`);
   });
 });
 

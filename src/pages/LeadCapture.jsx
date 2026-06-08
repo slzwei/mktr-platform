@@ -17,6 +17,7 @@ import {
   captureFbcFromUrl,
   readFbc,
   readFbp,
+  ensureFbp,
   initPixel,
   trackEvent,
   trackLead,
@@ -94,6 +95,9 @@ export default function LeadCapture() {
       const pixelId = campaign.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
       if (pixelId) {
         initPixel(pixelId);
+        // Establish _fbp now (gated by shouldTrack above) so the Lead submit — and
+        // the matching CAPI event — reliably carry it, even on a fast submit.
+        ensureFbp();
         trackEvent(
           'ViewContent',
           { content_name: campaign.name, content_category: 'lead_capture' },
