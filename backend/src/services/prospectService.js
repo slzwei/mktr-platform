@@ -195,17 +195,53 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
-    // Resolve secure assignment (agent/admin override -> qr owner -> campaign -> system).
-    // resolveLeadRouting also reports the route taken (via), which lead-quota uses to
-    // tell exempt (self/admin) from gated (qr/package/fallback) delivery.
-    const routing = await d.resolveLeadRouting({
-      reqUser: user,
-      requestedAgentId: body.assignedAgentId,
-      campaignId: incoming.campaignId,
-      qrTagId: incoming.qrTagId,
-    });
-    let assignedAgentId = routing.agentId;
-    let routeVia = routing.via;
+    // Pre-load campaign + QR tag (needed for routing below, the age gate, and quiz scoring).
+    const [sourceCampaign, sourceQrTag] = await Promise.all([
+      incoming.campaignId ? m.Campaign.findByPk(incoming.campaignId) : null,
+      incoming.qrTagId ? m.QrTag.findByPk(incoming.qrTagId) : null,
+    ]);
+
+    // External (MKTR Leads) eligibility. INERT until per-source consent capture writes
+    // consentMetadata.external — hasValidExternalConsent returns false for all current
+    // data, so allowExternal is false and routing takes the internal-only path below,
+    // byte-for-byte as before.
+    const allowExternal =
+      sourceCampaign?.externalEligible === true &&
+      d.hasValidExternalConsent({ consentMetadata: incoming.consentMetadata });
+
+    // SINGLE routing pass — exactly one resolver runs, so the per-campaign round-robin
+    // cursor advances once and routeVia is never stale:
+    //   - external-eligible + consented → unified resolveLeadAssignment (internal +
+    //     external pools); it also owns the self/admin/qr tiers, so the QR-override
+    //     block below is skipped for these leads.
+    //   - everyone else (the live path) → internal-only resolveLeadRouting, unchanged.
+    let assignedAgentId = null;
+    let externalAgentId = null;
+    let routeVia;
+    if (allowExternal) {
+      const r = await d.resolveLeadAssignment({
+        reqUser: user,
+        requestedAgentId: body.assignedAgentId,
+        campaignId: incoming.campaignId,
+        qrTagId: incoming.qrTagId,
+        allowExternal: true,
+      });
+      routeVia = r.via;
+      if (r.kind === 'external') {
+        externalAgentId = r.externalAgentId; // assignedAgentId stays null (mutually exclusive)
+      } else {
+        assignedAgentId = r.internalAgentId ?? null;
+      }
+    } else {
+      const routing = await d.resolveLeadRouting({
+        reqUser: user,
+        requestedAgentId: body.assignedAgentId,
+        campaignId: incoming.campaignId,
+        qrTagId: incoming.qrTagId,
+      });
+      assignedAgentId = routing.agentId;
+      routeVia = routing.via;
+    }
 
     // Normalize phone to E.164 format
     if (incoming.phone) {
@@ -281,12 +317,6 @@ export function makeProspectService(overrides = {}) {
       if (body.monthly_income) incoming.demographics.income = body.monthly_income;
     }
 
-    // Pre-load campaign and QR tag for routing resolution
-    const [sourceCampaign, sourceQrTag] = await Promise.all([
-      incoming.campaignId ? m.Campaign.findByPk(incoming.campaignId) : null,
-      incoming.qrTagId ? m.QrTag.findByPk(incoming.qrTagId) : null,
-    ]);
-
     // --- Quiz funnel: re-score server-side (anti-tamper) and stash on the lead ---
     // The client sends raw answers (+ an advisory result we ignore). We recompute
     // the authoritative profile/readiness/leadScore from the campaign's own quiz
@@ -331,7 +361,10 @@ export function makeProspectService(overrides = {}) {
     let resolvedAgent = null;
     let agentGroup = null;
 
-    if (sourceQrTag?.agentAssignmentMode === 'round_robin') {
+    // QR-level routing refines the INTERNAL path only; external-eligible leads were
+    // already routed by resolveLeadAssignment above (it includes the QR tier), so
+    // re-running QR routing here would double-route them.
+    if (!allowExternal && sourceQrTag?.agentAssignmentMode === 'round_robin') {
       routingMode = 'round_robin';
 
       // Query members from join table, ordered by sortOrder
@@ -361,11 +394,11 @@ export function makeProspectService(overrides = {}) {
           name: selectedMember.name,
         };
       }
-    } else if (sourceQrTag?.assignedAgentId) {
+    } else if (!allowExternal && sourceQrTag?.assignedAgentId) {
       // Direct FK lookup — faster than phone-based search
       assignedAgentId = sourceQrTag.assignedAgentId;
       routeVia = 'qr';
-    } else if (sourceQrTag?.assignedAgentPhone) {
+    } else if (!allowExternal && sourceQrTag?.assignedAgentPhone) {
       // Fallback for QR tags not yet backfilled
       resolvedAgent = {
         phone: sourceQrTag.assignedAgentPhone,
@@ -382,30 +415,6 @@ export function makeProspectService(overrides = {}) {
       if (agentByPhone) {
         assignedAgentId = agentByPhone.id;
         routeVia = 'qr';
-      }
-    }
-
-    // External (MKTR Leads) routing decision. INERT until per-source consent
-    // capture writes consentMetadata.external — hasValidExternalConsent returns
-    // false for all current data, so allowExternal is false and this whole block
-    // is skipped, leaving the internal path byte-for-byte unchanged.
-    let externalAgentId = null;
-    const allowExternal =
-      sourceCampaign?.externalEligible === true &&
-      d.hasValidExternalConsent({ consentMetadata: incoming.consentMetadata });
-    if (allowExternal) {
-      const extDecision = await d.resolveLeadAssignment({
-        reqUser: user,
-        requestedAgentId: body.assignedAgentId,
-        campaignId: incoming.campaignId,
-        qrTagId: incoming.qrTagId,
-        allowExternal: true,
-      });
-      if (extDecision?.kind === 'external') {
-        externalAgentId = extDecision.externalAgentId;
-        assignedAgentId = null; // mutually exclusive (DB CHECK enforces this)
-      } else if (extDecision?.kind === 'internal' && extDecision.internalAgentId) {
-        assignedAgentId = extDecision.internalAgentId;
       }
     }
 
