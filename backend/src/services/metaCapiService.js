@@ -70,7 +70,11 @@ export function _buildPayload(prospect, ctx, options) {
 
   const event = {
     event_name: eventName,
-    event_time: Math.floor(Date.now() / 1000),
+    // Delayed down-funnel events (QualifiedLead/ClosedWon, fired when a Lyfe
+    // agent advances the lead days later) back-date event_time to when the
+    // status changed. Meta accepts event_time up to 7 days old. Submit-time
+    // events (Lead/CompleteRegistration) omit ctx.eventTime → now.
+    event_time: ctx.eventTime || Math.floor(Date.now() / 1000),
     event_id: ctx.eventId,
     action_source: 'website',
     event_source_url: ctx.eventSourceUrl || meta.eventSourceUrl || undefined,
@@ -98,7 +102,7 @@ export function _buildPayload(prospect, ctx, options) {
  * Never throws to the caller. Errors land in Sentry + structured logs.
  *
  * @param {object} prospect           Sequelize prospect instance (or plain object with same shape)
- * @param {object} ctx                Request context: { eventId, fbp, fbc, clientIp, clientUserAgent, eventSourceUrl, pixelIdOverride }
+ * @param {object} ctx                Request context: { eventId, fbp, fbc, clientIp, clientUserAgent, eventSourceUrl, pixelIdOverride, eventTime }
  * @param {object} [options]          { eventName }  — defaults to 'Lead'
  * @param {object} [deps]             Injected dependencies for testing: { fetch }
  * @returns {Promise<object>}         { sent: boolean, ...details }

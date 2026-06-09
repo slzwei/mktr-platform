@@ -239,6 +239,26 @@ describe('_buildPayload', () => {
       lead_source: 'qr_code',
     });
   });
+
+  it('defaults event_time to now when ctx.eventTime is absent', () => {
+    const before = Math.floor(Date.now() / 1000);
+    const event = _buildPayload(webProspect(), ctx, {}).data[0];
+    expect(event.event_time).toBeGreaterThanOrEqual(before);
+    expect(event.event_time).toBeLessThanOrEqual(before + 2);
+  });
+
+  it('back-dates event_time to ctx.eventTime for delayed down-funnel events', () => {
+    // e.g. QualifiedLead fired days after submit, dated to the status change.
+    const qualifiedAt = 1_700_000_000; // fixed unix seconds
+    const event = _buildPayload(
+      webProspect(),
+      { eventId: 'qualified:prospect-uuid-1', eventTime: qualifiedAt },
+      { eventName: 'QualifiedLead' }
+    ).data[0];
+    expect(event.event_time).toBe(qualifiedAt);
+    expect(event.event_name).toBe('QualifiedLead');
+    expect(event.event_id).toBe('qualified:prospect-uuid-1');
+  });
 });
 
 // ============================================================
