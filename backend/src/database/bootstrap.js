@@ -39,11 +39,16 @@ export async function bootstrapDatabase() {
     logger.info('System Agent ready', { systemId });
   });
   await safeRun('Lyfe webhook subscriber', ensureLyfeWebhookSubscriber);
+  await safeRun('mktr-leads webhook subscriber', ensureMktrLeadsWebhookSubscriber);
 
-  // Warn if Lyfe webhook is configured but delivery is disabled
+  // Warn if a destination webhook is configured but delivery is globally disabled
   const lyfeAdapter = adapterRegistry.get('lyfe');
   if (lyfeAdapter.outboundWebhookUrl?.() && String(process.env.WEBHOOK_ENABLED || 'false').toLowerCase() !== 'true') {
     logger.warn('⚠️ Lyfe webhook URL is set but WEBHOOK_ENABLED is not "true" — leads will NOT be delivered to Lyfe');
+  }
+  const mktrLeadsAdapter = adapterRegistry.get('mktr_leads');
+  if (mktrLeadsAdapter.outboundWebhookUrl?.() && String(process.env.WEBHOOK_ENABLED || 'false').toLowerCase() !== 'true') {
+    logger.warn('⚠️ mktr-leads webhook URL is set but WEBHOOK_ENABLED is not "true" — leads will NOT be delivered to mktr-leads');
   }
 
   await safeRun('Retell campaigns', ensureRetellCampaigns);
@@ -88,7 +93,19 @@ export async function bootstrapDatabase() {
           const { syncAgentsFromLyfe } = await import('../services/agentSyncService.js');
           await syncAgentsFromLyfe();
         } catch (err) {
-          logger.warn('[AgentSync] periodic sync failed (non-fatal)', { error: err?.message });
+          logger.warn('[AgentSync] periodic Lyfe sync failed (non-fatal)', { error: err?.message });
+        }
+        // mktr-leads is a second agent source — sync it too when configured.
+        // Run sequentially after Lyfe (not a separate timer) so the two never
+        // contend for the shared advisory lock; each has its own try/catch so a
+        // failure in one doesn't suppress the other.
+        if (process.env.MKTR_LEADS_SUPABASE_URL) {
+          try {
+            const { syncAgentsFromMktrLeads } = await import('../services/agentSyncService.js');
+            await syncAgentsFromMktrLeads();
+          } catch (err) {
+            logger.warn('[AgentSync] periodic mktr-leads sync failed (non-fatal)', { error: err?.message });
+          }
         }
       }, 10 * 60 * 1000); // every 10 min
       logger.info('[AgentSync] periodic sync scheduled (10 min interval)');
@@ -177,6 +194,60 @@ async function ensureLyfeWebhookSubscriber() {
   });
 
   logger.info('Lyfe webhook subscriber registered', { url });
+}
+
+/**
+ * Ensure the mktr-leads webhook subscriber exists so leads assigned to
+ * mktr-leads agents are forwarded to that app's receive-mktr-lead Edge
+ * Function. Tagged metadata.destination='mktr_leads' so the destination-aware
+ * dispatcher delivers ONLY mktr-leads-destined leads here. Env-gated: skips
+ * silently if the URL/secret aren't configured (mirrors the Lyfe subscriber).
+ */
+async function ensureMktrLeadsWebhookSubscriber() {
+  const adapter = adapterRegistry.get('mktr_leads');
+  const url = adapter.outboundWebhookUrl?.();
+  const secret = adapter.outboundWebhookSecret?.();
+
+  if (!url || !secret) {
+    logger.debug('mktr-leads webhook not configured (URL/secret missing on adapter), skipping.');
+    return;
+  }
+
+  const SUBSCRIBER_NAME = 'MKTR Leads App';
+  const requiredEvents = ['lead.created', 'lead.assigned', 'lead.unassigned'];
+
+  const existing = await WebhookSubscriber.findOne({ where: { name: SUBSCRIBER_NAME } });
+
+  if (existing) {
+    const needsUpdate = existing.url !== url || existing.secret !== secret || !existing.enabled
+      || JSON.stringify(existing.events?.sort()) !== JSON.stringify(requiredEvents.sort())
+      || existing.metadata?.destination !== 'mktr_leads';
+    if (needsUpdate) {
+      await existing.update({
+        url,
+        secret,
+        enabled: true,
+        events: requiredEvents,
+        metadata: { ...(existing.metadata || {}), destination: 'mktr_leads' },
+      });
+      logger.info('mktr-leads webhook subscriber updated', { url, events: requiredEvents });
+    } else {
+      logger.debug('mktr-leads webhook subscriber already registered', { url });
+    }
+    return;
+  }
+
+  await WebhookSubscriber.create({
+    name: SUBSCRIBER_NAME,
+    url,
+    secret,
+    events: requiredEvents,
+    enabled: true,
+    description: 'Forward leads to the mktr-leads app via Supabase Edge Function',
+    metadata: { destination: 'mktr_leads' },
+  });
+
+  logger.info('mktr-leads webhook subscriber registered', { url });
 }
 
 /**
