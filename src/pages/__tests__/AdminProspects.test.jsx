@@ -274,4 +274,61 @@ describe('AdminProspects', () => {
  renderProspects();
  expect(screen.getByText(/rows per page/i)).toBeInTheDocument();
  });
+
+ // --- Selection & export ---
+ const twoProspects = [
+ { id: 'p-1', firstName: 'John', lastName: 'Doe', leadStatus: 'new', createdAt: '2025-01-15T10:00:00Z' },
+ { id: 'p-2', firstName: 'Jane', lastName: 'Roe', leadStatus: 'new', createdAt: '2025-01-16T10:00:00Z' },
+ ];
+
+ it('renders Export PDF button', () => {
+ renderProspects();
+ expect(screen.getByRole('button', { name: /export pdf/i })).toBeInTheDocument();
+ });
+
+ it('renders a select-all checkbox plus one checkbox per row', () => {
+ mockProspectsData.prospects = twoProspects;
+ renderProspects();
+ // 1 header select-all + 2 row checkboxes
+ expect(screen.getAllByRole('checkbox')).toHaveLength(3);
+ });
+
+ it('selecting a row reveals the selection bar with a count and clear action', () => {
+ mockProspectsData.prospects = twoProspects;
+ renderProspects();
+ fireEvent.click(screen.getByRole('checkbox', { name: /select john doe/i }));
+ expect(screen.getByText('1 selected')).toBeInTheDocument();
+ expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
+ });
+
+ it('reflects the selection count on the export buttons', () => {
+ mockProspectsData.prospects = twoProspects;
+ renderProspects();
+ fireEvent.click(screen.getByRole('checkbox', { name: /select john doe/i }));
+ expect(screen.getByRole('button', { name: /export csv \(1\)/i })).toBeInTheDocument();
+ expect(screen.getByRole('button', { name: /export pdf \(1\)/i })).toBeInTheDocument();
+ });
+
+ it('select-all selects every visible row', () => {
+ mockProspectsData.prospects = twoProspects;
+ renderProspects();
+ fireEvent.click(screen.getByRole('checkbox', { name: /select all prospects/i }));
+ expect(screen.getByText('2 selected')).toBeInTheDocument();
+ });
+
+ it('clear button resets the selection', () => {
+ mockProspectsData.prospects = twoProspects;
+ renderProspects();
+ fireEvent.click(screen.getByRole('checkbox', { name: /select john doe/i }));
+ expect(screen.getByText('1 selected')).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button', { name: /clear/i }));
+ expect(screen.queryByText(/selected/i)).not.toBeInTheDocument();
+ });
+
+ it('ticking a row checkbox does not open the detail view', () => {
+ mockProspectsData.prospects = twoProspects;
+ renderProspects();
+ fireEvent.click(screen.getByRole('checkbox', { name: /select john doe/i }));
+ expect(screen.queryByTestId('prospect-details')).not.toBeInTheDocument();
+ });
 });
