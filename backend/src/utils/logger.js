@@ -22,6 +22,11 @@ export const logger = pino({
       'access_token',
       'accessToken',
       'meta_capi_access_token',
+      // Supabase service-role credentials (Lyfe + mktr-leads adapters) — never
+      // let a logged request/err object leak them.
+      'apikey',
+      'headers.apikey',
+      'serviceRoleKey',
     ],
     censor: '[REDACTED]',
   },

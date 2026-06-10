@@ -242,5 +242,23 @@ export const schemas = {
     description: Joi.string().allow('', null).optional(),
     isPublic: Joi.boolean().optional(),
     status: Joi.string().valid('active', 'inactive', 'draft', 'archived').optional()
-  })
+  }),
+
+  // mktr-leads agent management (admin dashboard → mktr-leads source of truth).
+  // Phone is a loose charset pre-check only — the mktr-leads edge function owns
+  // canonical SG normalization (normalize_sg_phone); duplicating it here would
+  // risk drift between what we accept and what links on signup.
+  mktrLeadsAgentInvite: Joi.object({
+    phone: Joi.string().trim().pattern(/^\+?[0-9 ()-]{8,16}$/).required()
+      .messages({ 'string.pattern.base': 'phone must be a Singapore mobile number' }),
+    full_name: Joi.string().trim().max(120).allow('', null).optional(),
+    email: Joi.string().trim().email().allow('', null).optional(),
+    agency: Joi.string().trim().max(120).allow('', null).optional()
+  }),
+
+  mktrLeadsAgentUpdate: Joi.object({
+    full_name: Joi.string().trim().min(1).max(120).optional(),
+    email: Joi.string().trim().email().allow('', null).optional(),
+    agency: Joi.string().trim().max(120).allow('', null).optional()
+  }).min(1)
 };

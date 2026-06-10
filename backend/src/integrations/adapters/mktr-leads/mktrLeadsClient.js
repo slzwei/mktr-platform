@@ -166,6 +166,78 @@ export async function fetchAgentById(externalId) {
   return normalized;
 }
 
+// ── Management write-backs (mktr-leads is the source of truth) ──────────────
+// Plain fetch, NOT the read breaker: a tripped sync breaker must not block an
+// admin action, and a failed admin action must not trip the sync breaker.
+
+const WRITE_TIMEOUT_MS = 10_000;
+
+/**
+ * Create a pending invitation by calling mktr-leads' own create-ext-agent-invite
+ * edge function with the service-role bearer — the EF is the single owner of
+ * invitation semantics (canonical SG phone normalization, agent-exists guard,
+ * revoke-then-insert re-invite, optional email). Returns { status, body } for
+ * the caller to map; non-2xx is NOT thrown (409/400 carry meaning).
+ */
+export async function createInvitation({ phone, fullName, email, agency }) {
+  const { url, key } = getConfig();
+  const response = await fetch(`${url}/functions/v1/create-ext-agent-invite`, {
+    method: 'POST',
+    headers: authHeaders(key),
+    body: JSON.stringify({
+      phone,
+      full_name: fullName || null,
+      email: email || null,
+      agency: agency || null,
+    }),
+    signal: AbortSignal.timeout(WRITE_TIMEOUT_MS),
+  });
+  const body = await response.json().catch(() => ({}));
+  return { status: response.status, body };
+}
+
+/**
+ * PATCH one mktr-leads agent row. The `role=eq.agent` filter is a hard guard:
+ * admin rows can never be touched from here, whatever the caller passes.
+ * Returns the updated row, or null when nothing matched (unknown id / admin).
+ */
+async function patchAgent(mktrUserId, payload) {
+  const { url, key } = getConfig();
+  const response = await fetch(
+    `${url}/rest/v1/agents?mktr_user_id=eq.${encodeURIComponent(mktrUserId)}&role=eq.agent`,
+    {
+      method: 'PATCH',
+      headers: { ...authHeaders(key), Prefer: 'return=representation' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(WRITE_TIMEOUT_MS),
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`mktr-leads agents PATCH failed: ${response.status} ${text}`);
+  }
+  const rows = await response.json();
+  invalidateCache(); // the follow-up sync must see the fresh state
+  return rows[0] ?? null;
+}
+
+/** Flip is_active. NOTE: false also locks the agent out of the mktr-leads app (OTP gate). */
+export async function setAgentActive(mktrUserId, isActive) {
+  return patchAgent(mktrUserId, { is_active: isActive === true });
+}
+
+/**
+ * Update profile fields. `fields` may contain full_name / email / agency —
+ * only provided keys are sent (controller validates shape).
+ */
+export async function updateAgentFields(mktrUserId, fields) {
+  const payload = {};
+  if ('full_name' in fields) payload.full_name = fields.full_name || null;
+  if ('email' in fields) payload.email = fields.email || null;
+  if ('agency' in fields) payload.agency = fields.agency || null;
+  return patchAgent(mktrUserId, payload);
+}
+
 /** Exposed for tests + observability. */
 export function _getBreakerState() {
   return breaker.getState();
