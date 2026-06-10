@@ -3,8 +3,8 @@
  * webhook → Meta CAPI down-funnel dispatch.
  *
  * Uses the makeLeadOutcomeService dependency-injection seam so we run without a
- * live Postgres or real Meta calls: Prospect/Campaign models and
- * sendConversionEvent are stubbed.
+ * live Postgres or real Meta calls: Prospect/Campaign models, sendConversionEvent
+ * and sleep are stubbed.
  */
 import { jest } from '@jest/globals';
 import { makeLeadOutcomeService } from '../src/services/leadOutcomeService.js';
@@ -24,24 +24,19 @@ function makeProspect(overrides = {}) {
 
 function buildDeps(overrides = {}) {
   const prospect = overrides.prospect ?? makeProspect();
-  const Prospect = {
-    findByPk: jest.fn().mockResolvedValue(prospect),
-  };
+  const Prospect = { findByPk: jest.fn().mockResolvedValue(prospect) };
   const Campaign = {
     findByPk: jest.fn().mockResolvedValue({ id: 'campaign-uuid-1', metaPixelId: 'pixel-override-1' }),
   };
-  const sendConversionEvent = jest.fn().mockResolvedValue({ sent: true });
+  const sendConversionEvent = overrides.sendConversionEvent ?? jest.fn().mockResolvedValue({ sent: true });
+  const sleep = jest.fn().mockResolvedValue(undefined);
   return {
-    deps: {
-      models: { Prospect, Campaign },
-      sendConversionEvent,
-      logger: silentLogger,
-      ...overrides.deps,
-    },
+    deps: { models: { Prospect, Campaign }, sendConversionEvent, logger: silentLogger, sleep, ...overrides.deps },
     prospect,
     Prospect,
     Campaign,
     sendConversionEvent,
+    sleep,
   };
 }
 
@@ -55,57 +50,128 @@ const QUALIFIED = {
 };
 
 describe('leadOutcomeService.processLeadOutcome', () => {
-  it('dispatches QualifiedLead with deterministic event_id, back-dated event_time, and pixel override', async () => {
+  it('dispatches ConfirmedResident with deterministic event_id, back-dated event_time, and pixel override', async () => {
     const { deps, sendConversionEvent } = buildDeps();
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome(QUALIFIED);
 
-    expect(result).toEqual({ action: 'dispatched', eventName: 'QualifiedLead' });
+    expect(result).toEqual({ dispatched: ['ConfirmedResident'], duplicate: [], failed: [] });
     expect(sendConversionEvent).toHaveBeenCalledTimes(1);
     const [, ctx, options] = sendConversionEvent.mock.calls[0];
-    expect(ctx.eventId).toBe('qualified:prospect-uuid-1');
+    expect(ctx.eventId).toBe('confirmed_resident:prospect-uuid-1');
     expect(ctx.eventTime).toBe(Math.floor(Date.parse('2026-06-09T10:00:00Z') / 1000));
     expect(ctx.pixelIdOverride).toBe('pixel-override-1');
-    expect(options.eventName).toBe('QualifiedLead');
+    expect(options.eventName).toBe('ConfirmedResident');
   });
 
-  it('maps won → ClosedWon and writes the wonAt marker', async () => {
+  it('won emits BOTH ConfirmedResident and ClosedWon (won implies SC/PR)', async () => {
     const { deps, prospect, sendConversionEvent } = buildDeps();
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome({ ...QUALIFIED, new_status: 'won', old_status: 'proposed' });
 
-    expect(result.eventName).toBe('ClosedWon');
-    expect(sendConversionEvent.mock.calls[0][2].eventName).toBe('ClosedWon');
-    expect(prospect.sourceMetadata.capi.wonAt).toEqual(expect.any(String));
-    expect(prospect.save).toHaveBeenCalledTimes(1);
+    expect(result.dispatched).toEqual(['ConfirmedResident', 'ClosedWon']);
+    expect(sendConversionEvent).toHaveBeenCalledTimes(2);
+    expect(sendConversionEvent.mock.calls[0][1].eventId).toBe('confirmed_resident:prospect-uuid-1');
+    expect(sendConversionEvent.mock.calls[0][2].eventName).toBe('ConfirmedResident');
+    expect(sendConversionEvent.mock.calls[1][1].eventId).toBe('closed_won:prospect-uuid-1');
+    expect(sendConversionEvent.mock.calls[1][2].eventName).toBe('ClosedWon');
+    expect(prospect.sourceMetadata.capi.confirmedResidentAt).toEqual(expect.any(String));
+    expect(prospect.sourceMetadata.capi.closedWonAt).toEqual(expect.any(String));
+    expect(prospect.save).toHaveBeenCalledTimes(2);
   });
 
-  it('persists the idempotency marker before dispatch', async () => {
+  it('won skips ConfirmedResident if already sent, still emits ClosedWon', async () => {
+    const prospect = makeProspect({
+      sourceMetadata: { consent_contact: true, capi: { confirmedResidentAt: '2026-06-08T00:00:00Z' } },
+    });
+    const { deps, sendConversionEvent } = buildDeps({ prospect });
+    const svc = makeLeadOutcomeService(deps);
+
+    const result = await svc.processLeadOutcome({ ...QUALIFIED, new_status: 'won' });
+
+    expect(result).toEqual({ dispatched: ['ClosedWon'], duplicate: ['ConfirmedResident'], failed: [] });
+    expect(sendConversionEvent).toHaveBeenCalledTimes(1);
+    expect(sendConversionEvent.mock.calls[0][2].eventName).toBe('ClosedWon');
+  });
+
+  it('writes the dedup marker ONLY after a successful send', async () => {
     const { deps, prospect } = buildDeps();
     const svc = makeLeadOutcomeService(deps);
 
     await svc.processLeadOutcome(QUALIFIED);
 
-    expect(prospect.sourceMetadata.capi.qualifiedAt).toEqual(expect.any(String));
+    expect(prospect.sourceMetadata.capi.confirmedResidentAt).toEqual(expect.any(String));
     expect(prospect.changed).toHaveBeenCalledWith('sourceMetadata', true);
     expect(prospect.save).toHaveBeenCalledTimes(1);
-    // existing sourceMetadata is preserved, not clobbered
+    // existing sourceMetadata preserved, not clobbered
     expect(prospect.sourceMetadata.consent_contact).toBe(true);
     expect(prospect.sourceMetadata.fbp).toBe('fb.1.1.x');
   });
 
-  it('is a no-op (no refire) when the marker already exists', async () => {
+  it('does NOT mark (leaves re-tryable) when the send fails', async () => {
+    const sendConversionEvent = jest.fn().mockResolvedValue({ sent: false, status: 500 });
+    const { deps, prospect } = buildDeps({ sendConversionEvent });
+    const svc = makeLeadOutcomeService(deps);
+
+    const result = await svc.processLeadOutcome(QUALIFIED);
+
+    expect(result).toEqual({ dispatched: [], duplicate: [], failed: ['ConfirmedResident'] });
+    expect(prospect.sourceMetadata.capi).toBeUndefined();
+    expect(prospect.save).not.toHaveBeenCalled();
+  });
+
+  it('retries a transient failure then succeeds', async () => {
+    const sendConversionEvent = jest
+      .fn()
+      .mockResolvedValueOnce({ sent: false, status: 503 })
+      .mockResolvedValueOnce({ sent: true });
+    const { deps, prospect, sleep } = buildDeps({ sendConversionEvent });
+    const svc = makeLeadOutcomeService(deps);
+
+    const result = await svc.processLeadOutcome(QUALIFIED);
+
+    expect(result.dispatched).toEqual(['ConfirmedResident']);
+    expect(sendConversionEvent).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(prospect.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT retry a guarded (CAPI disabled / ineligible) result', async () => {
+    const sendConversionEvent = jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' });
+    const { deps, sleep } = buildDeps({ sendConversionEvent });
+    const svc = makeLeadOutcomeService(deps);
+
+    const result = await svc.processLeadOutcome(QUALIFIED);
+
+    expect(result.failed).toEqual(['ConfirmedResident']);
+    expect(sendConversionEvent).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('does NOT retry a 4xx (non-transient) result', async () => {
+    const sendConversionEvent = jest.fn().mockResolvedValue({ sent: false, status: 400 });
+    const { deps, sleep } = buildDeps({ sendConversionEvent });
+    const svc = makeLeadOutcomeService(deps);
+
+    const result = await svc.processLeadOutcome(QUALIFIED);
+
+    expect(result.failed).toEqual(['ConfirmedResident']);
+    expect(sendConversionEvent).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op (no refire) when the ConfirmedResident marker already exists', async () => {
     const prospect = makeProspect({
-      sourceMetadata: { consent_contact: true, capi: { qualifiedAt: '2026-06-08T00:00:00Z' } },
+      sourceMetadata: { consent_contact: true, capi: { confirmedResidentAt: '2026-06-08T00:00:00Z' } },
     });
     const { deps, sendConversionEvent } = buildDeps({ prospect });
     const svc = makeLeadOutcomeService(deps);
 
     const result = await svc.processLeadOutcome(QUALIFIED);
 
-    expect(result).toEqual({ skipped: 'duplicate', eventName: 'QualifiedLead' });
+    expect(result).toEqual({ dispatched: [], duplicate: ['ConfirmedResident'], failed: [] });
     expect(sendConversionEvent).not.toHaveBeenCalled();
     expect(prospect.save).not.toHaveBeenCalled();
   });
@@ -150,8 +216,10 @@ describe('leadOutcomeService.processLeadOutcome', () => {
       await svc.processLeadOutcome(QUALIFIED);
       expect(sendConversionEvent.mock.calls[0][2].eventName).toBe('Lead');
     } finally {
-      if (prev.q === undefined) delete process.env.META_EVENT_QUALIFIED; else process.env.META_EVENT_QUALIFIED = prev.q;
-      if (prev.w === undefined) delete process.env.META_EVENT_WON; else process.env.META_EVENT_WON = prev.w;
+      if (prev.q === undefined) delete process.env.META_EVENT_QUALIFIED;
+      else process.env.META_EVENT_QUALIFIED = prev.q;
+      if (prev.w === undefined) delete process.env.META_EVENT_WON;
+      else process.env.META_EVENT_WON = prev.w;
     }
   });
 });
