@@ -90,6 +90,7 @@ function toExternalAgent(row) {
     phone: row.phone ?? null,
     externalRole: row.role,
     isActive: row.is_active !== false,
+    agency: row.agency ?? null,
     avatarUrl: null,
     dateOfBirth: null,
     createdAt: row.created_at ?? null,
@@ -97,17 +98,21 @@ function toExternalAgent(row) {
   };
 }
 
-const SELECT_COLUMNS = 'mktr_user_id,full_name,email,phone,role,is_active,created_at';
+const SELECT_COLUMNS = 'mktr_user_id,full_name,email,phone,role,is_active,agency,created_at';
 
 /**
- * Fetch all assignable mktr-leads agents.
+ * Fetch ALL mktr-leads agents — active AND inactive.
  *
- * Filters `role=eq.agent` and `is_active=eq.true` AT THE SOURCE — this is
- * mandatory, not cosmetic: the generic runSync trusts the returned list (it
- * ignores `isActive`, creates local rows active), and mktr-leads has an `admin`
- * role that must never become an assignable MKTR agent. An agent who goes
- * inactive (or is promoted to admin) drops out of this list, so runSync's
- * deactivation step retires the local row — exactly how Lyfe behaves.
+ * `role=eq.agent` is filtered AT THE SOURCE and is mandatory: mktr-leads has an
+ * `admin` role that must never become an assignable MKTR agent (a promotion to
+ * admin drops the row from this list → the sync retires it locally).
+ *
+ * `is_active` is intentionally NOT filtered (unlike Lyfe): the adapter declares
+ * `mirrorsIsActive`, so runSync mirrors each row's is_active directly. Fetching
+ * active-only would make a deactivated agent look DELETED upstream — the sync's
+ * two-phase deletion would then hard-delete the local row after the grace
+ * window, cascading away its lead-package assignments. Only rows truly absent
+ * from this list (account deleted / promoted to admin) may be retired.
  */
 export async function fetchAgents() {
   const cacheKey = 'agents';
@@ -119,7 +124,7 @@ export async function fetchAgents() {
   let rows;
   try {
     rows = await breaker.fire(
-      `${url}/rest/v1/agents?role=eq.agent&is_active=eq.true&select=${SELECT_COLUMNS}&order=full_name`,
+      `${url}/rest/v1/agents?role=eq.agent&select=${SELECT_COLUMNS}&order=full_name`,
       authHeaders(key)
     );
   } catch (err) {
