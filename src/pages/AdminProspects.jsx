@@ -158,7 +158,7 @@ export default function AdminProspects() {
  const d = new Date(v);
  return isNaN(d.getTime()) ? '' : format(d, 'dd/MM/yyyy');
  };
- const exportColumns = ['Created Date', 'Campaign', 'Name', 'Phone', 'Email', 'Date of Birth', 'Postal Code', 'Company', 'Status', 'Assigned To', 'Source'];
+ const exportColumns = ['Created Date', 'Campaign', 'Name', 'Phone', 'Email', 'Date of Birth', 'Postal Code', 'Status', 'Assigned To', 'Source'];
  const exportRowValues = (p) => {
  const campaign = campaigns.find((c) => c.id === p.campaign_id);
  return [
@@ -169,7 +169,6 @@ export default function AdminProspects() {
  p.email || '',
  fmtDob(p.date_of_birth),
  p.postal_code || '',
- p.company || '',
  statusLabels[p.status] || p.status || '',
  p.assigned_agent_name || '',
  (p.source || '').toUpperCase(),
