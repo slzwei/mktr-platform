@@ -12,6 +12,7 @@ const ROWS = [
     phone: '6591234567',
     role: 'agent',
     is_active: true,
+    agency: 'Acme Advisory',
     created_at: '2026-06-01T00:00:00Z',
   },
   {
@@ -21,7 +22,19 @@ const ROWS = [
     phone: '6598765432',
     role: 'agent',
     is_active: true,
+    agency: null,
     created_at: '2026-06-02T00:00:00Z',
+  },
+  {
+    // Deactivated agent — must be returned (mirrored), not filtered out.
+    mktr_user_id: 'mu_3',
+    full_name: 'Cara Goh',
+    email: 'cara@example.com',
+    phone: '6587654321',
+    role: 'agent',
+    is_active: false,
+    agency: 'Acme Advisory',
+    created_at: '2026-06-03T00:00:00Z',
   },
 ];
 
@@ -48,16 +61,18 @@ describe('mktrLeadsClient', () => {
     delete process.env.MKTR_LEADS_SUPABASE_SERVICE_ROLE_KEY;
   });
 
-  it('fetchAgents filters role=agent + is_active at the source and normalizes', async () => {
+  it('fetchAgents filters role=agent at the source (NOT is_active — inactive rows are mirrored) and normalizes', async () => {
     const agents = await client.fetchAgents();
 
     const url = fetchMock.mock.calls[0][0];
     expect(url).toContain('/rest/v1/agents?');
     expect(url).toContain('role=eq.agent');
-    expect(url).toContain('is_active=eq.true');
-    expect(url).toContain('select=mktr_user_id,full_name,email,phone,role,is_active,created_at');
+    // Deactivated agents must stay in the fetched set: absence means DELETED
+    // upstream (two-phase hard-delete). is_active is mirrored row-wise instead.
+    expect(url).not.toContain('is_active=eq.true');
+    expect(url).toContain('select=mktr_user_id,full_name,email,phone,role,is_active,agency,created_at');
 
-    expect(agents).toHaveLength(2);
+    expect(agents).toHaveLength(3);
     expect(agents[0]).toMatchObject({
       externalId: 'mu_1', // the mktr_user_id, NOT an auth id
       fullName: 'Ada Tan',
@@ -65,11 +80,14 @@ describe('mktrLeadsClient', () => {
       phone: '6591234567',
       externalRole: 'agent',
       isActive: true,
+      agency: 'Acme Advisory',
       avatarUrl: null,
       dateOfBirth: null,
       createdAt: '2026-06-01T00:00:00Z',
     });
     expect(agents[1].email).toBeNull(); // do NOT synthesize
+    // Inactive rows pass through with isActive=false for row-wise mirroring.
+    expect(agents[2]).toMatchObject({ externalId: 'mu_3', isActive: false });
   });
 
   it('caches list results within TTL (no second fetch)', async () => {
@@ -111,6 +129,11 @@ describe('MktrLeadsAdapter contract', () => {
     expect(MktrLeadsAdapter.localIdField).toBe('mktrLeadsId');
   });
 
+  it('declares mirror semantics: is_active mirrored row-wise, profile fields source-authoritative', () => {
+    expect(MktrLeadsAdapter.mirrorsIsActive).toBe(true);
+    expect(MktrLeadsAdapter.authoritativeProfile).toBe(true);
+  });
+
   it('reads outbound webhook url/secret from env each call', () => {
     expect(MktrLeadsAdapter.outboundWebhookUrl()).toBeNull();
     expect(MktrLeadsAdapter.outboundWebhookSecret()).toBeNull();
@@ -126,7 +149,7 @@ describe('MktrLeadsAdapter contract', () => {
     client.invalidateCache();
     global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ROWS, text: async () => '' });
     const agents = await MktrLeadsAdapter.listAgents();
-    expect(agents.map((a) => a.externalId)).toEqual(['mu_1', 'mu_2']);
+    expect(agents.map((a) => a.externalId)).toEqual(['mu_1', 'mu_2', 'mu_3']);
     delete process.env.MKTR_LEADS_SUPABASE_URL;
     delete process.env.MKTR_LEADS_SUPABASE_SERVICE_ROLE_KEY;
   });

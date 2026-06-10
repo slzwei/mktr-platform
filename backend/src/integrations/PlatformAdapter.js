@@ -57,6 +57,9 @@
  * @property {boolean} isActive      Upstream active flag. Inactive agents
  *                                   are still listed so the orchestrator
  *                                   can deactivate locally.
+ * @property {string|null} [agency]  Upstream agency/company name (mktr-leads).
+ *                                   Mirrored to users.companyName by adapters
+ *                                   that declare `authoritativeProfile`.
  * @property {string|null} avatarUrl
  * @property {string|null} dateOfBirth
  * @property {string|null} createdAt ISO timestamp; informational.
@@ -83,6 +86,19 @@
  * @property {(externalId: string) => Promise<ExternalAgent>} getAgent
  *   Fetches one agent. Throws if not found. Used by lead-routing on the
  *   hot path; should be cached aggressively (TTL ~5 min).
+ *
+ * @property {boolean} [mirrorsIsActive]
+ *   Optional. When true, listAgents() returns active AND inactive rows and the
+ *   sync mirrors each row's isActive locally; only rows truly absent from the
+ *   list are treated as deleted (deactivation/two-phase delete). When falsy
+ *   (Lyfe legacy), listAgents() returns the active roster only and absence
+ *   implies inactive.
+ *
+ * @property {boolean} [authoritativeProfile]
+ *   Optional. When true, the sync OVERWRITES profile fields (fullName + derived
+ *   first/last, email, companyName←agency) on this adapter's rows so upstream
+ *   edits propagate. When falsy (Lyfe legacy), the sync only fills null/
+ *   placeholder fields.
  *
  * @property {() => void} [invalidateCache]
  *   Optional. Clears any internal cache. Called after manual sync runs.

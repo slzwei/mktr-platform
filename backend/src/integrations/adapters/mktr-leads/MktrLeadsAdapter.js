@@ -22,6 +22,22 @@ export const MktrLeadsAdapter = {
    */
   localIdField: 'mktrLeadsId',
 
+  /**
+   * listAgents returns ACTIVE AND INACTIVE rows; runSync mirrors each row's
+   * is_active locally instead of treating "not in the fetched set" as gone.
+   * Without this, deactivating an agent in mktr-leads would look like deletion
+   * → two-phase hard-delete → CASCADE wipes their lead-package assignments.
+   */
+  mirrorsIsActive: true,
+
+  /**
+   * mktr-leads is the source of truth for agent profile fields: runSync
+   * OVERWRITES fullName/email/companyName(agency) on its rows (vs the Lyfe
+   * fill-only-when-null behaviour), so edits made in mktr-leads — including via
+   * the admin write-back endpoints — propagate and self-heal.
+   */
+  authoritativeProfile: true,
+
   async listAgents(filters) {
     return mktrLeadsClient.fetchAgents(filters);
   },
