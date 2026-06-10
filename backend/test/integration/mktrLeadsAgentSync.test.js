@@ -113,4 +113,16 @@ describe('syncAgentsFromMktrLeads', () => {
     expect(result.locked).not.toBe(false);
     expect(result.skipped).toBeGreaterThanOrEqual(1);
   });
+
+  it('runs back-to-back without the advisory lock leaking (regression: lock_held skip)', async () => {
+    // Under the old session-level pg_advisory_lock, the acquire and the manual
+    // pg_advisory_unlock could land on different pooled connections, so the lock
+    // leaked and a sync running immediately after another (the Lyfe→mktr-leads
+    // cron pattern) skipped with locked:false. The transaction-scoped
+    // pg_try_advisory_xact_lock auto-releases on commit, so both runs acquire.
+    const first = await syncAgentsFromMktrLeads();
+    const second = await syncAgentsFromMktrLeads();
+    expect(first.locked).not.toBe(false);
+    expect(second.locked).not.toBe(false);
+  });
 });

@@ -129,6 +129,16 @@ export function provenanceConflictField(existing, matchedByExternalId, otherProv
  * Returns cleanly with `locked:false` if another session holds it, so a
  * cron-triggered run doesn't spam errors during manual ops.
  *
+ * The lock is held for the lifetime of a TRANSACTION (`pg_try_advisory_xact_lock`)
+ * so it is bound to a single connection and auto-released on commit/rollback.
+ * The previous session-level `pg_advisory_lock` + manual `pg_advisory_unlock`
+ * leaked under Sequelize's connection pool: the unlock frequently ran on a
+ * DIFFERENT pooled connection than the acquire, so it was a no-op and the lock
+ * stayed held. That made the mktr-leads sync skip with `lock_held` when it ran
+ * right after the Lyfe sync on the same cron tick. runSync's own reads/writes
+ * use pool connections (committed independently); lockTx exists only to hold the
+ * lock for the duration.
+ *
  * @returns {Promise<{ created: number, updated: number, deactivated: number, hardDeleted: number, skipped: number, total: number, locked?: boolean }>}
  */
 async function syncWithLock(adapterId) {
@@ -136,29 +146,22 @@ async function syncWithLock(adapterId) {
   const localIdField = adapter.localIdField;
   const startedAt = Date.now();
 
-  const [{ locked }] = await sequelize.query(
-    `SELECT pg_try_advisory_lock(hashtext(:key)) AS locked`,
-    { replacements: { key: ADVISORY_LOCK_KEY }, type: sequelize.QueryTypes.SELECT }
-  );
-  if (!locked) {
-    logger.info(
-      { event: 'agent_sync_skipped', adapter: adapter.id, reason: 'lock_held' },
-      '[AgentSync] another sync run is in progress — skipping'
+  return await sequelize.transaction(async (lockTx) => {
+    const [{ locked }] = await sequelize.query(
+      `SELECT pg_try_advisory_xact_lock(hashtext(:key)) AS locked`,
+      { replacements: { key: ADVISORY_LOCK_KEY }, type: sequelize.QueryTypes.SELECT, transaction: lockTx }
     );
-    return { created: 0, updated: 0, deactivated: 0, hardDeleted: 0, skipped: 0, total: 0, locked: false };
-  }
+    if (!locked) {
+      logger.info(
+        { event: 'agent_sync_skipped', adapter: adapter.id, reason: 'lock_held' },
+        '[AgentSync] another sync run is in progress — skipping'
+      );
+      return { created: 0, updated: 0, deactivated: 0, hardDeleted: 0, skipped: 0, total: 0, locked: false };
+    }
 
-  try {
+    // Lock auto-releases when this transaction commits (or rolls back on throw).
     return await runSync(adapter, localIdField, startedAt);
-  } finally {
-    // Always release the advisory lock, even if runSync throws.
-    await sequelize.query(
-      `SELECT pg_advisory_unlock(hashtext(:key))`,
-      { replacements: { key: ADVISORY_LOCK_KEY } }
-    ).catch((err) => {
-      logger.warn({ err, lockKey: ADVISORY_LOCK_KEY }, '[AgentSync] failed to release advisory lock');
-    });
-  }
+  });
 }
 
 /**
