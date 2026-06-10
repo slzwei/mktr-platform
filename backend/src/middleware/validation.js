@@ -229,14 +229,18 @@ export const schemas = {
   // ever added, define a fresh schema next to it.
 
   // Lead Package schemas — fields match `leadPackageController.createPackage`
-  // destructure. `description` is accepted because the admin form sends it
-  // (silently dropped by the controller).
+  // destructure. `description`, `isPublic` and `status` are accepted because the
+  // admin "Create Package Template" form sends them; the controller drops them
+  // (the service forces status:'active'), but this strict Joi object would
+  // otherwise 400 with `"isPublic"/"status" is not allowed`.
   leadPackageCreate: Joi.object({
     name: Joi.string().min(1).max(100).required(),
     price: Joi.number().min(0).required(),
     leadCount: Joi.number().integer().min(1).required(),
     campaignId: Joi.string().uuid().required(),
     type: Joi.string().valid('basic', 'premium', 'enterprise', 'custom').optional(),
-    description: Joi.string().allow('', null).optional()
+    description: Joi.string().allow('', null).optional(),
+    isPublic: Joi.boolean().optional(),
+    status: Joi.string().valid('active', 'inactive', 'draft', 'archived').optional()
   })
 };
