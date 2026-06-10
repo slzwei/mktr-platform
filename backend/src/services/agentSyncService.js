@@ -39,6 +39,17 @@ const SYNC_DRIFT_DEACTIVATION_RATIO = 0.2;
 // Per FMEA F09 — closes the read-then-delete race.
 const DELETE_GRACE_HOURS = 24;
 
+// Every external-provenance column on `users`. One source per user is enforced
+// by a DB CHECK (lyfeId IS NULL OR mktrLeadsId IS NULL); the sync reads BOTH so
+// it can detect a phone/email match that would cross sources and skip it.
+const PROVENANCE_FIELDS = ['lyfeId', 'mktrLeadsId'];
+
+// Single shared advisory lock across ALL agent syncs (Lyfe + mktr-leads). Both
+// mutate the same `users` table and the cross-source conflict check reads rows
+// owned by the other source, so the two syncs must never run concurrently — a
+// shared key (not per-adapter) serialises them. Stable across sessions, per-DB.
+const ADVISORY_LOCK_KEY = 'agent_sync';
+
 // ─── Backwards-compat exports ──────────────────────────────────────────────
 // Existing callers (lyfeAgentController, prospectService, etc.) import these
 // names directly. Keep them working as thin shims to the Lyfe adapter so we
@@ -85,32 +96,46 @@ function toLegacyShape(externalAgent) {
   };
 }
 
+/**
+ * One-source-per-user guard (pure). Given a local `users` row matched during a
+ * sync, return the name of a CONFLICTING provenance column — the other source's
+ * id is already set, so attaching this source's id would violate the
+ * single-provenance CHECK and create an ambiguous dual-source row — or null if
+ * the row is safe to attach.
+ *
+ * An externalId match is same-source and always safe (null). Only a phone/email
+ * match onto a row owned by a different source is a conflict.
+ *
+ * @param {object|null} existing               matched local user row
+ * @param {boolean}     matchedByExternalId     true if matched via this source's id
+ * @param {string[]}    otherProvenanceFields   provenance columns of OTHER sources
+ * @returns {string|null} conflicting field name, or null if safe to attach
+ */
+export function provenanceConflictField(existing, matchedByExternalId, otherProvenanceFields) {
+  if (!existing || matchedByExternalId) return null;
+  return otherProvenanceFields.find((f) => existing[f]) || null;
+}
+
 // ─── Sync orchestrator ─────────────────────────────────────────────────────
 
 /**
- * Sync agents from Lyfe into the local User table.
+ * Run one adapter's sync under the shared advisory lock.
  *
- * Find-or-creates local users (matched by lyfeId → phone → email),
- * updates stale records, deactivates agents no longer present upstream.
+ * ─── Concurrency guard (FMEA F08) ────────────────────────────────────
+ * Prevents two orchestrator runs from racing — e.g. the Lyfe cron firing while
+ * the mktr-leads cron (or a manual /api/.../agents/sync request) is in flight.
+ * The hashtext-based key is stable across sessions, scoped per-DB, and SHARED
+ * across all sources so the two syncs never mutate `users` concurrently.
+ * Returns cleanly with `locked:false` if another session holds it, so a
+ * cron-triggered run doesn't spam errors during manual ops.
  *
- * Phase 1: hard-coded to the 'lyfe' adapter. Phase 3 generalises this to
- * iterate over `adapterRegistry.list()` once a platform_id column exists
- * on `users` to disambiguate origin.
- *
- * @returns {Promise<{ created: number, updated: number, deactivated: number, skipped: number, total: number }>}
+ * @returns {Promise<{ created: number, updated: number, deactivated: number, hardDeleted: number, skipped: number, total: number, locked?: boolean }>}
  */
-export async function syncAgentsFromLyfe() {
-  const adapter = adapterRegistry.get('lyfe');
+async function syncWithLock(adapterId) {
+  const adapter = adapterRegistry.get(adapterId);
   const localIdField = adapter.localIdField;
   const startedAt = Date.now();
 
-  // ─── Concurrency guard (FMEA F08) ────────────────────────────────────
-  // Prevents two orchestrator runs from racing — e.g., the periodic cron
-  // firing while a manual /api/lyfe/agents/sync request is in flight. The
-  // hashtext-based key is stable across sessions, scoped per-DB.
-  // Returns false if another session holds the lock; we exit cleanly and
-  // log so the cron-triggered run doesn't spam errors during manual ops.
-  const ADVISORY_LOCK_KEY = 'agent_sync';
   const [{ locked }] = await sequelize.query(
     `SELECT pg_try_advisory_lock(hashtext(:key)) AS locked`,
     { replacements: { key: ADVISORY_LOCK_KEY }, type: sequelize.QueryTypes.SELECT }
@@ -137,6 +162,31 @@ export async function syncAgentsFromLyfe() {
 }
 
 /**
+ * Sync agents from Lyfe into the local User table.
+ *
+ * Find-or-creates local users (matched by lyfeId → phone → email),
+ * updates stale records, deactivates agents no longer present upstream.
+ *
+ * @returns {Promise<{ created: number, updated: number, deactivated: number, skipped: number, total: number }>}
+ */
+export async function syncAgentsFromLyfe() {
+  return syncWithLock('lyfe');
+}
+
+/**
+ * Sync agents from mktr-leads into the local User table — same contract as
+ * {@link syncAgentsFromLyfe}, keyed on `mktrLeadsId`. Shares the advisory lock
+ * so it never races the Lyfe sync. A phone/email match onto a Lyfe-owned row is
+ * SKIPPED (one source per user), never merged. Throws if the mktr-leads env is
+ * not configured (the client raises a 500) — callers env-gate before invoking.
+ *
+ * @returns {Promise<{ created: number, updated: number, deactivated: number, skipped: number, total: number }>}
+ */
+export async function syncAgentsFromMktrLeads() {
+  return syncWithLock('mktr_leads');
+}
+
+/**
  * Inner sync — assumes the caller already holds the advisory lock.
  * Split from `syncAgentsFromLyfe` so the outer wrapper can guarantee
  * lock release via try/finally without indenting 200 lines.
@@ -153,7 +203,9 @@ async function runSync(adapter, localIdField, startedAt) {
     allAgents = await User.findAll({
       where: { role: 'agent' },
       attributes: [
-        'id', localIdField, 'phone', 'email', 'firstName', 'lastName',
+        // Both provenance fields (not just localIdField) so the loop can detect
+        // a phone/email match that would cross sources and skip it.
+        'id', ...PROVENANCE_FIELDS, 'phone', 'email', 'firstName', 'lastName',
         'fullName', 'isActive', 'external_role', 'pending_deletion_at',
       ],
     });
@@ -168,11 +220,15 @@ async function runSync(adapter, localIdField, startedAt) {
     throw err;
   }
 
+  // byExternalId keys on THIS source's id only, so an externalId match is
+  // always same-source and safe to merge. The other source's column(s) are the
+  // ones a phone/email match must not collide with.
   const byExternalId = new Map(
     allAgents.filter((a) => a[localIdField]).map((a) => [a[localIdField], a])
   );
   const byPhone = new Map(allAgents.filter((a) => a.phone).map((a) => [a.phone, a]));
   const byEmail = new Map(allAgents.filter((a) => a.email).map((a) => [a.email.toLowerCase(), a]));
+  const otherProvenanceFields = PROVENANCE_FIELDS.filter((f) => f !== localIdField);
 
   let created = 0;
   let updated = 0;
@@ -185,10 +241,38 @@ async function runSync(adapter, localIdField, startedAt) {
     }
 
     const normalizedPhone = ea.phone ? String(ea.phone).replace(/\D/g, '') : null;
-    let existing =
-      (ea.externalId ? byExternalId.get(String(ea.externalId)) : null) ||
+    const externalIdMatch = ea.externalId ? byExternalId.get(String(ea.externalId)) : null;
+    const phoneEmailMatch =
       (normalizedPhone ? byPhone.get(normalizedPhone) : null) ||
       (ea.email ? byEmail.get(ea.email.toLowerCase()) : null);
+    let existing = externalIdMatch || phoneEmailMatch;
+
+    // One-source-per-user (Codex review): a phone/email match that lands on a
+    // row already owned by a DIFFERENT external source must NOT be merged — it
+    // would violate the single-provenance CHECK and create an ambiguous
+    // dual-source row that each sync could then fight over (cross-source
+    // deactivation). An externalId match is same-source and exempt. Skip +
+    // structured-alert so the collision is visible without blocking the run.
+    const conflictingField = provenanceConflictField(existing, Boolean(externalIdMatch), otherProvenanceFields);
+    if (conflictingField) {
+      skipped++;
+      logger.warn(
+        {
+          event: 'agent_sync_provenance_conflict',
+          adapter: adapter.id,
+          localIdField,
+          conflictingField,
+          matchedUserId: existing.id,
+        },
+        `[AgentSync] upstream agent's phone/email matches a ${conflictingField}-owned user — skipping to preserve one-source-per-user`
+      );
+      Sentry.captureMessage('agent_sync_provenance_conflict', {
+        level: 'warning',
+        tags: { component: 'agent_sync', adapter: adapter.id },
+        extra: { conflictingField, matchedUserId: existing.id, localIdField },
+      });
+      continue;
+    }
 
     if (existing) {
       const updateData = {};
