@@ -410,7 +410,8 @@ describe('retellService (unit)', () => {
 
       expect(mocks.dispatchEvent).toHaveBeenCalledWith(
         'lead.created',
-        expect.any(Function)
+        expect.any(Function),
+        expect.objectContaining({ destination: 'lyfe' })
       );
 
       // Invoke the payload builder to verify its structure

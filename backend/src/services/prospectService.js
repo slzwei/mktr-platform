@@ -32,6 +32,8 @@ import {
   buildLeadCreatedPayload,
   buildLeadAssignedPayload,
   buildLeadUnassignedPayload,
+  destinationForAgent,
+  externalIdForDestination,
 } from './prospectHelpers.js';
 import { scoreQuiz } from './quizScoringService.js';
 
@@ -565,18 +567,22 @@ export function makeProspectService(overrides = {}) {
     assignedAgentId = finalAgentId;
 
     // --- Webhook dispatch (AFTER transaction commits, fire-and-forget) ---
-    // Load assigned agent record if we have an assignedAgentId but no resolvedAgent
-    let agentForWebhook = resolvedAgent;
-    if (!agentForWebhook && assignedAgentId) {
+    // Always load the assigned agent's provenance (lyfeId/mktrLeadsId) by id — NOT
+    // the possibly-partial resolvedAgent from QR/group routing, which lacks it — so
+    // we route to the right app and send the destination-correct external id.
+    let agentForWebhook = null;
+    let leadDestination = null;
+    if (assignedAgentId) {
       const agentRecord = await m.User.findByPk(assignedAgentId, {
-        attributes: ['id', 'lyfeId', 'phone', 'email', 'firstName', 'lastName'],
+        attributes: ['id', 'lyfeId', 'mktrLeadsId', 'phone', 'email', 'firstName', 'lastName'],
       });
       if (agentRecord) {
+        leadDestination = destinationForAgent(agentRecord);
         agentForWebhook = {
-          phone: agentRecord.phone || null,
-          email: agentRecord.email || null,
-          name: `${agentRecord.firstName || ''} ${agentRecord.lastName || ''}`.trim(),
-          id: agentRecord.lyfeId || agentRecord.id,
+          phone: agentRecord.phone || resolvedAgent?.phone || null,
+          email: agentRecord.email || resolvedAgent?.email || null,
+          name: `${agentRecord.firstName || ''} ${agentRecord.lastName || ''}`.trim() || resolvedAgent?.name || null,
+          id: externalIdForDestination(agentRecord, leadDestination),
         };
       }
     }
@@ -598,7 +604,8 @@ export function makeProspectService(overrides = {}) {
           sourceCampaign,
           sourceQrTag,
           agentGroup
-        )
+        ),
+        { destination: leadDestination }
       ).catch((err) => {
         d.logger.error('[Webhook] dispatch error', { error: err?.message || String(err) });
       });
@@ -818,12 +825,20 @@ export function makeProspectService(overrides = {}) {
       // received a lead.created for it (the create webhook was suppressed), so an
       // unassigned event would reference a lead Lyfe does not know about.
       if (!prospect.quarantinedAt) {
-        let previousAgentLyfeId = previousAgentId;
+        // Destination + external id come from the PREVIOUS agent (the assignment
+        // is already null). Sourceless previous agent -> null -> default-denied.
+        let prevDestination = null;
+        let previousAgentExternalId = null;
         if (previousAgentId) {
-          const prevAgent = await m.User.findByPk(previousAgentId, { attributes: ['lyfeId'] });
-          if (prevAgent?.lyfeId) previousAgentLyfeId = prevAgent.lyfeId;
+          const prevAgent = await m.User.findByPk(previousAgentId, {
+            attributes: ['id', 'lyfeId', 'mktrLeadsId'],
+          });
+          prevDestination = destinationForAgent(prevAgent);
+          previousAgentExternalId = externalIdForDestination(prevAgent, prevDestination);
         }
-        d.dispatchEvent('lead.unassigned', () => buildLeadUnassignedPayload(prospect, previousAgentLyfeId));
+        d.dispatchEvent('lead.unassigned', () => buildLeadUnassignedPayload(prospect, previousAgentExternalId), {
+          destination: prevDestination,
+        });
       }
 
       return { prospect, agent: null, prospectWithCampaign: prospect };
@@ -889,14 +904,16 @@ export function makeProspectService(overrides = {}) {
         include: [{ association: 'campaign', attributes: ['id', 'name'] }],
       });
 
+      const releaseDestination = destinationForAgent(agent);
       const agentForWebhook = {
         phone: agent.phone || null,
         email: agent.email || null,
         name: `${agent.firstName || ''} ${agent.lastName || ''}`.trim(),
-        id: agent.lyfeId || agent.id,
+        id: externalIdForDestination(agent, releaseDestination),
       };
       d.dispatchEvent('lead.created', () =>
-        buildLeadCreatedPayload(prospect, 'direct', agentForWebhook, agentId, prospectWithCampaign?.campaign || null, null, null)
+        buildLeadCreatedPayload(prospect, 'direct', agentForWebhook, agentId, prospectWithCampaign?.campaign || null, null, null),
+        { destination: releaseDestination }
       );
 
       return { prospect, agent, prospectWithCampaign };
@@ -925,7 +942,9 @@ export function makeProspectService(overrides = {}) {
     });
 
     // Fire lead.assigned webhook
-    d.dispatchEvent('lead.assigned', () => buildLeadAssignedPayload(prospect, agent, prospectWithCampaign));
+    d.dispatchEvent('lead.assigned', () => buildLeadAssignedPayload(prospect, agent, prospectWithCampaign), {
+      destination: destinationForAgent(agent),
+    });
 
     return { prospect, agent, prospectWithCampaign };
   }

@@ -8,6 +8,7 @@ import { dispatchEvent } from './webhookService.js';
 import { sendLeadAssignmentEmail } from './mailer.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { destinationForAgent, externalIdForDestination } from './prospectHelpers.js';
 
 const IDEMPOTENCY_SCOPE = 'meta:lead';
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -299,16 +300,18 @@ export function makeMetaLeadService(overrides = {}) {
 
       // ── Fire outgoing webhooks (post-commit, fire-and-forget) ──
       let agentForWebhook = null;
+      let metaDestination = null;
       if (assignedAgentId) {
         const agentRecord = await d.User.findByPk(assignedAgentId, {
-          attributes: ['id', 'lyfeId', 'phone', 'email', 'firstName', 'lastName'],
+          attributes: ['id', 'lyfeId', 'mktrLeadsId', 'phone', 'email', 'firstName', 'lastName'],
         });
         if (agentRecord) {
+          metaDestination = destinationForAgent(agentRecord);
           agentForWebhook = {
             phone: agentRecord.phone || null,
             email: agentRecord.email || null,
             name: `${agentRecord.firstName || ''} ${agentRecord.lastName || ''}`.trim(),
-            id: agentRecord.lyfeId || agentRecord.id,
+            id: externalIdForDestination(agentRecord, metaDestination),
           };
         }
       }
@@ -340,7 +343,7 @@ export function makeMetaLeadService(overrides = {}) {
           source: 'meta_webhook',
           campaign: campaign ? { externalId: campaign.id, name: campaign.name } : null
         }
-      }));
+      }), { destination: metaDestination });
 
       // ── Email notification (fire-and-forget) ──
       const notifyAgent = quarantined

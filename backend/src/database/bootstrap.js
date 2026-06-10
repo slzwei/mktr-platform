@@ -149,9 +149,16 @@ async function ensureLyfeWebhookSubscriber() {
 
   if (existing) {
     const needsUpdate = existing.url !== url || existing.secret !== secret || !existing.enabled
-      || JSON.stringify(existing.events?.sort()) !== JSON.stringify(requiredEvents.sort());
+      || JSON.stringify(existing.events?.sort()) !== JSON.stringify(requiredEvents.sort())
+      || existing.metadata?.destination !== 'lyfe';
     if (needsUpdate) {
-      await existing.update({ url, secret, enabled: true, events: requiredEvents });
+      await existing.update({
+        url,
+        secret,
+        enabled: true,
+        events: requiredEvents,
+        metadata: { ...(existing.metadata || {}), destination: 'lyfe' },
+      });
       logger.info('Lyfe webhook subscriber updated', { url, events: requiredEvents });
     } else {
       logger.debug('Lyfe webhook subscriber already registered', { url });
@@ -165,7 +172,8 @@ async function ensureLyfeWebhookSubscriber() {
     secret,
     events: ['lead.created', 'lead.assigned', 'lead.unassigned'],
     enabled: true,
-    description: 'Forward leads to Lyfe mobile app via Supabase Edge Function'
+    description: 'Forward leads to Lyfe mobile app via Supabase Edge Function',
+    metadata: { destination: 'lyfe' },
   });
 
   logger.info('Lyfe webhook subscriber registered', { url });

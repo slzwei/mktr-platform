@@ -204,7 +204,7 @@ describe('prospectAssignment (unit)', () => {
 
       await service.assignProspect('prospect-1', 'agent-1', admin);
 
-      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.assigned', expect.any(Function));
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.assigned', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
     });
 
     it('fires lead.unassigned when agentId is null', async () => {
@@ -218,7 +218,7 @@ describe('prospectAssignment (unit)', () => {
 
       await service.assignProspect('prospect-1', null, admin);
 
-      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.unassigned', expect.any(Function));
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.unassigned', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
     });
 
     it('deducts lead credit on assignment', async () => {
@@ -330,7 +330,7 @@ describe('prospectAssignment (unit)', () => {
 
       expect(mocks.sequelize.query).toHaveBeenCalled();
       expect(mocks.deductLeadCredit).toHaveBeenCalledWith('agent-1');
-      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
       expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.assigned', expect.any(Function));
     });
 
@@ -457,7 +457,7 @@ describe('prospectAssignment (unit)', () => {
       const body = { firstName: 'Test', campaignId: 'camp-1' };
       await service.createProspect(body, admin, {});
 
-      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
     });
 
     it('creates activity records for created + assigned', async () => {
@@ -509,7 +509,7 @@ describe('prospectAssignment (unit)', () => {
       expect(createArg.quarantinedAt).toBeNull();
       expect(mocks.chargeLeadCredit).toHaveBeenCalledWith('agent-1', 'camp-1', mocks.mockTransaction);
       expect(mocks.deductLeadCredit).not.toHaveBeenCalled(); // no double-charge
-      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
     });
 
     it('gated route + charge fails → quarantines: no agent, quarantinedAt set, no webhook, no deduct', async () => {
@@ -546,7 +546,7 @@ describe('prospectAssignment (unit)', () => {
       expect(createArg.assignedAgentId).toBe('agent-1');
       expect(mocks.chargeLeadCredit).not.toHaveBeenCalled();
       expect(mocks.deductLeadCredit).toHaveBeenCalledWith('agent-1', 1, mocks.mockTransaction);
-      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
     });
 
     it('logs a held activity (type updated) when quarantined', async () => {

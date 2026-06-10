@@ -132,6 +132,14 @@ const User = sequelize.define('User', {
     allowNull: true,
     unique: true
   },
+  // Provenance marker for agents mirrored from the mktr-leads app (a second
+  // agent source). Stores mktr-leads `agents.mktr_user_id`. Mutually exclusive
+  // with lyfeId (DB CHECK users_single_provenance_chk) — one source per user.
+  mktrLeadsId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    unique: true
+  },
   // Phase 2 — preserves upstream platform role (agent|manager|director).
   // Internal MKTR `role` keeps using 'agent' for permission purposes;
   // external_role is the lossless mirror for read-side filtering.

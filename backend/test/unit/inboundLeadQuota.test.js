@@ -68,7 +68,7 @@ describe('retellService.processRetellCall (lead quota)', () => {
 
     expect(deps.Prospect.create.mock.calls[0][0]).toMatchObject({ assignedAgentId: 'agent-1', quarantinedAt: null });
     expect(deps.chargeLeadCredit).toHaveBeenCalledWith('agent-1', 'camp-1', deps.mockTx);
-    expect(deps.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+    expect(deps.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
     expect(res.status).toBe('created');
   });
 
@@ -96,7 +96,7 @@ describe('retellService.processRetellCall (lead quota)', () => {
 
     expect(deps.Prospect.create.mock.calls[0][0].assignedAgentId).toBe('agent-1');
     expect(deps.chargeLeadCredit).not.toHaveBeenCalled();
-    expect(deps.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+    expect(deps.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
     expect(res.status).toBe('created');
   });
 });
@@ -133,7 +133,7 @@ describe('metaLeadService.processMetaLead (lead quota)', () => {
 
     expect(deps.Prospect.create.mock.calls[0][0]).toMatchObject({ assignedAgentId: 'agent-1', quarantinedAt: null });
     expect(deps.chargeLeadCredit).toHaveBeenCalledWith('agent-1', 'camp-1', deps.mockTx);
-    expect(deps.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+    expect(deps.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
     expect(res.status).toBe('created');
   });
 
@@ -160,7 +160,7 @@ describe('metaLeadService.processMetaLead (lead quota)', () => {
 
     expect(deps.Prospect.create.mock.calls[0][0].assignedAgentId).toBe('agent-1');
     expect(deps.chargeLeadCredit).not.toHaveBeenCalled();
-    expect(deps.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+    expect(deps.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
     expect(res.status).toBe('created');
   });
 });
