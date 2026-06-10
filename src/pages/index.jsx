@@ -36,6 +36,7 @@ const Onboarding = lazy(() => import('./Onboarding'));
 const PendingApproval = lazy(() => import('./PendingApproval'));
 const ForgotPassword = lazy(() => import('./ForgotPassword'));
 const PersonalDataPolicy = lazy(() => import('./PersonalDataPolicy'));
+const LeadsPrivacy = lazy(() => import('./LeadsPrivacy'));
 const DevRoutes = lazy(() => import('../dev/DevRoutes'));
 
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
@@ -115,6 +116,7 @@ function PagesContent() {
  <Route path="/about" element={brand.showAbout ? <About /> : <NotFoundForBrand />} />
  <Route path="/Contact" element={<Contact />} />
  <Route path="/personal-data-policy" element={<PersonalDataPolicy />} />
+ <Route path="/leads/privacy" element={<LeadsPrivacy />} />
 
  {/* D13: internal/auth/admin/onboarding routes redirect to mktr.sg on the redeem build. */}
  <Route path="/CustomerLogin" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <CustomerLogin />} />
