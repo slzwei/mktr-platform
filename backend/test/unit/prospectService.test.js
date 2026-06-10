@@ -548,7 +548,8 @@ describe('prospectService (unit)', () => {
 
       expect(mocks.dispatchEvent).toHaveBeenCalledWith(
         'lead.created',
-        expect.any(Function)
+        expect.any(Function),
+        expect.any(Object)
       );
 
       // Verify webhook payload structure
@@ -616,7 +617,8 @@ describe('prospectService (unit)', () => {
 
       expect(mocks.dispatchEvent).toHaveBeenCalledWith(
         'lead.assigned',
-        expect.any(Function)
+        expect.any(Function),
+        expect.objectContaining({ destination: 'lyfe' })
       );
 
       // Verify the payload uses lyfeId
@@ -645,7 +647,8 @@ describe('prospectService (unit)', () => {
 
       expect(mocks.dispatchEvent).toHaveBeenCalledWith(
         'lead.unassigned',
-        expect.any(Function)
+        expect.any(Function),
+        expect.objectContaining({ destination: 'lyfe' })
       );
 
       const builder = mocks.dispatchEvent.mock.calls[0][1];

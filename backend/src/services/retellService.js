@@ -9,6 +9,7 @@ import { sendLeadAssignmentEmail } from './mailer.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
+import { destinationForAgent, externalIdForDestination } from './prospectHelpers.js';
 
 const IDEMPOTENCY_SCOPE = 'retell:call';
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -323,16 +324,18 @@ export function makeRetellService(overrides = {}) {
       // ── Fire outgoing webhooks (post-commit, fire-and-forget) ──
       // Look up assigned agent for routing info
       let agentForWebhook = null;
+      let retellDestination = null;
       if (assignedAgentId) {
         const agentRecord = await d.User.findByPk(assignedAgentId, {
-          attributes: ['id', 'lyfeId', 'phone', 'email', 'firstName', 'lastName'],
+          attributes: ['id', 'lyfeId', 'mktrLeadsId', 'phone', 'email', 'firstName', 'lastName'],
         });
         if (agentRecord) {
+          retellDestination = destinationForAgent(agentRecord);
           agentForWebhook = {
             phone: agentRecord.phone || null,
             email: agentRecord.email || null,
             name: `${agentRecord.firstName || ''} ${agentRecord.lastName || ''}`.trim(),
-            id: agentRecord.lyfeId || agentRecord.id,
+            id: externalIdForDestination(agentRecord, retellDestination),
           };
         }
       }
@@ -366,7 +369,7 @@ export function makeRetellService(overrides = {}) {
           source: 'retell_webhook',
           campaign: campaign ? { externalId: campaign.id, name: campaign.name } : null
         }
-      }));
+      }), { destination: retellDestination });
 
       // ── Email notification (fire-and-forget) ──
       const notifyAgent = quarantined
