@@ -10,6 +10,7 @@ describe('mktrLeadsAgentManagementService', () => {
   beforeEach(() => {
     process.env.MKTR_LEADS_SUPABASE_URL = 'https://proj.supabase.co';
     process.env.MKTR_LEADS_SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
+    process.env.MKTR_LEADS_INVITE_SECRET = 'invite-secret';
     client = {
       createInvitation: jest.fn(),
       setAgentActive: jest.fn(),
@@ -24,12 +25,22 @@ describe('mktrLeadsAgentManagementService', () => {
   afterEach(() => {
     delete process.env.MKTR_LEADS_SUPABASE_URL;
     delete process.env.MKTR_LEADS_SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.MKTR_LEADS_INVITE_SECRET;
   });
 
   describe('configuration gate', () => {
     it('throws 503 when env is unset', async () => {
       delete process.env.MKTR_LEADS_SUPABASE_URL;
       await expect(svc.inviteAgent({ phone: '91234567' }, admin)).rejects.toMatchObject({ statusCode: 503 });
+      expect(client.createInvitation).not.toHaveBeenCalled();
+    });
+
+    it('invite throws 503 with a setup hint when MKTR_LEADS_INVITE_SECRET is unset', async () => {
+      delete process.env.MKTR_LEADS_INVITE_SECRET;
+      await expect(svc.inviteAgent({ phone: '91234567' }, admin)).rejects.toMatchObject({
+        statusCode: 503,
+        message: expect.stringContaining('MKTR_LEADS_INVITE_SECRET'),
+      });
       expect(client.createInvitation).not.toHaveBeenCalled();
     });
   });

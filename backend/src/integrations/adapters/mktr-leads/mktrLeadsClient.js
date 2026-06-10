@@ -174,16 +174,26 @@ const WRITE_TIMEOUT_MS = 10_000;
 
 /**
  * Create a pending invitation by calling mktr-leads' own create-ext-agent-invite
- * edge function with the service-role bearer — the EF is the single owner of
- * invitation semantics (canonical SG phone normalization, agent-exists guard,
- * revoke-then-insert re-invite, optional email). Returns { status, body } for
- * the caller to map; non-2xx is NOT thrown (409/400 carry meaning).
+ * edge function — the EF is the single owner of invitation semantics (canonical
+ * SG phone normalization, agent-exists guard, revoke-then-insert re-invite,
+ * optional email). Returns { status, body } for the caller to map; non-2xx is
+ * NOT thrown (409/400 carry meaning).
+ *
+ * Auth is two-part: the service-role bearer passes the platform verify_jwt
+ * gate, and the dedicated `x-service-secret` (MKTR_LEADS_INVITE_SECRET, equal
+ * to the EF's MKTR_PLATFORM_INVITE_SECRET) is what the EF actually trusts —
+ * the runtime-injected SUPABASE_SERVICE_ROLE_KEY is not string-comparable
+ * across Supabase key formats, so a dedicated rotatable secret is used instead.
  */
 export async function createInvitation({ phone, fullName, email, agency }) {
   const { url, key } = getConfig();
+  const inviteSecret = process.env.MKTR_LEADS_INVITE_SECRET;
+  if (!inviteSecret) {
+    throw new AppError('MKTR_LEADS_INVITE_SECRET must be configured for mktr-leads invites', 500);
+  }
   const response = await fetch(`${url}/functions/v1/create-ext-agent-invite`, {
     method: 'POST',
-    headers: authHeaders(key),
+    headers: { ...authHeaders(key), 'x-service-secret': inviteSecret },
     body: JSON.stringify({
       phone,
       full_name: fullName || null,
