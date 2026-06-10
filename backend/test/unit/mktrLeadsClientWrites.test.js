@@ -9,6 +9,7 @@ describe('mktrLeadsClient write-backs', () => {
   beforeEach(() => {
     process.env.MKTR_LEADS_SUPABASE_URL = 'https://proj.supabase.co';
     process.env.MKTR_LEADS_SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
+    process.env.MKTR_LEADS_INVITE_SECRET = 'invite-secret';
     client.invalidateCache();
     fetchMock = jest.fn();
     global.fetch = fetchMock;
@@ -18,10 +19,11 @@ describe('mktrLeadsClient write-backs', () => {
     global.fetch = realFetch;
     delete process.env.MKTR_LEADS_SUPABASE_URL;
     delete process.env.MKTR_LEADS_SUPABASE_SERVICE_ROLE_KEY;
+    delete process.env.MKTR_LEADS_INVITE_SECRET;
   });
 
   describe('createInvitation', () => {
-    it('POSTs to the create-ext-agent-invite EF with the service bearer and snake_case body', async () => {
+    it('POSTs to the create-ext-agent-invite EF with the service bearer + dedicated x-service-secret and snake_case body', async () => {
       fetchMock.mockResolvedValue({ status: 200, json: async () => ({ success: true, invitation_id: 'inv1', email_sent: true }) });
 
       const res = await client.createInvitation({ phone: '91234567', fullName: 'Ada Tan', email: 'ada@x.com', agency: 'Acme' });
@@ -29,9 +31,16 @@ describe('mktrLeadsClient write-backs', () => {
       const [url, opts] = fetchMock.mock.calls[0];
       expect(url).toBe('https://proj.supabase.co/functions/v1/create-ext-agent-invite');
       expect(opts.method).toBe('POST');
-      expect(opts.headers.Authorization).toBe('Bearer svc-key');
+      expect(opts.headers.Authorization).toBe('Bearer svc-key'); // passes the platform verify_jwt gate
+      expect(opts.headers['x-service-secret']).toBe('invite-secret'); // what the EF actually trusts
       expect(JSON.parse(opts.body)).toEqual({ phone: '91234567', full_name: 'Ada Tan', email: 'ada@x.com', agency: 'Acme' });
       expect(res).toEqual({ status: 200, body: { success: true, invitation_id: 'inv1', email_sent: true } });
+    });
+
+    it('throws a clear config error when MKTR_LEADS_INVITE_SECRET is unset (no network call)', async () => {
+      delete process.env.MKTR_LEADS_INVITE_SECRET;
+      await expect(client.createInvitation({ phone: '91234567' })).rejects.toThrow(/MKTR_LEADS_INVITE_SECRET/);
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it('returns non-2xx statuses with their body instead of throwing (409/400 carry meaning)', async () => {

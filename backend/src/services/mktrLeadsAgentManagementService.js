@@ -77,6 +77,14 @@ export function makeMktrLeadsAgentManagementService(overrides = {}) {
    */
   async function inviteAgent({ phone, fullName, email, agency }, adminUser) {
     ensureConfigured();
+    // The invite path additionally needs the dedicated EF secret (the EF's
+    // MKTR_PLATFORM_INVITE_SECRET) — activate/edit go via PostgREST and don't.
+    if (!process.env.MKTR_LEADS_INVITE_SECRET) {
+      throw new AppError(
+        'mktr-leads invites are not configured (set MKTR_LEADS_INVITE_SECRET to the value of the create-ext-agent-invite function secret MKTR_PLATFORM_INVITE_SECRET)',
+        503
+      );
+    }
     const { status, body } = await d.client.createInvitation({ phone, fullName, email, agency });
 
     if (status === 200) {
