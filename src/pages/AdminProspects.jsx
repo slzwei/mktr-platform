@@ -153,7 +153,12 @@ export default function AdminProspects() {
  const exportFileName = (ext) =>
  `prospects_${format(new Date(), 'ddMMyyyy_HHmm')}${selectedIds.size > 0 ? '_selected' : ''}.${ext}`;
 
- const exportColumns = ['Created Date', 'Campaign', 'Name', 'Phone', 'Email', 'Status', 'Assigned To', 'Source'];
+ const fmtDob = (v) => {
+ if (!v) return '';
+ const d = new Date(v);
+ return isNaN(d.getTime()) ? '' : format(d, 'dd/MM/yyyy');
+ };
+ const exportColumns = ['Created Date', 'Campaign', 'Name', 'Phone', 'Email', 'Date of Birth', 'Postal Code', 'Company', 'Status', 'Assigned To', 'Source'];
  const exportRowValues = (p) => {
  const campaign = campaigns.find((c) => c.id === p.campaign_id);
  return [
@@ -162,6 +167,9 @@ export default function AdminProspects() {
  p.name || '',
  p.phone || '',
  p.email || '',
+ fmtDob(p.date_of_birth),
+ p.postal_code || '',
+ p.company || '',
  statusLabels[p.status] || p.status || '',
  p.assigned_agent_name || '',
  (p.source || '').toUpperCase(),
@@ -202,7 +210,7 @@ export default function AdminProspects() {
  startY: 26,
  head: [exportColumns],
  body: exportRows.map(exportRowValues),
- styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+ styles: { fontSize: 7, cellPadding: 1.5, overflow: 'linebreak' },
  headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
  alternateRowStyles: { fillColor: [245, 247, 250] },
  margin: { left: 14, right: 14 },
