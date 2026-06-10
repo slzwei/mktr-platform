@@ -188,10 +188,11 @@ describe('prospectHelpers', () => {
       expect(payload.data.routing.agentExternalId).not.toBe('internal-id-123');
     });
 
-    it('falls back to agent.id when lyfeId is absent', () => {
+    it('returns null agentExternalId when the agent has no external provenance (never falls back to internal id)', () => {
       const agent = {
         id: 'internal-id-123',
         lyfeId: null,
+        mktrLeadsId: null,
         firstName: 'Agent',
         lastName: 'Smith',
         email: 'agent@test.com',
@@ -199,7 +200,25 @@ describe('prospectHelpers', () => {
       };
       const payload = buildLeadAssignedPayload(prospect, agent, null);
 
-      expect(payload.data.routing.agentExternalId).toBe('internal-id-123');
+      // The internal users.id is meaningless to receivers (→ guaranteed 422),
+      // so destination-aware routing emits null rather than falling back to it.
+      expect(payload.data.routing.agentExternalId).toBeNull();
+      expect(payload.data.routing.agentExternalId).not.toBe('internal-id-123');
+    });
+
+    it('uses mktrLeadsId as agentExternalId for an mktr-leads agent', () => {
+      const agent = {
+        id: 'internal-id-456',
+        lyfeId: null,
+        mktrLeadsId: 'ml-agent-9',
+        firstName: 'Ben',
+        lastName: 'Lim',
+        email: 'ben@test.com',
+        phone: '+6590000002',
+      };
+      const payload = buildLeadAssignedPayload(prospect, agent, null);
+
+      expect(payload.data.routing.agentExternalId).toBe('ml-agent-9');
     });
 
     it('constructs agentName from firstName + lastName', () => {
