@@ -20,10 +20,14 @@ import { useLocation } from"react-router-dom";
 import { format } from"date-fns";
 import {
  Search,
- Download,
+ FileSpreadsheet,
+ FileText,
  Trash2,
- User
+ User,
+ X
 } from"lucide-react";
+import { Checkbox } from"@/components/ui/checkbox";
+import { toast } from"sonner";
 import { useIsMobile } from"@/hooks/use-mobile";
 import {
  Select,
@@ -62,6 +66,7 @@ export default function AdminProspects() {
  });
  const [currentPage, setCurrentPage] = useState(1);
  const [itemsPerPage, setItemsPerPage] = useState(25);
+ const [selectedIds, setSelectedIds] = useState(() => new Set());
  const isMobile = useIsMobile();
 
  useEffect(() => {
@@ -103,6 +108,31 @@ export default function AdminProspects() {
  currentPage, totalPages: 1, totalItems: prospects.length, itemsPerPage
  };
 
+ // Clear row selection whenever the visible set changes (page / filters / page size).
+ useEffect(() => { setSelectedIds(new Set()); }, [queryParams]);
+
+ const exportRows = useMemo(
+ () => (selectedIds.size > 0 ? prospects.filter((p) => selectedIds.has(p.id)) : prospects),
+ [prospects, selectedIds]
+ );
+ const allSelected = prospects.length > 0 && prospects.every((p) => selectedIds.has(p.id));
+ const someSelected = selectedIds.size > 0 && !allSelected;
+
+ const toggleSelectAll = () => {
+ setSelectedIds((prev) => {
+ const everyVisibleSelected = prospects.length > 0 && prospects.every((p) => prev.has(p.id));
+ return everyVisibleSelected ? new Set() : new Set(prospects.map((p) => p.id));
+ });
+ };
+ const toggleSelectOne = (id) => {
+ setSelectedIds((prev) => {
+ const next = new Set(prev);
+ if (next.has(id)) next.delete(id); else next.add(id);
+ return next;
+ });
+ };
+ const clearSelection = () => setSelectedIds(new Set());
+
  const handleRefresh = () => queryClient.invalidateQueries({ queryKey: ['prospects'] });
 
  const handleStatusUpdate = async (prospectId, newStatus) => {
@@ -119,26 +149,69 @@ export default function AdminProspects() {
  } catch (error) { console.error('Error deleting prospect:', error); }
  };
 
- const exportToCSV = () => {
- const headers = ['Created Date', 'Campaign', 'Name', 'Phone', 'Status', 'Assigned To', 'Source'];
- const csvData = prospects.map(p => {
- const campaign = campaigns.find(c => (c.id === p.campaign_id));
+ // Exports act on the current selection if any rows are ticked, otherwise the whole visible page.
+ const exportFileName = (ext) =>
+ `prospects_${format(new Date(), 'ddMMyyyy_HHmm')}${selectedIds.size > 0 ? '_selected' : ''}.${ext}`;
+
+ const exportColumns = ['Created Date', 'Campaign', 'Name', 'Phone', 'Email', 'Status', 'Assigned To', 'Source'];
+ const exportRowValues = (p) => {
+ const campaign = campaigns.find((c) => c.id === p.campaign_id);
  return [
  format(new Date(p.created_date), 'dd/MM/yyyy HH:mm'),
- campaign?.name || '', p.name, p.phone,
- statusLabels[p.status] || p.status,
- p.assigned_agent_name || '', (p.source || '').toUpperCase()
+ campaign?.name || '',
+ p.name || '',
+ p.phone || '',
+ p.email || '',
+ statusLabels[p.status] || p.status || '',
+ p.assigned_agent_name || '',
+ (p.source || '').toUpperCase(),
  ];
- });
- const csvContent = [headers, ...csvData]
- .map(row => row.map(field => '"' + String(field).replace(/"/g, '"') + '"').join(',')).join('\n');
- const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+ };
+
+ const exportToCSV = () => {
+ if (exportRows.length === 0) return;
+ const csvData = exportRows.map(exportRowValues);
+ const csvContent = [exportColumns, ...csvData]
+ .map((row) => row.map((field) => '"' + String(field ?? '').replace(/"/g, '""') + '"').join(',')).join('\n');
+ const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
  const link = document.createElement('a');
  link.setAttribute('href', URL.createObjectURL(blob));
- link.setAttribute('download', `prospects_${format(new Date(), 'ddMMyyyy_HHmm')}.csv`);
+ link.setAttribute('download', exportFileName('csv'));
  document.body.appendChild(link);
  link.click();
  document.body.removeChild(link);
+ };
+
+ const exportToPDF = async () => {
+ if (exportRows.length === 0) return;
+ try {
+ const [{ jsPDF }, autoTableModule] = await Promise.all([
+ import('jspdf'),
+ import('jspdf-autotable'),
+ ]);
+ const autoTable = autoTableModule.default;
+ const doc = new jsPDF({ orientation: 'landscape' });
+ const generatedAt = format(new Date(), 'dd MMM yyyy, h:mm a');
+ const scopeLabel = selectedIds.size > 0 ? `${exportRows.length} selected` : `${exportRows.length} total`;
+ doc.setFontSize(14);
+ doc.text('Prospects Export', 14, 15);
+ doc.setFontSize(9);
+ doc.setTextColor(110);
+ doc.text(`${scopeLabel} • Generated ${generatedAt}`, 14, 21);
+ autoTable(doc, {
+ startY: 26,
+ head: [exportColumns],
+ body: exportRows.map(exportRowValues),
+ styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+ headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
+ alternateRowStyles: { fillColor: [245, 247, 250] },
+ margin: { left: 14, right: 14 },
+ });
+ doc.save(exportFileName('pdf'));
+ } catch (err) {
+ console.error('Error generating PDF:', err);
+ toast.error('Could not generate PDF. Please try again.');
+ }
  };
 
  if (prospectsLoading) {
@@ -180,10 +253,16 @@ export default function AdminProspects() {
  <div className="max-w-[1400px] mx-auto space-y-6">
  <PageHeader
  title="Prospects" description="Manage and track your sales prospects across all campaigns." actions={
- <Button variant="outline" className="bg-card" onClick={exportToCSV} disabled={prospects.length === 0}>
- <Download className="w-4 h-4 mr-2"/>
- Export CSV
+ <div className="flex items-center gap-2">
+ <Button variant="outline" className="bg-card" onClick={exportToCSV} disabled={exportRows.length === 0}>
+ <FileSpreadsheet className="w-4 h-4 mr-2"/>
+ Export CSV{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
  </Button>
+ <Button variant="outline" className="bg-card" onClick={exportToPDF} disabled={exportRows.length === 0}>
+ <FileText className="w-4 h-4 mr-2"/>
+ Export PDF{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+ </Button>
+ </div>
  }
  />
 
@@ -217,11 +296,30 @@ export default function AdminProspects() {
  </CardHeader>
 
  <CardContent className="p-0">
+ {selectedIds.size > 0 && (
+ <div className="flex items-center justify-between gap-3 px-4 lg:px-6 py-2.5 bg-primary/5 border-b border-border">
+ <span className="text-sm font-medium text-foreground">
+ {selectedIds.size} selected
+ </span>
+ <Button
+ variant="ghost" size="sm" onClick={clearSelection}
+ className="h-8 text-muted-foreground hover:text-foreground">
+ <X className="w-4 h-4 mr-1.5"/>
+ Clear
+ </Button>
+ </div>
+ )}
  {!isMobile ? (
  <div className="overflow-x-auto">
  <Table>
  <TableHeader>
  <TableRow className="bg-muted/50 hover:bg-muted/50 border-border">
+ <TableHead className="py-3 pl-6 pr-2 w-[44px]">
+ <Checkbox
+ checked={allSelected ? true : someSelected ?"indeterminate" : false}
+ onCheckedChange={toggleSelectAll}
+ aria-label="Select all prospects on this page" />
+ </TableHead>
  <TableHead className="py-3 px-6 font-medium text-muted-foreground">Prospect</TableHead>
  <TableHead className="py-3 px-6 font-medium text-muted-foreground">Campaign</TableHead>
  <TableHead className="py-3 px-6 font-medium text-muted-foreground">Status</TableHead>
@@ -236,8 +334,14 @@ export default function AdminProspects() {
  return (
  <TableRow
  key={prospect.id}
- className="hover:bg-muted/50 transition-colors border-border group cursor-pointer" onClick={() => setSelectedProspect(prospect)}
+ className={`hover:bg-muted/50 transition-colors border-border group cursor-pointer ${selectedIds.has(prospect.id) ?"bg-primary/5" :""}`} onClick={() => setSelectedProspect(prospect)}
  >
+ <TableCell className="pl-6 pr-2" onClick={(e) => e.stopPropagation()}>
+ <Checkbox
+ checked={selectedIds.has(prospect.id)}
+ onCheckedChange={() => toggleSelectOne(prospect.id)}
+ aria-label={`Select ${prospect.name}`} />
+ </TableCell>
  <TableCell className="px-6 py-4">
  <div className="flex items-center gap-3">
  <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold uppercase">
@@ -294,7 +398,7 @@ export default function AdminProspects() {
  })}
  {prospects.length === 0 && (
  <TableEmpty
- colSpan={6}
+ colSpan={7}
  icon={Search}
  title="No prospects found"
  description="Try adjusting your filters or search terms." />
@@ -310,12 +414,19 @@ export default function AdminProspects() {
  title="No prospects found"
  description="Try adjusting your filters or search terms." />
  ) : prospects.map((prospect) => (
- <button
+ <div
  key={prospect.id}
+ className={`flex items-start gap-3 p-4 ${selectedIds.has(prospect.id) ?"bg-primary/5" :""}`}>
+ <Checkbox
+ checked={selectedIds.has(prospect.id)}
+ onCheckedChange={() => toggleSelectOne(prospect.id)}
+ aria-label={`Select ${prospect.name}`}
+ className="mt-1.5" />
+ <button
  type="button"
  onClick={() => setSelectedProspect(prospect)}
  aria-label={`View prospect ${prospect.name}`}
- className="w-full text-left p-4 active:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+ className="flex-1 min-w-0 text-left active:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-md">
  <div className="flex justify-between items-start mb-2">
  <div className="flex items-center gap-3">
  <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold">
@@ -334,6 +445,7 @@ export default function AdminProspects() {
  <span>{campaigns.find(c => c.id === prospect.campaign_id)?.name || 'Unknown Campaign'}</span>
  </div>
  </button>
+ </div>
  ))}
  </div>
  )}
