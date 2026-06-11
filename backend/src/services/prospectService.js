@@ -535,7 +535,7 @@ export function makeProspectService(overrides = {}) {
           }
         } else if (finalAgentId && decision.charged !== true) {
           await d
-            .deductLeadCredit(finalAgentId, 1, t)
+            .deductLeadCredit({ agentId: finalAgentId, campaignId: newProspect.campaignId || null, transaction: t })
             .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
         }
       }
@@ -897,7 +897,7 @@ export function makeProspectService(overrides = {}) {
       });
 
       await d
-        .deductLeadCredit(agentId)
+        .deductLeadCredit({ agentId, campaignId: prospect.campaignId || null })
         .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
 
       const prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
@@ -934,7 +934,7 @@ export function makeProspectService(overrides = {}) {
     });
 
     await d
-      .deductLeadCredit(agentId)
+      .deductLeadCredit({ agentId, campaignId: prospect.campaignId || null })
       .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
 
     const prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
@@ -976,6 +976,10 @@ export function makeProspectService(overrides = {}) {
       // which bulk update can't do per-lead. Release held leads via single assign
       // (PATCH /:id/assign) or the auto-release sweep.
       quarantinedAt: null,
+      // Skip rows already assigned to THIS agent (IS DISTINCT FROM semantics —
+      // a bare Op.ne would also exclude unassigned NULL rows). Re-assigning a
+      // no-op row used to double-charge the agent for a lead they already held.
+      [Op.or]: [{ assignedAgentId: null }, { assignedAgentId: { [Op.ne]: agentId } }],
       ...scopeFilter,
     };
 
@@ -984,14 +988,25 @@ export function makeProspectService(overrides = {}) {
         assignedAgentId: agentId,
         lastContactDate: new Date(),
       },
-      { where: whereConditions }
+      // RETURNING gives the exact affected rows (no select-then-update race) so
+      // credits can be deducted PER CAMPAIGN — a bulk set can span campaigns,
+      // and campaign-A leads must never drain campaign-B credits.
+      { where: whereConditions, returning: ['id', 'campaignId'] }
     );
 
     const affectedCount = result[0];
+    const affectedRows = result[1] || [];
     if (affectedCount > 0) {
-      await d
-        .deductLeadCredit(agentId, affectedCount)
-        .catch((err) => d.logger.error('Failed to deduct credits', { error: err?.message || String(err) }));
+      const countsByCampaign = new Map();
+      for (const row of affectedRows) {
+        const cId = row.campaignId || null;
+        countsByCampaign.set(cId, (countsByCampaign.get(cId) || 0) + 1);
+      }
+      for (const [cId, count] of countsByCampaign) {
+        await d
+          .deductLeadCredit({ agentId, campaignId: cId, amount: count })
+          .catch((err) => d.logger.error('Failed to deduct credits', { error: err?.message || String(err) }));
+      }
     }
 
     return { affectedCount, agent };

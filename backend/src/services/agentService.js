@@ -6,11 +6,11 @@ import { sendRoleInvitation } from './invitationService.js';
 import { getAgentInviteEmail, getAgentInviteSubject, getAgentInviteText } from './emailTemplates.js';
 
 // Re-export helpers from focused modules so existing `import * as agentService` still works
-export { getAssignedCampaignCounts, computeAgentStats, computeAgentStatsFromCounts } from './agentStatsHelpers.js';
+export { getAssignedCampaignCounts, getAgentPackageBreakdowns, computeAgentStats, computeAgentStatsFromCounts } from './agentStatsHelpers.js';
 export { getAgentMonthlyPerformance, getCommissionLeaderboard, getConversionLeaderboard, getProspectLeaderboard, getLeaderboard } from './agentLeaderboardService.js';
 
 // Internal imports used by functions in this file
-import { getAssignedCampaignCounts, computeAgentStatsFromCounts } from './agentStatsHelpers.js';
+import { getAssignedCampaignCounts, getAgentPackageBreakdowns, computeAgentStatsFromCounts } from './agentStatsHelpers.js';
 import { getAgentMonthlyPerformance } from './agentLeaderboardService.js';
 
 // ---------------------------------------------------------------------------
@@ -110,11 +110,16 @@ export async function listAgents(query) {
     ]
   });
 
-  // Compute counts of campaigns where agents have active lead packages
-  const assignedCounts = await getAssignedCampaignCounts();
+  // Compute counts of campaigns where agents have active lead packages,
+  // plus the per-campaign remaining-credit breakdown (separate grouped query —
+  // not a deeper include on this paginated findAndCountAll).
+  const [assignedCounts, packageBreakdowns] = await Promise.all([
+    getAssignedCampaignCounts(),
+    getAgentPackageBreakdowns(),
+  ]);
 
   // Calculate agent statistics from subquery counts
-  const agentsWithStats = agents.map(agent => computeAgentStatsFromCounts(agent, assignedCounts));
+  const agentsWithStats = agents.map(agent => computeAgentStatsFromCounts(agent, assignedCounts, packageBreakdowns));
 
   return {
     agents: agentsWithStats,

@@ -295,7 +295,8 @@ const AgentRow = React.memo(function AgentRow({
  {/* Status */}
  <TableCell className="px-6 py-4">{renderStatusBadge()}</TableCell>
 
- {/* Leads owed */}
+ {/* Leads owed — credits are per-campaign ledgers, so when an agent holds
+ more than one bucket the split is shown under the total. */}
  <TableCell className="px-6 py-4">
  <div className="flex items-center gap-2">
  <Badge
@@ -308,6 +309,26 @@ const AgentRow = React.memo(function AgentRow({
  <Plus className="w-3 h-3 mr-1"/> Assign
  </Button>
  </div>
+ {(() => {
+ const breakdown = agent.owed_leads_breakdown || [];
+ const manual = agent.owed_leads_manual_count || 0;
+ const buckets = breakdown.length + (manual > 0 ? 1 : 0);
+ if (buckets <= 1) return null;
+ return (
+ <div className="mt-1 space-y-0.5">
+ {breakdown.map((b) => (
+ <p key={b.campaignId || 'none'} className="text-[11px] leading-tight text-muted-foreground whitespace-nowrap">
+ {b.campaignName || 'No campaign'} · {b.leadsRemaining}
+ </p>
+ ))}
+ {manual > 0 && (
+ <p className="text-[11px] leading-tight text-muted-foreground whitespace-nowrap">
+ Manual · {manual}
+ </p>
+ )}
+ </div>
+ );
+ })()}
  </TableCell>
 
  {/* Joined date */}

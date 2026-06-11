@@ -14,6 +14,7 @@ jest.unstable_mockModule('../../src/models/index.js', () => ({
     transaction: jest.fn().mockResolvedValue(ownTx),
   },
   LeadPackageAssignment: {},
+  LeadPackage: {},
   User: {},
 }));
 

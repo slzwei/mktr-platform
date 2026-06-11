@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import '../setup.js';
+import { Op } from 'sequelize';
 import { makeProspectService } from '../../src/services/prospectService.js';
 
 // ── Helpers ──
@@ -232,7 +233,7 @@ describe('prospectAssignment (unit)', () => {
 
       await service.assignProspect('prospect-1', 'agent-1', admin);
 
-      expect(mocks.deductLeadCredit).toHaveBeenCalledWith('agent-1');
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith({ agentId: 'agent-1', campaignId: 'camp-1' });
     });
 
     it('does not deduct lead credit on unassignment', async () => {
@@ -329,7 +330,7 @@ describe('prospectAssignment (unit)', () => {
       await service.assignProspect('prospect-1', 'agent-1', admin);
 
       expect(mocks.sequelize.query).toHaveBeenCalled();
-      expect(mocks.deductLeadCredit).toHaveBeenCalledWith('agent-1');
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith({ agentId: 'agent-1', campaignId: 'camp-1' });
       expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
       expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.assigned', expect.any(Function));
     });
@@ -379,7 +380,11 @@ describe('prospectAssignment (unit)', () => {
 
   describe('bulkAssignProspects', () => {
     it('assigns multiple prospects to an agent via bulk update', async () => {
-      mocks.models.Prospect.update.mockResolvedValue([3]);
+      mocks.models.Prospect.update.mockResolvedValue([3, [
+        { id: 'p-1', campaignId: 'camp-1' },
+        { id: 'p-2', campaignId: 'camp-1' },
+        { id: 'p-3', campaignId: 'camp-1' },
+      ]]);
 
       const result = await service.bulkAssignProspects(['p-1', 'p-2', 'p-3'], 'agent-1', admin);
 
@@ -387,12 +392,49 @@ describe('prospectAssignment (unit)', () => {
       expect(result.agent).toBeDefined();
     });
 
-    it('deducts lead credits for affected count', async () => {
-      mocks.models.Prospect.update.mockResolvedValue([2]);
+    it('deducts lead credits per campaign from the RETURNING rows', async () => {
+      mocks.models.Prospect.update.mockResolvedValue([2, [
+        { id: 'p-1', campaignId: 'camp-1' },
+        { id: 'p-2', campaignId: 'camp-1' },
+      ]]);
 
       await service.bulkAssignProspects(['p-1', 'p-2'], 'agent-1', admin);
 
-      expect(mocks.deductLeadCredit).toHaveBeenCalledWith('agent-1', 2);
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith({ agentId: 'agent-1', campaignId: 'camp-1', amount: 2 });
+    });
+
+    it('splits the deduction per campaign when the bulk set spans campaigns (incl. campaignless)', async () => {
+      mocks.models.Prospect.update.mockResolvedValue([4, [
+        { id: 'p-1', campaignId: 'camp-1' },
+        { id: 'p-2', campaignId: 'camp-2' },
+        { id: 'p-3', campaignId: 'camp-1' },
+        { id: 'p-4', campaignId: null },
+      ]]);
+
+      await service.bulkAssignProspects(['p-1', 'p-2', 'p-3', 'p-4'], 'agent-1', admin);
+
+      // Campaign-A leads must never drain campaign-B credits: one scoped
+      // deduction per campaign, and the campaignless lead hits only the
+      // manual bucket (campaignId: null).
+      expect(mocks.deductLeadCredit).toHaveBeenCalledTimes(3);
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith({ agentId: 'agent-1', campaignId: 'camp-1', amount: 2 });
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith({ agentId: 'agent-1', campaignId: 'camp-2', amount: 1 });
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith({ agentId: 'agent-1', campaignId: null, amount: 1 });
+    });
+
+    it('excludes rows already assigned to the SAME agent (no re-assign double-charge)', async () => {
+      mocks.models.Prospect.update.mockResolvedValue([0, []]);
+
+      await service.bulkAssignProspects(['p-1'], 'agent-1', admin);
+
+      const where = mocks.models.Prospect.update.mock.calls[0][1].where;
+      // IS DISTINCT FROM semantics: unassigned (NULL) rows still match, rows
+      // already held by agent-1 do not.
+      expect(where[Op.or]).toEqual([
+        { assignedAgentId: null },
+        { assignedAgentId: { [Op.ne]: 'agent-1' } },
+      ]);
+      expect(mocks.deductLeadCredit).not.toHaveBeenCalled();
     });
 
     it('throws when agentId is missing', async () => {
@@ -446,11 +488,11 @@ describe('prospectAssignment (unit)', () => {
       const body = { firstName: 'Test', campaignId: 'camp-1' };
       await service.createProspect(body, admin, {});
 
-      expect(mocks.deductLeadCredit).toHaveBeenCalledWith(
-        'agent-1',
-        1,
-        mocks.mockTransaction
-      );
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith({
+        agentId: 'agent-1',
+        campaignId: 'camp-1',
+        transaction: mocks.mockTransaction,
+      });
     });
 
     it('dispatches lead.created webhook', async () => {
@@ -545,7 +587,11 @@ describe('prospectAssignment (unit)', () => {
       const createArg = mocks.models.Prospect.create.mock.calls[0][0];
       expect(createArg.assignedAgentId).toBe('agent-1');
       expect(mocks.chargeLeadCredit).not.toHaveBeenCalled();
-      expect(mocks.deductLeadCredit).toHaveBeenCalledWith('agent-1', 1, mocks.mockTransaction);
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith({
+        agentId: 'agent-1',
+        campaignId: 'camp-1',
+        transaction: mocks.mockTransaction,
+      });
       expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
     });
 
