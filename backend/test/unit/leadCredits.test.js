@@ -1,347 +1,176 @@
 import { jest } from '@jest/globals';
 import '../setup.js';
 import { Op } from 'sequelize';
+import { makeLeadCreditsService } from '../../src/services/leadCredits.js';
 
-// ── Helpers ──
+/**
+ * Tests the REAL deductLeadCredit via the DI factory. (The previous version of
+ * this file re-implemented the function inside the test and asserted against
+ * the copy — it protected nothing and silently drifted; Codex review finding.)
+ *
+ * Core invariant under test: deduction is CAMPAIGN-SCOPED — campaign A's leads
+ * can only consume campaign A's package credits (then the campaign-agnostic
+ * manual owed_leads_count bucket). Cross-campaign bleed was the production bug.
+ */
 
-function buildMocks() {
-  const mockAssignment1 = {
-    id: 'assign-1',
-    agentId: 'agent-1',
-    leadsRemaining: 5,
-    status: 'active',
-    purchaseDate: new Date('2025-01-01'),
-    save: jest.fn().mockResolvedValue(true),
-  };
-
-  const mockAssignment2 = {
-    id: 'assign-2',
-    agentId: 'agent-1',
-    leadsRemaining: 3,
-    status: 'active',
-    purchaseDate: new Date('2025-02-01'),
-    save: jest.fn().mockResolvedValue(true),
-  };
-
-  const mockAgent = {
-    id: 'agent-1',
-    owed_leads_count: 10,
-    save: jest.fn().mockResolvedValue(true),
-  };
-
+function buildMocks({ packages = [], assignments = [], agent = null } = {}) {
   const mockTransaction = {
     commit: jest.fn().mockResolvedValue(undefined),
     rollback: jest.fn().mockResolvedValue(undefined),
     LOCK: { UPDATE: 'UPDATE' },
   };
-
-  const User = {
-    findByPk: jest.fn().mockResolvedValue(mockAgent),
-  };
-
-  const LeadPackageAssignment = {
-    findAll: jest.fn().mockResolvedValue([]),
-  };
-
-  const sequelize = {
-    transaction: jest.fn().mockResolvedValue(mockTransaction),
-  };
-
-  const logger = {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  };
-
   return {
-    mockAssignment1,
-    mockAssignment2,
-    mockAgent,
     mockTransaction,
-    models: { User, LeadPackageAssignment },
-    sequelize,
-    logger,
+    LeadPackage: { findAll: jest.fn().mockResolvedValue(packages) },
+    LeadPackageAssignment: { findAll: jest.fn().mockResolvedValue(assignments) },
+    User: { findByPk: jest.fn().mockResolvedValue(agent) },
+    sequelize: { transaction: jest.fn().mockResolvedValue(mockTransaction) },
+    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
   };
 }
 
-/**
- * Build a deductLeadCredit function that uses the provided mocks instead
- * of the real model imports.  This mirrors the makeProspectService DI pattern.
- */
-function makeService(mocks) {
-  const { User, LeadPackageAssignment } = mocks.models;
-  const { sequelize, logger } = mocks;
+const makeAssignment = (over = {}) => ({
+  id: 'assign-1',
+  agentId: 'agent-1',
+  leadsRemaining: 5,
+  status: 'active',
+  purchaseDate: new Date('2025-01-01'),
+  save: jest.fn().mockResolvedValue(true),
+  ...over,
+});
 
-  async function deductLeadCredit(agentId, amount = 1, externalTransaction = null) {
-    if (!agentId || amount <= 0) return false;
+const makeAgent = (owed = 10) => ({
+  id: 'agent-1',
+  owed_leads_count: owed,
+  save: jest.fn().mockResolvedValue(true),
+});
 
-    const ownTransaction = !externalTransaction;
-    const t = externalTransaction || await sequelize.transaction();
-    try {
-      let remainingToDeduct = amount;
+describe('leadCredits – deductLeadCredit (real implementation, DI)', () => {
+  it('rejects positional (legacy-style) calls with a structured log, never throws', async () => {
+    const m = buildMocks();
+    const svc = makeLeadCreditsService(m);
 
-      // 1. FIFO from lead package assignments
-      const assignments = await LeadPackageAssignment.findAll({
-        where: {
-          agentId,
-          status: 'active',
-          leadsRemaining: { [Op.gt]: 0 },
-        },
-        order: [['purchaseDate', 'ASC']],
-        transaction: t,
-        lock: t.LOCK.UPDATE,
-      });
+    // The old signature was (agentId, amount, tx) — must not be silently misread.
+    const result = await svc.deductLeadCredit('agent-1');
 
-      for (const assignment of assignments) {
-        if (remainingToDeduct <= 0) break;
-
-        const available = assignment.leadsRemaining;
-        const deduction = Math.min(available, remainingToDeduct);
-
-        assignment.leadsRemaining -= deduction;
-        remainingToDeduct -= deduction;
-
-        if (assignment.leadsRemaining === 0) {
-          assignment.status = 'completed';
-        }
-
-        await assignment.save({ transaction: t });
-      }
-
-      // 2. Fallback to User.owed_leads_count
-      if (remainingToDeduct > 0) {
-        const agent = await User.findByPk(agentId, {
-          transaction: t,
-          lock: t.LOCK.UPDATE,
-        });
-
-        if (agent && agent.owed_leads_count > 0) {
-          const available = agent.owed_leads_count;
-          const deduction = Math.min(available, remainingToDeduct);
-
-          agent.owed_leads_count -= deduction;
-          remainingToDeduct -= deduction;
-
-          await agent.save({ transaction: t });
-        }
-      }
-
-      if (ownTransaction) await t.commit();
-
-      if (remainingToDeduct > 0 && remainingToDeduct < amount) {
-        // partial
-      } else if (remainingToDeduct === amount) {
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      if (ownTransaction) await t.rollback();
-      logger.error('Error deducting lead credits', { error: error?.message || String(error) });
-      return false;
-    }
-  }
-
-  return { deductLeadCredit };
-}
-
-// ── Tests ──
-
-describe('leadCredits – deductLeadCredit (unit)', () => {
-  let mocks, service;
-
-  beforeEach(() => {
-    mocks = buildMocks();
-    service = makeService(mocks);
+    expect(result).toBe(false);
+    expect(m.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('options object required'),
+      expect.any(Object)
+    );
+    expect(m.sequelize.transaction).not.toHaveBeenCalled();
   });
 
-  // ────────────────────────────────────────────────
-  // FIFO deduction from LeadPackageAssignment
-  // ────────────────────────────────────────────────
+  it('returns false for missing agentId or non-positive amount', async () => {
+    const m = buildMocks();
+    const svc = makeLeadCreditsService(m);
+    expect(await svc.deductLeadCredit({ campaignId: 'camp-1' })).toBe(false);
+    expect(await svc.deductLeadCredit({ agentId: 'agent-1', amount: 0 })).toBe(false);
+  });
 
-  it('deducts from the earliest package first (FIFO)', async () => {
-    mocks.models.LeadPackageAssignment.findAll.mockResolvedValue([
-      mocks.mockAssignment1, // 5 remaining, earlier date
-      mocks.mockAssignment2, // 3 remaining, later date
-    ]);
+  it("scopes package deduction to the campaign: only that campaign's package ids are queried", async () => {
+    const a1 = makeAssignment({ leadsRemaining: 3 });
+    const m = buildMocks({ packages: [{ id: 'pkg-A' }], assignments: [a1], agent: makeAgent(0) });
+    const svc = makeLeadCreditsService(m);
 
-    const result = await service.deductLeadCredit('agent-1', 3);
+    const result = await svc.deductLeadCredit({ agentId: 'agent-1', campaignId: 'camp-A', amount: 2 });
 
     expect(result).toBe(true);
-    expect(mocks.mockAssignment1.leadsRemaining).toBe(2);
-    expect(mocks.mockAssignment1.save).toHaveBeenCalled();
-    expect(mocks.mockAssignment2.save).not.toHaveBeenCalled();
+    // Step 1: the campaign's packages were looked up…
+    expect(m.LeadPackage.findAll).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { campaignId: 'camp-A' } })
+    );
+    // …step 2: assignments are filtered to those package ids (single-table lock, no join).
+    const q = m.LeadPackageAssignment.findAll.mock.calls[0][0];
+    expect(q.where.leadPackageId).toEqual({ [Op.in]: ['pkg-A'] });
+    expect(q.lock).toBe('UPDATE');
+    expect(a1.leadsRemaining).toBe(1);
   });
 
-  it('deducts across multiple packages when first is insufficient', async () => {
-    const assign1 = { ...mocks.mockAssignment1, leadsRemaining: 2, save: jest.fn().mockResolvedValue(true) };
-    const assign2 = { ...mocks.mockAssignment2, leadsRemaining: 5, save: jest.fn().mockResolvedValue(true) };
-    mocks.models.LeadPackageAssignment.findAll.mockResolvedValue([assign1, assign2]);
+  it('drains FIFO across multiple assignments within the campaign and completes emptied ones', async () => {
+    const older = makeAssignment({ id: 'a-old', leadsRemaining: 2, purchaseDate: new Date('2025-01-01') });
+    const newer = makeAssignment({ id: 'a-new', leadsRemaining: 5, purchaseDate: new Date('2025-02-01') });
+    const m = buildMocks({ packages: [{ id: 'pkg-A' }], assignments: [older, newer], agent: makeAgent(0) });
+    const svc = makeLeadCreditsService(m);
 
-    const result = await service.deductLeadCredit('agent-1', 4);
+    const result = await svc.deductLeadCredit({ agentId: 'agent-1', campaignId: 'camp-A', amount: 3 });
 
     expect(result).toBe(true);
-    expect(assign1.leadsRemaining).toBe(0);
-    expect(assign1.status).toBe('completed');
-    expect(assign2.leadsRemaining).toBe(3);
-    expect(assign1.save).toHaveBeenCalled();
-    expect(assign2.save).toHaveBeenCalled();
+    expect(older.leadsRemaining).toBe(0);
+    expect(older.status).toBe('completed');
+    expect(newer.leadsRemaining).toBe(4);
   });
 
-  it('marks assignment as completed when remaining hits 0', async () => {
-    const assign = { ...mocks.mockAssignment1, leadsRemaining: 3, save: jest.fn().mockResolvedValue(true) };
-    mocks.models.LeadPackageAssignment.findAll.mockResolvedValue([assign]);
+  it('campaign with NO matching packages: package phase skipped, manual bucket pays', async () => {
+    const agent = makeAgent(5);
+    const m = buildMocks({ packages: [], assignments: [], agent });
+    const svc = makeLeadCreditsService(m);
 
-    await service.deductLeadCredit('agent-1', 3);
-
-    expect(assign.leadsRemaining).toBe(0);
-    expect(assign.status).toBe('completed');
-  });
-
-  it('does not mark assignment as completed when remaining > 0', async () => {
-    const assign = { ...mocks.mockAssignment1, leadsRemaining: 5, status: 'active', save: jest.fn().mockResolvedValue(true) };
-    mocks.models.LeadPackageAssignment.findAll.mockResolvedValue([assign]);
-
-    await service.deductLeadCredit('agent-1', 2);
-
-    expect(assign.leadsRemaining).toBe(3);
-    expect(assign.status).toBe('active');
-  });
-
-  // ────────────────────────────────────────────────
-  // Fallback to User.owed_leads_count
-  // ────────────────────────────────────────────────
-
-  it('deducts from owed_leads_count when no packages exist', async () => {
-    mocks.models.LeadPackageAssignment.findAll.mockResolvedValue([]);
-    const agent = { ...mocks.mockAgent, owed_leads_count: 10, save: jest.fn().mockResolvedValue(true) };
-    mocks.models.User.findByPk.mockResolvedValue(agent);
-
-    const result = await service.deductLeadCredit('agent-1', 3);
+    const result = await svc.deductLeadCredit({ agentId: 'agent-1', campaignId: 'camp-B', amount: 2 });
 
     expect(result).toBe(true);
-    expect(agent.owed_leads_count).toBe(7);
-    expect(agent.save).toHaveBeenCalled();
+    // No package ids → assignment query never runs (nothing to lock).
+    expect(m.LeadPackageAssignment.findAll).not.toHaveBeenCalled();
+    expect(agent.owed_leads_count).toBe(3);
   });
 
-  it('deducts remaining from owed_leads_count when packages are exhausted', async () => {
-    const assign = { ...mocks.mockAssignment1, leadsRemaining: 2, save: jest.fn().mockResolvedValue(true) };
-    mocks.models.LeadPackageAssignment.findAll.mockResolvedValue([assign]);
-    const agent = { ...mocks.mockAgent, owed_leads_count: 10, save: jest.fn().mockResolvedValue(true) };
-    mocks.models.User.findByPk.mockResolvedValue(agent);
+  it('campaignless lead (campaignId null): NEVER touches packages, only the manual bucket', async () => {
+    const agent = makeAgent(4);
+    const m = buildMocks({ packages: [{ id: 'pkg-A' }], assignments: [makeAssignment()], agent });
+    const svc = makeLeadCreditsService(m);
 
-    const result = await service.deductLeadCredit('agent-1', 5);
+    const result = await svc.deductLeadCredit({ agentId: 'agent-1', campaignId: null });
 
     expect(result).toBe(true);
-    expect(assign.leadsRemaining).toBe(0);
-    expect(assign.status).toBe('completed');
-    expect(agent.owed_leads_count).toBe(7); // 10 - 3 remaining
+    expect(m.LeadPackage.findAll).not.toHaveBeenCalled();
+    expect(m.LeadPackageAssignment.findAll).not.toHaveBeenCalled();
+    expect(agent.owed_leads_count).toBe(3);
   });
 
-  // ────────────────────────────────────────────────
-  // Edge cases: zero remaining, no credits
-  // ────────────────────────────────────────────────
+  it('falls back to the manual bucket only for the REMAINDER the campaign packages could not cover', async () => {
+    const a1 = makeAssignment({ leadsRemaining: 1 });
+    const agent = makeAgent(10);
+    const m = buildMocks({ packages: [{ id: 'pkg-A' }], assignments: [a1], agent });
+    const svc = makeLeadCreditsService(m);
 
-  it('returns false when both packages and owed_leads_count are zero', async () => {
-    mocks.models.LeadPackageAssignment.findAll.mockResolvedValue([]);
-    const agent = { ...mocks.mockAgent, owed_leads_count: 0, save: jest.fn().mockResolvedValue(true) };
-    mocks.models.User.findByPk.mockResolvedValue(agent);
+    const result = await svc.deductLeadCredit({ agentId: 'agent-1', campaignId: 'camp-A', amount: 3 });
 
-    const result = await service.deductLeadCredit('agent-1', 1);
+    expect(result).toBe(true);
+    expect(a1.leadsRemaining).toBe(0);
+    expect(agent.owed_leads_count).toBe(8); // paid the remaining 2
+  });
+
+  it('returns false when no source can pay anything', async () => {
+    const m = buildMocks({ packages: [], assignments: [], agent: makeAgent(0) });
+    const svc = makeLeadCreditsService(m);
+
+    const result = await svc.deductLeadCredit({ agentId: 'agent-1', campaignId: 'camp-A' });
 
     expect(result).toBe(false);
   });
 
-  it('returns false when agent not found and no packages', async () => {
-    mocks.models.LeadPackageAssignment.findAll.mockResolvedValue([]);
-    mocks.models.User.findByPk.mockResolvedValue(null);
+  it("owns + commits its transaction when none is passed; uses the caller's when passed (no commit)", async () => {
+    const agent = makeAgent(2);
+    const m = buildMocks({ packages: [], assignments: [], agent });
+    const svc = makeLeadCreditsService(m);
 
-    const result = await service.deductLeadCredit('agent-1', 1);
+    await svc.deductLeadCredit({ agentId: 'agent-1', campaignId: null });
+    expect(m.mockTransaction.commit).toHaveBeenCalledTimes(1);
+
+    m.mockTransaction.commit.mockClear();
+    await svc.deductLeadCredit({ agentId: 'agent-1', campaignId: null, transaction: m.mockTransaction });
+    expect(m.mockTransaction.commit).not.toHaveBeenCalled();
+  });
+
+  it('rolls back its own transaction and returns false on a DB error (best-effort: never throws)', async () => {
+    const m = buildMocks({ agent: makeAgent(1) });
+    m.LeadPackage.findAll.mockRejectedValue(new Error('db down'));
+    const svc = makeLeadCreditsService(m);
+
+    const result = await svc.deductLeadCredit({ agentId: 'agent-1', campaignId: 'camp-A' });
 
     expect(result).toBe(false);
-  });
-
-  it('returns true for partial deduction (some credits available, less than requested)', async () => {
-    mocks.models.LeadPackageAssignment.findAll.mockResolvedValue([]);
-    const agent = { ...mocks.mockAgent, owed_leads_count: 2, save: jest.fn().mockResolvedValue(true) };
-    mocks.models.User.findByPk.mockResolvedValue(agent);
-
-    const result = await service.deductLeadCredit('agent-1', 5);
-
-    expect(result).toBe(true); // partial deduction still returns true
-    expect(agent.owed_leads_count).toBe(0);
-  });
-
-  // ────────────────────────────────────────────────
-  // Validation
-  // ────────────────────────────────────────────────
-
-  it('returns false when agentId is null', async () => {
-    const result = await service.deductLeadCredit(null, 1);
-
-    expect(result).toBe(false);
-    expect(mocks.models.LeadPackageAssignment.findAll).not.toHaveBeenCalled();
-  });
-
-  it('returns false when amount is 0', async () => {
-    const result = await service.deductLeadCredit('agent-1', 0);
-    expect(result).toBe(false);
-  });
-
-  it('returns false when amount is negative', async () => {
-    const result = await service.deductLeadCredit('agent-1', -5);
-    expect(result).toBe(false);
-  });
-
-  // ────────────────────────────────────────────────
-  // Transaction handling
-  // ────────────────────────────────────────────────
-
-  it('uses external transaction when provided (no commit/rollback)', async () => {
-    const extTx = {
-      LOCK: { UPDATE: 'UPDATE' },
-      commit: jest.fn(),
-      rollback: jest.fn(),
-    };
-    mocks.models.LeadPackageAssignment.findAll.mockResolvedValue([]);
-    const agent = { ...mocks.mockAgent, owed_leads_count: 5, save: jest.fn().mockResolvedValue(true) };
-    mocks.models.User.findByPk.mockResolvedValue(agent);
-
-    await service.deductLeadCredit('agent-1', 1, extTx);
-
-    expect(mocks.sequelize.transaction).not.toHaveBeenCalled();
-    expect(extTx.commit).not.toHaveBeenCalled();
-    expect(extTx.rollback).not.toHaveBeenCalled();
-  });
-
-  it('commits own transaction on success', async () => {
-    mocks.models.LeadPackageAssignment.findAll.mockResolvedValue([]);
-    const agent = { ...mocks.mockAgent, owed_leads_count: 5, save: jest.fn().mockResolvedValue(true) };
-    mocks.models.User.findByPk.mockResolvedValue(agent);
-
-    await service.deductLeadCredit('agent-1', 1);
-
-    expect(mocks.mockTransaction.commit).toHaveBeenCalled();
-  });
-
-  it('rolls back own transaction on error', async () => {
-    mocks.models.LeadPackageAssignment.findAll.mockRejectedValue(new Error('DB error'));
-
-    const result = await service.deductLeadCredit('agent-1', 1);
-
-    expect(result).toBe(false);
-    expect(mocks.mockTransaction.rollback).toHaveBeenCalled();
-    expect(mocks.logger.error).toHaveBeenCalled();
-  });
-
-  it('passes FOR UPDATE lock to findAll', async () => {
-    mocks.models.LeadPackageAssignment.findAll.mockResolvedValue([]);
-    mocks.models.User.findByPk.mockResolvedValue(null);
-
-    await service.deductLeadCredit('agent-1', 1);
-
-    const findAllArg = mocks.models.LeadPackageAssignment.findAll.mock.calls[0][0];
-    expect(findAllArg.lock).toBe('UPDATE');
+    expect(m.mockTransaction.rollback).toHaveBeenCalled();
+    expect(m.logger.error).toHaveBeenCalledWith('Error deducting lead credits', expect.any(Object));
   });
 });

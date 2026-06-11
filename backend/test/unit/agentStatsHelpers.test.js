@@ -5,6 +5,10 @@ import '../setup.js';
 jest.unstable_mockModule('../../src/models/index.js', () => ({
   LeadPackage: {},
   LeadPackageAssignment: { findAll: jest.fn().mockResolvedValue([]) },
+  sequelize: {
+    query: jest.fn().mockResolvedValue([]),
+    QueryTypes: { SELECT: 'SELECT' },
+  },
 }));
 
 const { getAssignedCampaignCounts, computeAgentStats, computeAgentStatsFromCounts } =

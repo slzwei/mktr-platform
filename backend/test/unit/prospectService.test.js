@@ -524,11 +524,11 @@ describe('prospectService (unit)', () => {
 
       await service.createProspect(body, user, {});
 
-      expect(mocks.deductLeadCredit).toHaveBeenCalledWith(
-        'agent-1',
-        1,
-        mocks.mockTransaction
-      );
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith({
+        agentId: 'agent-1',
+        campaignId: 'camp-1',
+        transaction: mocks.mockTransaction,
+      });
     });
 
     it('does not deduct lead credit when no agent is assigned', async () => {
@@ -687,7 +687,7 @@ describe('prospectService (unit)', () => {
 
       await service.assignProspect('prospect-1', 'agent-1', user);
 
-      expect(mocks.deductLeadCredit).toHaveBeenCalledWith('agent-1');
+      expect(mocks.deductLeadCredit).toHaveBeenCalledWith({ agentId: 'agent-1', campaignId: 'camp-1' });
     });
 
     it('creates ProspectActivity record for unassignment', async () => {

@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import { LeadPackage, LeadPackageAssignment } from '../models/index.js';
+import { LeadPackage, LeadPackageAssignment, sequelize } from '../models/index.js';
 
 /**
  * Fetch counts of unique campaigns each agent is assigned to via active lead packages.
@@ -30,6 +30,40 @@ export async function getAssignedCampaignCounts() {
   });
 
   return assignedCounts;
+}
+
+/**
+ * Per-agent, per-campaign remaining-credit breakdown for the agent listing.
+ * One grouped aggregate query (NOT a deeper include on the paginated
+ * findAndCountAll — hasMany includes there risk row duplication; Codex review).
+ * Returns { [agentId]: [{ campaignId, campaignName, leadsRemaining }] }.
+ */
+export async function getAgentPackageBreakdowns() {
+  const rows = await sequelize.query(
+    `SELECT a."agentId",
+            p."campaignId",
+            c.name AS "campaignName",
+            SUM(a."leadsRemaining")::int AS "leadsRemaining"
+       FROM lead_package_assignments a
+       JOIN lead_packages p ON p.id = a."leadPackageId"
+       LEFT JOIN campaigns c ON c.id = p."campaignId"
+      WHERE a.status = 'active' AND a."leadsRemaining" > 0
+      GROUP BY a."agentId", p."campaignId", c.name
+      ORDER BY c.name NULLS LAST`,
+    { type: sequelize.QueryTypes.SELECT }
+  );
+
+  const breakdowns = {};
+  for (const row of rows) {
+    const agentId = String(row.agentId);
+    if (!breakdowns[agentId]) breakdowns[agentId] = [];
+    breakdowns[agentId].push({
+      campaignId: row.campaignId || null,
+      campaignName: row.campaignName || null,
+      leadsRemaining: row.leadsRemaining,
+    });
+  }
+  return breakdowns;
 }
 
 /**
@@ -77,7 +111,7 @@ export function computeAgentStats(agent, assignedCounts) {
  * Compute stats for a single agent using pre-computed subquery counts (listAgents).
  * Avoids loading all prospects/commissions into memory.
  */
-export function computeAgentStatsFromCounts(agent, assignedCounts) {
+export function computeAgentStatsFromCounts(agent, assignedCounts, packageBreakdowns = {}) {
   const plain = agent.toJSON();
   const totalProspects = parseInt(plain.prospectCount) || 0;
   const convertedProspects = parseInt(plain.convertedCount) || 0;
@@ -99,6 +133,9 @@ export function computeAgentStatsFromCounts(agent, assignedCounts) {
     ...plain,
     owed_leads_count: totalLeadsOwed,
     owed_leads_manual_count: manualLeads,
+    // Per-campaign split of the package portion — credits are campaign-scoped
+    // ledgers, so the UI must be able to show more than one merged number.
+    owed_leads_breakdown: packageBreakdowns[String(agent.id)] || [],
     stats: {
       totalProspects,
       convertedProspects,
