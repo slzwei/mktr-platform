@@ -114,6 +114,10 @@ vi.mock('@/components/agents/InviteAgentDialog', () => ({
  default: ({ open }) => (open ? <div data-testid="invite-dialog">Invite Agent Dialog</div> : null),
 }));
 
+vi.mock('@/components/agents/MktrLeadsAgentDialog', () => ({
+ default: ({ open }) => (open ? <div data-testid="mktr-leads-dialog">MKTR Leads Agent Dialog</div> : null),
+}));
+
 vi.mock('@/components/agents/AgentDetailsDialog', () => ({
  default: ({ open, agent }) => (open ? <div data-testid="details-dialog">{agent?.fullName}</div> : null),
 }));
@@ -175,21 +179,22 @@ describe('AdminAgents', () => {
  expect(screen.getByRole('button', { name: /invite agent/i })).toBeInTheDocument();
  });
 
- it('opens invite dialog when Invite Agent is clicked', () => {
+ it('opens the MKTR Leads invite dialog when Invite Agent is clicked (new agents are invited via MKTR Leads)', () => {
  renderAgents();
  fireEvent.click(screen.getByRole('button', { name: /invite agent/i }));
- expect(screen.getByTestId('invite-dialog')).toBeInTheDocument();
+ expect(screen.getByTestId('mktr-leads-dialog')).toBeInTheDocument();
+ expect(screen.queryByTestId('invite-dialog')).not.toBeInTheDocument();
  });
 
- // --- Sync button ---
- it('renders Sync from Lyfe button', () => {
+ // --- Sync button (covers BOTH agent sources) ---
+ it('renders Sync Agents button', () => {
  renderAgents();
- expect(screen.getByRole('button', { name: /sync from lyfe/i })).toBeInTheDocument();
+ expect(screen.getByRole('button', { name: /sync agents/i })).toBeInTheDocument();
  });
 
  it('calls sync handler when Sync button is clicked', () => {
  renderAgents();
- fireEvent.click(screen.getByRole('button', { name: /sync from lyfe/i }));
+ fireEvent.click(screen.getByRole('button', { name: /sync agents/i }));
  expect(mockHandleSyncFromLyfe).toHaveBeenCalled();
  });
 

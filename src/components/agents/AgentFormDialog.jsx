@@ -17,7 +17,12 @@ import SubmitButton from"@/components/common/SubmitButton";
 import { agentInviteSchema } from"@/schemas/agent";
 
 const formatSgPhone = (raw) => {
- const digits = String(raw ||"").replace(/\D/g,"").slice(0, 8);
+ let digits = String(raw ||"").replace(/\D/g,"");
+ // Stored canonical form is 65XXXXXXXX — strip the country code instead of
+ // truncating the trailing digits (the old slice(0,8) mangled"6591234567"
+ // into"6591 2345").
+ if (digits.length === 10 && digits.startsWith("65")) digits = digits.slice(2);
+ digits = digits.slice(0, 8);
  if (digits.length <= 4) return digits;
  return `${digits.slice(0, 4)} ${digits.slice(4)}`;
 };
