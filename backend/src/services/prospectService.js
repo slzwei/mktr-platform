@@ -37,6 +37,8 @@ import {
 } from './prospectHelpers.js';
 import { scoreQuiz } from './quizScoringService.js';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const PROSPECT_UPDATE_FIELDS = [
   'firstName',
   'lastName',
@@ -108,9 +110,12 @@ export function makeProspectService(overrides = {}) {
     const consentContact = safeBody.consent_contact;
     const consentTerms = safeBody.consent_terms;
 
-    // Quiz funnel submission (re-scored server-side after the campaign loads) and
-    // ad attribution (UTM). Both stashed in sourceMetadata; neither is a Prospect column.
+    // Quiz funnel submission (re-scored server-side after the campaign loads),
+    // ad attribution (UTM) and referral identity (the sharer's prospect UUID from
+    // the share URL's ?ref=). All stashed in sourceMetadata; none is a Prospect column.
     const quizSubmission = safeBody.quizResult;
+    const referralRef =
+      typeof safeBody.referralRef === 'string' ? safeBody.referralRef.trim() : undefined;
     const utm = {
       ...(safeBody.utm_source ? { utm_source: safeBody.utm_source } : {}),
       ...(safeBody.utm_medium ? { utm_medium: safeBody.utm_medium } : {}),
@@ -124,7 +129,7 @@ export function makeProspectService(overrides = {}) {
       eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
       registrationEventId: _re, ttclid: _tc, ttp: _tp,
       consent_contact: _cc, consent_terms: _ct,
-      quizResult: _qr,
+      quizResult: _qr, referralRef: _rref,
       utm_source: _us, utm_medium: _um, utm_campaign: _ucmp, utm_content: _ucnt, utm_term: _utm,
       ...bodyWithoutMeta
     } = safeBody;
@@ -195,6 +200,40 @@ export function makeProspectService(overrides = {}) {
         delete incoming.sessionId;
         incoming.campaignId = explicitCampaignId;
       }
+    }
+
+    // Referral identity: resolve the sharer's prospect UUID (share URL ?ref=,
+    // forwarded by the SPA as referralRef) into sourceMetadata.referral so admin
+    // surfaces can show "Referred by …" without per-row lookups. Runs AFTER the
+    // campaign guard above so sameCampaign compares against the settled
+    // campaignId. Gated on leadSource === 'referral' (a direct API caller can't
+    // mint referral metadata onto non-referral leads); cross-campaign referrers
+    // keep ids only — no name — so this public endpoint can't be used to read
+    // names across campaigns. Lookup failure must never block lead creation.
+    if (referralRef && referralRef !== '1' && incoming.leadSource === 'referral') {
+      const referral = { ref: referralRef.slice(0, 64) };
+      if (UUID_RE.test(referralRef)) {
+        try {
+          const referrer = await m.Prospect.findByPk(referralRef, {
+            attributes: ['id', 'firstName', 'lastName', 'campaignId'],
+          });
+          if (referrer) {
+            const sameCampaign =
+              incoming.campaignId != null &&
+              String(referrer.campaignId) === String(incoming.campaignId);
+            referral.referrerProspectId = referrer.id;
+            referral.sameCampaign = sameCampaign;
+            if (sameCampaign) {
+              referral.referrerName = [referrer.firstName, referrer.lastName]
+                .filter(Boolean)
+                .join(' ');
+            }
+          }
+        } catch (err) {
+          d.logger.warn('Referrer lookup failed (non-blocking)', { error: err.message });
+        }
+      }
+      incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), referral };
     }
 
     // Pre-load campaign + QR tag (needed for routing below, the age gate, and quiz scoring).
@@ -324,6 +363,45 @@ export function makeProspectService(overrides = {}) {
       };
       if (body.education_level) incoming.demographics.education = body.education_level;
       if (body.monthly_income) incoming.demographics.income = body.monthly_income;
+    }
+
+    // --- Quiz funnel: re-score server-side (anti-tamper) and stash on the lead ---
+    // The client sends raw answers (+ an advisory result we ignore). We recompute
+    // the authoritative profile/readiness/leadScore from the campaign's own quiz
+    // definition so a tampered client cannot fake a result. Stored under
+    // sourceMetadata.quiz; forwarded verbatim to Lyfe in the lead.created webhook.
+    if (quizSubmission && Array.isArray(quizSubmission.answers) && quizSubmission.answers.length > 0) {
+      const quizDef = sourceCampaign?.design_config?.quiz;
+      let quizMeta;
+      if (quizDef && quizDef.enabled) {
+        let scored = null;
+        try {
+          scored = scoreQuiz(quizDef, quizSubmission.answers);
+        } catch (err) {
+          d.logger.error('[Quiz] scoring failed', { error: err?.message || String(err) });
+        }
+        quizMeta = {
+          quizId: quizDef.quizId || quizSubmission.quizId || null,
+          version: quizDef.version ?? quizSubmission.version ?? null,
+          answers: quizSubmission.answers,
+          result: scored
+            ? { profileId: scored.profileId, title: scored.title, readiness: scored.readiness, agentAngle: scored.agentAngle }
+            : (quizSubmission.result || null),
+          leadScore: scored?.leadScore || null,
+          scoredBy: scored ? 'server' : 'client-unverified',
+        };
+      } else {
+        // No quiz definition on the campaign (or disabled): keep the raw answers
+        // and the advisory client result, clearly marked unverified.
+        quizMeta = {
+          quizId: quizSubmission.quizId || null,
+          version: quizSubmission.version ?? null,
+          answers: quizSubmission.answers,
+          result: quizSubmission.result || null,
+          scoredBy: 'client-unverified',
+        };
+      }
+      incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), quiz: quizMeta };
     }
 
     // --- Quiz funnel: re-score server-side (anti-tamper) and stash on the lead ---

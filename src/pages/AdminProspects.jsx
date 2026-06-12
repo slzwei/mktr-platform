@@ -44,8 +44,58 @@ import TableEmpty from"@/components/common/TableEmpty";
 import TablePagination from"@/components/common/TablePagination";
 import PageHeader from"@/components/common/PageHeader";
 import { ConfirmDialog } from"@/components/ConfirmDialog";
-import normalizeProspect from"@/utils/normalizeProspect";
+import normalizeProspect, { sourceDisplay } from"@/utils/normalizeProspect";
 import { statusStyles, statusLabels } from"@/constants/statusConfig";
+import {
+ Tooltip,
+ TooltipContent,
+ TooltipProvider,
+ TooltipTrigger,
+} from"@/components/ui/tooltip";
+
+/**
+ * Source badge with ad-campaign / referrer context. Desktop: badge + detail
+ * line + hover tooltip. compact: single line for the mobile card list (no
+ * hover on touch).
+ */
+function SourceTag({ prospect, compact = false }) {
+ const d = sourceDisplay(prospect);
+ const badgeClass = `text-xs px-1.5 py-0.5 rounded border uppercase ${
+ d.label ==="META AD"
+ ?"bg-primary/10 text-primary border-primary/30"
+ :"bg-muted text-muted-foreground border-border"
+ }`;
+
+ if (compact) {
+ return (
+ <div className="flex items-center gap-1.5 text-xs min-w-0">
+ <code className={badgeClass}>{d.label}</code>
+ {d.detail && <span className="text-muted-foreground truncate">{d.detail}</span>}
+ </div>
+ );
+ }
+
+ const badge = (
+ <div className="inline-flex flex-col items-start gap-1">
+ <code className={badgeClass}>{d.label}</code>
+ {d.detail && (
+ <span className="text-xs text-muted-foreground truncate max-w-[160px]">{d.detail}</span>
+ )}
+ </div>
+ );
+
+ if (!d.tooltip) return badge;
+ return (
+ <TooltipProvider delayDuration={150}>
+ <Tooltip>
+ <TooltipTrigger asChild>{badge}</TooltipTrigger>
+ <TooltipContent side="top" className="max-w-[280px]">
+ {d.tooltip}
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
+ );
+}
 
 export default function AdminProspects() {
  const location = useLocation();
@@ -158,7 +208,9 @@ export default function AdminProspects() {
  const d = new Date(v);
  return isNaN(d.getTime()) ? '' : format(d, 'dd/MM/yyyy');
  };
- const exportColumns = ['Created Date', 'Campaign', 'Name', 'Phone', 'Email', 'Date of Birth', 'Postal Code', 'Status', 'Assigned To', 'Source'];
+ // 'Source' keeps the stable enum (FORM/QR/REFERRAL/…) for downstream
+ // consumers; ad-campaign / referrer context goes in the new 'Attribution'.
+ const exportColumns = ['Created Date', 'Campaign', 'Name', 'Phone', 'Email', 'Date of Birth', 'Postal Code', 'Status', 'Assigned To', 'Source', 'Attribution'];
  const exportRowValues = (p) => {
  const campaign = campaigns.find((c) => c.id === p.campaign_id);
  return [
@@ -172,6 +224,7 @@ export default function AdminProspects() {
  statusLabels[p.status] || p.status || '',
  p.assigned_agent_name || '',
  (p.source || '').toUpperCase(),
+ sourceDisplay(p).attribution,
  ];
  };
 
@@ -389,9 +442,7 @@ export default function AdminProspects() {
  </span>
  </TableCell>
  <TableCell className="px-6 py-4">
- <code className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded border border-border uppercase">
- {prospect.source}
- </code>
+ <SourceTag prospect={prospect} />
  </TableCell>
  <TableCell className="px-6 py-4 text-right">
  <Button
@@ -448,8 +499,9 @@ export default function AdminProspects() {
  {statusLabels[prospect.status] || prospect.status}
  </Badge>
  </div>
- <div className="flex justify-between items-center text-sm text-muted-foreground mt-3 pl-13">
- <span>{campaigns.find(c => c.id === prospect.campaign_id)?.name || 'Unknown Campaign'}</span>
+ <div className="text-sm text-muted-foreground mt-3 pl-13 space-y-1.5">
+ <div>{campaigns.find(c => c.id === prospect.campaign_id)?.name || 'Unknown Campaign'}</div>
+ <SourceTag prospect={prospect} compact />
  </div>
  </button>
  </div>

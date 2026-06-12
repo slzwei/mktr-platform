@@ -24,7 +24,7 @@ import { format } from 'date-fns';
 import ProspectDetails from '@/components/prospects/ProspectDetails';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import normalizeProspect from '@/utils/normalizeProspect';
+import normalizeProspect, { sourceLine } from '@/utils/normalizeProspect';
 import { statusStyles, statusLabels } from '@/constants/statusConfig';
 
 export default function AdminAgentDetail() {
@@ -256,7 +256,7 @@ export default function AdminAgentDetail() {
  </TableCell>
  <TableCell className="px-6 py-4">
  <code className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded border border-border uppercase">
- {prospect.leadSource}
+ {sourceLine(prospect)}
  </code>
  </TableCell>
  <TableCell className="px-6 py-4 text-sm text-muted-foreground">

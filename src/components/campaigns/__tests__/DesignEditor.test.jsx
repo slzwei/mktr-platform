@@ -54,7 +54,7 @@ describe('DesignEditor — SG/PR only toggle persistence', () => {
   it('renders the SG/PR only toggle, off by default', () => {
     render(<DesignEditor campaign={campaign} onSave={vi.fn()} />);
     expect(screen.getByText('SG / PR only')).toBeInTheDocument();
-    expect(screen.getByRole('switch')).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'SG / PR only' })).not.toBeChecked();
   });
 
   it('persists sgPrOnly:false when the toggle is left off', async () => {
@@ -72,8 +72,8 @@ describe('DesignEditor — SG/PR only toggle persistence', () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(<DesignEditor campaign={campaign} onSave={onSave} />);
-    await user.click(screen.getByRole('switch'));
-    expect(screen.getByRole('switch')).toBeChecked();
+    await user.click(screen.getByRole('switch', { name: 'SG / PR only' }));
+    expect(screen.getByRole('switch', { name: 'SG / PR only' })).toBeChecked();
     await user.click(screen.getByRole('button', { name: /Save Design/i }));
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0]).toMatchObject({ sgPrOnly: true });
@@ -84,10 +84,53 @@ describe('DesignEditor — SG/PR only toggle persistence', () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const gated = { id: 'camp-2', name: 'Gated', design_config: { formHeadline: 'Hi', sgPrOnly: true } };
     render(<DesignEditor campaign={gated} onSave={onSave} />);
-    expect(screen.getByRole('switch')).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'SG / PR only' })).toBeChecked();
     await user.type(screen.getByPlaceholderText('e.g., Get Started Now!'), '!');
     await user.click(screen.getByRole('button', { name: /Save Design/i }));
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave.mock.calls[0][0]).toMatchObject({ sgPrOnly: true });
+  });
+});
+
+describe('DesignEditor — exclude financial consultants toggle persistence', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('renders the exclude-consultants toggle, off by default', () => {
+    render(<DesignEditor campaign={campaign} onSave={vi.fn()} />);
+    expect(screen.getByText('Exclude financial consultants')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Exclude financial consultants' })).not.toBeChecked();
+  });
+
+  it('persists excludeAdvisors:false when the toggle is left off', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<DesignEditor campaign={campaign} onSave={onSave} />);
+    await user.type(screen.getByPlaceholderText('e.g., Get Started Now!'), '!');
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ excludeAdvisors: false });
+  });
+
+  it('persists excludeAdvisors:true after switching it on', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<DesignEditor campaign={campaign} onSave={onSave} />);
+    await user.click(screen.getByRole('switch', { name: 'Exclude financial consultants' }));
+    expect(screen.getByRole('switch', { name: 'Exclude financial consultants' })).toBeChecked();
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ excludeAdvisors: true });
+  });
+
+  it('initializes ON for a campaign with excludeAdvisors:true and preserves it on save', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const gated = { id: 'camp-3', name: 'NoAdvisors', design_config: { formHeadline: 'Hi', excludeAdvisors: true } };
+    render(<DesignEditor campaign={gated} onSave={onSave} />);
+    expect(screen.getByRole('switch', { name: 'Exclude financial consultants' })).toBeChecked();
+    await user.type(screen.getByPlaceholderText('e.g., Get Started Now!'), '!');
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ excludeAdvisors: true });
   });
 });

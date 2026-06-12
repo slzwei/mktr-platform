@@ -154,6 +154,28 @@ describe('CampaignSignupForm — SG/PR eligibility gate', () => {
     await user.click(screen.getByRole('button', { name: /picked the wrong option/i }));
     expect(await screen.findByText('Are you a Singapore Citizen or Permanent Resident?')).toBeInTheDocument();
   });
+
+  it('after Yes, shows a confirmed-eligibility chip with an Edit control', async () => {
+    const user = userEvent.setup();
+    renderForm({ design: { sgPrOnly: true } });
+    await user.click(screen.getByRole('button', { name: 'Yes, I am' }));
+    expect(await screen.findByText(/Confirmed: Singaporean or PR/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+  });
+
+  it('Edit on the confirmation chip returns to the screening gate', async () => {
+    const user = userEvent.setup();
+    renderForm({ design: { sgPrOnly: true } });
+    await user.click(screen.getByRole('button', { name: 'Yes, I am' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    expect(await screen.findByText('Are you a Singapore Citizen or Permanent Resident?')).toBeInTheDocument();
+  });
+
+  it('shows no eligibility chip when the gate is off', () => {
+    renderForm();
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(screen.queryByText(/Confirmed: Singaporean or PR/i)).toBeNull();
+  });
 });
 
 describe('CampaignSignupForm — SG/PR gate edge cases & integration', () => {
@@ -240,5 +262,80 @@ describe('CampaignSignupForm — SG/PR gate edge cases & integration', () => {
     expect(await screen.findByText('Preview — your details were not submitted.')).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
     expect(apiClient.post).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignSignupForm — exclude financial consultants gate', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const ADVISOR_Q = 'Are you a financial advisor, consultant, or insurance agent?';
+
+  it('shows the form directly when excludeAdvisors is off (default)', () => {
+    renderForm();
+    expect(screen.getByRole('button', { name: 'Submit Now' })).toBeInTheDocument();
+    expect(screen.queryByText(ADVISOR_Q)).toBeNull();
+  });
+
+  it('gates the form behind a Yes/No screening question when excludeAdvisors is on', () => {
+    renderForm({ design: { excludeAdvisors: true } });
+    expect(screen.getByText(ADVISOR_Q)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit Now' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'No, I am not' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Yes' })).toBeInTheDocument();
+  });
+
+  it('reveals the form after answering "No, I am not"', async () => {
+    const user = userEvent.setup();
+    renderForm({ design: { excludeAdvisors: true } });
+    await user.click(screen.getByRole('button', { name: 'No, I am not' }));
+    expect(await screen.findByRole('button', { name: 'Submit Now' })).toBeInTheDocument();
+    expect(screen.queryByText(ADVISOR_Q)).toBeNull();
+  });
+
+  it('blocks the form with a not-eligible message after answering Yes, and is reversible', async () => {
+    const user = userEvent.setup();
+    renderForm({ design: { excludeAdvisors: true } });
+    await user.click(screen.getByRole('button', { name: 'Yes' }));
+    expect(await screen.findByText(/not available to financial advisors/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit Now' })).toBeNull();
+    // Mis-tap recovery: back to the screening question.
+    await user.click(screen.getByRole('button', { name: /picked the wrong option/i }));
+    expect(await screen.findByText(ADVISOR_Q)).toBeInTheDocument();
+  });
+
+  it('does not gate when excludeAdvisors is explicitly false', () => {
+    renderForm({ design: { excludeAdvisors: false } });
+    expect(screen.getByRole('button', { name: 'Submit Now' })).toBeInTheDocument();
+  });
+
+  it('only gates on boolean true — a stale string "true" must NOT gate', () => {
+    renderForm({ design: { excludeAdvisors: 'true' } });
+    expect(screen.getByRole('button', { name: 'Submit Now' })).toBeInTheDocument();
+  });
+
+  it('screening buttons are type="button" so they never submit the form', () => {
+    renderForm({ design: { excludeAdvisors: true } });
+    expect(screen.getByRole('button', { name: 'No, I am not' })).toHaveAttribute('type', 'button');
+    expect(screen.getByRole('button', { name: 'Yes' })).toHaveAttribute('type', 'button');
+  });
+
+  it('shows the gate in previewMode (designer / admin preview)', () => {
+    renderForm({ previewMode: true, design: { excludeAdvisors: true } });
+    expect(screen.getByText(ADVISOR_Q)).toBeInTheDocument();
+  });
+
+  it('chains SG/PR first, then the advisor gate, before revealing the form', async () => {
+    const user = userEvent.setup();
+    renderForm({ design: { sgPrOnly: true, excludeAdvisors: true } });
+    // SG/PR gate first; advisor question not yet visible.
+    expect(screen.getByText('Are you a Singapore Citizen or Permanent Resident?')).toBeInTheDocument();
+    expect(screen.queryByText(ADVISOR_Q)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Yes, I am' }));
+    // Now the advisor gate; the form is still hidden.
+    expect(await screen.findByText(ADVISOR_Q)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit Now' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'No, I am not' }));
+    // Both gates passed → the form.
+    expect(await screen.findByRole('button', { name: 'Submit Now' })).toBeInTheDocument();
   });
 });

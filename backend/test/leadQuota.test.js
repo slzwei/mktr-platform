@@ -13,7 +13,7 @@ import {
   getApp, closeDb, createTestUser, createTestCampaign,
   createTestLeadPackage, createTestLeadPackageAssignment,
 } from './helpers.js';
-import { sequelize, Prospect, LeadPackageAssignment, Campaign } from '../src/models/index.js';
+import { sequelize, Prospect, Campaign } from '../src/models/index.js';
 import { sweepCampaign } from '../src/services/releaseSweep.js';
 
 let app, admin, adminToken;

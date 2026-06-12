@@ -14,6 +14,7 @@ import ContactInfoCard from"@/components/prospects/details/ContactInfoCard";
 import ActivityTimeline from"@/components/prospects/details/ActivityTimeline";
 import QuizResultCard from"@/components/prospects/details/QuizResultCard";
 import { extractQuizSummary } from"@/lib/quizDisplay";
+import { sourceDisplay } from"@/utils/normalizeProspect";
 
 const statusOptions = [
  { value:"new", label:"New", color:"bg-info/15 text-info border-info/30", dot:"bg-primary"},
@@ -127,7 +128,11 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
  setIsUpdating(false);
  };
 
- const sourceLabel = (details?.leadSource || prospect.source || 'other').replace('_', ' ').toUpperCase();
+ // details is the raw full record (has sourceMetadata); until it loads, the
+ // normalized list prospect (has precomputed .ad/.referral) — sourceDisplay
+ // handles both shapes.
+ const srcDisplay = sourceDisplay(details || prospect);
+ const sourceLabel = srcDisplay.label;
 
  return (
  <div className="space-y-6">
@@ -165,6 +170,9 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
  <code className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded border border-border">
  {sourceLabel}
  </code>
+ {srcDisplay.tooltip && (
+ <span className="text-xs text-muted-foreground">{srcDisplay.tooltip}</span>
+ )}
  </div>
  <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
  {phone && (

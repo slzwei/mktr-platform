@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import normalizeProspect from '../normalizeProspect';
+import normalizeProspect, { deriveAd, deriveReferral, sourceDisplay, sourceLine } from '../normalizeProspect';
 
 describe('normalizeProspect', () => {
  it('normalizes a prospect with all fields present', () => {
@@ -153,5 +153,177 @@ describe('normalizeProspect', () => {
  assignedAgent: { email: 'agent@test.com' },
  });
  expect(result.assigned_agent_name).toBe('agent@test.com');
+ });
+
+ it('passes sourceMetadata through and precomputes ad/referral', () => {
+ const result = normalizeProspect({
+ id: '1',
+ leadSource: 'website',
+ sourceMetadata: { utm: { utm_source: 'facebook', utm_campaign: 'jun-leads' } },
+ });
+ expect(result.sourceMetadata).toEqual({ utm: { utm_source: 'facebook', utm_campaign: 'jun-leads' } });
+ expect(result.ad).toMatchObject({ platform: 'meta', tier: 'ad', campaign: 'jun-leads' });
+ expect(result.referral).toBeNull();
+ });
+});
+
+describe('deriveAd', () => {
+ it('meta utm_source → tier "ad" with campaign/adset/ad from utm fields', () => {
+ const ad = deriveAd({
+ utm: { utm_source: 'facebook', utm_campaign: 'Jun Leads', utm_term: 'adset-1', utm_content: 'ad-1' },
+ });
+ expect(ad).toEqual({
+ platform: 'meta',
+ tier: 'ad',
+ campaign: 'Jun Leads',
+ adset: 'adset-1',
+ adName: 'ad-1',
+ utmSource: 'facebook',
+ });
+ });
+
+ it.each(['facebook', 'fb', 'instagram', 'ig', 'meta', 'IG', 'Facebook'])(
+ 'recognises meta utm_source alias %s',
+ (alias) => {
+ expect(deriveAd({ utm: { utm_source: alias } }).platform).toBe('meta');
+ }
+ );
+
+ it('non-meta utm_source keeps its platform (no meta badge)', () => {
+ const ad = deriveAd({ utm: { utm_source: 'tiktok', utm_campaign: 'q2' } });
+ expect(ad).toMatchObject({ platform: 'tiktok', tier: 'ad', campaign: 'q2' });
+ });
+
+ it('fbc-only → tier "click" (Meta click, not paid-ad evidence)', () => {
+ expect(deriveAd({ fbc: 'fb.1.1718000000.AbCd' })).toMatchObject({ platform: 'meta', tier: 'click' });
+ });
+
+ it('fbclid in eventSourceUrl → tier "click"', () => {
+ const ad = deriveAd({ eventSourceUrl: 'https://redeem.sg/LeadCapture?campaign_id=c1&fbclid=XYZ' });
+ expect(ad).toMatchObject({ platform: 'meta', tier: 'click' });
+ });
+
+ it('fbp alone is NOT ad evidence (minted for every tracked visitor)', () => {
+ expect(deriveAd({ fbp: 'fb.1.1718000000.12345' })).toBeNull();
+ });
+
+ it('returns null for empty/absent metadata', () => {
+ expect(deriveAd(null)).toBeNull();
+ expect(deriveAd({})).toBeNull();
+ expect(deriveAd({ eventSourceUrl: 'https://redeem.sg/LeadCapture?campaign_id=c1' })).toBeNull();
+ });
+});
+
+describe('deriveReferral', () => {
+ it('passes the backend referral stash through', () => {
+ const referral = deriveReferral({
+ referral: { ref: 'uuid-1', referrerProspectId: 'uuid-1', referrerName: 'Jane Doe', sameCampaign: true },
+ });
+ expect(referral).toEqual({
+ ref: 'uuid-1',
+ referrerProspectId: 'uuid-1',
+ referrerName: 'Jane Doe',
+ sameCampaign: true,
+ });
+ });
+
+ it('returns null when absent or malformed', () => {
+ expect(deriveReferral(null)).toBeNull();
+ expect(deriveReferral({})).toBeNull();
+ expect(deriveReferral({ referral: 'not-an-object' })).toBeNull();
+ });
+});
+
+describe('sourceDisplay', () => {
+ it('META AD with campaign detail + tooltip from a normalized prospect', () => {
+ const p = normalizeProspect({
+ id: '1',
+ leadSource: 'website',
+ sourceMetadata: { utm: { utm_source: 'facebook', utm_campaign: 'Jun Leads', utm_term: 'adset-1' } },
+ });
+ const d = sourceDisplay(p);
+ expect(d.label).toBe('META AD');
+ expect(d.detail).toBe('Jun Leads');
+ expect(d.tooltip).toBe('Campaign: Jun Leads · Ad set: adset-1');
+ expect(d.attribution).toBe('Meta ad: Jun Leads');
+ });
+
+ it('META CLICK for fbc-only rows (legacy Meta leads)', () => {
+ const d = sourceDisplay(normalizeProspect({ id: '1', leadSource: 'website', sourceMetadata: { fbc: 'fb.1.1.X' } }));
+ expect(d.label).toBe('META CLICK');
+ expect(d.detail).toBe('');
+ expect(d.attribution).toBe('Meta click');
+ });
+
+ it('referral with resolved name', () => {
+ const d = sourceDisplay(
+ normalizeProspect({
+ id: '1',
+ leadSource: 'referral',
+ sourceMetadata: { referral: { ref: 'u-1', referrerProspectId: 'u-1', referrerName: 'Jane Doe', sameCampaign: true } },
+ })
+ );
+ expect(d.label).toBe('REFERRAL');
+ expect(d.detail).toBe('Jane Doe');
+ expect(d.tooltip).toBe('Referred by Jane Doe');
+ expect(d.attribution).toBe('Referred by Jane Doe');
+ });
+
+ it('legacy anonymous referral explains itself', () => {
+ const d = sourceDisplay(normalizeProspect({ id: '1', leadSource: 'referral' }));
+ expect(d.label).toBe('REFERRAL');
+ expect(d.tooltip).toBe('Referrer unknown (shared before referral tracking)');
+ expect(d.attribution).toBe('');
+ });
+
+ it('referral wins over a stale same-tab ad capture', () => {
+ const d = sourceDisplay(
+ normalizeProspect({
+ id: '1',
+ leadSource: 'referral',
+ sourceMetadata: {
+ utm: { utm_source: 'facebook', utm_campaign: 'Jun Leads' },
+ referral: { ref: 'u-1', referrerName: 'Jane Doe', sameCampaign: true },
+ },
+ })
+ );
+ expect(d.label).toBe('REFERRAL');
+ });
+
+ it('plain sources fall through unchanged', () => {
+ expect(sourceDisplay(normalizeProspect({ id: '1', leadSource: 'website' })).label).toBe('FORM');
+ expect(sourceDisplay(normalizeProspect({ id: '1', leadSource: 'qr_code' })).label).toBe('QR');
+ expect(sourceDisplay(normalizeProspect({ id: '1', leadSource: 'social_media' })).label).toBe('SOCIAL MEDIA');
+ });
+
+ it('works on a RAW backend record too (detail view before normalize)', () => {
+ const d = sourceDisplay({
+ leadSource: 'website',
+ sourceMetadata: { utm: { utm_source: 'instagram', utm_campaign: 'IG Push' } },
+ });
+ expect(d.label).toBe('META AD');
+ expect(d.detail).toBe('IG Push');
+ });
+
+ it('non-meta ad platforms do not get the meta badge', () => {
+ const d = sourceDisplay(
+ normalizeProspect({ id: '1', leadSource: 'website', sourceMetadata: { utm: { utm_source: 'tiktok' } } })
+ );
+ expect(d.label).toBe('FORM');
+ });
+});
+
+describe('sourceLine', () => {
+ it('joins label and detail', () => {
+ const p = normalizeProspect({
+ id: '1',
+ leadSource: 'website',
+ sourceMetadata: { utm: { utm_source: 'facebook', utm_campaign: 'Jun Leads' } },
+ });
+ expect(sourceLine(p)).toBe('META AD · Jun Leads');
+ });
+
+ it('label only when no detail', () => {
+ expect(sourceLine(normalizeProspect({ id: '1', leadSource: 'website' }))).toBe('FORM');
  });
 });

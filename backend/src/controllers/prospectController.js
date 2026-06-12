@@ -68,10 +68,14 @@ export const createProspect = asyncHandler(async (req, res) => {
     console.error(`Failed to send confirmation email to lead for prospect ${prospect.id}:`, err.message || err)
   );
 
+  // Public, unauthenticated endpoint: echo only what the SPA needs — the id
+  // drives the post-submit referral share link. Returning the full row would
+  // leak sourceMetadata (fbc/fbp, consent flags, resolved referrerName) to
+  // whoever submitted the form.
   res.status(201).json({
     success: true,
     message: 'Prospect created successfully',
-    data: { prospect }
+    data: { prospect: { id: prospect.id } }
   });
 });
 

@@ -72,6 +72,7 @@ export default function DesignEditor({ campaign, onSave }) {
  visibleFields: { ...(design.visibleFields || { dob: true, postal_code: true }), phone: true },
  requiredFields: design.requiredFields || {},
     sgPrOnly: design.sgPrOnly === true,
+    excludeAdvisors: design.excludeAdvisors === true,
  fieldOrder: normalizeFieldOrder(design.fieldOrder),
  otpChannel: design.otpChannel ||"sms",
  mediaType: design.mediaType || (design.imageUrl ? 'image' : 'none'),

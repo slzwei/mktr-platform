@@ -41,6 +41,7 @@ const MOCK_CAMPAIGN = {
     requiredFields: { dob: true, postal_code: false },
     fieldOrder: ['name', 'phone', 'email', 'dob', 'postal_code'],
     otpChannel: 'whatsapp',
+    sgPrOnly: true, // demo: show the SG/PR eligibility gate before the form
   },
 };
 
