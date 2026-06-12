@@ -64,7 +64,12 @@ vi.mock('@/components/prospects/ProspectDetails', () => ({
  ),
 }));
 
-vi.mock('@/utils/normalizeProspect', () => ({
+vi.mock('@/utils/normalizeProspect', async (importOriginal) => {
+ // Keep the real named exports (sourceDisplay/deriveAd/deriveReferral power
+ // the Source badge) and only simplify the default normalizer.
+ const actual = await importOriginal();
+ return {
+ ...actual,
  default: (p) => ({
  id: p.id,
  name: [p.firstName, p.lastName].filter(Boolean).join(' ') || p.name || '',
@@ -74,8 +79,12 @@ vi.mock('@/utils/normalizeProspect', () => ({
  campaign_id: p.campaignId,
  assigned_agent_name: p.assignedAgent ? `${p.assignedAgent.firstName} ${p.assignedAgent.lastName}` : null,
  phone: p.phone || '',
+ sourceMetadata: p.sourceMetadata || null,
+ ad: actual.deriveAd(p.sourceMetadata),
+ referral: actual.deriveReferral(p.sourceMetadata),
  }),
-}));
+ };
+});
 
 vi.mock('@/constants/statusConfig', () => ({
  statusStyles: { new: 'bg-info/10 text-primary' },
@@ -330,5 +339,75 @@ describe('AdminProspects', () => {
  renderProspects();
  fireEvent.click(screen.getByRole('checkbox', { name: /select john doe/i }));
  expect(screen.queryByTestId('prospect-details')).not.toBeInTheDocument();
+ });
+
+ // --- Source attribution badges ---
+ it('shows META AD badge + campaign name for UTM-attributed leads', () => {
+ mockProspectsData.prospects = [
+ {
+ id: 'p-1',
+ firstName: 'Meta',
+ lastName: 'Lead',
+ leadStatus: 'new',
+ createdAt: '2025-01-15T10:00:00Z',
+ leadSource: 'website',
+ sourceMetadata: { utm: { utm_source: 'facebook', utm_campaign: 'Jun Leads' } },
+ },
+ ];
+ renderProspects();
+ expect(screen.getByText('META AD')).toBeInTheDocument();
+ expect(screen.getByText('Jun Leads')).toBeInTheDocument();
+ });
+
+ it('shows META CLICK badge for fbclid-only leads (no UTM data)', () => {
+ mockProspectsData.prospects = [
+ {
+ id: 'p-1',
+ firstName: 'Click',
+ lastName: 'Lead',
+ leadStatus: 'new',
+ createdAt: '2025-01-15T10:00:00Z',
+ leadSource: 'website',
+ sourceMetadata: { fbc: 'fb.1.1718000000.AbCd' },
+ },
+ ];
+ renderProspects();
+ expect(screen.getByText('META CLICK')).toBeInTheDocument();
+ });
+
+ it('shows referrer name under the REFERRAL badge when resolved', () => {
+ mockProspectsData.prospects = [
+ {
+ id: 'p-1',
+ firstName: 'Referred',
+ lastName: 'Friend',
+ leadStatus: 'new',
+ createdAt: '2025-01-15T10:00:00Z',
+ leadSource: 'referral',
+ sourceMetadata: {
+ referral: { ref: 'u-1', referrerProspectId: 'u-1', referrerName: 'Jane Doe', sameCampaign: true },
+ },
+ },
+ ];
+ renderProspects();
+ expect(screen.getByText('REFERRAL')).toBeInTheDocument();
+ expect(screen.getByText('Jane Doe')).toBeInTheDocument();
+ });
+
+ it('plain website leads keep their badge with no detail line', () => {
+ mockProspectsData.prospects = [
+ {
+ id: 'p-1',
+ firstName: 'Plain',
+ lastName: 'Lead',
+ leadStatus: 'new',
+ createdAt: '2025-01-15T10:00:00Z',
+ leadSource: 'website',
+ },
+ ];
+ renderProspects();
+ expect(screen.getByText('WEBSITE')).toBeInTheDocument();
+ expect(screen.queryByText('META AD')).not.toBeInTheDocument();
+ expect(screen.queryByText('META CLICK')).not.toBeInTheDocument();
  });
 });

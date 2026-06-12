@@ -19,6 +19,8 @@
  */
 
 const FBC_STORAGE_KEY = '_mktr_fbc';
+const UTM_STORAGE_KEY = '_mktr_utm';
+const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
 const initialisedPixelIds = new Set();
 
 export function shouldTrack({ campaign, pathname, search } = {}) {
@@ -69,6 +71,42 @@ export function readFbc() {
   if (typeof sessionStorage === 'undefined') return null;
   try {
     return sessionStorage.getItem(FBC_STORAGE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Capture ad-attribution UTM params (utm_source/medium/campaign/content/term)
+ * from the landing URL into sessionStorage, mirroring the `_mktr_fbc` pattern
+ * so they survive the in-page quiz gate and reach the submit payload.
+ * Last-touch: any visit that carries at least one UTM overwrites the stored
+ * set (consistent with backend Attribution `lastTouchAt DESC` semantics).
+ */
+export function captureUtmsFromUrl(search) {
+  if (!search || typeof sessionStorage === 'undefined') return null;
+  try {
+    const params = new URLSearchParams(search);
+    const utms = {};
+    for (const key of UTM_KEYS) {
+      const value = params.get(key);
+      if (value) utms[key] = value;
+    }
+    if (Object.keys(utms).length === 0) return null;
+    sessionStorage.setItem(UTM_STORAGE_KEY, JSON.stringify(utms));
+    return utms;
+  } catch {
+    return null;
+  }
+}
+
+export function readUtms() {
+  if (typeof sessionStorage === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(UTM_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
   } catch {
     return null;
   }

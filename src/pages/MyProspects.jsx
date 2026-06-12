@@ -41,7 +41,7 @@ import {
  DialogContent,
 } from"@/components/ui/dialog";
 import ProspectDetails from"@/components/prospects/ProspectDetails";
-import normalizeProspect from"@/utils/normalizeProspect";
+import normalizeProspect, { sourceLine } from"@/utils/normalizeProspect";
 import { getStatusColor, formatStatus } from"@/constants/statusConfig";
 
 export default function MyProspects() {
@@ -252,7 +252,7 @@ export default function MyProspects() {
  <TableCell>
  <div className="text-sm">
  <p className="font-medium text-foreground">{prospect.campaign?.name || 'Unknown Campaign'}</p>
- <p className="text-xs text-muted-foreground">{prospect.leadSource}</p>
+ <p className="text-xs text-muted-foreground">{sourceLine(prospect)}</p>
  </div>
  </TableCell>
  <TableCell>

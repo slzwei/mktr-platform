@@ -15,8 +15,10 @@ import {
   shouldTrack,
   generateEventId,
   captureFbcFromUrl,
+  captureUtmsFromUrl,
   readFbc,
   readFbp,
+  readUtms,
   ensureFbp,
   initPixel,
   trackEvent,
@@ -35,19 +37,24 @@ export default function LeadCapture() {
   const [submitted, setSubmitted] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [referralMarked, setReferralMarked] = useState(false);
+  // The created prospect's id — embedded in the share URL (?ref={id}) so a
+  // friend's referred submit can be attributed back to this sharer.
+  const [submittedProspectId, setSubmittedProspectId] = useState(null);
   const [duplicateDetected, setDuplicateDetected] = useState(false);
   const [duplicateCountdown, setDuplicateCountdown] = useState(5);
   // Quiz funnel result (answers + client-scored result). Set when the in-front
   // quiz completes; its answers are threaded into the prospect submit below.
   const [quizResult, setQuizResult] = useState(null);
 
-  // Meta Pixel: generate stable event IDs + capture fbclid on first mount.
-  // These must persist across re-renders so the ViewContent event_id matches
-  // any future references, and the Lead event_id matches the CAPI dispatch.
+  // Meta Pixel: generate stable event IDs + capture fbclid and ad UTMs on
+  // first mount. These must persist across re-renders so the ViewContent
+  // event_id matches any future references, and the Lead event_id matches the
+  // CAPI dispatch. UTMs ride along to the submit for sourceMetadata.utm.
   useEffect(() => {
     if (!viewEventIdRef.current) viewEventIdRef.current = generateEventId();
     if (!leadEventIdRef.current) leadEventIdRef.current = generateEventId();
     captureFbcFromUrl(location.search);
+    captureUtmsFromUrl(location.search);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -183,7 +190,8 @@ export default function LeadCapture() {
   const handleSubmit = async (formData) => {
     try {
       const params = new URLSearchParams(location.search);
-      const isReferral = !!(params.get('ref') || params.get('refshare'));
+      const refValue = params.get('ref') || params.get('refshare');
+      const isReferral = !!refValue;
       const name = (formData.name || '').trim();
       const [firstName, ...rest] = name.split(/\s+/);
       const lastName = rest.join(' ');
@@ -208,6 +216,13 @@ export default function LeadCapture() {
         fbp: readFbp(),
         fbc: readFbc(),
         eventSourceUrl: typeof window !== 'undefined' ? window.location.href : undefined,
+        // Ad attribution captured at mount (sessionStorage) — stashed by the
+        // backend into sourceMetadata.utm for the admin Source column.
+        ...(readUtms() || {}),
+        // Referral identity: forward the sharer's prospect UUID from the share
+        // URL. '1' is the legacy anonymous flag — not worth sending.
+        referralRef:
+          isReferral && refValue && refValue !== '1' ? refValue.slice(0, 64) : undefined,
         // Quiz funnel: raw answers only (the server re-scores authoritatively
         // from the campaign's quiz def). The object survives the null/empty
         // filter below; undefined when this campaign has no quiz.
@@ -225,6 +240,9 @@ export default function LeadCapture() {
 
       const result = await apiClient.post('/prospects', payload, { skipAuth: true });
       if (result?.success) {
+        // Keep the new prospect's id so this submitter's share links carry
+        // their identity (?ref={id}) instead of the anonymous ref=1.
+        setSubmittedProspectId(result?.data?.prospect?.id || null);
         // Fire Pixel Lead with the same eventId we sent to the backend so Meta
         // deduplicates this against the CAPI Lead dispatch. The OTP gate is
         // enforced upstream in CampaignSignupForm; reaching this branch means
@@ -297,8 +315,14 @@ export default function LeadCapture() {
 
   const longShareUrl = useMemo(() => {
     const baseUrl = window.location.origin;
-    return campaign ? `${baseUrl}/LeadCapture?campaign_id=${campaign.id}&ref=1` : window.location.href;
-  }, [campaign]);
+    // ref carries the sharer's prospect id when we have one (post-submit) so
+    // referred friends resolve to "Referred by {name}"; falls back to the
+    // legacy anonymous ref=1 (e.g. duplicate-signup sharers have no id).
+    const ref = submittedProspectId || '1';
+    return campaign
+      ? `${baseUrl}/LeadCapture?campaign_id=${campaign.id}&ref=${ref}`
+      : window.location.href;
+  }, [campaign, submittedProspectId]);
 
   // Loading state
   if (!campaign && !error) {

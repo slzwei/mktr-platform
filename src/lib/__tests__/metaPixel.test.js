@@ -3,8 +3,10 @@ import {
   shouldTrack,
   generateEventId,
   captureFbcFromUrl,
+  captureUtmsFromUrl,
   readFbc,
   readFbp,
+  readUtms,
   ensureFbp,
   initPixel,
   trackEvent,
@@ -156,6 +158,75 @@ describe('readFbc', () => {
 
   it('returns null when no value present', () => {
     expect(readFbc()).toBe(null);
+  });
+});
+
+describe('captureUtmsFromUrl', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('extracts utm_* params and persists them to sessionStorage', () => {
+    const result = captureUtmsFromUrl(
+      '?campaign_id=abc&utm_source=facebook&utm_medium=paid&utm_campaign=jun-leads&utm_term=adset1&utm_content=ad1'
+    );
+    expect(result).toEqual({
+      utm_source: 'facebook',
+      utm_medium: 'paid',
+      utm_campaign: 'jun-leads',
+      utm_term: 'adset1',
+      utm_content: 'ad1',
+    });
+    expect(JSON.parse(sessionStorage.getItem('_mktr_utm'))).toEqual(result);
+  });
+
+  it('captures a partial UTM set', () => {
+    const result = captureUtmsFromUrl('?utm_source=facebook');
+    expect(result).toEqual({ utm_source: 'facebook' });
+  });
+
+  it('is a no-op (and preserves prior capture) when the URL has no UTMs', () => {
+    captureUtmsFromUrl('?utm_source=facebook&utm_campaign=first');
+    const result = captureUtmsFromUrl('?campaign_id=abc&fbclid=X');
+    expect(result).toBe(null);
+    expect(readUtms()).toEqual({ utm_source: 'facebook', utm_campaign: 'first' });
+  });
+
+  it('last-touch: a later visit with UTMs overwrites the stored set', () => {
+    captureUtmsFromUrl('?utm_source=facebook&utm_campaign=first');
+    captureUtmsFromUrl('?utm_source=instagram');
+    expect(readUtms()).toEqual({ utm_source: 'instagram' });
+  });
+
+  it('returns null for empty or null input', () => {
+    expect(captureUtmsFromUrl('')).toBe(null);
+    expect(captureUtmsFromUrl(null)).toBe(null);
+    expect(captureUtmsFromUrl(undefined)).toBe(null);
+  });
+});
+
+describe('readUtms', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('returns the persisted UTM object', () => {
+    sessionStorage.setItem('_mktr_utm', JSON.stringify({ utm_source: 'facebook' }));
+    expect(readUtms()).toEqual({ utm_source: 'facebook' });
+  });
+
+  it('returns null when nothing stored', () => {
+    expect(readUtms()).toBe(null);
+  });
+
+  it('returns null on corrupt JSON instead of throwing', () => {
+    sessionStorage.setItem('_mktr_utm', '{not json');
+    expect(readUtms()).toBe(null);
+  });
+
+  it('returns null for non-object payloads', () => {
+    sessionStorage.setItem('_mktr_utm', JSON.stringify(['utm_source']));
+    expect(readUtms()).toBe(null);
   });
 });
 
