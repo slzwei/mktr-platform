@@ -139,6 +139,10 @@ Paid acquisition (Facebook/Instagram) for the lead-capture funnel. All assets li
 
 **Running a paid campaign** (drives clicks into the existing round-robin pipeline): objective **Leads** (`OUTCOME_LEADS`), conversion location **Website**, optimize for the **Lead** event; destination = a `redeem.sg/LeadCapture?campaign_id={id}` link for the specific MKTR campaign so leads attribute + auto-assign. No native Meta Lead Forms — the funnel uses the `redeem.sg` landing page.
 
+**Lead-quality controls** (who can actually convert — the `$20 voucher` hook attracts low-intent/freebie traffic, so two layers filter it):
+- **Per-campaign SG/PR gate** — `design_config.sgPrOnly` (shipped `622fd2e`). When on, `CampaignSignupForm.jsx` renders a Yes/No "Singapore Citizen or PR?" screening card before the form ("No" blocks); toggle it in the campaign designer's **Content** panel. It is **client-side and self-declared** (the answer is not POSTed to the backend): it deters honest non-residents and — because the Pixel `Lead` event only fires on a completed submit — keeps unqualified people out of CAPI + Meta's conversion optimization, but won't stop a motivated false answer.
+- **Meta-side audience filters** (ad-account config, not in this repo): Meta offers no occupation/citizenship targeting, so the ad set instead targets **"people who live in Singapore"** (`geo_locations.location_types:["home"]`, not the default "everyone in this location"), bounds age, and **excludes a customer-list Custom Audience** of known industry contacts/advisors (plus a lookalike of it). Under **Advantage+ Audience**, excluded custom audiences are the *only* hard filter Meta honors — interest/inclusion targeting is treated as a suggestion. Specific audience IDs live in the ad account.
+
 ## Architecture — Full Data Flow
 
 ```
