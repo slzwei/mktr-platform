@@ -104,10 +104,14 @@ export const init = async (app) => {
         ? parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200
         : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000;
     },
-    // Exempt server-to-server webhooks under /api/integrations/lyfe/ — they are
-    // HMAC-authenticated (not IP-based), and a Supabase pg_net burst or a
-    // reconciliation backfill must not be throttled by the public IP limiter.
-    skip: (req) => !isProd || req.originalUrl.startsWith('/api/integrations/lyfe/'),
+    // Exempt server-to-server webhooks under /api/integrations/lyfe/ and
+    // /api/external/ — they are HMAC-authenticated (not IP-based), and a
+    // Supabase pg_net burst or a reconciliation backfill must not be throttled
+    // by the public IP limiter.
+    skip: (req) =>
+      !isProd ||
+      req.originalUrl.startsWith('/api/integrations/lyfe/') ||
+      req.originalUrl.startsWith('/api/external/'),
     message: 'Too many requests from this IP, please try again later.',
   });
   // Ensure we decode JWT (if present) before limiter so skip() can see admin
@@ -131,6 +135,7 @@ export const init = async (app) => {
   //   - /api/retell/         — Retell AI call webhooks (HMAC-signed)
   //   - /api/meta/           — Meta CAPI signed callbacks
   //   - /api/integrations/lyfe/ — Lyfe→MKTR push (notify_mktr_user_change trigger; HMAC since 2026-05-12)
+  //   - /api/external/       — MKTR Leads buyer app → lead outcomes (HMAC, body-only)
   app.use(
     express.json({
       limit: '1mb',
@@ -138,7 +143,8 @@ export const init = async (app) => {
         if (
           req.originalUrl.startsWith('/api/retell/') ||
           req.originalUrl.startsWith('/api/meta/') ||
-          req.originalUrl.startsWith('/api/integrations/lyfe/')
+          req.originalUrl.startsWith('/api/integrations/lyfe/') ||
+          req.originalUrl.startsWith('/api/external/')
         ) {
           req.rawBody = buf;
         }
