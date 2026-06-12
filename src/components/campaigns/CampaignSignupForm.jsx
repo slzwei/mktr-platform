@@ -39,6 +39,7 @@ export default function CampaignSignupForm({
   const otpChannel = campaign?.design_config?.otpChannel || 'sms';
   const headingFont = heroFontStack(campaign?.design_config?.heroFont);
   const sgPrOnly = campaign?.design_config?.sgPrOnly === true;
+  const excludeAdvisors = campaign?.design_config?.excludeAdvisors === true;
 
   const [formData, setFormData] = useState({
     name: '',
@@ -60,6 +61,8 @@ export default function CampaignSignupForm({
   const [showSuccessTick, setShowSuccessTick] = useState(false);
   // SG/PR eligibility gate: null = not answered, 'eligible' = show form, 'no' = blocked.
   const [eligibility, setEligibility] = useState(null);
+  // Financial-consultant exclusion gate: null = not answered, 'public' = show form, 'advisor' = blocked.
+  const [advisorAck, setAdvisorAck] = useState(null);
 
   // Two PDPA consent checkboxes — campaign T&C is required (opt-in), contact
   // consent defaults to ticked (opt-out). The opt-out path is documented in
@@ -489,6 +492,143 @@ export default function CampaignSignupForm({
     );
   }
 
+  // Financial-consultant exclusion gate (campaign.design_config.excludeAdvisors):
+  // a Yes/No screening card shown before the form, after the SG/PR gate so both
+  // can stack. "No" reveals + animates the form in; "Yes" shows a polite,
+  // reversible not-eligible message. No gate when excludeAdvisors is off.
+  if (excludeAdvisors && advisorAck !== 'public') {
+    return (
+      <AnimatePresence mode="wait">
+        {advisorAck === 'advisor' ? (
+          <motion.div
+            key="advisor-ineligible"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+          >
+            <h2
+              style={{
+                fontFamily: headingFont,
+                fontWeight: 800,
+                fontSize: 'clamp(24px, 5.5vw, 30px)',
+                lineHeight: 1.15,
+                color: TOKENS.ink,
+                margin: 0,
+                marginBottom: 12,
+              }}
+            >
+              Thanks for your interest
+            </h2>
+            <p
+              style={{
+                fontFamily: 'Albert Sans, system-ui, sans-serif',
+                fontSize: 16,
+                lineHeight: 1.55,
+                color: TOKENS.body,
+                margin: 0,
+                marginBottom: 20,
+              }}
+            >
+              This promotion is for members of the public. It is not available to
+              financial advisors, consultants, or insurance agents.
+            </p>
+            <button
+              type="button"
+              onClick={() => setAdvisorAck(null)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                color: TOKENS.muted,
+                fontSize: 14,
+                fontFamily: 'Albert Sans, system-ui, sans-serif',
+                textDecoration: 'underline',
+                textUnderlineOffset: 3,
+              }}
+            >
+              ← I picked the wrong option
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="advisor-gate"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+          >
+            <h2
+              style={{
+                fontFamily: headingFont,
+                fontWeight: 800,
+                fontSize: 'clamp(24px, 5.5vw, 30px)',
+                lineHeight: 1.15,
+                color: TOKENS.ink,
+                margin: 0,
+                marginBottom: 10,
+              }}
+            >
+              Quick question first
+            </h2>
+            <p
+              style={{
+                fontFamily: 'Albert Sans, system-ui, sans-serif',
+                fontSize: 16,
+                lineHeight: 1.55,
+                color: TOKENS.body,
+                margin: 0,
+                marginBottom: 24,
+              }}
+            >
+              Are you a financial advisor, consultant, or insurance agent?
+            </p>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button
+                type="button"
+                onClick={() => setAdvisorAck('public')}
+                style={{
+                  flex: 1,
+                  height: 56,
+                  borderRadius: RADIUS.pill,
+                  backgroundColor: accent,
+                  color: '#ffffff',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontFamily: 'Albert Sans, system-ui, sans-serif',
+                  fontWeight: 600,
+                  fontSize: 16,
+                  boxShadow: '0 4px 14px rgba(209, 112, 41, 0.18)',
+                }}
+              >
+                No, I am not
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdvisorAck('advisor')}
+                style={{
+                  flex: 1,
+                  height: 56,
+                  borderRadius: RADIUS.pill,
+                  backgroundColor: '#ffffff',
+                  color: TOKENS.body,
+                  border: `1px solid ${TOKENS.hairline}`,
+                  cursor: 'pointer',
+                  fontFamily: 'Albert Sans, system-ui, sans-serif',
+                  fontWeight: 600,
+                  fontSize: 16,
+                }}
+              >
+                Yes
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  }
+
   return (
     <>
       <motion.div
@@ -496,6 +636,72 @@ export default function CampaignSignupForm({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: 'easeOut' }}
       >
+      {/* Confirmed eligibility — shown above the form once they pass the SG/PR gate */}
+      {sgPrOnly && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            marginBottom: 20,
+            padding: '10px 14px',
+            borderRadius: 12,
+            backgroundColor: accent + '12',
+            border: `1px solid ${accent}33`,
+          }}
+        >
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              fontFamily: 'Albert Sans, system-ui, sans-serif',
+              fontSize: 13.5,
+              fontWeight: 500,
+              color: TOKENS.body,
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 18,
+                height: 18,
+                borderRadius: '50%',
+                backgroundColor: accent,
+                color: '#ffffff',
+                fontSize: 11,
+                flexShrink: 0,
+              }}
+            >
+              ✓
+            </span>
+            Confirmed: Singaporean or PR
+          </span>
+          <button
+            type="button"
+            onClick={() => setEligibility(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              color: accent,
+              fontWeight: 600,
+              fontSize: 13.5,
+              fontFamily: 'Albert Sans, system-ui, sans-serif',
+              textDecoration: 'underline',
+              textUnderlineOffset: 3,
+              flexShrink: 0,
+            }}
+          >
+            Edit
+          </button>
+        </div>
+      )}
       <form onSubmit={handleSubmit}>
         {/* Heavy-serif heading */}
         <h2

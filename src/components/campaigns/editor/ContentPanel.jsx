@@ -413,8 +413,20 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
               <span className="text-xs text-muted-foreground">Adds a Singapore Citizen / PR question before the form — only Yes reveals it.</span>
             </div>
             <Switch
+              aria-label="SG / PR only"
               checked={currentDesign.sgPrOnly === true}
               onCheckedChange={(checked) => onDesignChange('sgPrOnly', checked)}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3 py-1">
+            <div className="flex flex-col">
+              <span className="text-sm text-foreground">Exclude financial consultants</span>
+              <span className="text-xs text-muted-foreground">Adds an advisor / consultant question — answering Yes blocks the form.</span>
+            </div>
+            <Switch
+              aria-label="Exclude financial consultants"
+              checked={currentDesign.excludeAdvisors === true}
+              onCheckedChange={(checked) => onDesignChange('excludeAdvisors', checked)}
             />
           </div>
         </div>
