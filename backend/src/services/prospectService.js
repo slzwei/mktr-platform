@@ -27,6 +27,8 @@ import {
 } from './prospectHelpers.js';
 import { scoreQuiz } from './quizScoringService.js';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const PROSPECT_UPDATE_FIELDS = [
   'firstName',
   'lastName',
@@ -85,9 +87,12 @@ export function makeProspectService(overrides = {}) {
     const consentContact = safeBody.consent_contact;
     const consentTerms = safeBody.consent_terms;
 
-    // Quiz funnel submission (re-scored server-side after the campaign loads) and
-    // ad attribution (UTM). Both stashed in sourceMetadata; neither is a Prospect column.
+    // Quiz funnel submission (re-scored server-side after the campaign loads),
+    // ad attribution (UTM) and referral identity (the sharer's prospect UUID from
+    // the share URL's ?ref=). All stashed in sourceMetadata; none is a Prospect column.
     const quizSubmission = safeBody.quizResult;
+    const referralRef =
+      typeof safeBody.referralRef === 'string' ? safeBody.referralRef.trim() : undefined;
     const utm = {
       ...(safeBody.utm_source ? { utm_source: safeBody.utm_source } : {}),
       ...(safeBody.utm_medium ? { utm_medium: safeBody.utm_medium } : {}),
@@ -100,7 +105,7 @@ export function makeProspectService(overrides = {}) {
     const {
       eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
       consent_contact: _cc, consent_terms: _ct,
-      quizResult: _qr,
+      quizResult: _qr, referralRef: _rref,
       utm_source: _us, utm_medium: _um, utm_campaign: _ucmp, utm_content: _ucnt, utm_term: _utm,
       ...bodyWithoutMeta
     } = safeBody;
@@ -168,6 +173,40 @@ export function makeProspectService(overrides = {}) {
         delete incoming.sessionId;
         incoming.campaignId = explicitCampaignId;
       }
+    }
+
+    // Referral identity: resolve the sharer's prospect UUID (share URL ?ref=,
+    // forwarded by the SPA as referralRef) into sourceMetadata.referral so admin
+    // surfaces can show "Referred by …" without per-row lookups. Runs AFTER the
+    // campaign guard above so sameCampaign compares against the settled
+    // campaignId. Gated on leadSource === 'referral' (a direct API caller can't
+    // mint referral metadata onto non-referral leads); cross-campaign referrers
+    // keep ids only — no name — so this public endpoint can't be used to read
+    // names across campaigns. Lookup failure must never block lead creation.
+    if (referralRef && referralRef !== '1' && incoming.leadSource === 'referral') {
+      const referral = { ref: referralRef.slice(0, 64) };
+      if (UUID_RE.test(referralRef)) {
+        try {
+          const referrer = await m.Prospect.findByPk(referralRef, {
+            attributes: ['id', 'firstName', 'lastName', 'campaignId'],
+          });
+          if (referrer) {
+            const sameCampaign =
+              incoming.campaignId != null &&
+              String(referrer.campaignId) === String(incoming.campaignId);
+            referral.referrerProspectId = referrer.id;
+            referral.sameCampaign = sameCampaign;
+            if (sameCampaign) {
+              referral.referrerName = [referrer.firstName, referrer.lastName]
+                .filter(Boolean)
+                .join(' ');
+            }
+          }
+        } catch (err) {
+          d.logger.warn('Referrer lookup failed (non-blocking)', { error: err.message });
+        }
+      }
+      incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), referral };
     }
 
     // Resolve secure assignment (agent/admin override -> qr owner -> campaign -> system)

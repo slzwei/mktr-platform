@@ -186,7 +186,11 @@ export const schemas = {
     utm_medium: Joi.string().max(128).optional(),
     utm_campaign: Joi.string().max(190).optional(),
     utm_content: Joi.string().max(190).optional(),
-    utm_term: Joi.string().max(190).optional()
+    utm_term: Joi.string().max(190).optional(),
+    // Referral identity: the sharer's prospect UUID carried by the share URL's
+    // ?ref= param. Resolved server-side into sourceMetadata.referral (see
+    // prospectService.createProspect) — only honored when leadSource='referral'.
+    referralRef: Joi.string().max(64).optional()
   }),
 
   // QR Tag schemas — fields match `qrCodeService.createQrCode` destructure

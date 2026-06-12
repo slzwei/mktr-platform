@@ -43,4 +43,12 @@ describe('prospectCreate validation — quiz funnel + UTM', () => {
     expect(schemas.campaignCreate.validate({ name: 'Q', type: 'quiz' }).error).toBeUndefined();
     expect(schemas.campaignUpdate.validate({ type: 'quiz' }).error).toBeUndefined();
   });
+
+  it('accepts referralRef up to 64 chars, rejects longer', () => {
+    expect(
+      schemas.prospectCreate.validate({ ...base, referralRef: '5f1e9c1a-2222-4444-8888-aaaaaaaaaaaa' }).error
+    ).toBeUndefined();
+    expect(schemas.prospectCreate.validate({ ...base, referralRef: 'x'.repeat(64) }).error).toBeUndefined();
+    expect(schemas.prospectCreate.validate({ ...base, referralRef: 'x'.repeat(65) }).error).toBeDefined();
+  });
 });
