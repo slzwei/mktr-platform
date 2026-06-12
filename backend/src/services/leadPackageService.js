@@ -82,6 +82,16 @@ export async function assignPackage({ agentId, packageId }) {
     purchaseDate: new Date()
   });
 
+  // New funded package → drain any held lead-quota queue for its campaign (async,
+  // fire-and-forget; the assignment response must not wait on the sweep).
+  if (pkg.campaignId) {
+    // Dynamic import keeps releaseSweep (and its systemAgent/webhook graph) out of this
+    // module's static dependency graph — avoids coupling and keeps unit-test mocks lean.
+    import('./releaseSweep.js')
+      .then((m) => m.sweepCampaign(pkg.campaignId))
+      .catch((err) => logger.error('[ReleaseSweep] assignPackage trigger failed', { error: err?.message || String(err) }));
+  }
+
   return {
     assignment,
     agent,
@@ -152,10 +162,21 @@ export async function updateAssignment(id, { leadsRemaining }) {
       throw new AppError('Invalid lead count', 400);
     }
 
+    const prevCount = assignment.leadsRemaining;
     await assignment.update({
       leadsRemaining: newCount,
       status: newCount === 0 ? 'exhausted' : 'active'
     });
+
+    // Top-up (credits increased) → drain the held queue for this assignment's campaign.
+    if (newCount > prevCount) {
+      const pkg = await LeadPackage.findByPk(assignment.leadPackageId, { attributes: ['campaignId'] });
+      if (pkg?.campaignId) {
+        import('./releaseSweep.js')
+          .then((m) => m.sweepCampaign(pkg.campaignId))
+          .catch((err) => logger.error('[ReleaseSweep] updateAssignment trigger failed', { error: err?.message || String(err) }));
+      }
+    }
   }
 
   return { assignment };

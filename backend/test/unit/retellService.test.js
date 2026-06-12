@@ -72,6 +72,8 @@ function buildMocks() {
   };
 
   const resolveAssignedAgentId = jest.fn().mockResolvedValue('agent-1');
+  const resolveLeadRouting = jest.fn().mockResolvedValue({ agentId: 'agent-1', via: 'package' });
+  const chargeLeadCredit = jest.fn().mockResolvedValue(true);
   const dispatchEvent = jest.fn().mockResolvedValue(undefined);
   const sendLeadAssignmentEmail = jest.fn().mockResolvedValue(undefined);
   const AppError = class extends Error {
@@ -99,6 +101,8 @@ function buildMocks() {
     ProspectActivity,
     sequelize,
     resolveAssignedAgentId,
+    resolveLeadRouting,
+    chargeLeadCredit,
     dispatchEvent,
     sendLeadAssignmentEmail,
     AppError,
@@ -212,6 +216,8 @@ describe('retellService (unit)', () => {
         ProspectActivity: mocks.ProspectActivity,
         sequelize: mocks.sequelize,
         resolveAssignedAgentId: mocks.resolveAssignedAgentId,
+        resolveLeadRouting: mocks.resolveLeadRouting,
+        chargeLeadCredit: mocks.chargeLeadCredit,
         dispatchEvent: mocks.dispatchEvent,
         sendLeadAssignmentEmail: mocks.sendLeadAssignmentEmail,
         AppError: mocks.AppError,
@@ -404,7 +410,8 @@ describe('retellService (unit)', () => {
 
       expect(mocks.dispatchEvent).toHaveBeenCalledWith(
         'lead.created',
-        expect.any(Function)
+        expect.any(Function),
+        expect.objectContaining({ destination: 'lyfe' })
       );
 
       // Invoke the payload builder to verify its structure
@@ -473,6 +480,8 @@ describe('retellService (unit)', () => {
         ProspectActivity: mocks.ProspectActivity,
         sequelize: mocks.sequelize,
         resolveAssignedAgentId: mocks.resolveAssignedAgentId,
+        resolveLeadRouting: mocks.resolveLeadRouting,
+        chargeLeadCredit: mocks.chargeLeadCredit,
         dispatchEvent: mocks.dispatchEvent,
         sendLeadAssignmentEmail: mocks.sendLeadAssignmentEmail,
         AppError: mocks.AppError,

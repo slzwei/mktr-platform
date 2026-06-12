@@ -35,11 +35,17 @@ import {
  UserCheck,
 } from"lucide-react";
 import { format } from"date-fns";
+import { sourceBadge, isLyfeAgent, isMktrLeadsAgent, isLocalAgent } from"@/lib/agentSource";
 
 /**
  * Determines whether an agent is in a"pending registration"state.
+ * Only meaningful for LOCAL rows: mirrored agents (Lyfe / MKTR Leads) have no
+ * local password and emailVerified=false by construction, so without the
+ * source guard every mirrored agent rendered as"Invited"with a Resend item —
+ * hiding the Activate/Deactivate action entirely.
  */
 const isPending = (agent) =>
+ isLocalAgent(agent) &&
  agent?.isActive === true &&
  (agent?.status ==="pending_registration"||
  !!agent?.invitationToken ||
@@ -102,11 +108,14 @@ export default function AgentTable({
  <TableHeader>
  <TableRow className="bg-muted/50 hover:bg-muted/50 border-border">
  <TableHead className="w-12 h-12 px-4 text-center">
+ {/* Selection exists only for bulk-DELETE, which is a local-row concept:
+ mirrored agents are owned by their source app. */}
  <Checkbox
  checked={
- agents.length > 0 &&
- selectedAgentIds.length === agents.length
+ agents.some(isLocalAgent) &&
+ selectedAgentIds.length === agents.filter(isLocalAgent).length
  }
+ disabled={!agents.some(isLocalAgent)}
  onCheckedChange={onSelectAll}
  aria-label="Select all" />
  </TableHead>
@@ -115,6 +124,9 @@ export default function AgentTable({
  </TableHead>
  <TableHead className="py-3 px-6 font-medium text-muted-foreground min-w-[250px]">
  Contact
+ </TableHead>
+ <TableHead className="py-3 px-6 font-medium text-muted-foreground min-w-[110px]">
+ Source
  </TableHead>
  <TableHead className="py-3 px-6 font-medium text-muted-foreground min-w-[140px]">
  Status
@@ -133,7 +145,7 @@ export default function AgentTable({
  <TableBody>
  {agents.length === 0 ? (
  <TableEmpty
- colSpan={7}
+ colSpan={8}
  icon={UserCheck}
  title="No agents found"
  description="Try adjusting your filters, or invite a new agent to get started." />
@@ -187,6 +199,10 @@ const AgentRow = React.memo(function AgentRow({
  agent.approvalStatus ==="pending"|| agent.status ==="pending_approval";
  const pendingRegistration = isPending(agent);
  const isActive = agent.isActive && !pendingApproval && !pendingRegistration;
+ const lyfe = isLyfeAgent(agent);
+ const mktrLeads = isMktrLeadsAgent(agent);
+ const local = isLocalAgent(agent);
+ const source = sourceBadge(agent);
 
  const renderStatusBadge = () => {
  if (pendingApproval)
@@ -223,10 +239,11 @@ const AgentRow = React.memo(function AgentRow({
  className={`hover:bg-muted/50 border-border ${
  isSelected ?"bg-primary/10":"" }`}
  >
- {/* Checkbox */}
+ {/* Checkbox — selection drives bulk-delete, a local-row concept */}
  <TableCell className="px-4 text-center">
  <Checkbox
  checked={isSelected}
+ disabled={!local}
  onCheckedChange={(checked) => onSelect(agent.id, checked)}
  aria-label={`Select ${agent.fullName}`}
  />
@@ -268,10 +285,18 @@ const AgentRow = React.memo(function AgentRow({
  </div>
  </TableCell>
 
+ {/* Source */}
+ <TableCell className="px-6 py-4">
+ <Badge variant="outline" className={`${source.className} hover:bg-transparent whitespace-nowrap`}>
+ {source.label}
+ </Badge>
+ </TableCell>
+
  {/* Status */}
  <TableCell className="px-6 py-4">{renderStatusBadge()}</TableCell>
 
- {/* Leads owed */}
+ {/* Leads owed — credits are per-campaign ledgers, so when an agent holds
+ more than one bucket the split is shown under the total. */}
  <TableCell className="px-6 py-4">
  <div className="flex items-center gap-2">
  <Badge
@@ -284,6 +309,26 @@ const AgentRow = React.memo(function AgentRow({
  <Plus className="w-3 h-3 mr-1"/> Assign
  </Button>
  </div>
+ {(() => {
+ const breakdown = agent.owed_leads_breakdown || [];
+ const manual = agent.owed_leads_manual_count || 0;
+ const buckets = breakdown.length + (manual > 0 ? 1 : 0);
+ if (buckets <= 1) return null;
+ return (
+ <div className="mt-1 space-y-0.5">
+ {breakdown.map((b) => (
+ <p key={b.campaignId || 'none'} className="text-[11px] leading-tight text-muted-foreground whitespace-nowrap">
+ {b.campaignName || 'No campaign'} · {b.leadsRemaining}
+ </p>
+ ))}
+ {manual > 0 && (
+ <p className="text-[11px] leading-tight text-muted-foreground whitespace-nowrap">
+ Manual · {manual}
+ </p>
+ )}
+ </div>
+ );
+ })()}
  </TableCell>
 
  {/* Joined date */}
@@ -316,8 +361,8 @@ const AgentRow = React.memo(function AgentRow({
  <UserCheck className="mr-2 h-4 w-4"/> View Assigned Leads
  </Link>
  </DropdownMenuItem>
- <DropdownMenuItem onClick={() => onEditAgent(agent)}>
- <Edit className="mr-2 h-4 w-4"/> Edit Profile
+ <DropdownMenuItem onClick={() => onEditAgent(agent)} disabled={lyfe}>
+ <Edit className="mr-2 h-4 w-4"/> {lyfe ?"Edit (managed in Lyfe)":"Edit Profile"}
  </DropdownMenuItem>
  <DropdownMenuSeparator />
  <DropdownMenuItem onClick={() => onManagePackages(agent)}>
@@ -346,23 +391,29 @@ const AgentRow = React.memo(function AgentRow({
  <Mail className="mr-2 h-4 w-4"/> Resend Invite
  </DropdownMenuItem>
  ) : (
- <DropdownMenuItem onClick={() => onToggleStatus(agent)}>
+ <DropdownMenuItem onClick={() => onToggleStatus(agent)} disabled={lyfe}>
  {agent.isActive ? (
  <>
- <ShieldAlert className="mr-2 h-4 w-4"/> Deactivate
+ <ShieldAlert className="mr-2 h-4 w-4"/>
+ {lyfe ?"Deactivate (in Lyfe)": mktrLeads ?"Deactivate in MKTR Leads":"Deactivate"}
  </>
  ) : (
  <>
- <CheckCircle className="mr-2 h-4 w-4"/> Activate
+ <CheckCircle className="mr-2 h-4 w-4"/>
+ {lyfe ?"Activate (in Lyfe)": mktrLeads ?"Reactivate in MKTR Leads":"Activate"}
  </>
  )}
  </DropdownMenuItem>
  )}
  <DropdownMenuSeparator />
+ {/* Delete is a local-row concept; mirrored agents are owned by their
+ source app — retire them by deactivating instead. */}
  <DropdownMenuItem
  onClick={() => onDeleteAgent(agent)}
+ disabled={!local}
  className="text-destructive" >
- <Trash2 className="mr-2 h-4 w-4"/> Delete Agent
+ <Trash2 className="mr-2 h-4 w-4"/>
+ {local ?"Delete Agent": lyfe ?"Delete (managed in Lyfe)":"Delete (deactivate instead)"}
  </DropdownMenuItem>
  </DropdownMenuContent>
  </DropdownMenu>

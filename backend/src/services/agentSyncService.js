@@ -39,6 +39,17 @@ const SYNC_DRIFT_DEACTIVATION_RATIO = 0.2;
 // Per FMEA F09 — closes the read-then-delete race.
 const DELETE_GRACE_HOURS = 24;
 
+// Every external-provenance column on `users`. One source per user is enforced
+// by a DB CHECK (lyfeId IS NULL OR mktrLeadsId IS NULL); the sync reads BOTH so
+// it can detect a phone/email match that would cross sources and skip it.
+const PROVENANCE_FIELDS = ['lyfeId', 'mktrLeadsId'];
+
+// Single shared advisory lock across ALL agent syncs (Lyfe + mktr-leads). Both
+// mutate the same `users` table and the cross-source conflict check reads rows
+// owned by the other source, so the two syncs must never run concurrently — a
+// shared key (not per-adapter) serialises them. Stable across sessions, per-DB.
+const ADVISORY_LOCK_KEY = 'agent_sync';
+
 // ─── Backwards-compat exports ──────────────────────────────────────────────
 // Existing callers (lyfeAgentController, prospectService, etc.) import these
 // names directly. Keep them working as thin shims to the Lyfe adapter so we
@@ -85,7 +96,172 @@ function toLegacyShape(externalAgent) {
   };
 }
 
+/**
+ * One-source-per-user guard (pure). Given a local `users` row matched during a
+ * sync, return the name of a CONFLICTING provenance column — the other source's
+ * id is already set, so attaching this source's id would violate the
+ * single-provenance CHECK and create an ambiguous dual-source row — or null if
+ * the row is safe to attach.
+ *
+ * An externalId match is same-source and always safe (null). Only a phone/email
+ * match onto a row owned by a different source is a conflict.
+ *
+ * @param {object|null} existing               matched local user row
+ * @param {boolean}     matchedByExternalId     true if matched via this source's id
+ * @param {string[]}    otherProvenanceFields   provenance columns of OTHER sources
+ * @returns {string|null} conflicting field name, or null if safe to attach
+ */
+export function provenanceConflictField(existing, matchedByExternalId, otherProvenanceFields) {
+  if (!existing || matchedByExternalId) return null;
+  return otherProvenanceFields.find((f) => existing[f]) || null;
+}
+
+/** Split a display name into firstName/lastName the way the create path does. */
+function splitFullName(fullName) {
+  const nameParts = (fullName || '').trim().split(/\s+/);
+  return {
+    firstName: nameParts[0] || null,
+    lastName: nameParts.slice(1).join(' ') || null,
+  };
+}
+
+/**
+ * Compute the update payload for one matched (existing local row, upstream
+ * agent) pair — pure, so the per-adapter semantics are unit-testable without a
+ * DB. Two adapter flags branch the behaviour:
+ *
+ *   authoritativeProfile — upstream OWNS profile fields: overwrite fullName
+ *     (+ re-derived firstName/lastName), email, and companyName←agency when
+ *     they differ. Never null-out email (upstream null ≠ "clear it"). Legacy
+ *     (Lyfe) keeps fill-only-when-null + @placeholder.local replacement.
+ *
+ *   mirrorsIsActive — upstream rows carry a meaningful isActive: mirror flips
+ *     both ways (deactivate AND reactivate). Legacy adapters fetch active-only
+ *     rosters, so absence — handled by the deactivation phase — is their only
+ *     inactive signal.
+ *
+ * Phone is fill-only for everyone: it's a matching key and unique locally.
+ * pending_deletion_at clears whenever the agent is present upstream at all.
+ */
+export function computeSyncUpdate({ adapter, existing, ea, normalizedPhone }) {
+  const authoritative = adapter.authoritativeProfile === true;
+  const updateData = {};
+
+  if (ea.externalId && !existing[adapter.localIdField]) {
+    updateData[adapter.localIdField] = String(ea.externalId);
+  }
+
+  if (ea.fullName && (authoritative ? existing.fullName !== ea.fullName : !existing.fullName)) {
+    updateData.fullName = ea.fullName;
+    if (authoritative) {
+      const { firstName, lastName } = splitFullName(ea.fullName);
+      updateData.firstName = firstName;
+      updateData.lastName = lastName;
+    }
+  }
+
+  // Backfill upstream role onto pre-Phase-2 rows (external_role was null
+  // before migration 025). Once set, sync keeps it in sync if upstream
+  // changes role.
+  if (ea.externalRole && existing.external_role !== ea.externalRole) {
+    updateData.external_role = ea.externalRole;
+  }
+
+  // Legacy: fill when null or replace synthetic @placeholder.local emails.
+  // Authoritative: overwrite on any difference (but never null-out).
+  if (
+    ea.email &&
+    (authoritative
+      ? existing.email !== ea.email
+      : !existing.email || existing.email.endsWith('@placeholder.local'))
+  ) {
+    updateData.email = ea.email;
+  }
+
+  if (ea.phone && !existing.phone) {
+    updateData.phone = normalizedPhone;
+  }
+
+  // agency → companyName. Sync-owned for authoritative rows, so mirroring a
+  // cleared upstream agency (null) is intentional.
+  if (authoritative && ea.agency !== undefined && (ea.agency || null) !== (existing.companyName || null)) {
+    updateData.companyName = ea.agency || null;
+  }
+
+  if (adapter.mirrorsIsActive === true && typeof ea.isActive === 'boolean' && existing.isActive !== ea.isActive) {
+    updateData.isActive = ea.isActive;
+  }
+
+  // Present upstream (in any state) → cancel a pending deletion.
+  if (existing.pending_deletion_at) {
+    updateData.pending_deletion_at = null;
+  }
+
+  return updateData;
+}
+
 // ─── Sync orchestrator ─────────────────────────────────────────────────────
+
+/**
+ * Run one adapter's sync under the shared advisory lock.
+ *
+ * ─── Concurrency guard (FMEA F08) ────────────────────────────────────
+ * Prevents two orchestrator runs from racing — e.g. the Lyfe cron firing while
+ * the mktr-leads cron (or a manual /api/.../agents/sync request) is in flight.
+ * The hashtext-based key is stable across sessions, scoped per-DB, and SHARED
+ * across all sources so the two syncs never mutate `users` concurrently.
+ * Returns cleanly with `locked:false` if another session holds it, so a
+ * cron-triggered run doesn't spam errors during manual ops.
+ *
+ * The lock is held for the lifetime of a TRANSACTION (`pg_try_advisory_xact_lock`)
+ * so it is bound to a single connection and auto-released on commit/rollback.
+ * The previous session-level `pg_advisory_lock` + manual `pg_advisory_unlock`
+ * leaked under Sequelize's connection pool: the unlock frequently ran on a
+ * DIFFERENT pooled connection than the acquire, so it was a no-op and the lock
+ * stayed held. That made the mktr-leads sync skip with `lock_held` when it ran
+ * right after the Lyfe sync on the same cron tick. runSync's own reads/writes
+ * use pool connections (committed independently); lockTx exists only to hold the
+ * lock for the duration.
+ *
+ * `options.wait = true` switches from try-lock (skip when held — right for the
+ * cron, where the next tick retries) to a BLOCKING `pg_advisory_xact_lock`
+ * bounded by lock_timeout. Management actions use this: after writing to the
+ * source app they re-sync to refresh the local mirror, and a silent skip there
+ * would leave the dashboard stale for up to 10 minutes. On timeout Postgres
+ * aborts the wait (SQLSTATE 55P03) and the error propagates to the caller.
+ *
+ * @returns {Promise<{ created: number, updated: number, deactivated: number, hardDeleted: number, skipped: number, total: number, locked?: boolean }>}
+ */
+async function syncWithLock(adapterId, { wait = false } = {}) {
+  const adapter = adapterRegistry.get(adapterId);
+  const localIdField = adapter.localIdField;
+  const startedAt = Date.now();
+
+  return await sequelize.transaction(async (lockTx) => {
+    if (wait) {
+      await sequelize.query(`SET LOCAL lock_timeout = '15s'`, { transaction: lockTx });
+      await sequelize.query(
+        `SELECT pg_advisory_xact_lock(hashtext(:key))`,
+        { replacements: { key: ADVISORY_LOCK_KEY }, transaction: lockTx }
+      );
+    } else {
+      const [{ locked }] = await sequelize.query(
+        `SELECT pg_try_advisory_xact_lock(hashtext(:key)) AS locked`,
+        { replacements: { key: ADVISORY_LOCK_KEY }, type: sequelize.QueryTypes.SELECT, transaction: lockTx }
+      );
+      if (!locked) {
+        logger.info(
+          { event: 'agent_sync_skipped', adapter: adapter.id, reason: 'lock_held' },
+          '[AgentSync] another sync run is in progress — skipping'
+        );
+        return { created: 0, updated: 0, deactivated: 0, hardDeleted: 0, skipped: 0, total: 0, locked: false };
+      }
+    }
+
+    // Lock auto-releases when this transaction commits (or rolls back on throw).
+    return await runSync(adapter, localIdField, startedAt);
+  });
+}
 
 /**
  * Sync agents from Lyfe into the local User table.
@@ -93,47 +269,23 @@ function toLegacyShape(externalAgent) {
  * Find-or-creates local users (matched by lyfeId → phone → email),
  * updates stale records, deactivates agents no longer present upstream.
  *
- * Phase 1: hard-coded to the 'lyfe' adapter. Phase 3 generalises this to
- * iterate over `adapterRegistry.list()` once a platform_id column exists
- * on `users` to disambiguate origin.
+ * @returns {Promise<{ created: number, updated: number, deactivated: number, skipped: number, total: number }>}
+ */
+export async function syncAgentsFromLyfe(options = {}) {
+  return syncWithLock('lyfe', options);
+}
+
+/**
+ * Sync agents from mktr-leads into the local User table — same contract as
+ * {@link syncAgentsFromLyfe}, keyed on `mktrLeadsId`. Shares the advisory lock
+ * so it never races the Lyfe sync. A phone/email match onto a Lyfe-owned row is
+ * SKIPPED (one source per user), never merged. Throws if the mktr-leads env is
+ * not configured (the client raises a 500) — callers env-gate before invoking.
  *
  * @returns {Promise<{ created: number, updated: number, deactivated: number, skipped: number, total: number }>}
  */
-export async function syncAgentsFromLyfe() {
-  const adapter = adapterRegistry.get('lyfe');
-  const localIdField = adapter.localIdField;
-  const startedAt = Date.now();
-
-  // ─── Concurrency guard (FMEA F08) ────────────────────────────────────
-  // Prevents two orchestrator runs from racing — e.g., the periodic cron
-  // firing while a manual /api/lyfe/agents/sync request is in flight. The
-  // hashtext-based key is stable across sessions, scoped per-DB.
-  // Returns false if another session holds the lock; we exit cleanly and
-  // log so the cron-triggered run doesn't spam errors during manual ops.
-  const ADVISORY_LOCK_KEY = 'agent_sync';
-  const [{ locked }] = await sequelize.query(
-    `SELECT pg_try_advisory_lock(hashtext(:key)) AS locked`,
-    { replacements: { key: ADVISORY_LOCK_KEY }, type: sequelize.QueryTypes.SELECT }
-  );
-  if (!locked) {
-    logger.info(
-      { event: 'agent_sync_skipped', adapter: adapter.id, reason: 'lock_held' },
-      '[AgentSync] another sync run is in progress — skipping'
-    );
-    return { created: 0, updated: 0, deactivated: 0, hardDeleted: 0, skipped: 0, total: 0, locked: false };
-  }
-
-  try {
-    return await runSync(adapter, localIdField, startedAt);
-  } finally {
-    // Always release the advisory lock, even if runSync throws.
-    await sequelize.query(
-      `SELECT pg_advisory_unlock(hashtext(:key))`,
-      { replacements: { key: ADVISORY_LOCK_KEY } }
-    ).catch((err) => {
-      logger.warn({ err, lockKey: ADVISORY_LOCK_KEY }, '[AgentSync] failed to release advisory lock');
-    });
-  }
+export async function syncAgentsFromMktrLeads(options = {}) {
+  return syncWithLock('mktr_leads', options);
 }
 
 /**
@@ -153,8 +305,10 @@ async function runSync(adapter, localIdField, startedAt) {
     allAgents = await User.findAll({
       where: { role: 'agent' },
       attributes: [
-        'id', localIdField, 'phone', 'email', 'firstName', 'lastName',
-        'fullName', 'isActive', 'external_role', 'pending_deletion_at',
+        // Both provenance fields (not just localIdField) so the loop can detect
+        // a phone/email match that would cross sources and skip it.
+        'id', ...PROVENANCE_FIELDS, 'phone', 'email', 'firstName', 'lastName',
+        'fullName', 'companyName', 'isActive', 'external_role', 'pending_deletion_at',
       ],
     });
   } catch (err) {
@@ -168,11 +322,15 @@ async function runSync(adapter, localIdField, startedAt) {
     throw err;
   }
 
+  // byExternalId keys on THIS source's id only, so an externalId match is
+  // always same-source and safe to merge. The other source's column(s) are the
+  // ones a phone/email match must not collide with.
   const byExternalId = new Map(
     allAgents.filter((a) => a[localIdField]).map((a) => [a[localIdField], a])
   );
   const byPhone = new Map(allAgents.filter((a) => a.phone).map((a) => [a.phone, a]));
   const byEmail = new Map(allAgents.filter((a) => a.email).map((a) => [a.email.toLowerCase(), a]));
+  const otherProvenanceFields = PROVENANCE_FIELDS.filter((f) => f !== localIdField);
 
   let created = 0;
   let updated = 0;
@@ -185,79 +343,110 @@ async function runSync(adapter, localIdField, startedAt) {
     }
 
     const normalizedPhone = ea.phone ? String(ea.phone).replace(/\D/g, '') : null;
-    let existing =
-      (ea.externalId ? byExternalId.get(String(ea.externalId)) : null) ||
+    const externalIdMatch = ea.externalId ? byExternalId.get(String(ea.externalId)) : null;
+    const phoneEmailMatch =
       (normalizedPhone ? byPhone.get(normalizedPhone) : null) ||
       (ea.email ? byEmail.get(ea.email.toLowerCase()) : null);
+    let existing = externalIdMatch || phoneEmailMatch;
 
-    if (existing) {
-      const updateData = {};
-      if (ea.externalId && !existing[localIdField]) updateData[localIdField] = String(ea.externalId);
-      if (ea.fullName && !existing.fullName) updateData.fullName = ea.fullName;
-      // Backfill upstream role onto pre-Phase-2 rows (external_role was
-      // null before migration 025). Once set, sync keeps it in sync if
-      // upstream changes role.
-      if (ea.externalRole && existing.external_role !== ea.externalRole) {
-        updateData.external_role = ea.externalRole;
-      }
-      // Replace synthetic @placeholder.local emails (legacy from pre-Phase-2)
-      // when upstream now provides a real one. Don't overwrite a real email.
-      if (ea.email && (!existing.email || existing.email.endsWith('@placeholder.local'))) {
-        updateData.email = ea.email;
-      }
-      if (ea.phone && !existing.phone) {
-        updateData.phone = normalizedPhone;
-      }
-      // If the agent had been marked for deletion and is back in the
-      // upstream set, clear the timer.
-      if (existing.pending_deletion_at) {
-        updateData.pending_deletion_at = null;
-      }
-
-      if (Object.keys(updateData).length > 0) {
-        await existing.update(updateData);
-        updated++;
-      } else {
-        skipped++;
-      }
-    } else {
-      const nameParts = (ea.fullName || '').trim().split(/\s+/);
-      const firstName = nameParts[0] || null;
-      const lastName = nameParts.slice(1).join(' ') || null;
-
-      await User.create({
-        [localIdField]: ea.externalId ? String(ea.externalId) : null,
-        // Post-migration 025 email is nullable. Don't fabricate
-        // @placeholder.local — leave NULL so downstream UIs render '(no
-        // email)' instead of a synthetic value that looks real.
-        email: ea.email || null,
-        firstName,
-        lastName,
-        fullName: ea.fullName || null,
-        phone: normalizedPhone,
-        role: 'agent',
-        external_role: ea.externalRole || null,
-        isActive: true,
-        emailVerified: false,
-        approvalStatus: 'approved',
+    // One-source-per-user (Codex review): a phone/email match that lands on a
+    // row already owned by a DIFFERENT external source must NOT be merged — it
+    // would violate the single-provenance CHECK and create an ambiguous
+    // dual-source row that each sync could then fight over (cross-source
+    // deactivation). An externalId match is same-source and exempt. Skip +
+    // structured-alert so the collision is visible without blocking the run.
+    const conflictingField = provenanceConflictField(existing, Boolean(externalIdMatch), otherProvenanceFields);
+    if (conflictingField) {
+      skipped++;
+      logger.warn(
+        {
+          event: 'agent_sync_provenance_conflict',
+          adapter: adapter.id,
+          localIdField,
+          conflictingField,
+          matchedUserId: existing.id,
+        },
+        `[AgentSync] upstream agent's phone/email matches a ${conflictingField}-owned user — skipping to preserve one-source-per-user`
+      );
+      Sentry.captureMessage('agent_sync_provenance_conflict', {
+        level: 'warning',
+        tags: { component: 'agent_sync', adapter: adapter.id },
+        extra: { conflictingField, matchedUserId: existing.id, localIdField },
       });
-      created++;
+      continue;
+    }
+
+    try {
+      if (existing) {
+        // Per-adapter fill-vs-overwrite + is_active mirroring semantics live in
+        // the pure helper (see its doc block).
+        const updateData = computeSyncUpdate({ adapter, existing, ea, normalizedPhone });
+
+        if (Object.keys(updateData).length > 0) {
+          await existing.update(updateData);
+          updated++;
+        } else {
+          skipped++;
+        }
+      } else {
+        const { firstName, lastName } = splitFullName(ea.fullName);
+
+        await User.create({
+          [localIdField]: ea.externalId ? String(ea.externalId) : null,
+          // Post-migration 025 email is nullable. Don't fabricate
+          // @placeholder.local — leave NULL so downstream UIs render '(no
+          // email)' instead of a synthetic value that looks real.
+          email: ea.email || null,
+          firstName,
+          lastName,
+          fullName: ea.fullName || null,
+          phone: normalizedPhone,
+          role: 'agent',
+          external_role: ea.externalRole || null,
+          companyName: adapter.authoritativeProfile === true ? ea.agency || null : null,
+          // Mirroring adapters list inactive rows too — honour their state.
+          // Legacy adapters send active-only rosters, so created = active.
+          isActive: adapter.mirrorsIsActive === true ? ea.isActive !== false : true,
+          emailVerified: false,
+          approvalStatus: 'approved',
+        });
+        created++;
+      }
+    } catch (err) {
+      // One bad row (e.g. a unique-constraint collision on an authoritative
+      // email overwrite) must not abort the rest of the run.
+      skipped++;
+      logger.error(
+        { event: 'agent_sync_row_failed', adapter: adapter.id, externalId: ea.externalId, err },
+        '[AgentSync] row upsert failed — skipping'
+      );
     }
   }
 
   // ─── Two-phase delete-aware deactivation (FMEA F09) ────────────────────
+  // Keyed on ABSENCE from the fetched upstream set. What absence means is
+  // adapter-dependent:
+  //   - legacy active-only adapters (Lyfe): the set is the ACTIVE roster, so a
+  //     deactivated upstream agent is "absent" → deactivated (and eventually
+  //     deleted) locally. Their only inactive signal is absence.
+  //   - mirrorsIsActive adapters (mktr-leads): the set contains active AND
+  //     inactive rows — is_active flips are mirrored row-wise in the upsert
+  //     loop above, and only truly-gone rows (account deleted, role promoted
+  //     to admin) reach this block. A merely-deactivated agent is present
+  //     upstream, so it is never pending-deleted — protecting its CASCADE-
+  //     linked lead_package_assignments from silent destruction.
   // Phase 1: deactivate agents missing upstream. If they have no attached
   // prospects, also mark pending_deletion_at = NOW().
   // Phase 2: agents whose pending_deletion_at is older than DELETE_GRACE_MS
   // AND still missing upstream AND still no prospects → hard DELETE.
   // Agents with attached prospects are NEVER hard-deleted; they remain
   // inactive forever to preserve lead-history FK integrity.
-  const activeExternalIds = externalAgents.map((a) => String(a.externalId)).filter(Boolean);
+  const upstreamExternalIds = externalAgents.map((a) => String(a.externalId)).filter(Boolean);
   let deactivated = 0;
   let hardDeleted = 0;
 
   try {
-    if (activeExternalIds.length > 0) {
+    if (upstreamExternalIds.length > 0) {
       // 1. Bulk-deactivate currently-active agents missing from upstream.
       const [deactivatedCount] = await User.update(
         { isActive: false },
@@ -265,7 +454,7 @@ async function runSync(adapter, localIdField, startedAt) {
           where: {
             role: 'agent',
             isActive: true,
-            [localIdField]: { [Op.notIn]: activeExternalIds, [Op.ne]: null },
+            [localIdField]: { [Op.notIn]: upstreamExternalIds, [Op.ne]: null },
           },
         }
       );
@@ -279,10 +468,10 @@ async function runSync(adapter, localIdField, startedAt) {
           WHERE role = 'agent'
             AND "isActive" = false
             AND "${localIdField}" IS NOT NULL
-            AND "${localIdField}" NOT IN (:activeExternalIds)
+            AND "${localIdField}" NOT IN (:upstreamExternalIds)
             AND pending_deletion_at IS NULL
             AND id NOT IN (SELECT DISTINCT "assignedAgentId" FROM prospects WHERE "assignedAgentId" IS NOT NULL)`,
-        { replacements: { activeExternalIds } }
+        { replacements: { upstreamExternalIds } }
       );
 
       // 3. Hard-delete agents whose grace window expired AND still no
@@ -294,14 +483,14 @@ async function runSync(adapter, localIdField, startedAt) {
              WHERE role = 'agent'
                AND "isActive" = false
                AND "${localIdField}" IS NOT NULL
-               AND "${localIdField}" NOT IN (:activeExternalIds)
+               AND "${localIdField}" NOT IN (:upstreamExternalIds)
                AND pending_deletion_at IS NOT NULL
                AND pending_deletion_at < NOW() - INTERVAL '${DELETE_GRACE_HOURS} hours'
                AND id NOT IN (SELECT DISTINCT "assignedAgentId" FROM prospects WHERE "assignedAgentId" IS NOT NULL)
             RETURNING id
          )
          SELECT COUNT(*)::int AS count FROM deleted`,
-        { replacements: { activeExternalIds }, type: sequelize.QueryTypes.SELECT }
+        { replacements: { upstreamExternalIds }, type: sequelize.QueryTypes.SELECT }
       );
       hardDeleted = deletedCount || 0;
     }

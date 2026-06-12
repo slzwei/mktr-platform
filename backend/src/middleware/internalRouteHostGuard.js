@@ -18,6 +18,7 @@ const BLOCKED_PATH_PREFIXES = [
   '/api/devices',
   '/api/users',
   '/api/lyfe',
+  '/api/mktr-leads',
   '/api/webhooks',
   '/api/integrations',
 ];

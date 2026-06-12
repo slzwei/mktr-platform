@@ -69,7 +69,7 @@ export function makeWebhookService(overrides = {}) {
    * Dispatch an event to all active webhook subscribers.
    * Fire-and-forget — does not throw.
    */
-  async function dispatchEvent(eventType, payloadBuilder) {
+  async function dispatchEvent(eventType, payloadBuilder, options = {}) {
     if (String(process.env.WEBHOOK_ENABLED || 'false').toLowerCase() !== 'true') {
       return;
     }
@@ -80,10 +80,30 @@ export function makeWebhookService(overrides = {}) {
       });
 
       // Filter to subscribers interested in this event type
-      const matched = subscribers.filter(sub => {
+      let matched = subscribers.filter(sub => {
         const events = sub.events || [];
         return events.includes(eventType);
       });
+
+      // Destination-aware delivery: when a caller passes `destination`, deliver
+      // ONLY to subscribers tagged for that app (metadata.destination) so a lead's
+      // PII never crosses apps. A null/unknown destination is DEFAULT-DENIED (e.g.
+      // an assignee with no Lyfe/mktr-leads provenance, like the System Agent).
+      // Callers that omit `destination` keep the legacy event-type-only behaviour.
+      if ('destination' in options) {
+        const { destination } = options;
+        const eventMatchCount = matched.length;
+        matched = destination
+          ? matched.filter(sub => (sub.metadata?.destination || null) === destination)
+          : [];
+        if (eventMatchCount > 0 && matched.length === 0) {
+          d.logger.warn('[Webhook] lead_webhook_default_denied', {
+            event: 'lead_webhook_default_denied',
+            eventType,
+            destination: destination || null,
+          });
+        }
+      }
 
       if (matched.length === 0) {
         d.logger.debug('[Webhook] No active subscribers for event', { eventType });

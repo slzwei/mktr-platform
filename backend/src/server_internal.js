@@ -104,7 +104,10 @@ export const init = async (app) => {
         ? parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 200
         : parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000000;
     },
-    skip: (req) => !isProd,
+    // Exempt server-to-server webhooks under /api/integrations/lyfe/ — they are
+    // HMAC-authenticated (not IP-based), and a Supabase pg_net burst or a
+    // reconciliation backfill must not be throttled by the public IP limiter.
+    skip: (req) => !isProd || req.originalUrl.startsWith('/api/integrations/lyfe/'),
     message: 'Too many requests from this IP, please try again later.',
   });
   // Ensure we decode JWT (if present) before limiter so skip() can see admin

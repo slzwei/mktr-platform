@@ -30,6 +30,33 @@ export function normalizePhone(phone) {
 }
 
 /**
+ * Destination app for a mirrored agent, derived from its provenance columns.
+ *   lyfeId set       -> 'lyfe'
+ *   mktrLeadsId set  -> 'mktr_leads'
+ *   neither          -> null  (local-only, e.g. System Agent → not deliverable)
+ * The DB CHECK (users_single_provenance_chk) guarantees at most one is set.
+ */
+export function destinationForAgent(agent) {
+  if (!agent) return null;
+  if (agent.lyfeId) return 'lyfe';
+  if (agent.mktrLeadsId) return 'mktr_leads';
+  return null;
+}
+
+/**
+ * The external agent id the destination app's receiver matches on.
+ * NEVER falls back to the internal MKTR users.id — that id is meaningless to the
+ * receivers (Lyfe matches users.id by lyfeId; mktr-leads by mktr_user_id), so a
+ * fallback would guarantee a 422 and a dropped lead.
+ */
+export function externalIdForDestination(agent, destination) {
+  if (!agent) return null;
+  if (destination === 'lyfe') return agent.lyfeId || null;
+  if (destination === 'mktr_leads') return agent.mktrLeadsId || null;
+  return null;
+}
+
+/**
  * Build the webhook payload for a 'lead.created' event.
  */
 export function buildLeadCreatedPayload(prospect, routingMode, agentForWebhook, assignedAgentId, sourceCampaign, sourceQrTag, agentGroup) {
@@ -104,7 +131,7 @@ export function buildLeadAssignedPayload(prospect, agent, prospectWithCampaign) 
         createdAt: prospect.createdAt
       },
       routing: {
-        agentExternalId: agent.lyfeId || agent.id,
+        agentExternalId: externalIdForDestination(agent, destinationForAgent(agent)),
         agentName: [agent.firstName, agent.lastName].filter(Boolean).join(' '),
         agentEmail: agent.email,
         agentPhone: agent.phone

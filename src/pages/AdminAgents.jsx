@@ -28,9 +28,11 @@ import AgentFilters from '../components/agents/AgentFilters';
 import AgentTable from '../components/agents/AgentTable';
 import ManagePackagesDialog from '../components/agents/ManagePackagesDialog';
 import InviteAgentDialog from '../components/agents/InviteAgentDialog';
+import MktrLeadsAgentDialog from '../components/agents/MktrLeadsAgentDialog';
 import AgentDetailsDialog from '../components/agents/AgentDetailsDialog';
 import AssignPackageDialog from '../components/agents/AssignPackageDialog';
 import useAgentActions from '@/hooks/useAgentActions';
+import { isMktrLeadsAgent, isLocalAgent } from '@/lib/agentSource';
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
@@ -68,6 +70,7 @@ export default function AdminAgents() {
  // --- Local UI state ---
  const [selectedAgentIds, setSelectedAgentIds] = useState([]);
  const [isFormOpen, setIsFormOpen] = useState(false);
+ const [isMktrFormOpen, setIsMktrFormOpen] = useState(false);
  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
  const [isPackageDialogOpen, setIsPackageDialogOpen] = useState(false);
  const [selectedAgent, setSelectedAgent] = useState(null);
@@ -88,7 +91,11 @@ export default function AdminAgents() {
 
  let matchesStatus = true;
  if (statusFilter !== 'all') {
+ // Pending = locally-invited awaiting registration. Mirrored rows (Lyfe /
+ // MKTR Leads) have no local password + emailVerified=false by
+ // construction, so they must be excluded or they all read as pending.
  const isPending =
+ isLocalAgent(agent) &&
  agent?.isActive === true &&
  (agent?.status === 'pending_registration' || !!agent?.invitationToken || agent?.emailVerified === false);
  if (statusFilter === 'pending') matchesStatus = isPending;
@@ -121,8 +128,10 @@ export default function AdminAgents() {
  const showingTo = Math.min(safePage * pageSize, filteredAgents.length);
 
  // --- Selection handlers ---
+ // Selection drives bulk-delete, which only applies to legacy LOCAL rows —
+ // mirrored agents are owned by their source app (rows render disabled boxes).
  const handleSelectAll = (checked) => {
- setSelectedAgentIds(checked ? filteredAgents.map((a) => a.id) : []);
+ setSelectedAgentIds(checked ? filteredAgents.filter(isLocalAgent).map((a) => a.id) : []);
  };
 
  const handleSelectAgent = (agentId, checked) => {
@@ -130,9 +139,17 @@ export default function AdminAgents() {
  };
 
  // --- Dialog openers ---
+ // Inviting a NEW agent always goes through MKTR Leads (the local invite
+ // minted rows no app could deliver leads to). Editing routes by source:
+ // MKTR-Leads-owned rows use the write-back dialog; legacy local rows keep
+ // the original form. (Lyfe rows: Edit is disabled in the table.)
  const handleOpenForm = (agent = null) => {
  setSelectedAgent(agent);
+ if (!agent || isMktrLeadsAgent(agent)) {
+ setIsMktrFormOpen(true);
+ } else {
  setIsFormOpen(true);
+ }
  };
 
  const handleOpenDetails = (agent) => {
@@ -150,7 +167,7 @@ export default function AdminAgents() {
  actions.openManagePackagesDialog(agent);
  };
 
- // --- Form submit wrapper ---
+ // --- Form submit wrappers ---
  const handleFormSubmit = async (formData) => {
  try {
  await actions.handleFormSubmit(formData, selectedAgent);
@@ -158,6 +175,17 @@ export default function AdminAgents() {
  setSelectedAgent(null);
  } catch (error) {
  console.error('Error saving agent:', error);
+ throw error;
+ }
+ };
+
+ const handleMktrFormSubmit = async (formData, agent) => {
+ try {
+ await actions.handleMktrLeadsSubmit(formData, agent);
+ setIsMktrFormOpen(false);
+ setSelectedAgent(null);
+ } catch (error) {
+ console.error('Error saving MKTR Leads agent:', error);
  throw error;
  }
  };
@@ -198,7 +226,7 @@ export default function AdminAgents() {
  )}
  <Button variant="outline" onClick={actions.handleSyncFromLyfe} disabled={actions.syncing}>
  <RefreshCw className={`w-4 h-4 mr-2 ${actions.syncing ? 'animate-spin' : ''}`} />
- {actions.syncing ? 'Syncing...' : 'Sync from Lyfe'}
+ {actions.syncing ? 'Syncing...' : 'Sync Agents'}
  </Button>
  <Button onClick={() => handleOpenForm()} className="bg-primary hover:bg-primary/90">
  <Plus className="w-5 h-5 mr-2"/>
@@ -323,6 +351,13 @@ export default function AdminAgents() {
  onSubmit={handleFormSubmit}
  />
 
+ <MktrLeadsAgentDialog
+ open={isMktrFormOpen}
+ onOpenChange={setIsMktrFormOpen}
+ agent={selectedAgent && isMktrLeadsAgent(selectedAgent) ? selectedAgent : null}
+ onSubmit={handleMktrFormSubmit}
+ />
+
  <AgentDetailsDialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen} agent={selectedAgent} />
 
  <AssignPackageDialog
@@ -355,7 +390,7 @@ export default function AdminAgents() {
  title={actions.confirmDialog.title}
  description={actions.confirmDialog.description}
  onConfirm={actions.confirmDialog.onConfirm}
- confirmText={actions.confirmDialog.destructive ? 'Delete' : 'OK'}
+ confirmText={actions.confirmDialog.confirmText || (actions.confirmDialog.destructive ? 'Delete' : 'OK')}
  destructive={actions.confirmDialog.destructive}
  />
  </div>

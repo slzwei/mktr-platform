@@ -20,6 +20,7 @@ vi.mock('@/api/client', () => ({
  },
  apiClient: {
  post: vi.fn(),
+ patch: vi.fn(),
  delete: vi.fn(),
  },
 }));
@@ -49,9 +50,15 @@ describe('useAgentActions', () => {
 
  // --- handleSyncFromLyfe ---
 
- it('handleSyncFromLyfe success: shows toast and invalidates queries', async () => {
- apiClient.post.mockResolvedValue({
- data: { created: 2, updated: 1, deactivated: 0, skipped: 3 },
+ it('handleSyncFromLyfe success: syncs BOTH sources, aggregates the toast, invalidates queries', async () => {
+ apiClient.post.mockImplementation((url) => {
+ if (url === '/lyfe/agents/sync') {
+ return Promise.resolve({ data: { created: 2, updated: 1, deactivated: 0, skipped: 3 } });
+ }
+ if (url === '/mktr-leads/agents/sync') {
+ return Promise.resolve({ data: { created: 1, updated: 0, deactivated: 0, skipped: 2 } });
+ }
+ return Promise.reject(new Error(`unexpected ${url}`));
  });
 
  const { result } = renderHook(() => useAgentActions({ queryClient }));
@@ -61,10 +68,29 @@ describe('useAgentActions', () => {
  });
 
  expect(apiClient.post).toHaveBeenCalledWith('/lyfe/agents/sync');
- expect(toast.success).toHaveBeenCalledWith('2 added, 1 updated, 3 unchanged');
+ expect(apiClient.post).toHaveBeenCalledWith('/mktr-leads/agents/sync');
+ expect(toast.success).toHaveBeenCalledWith('3 added, 1 updated, 5 unchanged');
  expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['agents'] });
  expect(result.current.syncing).toBe(false);
  expect(result.current.lastSyncTime).toBeTruthy();
+ });
+
+ it('handleSyncFromLyfe tolerates an unconfigured MKTR Leads source (503) silently', async () => {
+ apiClient.post.mockImplementation((url) => {
+ if (url === '/lyfe/agents/sync') {
+ return Promise.resolve({ data: { created: 2, updated: 0, deactivated: 0, skipped: 0 } });
+ }
+ return Promise.reject(Object.assign(new Error('not configured'), { status: 503 }));
+ });
+
+ const { result } = renderHook(() => useAgentActions({ queryClient }));
+
+ await act(async () => {
+ await result.current.handleSyncFromLyfe();
+ });
+
+ expect(toast.success).toHaveBeenCalledWith('2 added');
+ expect(toast.error).not.toHaveBeenCalled();
  });
 
  it('handleSyncFromLyfe error: shows error toast', async () => {
@@ -300,5 +326,107 @@ describe('useAgentActions', () => {
 
  expect(result.current.editingAssignmentId).toBeNull();
  expect(result.current.editLeadCount).toBe('');
+ });
+
+ // --- MKTR Leads management (source-of-truth write-backs) ---
+
+ describe('handleMktrLeadsSubmit', () => {
+ it('invites via POST /mktr-leads/agents/invite when no agent', async () => {
+ apiClient.post.mockResolvedValue({ success: true });
+ const { result } = renderHook(() => useAgentActions({ queryClient }));
+
+ await act(async () => {
+ await result.current.handleMktrLeadsSubmit(
+ { phone: '91234567', full_name: 'Ada Tan', email: '', agency: 'Acme' },
+ null,
+ );
+ });
+
+ expect(apiClient.post).toHaveBeenCalledWith('/mktr-leads/agents/invite', {
+ phone: '91234567',
+ full_name: 'Ada Tan',
+ email: null,
+ agency: 'Acme',
+ });
+ expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['agents'] });
+ });
+
+ it('edits via PATCH /mktr-leads/agents/:mktrLeadsId for an owned agent', async () => {
+ apiClient.patch.mockResolvedValue({ success: true });
+ const { result } = renderHook(() => useAgentActions({ queryClient }));
+
+ await act(async () => {
+ await result.current.handleMktrLeadsSubmit(
+ { full_name: 'New Name', email: 'new@x.com', agency: '' },
+ { id: 'u1', mktrLeadsId: 'mu_12345678' },
+ );
+ });
+
+ expect(apiClient.patch).toHaveBeenCalledWith('/mktr-leads/agents/mu_12345678', {
+ full_name: 'New Name',
+ email: 'new@x.com',
+ agency: null,
+ });
+ });
+ });
+
+ describe('handleToggleStatus (source-aware)', () => {
+ it('MKTR Leads agent: confirms (with app-lockout warning) then POSTs deactivate', async () => {
+ apiClient.post.mockResolvedValue({ success: true });
+ const { result } = renderHook(() => useAgentActions({ queryClient }));
+ const agent = { id: 'u1', mktrLeadsId: 'mu_12345678', isActive: true, fullName: 'Ada' };
+
+ await act(async () => {
+ await result.current.handleToggleStatus(agent);
+ });
+ expect(result.current.confirmDialog.open).toBe(true);
+ expect(result.current.confirmDialog.title).toMatch(/deactivate/i);
+ expect(result.current.confirmDialog.description).toMatch(/no longer be able to sign into/i);
+ expect(result.current.confirmDialog.confirmText).toBe('Deactivate');
+
+ await act(async () => {
+ await result.current.confirmDialog.onConfirm();
+ });
+ expect(apiClient.post).toHaveBeenCalledWith('/mktr-leads/agents/mu_12345678/deactivate');
+ expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['agents'] });
+ });
+
+ it('MKTR Leads agent: reactivate path POSTs activate', async () => {
+ apiClient.post.mockResolvedValue({ success: true });
+ const { result } = renderHook(() => useAgentActions({ queryClient }));
+ const agent = { id: 'u1', mktrLeadsId: 'mu_12345678', isActive: false, fullName: 'Ada' };
+
+ await act(async () => {
+ await result.current.handleToggleStatus(agent);
+ });
+ expect(result.current.confirmDialog.confirmText).toBe('Reactivate');
+ await act(async () => {
+ await result.current.confirmDialog.onConfirm();
+ });
+ expect(apiClient.post).toHaveBeenCalledWith('/mktr-leads/agents/mu_12345678/activate');
+ });
+
+ it('Lyfe agent: refuses with an error toast (managed in Lyfe)', async () => {
+ const { result } = renderHook(() => useAgentActions({ queryClient }));
+
+ await act(async () => {
+ await result.current.handleToggleStatus({ id: 'u1', lyfeId: 'L1', isActive: true });
+ });
+
+ expect(toast.error).toHaveBeenCalledWith('This agent is managed in the Lyfe app');
+ expect(User.update).not.toHaveBeenCalled();
+ expect(apiClient.post).not.toHaveBeenCalled();
+ });
+
+ it('legacy local agent: keeps the original User.update path', async () => {
+ User.update.mockResolvedValue({ success: true });
+ const { result } = renderHook(() => useAgentActions({ queryClient }));
+
+ await act(async () => {
+ await result.current.handleToggleStatus({ id: 'u1', isActive: true });
+ });
+
+ expect(User.update).toHaveBeenCalledWith('u1', { isActive: false });
+ });
  });
 });

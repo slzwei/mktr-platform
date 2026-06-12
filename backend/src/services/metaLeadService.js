@@ -1,11 +1,14 @@
 import crypto from 'crypto';
 import { sequelize, Prospect, IdempotencyKey, User, Campaign } from '../models/index.js';
 import ProspectActivity from '../models/ProspectActivity.js';
-import { resolveAssignedAgentId } from './systemAgent.js';
+import { resolveAssignedAgentId, resolveLeadRouting } from './systemAgent.js';
+import { chargeLeadCredit } from './leadCredits.js';
+import { decideAssignment } from './leadQuota.js';
 import { dispatchEvent } from './webhookService.js';
 import { sendLeadAssignmentEmail } from './mailer.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { destinationForAgent, externalIdForDestination } from './prospectHelpers.js';
 
 const IDEMPOTENCY_SCOPE = 'meta:lead';
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -20,6 +23,9 @@ const defaultDeps = {
   ProspectActivity,
   sequelize,
   resolveAssignedAgentId,
+  resolveLeadRouting,
+  chargeLeadCredit,
+  decideAssignment,
   dispatchEvent,
   sendLeadAssignmentEmail,
   AppError,
@@ -202,19 +208,36 @@ export function makeMetaLeadService(overrides = {}) {
     const campaignId = campaign?.id || null;
 
     let assignedAgentId = null;
+    let routeVia = 'fallback';
     if (campaignId) {
-      assignedAgentId = await d.resolveAssignedAgentId({
+      const routing = await d.resolveLeadRouting({
         reqUser: null,
         requestedAgentId: null,
         campaignId,
         qrTagId: null
       });
+      assignedAgentId = routing.agentId;
+      routeVia = routing.via;
     }
 
     // ── Create prospect in a transaction (with idempotency key) ──
+    // Lead-quota gate: decideAssignment charges authoritatively for a funded gated
+    // route, or quarantines (held) when no funded agent. Meta never best-effort
+    // deducted, so soft campaigns stay deduct-free here.
     const t = await d.sequelize.transaction();
+    let quarantined = false;
 
     try {
+      const decision = await d.decideAssignment({
+        campaign,
+        routing: { agentId: assignedAgentId, via: routeVia },
+        campaignId,
+        transaction: t,
+        charge: d.chargeLeadCredit,
+      });
+      quarantined = decision.action === 'quarantine';
+      assignedAgentId = quarantined ? null : (decision.assignedAgentId ?? null);
+
       const prospect = await d.Prospect.create({
         firstName: parsed.firstName,
         lastName: parsed.lastName,
@@ -229,6 +252,8 @@ export function makeMetaLeadService(overrides = {}) {
         tags: ['meta', 'lead-ad'],
         campaignId,
         assignedAgentId,
+        quarantinedAt: quarantined ? new Date() : null,
+        quarantineReason: quarantined ? decision.quarantineReason : null,
         preferences: {
           contactMethod: parsed.email ? 'email' : 'phone',
           contactTime: '',
@@ -275,21 +300,24 @@ export function makeMetaLeadService(overrides = {}) {
 
       // ── Fire outgoing webhooks (post-commit, fire-and-forget) ──
       let agentForWebhook = null;
+      let metaDestination = null;
       if (assignedAgentId) {
         const agentRecord = await d.User.findByPk(assignedAgentId, {
-          attributes: ['id', 'lyfeId', 'phone', 'email', 'firstName', 'lastName'],
+          attributes: ['id', 'lyfeId', 'mktrLeadsId', 'phone', 'email', 'firstName', 'lastName'],
         });
         if (agentRecord) {
+          metaDestination = destinationForAgent(agentRecord);
           agentForWebhook = {
             phone: agentRecord.phone || null,
             email: agentRecord.email || null,
             name: `${agentRecord.firstName || ''} ${agentRecord.lastName || ''}`.trim(),
-            id: agentRecord.lyfeId || agentRecord.id,
+            id: externalIdForDestination(agentRecord, metaDestination),
           };
         }
       }
 
-      d.dispatchEvent('lead.created', () => ({
+      // Suppress the Lyfe delivery webhook for quarantined (held) leads.
+      if (!quarantined) d.dispatchEvent('lead.created', () => ({
         event: 'lead.created',
         timestamp: new Date().toISOString(),
         data: {
@@ -315,12 +343,14 @@ export function makeMetaLeadService(overrides = {}) {
           source: 'meta_webhook',
           campaign: campaign ? { externalId: campaign.id, name: campaign.name } : null
         }
-      }));
+      }), { destination: metaDestination });
 
       // ── Email notification (fire-and-forget) ──
-      const notifyAgent = assignedAgentId
-        ? await d.User.findByPk(assignedAgentId)
-        : await d.User.findOne({ where: { email: 'system@mktr.sg' } });
+      const notifyAgent = quarantined
+        ? null
+        : assignedAgentId
+          ? await d.User.findByPk(assignedAgentId)
+          : await d.User.findOne({ where: { email: 'system@mktr.sg' } });
 
       if (notifyAgent) {
         const prospectWithCampaign = campaign
@@ -338,7 +368,7 @@ export function makeMetaLeadService(overrides = {}) {
         assignedAgentId,
       });
 
-      return { status: 'created', prospectId: prospect.id };
+      return { status: quarantined ? 'quarantined' : 'created', prospectId: prospect.id };
     } catch (err) {
       await t.rollback();
 

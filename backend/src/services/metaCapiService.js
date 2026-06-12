@@ -16,6 +16,9 @@ const META_GRAPH_VERSION = 'v21.0';
  * The leadSource check + retellCallId + metaLeadgenId combo is defence-in-depth:
  * the wiring only happens at the web-form code path, but the guard runs anyway
  * in case future code paths route Retell or Meta prospects through prospectService.
+ *
+ * Identical eligibility for every event_name we send (Lead, CompleteRegistration):
+ * the prospect's origin is what gates dispatch, not which funnel event fired.
  */
 export function shouldFireCapi(prospect) {
   if (process.env.META_CAPI_ENABLED !== 'true') return false;
@@ -31,6 +34,11 @@ export function shouldFireCapi(prospect) {
 /**
  * Builds the CAPI events payload. Exported for testing.
  *
+ * The event_name defaults to 'Lead' (the original behaviour) and is overridable
+ * via options.eventName so the quiz funnel can dispatch a 'CompleteRegistration'
+ * at the result reveal. The event_id always comes from ctx.eventId — callers pass
+ * the SAME id the browser Pixel fired with so Meta deduplicates Pixel↔CAPI.
+ *
  * PII consent rule:
  *   - hashed em/ph are included only when prospect has marketing consent
  *     (sourceMetadata.consent_contact === true)
@@ -40,6 +48,7 @@ export function shouldFireCapi(prospect) {
 export function _buildPayload(prospect, ctx, options) {
   const meta = prospect.sourceMetadata || {};
   const marketingConsent = meta.consent_contact === true;
+  const eventName = options?.eventName || 'Lead';
 
   const userData = {
     fbp: ctx.fbp || meta.fbp,
@@ -60,8 +69,12 @@ export function _buildPayload(prospect, ctx, options) {
   );
 
   const event = {
-    event_name: 'Lead',
-    event_time: Math.floor(Date.now() / 1000),
+    event_name: eventName,
+    // Delayed down-funnel events (QualifiedLead/ClosedWon, fired when a Lyfe
+    // agent advances the lead days later) back-date event_time to when the
+    // status changed. Meta accepts event_time up to 7 days old. Submit-time
+    // events (Lead/CompleteRegistration) omit ctx.eventTime → now.
+    event_time: ctx.eventTime || Math.floor(Date.now() / 1000),
     event_id: ctx.eventId,
     action_source: 'website',
     event_source_url: ctx.eventSourceUrl || meta.eventSourceUrl || undefined,
@@ -84,17 +97,21 @@ export function _buildPayload(prospect, ctx, options) {
 }
 
 /**
- * Fire-and-forget CAPI Lead dispatch.
+ * Fire-and-forget CAPI conversion dispatch (generic over event_name).
  *
  * Never throws to the caller. Errors land in Sentry + structured logs.
  *
  * @param {object} prospect           Sequelize prospect instance (or plain object with same shape)
- * @param {object} ctx                Request context: { eventId, fbp, fbc, clientIp, clientUserAgent, eventSourceUrl, pixelIdOverride }
+ * @param {object} ctx                Request context: { eventId, fbp, fbc, clientIp, clientUserAgent, eventSourceUrl, pixelIdOverride, eventTime }
+ * @param {object} [options]          { eventName }  — defaults to 'Lead'
  * @param {object} [deps]             Injected dependencies for testing: { fetch }
  * @returns {Promise<object>}         { sent: boolean, ...details }
  */
-export async function sendLeadEvent(prospect, ctx = {}, deps = {}) {
+export async function sendConversionEvent(prospect, ctx = {}, options = {}, deps = {}) {
   const fetchImpl = deps.fetch || globalThis.fetch;
+  const eventName = options.eventName || 'Lead';
+  // Stable log label per event (e.g. capi.lead.sent, capi.complete_registration.sent)
+  const logLabel = eventName.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
 
   if (!shouldFireCapi(prospect)) {
     return { sent: false, reason: 'guarded' };
@@ -104,7 +121,7 @@ export async function sendLeadEvent(prospect, ctx = {}, deps = {}) {
   const accessToken = process.env.META_CAPI_ACCESS_TOKEN;
   const testEventCode = process.env.META_TEST_EVENT_CODE || undefined;
 
-  const payload = _buildPayload(prospect, ctx, { testEventCode });
+  const payload = _buildPayload(prospect, ctx, { testEventCode, eventName });
   const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${pixelId}/events?access_token=${accessToken}`;
 
   try {
@@ -117,12 +134,12 @@ export async function sendLeadEvent(prospect, ctx = {}, deps = {}) {
 
     if (!res.ok) {
       Sentry.captureException(new Error(`CAPI dispatch failed: HTTP ${res.status}`), {
-        tags: { source: 'capi', event_name: 'Lead' },
+        tags: { source: 'capi', event_name: eventName },
         extra: { status: res.status, body, prospect_id: prospect.id },
       });
       logger.warn(
         { status: res.status, body, prospect_id: prospect.id, event_id: ctx.eventId },
-        'capi.lead.failed'
+        `capi.${logLabel}.failed`
       );
       return { sent: false, status: res.status, body };
     }
@@ -134,15 +151,34 @@ export async function sendLeadEvent(prospect, ctx = {}, deps = {}) {
         fbtrace_id: body.fbtrace_id,
         prospect_id: prospect.id,
       },
-      'capi.lead.sent'
+      `capi.${logLabel}.sent`
     );
     return { sent: true, status: res.status, body };
   } catch (err) {
     Sentry.captureException(err, {
-      tags: { source: 'capi', event_name: 'Lead' },
+      tags: { source: 'capi', event_name: eventName },
       extra: { prospect_id: prospect.id, event_id: ctx.eventId },
     });
-    logger.error({ err: err.message, prospect_id: prospect.id }, 'capi.lead.error');
+    logger.error({ err: err.message, prospect_id: prospect.id }, `capi.${logLabel}.error`);
     return { sent: false, error: err.message };
   }
+}
+
+/**
+ * Fire-and-forget CAPI Lead dispatch (form submit / conversion).
+ * Thin wrapper over sendConversionEvent preserving the original signature.
+ */
+export async function sendLeadEvent(prospect, ctx = {}, deps = {}) {
+  return sendConversionEvent(prospect, ctx, { eventName: 'Lead' }, deps);
+}
+
+/**
+ * Fire-and-forget CAPI CompleteRegistration dispatch (quiz result reveal).
+ *
+ * Fired server-side at submit time using the registrationEventId the browser
+ * Pixel fired with at the reveal, so Meta deduplicates the Pixel↔CAPI pair. The
+ * strongest mid-funnel optimisation signal for paid social.
+ */
+export async function sendCompleteRegistrationEvent(prospect, ctx = {}, deps = {}) {
+  return sendConversionEvent(prospect, ctx, { eventName: 'CompleteRegistration' }, deps);
 }

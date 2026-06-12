@@ -11,19 +11,29 @@ import {
   AgentGroupMember,
   sequelize,
 } from '../models/index.js';
-import { resolveAssignedAgentId, getSystemAgentId, resolveLeadAssignment } from './systemAgent.js';
-import { deductLeadCredit, deductExternalLeadBalance } from './leadCredits.js';
+import { resolveAssignedAgentId, resolveLeadRouting, getSystemAgentId, resolveLeadAssignment } from './systemAgent.js';
+import { deductLeadCredit, chargeLeadCredit, deductExternalLeadBalance } from './leadCredits.js';
+import { decideAssignment } from './leadQuota.js';
 import { hasValidExternalConsent } from './externalConsent.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { dispatchEvent } from './webhookService.js';
-import { sendLeadEvent as metaSendLeadEvent } from './metaCapiService.js';
+import {
+  sendLeadEvent as metaSendLeadEvent,
+  sendCompleteRegistrationEvent as metaSendCompleteRegistrationEvent,
+} from './metaCapiService.js';
+import {
+  sendTikTokLeadEvent,
+  sendTikTokCompleteRegistrationEvent,
+} from './tiktokEventsService.js';
 import { logger } from '../utils/logger.js';
 import {
   normalizePhone,
   buildLeadCreatedPayload,
   buildLeadAssignedPayload,
   buildLeadUnassignedPayload,
+  destinationForAgent,
+  externalIdForDestination,
 } from './prospectHelpers.js';
 import { scoreQuiz } from './quizScoringService.js';
 
@@ -42,7 +52,10 @@ const PROSPECT_UPDATE_FIELDS = [
   'notes',
   'nextFollowUpDate',
   'lastContactDate',
-  'assignedAgentId',
+  // assignedAgentId is intentionally NOT updatable via PUT. Reassignment must go through
+  // assignProspect (PATCH /:id/assign), which charges, fires the correct webhook, and
+  // releases held leads. A raw PUT could otherwise silently reassign with no charge or
+  // webhook — and bypass the lead-quota gate.
   'demographics',
   'location',
   'tags',
@@ -52,14 +65,20 @@ const defaultDeps = {
   models: { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, AgentGroup, AgentGroupMember },
   sequelize,
   resolveAssignedAgentId,
+  resolveLeadRouting,
   getSystemAgentId,
   resolveLeadAssignment,
   deductLeadCredit,
   deductExternalLeadBalance,
   hasValidExternalConsent,
+  chargeLeadCredit,
+  decideAssignment,
   buildProspectWhere,
   dispatchEvent,
   sendLeadEvent: metaSendLeadEvent,
+  sendCompleteRegistrationEvent: metaSendCompleteRegistrationEvent,
+  sendTikTokLeadEvent,
+  sendTikTokCompleteRegistrationEvent,
   AppError,
   logger,
 };
@@ -83,6 +102,10 @@ export function makeProspectService(overrides = {}) {
     const eventSourceUrl = meta?.eventSourceUrl ?? safeBody.eventSourceUrl;
     const clientIp = meta?.clientIp;
     const clientUserAgent = meta?.clientUserAgent;
+    // Quiz CompleteRegistration dedup id (Meta CAPI) + TikTok attribution ids.
+    const registrationEventId = meta?.registrationEventId ?? safeBody.registrationEventId;
+    const ttclid = meta?.ttclid ?? safeBody.ttclid;
+    const ttp = meta?.ttp ?? safeBody.ttp;
     // Consent flags: preserve explicit `false` (user opted out) via !== undefined check.
     const consentContact = safeBody.consent_contact;
     const consentTerms = safeBody.consent_terms;
@@ -104,6 +127,7 @@ export function makeProspectService(overrides = {}) {
     // Strip from body so they don't reach Sequelize as bogus Prospect attributes.
     const {
       eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
+      registrationEventId: _re, ttclid: _tc, ttp: _tp,
       consent_contact: _cc, consent_terms: _ct,
       quizResult: _qr, referralRef: _rref,
       utm_source: _us, utm_medium: _um, utm_campaign: _ucmp, utm_content: _ucnt, utm_term: _utm,
@@ -118,6 +142,9 @@ export function makeProspectService(overrides = {}) {
       ...(eventSourceUrl ? { eventSourceUrl } : {}),
       ...(clientIp ? { clientIp } : {}),
       ...(clientUserAgent ? { clientUserAgent } : {}),
+      ...(registrationEventId ? { registrationEventId } : {}),
+      ...(ttclid ? { ttclid } : {}),
+      ...(ttp ? { ttp } : {}),
       ...(consentContact !== undefined ? { consent_contact: consentContact } : {}),
       ...(consentTerms !== undefined ? { consent_terms: consentTerms } : {}),
       ...(Object.keys(utm).length > 0 ? { utm } : {}),
@@ -209,13 +236,60 @@ export function makeProspectService(overrides = {}) {
       incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), referral };
     }
 
-    // Resolve secure assignment (agent/admin override -> qr owner -> campaign -> system)
-    let assignedAgentId = await d.resolveAssignedAgentId({
-      reqUser: user,
-      requestedAgentId: body.assignedAgentId,
-      campaignId: incoming.campaignId,
-      qrTagId: incoming.qrTagId,
-    });
+    // Pre-load campaign + QR tag (needed for routing below, the age gate, and quiz scoring).
+    const [sourceCampaign, sourceQrTag] = await Promise.all([
+      incoming.campaignId ? m.Campaign.findByPk(incoming.campaignId) : null,
+      incoming.qrTagId ? m.QrTag.findByPk(incoming.qrTagId) : null,
+    ]);
+
+    // External (MKTR Leads) eligibility. INERT until per-source consent capture writes
+    // consentMetadata.external — hasValidExternalConsent returns false for all current
+    // data, so allowExternal is false and routing takes the internal-only path below,
+    // byte-for-byte as before.
+    const allowExternal =
+      sourceCampaign?.externalEligible === true &&
+      d.hasValidExternalConsent({ consentMetadata: incoming.consentMetadata });
+
+    // SINGLE routing pass — exactly one resolver runs, so the per-campaign round-robin
+    // cursor advances once and routeVia is never stale:
+    //   - external-eligible + consented → unified resolveLeadAssignment (internal +
+    //     external pools); it also owns the self/admin/qr tiers, so the QR-override
+    //     block below is skipped for these leads.
+    //   - everyone else (the live path) → internal-only resolveLeadRouting, unchanged.
+    let assignedAgentId = null;
+    let externalAgentId = null;
+    let externalHold = false; // external-eligible + consented, but no funded buyer → HOLD
+    let externalHoldReason = null;
+    let routeVia;
+    if (allowExternal) {
+      const r = await d.resolveLeadAssignment({
+        reqUser: user,
+        requestedAgentId: body.assignedAgentId,
+        campaignId: incoming.campaignId,
+        qrTagId: incoming.qrTagId,
+        allowExternal: true,
+      });
+      routeVia = r.via;
+      if (r.kind === 'external') {
+        externalAgentId = r.externalAgentId; // assignedAgentId stays null (mutually exclusive)
+      } else if (r.kind === 'hold') {
+        // No funded buyer AND no funded internal pool agent — never hand a monetized,
+        // consented lead to the free System Agent. Quarantine it (held) below.
+        externalHold = true;
+        externalHoldReason = r.holdReason || 'no_funded_external_buyer';
+      } else {
+        assignedAgentId = r.internalAgentId ?? null;
+      }
+    } else {
+      const routing = await d.resolveLeadRouting({
+        reqUser: user,
+        requestedAgentId: body.assignedAgentId,
+        campaignId: incoming.campaignId,
+        qrTagId: incoming.qrTagId,
+      });
+      assignedAgentId = routing.agentId;
+      routeVia = routing.via;
+    }
 
     // Normalize phone to E.164 format
     if (incoming.phone) {
@@ -291,11 +365,44 @@ export function makeProspectService(overrides = {}) {
       if (body.monthly_income) incoming.demographics.income = body.monthly_income;
     }
 
-    // Pre-load campaign and QR tag for routing resolution
-    const [sourceCampaign, sourceQrTag] = await Promise.all([
-      incoming.campaignId ? m.Campaign.findByPk(incoming.campaignId) : null,
-      incoming.qrTagId ? m.QrTag.findByPk(incoming.qrTagId) : null,
-    ]);
+    // --- Quiz funnel: re-score server-side (anti-tamper) and stash on the lead ---
+    // The client sends raw answers (+ an advisory result we ignore). We recompute
+    // the authoritative profile/readiness/leadScore from the campaign's own quiz
+    // definition so a tampered client cannot fake a result. Stored under
+    // sourceMetadata.quiz; forwarded verbatim to Lyfe in the lead.created webhook.
+    if (quizSubmission && Array.isArray(quizSubmission.answers) && quizSubmission.answers.length > 0) {
+      const quizDef = sourceCampaign?.design_config?.quiz;
+      let quizMeta;
+      if (quizDef && quizDef.enabled) {
+        let scored = null;
+        try {
+          scored = scoreQuiz(quizDef, quizSubmission.answers);
+        } catch (err) {
+          d.logger.error('[Quiz] scoring failed', { error: err?.message || String(err) });
+        }
+        quizMeta = {
+          quizId: quizDef.quizId || quizSubmission.quizId || null,
+          version: quizDef.version ?? quizSubmission.version ?? null,
+          answers: quizSubmission.answers,
+          result: scored
+            ? { profileId: scored.profileId, title: scored.title, readiness: scored.readiness, agentAngle: scored.agentAngle }
+            : (quizSubmission.result || null),
+          leadScore: scored?.leadScore || null,
+          scoredBy: scored ? 'server' : 'client-unverified',
+        };
+      } else {
+        // No quiz definition on the campaign (or disabled): keep the raw answers
+        // and the advisory client result, clearly marked unverified.
+        quizMeta = {
+          quizId: quizSubmission.quizId || null,
+          version: quizSubmission.version ?? null,
+          answers: quizSubmission.answers,
+          result: quizSubmission.result || null,
+          scoredBy: 'client-unverified',
+        };
+      }
+      incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), quiz: quizMeta };
+    }
 
     // --- Quiz funnel: re-score server-side (anti-tamper) and stash on the lead ---
     // The client sends raw answers (+ an advisory result we ignore). We recompute
@@ -341,7 +448,10 @@ export function makeProspectService(overrides = {}) {
     let resolvedAgent = null;
     let agentGroup = null;
 
-    if (sourceQrTag?.agentAssignmentMode === 'round_robin') {
+    // QR-level routing refines the INTERNAL path only; external-eligible leads were
+    // already routed by resolveLeadAssignment above (it includes the QR tier), so
+    // re-running QR routing here would double-route them.
+    if (!allowExternal && sourceQrTag?.agentAssignmentMode === 'round_robin') {
       routingMode = 'round_robin';
 
       // Query members from join table, ordered by sortOrder
@@ -371,10 +481,11 @@ export function makeProspectService(overrides = {}) {
           name: selectedMember.name,
         };
       }
-    } else if (sourceQrTag?.assignedAgentId) {
+    } else if (!allowExternal && sourceQrTag?.assignedAgentId) {
       // Direct FK lookup — faster than phone-based search
       assignedAgentId = sourceQrTag.assignedAgentId;
-    } else if (sourceQrTag?.assignedAgentPhone) {
+      routeVia = 'qr';
+    } else if (!allowExternal && sourceQrTag?.assignedAgentPhone) {
       // Fallback for QR tags not yet backfilled
       resolvedAgent = {
         phone: sourceQrTag.assignedAgentPhone,
@@ -390,36 +501,53 @@ export function makeProspectService(overrides = {}) {
       });
       if (agentByPhone) {
         assignedAgentId = agentByPhone.id;
+        routeVia = 'qr';
       }
     }
 
-    // External (MKTR Leads) routing decision. INERT until per-source consent
-    // capture writes consentMetadata.external — hasValidExternalConsent returns
-    // false for all current data, so allowExternal is false and this whole block
-    // is skipped, leaving the internal path byte-for-byte unchanged.
-    let externalAgentId = null;
-    const allowExternal =
-      sourceCampaign?.externalEligible === true &&
-      d.hasValidExternalConsent({ consentMetadata: incoming.consentMetadata });
-    if (allowExternal) {
-      const decision = await d.resolveLeadAssignment({
-        reqUser: user,
-        requestedAgentId: body.assignedAgentId,
-        campaignId: incoming.campaignId,
-        qrTagId: incoming.qrTagId,
-        allowExternal: true,
-      });
-      if (decision?.kind === 'external') {
-        externalAgentId = decision.externalAgentId;
-        assignedAgentId = null; // mutually exclusive (DB CHECK enforces this)
-      } else if (decision?.kind === 'internal' && decision.internalAgentId) {
-        assignedAgentId = decision.internalAgentId;
-      }
-    }
-
-    // Wrap all DB writes in a transaction for data integrity
+    // Wrap all DB writes in a transaction for data integrity.
+    // Two orthogonal gates compose here:
+    //   - External (MKTR Leads): a PAID third-party buyer lead. It bypasses the
+    //     internal lead-package quota (a separate pool) and is charged against the
+    //     buyer's prepaid balance below — never quarantined here.
+    //   - Internal: the lead-quota gate (decideAssignment) may QUARANTINE (hold) the
+    //     lead, and for a funded gated route charges a credit authoritatively
+    //     (charged:true ⇒ skip the best-effort deduct below to avoid double-charging).
+    //     Soft/exempt routes are unchanged: assign + best-effort deduct.
+    let quarantined = false;
+    let finalAgentId = assignedAgentId;
     const prospect = await d.sequelize.transaction(async (t) => {
-      const newProspect = await m.Prospect.create({ ...incoming, assignedAgentId, externalAgentId }, { transaction: t });
+      // The internal quota gate applies ONLY to the internal path. For external
+      // leads default to a plain "assign" directive so the shared activity/deduct
+      // code below stays correct (external is charged authoritatively, not metered).
+      let decision = { action: 'assign', assignedAgentId, charged: false, via: routeVia };
+      if (externalHold) {
+        // External-eligible + consented but no funded buyer → HOLD (never System Agent,
+        // never charged). The distinct quarantineReason fences this lead off from the
+        // internal release sweep so it can never be delivered to Lyfe.
+        decision = { action: 'quarantine', quarantineReason: externalHoldReason, charged: false, via: routeVia };
+      } else if (!externalAgentId) {
+        decision = await d.decideAssignment({
+          campaign: sourceCampaign,
+          routing: { agentId: assignedAgentId, via: routeVia },
+          campaignId: incoming.campaignId,
+          transaction: t,
+          charge: d.chargeLeadCredit,
+        });
+      }
+      quarantined = decision.action === 'quarantine';
+      finalAgentId = quarantined ? null : (decision.assignedAgentId ?? null);
+
+      const newProspect = await m.Prospect.create(
+        {
+          ...incoming,
+          assignedAgentId: finalAgentId,
+          externalAgentId,
+          quarantinedAt: quarantined ? new Date() : null,
+          quarantineReason: quarantined ? decision.quarantineReason : null,
+        },
+        { transaction: t }
+      );
 
       const campaignName = sourceCampaign?.name || 'Unknown Campaign';
       const qrTagName = sourceQrTag?.name || sourceQrTag?.label || 'Unknown QR';
@@ -441,35 +569,57 @@ export function makeProspectService(overrides = {}) {
         { transaction: t }
       );
 
-      // Activity: assigned
-      await m.ProspectActivity.create(
-        {
-          prospectId: newProspect.id,
-          type: 'assigned',
-          actorUserId: user?.id || null,
-          description: `Assigned to agent ${assignedAgentId}`,
-          metadata: { assignedAgentId },
-        },
-        { transaction: t }
-      );
+      // Activity: assignment outcome (assigned, or held under quota)
+      if (quarantined) {
+        await m.ProspectActivity.create(
+          {
+            prospectId: newProspect.id,
+            type: 'updated',
+            actorUserId: user?.id || null,
+            description:
+              decision.quarantineReason === 'no_funded_external_buyer'
+                ? 'Held — no funded MKTR Leads (external) buyer'
+                : 'Held — no funded agent (lead quota)',
+            metadata: { quarantined: true, reason: decision.quarantineReason, via: routeVia },
+          },
+          { transaction: t }
+        );
+      } else {
+        await m.ProspectActivity.create(
+          {
+            prospectId: newProspect.id,
+            type: 'assigned',
+            actorUserId: user?.id || null,
+            description: externalAgentId
+              ? `Routed to external buyer ${externalAgentId} (MKTR Leads)`
+              : `Assigned to agent ${finalAgentId}`,
+            metadata: externalAgentId
+              ? { externalAgentId }
+              : { assignedAgentId: finalAgentId },
+          },
+          { transaction: t }
+        );
 
-      // Deduct lead credit. External buyers are PAID leads: the deduction is
-      // authoritative — if we cannot charge the buyer's prepaid balance, abort
-      // the whole create (rollback) rather than hand over a lead we can't bill.
-      // Internal stays best-effort (a missing internal credit must not block a
-      // Lyfe agent's lead), unchanged from before.
-      if (externalAgentId) {
-        const charged = await d.deductExternalLeadBalance(externalAgentId, 1, t);
-        if (!charged) {
-          throw new d.AppError('No paid external buyer balance available for this lead.', 409);
+        // Deduct lead credit.
+        //  - External (MKTR Leads) buyers are PAID leads: the charge is authoritative
+        //    — if the buyer's prepaid balance can't be charged, abort the whole create
+        //    (rollback) rather than hand over a lead we can't bill.
+        //  - Internal stays best-effort, and is skipped when decideAssignment already
+        //    charged authoritatively (charged:true) to avoid double-charging.
+        if (externalAgentId) {
+          const extCharged = await d.deductExternalLeadBalance(externalAgentId, 1, t);
+          if (!extCharged) {
+            throw new d.AppError('No paid external buyer balance available for this lead.', 409);
+          }
+        } else if (finalAgentId && decision.charged !== true) {
+          await d
+            .deductLeadCredit({ agentId: finalAgentId, campaignId: newProspect.campaignId || null, transaction: t })
+            .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
         }
-      } else if (assignedAgentId) {
-        await d
-          .deductLeadCredit(assignedAgentId, 1, t)
-          .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
       }
 
-      // Update QR tag analytics (atomic to avoid read-modify-write race)
+      // Update QR tag analytics (atomic to avoid read-modify-write race).
+      // A quarantined lead is still a captured conversion, so we count it.
       if (newProspect.qrTagId && sourceQrTag) {
         await sourceQrTag.update(
           {
@@ -490,28 +640,39 @@ export function makeProspectService(overrides = {}) {
       return newProspect;
     });
 
+    // Reflect the committed outcome (null when quarantined) for the rest of the
+    // function — webhook dispatch, agent load, and the returned payload.
+    assignedAgentId = finalAgentId;
+
     // --- Webhook dispatch (AFTER transaction commits, fire-and-forget) ---
-    // Load assigned agent record if we have an assignedAgentId but no resolvedAgent
-    let agentForWebhook = resolvedAgent;
-    if (!agentForWebhook && assignedAgentId) {
+    // Always load the assigned agent's provenance (lyfeId/mktrLeadsId) by id — NOT
+    // the possibly-partial resolvedAgent from QR/group routing, which lacks it — so
+    // we route to the right app and send the destination-correct external id.
+    let agentForWebhook = null;
+    let leadDestination = null;
+    if (assignedAgentId) {
       const agentRecord = await m.User.findByPk(assignedAgentId, {
-        attributes: ['id', 'lyfeId', 'phone', 'email', 'firstName', 'lastName'],
+        attributes: ['id', 'lyfeId', 'mktrLeadsId', 'phone', 'email', 'firstName', 'lastName'],
       });
       if (agentRecord) {
+        leadDestination = destinationForAgent(agentRecord);
         agentForWebhook = {
-          phone: agentRecord.phone || null,
-          email: agentRecord.email || null,
-          name: `${agentRecord.firstName || ''} ${agentRecord.lastName || ''}`.trim(),
-          id: agentRecord.lyfeId || agentRecord.id,
+          phone: agentRecord.phone || resolvedAgent?.phone || null,
+          email: agentRecord.email || resolvedAgent?.email || null,
+          name: `${agentRecord.firstName || ''} ${agentRecord.lastName || ''}`.trim() || resolvedAgent?.name || null,
+          id: externalIdForDestination(agentRecord, leadDestination),
         };
       }
     }
 
-    // Destination safety: the existing 'lead.created' subscriber is the Lyfe app.
-    // An external (MKTR Leads) lead must NEVER be dispatched to it. Until
-    // destination-aware routing lands in webhookService, external leads simply
-    // do not fire this event (no external subscriber exists yet either).
-    if (!externalAgentId) {
+    // Suppress the Lyfe 'lead.created' delivery webhook when there is no internal
+    // agent to deliver to:
+    //  - quarantined (held under lead quota) — no agent yet; it fires on release
+    //    (slice 4) as the first lead.created.
+    //  - external (MKTR Leads) — the existing subscriber is the Lyfe app, and an
+    //    external buyer lead must NEVER be dispatched to it (no external subscriber
+    //    exists yet; destination-aware routing lands later in webhookService).
+    if (!quarantined && !externalAgentId) {
       d.dispatchEvent('lead.created', () =>
         buildLeadCreatedPayload(
           prospect,
@@ -521,7 +682,8 @@ export function makeProspectService(overrides = {}) {
           sourceCampaign,
           sourceQrTag,
           agentGroup
-        )
+        ),
+        { destination: leadDestination }
       ).catch((err) => {
         d.logger.error('[Webhook] dispatch error', { error: err?.message || String(err) });
       });
@@ -540,6 +702,46 @@ export function makeProspectService(overrides = {}) {
       d.logger.error('[CAPI] sendLeadEvent error', { error: err?.message || String(err) });
     });
 
+    // Meta CAPI CompleteRegistration (quiz funnel). Fired server-side only when
+    // the browser sent a registrationEventId (the quiz reveal happened), using
+    // that same id so Meta dedups it against the Pixel CompleteRegistration fired
+    // at the reveal. No-op for non-quiz leads. Guard inside sendCompleteRegistrationEvent.
+    if (registrationEventId) {
+      d.sendCompleteRegistrationEvent(prospect, {
+        eventId: registrationEventId,
+        fbp,
+        fbc,
+        eventSourceUrl,
+        clientIp,
+        clientUserAgent,
+        pixelIdOverride: sourceCampaign?.metaPixelId || undefined,
+      }).catch((err) => {
+        d.logger.error('[CAPI] sendCompleteRegistrationEvent error', { error: err?.message || String(err) });
+      });
+    }
+
+    // TikTok Events API dispatch (fire-and-forget; post-commit; guard inside the
+    // sender). Mirrors the Meta CAPI pair: a Lead at submit, plus a
+    // CompleteRegistration when the quiz reveal fired one — each deduped against
+    // the browser ttq pixel via the shared event ids. Per-campaign tiktokPixelId
+    // overrides env TIKTOK_PIXEL_ID.
+    const tiktokCtxBase = {
+      ttclid,
+      ttp,
+      eventSourceUrl,
+      clientIp,
+      clientUserAgent,
+      pixelIdOverride: sourceCampaign?.tiktokPixelId || undefined,
+    };
+    d.sendTikTokLeadEvent(prospect, { eventId, ...tiktokCtxBase }).catch((err) => {
+      d.logger.error('[TikTok] sendTikTokLeadEvent error', { error: err?.message || String(err) });
+    });
+    if (registrationEventId) {
+      d.sendTikTokCompleteRegistrationEvent(prospect, { eventId: registrationEventId, ...tiktokCtxBase }).catch((err) => {
+        d.logger.error('[TikTok] sendTikTokCompleteRegistrationEvent error', { error: err?.message || String(err) });
+      });
+    }
+
     // Pre-load agent + prospect-with-campaign for caller's email side-effect
     let assignedAgent = null;
     let prospectWithCampaign = prospect;
@@ -550,7 +752,7 @@ export function makeProspectService(overrides = {}) {
       });
     }
 
-    return { prospect, assignedAgentId, assignedAgent, prospectWithCampaign };
+    return { prospect, assignedAgentId, assignedAgent, prospectWithCampaign, quarantined };
   }
 
   /**
@@ -617,23 +819,8 @@ export function makeProspectService(overrides = {}) {
     const safeUpdates = Object.fromEntries(Object.entries(body).filter(([k]) => PROSPECT_UPDATE_FIELDS.includes(k)));
     await prospect.update(safeUpdates);
 
-    // Check for manual unassignment
-    if (oldAssignedAgentId && body.assignedAgentId === null) {
-      const agentName = oldAssignedAgent
-        ? `${oldAssignedAgent.firstName} ${oldAssignedAgent.lastName}`.trim() || oldAssignedAgent.email
-        : 'Unknown Agent';
-
-      await m.ProspectActivity.create({
-        prospectId: prospect.id,
-        type: 'updated',
-        actorUserId: user.id,
-        description: `Lead manually unassigned from ${agentName} by ${user.firstName || 'Admin'}`,
-        metadata: {
-          previousAssignedAgentId: oldAssignedAgentId,
-          reason: 'manual_unassignment',
-        },
-      });
-    }
+    // (Reassignment / unassignment is handled exclusively by assignProspect — see the
+    // PROSPECT_UPDATE_FIELDS note — so PUT no longer needs unassignment side-effects.)
 
     // If status changed to 'won', create commission and update metrics atomically
     if (oldStatus !== 'won' && safeUpdates.leadStatus === 'won') {
@@ -712,14 +899,25 @@ export function makeProspectService(overrides = {}) {
         metadata: { previousAgentId },
       });
 
-      // Fire lead.unassigned webhook — resolve lyfeId for previous agent
-      let previousAgentLyfeId = previousAgentId;
-      if (previousAgentId) {
-        const prevAgent = await m.User.findByPk(previousAgentId, { attributes: ['lyfeId'] });
-        if (prevAgent?.lyfeId) previousAgentLyfeId = prevAgent.lyfeId;
+      // Fire lead.unassigned webhook — but NOT for a HELD (quarantined) lead: Lyfe never
+      // received a lead.created for it (the create webhook was suppressed), so an
+      // unassigned event would reference a lead Lyfe does not know about.
+      if (!prospect.quarantinedAt) {
+        // Destination + external id come from the PREVIOUS agent (the assignment
+        // is already null). Sourceless previous agent -> null -> default-denied.
+        let prevDestination = null;
+        let previousAgentExternalId = null;
+        if (previousAgentId) {
+          const prevAgent = await m.User.findByPk(previousAgentId, {
+            attributes: ['id', 'lyfeId', 'mktrLeadsId'],
+          });
+          prevDestination = destinationForAgent(prevAgent);
+          previousAgentExternalId = externalIdForDestination(prevAgent, prevDestination);
+        }
+        d.dispatchEvent('lead.unassigned', () => buildLeadUnassignedPayload(prospect, previousAgentExternalId), {
+          destination: prevDestination,
+        });
       }
-
-      d.dispatchEvent('lead.unassigned', () => buildLeadUnassignedPayload(prospect, previousAgentLyfeId));
 
       return { prospect, agent: null, prospectWithCampaign: prospect };
     }
@@ -733,6 +931,73 @@ export function makeProspectService(overrides = {}) {
       throw new d.AppError('Invalid or inactive agent', 400);
     }
 
+    // An external hold (no funded MKTR Leads buyer) must NEVER be manually released to an
+    // internal agent / Lyfe — it was captured for the external buyer pool and can only be
+    // delivered via the external channel (or a dedicated conversion flow, not built yet).
+    // The auto release-sweep is already fenced off these holds; close the manual path too.
+    if (prospect.quarantineReason === 'no_funded_external_buyer') {
+      throw new d.AppError(
+        'This lead is held for the MKTR Leads (external) buyer pool and cannot be manually assigned to an internal agent.',
+        409
+      );
+    }
+
+    // A manual admin assign is an EXEMPT route (decision a): it always delivers and does
+    // a best-effort deduct. If the prospect is currently HELD under lead-quota, this is a
+    // RELEASE — clear the hold ATOMICALLY (so a double-click / concurrent sweep can't
+    // deliver twice) and fire lead.created, the FIRST delivery to Lyfe (which never saw
+    // the suppressed create webhook), NOT lead.assigned.
+    if (prospect.quarantinedAt) {
+      const [releaseRows] = await d.sequelize.query(
+        `UPDATE prospects
+            SET "assignedAgentId" = :agentId, "lastContactDate" = NOW(),
+                "quarantinedAt" = NULL, "quarantineReason" = NULL, "updatedAt" = NOW()
+          WHERE id = :prospectId AND "quarantinedAt" IS NOT NULL
+          RETURNING id`,
+        { replacements: { agentId, prospectId: prospect.id } }
+      );
+      const released = Array.isArray(releaseRows) && releaseRows.length > 0;
+      await prospect.reload();
+
+      if (!released) {
+        // Lost the race — already released elsewhere. Do not double-deliver, and return
+        // agent:null so the controller does not email an agent about a lead a concurrent
+        // release/sweep already assigned (possibly to a different agent).
+        return { prospect, agent: null, prospectWithCampaign: prospect };
+      }
+
+      await m.ProspectActivity.create({
+        prospectId: prospect.id,
+        type: 'assigned',
+        actorUserId: user?.id || null,
+        description: `Released from hold and assigned to ${agent.firstName} ${agent.lastName}`.trim(),
+        metadata: { assignedAgentId: agentId, previousAgentId, released: true },
+      });
+
+      await d
+        .deductLeadCredit({ agentId, campaignId: prospect.campaignId || null })
+        .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
+
+      const prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
+        include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+      });
+
+      const releaseDestination = destinationForAgent(agent);
+      const agentForWebhook = {
+        phone: agent.phone || null,
+        email: agent.email || null,
+        name: `${agent.firstName || ''} ${agent.lastName || ''}`.trim(),
+        id: externalIdForDestination(agent, releaseDestination),
+      };
+      d.dispatchEvent('lead.created', () =>
+        buildLeadCreatedPayload(prospect, 'direct', agentForWebhook, agentId, prospectWithCampaign?.campaign || null, null, null),
+        { destination: releaseDestination }
+      );
+
+      return { prospect, agent, prospectWithCampaign };
+    }
+
+    // ── Normal reassign (not held) ──
     await prospect.update({
       assignedAgentId: agentId,
       lastContactDate: new Date(),
@@ -747,7 +1012,7 @@ export function makeProspectService(overrides = {}) {
     });
 
     await d
-      .deductLeadCredit(agentId)
+      .deductLeadCredit({ agentId, campaignId: prospect.campaignId || null })
       .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
 
     const prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
@@ -755,7 +1020,9 @@ export function makeProspectService(overrides = {}) {
     });
 
     // Fire lead.assigned webhook
-    d.dispatchEvent('lead.assigned', () => buildLeadAssignedPayload(prospect, agent, prospectWithCampaign));
+    d.dispatchEvent('lead.assigned', () => buildLeadAssignedPayload(prospect, agent, prospectWithCampaign), {
+      destination: destinationForAgent(agent),
+    });
 
     return { prospect, agent, prospectWithCampaign };
   }
@@ -783,6 +1050,14 @@ export function makeProspectService(overrides = {}) {
     const scopeFilter = await d.buildProspectWhere(user);
     const whereConditions = {
       id: { [Op.in]: prospectIds },
+      // Bulk assign skips HELD leads — releasing a held lead must deliver it to Lyfe,
+      // which bulk update can't do per-lead. Release held leads via single assign
+      // (PATCH /:id/assign) or the auto-release sweep.
+      quarantinedAt: null,
+      // Skip rows already assigned to THIS agent (IS DISTINCT FROM semantics —
+      // a bare Op.ne would also exclude unassigned NULL rows). Re-assigning a
+      // no-op row used to double-charge the agent for a lead they already held.
+      [Op.or]: [{ assignedAgentId: null }, { assignedAgentId: { [Op.ne]: agentId } }],
       ...scopeFilter,
     };
 
@@ -791,14 +1066,25 @@ export function makeProspectService(overrides = {}) {
         assignedAgentId: agentId,
         lastContactDate: new Date(),
       },
-      { where: whereConditions }
+      // RETURNING gives the exact affected rows (no select-then-update race) so
+      // credits can be deducted PER CAMPAIGN — a bulk set can span campaigns,
+      // and campaign-A leads must never drain campaign-B credits.
+      { where: whereConditions, returning: ['id', 'campaignId'] }
     );
 
     const affectedCount = result[0];
+    const affectedRows = result[1] || [];
     if (affectedCount > 0) {
-      await d
-        .deductLeadCredit(agentId, affectedCount)
-        .catch((err) => d.logger.error('Failed to deduct credits', { error: err?.message || String(err) }));
+      const countsByCampaign = new Map();
+      for (const row of affectedRows) {
+        const cId = row.campaignId || null;
+        countsByCampaign.set(cId, (countsByCampaign.get(cId) || 0) + 1);
+      }
+      for (const [cId, count] of countsByCampaign) {
+        await d
+          .deductLeadCredit({ agentId, campaignId: cId, amount: count })
+          .catch((err) => d.logger.error('Failed to deduct credits', { error: err?.message || String(err) }));
+      }
     }
 
     return { affectedCount, agent };
@@ -1010,6 +1296,42 @@ export function makeProspectService(overrides = {}) {
     });
   }
 
+  /**
+   * List HELD (quarantined) leads, FIFO by quarantinedAt (the release order). Scoped to
+   * the caller's access; optionally filtered by campaign. Release is done via the
+   * existing assignProspect (PATCH /:id/assign) or the auto-release sweep on top-up.
+   */
+  async function listHeldProspects(user, params = {}) {
+    const { campaignId } = params;
+    const limit = Math.min(parseInt(params.limit, 10) || 100, 500);
+    const scopeFilter = await d.buildProspectWhere(user);
+    const where = { ...scopeFilter, quarantinedAt: { [Op.ne]: null } };
+    if (campaignId) where.campaignId = campaignId;
+
+    const { count, rows } = await m.Prospect.findAndCountAll({
+      where,
+      include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+      order: [['quarantinedAt', 'ASC']], // FIFO — oldest held first (the release order)
+      limit,
+    });
+
+    const held = rows.map((p) => ({
+      id: p.id,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      phone: p.phone,
+      email: p.email,
+      leadSource: p.leadSource,
+      campaignId: p.campaignId,
+      campaignName: p.campaign?.name || null,
+      quarantinedAt: p.quarantinedAt,
+      quarantineReason: p.quarantineReason,
+      createdAt: p.createdAt,
+    }));
+
+    return { count, held };
+  }
+
   return {
     createProspect,
     getProspect,
@@ -1019,6 +1341,7 @@ export function makeProspectService(overrides = {}) {
     bulkAssignProspects,
     getProspectStats,
     listProspects,
+    listHeldProspects,
     scheduleFollowUp,
     trackProspectView,
   };
@@ -1033,5 +1356,6 @@ export const assignProspect = _default.assignProspect;
 export const bulkAssignProspects = _default.bulkAssignProspects;
 export const getProspectStats = _default.getProspectStats;
 export const listProspects = _default.listProspects;
+export const listHeldProspects = _default.listHeldProspects;
 export const scheduleFollowUp = _default.scheduleFollowUp;
 export const trackProspectView = _default.trackProspectView;

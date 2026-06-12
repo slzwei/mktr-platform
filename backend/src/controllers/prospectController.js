@@ -24,6 +24,15 @@ export const listProspects = asyncHandler(async (req, res) => {
   });
 });
 
+export const listHeldProspects = asyncHandler(async (req, res) => {
+  const result = await prospectService.listHeldProspects(req.user, req.query);
+
+  res.json({
+    success: true,
+    data: result
+  });
+});
+
 export const createProspect = asyncHandler(async (req, res) => {
   const publicHost = publicHostFromRequest(req);
   const meta = {
@@ -33,6 +42,11 @@ export const createProspect = asyncHandler(async (req, res) => {
     fbp: req.body?.fbp,
     fbc: req.body?.fbc,
     eventSourceUrl: deriveEventSourceUrl(req, publicHost),
+    // Quiz CompleteRegistration dedup id (Meta CAPI) + TikTok click/cookie ids
+    // (Phase 6 server-side Events API). Stashed in sourceMetadata server-side.
+    registrationEventId: req.body?.registrationEventId,
+    ttclid: req.body?.ttclid,
+    ttp: req.body?.ttp,
   };
 
   const { prospect, assignedAgentId, assignedAgent, prospectWithCampaign } = await prospectService.createProspect(

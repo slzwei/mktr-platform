@@ -77,7 +77,8 @@ export const schemas = {
     commission_amount_driver: Joi.number().min(0).optional().allow(null),
     commission_amount_fleet: Joi.number().min(0).optional().allow(null),
     defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
-    ad_playlist: Joi.array().items(Joi.object()).optional()
+    ad_playlist: Joi.array().items(Joi.object()).optional(),
+    enforceLeadQuota: Joi.boolean().optional()
   }),
 
   campaignUpdate: Joi.object({
@@ -93,7 +94,8 @@ export const schemas = {
     commission_amount_driver: Joi.number().min(0).optional().allow(null),
     commission_amount_fleet: Joi.number().min(0).optional().allow(null),
     defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
-    ad_playlist: Joi.array().items(Joi.object()).optional()
+    ad_playlist: Joi.array().items(Joi.object()).optional(),
+    enforceLeadQuota: Joi.boolean().optional()
   }).min(1),
 
   // Car schemas
@@ -161,6 +163,14 @@ export const schemas = {
     fbp: Joi.string().max(255).optional(),
     fbc: Joi.string().max(255).optional(),
     eventSourceUrl: Joi.string().uri().max(2048).optional(),
+    // CompleteRegistration dedup id — set when a quiz reveal fired the browser
+    // CompleteRegistration; the server fires a matching CAPI event with this id.
+    registrationEventId: Joi.string().max(64).optional(),
+    // TikTok attribution identifiers (ttclid click id + _ttp first-party cookie).
+    // Captured at the landing page, stashed in sourceMetadata for the Phase 6
+    // server-side TikTok Events API. Whitelisted here so they don't 400.
+    ttclid: Joi.string().max(512).optional(),
+    ttp: Joi.string().max(255).optional(),
     // PDPA consent flags from the lead-capture form. Stashed in sourceMetadata.
     // consent_contact gates hashed PII (em/ph) in the CAPI payload — see
     // metaCapiService._buildPayload's `marketingConsent` check.
@@ -223,14 +233,36 @@ export const schemas = {
   // ever added, define a fresh schema next to it.
 
   // Lead Package schemas — fields match `leadPackageController.createPackage`
-  // destructure. `description` is accepted because the admin form sends it
-  // (silently dropped by the controller).
+  // destructure. `description`, `isPublic` and `status` are accepted because the
+  // admin "Create Package Template" form sends them; the controller drops them
+  // (the service forces status:'active'), but this strict Joi object would
+  // otherwise 400 with `"isPublic"/"status" is not allowed`.
   leadPackageCreate: Joi.object({
     name: Joi.string().min(1).max(100).required(),
     price: Joi.number().min(0).required(),
     leadCount: Joi.number().integer().min(1).required(),
     campaignId: Joi.string().uuid().required(),
     type: Joi.string().valid('basic', 'premium', 'enterprise', 'custom').optional(),
-    description: Joi.string().allow('', null).optional()
-  })
+    description: Joi.string().allow('', null).optional(),
+    isPublic: Joi.boolean().optional(),
+    status: Joi.string().valid('active', 'inactive', 'draft', 'archived').optional()
+  }),
+
+  // mktr-leads agent management (admin dashboard → mktr-leads source of truth).
+  // Phone is a loose charset pre-check only — the mktr-leads edge function owns
+  // canonical SG normalization (normalize_sg_phone); duplicating it here would
+  // risk drift between what we accept and what links on signup.
+  mktrLeadsAgentInvite: Joi.object({
+    phone: Joi.string().trim().pattern(/^\+?[0-9 ()-]{8,16}$/).required()
+      .messages({ 'string.pattern.base': 'phone must be a Singapore mobile number' }),
+    full_name: Joi.string().trim().max(120).allow('', null).optional(),
+    email: Joi.string().trim().email().allow('', null).optional(),
+    agency: Joi.string().trim().max(120).allow('', null).optional()
+  }),
+
+  mktrLeadsAgentUpdate: Joi.object({
+    full_name: Joi.string().trim().min(1).max(120).optional(),
+    email: Joi.string().trim().email().allow('', null).optional(),
+    agency: Joi.string().trim().max(120).allow('', null).optional()
+  }).min(1)
 };

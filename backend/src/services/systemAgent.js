@@ -74,16 +74,27 @@ async function findFirstActiveAgentByIds(candidateIds = []) {
   return null;
 }
 
-export async function resolveAssignedAgentId({ reqUser, requestedAgentId, campaignId, qrTagId }) {
+/**
+ * Resolve a lead's agent AND report which route chose it, so lead-quota enforcement
+ * can tell an exempt route (authenticated self / admin-explicit) from a gated route
+ * (qr / package / fallback).
+ *
+ * Returns { agentId, via } with via ∈ 'self' | 'admin' | 'qr' | 'package' | 'fallback'.
+ * 'fallback' means nothing matched and agentId is the System Agent (or DEFAULT_AGENT_ID).
+ * The tier logic is byte-for-byte the previous resolveAssignedAgentId; that function is
+ * now a thin wrapper that returns `.agentId`, so retell / meta / createProspect are
+ * unchanged until they opt into routing-aware behaviour.
+ */
+export async function resolveLeadRouting({ reqUser, requestedAgentId, campaignId, qrTagId }) {
   // 1) If requester is an agent, they self-assign
   if (reqUser && reqUser.role === 'agent') {
-    return reqUser.id;
+    return { agentId: reqUser.id, via: 'self' };
   }
 
   // 2) If requester is admin and provided a valid active agent, accept it
   if (reqUser && reqUser.role === 'admin' && requestedAgentId) {
     const valid = await User.findOne({ where: { id: requestedAgentId, role: 'agent', isActive: true } });
-    if (valid) return valid.id;
+    if (valid) return { agentId: valid.id, via: 'admin' };
   }
 
   // 3) Try the agent the QR is directly assigned to (admin sets this via
@@ -96,7 +107,7 @@ export async function resolveAssignedAgentId({ reqUser, requestedAgentId, campai
     const candidateId = qr?.assignedAgentId || qr?.ownerUserId;
     if (candidateId) {
       const agent = await User.findOne({ where: { id: candidateId, role: 'agent', isActive: true } });
-      if (agent) return agent.id;
+      if (agent) return { agentId: agent.id, via: 'qr' };
     }
   }
 
@@ -152,14 +163,23 @@ export async function resolveAssignedAgentId({ reqUser, requestedAgentId, campai
           const nextCursor = updated?.cursor ?? 1;
           return activeAgents[(nextCursor - 1) % activeAgents.length];
         });
-        if (result) return result;
+        if (result) return { agentId: result, via: 'package' };
       }
     }
   }
 
   // 5) Fallback to System Agent
   const systemId = await getSystemAgentId();
-  return systemId;
+  return { agentId: systemId, via: 'fallback' };
+}
+
+/**
+ * Back-compat wrapper: returns just the resolved agent id (System Agent on fallback),
+ * exactly as before. Existing callers (retell / meta / createProspect) are unchanged.
+ */
+export async function resolveAssignedAgentId(ctx) {
+  const { agentId } = await resolveLeadRouting(ctx);
+  return agentId;
 }
 
 /**
@@ -182,18 +202,29 @@ export async function resolveAssignedAgentId({ reqUser, requestedAgentId, campai
  * behavior. This is the fail-safe that keeps the live pipeline unchanged until a
  * caller opts a consented, external-eligible lead in.
  *
- *   returns { kind: 'internal', internalAgentId } | { kind: 'external', externalAgentId }
+ * Every return also carries `via` (self | admin | qr | package | external | fallback)
+ * so the caller threads a consistent route label into the lead-quota gate.
+ *
+ *   returns { kind: 'internal', internalAgentId, via } | { kind: 'external', externalAgentId, via }
+ *
+ * NOTE (external-activation parity, tracked in MKTR_LEADS_ACTIVATION_PLAN.md): the QR tier
+ * here only covers direct assignedAgentId/ownerUserId — NOT QR round-robin groups or the
+ * legacy assignedAgentPhone fallback that createProspect's QR-override block handles. Since
+ * createProspect skips that block for external-eligible leads, QR round-robin/phone routing
+ * must be folded into this resolver (or the block re-enabled per-tier) before external goes
+ * live. Likewise, tier-5 still falls back to the System Agent; an external-eligible campaign
+ * with no funded buyer must HOLD (W1b), not deliver internally.
  */
 export async function resolveLeadAssignment({ reqUser, requestedAgentId, campaignId, qrTagId, allowExternal = false }) {
   // 1) Requester is an agent → self-assign (internal)
   if (reqUser && reqUser.role === 'agent') {
-    return { kind: 'internal', internalAgentId: reqUser.id };
+    return { kind: 'internal', internalAgentId: reqUser.id, via: 'self' };
   }
 
   // 2) Admin-requested explicit agent (internal)
   if (reqUser && reqUser.role === 'admin' && requestedAgentId) {
     const valid = await User.findOne({ where: { id: requestedAgentId, role: 'agent', isActive: true } });
-    if (valid) return { kind: 'internal', internalAgentId: valid.id };
+    if (valid) return { kind: 'internal', internalAgentId: valid.id, via: 'admin' };
   }
 
   // 3) QR directly assigned to an internal agent
@@ -202,7 +233,7 @@ export async function resolveLeadAssignment({ reqUser, requestedAgentId, campaig
     const candidateId = qr?.assignedAgentId || qr?.ownerUserId;
     if (candidateId) {
       const agent = await User.findOne({ where: { id: candidateId, role: 'agent', isActive: true } });
-      if (agent) return { kind: 'internal', internalAgentId: agent.id };
+      if (agent) return { kind: 'internal', internalAgentId: agent.id, via: 'qr' };
     }
   }
 
@@ -243,8 +274,8 @@ export async function resolveLeadAssignment({ reqUser, requestedAgentId, campaig
     }
 
     const ring = [
-      ...internalActive.map((id) => ({ kind: 'internal', internalAgentId: id })),
-      ...externalActive.map((id) => ({ kind: 'external', externalAgentId: id })),
+      ...internalActive.map((id) => ({ kind: 'internal', internalAgentId: id, via: 'package' })),
+      ...externalActive.map((id) => ({ kind: 'external', externalAgentId: id, via: 'external' })),
     ];
 
     if (ring.length > 0) {
@@ -262,10 +293,16 @@ export async function resolveLeadAssignment({ reqUser, requestedAgentId, campaig
     }
   }
 
-  // 5) Fallback → System Agent (internal). NOTE: the cutover must NOT let an
-  //    external-only campaign reach here — no eligible paid buyer => quarantine.
+  // 5) Fallback. For an external-eligible (allowExternal) lead with no funded buyer AND
+  //    no funded internal pool agent, HOLD it — never hand a monetized, consented lead to
+  //    the free System Agent (plan §0.7). The caller quarantines it; the internal release
+  //    sweep is fenced off from these holds. Internal-only callers (allowExternal=false,
+  //    e.g. resolveAssignedAgentId/retell/meta) keep the System-Agent fallback unchanged.
+  if (allowExternal) {
+    return { kind: 'hold', via: 'fallback', holdReason: 'no_funded_external_buyer' };
+  }
   const systemId = await getSystemAgentId();
-  return { kind: 'internal', internalAgentId: systemId };
+  return { kind: 'internal', internalAgentId: systemId, via: 'fallback' };
 }
 
 

@@ -9,18 +9,22 @@ import { scoreQuiz } from '@/lib/quizScoring';
  * scoreQuiz (the server re-scores authoritatively on submit). Styled with the
  * locked LeadCaptureLayout tokens + the campaign's themeColor so it stays on-brand.
  *
- * Renders inside the form card (as LeadCaptureLayout children). On the reveal
- * CTA it calls onComplete({ quizId, version, answers, result }); the parent then
- * shows the contact form and threads `answers` into the /api/prospects payload.
+ * Renders inside the form card (as LeadCaptureLayout children). When the result
+ * screen first appears it calls onReveal(result) — the parent fires the Meta +
+ * TikTok CompleteRegistration conversion events there. On the reveal CTA it calls
+ * onComplete({ quizId, version, answers, result }); the parent then shows the
+ * contact form and threads `answers` into the /api/prospects payload.
  *
- * previewMode is accepted for API symmetry with the form; the quiz has no network
- * side-effects, so it behaves identically in preview and live.
+ * previewMode is accepted for API symmetry with the form; the quiz itself has no
+ * network side-effects, so it behaves identically in preview and live. (Pixel
+ * firing lives in the parent's onReveal handler, which is gated by shouldTrack /
+ * shouldTrackTikTok and is simply not wired on preview surfaces.)
  */
 
 const SANS = 'Albert Sans, system-ui, sans-serif';
 const SERIF = 'Fraunces, serif';
 
-export default function CampaignQuiz({ quiz, themeColor, previewMode = false, onComplete }) {
+export default function CampaignQuiz({ quiz, themeColor, previewMode = false, onComplete, onReveal }) {
   const accent = themeColor || TOKENS.accent;
   const questions = useMemo(
     () => (quiz?.steps || []).flatMap((s) => s.questions || []),
@@ -53,8 +57,13 @@ export default function CampaignQuiz({ quiz, themeColor, previewMode = false, on
       if (stepIdx + 1 < questions.length) {
         setStepIdx(stepIdx + 1);
       } else {
-        setResult(scoreQuiz(quiz, next));
+        const scored = scoreQuiz(quiz, next);
+        setResult(scored);
         setPhase('result');
+        // Result reveal — the parent fires CompleteRegistration here. Runs once
+        // (this is the single question→result transition, an event handler not a
+        // render effect, so no double-fire on re-render).
+        onReveal?.(scored);
       }
     }, 200);
   };
@@ -273,7 +282,7 @@ function PillButton({ accent, onClick, children }) {
  * { quizId, version, answers, result } so the live page can thread answers into
  * the prospect submit; previews pass a no-op (or omit it).
  */
-export function QuizGate({ quiz, themeColor, previewMode = false, onComplete, children }) {
+export function QuizGate({ quiz, themeColor, previewMode = false, onComplete, onReveal, children }) {
   const enabled = !!(quiz && quiz.enabled && Array.isArray(quiz.steps) && quiz.steps.length > 0);
   const [done, setDone] = useState(false);
 
@@ -284,6 +293,7 @@ export function QuizGate({ quiz, themeColor, previewMode = false, onComplete, ch
       quiz={quiz}
       themeColor={themeColor}
       previewMode={previewMode}
+      onReveal={onReveal}
       onComplete={(r) => {
         setDone(true);
         onComplete?.(r);
