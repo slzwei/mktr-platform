@@ -187,7 +187,7 @@ export default function AdminDashboard() {
  Export Report
  </Button>
  <Link to={"/AdminCampaigns"}>
- <Button size="sm">
+ <Button size="sm" className="w-full sm:w-auto">
  <Plus className="w-4 h-4 mr-2"/>
  New Campaign
  </Button>

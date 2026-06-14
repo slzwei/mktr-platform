@@ -85,10 +85,10 @@ export default function DashboardHeader({
                 )}
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 w-full md:w-auto">
                 {period && onPeriodChange && (
                     <Select value={period} onValueChange={onPeriodChange}>
-                        <SelectTrigger className="w-[140px] bg-card" size="sm">
+                        <SelectTrigger className="w-full sm:w-[140px] bg-card" size="sm">
                             <SelectValue placeholder="Period" />
                         </SelectTrigger>
                         <SelectContent>
@@ -100,7 +100,11 @@ export default function DashboardHeader({
                         </SelectContent>
                     </Select>
                 )}
-                {actions}
+                {actions && (
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3 [&>*]:flex-1 [&>*]:min-w-0 sm:[&>*]:flex-none">
+                        {actions}
+                    </div>
+                )}
             </div>
         </div>
     );
