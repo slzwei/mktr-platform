@@ -116,6 +116,104 @@ describe('LeadPackage CRUD', () => {
   })
 })
 
+describe('LeadPackage update', () => {
+  let campaign, otherCampaign, packageId
+
+  beforeAll(async () => {
+    campaign = await createTestCampaign(adminUser.id)
+    otherCampaign = await createTestCampaign(adminUser.id)
+    const createRes = await request(app)
+      .post('/api/lead-packages')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: `Editable Pkg ${Date.now()}`,
+        price: 100,
+        leadCount: 50,
+        campaignId: campaign.id,
+        type: 'basic'
+      })
+    packageId = createRes.body.data.package.id
+  })
+
+  it('PUT /api/lead-packages/:id — admin can edit a package template', async () => {
+    const res = await request(app)
+      .put(`/api/lead-packages/${packageId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Renamed Package',
+        description: 'Updated details',
+        price: 250.5,
+        leadCount: 120,
+        campaignId: otherCampaign.id,
+        type: 'premium',
+        isPublic: false,
+        status: 'inactive'
+      })
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.data.package.name).toBe('Renamed Package')
+    expect(res.body.data.package.description).toBe('Updated details')
+    expect(Number(res.body.data.package.price)).toBe(250.5)
+    expect(res.body.data.package.leadCount).toBe(120)
+    expect(res.body.data.package.campaignId).toBe(otherCampaign.id)
+    expect(res.body.data.package.type).toBe('premium')
+    expect(res.body.data.package.isPublic).toBe(false)
+    expect(res.body.data.package.status).toBe('inactive')
+    // Association re-fetched so the UI gets the campaign object
+    expect(res.body.data.package.campaign).toBeDefined()
+    expect(res.body.data.package.campaign.id).toBe(otherCampaign.id)
+  })
+
+  it('PUT /api/lead-packages/:id — supports partial update', async () => {
+    const res = await request(app)
+      .put(`/api/lead-packages/${packageId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Partially Renamed' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.package.name).toBe('Partially Renamed')
+    // Untouched field retains its prior value
+    expect(res.body.data.package.leadCount).toBe(120)
+  })
+
+  it('PUT /api/lead-packages/:id — returns 404 for non-existent package', async () => {
+    const res = await request(app)
+      .put('/api/lead-packages/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Ghost' })
+
+    expect(res.status).toBe(404)
+  })
+
+  it('PUT /api/lead-packages/:id — returns 400 for empty body', async () => {
+    const res = await request(app)
+      .put(`/api/lead-packages/${packageId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({})
+
+    expect(res.status).toBe(400)
+  })
+
+  it('PUT /api/lead-packages/:id — returns 400 for invalid leadCount', async () => {
+    const res = await request(app)
+      .put(`/api/lead-packages/${packageId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ leadCount: 0 })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('PUT /api/lead-packages/:id — agent cannot edit packages', async () => {
+    const res = await request(app)
+      .put(`/api/lead-packages/${packageId}`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ name: 'Agent Edit' })
+
+    expect(res.status).toBe(403)
+  })
+})
+
 describe('LeadPackage validation', () => {
   let campaign
 

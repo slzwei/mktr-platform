@@ -53,6 +53,40 @@ export async function createPackage({ name, price, leadCount, campaignId, type, 
 }
 
 /**
+ * Update a lead package template. Only whitelisted fields are mutable —
+ * `id` and `createdBy` are never reassigned. Re-fetches with the campaign
+ * association so the response matches the list/get shape the admin UI expects.
+ */
+export async function updatePackage(id, fields) {
+  const pkg = await LeadPackage.findByPk(id);
+  if (!pkg) {
+    throw new AppError('Package not found', 404);
+  }
+
+  const ALLOWED = ['name', 'description', 'price', 'leadCount', 'campaignId', 'type', 'isPublic', 'status'];
+  const updates = {};
+  for (const key of ALLOWED) {
+    if (fields[key] !== undefined) {
+      updates[key] = fields[key];
+    }
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await pkg.update(updates);
+  }
+
+  const updated = await LeadPackage.findByPk(id, {
+    include: [{
+      model: Campaign,
+      as: 'campaign',
+      attributes: ['id', 'name', 'status']
+    }]
+  });
+
+  return { package: updated };
+}
+
+/**
  * Assign a package to an agent. Returns the assignment and data needed for email.
  */
 export async function assignPackage({ agentId, packageId }) {
