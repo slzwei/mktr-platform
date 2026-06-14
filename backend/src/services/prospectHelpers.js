@@ -122,7 +122,18 @@ export function buildLeadAssignedPayload(prospect, agent, prospectWithCampaign) 
         lastName: prospect.lastName,
         phone: prospect.phone,
         email: prospect.email,
+        // Firmographic + demographic fields MUST match buildLeadCreatedPayload: when a
+        // reassigned lead is NEW to the destination app it is INSERTED from this payload,
+        // and the receiver's note enrichment (Birthday/Postal/Company/…) reads exactly these.
+        company: prospect.company,
+        jobTitle: prospect.jobTitle,
+        industry: prospect.industry,
         leadSource: prospect.leadSource,
+        interests: prospect.interests,
+        budget: prospect.budget,
+        preferences: prospect.preferences,
+        demographics: prospect.demographics,
+        location: prospect.location,
         tags: prospect.tags,
         notes: prospect.notes,
         sourceMetadata: meta,
