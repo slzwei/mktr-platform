@@ -1019,10 +1019,29 @@ export function makeProspectService(overrides = {}) {
       include: [{ association: 'campaign', attributes: ['id', 'name'] }],
     });
 
-    // Fire lead.assigned webhook
+    // Fire lead.assigned webhook to the NEW owner's app.
+    const newDestination = destinationForAgent(agent);
     d.dispatchEvent('lead.assigned', () => buildLeadAssignedPayload(prospect, agent, prospectWithCampaign), {
-      destination: destinationForAgent(agent),
+      destination: newDestination,
     });
+
+    // Cross-app reassignment: if the PREVIOUS owner lived in a different app, that app
+    // still holds a copy of this lead that would otherwise linger. Tell it to release the
+    // lead (lead.unassigned -> the receiver marks it disputed). A SAME-app reassignment
+    // needs nothing extra — the receiver re-points the single shared row when it handles
+    // lead.assigned, so firing unassigned there would wrongly dispute the now-reassigned row.
+    if (previousAgentId && previousAgentId !== agentId) {
+      const prevAgent = await m.User.findByPk(previousAgentId, {
+        attributes: ['id', 'lyfeId', 'mktrLeadsId'],
+      });
+      const prevDestination = destinationForAgent(prevAgent);
+      if (prevDestination && prevDestination !== newDestination) {
+        const previousAgentExternalId = externalIdForDestination(prevAgent, prevDestination);
+        d.dispatchEvent('lead.unassigned', () => buildLeadUnassignedPayload(prospect, previousAgentExternalId), {
+          destination: prevDestination,
+        });
+      }
+    }
 
     return { prospect, agent, prospectWithCampaign };
   }
@@ -1061,16 +1080,29 @@ export function makeProspectService(overrides = {}) {
       ...scopeFilter,
     };
 
-    const result = await m.Prospect.update(
-      {
-        assignedAgentId: agentId,
-        lastContactDate: new Date(),
-      },
-      // RETURNING gives the exact affected rows (no select-then-update race) so
-      // credits can be deducted PER CAMPAIGN — a bulk set can span campaigns,
-      // and campaign-A leads must never drain campaign-B credits.
-      { where: whereConditions, returning: ['id', 'campaignId'] }
-    );
+    // Lock the candidate rows and update them inside ONE transaction so the webhook side
+    // sees a consistent picture: a concurrent (re)assignment of the same lead cannot slip
+    // between our read and our write (which would otherwise mis-attribute or skip a
+    // cross-app release and leave the other app holding an active copy). RETURNING stays the
+    // source of truth for WHICH rows changed, so per-campaign credit counting is exact. We
+    // lock WITHOUT the campaign include — FOR UPDATE cannot be applied to the nullable side
+    // of an outer join — and fetch campaign data for the payloads afterwards.
+    let result = [0, []];
+    const lockedById = new Map();
+    await d.sequelize.transaction(async (transaction) => {
+      const locked = await m.Prospect.findAll({
+        where: whereConditions,
+        attributes: ['id', 'assignedAgentId', 'campaignId'],
+        transaction,
+        lock: true,
+      });
+      for (const row of locked) lockedById.set(row.id, row);
+      result = await m.Prospect.update(
+        { assignedAgentId: agentId, lastContactDate: new Date() },
+        // Update exactly the locked set; RETURNING reports the rows actually changed.
+        { where: { id: { [Op.in]: [...lockedById.keys()] } }, returning: ['id', 'campaignId'], transaction }
+      );
+    });
 
     const affectedCount = result[0];
     const affectedRows = result[1] || [];
@@ -1084,6 +1116,52 @@ export function makeProspectService(overrides = {}) {
         await d
           .deductLeadCredit({ agentId, campaignId: cId, amount: count })
           .catch((err) => d.logger.error('Failed to deduct credits', { error: err?.message || String(err) }));
+      }
+
+      // Deliver each newly-assigned lead (bulk-assign previously fired NO webhook at all, so
+      // bulk-assigned leads never reached the agent's app). Mirror the single-assign path:
+      // lead.assigned to the new owner, plus — for a CROSS-app reassignment — lead.unassigned
+      // to the previous owner so its copy in the other app doesn't linger. Payload rows are
+      // fetched with their campaign; previous owners come from the locked snapshot.
+      const newDestination = destinationForAgent(agent);
+      const affectedIds = affectedRows.map((row) => row.id);
+      const full = await m.Prospect.findAll({
+        where: { id: { [Op.in]: affectedIds } },
+        include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+      });
+
+      const prevOwnerIds = [
+        ...new Set(
+          affectedIds
+            .map((id) => lockedById.get(id)?.assignedAgentId)
+            .filter((prevId) => prevId && prevId !== agentId)
+        ),
+      ];
+      const prevAgentById = new Map();
+      if (prevOwnerIds.length > 0) {
+        const prevAgents = await m.User.findAll({
+          where: { id: { [Op.in]: prevOwnerIds } },
+          attributes: ['id', 'lyfeId', 'mktrLeadsId'],
+        });
+        for (const a of prevAgents) prevAgentById.set(a.id, a);
+      }
+
+      for (const p of full) {
+        d.dispatchEvent('lead.assigned', () => buildLeadAssignedPayload(p, agent, p), {
+          destination: newDestination,
+        });
+
+        const prevId = lockedById.get(p.id)?.assignedAgentId;
+        const prevAgent = prevId && prevId !== agentId ? prevAgentById.get(prevId) : null;
+        if (prevAgent) {
+          const prevDestination = destinationForAgent(prevAgent);
+          if (prevDestination && prevDestination !== newDestination) {
+            const previousAgentExternalId = externalIdForDestination(prevAgent, prevDestination);
+            d.dispatchEvent('lead.unassigned', () => buildLeadUnassignedPayload(p, previousAgentExternalId), {
+              destination: prevDestination,
+            });
+          }
+        }
       }
     }
 

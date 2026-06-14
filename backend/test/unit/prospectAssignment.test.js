@@ -69,6 +69,7 @@ function buildMocks() {
   const User = {
     findOne: jest.fn().mockResolvedValue(mockAgent),
     findByPk: jest.fn().mockResolvedValue(mockAgent),
+    findAll: jest.fn().mockResolvedValue([]),
   };
 
   const Campaign = {
@@ -206,6 +207,44 @@ describe('prospectAssignment (unit)', () => {
       await service.assignProspect('prospect-1', 'agent-1', admin);
 
       expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.assigned', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
+    });
+
+    it('fires lead.unassigned to the previous owner on a CROSS-APP reassignment', async () => {
+      const prospect = {
+        ...mocks.mockProspect,
+        assignedAgentId: 'agent-prev',
+        update: jest.fn().mockResolvedValue(true),
+      };
+      mocks.models.Prospect.findByPk
+        .mockResolvedValueOnce(prospect)
+        .mockResolvedValueOnce({ ...prospect, campaign: mocks.mockCampaign });
+      // New owner is a Lyfe agent (default mockAgent via findOne); previous owner is an
+      // mktr-leads agent -> different app -> its lingering copy must be released.
+      mocks.models.User.findByPk.mockResolvedValue({ id: 'agent-prev', mktrLeadsId: 'ml-prev' });
+
+      await service.assignProspect('prospect-1', 'agent-1', admin);
+
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.assigned', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.unassigned', expect.any(Function), expect.objectContaining({ destination: 'mktr_leads' }));
+    });
+
+    it('does NOT fire lead.unassigned on a SAME-APP reassignment', async () => {
+      const prospect = {
+        ...mocks.mockProspect,
+        assignedAgentId: 'agent-prev',
+        update: jest.fn().mockResolvedValue(true),
+      };
+      mocks.models.Prospect.findByPk
+        .mockResolvedValueOnce(prospect)
+        .mockResolvedValueOnce({ ...prospect, campaign: null });
+      // Both owners are Lyfe agents -> same app -> the receiver moves the single shared
+      // row on lead.assigned, so firing unassigned would wrongly dispute it.
+      mocks.models.User.findByPk.mockResolvedValue({ id: 'agent-prev', lyfeId: 'lyfe-prev' });
+
+      await service.assignProspect('prospect-1', 'agent-1', admin);
+
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.assigned', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
+      expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.unassigned', expect.any(Function), expect.anything());
     });
 
     it('fires lead.unassigned when agentId is null', async () => {
@@ -392,6 +431,23 @@ describe('prospectAssignment (unit)', () => {
       expect(result.agent).toBeDefined();
     });
 
+    it('fires lead.assigned for each newly-assigned lead (bulk previously delivered nothing)', async () => {
+      mocks.models.Prospect.findAll.mockResolvedValue([
+        { id: 'p-1', firstName: 'A', assignedAgentId: null, campaignId: 'camp-1', campaign: mocks.mockCampaign },
+        { id: 'p-2', firstName: 'B', assignedAgentId: null, campaignId: 'camp-1', campaign: mocks.mockCampaign },
+      ]);
+      mocks.models.Prospect.update.mockResolvedValue([2, [
+        { id: 'p-1', campaignId: 'camp-1' },
+        { id: 'p-2', campaignId: 'camp-1' },
+      ]]);
+
+      await service.bulkAssignProspects(['p-1', 'p-2'], 'agent-1', admin);
+
+      const assignedCalls = mocks.dispatchEvent.mock.calls.filter((c) => c[0] === 'lead.assigned');
+      expect(assignedCalls).toHaveLength(2);
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.assigned', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
+    });
+
     it('deducts lead credits per campaign from the RETURNING rows', async () => {
       mocks.models.Prospect.update.mockResolvedValue([2, [
         { id: 'p-1', campaignId: 'camp-1' },
@@ -427,9 +483,10 @@ describe('prospectAssignment (unit)', () => {
 
       await service.bulkAssignProspects(['p-1'], 'agent-1', admin);
 
-      const where = mocks.models.Prospect.update.mock.calls[0][1].where;
-      // IS DISTINCT FROM semantics: unassigned (NULL) rows still match, rows
-      // already held by agent-1 do not.
+      // The same-agent exclusion lives on the locked SELECT (the UPDATE then targets the
+      // locked id set). IS DISTINCT FROM semantics: unassigned (NULL) rows still match,
+      // rows already held by agent-1 do not.
+      const where = mocks.models.Prospect.findAll.mock.calls[0][0].where;
       expect(where[Op.or]).toEqual([
         { assignedAgentId: null },
         { assignedAgentId: { [Op.ne]: 'agent-1' } },
