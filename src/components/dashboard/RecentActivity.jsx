@@ -80,7 +80,54 @@ export default function RecentActivity({ prospects }) {
  </div>
  </CardHeader>
  <CardContent className="p-0">
- <div className="overflow-x-auto">
+ {/* Mobile: stacked list — a 4-column table is too wide for a phone */}
+ <div className="md:hidden">
+ {recentProspects.length > 0 ? (
+ <ul className="divide-y divide-border/50">
+ {recentProspects.map((prospect) => (
+ <li key={prospect.id}>
+ <Link
+ to={'/AdminProspects' + `?id=${prospect.id}`}
+ className="flex items-center gap-3 px-4 py-3 active:bg-muted/50 transition-colors"
+ >
+ <Avatar className="w-9 h-9 shrink-0 border border-border">
+ <AvatarFallback className="bg-background text-foreground text-xs font-medium">
+ {prospect.name?.charAt(0)?.toUpperCase()}
+ </AvatarFallback>
+ </Avatar>
+ <div className="min-w-0 flex-1">
+ <p className="font-medium text-foreground truncate">{prospect.name || '—'}</p>
+ <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+ <Clock className="w-3 h-3 shrink-0 text-muted-foreground/70" aria-hidden="true"/>
+ <span className="truncate">{formatProspectDate(prospect)}</span>
+ </div>
+ </div>
+ <Badge
+ variant="outline" className={`shrink-0 font-normal ${statusStyles[prospect.status] || 'bg-muted text-muted-foreground'}`}
+ >
+ {statusLabels[prospect.status] || prospect.status}
+ </Badge>
+ </Link>
+ </li>
+ ))}
+ </ul>
+ ) : (
+ <div className="px-6 py-12 text-center text-muted-foreground">
+ <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50"/>
+ <p className="font-medium mb-1">No recent activity</p>
+ <p className="text-xs text-muted-foreground/70 mb-4">
+ Prospects will appear here as they are added
+ </p>
+ <Link to={'/AdminProspects'}>
+ <Button variant="outline" size="sm">
+ View All Prospects
+ </Button>
+ </Link>
+ </div>
+ )}
+ </div>
+ {/* Desktop: full table */}
+ <div className="hidden md:block overflow-x-auto">
  <table className="w-full text-sm text-left">
  <thead className="bg-muted/50 text-muted-foreground font-medium border-b border-border">
  <tr>
