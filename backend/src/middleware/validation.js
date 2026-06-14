@@ -248,6 +248,21 @@ export const schemas = {
     status: Joi.string().valid('active', 'inactive', 'draft', 'archived').optional()
   }),
 
+  // Update mirrors create but every field is optional (partial update). The admin
+  // "Edit Package Template" form re-submits the whole payload (incl. description,
+  // isPublic, status), so all of those must be accepted here too. `.min(1)`
+  // rejects an empty body.
+  leadPackageUpdate: Joi.object({
+    name: Joi.string().min(1).max(100).optional(),
+    price: Joi.number().min(0).optional(),
+    leadCount: Joi.number().integer().min(1).optional(),
+    campaignId: Joi.string().uuid().optional(),
+    type: Joi.string().valid('basic', 'premium', 'enterprise', 'custom').optional(),
+    description: Joi.string().allow('', null).optional(),
+    isPublic: Joi.boolean().optional(),
+    status: Joi.string().valid('active', 'inactive', 'draft', 'archived').optional()
+  }).min(1),
+
   // mktr-leads agent management (admin dashboard → mktr-leads source of truth).
   // Phone is a loose charset pre-check only — the mktr-leads edge function owns
   // canonical SG normalization (normalize_sg_phone); duplicating it here would

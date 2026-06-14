@@ -87,6 +87,7 @@ jest.unstable_mockModule('../../src/utils/logger.js', () => ({
 const {
   listPackages,
   createPackage,
+  updatePackage,
   assignPackage,
   getAgentAssignments,
   deleteAssignment,
@@ -180,6 +181,70 @@ describe('leadPackageService (unit)', () => {
 
       const createArg = LeadPackage.create.mock.calls[0][0];
       expect(createArg.type).toBe('basic');
+    });
+  });
+
+  // ────────────────────────────────────────────────
+  // updatePackage
+  // ────────────────────────────────────────────────
+
+  describe('updatePackage', () => {
+    it('updates only whitelisted fields', async () => {
+      const pkg = { ...mockPackage, update: jest.fn().mockResolvedValue(true) };
+      LeadPackage.findByPk.mockResolvedValue(pkg);
+
+      await updatePackage('pkg-1', {
+        name: 'Renamed',
+        price: 999,
+        leadCount: 75,
+        campaignId: 'camp-2',
+        type: 'premium',
+        isPublic: false,
+        status: 'inactive',
+        // Non-whitelisted fields must be ignored:
+        id: 'hacked-id',
+        createdBy: 'someone-else',
+      });
+
+      expect(pkg.update).toHaveBeenCalledTimes(1);
+      const updateArg = pkg.update.mock.calls[0][0];
+      expect(updateArg).toEqual({
+        name: 'Renamed',
+        price: 999,
+        leadCount: 75,
+        campaignId: 'camp-2',
+        type: 'premium',
+        isPublic: false,
+        status: 'inactive',
+      });
+      expect(updateArg).not.toHaveProperty('id');
+      expect(updateArg).not.toHaveProperty('createdBy');
+    });
+
+    it('skips the update call when no whitelisted fields are present', async () => {
+      const pkg = { ...mockPackage, update: jest.fn().mockResolvedValue(true) };
+      LeadPackage.findByPk.mockResolvedValue(pkg);
+
+      const result = await updatePackage('pkg-1', { id: 'x', createdBy: 'y' });
+
+      expect(pkg.update).not.toHaveBeenCalled();
+      expect(result.package).toBeDefined();
+    });
+
+    it('ignores undefined fields (partial update)', async () => {
+      const pkg = { ...mockPackage, update: jest.fn().mockResolvedValue(true) };
+      LeadPackage.findByPk.mockResolvedValue(pkg);
+
+      await updatePackage('pkg-1', { name: 'Only Name', price: undefined });
+
+      expect(pkg.update).toHaveBeenCalledWith({ name: 'Only Name' });
+    });
+
+    it('throws when package not found', async () => {
+      LeadPackage.findByPk.mockResolvedValue(null);
+
+      await expect(updatePackage('nonexistent', { name: 'x' }))
+        .rejects.toThrow('Package not found');
     });
   });
 

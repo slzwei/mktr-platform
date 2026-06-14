@@ -25,6 +25,9 @@ router.delete('/assignments/:id', authenticateToken, requireAgentOrAdmin, ctrl.d
 // PATCH /api/lead-packages/assignments/:id
 router.patch('/assignments/:id', authenticateToken, requireAgentOrAdmin, ctrl.updateAssignment);
 
+// PUT /api/lead-packages/:id
+router.put('/:id', authenticateToken, requireAgentOrAdmin, validate(schemas.leadPackageUpdate), ctrl.updatePackage);
+
 // DELETE /api/lead-packages/:id
 router.delete('/:id', authenticateToken, requireAgentOrAdmin, ctrl.deletePackage);
 

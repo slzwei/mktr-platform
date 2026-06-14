@@ -31,6 +31,30 @@ export const createPackage = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data });
 });
 
+export const updatePackage = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'admin') {
+    throw new AppError('Access denied', 403);
+  }
+
+  const { name, description, price, leadCount, campaignId, type, isPublic, status } = req.body;
+  const data = await leadPackageService.updatePackage(req.params.id, {
+    name,
+    description,
+    price,
+    leadCount,
+    campaignId,
+    type,
+    isPublic,
+    status
+  });
+
+  res.json({
+    success: true,
+    message: 'Package updated successfully',
+    data
+  });
+});
+
 export const assignPackage = asyncHandler(async (req, res) => {
   if (req.user.role !== 'admin') {
     throw new AppError('Access denied', 403);
