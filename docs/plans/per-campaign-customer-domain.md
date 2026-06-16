@@ -1,6 +1,6 @@
 # Plan — Per-campaign customer domain toggle (redeem.sg ↔ mktr.sg)
 
-**Status:** Draft for review
+**Status:** ✅ SHIPPED 2026-06-17 — Phase 1 + 2 deployed to prod (commit `0554719`); mktr.sg Render lead-capture redirects removed; `EMAIL_FROM_MKTR=noreply@mktr.sg` set; migration `037` applied. Remaining follow-ups (QR integration tests, "host changed → regenerate" hint, AdminShortLinks) in §11 / §12.3.
 **Author:** Shawn + Claude
 **Repo:** mktr-platform (Express backend + React/Vite SPA, dual-brand build)
 

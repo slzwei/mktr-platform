@@ -18,20 +18,13 @@ The same React/Vite SPA in `src/` builds into TWO Render Static Sites from the s
 | `redeem-frontend` | `redeem.sg`, `www.redeem.sg` | `redeem` | **Customer brand** (a service of MKTR PTE. LTD., UEN 202507548M). What a prospect sees after scanning a QR or clicking a campaign link. Lead-capture forms only. Apex `/` shows minimal `RedeemPlaceholder`. |
 | `mktr-backend-jo6r` | `api.mktr.sg` | (backend) | Single Express service serves both static sites' `/api/*` and `/uploads/*` via Render proxy rewrites. Single source of truth for campaigns/agents/leads/round-robin regardless of which brand sent traffic. |
 
-### Cutover redirect rules on `mktr-platform` (5 lead-capture paths only)
+### Per-campaign customer domain (redeem.sg ↔ mktr.sg) — shipped 2026-06-17
 
-Old mktr.sg lead-capture URLs 301-redirect to redeem.sg as a safety net (existing QRs printed with mktr.sg, hardcoded integrations). Everything else stays on MKTR:
+Customer-facing surfaces default to **redeem.sg**, but a campaign can opt into **mktr.sg** per-campaign via the **Customer domain** toggle in the campaign designer (Content panel), stored as `design_config.customerHost ∈ {redeem, mktr}` (default `redeem`). Choosing `mktr.sg` intentionally shows the MKTR (operator) brand to the customer — page chrome, regulatory copy, Pixel, and the confirmation email all follow the host.
 
-| Source | Destination |
-|---|---|
-| `/LeadCapture` | `https://redeem.sg/LeadCapture` |
-| `/LeadCapture/*` | `https://redeem.sg/LeadCapture/*` |
-| `/p/*` | `https://redeem.sg/p/*` (campaign preview) |
-| `/t/*` | `https://redeem.sg/t/*` (QR tracker) |
-| `/share/*` | `https://redeem.sg/share/*` (shortlinks) |
-| `/*` | `/index.html` (SPA fallback, LAST) |
+**The old mktr.sg→redeem.sg lead-capture 301 redirects were REMOVED** (Render dashboard, 2026-06-17) so `mktr.sg` now serves the SPA for `/LeadCapture`, `/t/*`, `/p/*`, `/share/*` directly. The only redirect/rewrite rule left on `mktr-platform` is the SPA fallback `/* → /index.html` (must stay last). Removing them is safe for redeem campaigns (they still emit redeem.sg links by default) — it just stops force-bouncing mktr.sg lead-capture traffic so the per-campaign option works.
 
-The 7 marketing/apex redirects originally added (`/Homepage`, `/Contact`, `/features`, `/pricing`, `/about`, `/personal-data-policy`, `/`) were removed during cutover. Per product direction, `mktr.sg` keeps its existing marketing pages and admin surfaces unchanged — only lead-capture flows redirect.
+> Historical: during the 2026-05 cutover those 5 lead-capture paths 301'd to redeem.sg as a safety net, and 7 marketing/apex redirects (`/Homepage`, `/Contact`, `/features`, `/pricing`, `/about`, `/personal-data-policy`, `/`) were removed. `mktr.sg` keeps its marketing pages and admin surfaces.
 
 ### Brand isolation in the bundle
 
@@ -39,20 +32,23 @@ The 7 marketing/apex redirects originally added (`/Homepage`, `/Contact`, `/feat
 
 Brand-aware values include: `name`, `wordmark`, `legalName`, `uen`, `consumerLine`, `logoSrc`/`logoDarkSrc`/`logoIconSrc`/`faviconSrc`, `pageTitle`, `pdpaUrl`, `publicHost`, `defaultRegulatory`, `defaultPoweredBy`, `partnersTerm`, `pdpaAbsoluteUrl`, `consentEntityClause`, plus the `show*` route gates (`showHomepage`, `showAbout`, `showFeatures`, `showPricing`).
 
-### Customer-facing URL helpers (always point to redeem.sg)
+### Customer-facing URL helpers (host-aware; default redeem.sg)
 
-`src/lib/brand.js` defines `CUSTOMER_HOST = 'redeem.sg'` as a module-level constant. Helpers that produce customer-facing URLs **always** use this host regardless of which brand build is rendering them. This ensures admin-side surfaces (Copy Link buttons, QR display, preview links) generate clean `redeem.sg` URLs with no `mktr.sg → redeem.sg` redirect hop:
+`src/lib/brand.js` defines `resolveCustomerHost(choice)` which maps a campaign's stored enum CHOICE (`'redeem'` | `'mktr'`) to a HOST (`redeem.sg` | `mktr.sg`), defaulting to `redeem.sg` for any missing/unknown value. The customer-facing helpers take an **optional `host`** (last arg, default `redeem.sg`), so admin-side surfaces emit the campaign's chosen host with no redirect hop. Keep the enum-choice and the hostname strictly separate — never pass a raw hostname from campaign JSON into a helper.
 
 | Helper | Returns |
 |---|---|
-| `customerPublicUrl(path)` | `https://redeem.sg{path}` |
-| `customerLeadCaptureUrl(campaignId, extraParams)` | `https://redeem.sg/LeadCapture?campaign_id={id}&...` |
-| `customerPreviewUrl(slug)` | `https://redeem.sg/p/{slug}` |
-| `publicTrackingUrl(slug)` | `https://redeem.sg/t/{slug}` (via `customerPublicUrl`) |
-| `publicShareUrl(slug)` | `https://redeem.sg/share/{slug}` |
+| `resolveCustomerHost(choice)` | `'redeem.sg'` \| `'mktr.sg'` (default `redeem.sg`) |
+| `customerPublicUrl(path, host?)` | `https://{host}{path}` (host defaults to redeem.sg) |
+| `customerLeadCaptureUrl(campaignId, extraParams?, host?)` | `https://{host}/LeadCapture?campaign_id={id}&...` |
+| `customerPreviewUrl(slug, host?)` | `https://{host}/p/{slug}` |
+| `publicTrackingUrl(slug, host?)` | `https://{host}/t/{slug}` (via `customerPublicUrl`) |
+| `publicShareUrl(slug, host?)` | `https://{host}/share/{slug}` |
 | `publicUrl(path)` | `https://{brand.publicHost}{path}` — brand-self-referential; for canonical, SEO, robots/sitemap only |
 
-Callers: `AdminCampaigns.handleCopyLink`, `AdminCampaignDesigner.handlePreview`, all QR admin tables (`CarQRTable`, `ExistingQRCodes`, `PromotionalQRTable`). Customer-side surfaces (`LeadCapture.longShareUrl`, `ShareCampaignDialog`) work via `window.location.origin` and are already correct since they execute on `redeem.sg`.
+Callers pass `resolveCustomerHost(campaign.design_config?.customerHost)`: `AdminCampaigns.handleCopyLink` (both the dropdown + grid Copy Link sites), `AdminCampaignDesigner.handlePreview` (from the *saved* campaign), `PreviewFrame` chrome (from live editor state). The QR admin tables (`CarQRTable`, `ExistingQRCodes`, `PromotionalQRTable`) pass `resolveCustomerHost(qr.targetHost)` — the host baked into that QR image. Customer-side surfaces (`LeadCapture.longShareUrl`, `ShareCampaignDialog`) use `window.location.origin` and are correct on whichever host served them.
+
+**QR generation (backend):** `qrCodeService` bakes the campaign's host into the QR image at create/regenerate time and records it on `QrTag.targetHost` (enum `redeem`|`mktr`, nullable → legacy treated as redeem; migration `037-add-qrtag-target-host.js`, existing rows backfilled to `redeem`). `backend/src/utils/customerHost.js` provides `normalizeCustomerHostChoice()` (enum clamp — the security boundary, never trusts a raw host) and `customerHostOrigin(choice)` (→ `PUBLIC_BASE_URL` for redeem/default, `MKTR_FRONTEND_URL`/`https://mktr.sg` for mktr). `campaignService.updateCampaign` clamps `design_config.customerHost` to the enum on save; the bulk-QR update path excludes `campaignId`/`targetHost`/`slug`/`qrCode`/`qrImageUrl` so host can't be mass-mutated without regeneration.
 
 ### Routing guards (D13 — internal routes are mktr.sg-only, three layers)
 
@@ -68,17 +64,17 @@ The single backend serves both origins. To respond correctly per origin:
 - **`backend/src/utils/frontendBase.js`** — `frontendBaseForHost(host)` returns `MKTR_FRONTEND_URL` or `REDEEM_FRONTEND_URL` for per-request redirect destinations.
 - **`trackerController.js` + `leadCaptureBind.js`** — cookies set via `cookieDomainForPublicHost(publicHostFromRequest(req))`. Redirects use `frontendBaseForHost(...)` to land on the same public host the user came from. The lead-capture binder route redirects to `/LeadCapture` (camelCase, matches SPA route) instead of `/lead-capture` (which doesn't exist on the SPA).
 - **`prospectController.js`** — derives a CAPI `event_source_url` fallback from `publicHostFromRequest(req)` when the SPA omits it; `metaCapiService.js` is unchanged (still has no req access).
-- **`mailer.js`** — `resolveEmailFrom(context)` and `sendEmail({..., context, from})` allow per-flow sender selection. `EMAIL_FROM_MKTR` / `EMAIL_FROM_REDEEM` env vars override the default `EMAIL_FROM`. `sendLeadConfirmationEmail` is wired to `context: 'redeem'` and fires fire-and-forget on every lead-capture submit (`prospectController.js`; synthetic `@calls.mktr.sg` Retell emails are skipped). Its copy/header/footer are **hardcoded Redeem branding with no per-campaign brand branching** — an MKTR-hosted campaign would still email Redeem branding to the customer (tracked in `docs/plans/per-campaign-customer-domain.md`).
+- **`mailer.js`** — `resolveEmailFrom(context)` and `sendEmail({..., context, from})` allow per-flow sender selection. `EMAIL_FROM_MKTR` / `EMAIL_FROM_REDEEM` env vars override the default `EMAIL_FROM`. `sendLeadConfirmationEmail` fires fire-and-forget on every lead-capture submit (`prospectController.js`; synthetic `@calls.mktr.sg` Retell emails are skipped) and **brands by the campaign's `design_config.customerHost`**: a redeem campaign sends Redeem copy/header/footer with `context:'redeem'` (→ `noreply@redeem.sg`); an mktr campaign sends MKTR branding with `context:'mktr'` (→ `EMAIL_FROM_MKTR` = `noreply@mktr.sg`). `prospectService` loads the campaign's `design_config` for every prospect so the brand is available to the email.
 
 ### Backend env vars set in production
 
 | Env var | Value | Purpose |
 |---|---|---|
-| `PUBLIC_BASE_URL` | `https://redeem.sg` | Host encoded in newly generated QR code images. New QRs encode `redeem.sg/t/{slug}` directly. Also used by APK download URL display (admin-side cosmetic). |
+| `PUBLIC_BASE_URL` | `https://redeem.sg` | **Default** host baked into QR images (redeem + unbound QRs encode `redeem.sg/t/{slug}`). Per-campaign mktr QRs use `MKTR_FRONTEND_URL` instead, via `customerHostOrigin()`. Also used by APK download URL display (admin-side cosmetic). |
 | `MKTR_FRONTEND_URL` | `https://mktr.sg` | Per-host redirect destination for mktr.sg traffic. Falls back to `FRONTEND_BASE_URL`. |
 | `REDEEM_FRONTEND_URL` | `https://redeem.sg` | Per-host redirect destination for redeem.sg traffic. |
 | `CORS_ORIGIN` | `…mktr-platform.onrender.com,…redeem-frontend.onrender.com` | Adds preview hostnames for staging. Code defaults already include the four apex+www hosts. |
-| `EMAIL_FROM_MKTR` | (unset; defaults to `EMAIL_FROM`) | Admin/agent emails (lead assignments, package assignments) — stays MKTR. |
+| `EMAIL_FROM_MKTR` | `noreply@mktr.sg` (set 2026-06-17) | From-address for ALL MKTR-context emails — the customer confirmation on mktr campaigns AND agent/admin notifications (lead/package assignments). First in the from-address resolution chain (ahead of `EMAIL_FROM` / `EMAIL_USER`); set explicitly so the sender isn't the SMTP login `admin@mktr.sg`. |
 | `EMAIL_FROM_REDEEM` | (falls back to `EMAIL_FROM` if unset) | Customer-facing lead-capture confirmation email (`sendLeadConfirmationEmail`, `context:'redeem'`), sender `noreply@redeem.sg`. SES domain verified + DKIM/SPF/DMARC pass. |
 
 ### DNS for `redeem.sg`
