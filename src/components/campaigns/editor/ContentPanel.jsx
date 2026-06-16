@@ -70,6 +70,35 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
 
  return (
  <div className="space-y-6">
+      {/* Customer domain — which host + brand the customer sees */}
+      <div className="space-y-3">
+        <Label className="text-sm font-semibold text-foreground">Customer domain</Label>
+        <p className="text-xs text-muted-foreground -mt-1">
+          Where this campaign&apos;s form lives and which brand the customer sees. Default is
+          redeem.sg (customer brand); switch to mktr.sg to serve it on the operator domain.
+        </p>
+        <div className="bg-muted p-1 rounded-lg flex gap-1">
+          {[
+            { id: 'redeem', label: 'redeem.sg', sub: 'Customer brand' },
+            { id: 'mktr', label: 'mktr.sg', sub: 'Operator brand' },
+          ].map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => onDesignChange('customerHost', opt.id)}
+              className={`flex-1 py-1.5 px-2 text-xs font-medium rounded-md transition-colors ${
+                (currentDesign.customerHost || 'redeem') === opt.id
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground dark:hover:text-muted-foreground'
+              }`}
+            >
+              <span className="block font-mono">{opt.label}</span>
+              <span className="block text-[10px] font-normal opacity-70">{opt.sub}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
  {/* Headline */}
  <div className="space-y-3">
  <Label htmlFor="formHeadline" className="text-sm font-semibold text-foreground">

@@ -68,7 +68,7 @@ The single backend serves both origins. To respond correctly per origin:
 - **`backend/src/utils/frontendBase.js`** — `frontendBaseForHost(host)` returns `MKTR_FRONTEND_URL` or `REDEEM_FRONTEND_URL` for per-request redirect destinations.
 - **`trackerController.js` + `leadCaptureBind.js`** — cookies set via `cookieDomainForPublicHost(publicHostFromRequest(req))`. Redirects use `frontendBaseForHost(...)` to land on the same public host the user came from. The lead-capture binder route redirects to `/LeadCapture` (camelCase, matches SPA route) instead of `/lead-capture` (which doesn't exist on the SPA).
 - **`prospectController.js`** — derives a CAPI `event_source_url` fallback from `publicHostFromRequest(req)` when the SPA omits it; `metaCapiService.js` is unchanged (still has no req access).
-- **`mailer.js`** — `resolveEmailFrom(context)` and `sendEmail({..., context, from})` allow per-flow sender selection. `EMAIL_FROM_MKTR` / `EMAIL_FROM_REDEEM` env vars override the default `EMAIL_FROM`. No callers wired to `context: 'redeem'` yet (lead-capture flow does not currently send customer confirmation emails).
+- **`mailer.js`** — `resolveEmailFrom(context)` and `sendEmail({..., context, from})` allow per-flow sender selection. `EMAIL_FROM_MKTR` / `EMAIL_FROM_REDEEM` env vars override the default `EMAIL_FROM`. `sendLeadConfirmationEmail` is wired to `context: 'redeem'` and fires fire-and-forget on every lead-capture submit (`prospectController.js`; synthetic `@calls.mktr.sg` Retell emails are skipped). Its copy/header/footer are **hardcoded Redeem branding with no per-campaign brand branching** — an MKTR-hosted campaign would still email Redeem branding to the customer (tracked in `docs/plans/per-campaign-customer-domain.md`).
 
 ### Backend env vars set in production
 
@@ -79,7 +79,7 @@ The single backend serves both origins. To respond correctly per origin:
 | `REDEEM_FRONTEND_URL` | `https://redeem.sg` | Per-host redirect destination for redeem.sg traffic. |
 | `CORS_ORIGIN` | `…mktr-platform.onrender.com,…redeem-frontend.onrender.com` | Adds preview hostnames for staging. Code defaults already include the four apex+www hosts. |
 | `EMAIL_FROM_MKTR` | (unset; defaults to `EMAIL_FROM`) | Admin/agent emails (lead assignments, package assignments) — stays MKTR. |
-| `EMAIL_FROM_REDEEM` | (unset until a customer email flow is wired) | Customer-facing emails from `noreply@redeem.sg`. SES domain verified + DKIM/SPF/DMARC pass — ready when a customer email flow is added. |
+| `EMAIL_FROM_REDEEM` | (falls back to `EMAIL_FROM` if unset) | Customer-facing lead-capture confirmation email (`sendLeadConfirmationEmail`, `context:'redeem'`), sender `noreply@redeem.sg`. SES domain verified + DKIM/SPF/DMARC pass. |
 
 ### DNS for `redeem.sg`
 

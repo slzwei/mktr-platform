@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { QrTag, Campaign, Car, QrScan, Attribution, Prospect, SessionVisit, User, AgentGroupMember, sequelize } from '../models/index.js';
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { normalizeCustomerHostChoice, customerHostOrigin } from '../utils/customerHost.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -122,12 +123,21 @@ export async function listQrCodes(user, query) {
   };
 }
 
+// Resolve the customer-host CHOICE ('redeem' | 'mktr') for a QR's (effective)
+// campaign. Unbound QRs (no campaign) → 'redeem' (the default host).
+async function resolveQrTargetHost(campaignId) {
+  if (!campaignId) return 'redeem';
+  const campaign = await Campaign.findByPk(campaignId, { attributes: ['id', 'design_config'] });
+  return normalizeCustomerHostChoice(campaign?.design_config?.customerHost);
+}
+
 export async function createQrCode(body, user) {
   const { label, tags = [], type, campaignId, carId,
           agentAssignmentMode, agentGroupId,
           assignedAgentPhone, assignedAgentEmail, assignedAgentName } = body;
 
-  // Validate campaign access
+  // Validate campaign access + capture its customer host (redeem default).
+  let targetHost = 'redeem';
   if (campaignId) {
     const campaign = await Campaign.findOne({
       where: {
@@ -139,6 +149,7 @@ export async function createQrCode(body, user) {
       }
     });
     if (!campaign) throw new AppError('Campaign not found or access denied', 404);
+    targetHost = normalizeCustomerHostChoice(campaign.design_config?.customerHost);
   }
 
   // Validate car access
@@ -151,16 +162,26 @@ export async function createQrCode(body, user) {
     }
   }
 
-  // Idempotent car QR: update existing if present
+  // Idempotent car QR: update existing if present. If a campaign reassignment
+  // moves the QR to a different customer host, re-bake the image so the printed
+  // code points at the right host.
   if (type === 'car' && carId) {
     const existing = await QrTag.findOne({ where: { type: 'car', carId } });
     if (existing) {
-      await existing.update({
+      const effectiveTargetHost = campaignId ? targetHost : (existing.targetHost || 'redeem');
+      const updates = {
         campaignId: campaignId || existing.campaignId,
         active: true,
         label: label || existing.label,
         tags
-      });
+      };
+      if (existing.slug && effectiveTargetHost !== (existing.targetHost || 'redeem')) {
+        const linkUrl = `${customerHostOrigin(effectiveTargetHost)}/t/${existing.slug}`;
+        updates.targetHost = effectiveTargetHost;
+        updates.qrCode = await generateQRCodeImage(linkUrl);
+        updates.qrImageUrl = await generateAndStorePng(linkUrl, existing.slug);
+      }
+      await existing.update(updates);
       return { qrTag: existing, updated: true };
     }
   }
@@ -173,7 +194,7 @@ export async function createQrCode(body, user) {
     if (++retry > 5) break;
   }
 
-  const publicBase = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
+  const publicBase = customerHostOrigin(targetHost);
   const linkUrl = `${publicBase}/t/${slug}`;
   const svg = await generateQRCodeImage(linkUrl);
   const publicUrl = await generateAndStorePng(linkUrl, slug);
@@ -199,6 +220,7 @@ export async function createQrCode(body, user) {
     active: true,
     qrCode: svg,
     qrImageUrl: publicUrl,
+    targetHost,
     agentAssignmentMode: agentAssignmentMode || 'direct',
     agentGroupId: agentGroupId || null,
     assignedAgentId: resolvedAgentId,
@@ -258,11 +280,19 @@ export async function updateQrCode(id, body, user) {
     updateData.assignedAgentId = null;
   }
 
-  if (regenerateCode) {
-    const publicBase = process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
-    const linkUrl = `${publicBase}/t/${qrTag.slug}`;
+  // Resolve the effective customer host from the (possibly updated) campaign.
+  // Regenerate the QR image when explicitly requested OR when a host-affecting
+  // reassignment changes which host the code points at.
+  const effectiveCampaignId =
+    'campaignId' in updateData ? updateData.campaignId : qrTag.campaignId;
+  const effectiveTargetHost = await resolveQrTargetHost(effectiveCampaignId);
+  const hostChanged = effectiveTargetHost !== (qrTag.targetHost || 'redeem');
+
+  if (regenerateCode || hostChanged) {
+    const linkUrl = `${customerHostOrigin(effectiveTargetHost)}/t/${qrTag.slug}`;
     updateData.qrCode = await generateQRCodeImage(linkUrl);
     updateData.qrImageUrl = await generateAndStorePng(linkUrl, qrTag.slug);
+    updateData.targetHost = effectiveTargetHost;
   }
 
   await qrTag.update(updateData);
@@ -384,9 +414,12 @@ export async function bulkOperateQrCodes(operation, qrTagIds, data, user) {
       message = `${qrTags.length} QR codes archived`;
       break;
     case 'update': {
-      // Exclude assignment fields from bulk update to prevent mass-overwrite
+      // Exclude assignment + host/image fields from bulk update: campaignId and
+      // targetHost change which host the QR points at (needs per-row regen), and
+      // slug/qrCode/qrImageUrl must never be mass-overwritten.
       const BULK_EXCLUDE = ['agentAssignmentMode', 'agentGroupId',
-        'assignedAgentId', 'assignedAgentPhone', 'assignedAgentEmail', 'assignedAgentName', 'roundRobinIndex'];
+        'assignedAgentId', 'assignedAgentPhone', 'assignedAgentEmail', 'assignedAgentName', 'roundRobinIndex',
+        'campaignId', 'slug', 'qrCode', 'qrImageUrl', 'targetHost'];
       const safeData = Object.fromEntries(
         Object.entries(data || {}).filter(([k]) => !BULK_EXCLUDE.includes(k))
       );

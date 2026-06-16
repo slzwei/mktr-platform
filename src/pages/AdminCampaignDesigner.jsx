@@ -11,7 +11,7 @@ import { apiClient } from"@/api/client";
 import { useCurrentUser } from"@/hooks/queries/useUsersQuery";
 import { useCampaign } from"@/hooks/queries/useCampaignsQuery";
 import { queryClient } from"@/lib/queryClient";
-import { customerPublicUrl } from"@/lib/brand";
+import { customerPublicUrl, resolveCustomerHost } from"@/lib/brand";
 
 export default function AdminCampaignDesigner() {
  const campaignId = new URLSearchParams(window.location.search).get('campaign_id');
@@ -48,9 +48,12 @@ export default function AdminCampaignDesigner() {
  toast.error('Failed to generate preview link');
  return;
  }
- // Open preview on the customer-facing redeem.sg so the admin reviews
- // the same render the customer would see (avoiding a mktr→redeem hop).
- const url = customerPublicUrl(urlPath);
+ // Open the preview on the campaign's chosen customer host so the admin
+ // reviews the same render the customer would see. Uses the SAVED campaign's
+ // customerHost (the /p/:slug preview is minted from the persisted campaign,
+ // so toggling the domain requires a Save before this reflects it).
+ const host = resolveCustomerHost(campaign?.design_config?.customerHost);
+ const url = customerPublicUrl(urlPath, host);
  window.open(url, '_blank');
  } catch (e) {
  console.error('Failed to create preview:', e);

@@ -68,6 +68,13 @@ const QrTag = sequelize.define('QrTag', {
     type: DataTypes.STRING,
     allowNull: true
   },
+  // Customer host baked into the QR image link ('redeem' | 'mktr'). NULL =
+  // legacy/unspecified → treated as 'redeem'. Set at generation/regeneration so
+  // admin display matches the printed code and host drift can be detected.
+  targetHost: {
+    type: DataTypes.STRING(16),
+    allowNull: true
+  },
   // Active flag (replace status enum usage)
   active: {
     type: DataTypes.BOOLEAN,

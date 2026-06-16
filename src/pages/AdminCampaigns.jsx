@@ -29,7 +29,7 @@ import {
  TableRow
 } from"@/components/ui/table";
 import { Link } from"react-router-dom";
-import { customerLeadCaptureUrl } from"@/lib/brand";
+import { customerLeadCaptureUrl, resolveCustomerHost } from"@/lib/brand";
 import { format, parseISO } from"date-fns";
 import {
  Plus,
@@ -92,13 +92,15 @@ export default function AdminCampaigns() {
  navigate(`/admin/campaigns/new?type=${type}`);
  };
 
- const handleCopyLink = (campaignId) => {
- // Always copy the customer-facing redeem.sg URL so recipients open
- // directly on the customer brand (no mktr.sg→redeem.sg redirect hop).
- const campaignUrl = customerLeadCaptureUrl(campaignId);
+ const handleCopyLink = (campaign) => {
+ // Copy the campaign's customer-facing URL on its chosen host (redeem.sg by
+ // default, mktr.sg when design_config.customerHost === 'mktr') so recipients
+ // open directly on the right brand with no redirect hop.
+ const host = resolveCustomerHost(campaign?.design_config?.customerHost);
+ const campaignUrl = customerLeadCaptureUrl(campaign.id, {}, host);
 
  navigator.clipboard.writeText(campaignUrl).then(() => {
- setCopiedId(campaignId);
+ setCopiedId(campaign.id);
  setTimeout(() => setCopiedId(null), 2000);
  });
  };
@@ -180,7 +182,7 @@ export default function AdminCampaigns() {
  </Button>
  </DropdownMenuTrigger>
  <DropdownMenuContent align="end">
- <DropdownMenuItem onClick={() => handleCopyLink(c.id)}>
+ <DropdownMenuItem onClick={() => handleCopyLink(c)}>
  {copiedId === c.id ? <Copy className="w-4 h-4 text-success"/> : <LinkIcon className="w-4 h-4"/>}
  <span className="ml-2">{copiedId === c.id ? 'Copied!' : 'Copy Link'}</span>
  </DropdownMenuItem>
@@ -347,7 +349,7 @@ export default function AdminCampaigns() {
  </div>
  ) : (
  <div className="flex items-center gap-2">
- <Button size="sm" variant="outline" onClick={() => handleCopyLink(c.id)}>
+ <Button size="sm" variant="outline" onClick={() => handleCopyLink(c)}>
  {copiedId === c.id ? <Copy className="w-4 h-4 mr-2 text-success"/> : <LinkIcon className="w-4 h-4 mr-2"/>}
  {copiedId === c.id ? 'Copied' : 'Copy Link'}
  </Button>

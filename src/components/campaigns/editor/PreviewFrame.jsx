@@ -4,7 +4,7 @@ import LeadCaptureLayout from"../LeadCaptureLayout";
 import CampaignSignupForm from"../CampaignSignupForm";
 import { QuizGate } from"../CampaignQuiz";
 import { deriveLeadCaptureContent } from"../leadCaptureContent";
-import { customerPublicUrl } from"@/lib/brand";
+import { customerPublicUrl, resolveCustomerHost } from"@/lib/brand";
 
 /**
  * Faithful, read-only campaign preview.
@@ -45,7 +45,8 @@ export default function PreviewFrame({ currentDesign, campaign }) {
 
  // Cosmetic chrome host — show the real customer host the page is served from.
  const chromeUrl = customerPublicUrl(
- `/LeadCapture?campaign_id=${campaign?.id ?? ''}`
+ `/LeadCapture?campaign_id=${campaign?.id ?? ''}`,
+ resolveCustomerHost(currentDesign.customerHost)
  ).replace(/^https?:\/\//, '');
 
  return (

@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { logger } from '../utils/logger.js';
+import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
 
 // D12: per-origin from-address. Lead-capture confirmations sent from the
 // redeem.sg flow use noreply@redeem.sg; admin / agent emails keep the
@@ -258,12 +259,29 @@ export async function sendLeadConfirmationEmail(prospect) {
   const safeCampaign = escapeHtml(campaignName);
   const subject = `We've received your interest in ${campaignName}`;
 
+  // Brand the confirmation email by the campaign's customer host: redeem.sg
+  // (default) shows the Redeem brand; an mktr.sg campaign must show MKTR to the
+  // customer. Backend code is not bundled into the frontend dist, so the MKTR
+  // literals here do not affect the redeem-build brand-isolation grep.
+  const hostChoice = normalizeCustomerHostChoice(prospect.campaign?.design_config?.customerHost);
+  const isMktrHost = hostChoice === 'mktr';
+  const brandName = isMktrHost ? 'MKTR' : 'Redeem';
+  const headerImage = isMktrHost
+    ? 'https://mktr.sg/email/confetti-header.gif'
+    : 'https://redeem.sg/email/confetti-header.gif';
+  const footerEntityHtml = isMktrHost
+    ? 'MKTR PTE. LTD. (UEN 202507548M)'
+    : 'Redeem &middot; A service of MKTR PTE. LTD. (UEN 202507548M)';
+  const footerEntityText = isMktrHost
+    ? 'MKTR PTE. LTD. (UEN 202507548M)'
+    : 'Redeem · A service of MKTR PTE. LTD. (UEN 202507548M)';
+
   const content = `
     <p>Hi ${safeFirstName},</p>
     <p>Thank you for your interest in <strong>${safeCampaign}</strong>.</p>
     <p>We've received your submission and a member of our team will be in touch with you shortly &mdash; usually within 24 hours.</p>
     <p>If you didn't submit this request, you can safely ignore this email.</p>
-    <p>&mdash; The Redeem team</p>
+    <p>&mdash; The ${brandName} team</p>
   `;
 
   const html = getModernTemplate(
@@ -271,10 +289,10 @@ export async function sendLeadConfirmationEmail(prospect) {
     content,
     null,
     {
-      headerTitle: 'Redeem',
-      headerImage: 'https://redeem.sg/email/confetti-header.gif',
+      headerTitle: brandName,
+      headerImage,
       headerImageAlt: 'Thank you!',
-      footerHtml: `<p>&copy; ${new Date().getFullYear()} Redeem &middot; A service of MKTR PTE. LTD. (UEN 202507548M)</p>`,
+      footerHtml: `<p>&copy; ${new Date().getFullYear()} ${footerEntityHtml}</p>`,
     }
   );
 
@@ -286,18 +304,18 @@ We've received your submission and a member of our team will be in touch with yo
 
 If you didn't submit this request, you can safely ignore this email.
 
-— The Redeem team
+— The ${brandName} team
 
-© ${new Date().getFullYear()} Redeem · A service of MKTR PTE. LTD. (UEN 202507548M)`;
+© ${new Date().getFullYear()} ${footerEntityText}`;
 
-  logger.info('Sending lead confirmation email', { to: prospect.email, prospectId: prospect.id, campaign: campaignName });
+  logger.info('Sending lead confirmation email', { to: prospect.email, prospectId: prospect.id, campaign: campaignName, brand: brandName });
 
   return sendEmail({
     to: prospect.email,
     subject,
     html,
     text,
-    context: 'redeem',
+    context: hostChoice,
   });
 }
 

@@ -3,6 +3,7 @@ import { Campaign, QrTag, Prospect, Commission, Device, CampaignMediaItem, Campa
 import { getTenantId } from '../middleware/tenant.js';
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
 
 /**
  * Compute campaign metrics from real data (no JSON blob).
@@ -231,7 +232,14 @@ export async function updateCampaign(id, body, req) {
     updateData.is_active = is_active;
     updateData.status = is_active ? 'active' : 'draft';
   }
-  if (design_config !== undefined) updateData.design_config = design_config;
+  if (design_config !== undefined) {
+    // Clamp the per-campaign customer host to the enum (never trust a raw host
+    // from client JSON); preserve all other design keys untouched.
+    updateData.design_config =
+      design_config && typeof design_config === 'object'
+        ? { ...design_config, customerHost: normalizeCustomerHostChoice(design_config.customerHost) }
+        : design_config;
+  }
   if (commission_amount_driver !== undefined) updateData.commission_amount_driver = commission_amount_driver;
   if (commission_amount_fleet !== undefined) updateData.commission_amount_fleet = commission_amount_fleet;
   if (defaultAssignmentMode !== undefined) updateData.defaultAssignmentMode = defaultAssignmentMode;

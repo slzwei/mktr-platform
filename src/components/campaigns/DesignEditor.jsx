@@ -73,6 +73,9 @@ export default function DesignEditor({ campaign, onSave }) {
  requiredFields: design.requiredFields || {},
     sgPrOnly: design.sgPrOnly === true,
     excludeAdvisors: design.excludeAdvisors === true,
+    // Per-campaign customer host: 'redeem' (default) or 'mktr' — drives the
+    // customer-facing brand/domain for this campaign's links + confirmation email.
+    customerHost: design.customerHost === 'mktr' ? 'mktr' : 'redeem',
  fieldOrder: normalizeFieldOrder(design.fieldOrder),
  otpChannel: design.otpChannel ||"sms",
  mediaType: design.mediaType || (design.imageUrl ? 'image' : 'none'),

@@ -3,6 +3,7 @@ import path from 'path';
 import QRCode from 'qrcode';
 import { fileURLToPath } from 'url';
 import { sequelize, QrTag } from '../../models/index.js';
+import { customerHostOrigin, normalizeCustomerHostChoice } from '../../utils/customerHost.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,13 +32,22 @@ async function main() {
       }
     }
 
-    // Ensure PNG
+    // Ensure targetHost recorded (legacy rows default to redeem — never infer
+    // the baked host from current campaign state).
+    const targetHost = normalizeCustomerHostChoice(tag.targetHost);
+    if (tag.targetHost !== targetHost) {
+      tag.targetHost = targetHost;
+      changed = true;
+    }
+
+    // Ensure PNG — bake an ABSOLUTE tracker URL on the tag's host (a relative
+    // /t/:slug baked into the image is unscannable).
     if (!tag.qrImageUrl) {
-      const linkPath = `/t/${tag.slug}`;
+      const linkUrl = `${customerHostOrigin(targetHost)}/t/${tag.slug}`;
       const fileName = `qr-${tag.slug}.png`;
       const filePath = path.join(uploadsDir, fileName);
       if (!dryRun) {
-        const pngBuffer = await QRCode.toBuffer(linkPath, { type: 'png', width: 600, margin: 2 });
+        const pngBuffer = await QRCode.toBuffer(linkUrl, { type: 'png', width: 600, margin: 2 });
         fs.writeFileSync(filePath, pngBuffer);
       }
       tag.qrImageUrl = `/uploads/image/${fileName}`;

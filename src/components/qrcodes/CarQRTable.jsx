@@ -2,7 +2,7 @@ import { useState } from"react";
 import { useQueryClient } from"@tanstack/react-query";
 import { QrTag } from"@/api/entities";
 import { apiClient } from"@/api/client";
-import { publicTrackingUrl } from"@/lib/brand";
+import { publicTrackingUrl, resolveCustomerHost } from"@/lib/brand";
 import { Card, CardContent, CardHeader, CardTitle } from"@/components/ui/card";
 import { Button } from"@/components/ui/button";
 import { Badge } from"@/components/ui/badge";
@@ -42,8 +42,8 @@ export default function CarQRTable({ qrTags, onRefresh, refreshing }) {
  return `${backendOrigin}${path.startsWith('/') ? path : '/' + path}`;
  };
 
- const handleCopyLink = (slug) => {
- const url = publicTrackingUrl(slug);
+ const handleCopyLink = (slug, targetHost) => {
+ const url = publicTrackingUrl(slug, resolveCustomerHost(targetHost));
  navigator.clipboard.writeText(url);
  setCopiedLink(slug);
  setTimeout(() => setCopiedLink(null), 2000);
@@ -175,7 +175,7 @@ export default function CarQRTable({ qrTags, onRefresh, refreshing }) {
  <Download className="w-4 h-4 mr-1"/>
  </Button>
  <Button
- variant="outline" size="sm" onClick={() => handleCopyLink(qr.slug)}
+ variant="outline" size="sm" onClick={() => handleCopyLink(qr.slug, qr.targetHost)}
  >
  {copiedLink === qr.slug ? <Copy className="w-4 h-4 mr-1 text-success"/> : <LinkIcon className="w-4 h-4 mr-1"/>}
  </Button>

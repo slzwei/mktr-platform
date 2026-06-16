@@ -1,7 +1,7 @@
 import { useState } from"react";
 import { QrTag } from"@/api/entities";
 import { apiClient } from"@/api/client";
-import { publicTrackingUrl } from"@/lib/brand";
+import { publicTrackingUrl, resolveCustomerHost } from"@/lib/brand";
 // N+1 fix: scanCount and uniqueScanCount come directly from the QR tag model
 // No separate analytics or prospect-list fetches needed
 import { Card, CardContent, CardHeader, CardTitle } from"@/components/ui/card";
@@ -73,10 +73,10 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
  return `${backendOrigin}${path.startsWith('/') ? path : '/' + path}`;
  };
 
- const handleCopyLink = (slug) => {
- // Always copy the absolute public-brand URL so end users don't end up
- // with a relative /t/:slug string in their clipboard.
- const url = publicTrackingUrl(slug);
+ const handleCopyLink = (slug, targetHost) => {
+ // Always copy the absolute public-brand URL (on the QR's baked host) so end
+ // users don't end up with a relative /t/:slug string in their clipboard.
+ const url = publicTrackingUrl(slug, resolveCustomerHost(targetHost));
  navigator.clipboard.writeText(url);
  setCopiedLink(slug);
  setTimeout(() => setCopiedLink(null), 2000);
@@ -250,7 +250,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
  </div>
  {qr.slug && (
  <div className="text-xs text-primary break-all">
- {publicTrackingUrl(qr.slug)}
+ {publicTrackingUrl(qr.slug, resolveCustomerHost(qr.targetHost))}
  </div>
  )}
  {/* Assignment info */}
@@ -310,7 +310,7 @@ export default function ExistingQRCodes({ qrTags, loading, onRefresh }) {
  <Download className="w-4 h-4 mr-1"/>
  </Button>
  <Button
- variant="outline" size="sm" onClick={() => handleCopyLink(qr.slug)}
+ variant="outline" size="sm" onClick={() => handleCopyLink(qr.slug, qr.targetHost)}
  >
  {copiedLink === qr.slug ? <Copy className="w-4 h-4 mr-1 text-success"/> : <LinkIcon className="w-4 h-4 mr-1"/>}
  </Button>

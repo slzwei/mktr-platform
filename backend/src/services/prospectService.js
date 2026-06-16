@@ -742,15 +742,18 @@ export function makeProspectService(overrides = {}) {
       });
     }
 
-    // Pre-load agent + prospect-with-campaign for caller's email side-effect
+    // Pre-load agent + prospect-with-campaign for the caller's fire-and-forget
+    // email side-effects. The campaign's design_config.customerHost drives the
+    // confirmation-email brand, so load the campaign (with design_config) for
+    // EVERY prospect — not only when an agent is assigned.
     let assignedAgent = null;
-    let prospectWithCampaign = prospect;
     if (assignedAgentId) {
       assignedAgent = await m.User.findByPk(assignedAgentId);
-      prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
-        include: [{ association: 'campaign', attributes: ['id', 'name'] }],
-      });
     }
+    const prospectWithCampaign =
+      (await m.Prospect.findByPk(prospect.id, {
+        include: [{ association: 'campaign', attributes: ['id', 'name', 'design_config'] }],
+      })) || prospect;
 
     return { prospect, assignedAgentId, assignedAgent, prospectWithCampaign, quarantined };
   }
