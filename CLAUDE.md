@@ -97,6 +97,7 @@ Nameservers at Cloudflare (`chance.ns.cloudflare.com`, `liv.ns.cloudflare.com`) 
 
 - mktr-platform Static Site (Render): `VITE_BRAND=mktr` (or unset — defaults to mktr), `VITE_API_URL=https://api.mktr.sg/api` (absolute — pre-rebrand setup, cross-origin to api.mktr.sg works because cookies live on parent `.mktr.sg`).
 - redeem-frontend Static Site (Render): `VITE_BRAND=redeem`, `VITE_API_URL=/api` (relative — Render rewrites `/api/*` → `https://api.mktr.sg/api/*` so cookies live on `.redeem.sg`). Vite plugin emits brand-aware `robots.txt` + `sitemap.xml` per build.
+- Both static sites bake the public pixel IDs at build time: `VITE_META_PIXEL_ID=1402034528611431` and `VITE_TIKTOK_PIXEL_ID=D8GJ6T3C77UDLID6746G` (TikTok added to `mktr-platform`/mktr.sg on 2026-06-17 to match redeem.sg). `VITE_*` vars are baked into `dist` at build, so changing a pixel id requires a redeploy.
 
 ## Meta Ads — Advertising Account, Pixel & CAPI
 
@@ -140,6 +141,32 @@ Paid acquisition (Facebook/Instagram) for the lead-capture funnel. All assets li
 **Lead-quality controls** (who can actually convert — the `$20 voucher` hook attracts low-intent/freebie traffic, so two layers filter it):
 - **Per-campaign SG/PR gate** — `design_config.sgPrOnly` (shipped `622fd2e`). When on, `CampaignSignupForm.jsx` renders a Yes/No "Singapore Citizen or PR?" screening card before the form ("No" blocks); toggle it in the campaign designer's **Content** panel. It is **client-side and self-declared** (the answer is not POSTed to the backend): it deters honest non-residents and — because the Pixel `Lead` event only fires on a completed submit — keeps unqualified people out of CAPI + Meta's conversion optimization, but won't stop a motivated false answer.
 - **Meta-side audience filters** (ad-account config, not in this repo): Meta offers no occupation/citizenship targeting, so the ad set instead targets **"people who live in Singapore"** (`geo_locations.location_types:["home"]`, not the default "everyone in this location"), bounds age, and **excludes a customer-list Custom Audience** of known industry contacts/advisors (plus a lookalike of it). Under **Advantage+ Audience**, excluded custom audiences are the *only* hard filter Meta honors — interest/inclusion targeting is treated as a suggestion. Specific audience IDs live in the ad account.
+
+## TikTok Ads — Pixel & Events API
+
+The TikTok counterpart of the Meta funnel above — a browser **Pixel** (`ttq`) plus a server-side **Events API** (TikTok's CAPI equivalent). Built for the quiz/lead-capture funnel and **live in production** (shipped via PRs **#21** quiz-funnel + tracking and **#22** audit fixes; migration `034-add-campaign-tiktok-pixel-id.js` applied 2026-06-04). Deliberately mirrors `metaPixel.js` / `metaCapiService.js` so the two platforms behave identically (stable shared `event_id` → Pixel⇄server dedup, consent-gated PII, origin-gated dispatch).
+
+**Pixel:** TikTok pixel code `D8GJ6T3C77UDLID6746G`. Browser Pixel **+** Events API, both receiving events. (The TikTok ad-account / Business Center topology is not yet documented here — only the pixel + code path is confirmed.)
+
+**Tracking code:**
+- `index.html` — `ttq` base stub, gated on `VITE_TIKTOK_PIXEL_ID` (defines the queue + `ttq.load` injector but does NOT call `ttq.load()`/`ttq.page()`; the guard `PIXEL_ID.charAt(0)==='%'` no-ops cleanly when the var is unset, so an unset host shows no broken pixel).
+- `src/lib/tiktokPixel.js` — `initTikTokPixel` (injects the SDK only on the live `/LeadCapture` page), `ViewContent` / `CompleteRegistration` / `Lead` trackers carrying the stable `event_id` for Pixel⇄Events-API dedup; `captureTtclidFromUrl` (persists `ttclid`), `readTtp` (reads the `_ttp` cookie). Suppression via shared `src/lib/pixelSuppression.js` (`isTrackableLeadCapture`, kept in lock-step with the Meta pixel).
+- `backend/src/services/tiktokEventsService.js` — fire-and-forget `sendConversionEvent` (wrappers `sendTikTokLeadEvent` / `sendTikTokCompleteRegistrationEvent`) → `POST business-api.tiktok.com/open_api/v1.3/event/track/`. Guard `shouldFireTikTok` skips Retell + Meta-Lead-Ads-origin prospects (mirrors `shouldFireCapi`). Hashed email/phone/external_id via `backend/src/utils/piiHashing.js` — email/phone only with marketing consent (`sourceMetadata.consent_contact === true`); `ttclid`/`ttp`/ip/ua always sent. TikTok returns HTTP 200 with a non-zero `code` on logical failure, so success requires `res.ok && body.code === 0` (logged as `tiktok.lead.sent` / `tiktok.complete_registration.sent`).
+- Wiring: `prospectService.js` fires both senders post-commit alongside the Meta senders, with `pixelIdOverride: sourceCampaign?.tiktokPixelId`; `prospectController.js` threads `ttclid`/`ttp` from `req.body`. Per-campaign override = `Campaign.tiktokPixelId` (column `tiktok_pixel_id`, migration 034), else the env pixel id.
+
+**Env vars** (pixel id is public — embedded in page source; the access token is the only secret):
+
+| Var | Component | Value / Notes |
+|---|---|---|
+| `VITE_TIKTOK_PIXEL_ID` | Frontend build (both static sites) | `D8GJ6T3C77UDLID6746G` — on `redeem-frontend` and (2026-06-17) `mktr-platform` |
+| `TIKTOK_PIXEL_ID` | Backend (Events API) | `D8GJ6T3C77UDLID6746G` — per-campaign `Campaign.tiktokPixelId` overrides |
+| `TIKTOK_ACCESS_TOKEN` | Backend | **Secret** — never commit |
+| `TIKTOK_EVENTS_API_ENABLED` | Backend | Must be `"true"` to dispatch |
+| `TIKTOK_TEST_EVENT_CODE` / `VITE_TIKTOK_TEST_EVENT_CODE` | Both | Routes events to Test Events (staging/dev) |
+
+**Live status (verified 2026-06-17):** browser Pixel live on **redeem.sg** and **mktr.sg** (both static sites bake `VITE_TIKTOK_PIXEL_ID`); backend Events API firing `Lead` + `CompleteRegistration` successfully — `tiktok.lead.sent` appears continuously in `mktr-backend-jo6r` Render logs (2026-06-04 → 2026-06-16). Note: `.env.example` ships `TIKTOK_EVENTS_API_ENABLED=false` + blank ids — that is the example default, NOT prod state; check the live deploy/logs.
+
+**TODO:** add TikTok's **domain verification** for `redeem.sg` in TikTok Events Manager (the Meta `facebook-domain-verification` TXT is already present in the DNS section; TikTok needs its own record). Not required for the Events API to fire, but it improves pixel attribution / event match quality. No native TikTok lead forms — same `redeem.sg/LeadCapture?campaign_id={id}` landing-page funnel as Meta; optimize the ad for the `Lead` event.
 
 ## Architecture — Full Data Flow
 
