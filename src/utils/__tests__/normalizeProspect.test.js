@@ -207,6 +207,30 @@ describe('deriveAd', () => {
  expect(deriveAd({ fbp: 'fb.1.1718000000.12345' })).toBeNull();
  });
 
+ it.each(['tiktok', 'tt', 'tiktokads', 'tiktok_ads', 'tiktok-ads', 'TikTok'])(
+ 'recognises tiktok utm_source alias %s',
+ (alias) => {
+ expect(deriveAd({ utm: { utm_source: alias } }).platform).toBe('tiktok');
+ }
+ );
+
+ it('ttclid-only → tier "click" (TikTok click, not paid-ad evidence)', () => {
+ expect(deriveAd({ ttclid: 'EAAtt.123' })).toMatchObject({ platform: 'tiktok', tier: 'click' });
+ });
+
+ it('ttclid in eventSourceUrl → tier "click"', () => {
+ const ad = deriveAd({ eventSourceUrl: 'https://redeem.sg/LeadCapture?campaign_id=c1&ttclid=XYZ' });
+ expect(ad).toMatchObject({ platform: 'tiktok', tier: 'click' });
+ });
+
+ it('_ttp alone is NOT ad evidence (minted for every tracked visitor)', () => {
+ expect(deriveAd({ ttp: 'tt.1.1718000000.12345' })).toBeNull();
+ });
+
+ it('meta click id wins when both fbc and ttclid are present', () => {
+ expect(deriveAd({ fbc: 'fb.1.1.X', ttclid: 'EAAtt.123' }).platform).toBe('meta');
+ });
+
  it('returns null for empty/absent metadata', () => {
  expect(deriveAd(null)).toBeNull();
  expect(deriveAd({})).toBeNull();
@@ -305,11 +329,35 @@ describe('sourceDisplay', () => {
  expect(d.detail).toBe('IG Push');
  });
 
- it('non-meta ad platforms do not get the meta badge', () => {
+ it('TIKTOK AD with campaign detail from utm_source=tiktok', () => {
  const d = sourceDisplay(
- normalizeProspect({ id: '1', leadSource: 'website', sourceMetadata: { utm: { utm_source: 'tiktok' } } })
+ normalizeProspect({
+ id: '1',
+ leadSource: 'website',
+ sourceMetadata: { utm: { utm_source: 'tiktok', utm_campaign: 'Q2 Quiz', utm_term: 'adgroup-1' } },
+ })
  );
- expect(d.label).toBe('FORM');
+ expect(d.label).toBe('TIKTOK AD');
+ expect(d.detail).toBe('Q2 Quiz');
+ expect(d.tooltip).toBe('Campaign: Q2 Quiz · Ad set: adgroup-1');
+ expect(d.attribution).toBe('TikTok ad: Q2 Quiz');
+ });
+
+ it('TIKTOK CLICK for ttclid-only rows (no UTMs on the ad URL)', () => {
+ const d = sourceDisplay(
+ normalizeProspect({ id: '1', leadSource: 'website', sourceMetadata: { ttclid: 'EAAtt.123' } })
+ );
+ expect(d.label).toBe('TIKTOK CLICK');
+ expect(d.detail).toBe('');
+ expect(d.attribution).toBe('TikTok click');
+ });
+
+ it('unknown ad platform surfaces the raw source as an AD badge', () => {
+ const d = sourceDisplay(
+ normalizeProspect({ id: '1', leadSource: 'website', sourceMetadata: { utm: { utm_source: 'google' } } })
+ );
+ expect(d.label).toBe('GOOGLE AD');
+ expect(d.attribution).toBe('GOOGLE ad');
  });
 });
 

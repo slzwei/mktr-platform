@@ -8,18 +8,40 @@
  */
 
 const META_UTM_SOURCES = new Set(["facebook", "fb", "instagram", "ig", "meta"]);
+const TIKTOK_UTM_SOURCES = new Set(["tiktok", "tt", "tiktokads", "tiktok_ads", "tiktok-ads"]);
+
+// Ad-platform display labels: badge text (uppercase) vs prose name (title case).
+// An unknown-but-present utm_source surfaces raw (uppercased for the badge).
+const AD_PLATFORM_BADGE = { meta: "META", tiktok: "TIKTOK" };
+const AD_PLATFORM_NAME = { meta: "Meta", tiktok: "TikTok" };
+
+function adPlatformFor(utmSource) {
+ if (META_UTM_SOURCES.has(utmSource)) return "meta";
+ if (TIKTOK_UTM_SOURCES.has(utmSource)) return "tiktok";
+ return utmSource;
+}
+
+function adPlatformBadge(platform) {
+ return AD_PLATFORM_BADGE[platform] || String(platform || "").toUpperCase();
+}
+
+function adPlatformName(platform) {
+ return AD_PLATFORM_NAME[platform] || String(platform || "").toUpperCase();
+}
 
 /**
  * Derive ad attribution from Prospect.sourceMetadata (stashed by the backend
  * at create time — see prospectService.createProspect).
  *
- * tier "ad"    — UTM evidence. UTMs only exist on our paid-ad URLs, so
- *                utm_source ∈ META_UTM_SOURCES is proof of a Meta ad;
+ * tier "ad"    — UTM evidence. UTMs only exist on our paid-ad URLs, so a known
+ *                utm_source pins the platform (META_UTM_SOURCES → meta,
+ *                TIKTOK_UTM_SOURCES → tiktok; anything else surfaces raw);
  *                campaign/adset/ad come from utm_campaign/utm_term/utm_content.
- * tier "click" — fbclid fingerprint only (`fbc`, or an fbclid in the landing
- *                URL). Organic Facebook/Instagram clicks carry these too, so
- *                this is "came via Meta", not "came via a paid ad".
- * Never uses fbp: ensureFbp() mints that for every tracked visitor.
+ * tier "click" — click-id fingerprint only: Meta `fbc`/fbclid, or TikTok
+ *                `ttclid`. Organic clicks carry these too, so this is "came via
+ *                {platform}", not a paid ad. Meta is checked first.
+ * Never uses fbp/_ttp: those are minted for every tracked visitor, not just ad
+ * clickers, so they are not attribution evidence.
  */
 export function deriveAd(sourceMetadata) {
  const meta = sourceMetadata || {};
@@ -27,7 +49,7 @@ export function deriveAd(sourceMetadata) {
  const utmSource = String(utm.utm_source || "").toLowerCase();
  if (utmSource) {
  return {
- platform: META_UTM_SOURCES.has(utmSource) ? "meta" : utmSource,
+ platform: adPlatformFor(utmSource),
  tier: "ad",
  campaign: utm.utm_campaign || "",
  adset: utm.utm_term || "",
@@ -37,6 +59,9 @@ export function deriveAd(sourceMetadata) {
  }
  if (meta.fbc || /[?&]fbclid=/.test(meta.eventSourceUrl || "")) {
  return { platform: "meta", tier: "click", campaign: "", adset: "", adName: "", utmSource: "" };
+ }
+ if (meta.ttclid || /[?&]ttclid=/.test(meta.eventSourceUrl || "")) {
+ return { platform: "tiktok", tier: "click", campaign: "", adset: "", adName: "", utmSource: "" };
  }
  return null;
 }
@@ -81,7 +106,9 @@ export function sourceDisplay(p) {
  };
  }
 
- if (ad && ad.platform === "meta") {
+ if (ad && ad.platform) {
+ const badge = adPlatformBadge(ad.platform);
+ const name = adPlatformName(ad.platform);
  if (ad.tier === "ad") {
  const parts = [
  ad.campaign ? `Campaign: ${ad.campaign}` : "",
@@ -89,17 +116,18 @@ export function sourceDisplay(p) {
  ad.adName ? `Ad: ${ad.adName}` : "",
  ].filter(Boolean);
  return {
- label: "META AD",
+ label: `${badge} AD`,
  detail: ad.campaign,
- tooltip: parts.join(" · ") || "Meta ad (no campaign name in UTMs)",
- attribution: ad.campaign ? `Meta ad: ${ad.campaign}` : "Meta ad",
+ tooltip: parts.join(" · ") || `${name} ad (no campaign name in UTMs)`,
+ attribution: ad.campaign ? `${name} ad: ${ad.campaign}` : `${name} ad`,
  };
  }
+ const clickChannel = ad.platform === "meta" ? "Meta (Facebook/Instagram)" : name;
  return {
- label: "META CLICK",
+ label: `${badge} CLICK`,
  detail: "",
- tooltip: "Came via a Meta (Facebook/Instagram) click — no ad UTM data",
- attribution: "Meta click",
+ tooltip: `Came via a ${clickChannel} click — no ad UTM data`,
+ attribution: `${name} click`,
  };
  }
 
