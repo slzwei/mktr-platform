@@ -61,7 +61,7 @@ import {
 function SourceTag({ prospect, compact = false }) {
  const d = sourceDisplay(prospect);
  const badgeClass = `text-xs px-1.5 py-0.5 rounded border uppercase ${
- d.label ==="META AD"
+ d.label.endsWith(" AD")
  ?"bg-primary/10 text-primary border-primary/30"
  :"bg-muted text-muted-foreground border-border"
  }`;
