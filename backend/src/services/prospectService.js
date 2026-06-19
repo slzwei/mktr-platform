@@ -27,6 +27,7 @@ import {
   sendTikTokCompleteRegistrationEvent,
 } from './tiktokEventsService.js';
 import { logger } from '../utils/logger.js';
+import { signupActivityDescription } from '../utils/sourceLabel.js';
 import {
   normalizePhone,
   buildLeadCreatedPayload,
@@ -550,8 +551,14 @@ export function makeProspectService(overrides = {}) {
       );
 
       const campaignName = sourceCampaign?.name || 'Unknown Campaign';
-      const qrTagName = sourceQrTag?.name || sourceQrTag?.label || 'Unknown QR';
-      const activityDescription = `Prospect signed up for ${campaignName} campaign via ${qrTagName} QR code`;
+      // Source-aware phrase ("via TikTok ad" / "via web form" / "via {name} QR
+      // code" …) instead of the old hardcoded "via {qr} QR code", which
+      // mislabeled every non-QR lead as "Unknown QR". See utils/sourceLabel.js.
+      const activityDescription = signupActivityDescription(campaignName, {
+        leadSource: incoming.leadSource,
+        qrTag: sourceQrTag,
+        sourceMetadata: incoming.sourceMetadata,
+      });
 
       // Activity: created
       await m.ProspectActivity.create(
