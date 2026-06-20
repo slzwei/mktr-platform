@@ -16,6 +16,24 @@ afterAll(async () => {
   await closeDb()
 })
 
+// POST /api/prospects is a public, unauthenticated endpoint that deliberately
+// returns only { prospect: { id } } (it must not echo PII / sourceMetadata back
+// to the submitter). To assert on persisted/derived fields, fetch the full row
+// via the authenticated GET and splice it onto the response under data.prospect.
+async function postProspect(payload, token = adminToken) {
+  const res = await request(app)
+    .post('/api/prospects')
+    .set('Authorization', `Bearer ${token}`)
+    .send(payload)
+  if (res.status === 201 && res.body?.data?.prospect?.id) {
+    const got = await request(app)
+      .get(`/api/prospects/${res.body.data.prospect.id}`)
+      .set('Authorization', `Bearer ${token}`)
+    if (got.status === 200) res.body.data.prospect = got.body.data.prospect
+  }
+  return res
+}
+
 describe('Prospect CRUD', () => {
   let campaign, prospectId
 
@@ -24,17 +42,14 @@ describe('Prospect CRUD', () => {
   })
 
   it('POST /api/prospects — creates a prospect', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'John',
-        lastName: 'Doe',
-        email: `prospect-crud-${Date.now()}@test.com`,
-        phone: `65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id
-      })
+    const res = await postProspect({
+      firstName: 'John',
+      lastName: 'Doe',
+      email: `prospect-crud-${Date.now()}@test.com`,
+      phone: `65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id
+    })
 
     expect(res.status).toBe(201)
     expect(res.body.success).toBe(true)
@@ -229,17 +244,14 @@ describe('Phone normalization', () => {
   })
 
   it('normalizes 8-digit SG number to E.164', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'PhoneA',
-        lastName: 'Test',
-        email: `phone-a-${Date.now()}@test.com`,
-        phone: '96989099',
-        leadSource: 'qr_code',
-        campaignId: campaign.id
-      })
+    const res = await postProspect({
+      firstName: 'PhoneA',
+      lastName: 'Test',
+      email: `phone-a-${Date.now()}@test.com`,
+      phone: '96989099',
+      leadSource: 'qr_code',
+      campaignId: campaign.id
+    })
 
     expect(res.status).toBe(201)
     expect(res.body.data.prospect.phone).toBe('+6596989099')
@@ -249,17 +261,14 @@ describe('Phone normalization', () => {
     // Use a separate campaign to avoid duplicate phone conflict
     // (96989099 and 6596989099 both normalize to +6596989099)
     const campaign2 = await createTestCampaign(adminUser.id)
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'PhoneB',
-        lastName: 'Test',
-        email: `phone-b-${Date.now()}@test.com`,
-        phone: '6596989099',
-        leadSource: 'qr_code',
-        campaignId: campaign2.id
-      })
+    const res = await postProspect({
+      firstName: 'PhoneB',
+      lastName: 'Test',
+      email: `phone-b-${Date.now()}@test.com`,
+      phone: '6596989099',
+      leadSource: 'qr_code',
+      campaignId: campaign2.id
+    })
 
     expect(res.status).toBe(201)
     expect(res.body.data.prospect.phone).toBe('+6596989099')
@@ -267,17 +276,14 @@ describe('Phone normalization', () => {
 
   it('preserves already-E.164 number unchanged', async () => {
     const uniquePhone = `+65${Date.now().toString().slice(-8)}`
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'PhoneC',
-        lastName: 'Test',
-        email: `phone-c-${Date.now()}@test.com`,
-        phone: uniquePhone,
-        leadSource: 'qr_code',
-        campaignId: campaign.id
-      })
+    const res = await postProspect({
+      firstName: 'PhoneC',
+      lastName: 'Test',
+      email: `phone-c-${Date.now()}@test.com`,
+      phone: uniquePhone,
+      leadSource: 'qr_code',
+      campaignId: campaign.id
+    })
 
     expect(res.status).toBe(201)
     expect(res.body.data.prospect.phone).toBe(uniquePhone)
@@ -292,18 +298,15 @@ describe('DOB and postal code mapping', () => {
   })
 
   it('maps date_of_birth to demographics.age', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'DobTest',
-        lastName: 'User',
-        email: `dob-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        date_of_birth: '1990-01-15'
-      })
+    const res = await postProspect({
+      firstName: 'DobTest',
+      lastName: 'User',
+      email: `dob-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      date_of_birth: '1990-01-15'
+    })
 
     expect(res.status).toBe(201)
     const demographics = res.body.data.prospect.demographics
@@ -314,18 +317,15 @@ describe('DOB and postal code mapping', () => {
   })
 
   it('maps postal_code to location.postalCode', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'PostalTest',
-        lastName: 'User',
-        email: `postal-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        postal_code: '123456'
-      })
+    const res = await postProspect({
+      firstName: 'PostalTest',
+      lastName: 'User',
+      email: `postal-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      postal_code: '123456'
+    })
 
     expect(res.status).toBe(201)
     const location = res.body.data.prospect.location
@@ -500,8 +500,12 @@ describe('Attribution binding', () => {
       })
 
     expect(res.status).toBe(201)
-    expect(res.body.data.prospect.attributionId).toBe(attribution.id)
-    expect(res.body.data.prospect.qrTagId).toBe(qrTag.id)
+    // Create returns only { id }; fetch the full row to verify server-side binding.
+    const got = await request(app)
+      .get(`/api/prospects/${res.body.data.prospect.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(got.body.data.prospect.attributionId).toBe(attribution.id)
+    expect(got.body.data.prospect.qrTagId).toBe(qrTag.id)
   })
 })
 
@@ -510,18 +514,15 @@ describe('QR tag campaign derivation', () => {
     const campaign = await createTestCampaign(adminUser.id)
     const qrTag = await createTestQrTag(campaign.id, adminUser.id)
 
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'DeriveC',
-        lastName: 'Test',
-        email: `derivec-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        qrTagId: qrTag.id
-        // no campaignId
-      })
+    const res = await postProspect({
+      firstName: 'DeriveC',
+      lastName: 'Test',
+      email: `derivec-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      qrTagId: qrTag.id
+      // no campaignId
+    })
 
     expect(res.status).toBe(201)
     expect(res.body.data.prospect.campaignId).toBe(campaign.id)
@@ -565,18 +566,15 @@ describe('Education and income demographic mapping', () => {
   })
 
   it('maps education_level to demographics.education', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'EduTest',
-        lastName: 'User',
-        email: `edu-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        education_level: 'bachelors'
-      })
+    const res = await postProspect({
+      firstName: 'EduTest',
+      lastName: 'User',
+      email: `edu-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      education_level: 'bachelors'
+    })
 
     expect(res.status).toBe(201)
     const demographics = res.body.data.prospect.demographics
@@ -585,18 +583,15 @@ describe('Education and income demographic mapping', () => {
   })
 
   it('maps monthly_income to demographics.income', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'IncTest',
-        lastName: 'User',
-        email: `inc-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        monthly_income: '5000-10000'
-      })
+    const res = await postProspect({
+      firstName: 'IncTest',
+      lastName: 'User',
+      email: `inc-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      monthly_income: '5000-10000'
+    })
 
     expect(res.status).toBe(201)
     const demographics = res.body.data.prospect.demographics
@@ -605,19 +600,16 @@ describe('Education and income demographic mapping', () => {
   })
 
   it('maps both education_level and monthly_income together', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'BothTest',
-        lastName: 'User',
-        email: `both-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        education_level: 'masters',
-        monthly_income: '10000-20000'
-      })
+    const res = await postProspect({
+      firstName: 'BothTest',
+      lastName: 'User',
+      email: `both-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      education_level: 'masters',
+      monthly_income: '10000-20000'
+    })
 
     expect(res.status).toBe(201)
     const demographics = res.body.data.prospect.demographics
@@ -635,28 +627,29 @@ describe('Unassignment activity logging', () => {
   })
 
   it('logs activity when prospect is manually unassigned', async () => {
+    // Unassignment goes through the assign endpoint with a null agentId — a raw
+    // PUT intentionally cannot mutate assignedAgentId (it must charge / fire the
+    // lead.unassigned webhook), so assignedAgentId is filtered out of PUT updates.
     const res = await request(app)
-      .put(`/api/prospects/${prospect.id}`)
+      .patch(`/api/prospects/${prospect.id}/assign`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ assignedAgentId: null })
+      .send({ agentId: null })
 
     expect(res.status).toBe(200)
 
-    // Verify unassignment activity was created
+    // Verify the unassignment activity was logged (type 'assigned', previous agent
+    // captured in metadata.previousAgentId).
     const activities = await ProspectActivity.findAll({
       where: {
         prospectId: prospect.id,
-        type: 'updated'
+        type: 'assigned'
       },
       order: [['createdAt', 'DESC']]
     })
 
-    const unassignActivity = activities.find(a => {
-      const meta = a.metadata || {}
-      return meta.reason === 'manual_unassignment'
-    })
+    const unassignActivity = activities.find(a => (a.metadata || {}).previousAgentId === agentUser.id)
     expect(unassignActivity).toBeDefined()
-    expect(unassignActivity.metadata.previousAssignedAgentId).toBe(agentUser.id)
+    expect(unassignActivity.description).toBe('Unassigned from agent')
   })
 })
 
@@ -892,19 +885,16 @@ describe('Prospect CAPI meta-fields (Phase 2)', () => {
   })
 
   it('POST /api/prospects with bogus CAPI fields does not leak them as Prospect attributes', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'Strip',
-        lastName: 'Tester',
-        email: `strip-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'website',
-        campaignId: campaign.id,
-        eventId: 'evt-strip',
-        fbp: 'fbp-strip',
-      })
+    const res = await postProspect({
+      firstName: 'Strip',
+      lastName: 'Tester',
+      email: `strip-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'website',
+      campaignId: campaign.id,
+      eventId: 'evt-strip',
+      fbp: 'fbp-strip',
+    })
 
     expect(res.status).toBe(201)
     const p = res.body.data.prospect

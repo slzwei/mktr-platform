@@ -24,24 +24,26 @@ afterAll(async () => {
 // Tracker: GET /api/qrcodes/track/:slug
 // ---------------------------------------------------------------------------
 describe('Tracker — GET /api/qrcodes/track/:slug', () => {
-  it('valid slug redirects 302 to /lead-capture with campaign_id and slug', async () => {
+  it('valid slug redirects 302 to the LeadCapture page with campaign_id and slug', async () => {
     const res = await request(app)
       .get(`/api/qrcodes/track/${qrTag.slug}`)
       .set('User-Agent', 'TestAgent/1.0');
 
     expect(res.status).toBe(302);
-    expect(res.headers.location).toContain('/lead-capture');
+    // Redirect is the absolute, host-aware customer URL (redeem.sg/mktr.sg) to the
+    // /LeadCapture SPA route — assert by path + query, not the exact host.
+    expect(res.headers.location).toContain('/LeadCapture');
     expect(res.headers.location).toContain(`campaign_id=${campaign.id}`);
     expect(res.headers.location).toContain(`slug=${qrTag.slug}`);
   });
 
-  it('non-existent slug redirects 302 to /lead-capture?error=not_found', async () => {
+  it('non-existent slug redirects 302 to the LeadCapture page with error=not_found', async () => {
     const res = await request(app)
       .get('/api/qrcodes/track/does-not-exist-999')
       .set('User-Agent', 'TestAgent/1.0');
 
     expect(res.status).toBe(302);
-    expect(res.headers.location).toBe('/lead-capture?error=not_found');
+    expect(res.headers.location).toContain('/LeadCapture?error=not_found');
   });
 
   it('sets atk and sid cookies on successful scan', async () => {

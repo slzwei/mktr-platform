@@ -84,7 +84,9 @@ describe('POST /api/shortlinks/public/share', () => {
   it('creates a share link for a LeadCapture URL', async () => {
     const res = await request(app)
       .post('/api/shortlinks/public/share')
-      .send({ targetUrl: 'https://app.example.com/LeadCapture?c=abc123' })
+      // The public share endpoint only mints links to our own domains
+      // (open-redirect guard); redeem.sg is the default customer host.
+      .send({ targetUrl: 'https://redeem.sg/LeadCapture?c=abc123' })
 
     expect(res.status).toBe(201)
     expect(res.body.success).toBe(true)

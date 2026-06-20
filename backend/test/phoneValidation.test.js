@@ -16,17 +16,28 @@ afterAll(async () => {
   await closeDb();
 });
 
+// POST /api/prospects returns only { prospect: { id } }; fetch the persisted row
+// (authenticated GET) to assert on the normalized phone the server stored.
+async function postProspect(payload) {
+  const res = await request(app).post('/api/prospects').send(payload);
+  if (res.status === 201 && res.body?.data?.prospect?.id) {
+    const got = await request(app)
+      .get(`/api/prospects/${res.body.data.prospect.id}`)
+      .set('Authorization', `Bearer ${_token}`);
+    if (got.status === 200) res.body.data.prospect = got.body.data.prospect;
+  }
+  return res;
+}
+
 describe('Phone E.164 Validation', () => {
   test('Accepts valid E.164 phone number', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .send({
-        firstName: 'Test', lastName: 'User',
-        email: `e164-valid-${Date.now()}@test.com`,
-        phone: '+6591234567',
-        leadSource: 'qr_code',
-        campaignId: campaign.id
-      });
+    const res = await postProspect({
+      firstName: 'Test', lastName: 'User',
+      email: `e164-valid-${Date.now()}@test.com`,
+      phone: '+6591234567',
+      leadSource: 'qr_code',
+      campaignId: campaign.id
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.phone).toBe('+6591234567');
@@ -47,15 +58,13 @@ describe('Phone E.164 Validation', () => {
   });
 
   test('Accepts raw digits phone (backward compat, normalized to E.164)', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .send({
-        firstName: 'Test', lastName: 'User',
-        email: `rawdigits-${Date.now()}@test.com`,
-        phone: '81112222',
-        leadSource: 'qr_code',
-        campaignId: campaign.id
-      });
+    const res = await postProspect({
+      firstName: 'Test', lastName: 'User',
+      email: `rawdigits-${Date.now()}@test.com`,
+      phone: '81112222',
+      leadSource: 'qr_code',
+      campaignId: campaign.id
+    });
 
     expect(res.status).toBe(201);
     // Service normalizes 8-digit SG number to +65XXXXXXXX
@@ -104,15 +113,16 @@ describe('Phone E.164 Validation', () => {
   });
 
   test('Normalizes 10-digit SG number starting with 65 to +65XXXXXXXX', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .send({
-        firstName: 'Test', lastName: 'SG65',
-        email: `sg65-${Date.now()}@test.com`,
-        phone: '6591234567',
-        leadSource: 'qr_code',
-        campaignId: campaign.id
-      });
+    // Own campaign so the normalized +6591234567 can't collide with the valid-E.164
+    // test's prospect (unique (campaignId, phone) index would otherwise 409).
+    const c = await createTestCampaign(admin.id);
+    const res = await postProspect({
+      firstName: 'Test', lastName: 'SG65',
+      email: `sg65-${Date.now()}@test.com`,
+      phone: '6591234567',
+      leadSource: 'qr_code',
+      campaignId: c.id
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.phone).toBe('+6591234567');

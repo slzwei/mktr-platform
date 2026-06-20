@@ -211,8 +211,13 @@ describe('prospectService.createProspect → CAPI wire-up (Phase 2)', () => {
       )
     ).resolves.toBeDefined();
 
-    // Sanity: webhook dispatch was also called (proving we don't short-circuit)
-    expect(deps.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function));
+    // Sanity: webhook dispatch was also called (proving we don't short-circuit).
+    // Dispatch is destination-aware (3rd arg), null here since no agent is assigned.
+    expect(deps.dispatchEvent).toHaveBeenCalledWith(
+      'lead.created',
+      expect.any(Function),
+      expect.objectContaining({ destination: null })
+    );
   });
 
   it('still fires sendLeadEvent for prospects with no meta-fields (guard inside sendLeadEvent will reject)', async () => {
@@ -340,13 +345,13 @@ describe('createProspect → per-campaign Pixel override (Phase 5)', () => {
     lastName: 'Doe',
     email: 'jane@example.com',
     leadSource: 'website',
-    campaignId: 'campaign-uuid-1',
+    campaignId: '11111111-1111-1111-1111-111111111111',
   };
 
   it('passes sourceCampaign.metaPixelId to sendLeadEvent as ctx.pixelIdOverride', async () => {
     const deps = buildDeps();
     deps.models.Campaign.findByPk = jest.fn().mockResolvedValue({
-      id: 'campaign-uuid-1',
+      id: '11111111-1111-1111-1111-111111111111',
       name: 'Test Campaign',
       metaPixelId: 'pixel-override-999',
     });
@@ -366,7 +371,7 @@ describe('createProspect → per-campaign Pixel override (Phase 5)', () => {
   it('passes pixelIdOverride: undefined when sourceCampaign.metaPixelId is null', async () => {
     const deps = buildDeps();
     deps.models.Campaign.findByPk = jest.fn().mockResolvedValue({
-      id: 'campaign-uuid-1',
+      id: '11111111-1111-1111-1111-111111111111',
       name: 'Test Campaign',
       metaPixelId: null,
     });
@@ -528,13 +533,13 @@ describe('createProspect → TikTok Events API wire-up (Phase 6)', () => {
     lastName: 'Taker',
     email: 'quiz@example.com',
     leadSource: 'website',
-    campaignId: 'campaign-uuid-1',
+    campaignId: '11111111-1111-1111-1111-111111111111',
   };
 
   it('fires sendTikTokLeadEvent post-commit with eventId + ttclid/ttp ctx', async () => {
     const deps = buildDeps();
     deps.models.Campaign.findByPk = jest.fn().mockResolvedValue({
-      id: 'campaign-uuid-1', name: 'Quiz Campaign', tiktokPixelId: 'CAMPAIGN_TT_PIXEL',
+      id: '11111111-1111-1111-1111-111111111111', name: 'Quiz Campaign', tiktokPixelId: 'CAMPAIGN_TT_PIXEL',
     });
     const svc = makeProspectService(deps);
 
@@ -587,7 +592,7 @@ describe('createProspect → TikTok Events API wire-up (Phase 6)', () => {
   it('passes pixelIdOverride: undefined when campaign has no tiktokPixelId', async () => {
     const deps = buildDeps();
     deps.models.Campaign.findByPk = jest.fn().mockResolvedValue({
-      id: 'campaign-uuid-1', name: 'Quiz Campaign', tiktokPixelId: null,
+      id: '11111111-1111-1111-1111-111111111111', name: 'Quiz Campaign', tiktokPixelId: null,
     });
     const svc = makeProspectService(deps);
 

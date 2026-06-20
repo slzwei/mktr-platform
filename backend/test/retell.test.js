@@ -309,9 +309,10 @@ describe('POST /api/retell/webhook', () => {
       .set('x-retell-signature', signature)
       .send(bodyStr)
 
-    // Without call_analysis, call_successful defaults to falsy -> skipped
+    // Missing call_analysis is treated as successful (Retell may omit it) so the
+    // lead isn't silently dropped — only an explicit call_successful=false skips.
     expect(res.status).toBe(200)
-    expect(res.body.status).toBe('skipped')
+    expect(res.body.status).toBe('created')
   })
 
   it('handles missing transcript gracefully', async () => {

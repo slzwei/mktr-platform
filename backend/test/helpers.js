@@ -81,7 +81,10 @@ export async function createTestProspect(campaignId, overrides = {}) {
     firstName: overrides.firstName || `Prospect${n}`,
     lastName: overrides.lastName || 'Test',
     email: overrides.email || `prospect-${n}-${Date.now()}@test.com`,
-    phone: overrides.phone || `+65${String(Date.now()).slice(-8)}`,
+    // Include the monotonic uid (n) so rapid back-to-back calls don't collide on
+    // the same Date.now() millisecond — prospects has a unique (campaignId, phone)
+    // index, so two same-campaign prospects with an identical phone would throw.
+    phone: overrides.phone || `+65${String(Date.now() + n).slice(-8)}`,
     campaignId,
     leadStatus: overrides.leadStatus || 'new',
     leadSource: overrides.leadSource || 'qr_code',
