@@ -63,6 +63,35 @@ describe('Prospect CRUD', () => {
     expect(res.body.data.prospect.campaign).toBeDefined()
   })
 
+  it('GET /api/prospects/:id — returns activities newest-first with the genesis event last', async () => {
+    // The Activity Timeline UI renders activities top-to-bottom and pins a
+    // "Start of History" marker at the bottom, so the API must return them
+    // newest-first: the latest event on top, the genesis 'created' event last.
+    const p = await createTestProspect(campaign.id)
+    const older = new Date('2026-01-01T00:00:00.000Z')
+    const newer = new Date('2026-01-01T00:05:00.000Z')
+    const created = await ProspectActivity.create({ prospectId: p.id, type: 'created', description: 'Prospect signed up' })
+    const assigned = await ProspectActivity.create({ prospectId: p.id, type: 'assigned', description: 'Assigned to agent' })
+    // Force distinct, deterministic timestamps — sequential inserts can land in
+    // the same millisecond. silent:true keeps updatedAt untouched.
+    await ProspectActivity.update({ createdAt: older }, { where: { id: created.id }, silent: true })
+    await ProspectActivity.update({ createdAt: newer }, { where: { id: assigned.id }, silent: true })
+
+    const res = await request(app)
+      .get(`/api/prospects/${p.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const activities = res.body.data.prospect.activities
+    // Non-empty guards the separate-include FK regression: dropping prospectId
+    // from the activities attributes would blank this array entirely.
+    expect(Array.isArray(activities)).toBe(true)
+    expect(activities).toHaveLength(2)
+    // Newest-first: assignment on top, genesis 'created' last (above the marker).
+    expect(activities[0].type).toBe('assigned')
+    expect(activities[activities.length - 1].type).toBe('created')
+  })
+
   it('PUT /api/prospects/:id — updates a prospect', async () => {
     const res = await request(app)
       .put(`/api/prospects/${prospectId}`)
