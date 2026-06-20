@@ -159,7 +159,7 @@ export async function resolveSession(sid, atkCookie) {
     // — the QR-scan path (this fn) and the direct campaign_id link path both
     // hydrate the same form.
     campaign = await Campaign.findByPk(qrTag.campaignId, {
-      attributes: ['id', 'name', 'design_config', 'is_active', 'metaPixelId', 'min_age', 'max_age']
+      attributes: ['id', 'name', 'design_config', 'is_active', 'metaPixelId', 'tiktokPixelId', 'min_age', 'max_age']
     });
   }
 

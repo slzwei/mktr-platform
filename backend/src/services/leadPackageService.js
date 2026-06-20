@@ -1,4 +1,5 @@
-import { LeadPackage, LeadPackageAssignment, User, Campaign } from '../models/index.js';
+import { Op } from 'sequelize';
+import { LeadPackage, LeadPackageAssignment, User, Campaign, Prospect, sequelize } from '../models/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 
@@ -243,4 +244,184 @@ export async function deletePackage(id) {
       message: 'Package deleted successfully'
     };
   }
+}
+
+/**
+ * Pure aggregation of active package assignments into per-agent delivery-pool
+ * rows (sum remaining credits, list assignments, track last assignment). Kept
+ * pure + exported so it unit-tests without a DB. Accepts Sequelize instances or
+ * plain objects (reads `.agent`, `.leadsRemaining`, `.leadPackageId`, etc.).
+ */
+export function aggregateDeliveryPoolAgents(assignments = []) {
+  const byAgent = new Map();
+  for (const a of assignments) {
+    const agent = a.agent;
+    if (!agent) continue;
+    const entry = byAgent.get(agent.id) || {
+      agentId: agent.id,
+      fullName: agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || null,
+      email: agent.email || null,
+      phone: agent.phone || null,
+      remainingCredits: 0,
+      lastPackageAssignedAt: null,
+      assignments: [],
+    };
+    entry.remainingCredits += a.leadsRemaining;
+    entry.assignments.push({
+      id: a.id,
+      packageId: a.leadPackageId,
+      packageName: a.package?.name || null,
+      leadsRemaining: a.leadsRemaining,
+      leadsTotal: a.leadsTotal,
+      purchaseDate: a.purchaseDate,
+    });
+    if (!entry.lastPackageAssignedAt || new Date(a.purchaseDate) > new Date(entry.lastPackageAssignedAt)) {
+      entry.lastPackageAssignedAt = a.purchaseDate;
+    }
+    byAgent.set(agent.id, entry);
+  }
+  return [...byAgent.values()];
+}
+
+/**
+ * Campaign-first delivery pool: the agents actually in this campaign's lead
+ * round-robin, with remaining credits. Mirrors the live routing pool
+ * (systemAgent.resolveLeadRouting step 4 / campaignReadinessService): active
+ * LeadPackageAssignments for packages whose campaignId = :campaignId, restricted
+ * to active role:'agent' users. NOT CampaignAgentAssignment (which the router
+ * never consults).
+ */
+export async function getCampaignDeliveryPool(campaignId) {
+  const campaign = await Campaign.findByPk(campaignId, {
+    attributes: ['id', 'name', 'is_active', 'status', 'enforceLeadQuota'],
+  });
+  if (!campaign) throw new AppError('Campaign not found', 404);
+
+  const packages = await LeadPackage.findAll({
+    where: { campaignId },
+    attributes: ['id', 'name', 'leadCount', 'price', 'status'],
+    order: [['createdAt', 'DESC']],
+  });
+  const packageIds = packages.map((p) => p.id);
+
+  let agents = [];
+  if (packageIds.length > 0) {
+    const assignments = await LeadPackageAssignment.findAll({
+      where: { leadPackageId: { [Op.in]: packageIds }, status: 'active' },
+      include: [
+        {
+          model: User,
+          as: 'agent',
+          where: { role: 'agent', isActive: true },
+          required: true,
+          attributes: ['id', 'firstName', 'lastName', 'fullName', 'email', 'phone'],
+        },
+        { model: LeadPackage, as: 'package', attributes: ['id', 'name'] },
+      ],
+      order: [['purchaseDate', 'DESC']],
+    });
+
+    agents = aggregateDeliveryPoolAgents(assignments);
+  }
+
+  const remainingCredits = agents.reduce((sum, ag) => sum + ag.remainingCredits, 0);
+  const fundedAgents = agents.filter((a) => a.remainingCredits > 0).length;
+
+  // Internally-releasable holds only — external-buyer holds
+  // (no_funded_external_buyer) must never release to Lyfe, so they don't count
+  // toward this internal delivery pool.
+  const heldLeads = await Prospect.count({
+    where: { campaignId, quarantinedAt: { [Op.ne]: null }, quarantineReason: 'no_funded_agent' },
+  });
+
+  return {
+    campaign: {
+      id: campaign.id,
+      name: campaign.name,
+      is_active: campaign.is_active,
+      status: campaign.status,
+      enforceLeadQuota: campaign.enforceLeadQuota,
+    },
+    totals: { fundedAgents, remainingCredits, heldLeads },
+    packages: packages.map((p) => p.toJSON()),
+    agents,
+  };
+}
+
+/**
+ * Bulk-assign one campaign package to many agents (campaign-first funding).
+ * Race-safe: a per-package advisory xact lock serializes concurrent admin
+ * assigns so the skip-existing read + insert can't duplicate active assignments
+ * (no unique (agentId,leadPackageId) index exists). Idempotent — agents already
+ * holding an active assignment for this package are skipped, not duplicated.
+ * Fires exactly ONE releaseSweep after commit (not per agent).
+ */
+export async function bulkAssignPackage({ campaignId, packageId, agentIds }) {
+  if (!campaignId || !packageId || !Array.isArray(agentIds) || agentIds.length === 0) {
+    throw new AppError('campaignId, packageId and a non-empty agentIds array are required', 400);
+  }
+  const uniqueAgentIds = [...new Set(agentIds)];
+
+  const pkg = await LeadPackage.findByPk(packageId);
+  if (!pkg) throw new AppError('Package not found', 404);
+  if (String(pkg.campaignId) !== String(campaignId)) {
+    throw new AppError('Package does not belong to this campaign', 400);
+  }
+
+  const validAgents = await User.findAll({
+    where: { id: { [Op.in]: uniqueAgentIds }, role: 'agent', isActive: true },
+    attributes: ['id'],
+  });
+  const validIds = validAgents.map((a) => a.id);
+  const invalid = uniqueAgentIds.filter((id) => !validIds.includes(id));
+
+  let assignedIds = [];
+  let skipped = [];
+  if (validIds.length > 0) {
+    await sequelize.transaction(async (t) => {
+      await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:k))', {
+        replacements: { k: `lpa:${packageId}` },
+        transaction: t,
+      });
+
+      const existing = await LeadPackageAssignment.findAll({
+        where: { leadPackageId: packageId, agentId: { [Op.in]: validIds }, status: 'active' },
+        attributes: ['agentId'],
+        transaction: t,
+      });
+      const existingIds = new Set(existing.map((e) => e.agentId));
+      skipped = validIds.filter((id) => existingIds.has(id));
+      assignedIds = validIds.filter((id) => !existingIds.has(id));
+
+      if (assignedIds.length > 0) {
+        await LeadPackageAssignment.bulkCreate(
+          assignedIds.map((agentId) => ({
+            agentId,
+            leadPackageId: packageId,
+            leadsTotal: pkg.leadCount,
+            leadsRemaining: pkg.leadCount,
+            priceSnapshot: pkg.price,
+            status: 'active',
+            purchaseDate: new Date(),
+          })),
+          { transaction: t }
+        );
+      }
+    });
+  }
+
+  if (assignedIds.length > 0 && pkg.campaignId) {
+    import('./releaseSweep.js')
+      .then((m) => m.sweepCampaign(pkg.campaignId))
+      .catch((err) => logger.error('[ReleaseSweep] bulkAssignPackage trigger failed', { error: err?.message || String(err) }));
+  }
+
+  return {
+    assigned: assignedIds.length,
+    assignedAgentIds: assignedIds,
+    skipped,
+    invalid,
+    leadsPerAgent: pkg.leadCount,
+    packageName: pkg.name,
+  };
 }

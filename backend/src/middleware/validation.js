@@ -78,7 +78,9 @@ export const schemas = {
     commission_amount_fleet: Joi.number().min(0).optional().allow(null),
     defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
     ad_playlist: Joi.array().items(Joi.object()).optional(),
-    enforceLeadQuota: Joi.boolean().optional()
+    enforceLeadQuota: Joi.boolean().optional(),
+    metaPixelId: Joi.string().max(64).optional().allow(null, ''),
+    tiktokPixelId: Joi.string().max(64).optional().allow(null, '')
   }),
 
   campaignUpdate: Joi.object({
@@ -95,7 +97,9 @@ export const schemas = {
     commission_amount_fleet: Joi.number().min(0).optional().allow(null),
     defaultAssignmentMode: Joi.string().valid('direct', 'round_robin').optional(),
     ad_playlist: Joi.array().items(Joi.object()).optional(),
-    enforceLeadQuota: Joi.boolean().optional()
+    enforceLeadQuota: Joi.boolean().optional(),
+    metaPixelId: Joi.string().max(64).optional().allow(null, ''),
+    tiktokPixelId: Joi.string().max(64).optional().allow(null, '')
   }).min(1),
 
   // Car schemas
