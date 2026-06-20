@@ -793,8 +793,19 @@ export function makeProspectService(overrides = {}) {
         },
         {
           association: 'activities',
-          attributes: ['id', 'type', 'description', 'metadata', 'createdAt'],
-          order: [['createdAt', 'ASC']],
+          // Newest-first, so the Activity Timeline UI (which renders this array
+          // top-to-bottom and pins a "Start of History" marker at the bottom) leads
+          // with the most recent event and ends with the genesis 'created' event.
+          //
+          // `separate: true` is REQUIRED: an `order` inside a normal (JOINed) hasMany
+          // include is silently ignored by Sequelize v6 — only the separate (own-query)
+          // loader honours include-local ordering. `prospectId` must stay in
+          // `attributes` because that loader maps children back to the parent by the
+          // FK; omitting it returns an empty activities array. `id DESC` is a
+          // deterministic tiebreaker for same-millisecond `createdAt` values.
+          separate: true,
+          attributes: ['id', 'prospectId', 'type', 'description', 'metadata', 'createdAt'],
+          order: [['createdAt', 'DESC'], ['id', 'DESC']],
         },
       ],
     });
