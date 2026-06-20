@@ -42,6 +42,8 @@ const mockCampaign = {
 const QrTag = {
   findOne: jest.fn().mockResolvedValue(mockQrTag),
   findByPk: jest.fn().mockResolvedValue(mockQrTag),
+  increment: jest.fn().mockResolvedValue([1]),
+  update: jest.fn().mockResolvedValue([1]),
 };
 
 const QrScan = {
