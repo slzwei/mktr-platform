@@ -167,7 +167,9 @@ describe('retellService (unit)', () => {
       const secret = 'test-secret';
       process.env.RETELL_WEBHOOK_SECRET = secret;
       const body = Buffer.from('{"event":"call_ended"}');
-      const timestamp = '1700000000';
+      // Retell sends the timestamp in seconds. It must be current: the verifier
+      // normalizes it to ms and rejects anything outside a ±5-minute replay window.
+      const timestamp = Math.floor(Date.now() / 1000).toString();
 
       // Canonical format: HMAC-SHA256 over "${timestamp}.${bodyStr}"
       const hmac = crypto.createHmac('sha256', secret)

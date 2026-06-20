@@ -93,7 +93,15 @@ describe('errorHandler & observability', () => {
     const err = new AppError('Forbidden', 403, 'details here');
     const res = mockRes();
 
-    errorHandler(err, mockReq(), res, jest.fn());
+    // AppError `details` are intentionally exposed only in development (the
+    // handler hides internal details in prod). Exercise the dev path here.
+    const prevEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+    try {
+      errorHandler(err, mockReq(), res, jest.fn());
+    } finally {
+      process.env.NODE_ENV = prevEnv;
+    }
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res._body.message).toBe('Forbidden');

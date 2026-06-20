@@ -20,6 +20,23 @@ afterAll(async () => {
   await closeDb();
 });
 
+// POST /api/prospects returns only { prospect: { id } }. POST with the caller's
+// token (assignment depends on who creates it) but fetch the full row as admin
+// so assignment assertions can read the resolved agent.
+async function postProspect(payload, token = adminToken) {
+  const res = await request(app)
+    .post('/api/prospects')
+    .set('Authorization', `Bearer ${token}`)
+    .send(payload);
+  if (res.status === 201 && res.body?.data?.prospect?.id) {
+    const got = await request(app)
+      .get(`/api/prospects/${res.body.data.prospect.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    if (got.status === 200) res.body.data.prospect = got.body.data.prospect;
+  }
+  return res;
+}
+
 // ---------------------------------------------------------------------------
 // 1. resolveAssignedAgentId — tested via POST /api/prospects
 // ---------------------------------------------------------------------------
@@ -31,35 +48,29 @@ describe('resolveAssignedAgentId', () => {
   });
 
   it('self-assigns when the logged-in user is an agent', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${agentToken}`)
-      .send({
-        firstName: 'SelfAssign',
-        lastName: 'Test',
-        email: `self-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'website',
-        campaignId: campaign.id
-      });
+    const res = await postProspect({
+      firstName: 'SelfAssign',
+      lastName: 'Test',
+      email: `self-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'website',
+      campaignId: campaign.id
+    }, agentToken);
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.assignedAgentId).toBe(agentUser.id);
   });
 
   it('uses requestedAgentId when admin provides a valid active agent', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'AdminPick',
-        lastName: 'Test',
-        email: `adminpick-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'website',
-        campaignId: campaign.id,
-        assignedAgentId: agentUser.id
-      });
+    const res = await postProspect({
+      firstName: 'AdminPick',
+      lastName: 'Test',
+      email: `adminpick-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'website',
+      campaignId: campaign.id,
+      assignedAgentId: agentUser.id
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.assignedAgentId).toBe(agentUser.id);
@@ -68,18 +79,15 @@ describe('resolveAssignedAgentId', () => {
   it('falls back to system agent when admin provides invalid assignedAgentId', async () => {
     const fakeUUID = '00000000-0000-0000-0000-000000000000';
 
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'BadAgent',
-        lastName: 'Test',
-        email: `badagent-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'website',
-        campaignId: campaign.id,
-        assignedAgentId: fakeUUID
-      });
+    const res = await postProspect({
+      firstName: 'BadAgent',
+      lastName: 'Test',
+      email: `badagent-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'website',
+      campaignId: campaign.id,
+      assignedAgentId: fakeUUID
+    });
 
     expect(res.status).toBe(201);
     // Should NOT be the fake UUID; should be some system/fallback agent

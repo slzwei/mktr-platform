@@ -16,6 +16,23 @@ afterAll(async () => {
   await closeDb();
 });
 
+// POST /api/prospects returns only { prospect: { id } }. POST with the caller's
+// token (assignment depends on who creates it) but fetch the full row as admin
+// (sees all) so assignment assertions can read the resolved agent.
+async function postProspect(payload, token = adminToken) {
+  const res = await request(app)
+    .post('/api/prospects')
+    .set('Authorization', `Bearer ${token}`)
+    .send(payload);
+  if (res.status === 201 && res.body?.data?.prospect?.id) {
+    const got = await request(app)
+      .get(`/api/prospects/${res.body.data.prospect.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    if (got.status === 200) res.body.data.prospect = got.body.data.prospect;
+  }
+  return res;
+}
+
 describe('System agent initialization', () => {
   it('system agent exists after app initialization', async () => {
     const systemEmail = process.env.SYSTEM_AGENT_EMAIL || 'system@mktr.local';
@@ -38,17 +55,14 @@ describe('Agent self-assignment', () => {
   });
 
   it('assigns prospect to the requesting agent when agent creates a prospect', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${agentToken}`)
-      .send({
-        firstName: 'SelfAssign',
-        lastName: 'Test',
-        email: `selfassign-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id
-      });
+    const res = await postProspect({
+      firstName: 'SelfAssign',
+      lastName: 'Test',
+      email: `selfassign-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id
+    }, agentToken);
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.assignedAgentId).toBe(agentUser.id);
@@ -68,18 +82,15 @@ describe('QR owner fallback assignment', () => {
     const qrTag = await createTestQrTag(campaign.id, ownerAgent.id);
 
     // Admin creates prospect with qrTagId but no explicit assignedAgentId
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'QrOwner',
-        lastName: 'Fallback',
-        email: `qrowner-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        qrTagId: qrTag.id
-      });
+    const res = await postProspect({
+      firstName: 'QrOwner',
+      lastName: 'Fallback',
+      email: `qrowner-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      qrTagId: qrTag.id
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.assignedAgentId).toBe(ownerAgent.id);
@@ -90,17 +101,14 @@ describe('System agent fallback', () => {
   it('assigns prospect to system agent when no QR and no agent specified', async () => {
     const campaign = await createTestCampaign(adminUser.id);
 
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'SystemFallback',
-        lastName: 'Test',
-        email: `sysfallback-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'website',
-        campaignId: campaign.id
-      });
+    const res = await postProspect({
+      firstName: 'SystemFallback',
+      lastName: 'Test',
+      email: `sysfallback-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'website',
+      campaignId: campaign.id
+    });
 
     expect(res.status).toBe(201);
 
@@ -121,36 +129,30 @@ describe('Admin explicit agent assignment', () => {
   });
 
   it('assigns prospect to admin-specified agent when assignedAgentId is provided', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'AdminAssign',
-        lastName: 'Test',
-        email: `adminassign-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'referral',
-        campaignId: campaign.id,
-        assignedAgentId: targetAgent.id
-      });
+    const res = await postProspect({
+      firstName: 'AdminAssign',
+      lastName: 'Test',
+      email: `adminassign-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'referral',
+      campaignId: campaign.id,
+      assignedAgentId: targetAgent.id
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.assignedAgentId).toBe(targetAgent.id);
   });
 
   it('ignores invalid assignedAgentId and falls back', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'InvalidAssign',
-        lastName: 'Test',
-        email: `invalidassign-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'website',
-        campaignId: campaign.id,
-        assignedAgentId: '00000000-0000-0000-0000-000000000000'
-      });
+    const res = await postProspect({
+      firstName: 'InvalidAssign',
+      lastName: 'Test',
+      email: `invalidassign-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'website',
+      campaignId: campaign.id,
+      assignedAgentId: '00000000-0000-0000-0000-000000000000'
+    });
 
     expect(res.status).toBe(201);
     // Should fall through to system agent since there's no QR and no valid agent
@@ -177,17 +179,14 @@ describe('Lead package round-robin assignment', () => {
   });
 
   it('assigns prospects to agents with active lead package assignments', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'PkgRR',
-        lastName: 'Test',
-        email: `pkgrr-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'website',
-        campaignId: campaign.id
-      });
+    const res = await postProspect({
+      firstName: 'PkgRR',
+      lastName: 'Test',
+      email: `pkgrr-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'website',
+      campaignId: campaign.id
+    });
 
     expect(res.status).toBe(201);
     // Should be assigned to one of the two agents with lead packages
@@ -195,29 +194,23 @@ describe('Lead package round-robin assignment', () => {
   });
 
   it('rotates assignment between agents on subsequent prospects', async () => {
-    const firstRes = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'PkgRR2',
-        lastName: 'Test',
-        email: `pkgrr2-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'website',
-        campaignId: campaign.id
-      });
+    const firstRes = await postProspect({
+      firstName: 'PkgRR2',
+      lastName: 'Test',
+      email: `pkgrr2-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'website',
+      campaignId: campaign.id
+    });
 
-    const secondRes = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'PkgRR3',
-        lastName: 'Test',
-        email: `pkgrr3-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'website',
-        campaignId: campaign.id
-      });
+    const secondRes = await postProspect({
+      firstName: 'PkgRR3',
+      lastName: 'Test',
+      email: `pkgrr3-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'website',
+      campaignId: campaign.id
+    });
 
     expect(firstRes.status).toBe(201);
     expect(secondRes.status).toBe(201);

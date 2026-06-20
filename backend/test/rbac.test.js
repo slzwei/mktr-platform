@@ -328,8 +328,10 @@ describe('Agent role can access agent-or-admin endpoints', () => {
   })
 
   it('GET /api/dashboard/analytics returns 200 for agent', async () => {
+    // type is a required query param (chart selector); pass one so the RBAC
+    // check (agent is authorized) isn't masked by a 400 for the missing param.
     const res = await request(app)
-      .get('/api/dashboard/analytics')
+      .get('/api/dashboard/analytics?type=prospects')
       .set('Authorization', `Bearer ${tokens.agent.token}`)
     expect(res.status).toBe(200)
   })

@@ -62,13 +62,27 @@ function prospectPayload(overrides = {}) {
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
+// POST /api/prospects is public and returns only { prospect: { id } } (it must
+// not echo PII back). Fetch the full row via the authenticated GET so tests can
+// assert on persisted / derived fields.
+async function postProspect(payload, token = adminToken) {
+  const res = await request(app)
+    .post('/api/prospects')
+    .set('Authorization', `Bearer ${token}`)
+    .send(payload);
+  if (res.status === 201 && res.body?.data?.prospect?.id) {
+    const got = await request(app)
+      .get(`/api/prospects/${res.body.data.prospect.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    if (got.status === 200) res.body.data.prospect = got.body.data.prospect;
+  }
+  return res;
+}
+
 describe('POST /api/prospects', () => {
   it('creates a prospect with correct fields', async () => {
     const body = prospectPayload({ firstName: 'Alice', lastName: 'Lim' });
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send(body);
+    const res = await postProspect(body);
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
@@ -82,10 +96,7 @@ describe('POST /api/prospects', () => {
 
   it('normalizes a raw 8-digit SG phone to E.164', async () => {
     const body = prospectPayload({ phone: '91234567' });
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send(body);
+    const res = await postProspect(body);
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.phone).toBe('+6591234567');
@@ -123,10 +134,7 @@ describe('POST /api/prospects', () => {
     });
 
     const body = prospectPayload({ qrTagId: qrTag.id });
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send(body);
+    const res = await postProspect(body);
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.assignedAgentId).toBe(agentUser.id);
@@ -157,18 +165,12 @@ describe('POST /api/prospects', () => {
 
     // First lead
     const body1 = prospectPayload({ qrTagId: qrTag.id, campaignId: rrCampaign.id });
-    const res1 = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send(body1);
+    const res1 = await postProspect(body1);
     expect(res1.status).toBe(201);
 
     // Second lead
     const body2 = prospectPayload({ qrTagId: qrTag.id, campaignId: rrCampaign.id });
-    const res2 = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send(body2);
+    const res2 = await postProspect(body2);
     expect(res2.status).toBe(201);
 
     // The two prospects should be assigned to different agents (round-robin)

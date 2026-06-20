@@ -119,7 +119,10 @@ beforeAll(async () => {
     url: mockServerUrl,
     secret: SUBSCRIBER_SECRET,
     events: ['lead.created', 'lead.assigned', 'lead.unassigned'],
-    enabled: true
+    enabled: true,
+    // Destination-aware delivery (commit fd19d37): the lead is assigned to a
+    // lyfe-provenance agent, so dispatch only reaches subscribers tagged 'lyfe'.
+    metadata: { destination: 'lyfe' }
   });
 }, 30000);
 

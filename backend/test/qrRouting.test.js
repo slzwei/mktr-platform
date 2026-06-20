@@ -18,6 +18,22 @@ afterAll(async () => {
   await closeDb();
 });
 
+// POST /api/prospects returns only { prospect: { id } }; fetch the full row via
+// the authenticated GET so routing assertions can read the resolved agent, etc.
+async function postProspect(payload, token = adminToken) {
+  const res = await request(app)
+    .post('/api/prospects')
+    .set('Authorization', `Bearer ${token}`)
+    .send(payload);
+  if (res.status === 201 && res.body?.data?.prospect?.id) {
+    const got = await request(app)
+      .get(`/api/prospects/${res.body.data.prospect.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    if (got.status === 200) res.body.data.prospect = got.body.data.prospect;
+  }
+  return res;
+}
+
 describe('QR Direct Assignment', () => {
   let campaign, agentA, agentB;
 
@@ -37,18 +53,15 @@ describe('QR Direct Assignment', () => {
       assignedAgentName: agentA.firstName
     });
 
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'DirectA',
-        lastName: 'Test',
-        email: `direct-a-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        qrTagId: qr.id
-      });
+    const res = await postProspect({
+      firstName: 'DirectA',
+      lastName: 'Test',
+      email: `direct-a-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      qrTagId: qr.id
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.assignedAgentId).toBe(agentA.id);
@@ -62,18 +75,15 @@ describe('QR Direct Assignment', () => {
       assignedAgentName: agentB.firstName
     });
 
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'DirectB',
-        lastName: 'Test',
-        email: `direct-b-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        qrTagId: qr.id
-      });
+    const res = await postProspect({
+      firstName: 'DirectB',
+      lastName: 'Test',
+      email: `direct-b-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      qrTagId: qr.id
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.assignedAgentId).toBe(agentB.id);
@@ -87,18 +97,15 @@ describe('QR Direct Assignment', () => {
       assignedAgentName: 'Ghost Agent'
     });
 
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'Fallback',
-        lastName: 'Test',
-        email: `fallback-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        qrTagId: qr.id
-      });
+    const res = await postProspect({
+      firstName: 'Fallback',
+      lastName: 'Test',
+      email: `fallback-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      qrTagId: qr.id
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.assignedAgentId).not.toBe(agentA.id);
@@ -133,18 +140,15 @@ describeRR('QR Round Robin Assignment', () => {
   });
 
   it('assigns first lead to an agent in the group', async () => {
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'RR1',
-        lastName: 'Test',
-        email: `rr1-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        qrTagId: qr.id
-      });
+    const res = await postProspect({
+      firstName: 'RR1',
+      lastName: 'Test',
+      email: `rr1-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      qrTagId: qr.id
+    });
 
     expect(res.status).toBe(201);
     expect([agentB.id, agentC.id]).toContain(res.body.data.prospect.assignedAgentId);
@@ -157,18 +161,15 @@ describeRR('QR Round Robin Assignment', () => {
       .set('Authorization', `Bearer ${adminToken}`)).body.data.prospects;
     const firstAgentId = firstProspect.find(p => p.firstName === 'RR1')?.assignedAgentId;
 
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'RR2',
-        lastName: 'Test',
-        email: `rr2-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        qrTagId: qr.id
-      });
+    const res = await postProspect({
+      firstName: 'RR2',
+      lastName: 'Test',
+      email: `rr2-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      qrTagId: qr.id
+    });
 
     expect(res.status).toBe(201);
     // Second lead should go to the OTHER agent (round-robin alternation)
@@ -184,18 +185,15 @@ describeRR('QR Round Robin Assignment', () => {
       .set('Authorization', `Bearer ${adminToken}`)).body.data.prospects;
     const secondAgentId = allProspects.find(p => p.firstName === 'RR2')?.assignedAgentId;
 
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'RR3',
-        lastName: 'Test',
-        email: `rr3-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        qrTagId: qr.id
-      });
+    const res = await postProspect({
+      firstName: 'RR3',
+      lastName: 'Test',
+      email: `rr3-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      qrTagId: qr.id
+    });
 
     expect(res.status).toBe(201);
     // Third lead should wrap around to the same agent as the first (not the second)
@@ -209,17 +207,14 @@ describe('QR routing does not interfere with non-QR leads', () => {
   it('assigns lead without qrTagId via normal fallback', async () => {
     const campaign = await createTestCampaign(adminUser.id);
 
-    const res = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'NoQR',
-        lastName: 'Test',
-        email: `noqr-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'website',
-        campaignId: campaign.id
-      });
+    const res = await postProspect({
+      firstName: 'NoQR',
+      lastName: 'Test',
+      email: `noqr-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'website',
+      campaignId: campaign.id
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.data.prospect.assignedAgentId).toBeDefined();
@@ -292,8 +287,9 @@ describe('QR code CRUD error paths', () => {
         qrTagIds: ['00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000001']
       });
 
-    // Should not crash, may return 200 with 0 affected or 400
-    expect([200, 400]).toContain(res.status);
+    // Should not crash: 200 (0 affected), 400 (bad request), or 404 (none of the
+    // requested QR tags exist) are all acceptable graceful rejections.
+    expect([200, 400, 404]).toContain(res.status);
   });
 
   it('GET /api/qrcodes/:id/analytics — returns 404 for non-existent QR', async () => {
@@ -331,35 +327,29 @@ describeRR('Mixed QR modes on same campaign', () => {
     });
 
     // Lead via direct QR
-    const res1 = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'MixDirect',
-        lastName: 'Test',
-        email: `mix-d-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        qrTagId: directQr.id
-      });
+    const res1 = await postProspect({
+      firstName: 'MixDirect',
+      lastName: 'Test',
+      email: `mix-d-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      qrTagId: directQr.id
+    });
 
     expect(res1.status).toBe(201);
     expect(res1.body.data.prospect.assignedAgentId).toBe(a.user.id);
 
     // Lead via round-robin QR
-    const res2 = await request(app)
-      .post('/api/prospects')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        firstName: 'MixRR',
-        lastName: 'Test',
-        email: `mix-rr-${Date.now()}@test.com`,
-        phone: `+65${Date.now().toString().slice(-8)}`,
-        leadSource: 'qr_code',
-        campaignId: campaign.id,
-        qrTagId: rrQr.id
-      });
+    const res2 = await postProspect({
+      firstName: 'MixRR',
+      lastName: 'Test',
+      email: `mix-rr-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: campaign.id,
+      qrTagId: rrQr.id
+    });
 
     expect(res2.status).toBe(201);
     expect([b.user.id, c.user.id]).toContain(res2.body.data.prospect.assignedAgentId);

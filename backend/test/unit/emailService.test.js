@@ -37,6 +37,7 @@ describe('emailService (unit)', () => {
     savedEnv.EMAIL_USER = process.env.EMAIL_USER;
     savedEnv.EMAIL_PASSWORD = process.env.EMAIL_PASSWORD;
     savedEnv.EMAIL_FROM = process.env.EMAIL_FROM;
+    savedEnv.SYSTEM_AGENT_REDIRECT_EMAIL = process.env.SYSTEM_AGENT_REDIRECT_EMAIL;
   });
 
   afterEach(() => {
@@ -136,6 +137,9 @@ describe('emailService (unit)', () => {
 
     it('redirects system agent email to admin', async () => {
       delete process.env.EMAIL_HOST;
+      // The redirect only fires when an admin redirect target is configured;
+      // without it the mailer safely refuses to send (no real address to use).
+      process.env.SYSTEM_AGENT_REDIRECT_EMAIL = 'admin@mktr.sg';
 
       await sendLeadAssignmentEmail(
         { id: 'sys-1', email: 'system@mktr.local', firstName: 'System', lastName: 'Agent' },
@@ -144,7 +148,7 @@ describe('emailService (unit)', () => {
 
       expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('redirecting'),
-        expect.anything()
+        expect.objectContaining({ redirectTo: 'admin@mktr.sg' })
       );
     });
   });

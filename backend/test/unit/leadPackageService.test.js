@@ -59,11 +59,22 @@ const Campaign = {
   findByPk: jest.fn().mockResolvedValue({ id: 'camp-1', name: 'Test Campaign' }),
 };
 
+const Prospect = {
+  count: jest.fn().mockResolvedValue(0),
+};
+
+const sequelize = {
+  transaction: jest.fn(async (cb) => cb({})),
+  query: jest.fn().mockResolvedValue([]),
+};
+
 jest.unstable_mockModule('../../src/models/index.js', () => ({
   LeadPackage,
   LeadPackageAssignment,
   User,
   Campaign,
+  Prospect,
+  sequelize,
 }));
 
 jest.unstable_mockModule('../../src/middleware/errorHandler.js', () => ({

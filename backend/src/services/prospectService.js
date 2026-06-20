@@ -40,6 +40,11 @@ import { scoreQuiz } from './quizScoringService.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Mirrors the Prospect.leadStatus ENUM. A filter value outside this set would
+// otherwise reach Postgres and throw ("invalid input value for enum"), so the
+// list endpoint validates against it and returns no matches for unknown values.
+const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'proposal_sent', 'negotiating', 'won', 'lost', 'nurturing'];
+
 const PROSPECT_UPDATE_FIELDS = [
   'firstName',
   'lastName',
@@ -1273,9 +1278,19 @@ export function makeProspectService(overrides = {}) {
       qrTagId,
     } = params;
 
-    const offset = (page - 1) * limit;
+    // Clamp pagination so malformed query params (e.g. ?page=-1&limit=-5) don't
+    // reach Sequelize as a negative LIMIT/OFFSET, which throws → 500.
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(Math.max(1, parseInt(limit, 10) || 10), 200);
+    const offset = (pageNum - 1) * limitNum;
     const scopeFilter = await d.buildProspectWhere(user);
     const whereConditions = { ...scopeFilter };
+
+    // Unknown leadStatus would hit the Postgres enum and 500; degrade to "no
+    // matches" so a bad filter value returns an empty page rather than erroring.
+    if (leadStatus && !VALID_LEAD_STATUSES.includes(leadStatus)) {
+      return { prospects: [], pagination: { currentPage: pageNum, totalPages: 0, totalItems: 0, itemsPerPage: limitNum } };
+    }
 
     if (qrTagId) whereConditions.qrTagId = qrTagId;
     if (leadStatus) whereConditions.leadStatus = leadStatus;
@@ -1303,8 +1318,8 @@ export function makeProspectService(overrides = {}) {
 
     const { count, rows: prospects } = await m.Prospect.findAndCountAll({
       where: whereConditions,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
+      limit: limitNum,
+      offset,
       order: [['createdAt', 'DESC']],
       include: [
         {
@@ -1325,10 +1340,10 @@ export function makeProspectService(overrides = {}) {
     return {
       prospects,
       pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(count / limit),
+        currentPage: pageNum,
+        totalPages: Math.ceil(count / limitNum),
         totalItems: count,
-        itemsPerPage: parseInt(limit),
+        itemsPerPage: limitNum,
       },
     };
   }

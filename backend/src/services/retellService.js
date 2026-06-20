@@ -72,9 +72,15 @@ export function verifyRetellSignature(rawBody, signatureHeader) {
     return false;
   }
 
-  // Reject replays older than 5 minutes
-  const ts = Number(timestamp);
-  if (Number.isNaN(ts) || Math.abs(Date.now() - ts) > 5 * 60 * 1000) {
+  // Reject replays older than 5 minutes. Retell sends the timestamp in seconds
+  // (Stripe-style "<t>.<body>" signing); normalize to milliseconds for the window
+  // comparison while keeping the raw `timestamp` string for the HMAC below. A
+  // value below 1e12 is treated as seconds (a millisecond epoch is ~1.7e12 today),
+  // so this also tolerates a millisecond timestamp without double-scaling.
+  const tsNum = Number(timestamp);
+  if (Number.isNaN(tsNum)) return false;
+  const tsMs = tsNum < 1e12 ? tsNum * 1000 : tsNum;
+  if (Math.abs(Date.now() - tsMs) > 5 * 60 * 1000) {
     return false;
   }
 
