@@ -89,7 +89,11 @@ export default function AdminCampaigns() {
 
  const handleCreateCampaign = (type) => {
  setIsTypeSelectionOpen(false);
- navigate(`/admin/campaigns/new?type=${type}`);
+ // Flag-gated: route new campaigns into the unified workspace when enabled,
+ // else the classic create form. Ships dark (flag off) until set on the
+ // mktr-platform static site.
+ const workspace = import.meta.env.VITE_CAMPAIGN_WORKSPACE_ENABLED === 'true';
+ navigate(workspace ? `/admin/campaigns/workspace?type=${type}` : `/admin/campaigns/new?type=${type}`);
  };
 
  const handleCopyLink = (campaign) => {
@@ -187,14 +191,14 @@ export default function AdminCampaigns() {
  <span className="ml-2">{copiedId === c.id ? 'Copied!' : 'Copy Link'}</span>
  </DropdownMenuItem>
  <DropdownMenuItem asChild>
- <Link to={`/AdminCampaignDesigner?campaign_id=${c.id}`} className="flex items-center">
+ <Link to={import.meta.env.VITE_CAMPAIGN_WORKSPACE_ENABLED === 'true' ? `/admin/campaigns/${c.id}/workspace?tab=design` : `/AdminCampaignDesigner?campaign_id=${c.id}`} className="flex items-center">
  <Palette className="w-4 h-4"/>
  <span className="ml-2">Design</span>
  </Link>
  </DropdownMenuItem>
 
  <DropdownMenuItem asChild>
- <Link to={`/admin/campaigns/${c.id}/edit`}>
+ <Link to={import.meta.env.VITE_CAMPAIGN_WORKSPACE_ENABLED === 'true' ? `/admin/campaigns/${c.id}/workspace?tab=details` : `/admin/campaigns/${c.id}/edit`}>
  <Edit className="w-4 h-4"/>
  <span className="ml-2">Edit</span>
  </Link>

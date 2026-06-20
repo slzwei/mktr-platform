@@ -40,3 +40,16 @@ export async function permanentDeleteCampaign(id) {
 export async function getCampaignAnalytics(id) {
  return Campaign.getAnalytics(id);
 }
+
+// --- Campaign Launch Workspace ---
+export async function getCampaignDeliveryPool(id) {
+ return Campaign.getDeliveryPool(id);
+}
+
+export async function bulkAssignCampaignPackage(id, payload) {
+ return Campaign.bulkAssignDeliveryPool(id, payload);
+}
+
+export async function setCampaignLaunchState(id, payload) {
+ return Campaign.setLaunchState(id, payload);
+}

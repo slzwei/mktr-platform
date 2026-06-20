@@ -461,6 +461,22 @@ class CampaignEntity extends BaseEntity {
  const response = await apiClient.delete(`${this.endpoint}/${id}/permanent`);
  return response.data;
  }
+
+ // --- Campaign Launch Workspace (admin-only, /api/admin/campaigns) ---
+ async getDeliveryPool(id) {
+ const response = await apiClient.get(`/admin/campaigns/${id}/delivery-pool`);
+ return response.data?.data || response.data;
+ }
+
+ async bulkAssignDeliveryPool(id, payload) {
+ const response = await apiClient.post(`/admin/campaigns/${id}/delivery-pool/assign`, payload);
+ return response.data?.data || response.data;
+ }
+
+ async setLaunchState(id, payload) {
+ const response = await apiClient.patch(`/admin/campaigns/${id}/launch-state`, payload);
+ return response.data;
+ }
 }
 
 // Prospect Entity

@@ -87,3 +87,36 @@ export function useUpdateCampaign() {
  onSuccess: () => queryClient.invalidateQueries({ queryKey: ['campaigns'] }),
  });
 }
+
+// --- Campaign Launch Workspace ---
+
+export function useCampaignDeliveryPool(id) {
+ return useQuery({
+ queryKey: ['campaignDeliveryPool', id],
+ queryFn: () => campaignService.getCampaignDeliveryPool(id),
+ enabled: !!id,
+ });
+}
+
+export function useBulkAssignCampaignPackage(id) {
+ const queryClient = useQueryClient();
+ return useMutation({
+ mutationFn: (payload) => campaignService.bulkAssignCampaignPackage(id, payload),
+ onSuccess: () => {
+ queryClient.invalidateQueries({ queryKey: ['campaignDeliveryPool', id] });
+ queryClient.invalidateQueries({ queryKey: ['leadPackages'] });
+ queryClient.invalidateQueries({ queryKey: ['agents'] });
+ },
+ });
+}
+
+export function useSetCampaignLaunchState(id) {
+ const queryClient = useQueryClient();
+ return useMutation({
+ mutationFn: (payload) => campaignService.setCampaignLaunchState(id, payload),
+ onSuccess: () => {
+ queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+ queryClient.invalidateQueries({ queryKey: ['campaignDeliveryPool', id] });
+ },
+ });
+}

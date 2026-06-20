@@ -43,7 +43,7 @@ const TABS = [
  { id: 'quiz', label: 'Quiz', icon: ListChecks }
 ];
 
-export default function DesignEditor({ campaign, onSave }) {
+export default function DesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8rem)]' }) {
  const [activeTab, setActiveTab] = useState('content');
  const [panelOpen, setPanelOpen] = useState(true);
 
@@ -134,7 +134,7 @@ export default function DesignEditor({ campaign, onSave }) {
  };
 
  return (
- <div className="flex h-[calc(100vh-8rem)] gap-0">
+ <div className={`flex ${heightClass} gap-0`}>
  {/* Editor Panel */}
  <div className={`${panelOpen ? 'w-[380px] min-w-[380px]' : 'w-0 min-w-0 overflow-hidden'} transition-colors duration-300 flex flex-col border-r border-border bg-card`}>
  {/* Tab Bar */}
