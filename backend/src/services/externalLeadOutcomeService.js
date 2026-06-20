@@ -42,6 +42,7 @@
 
 import { sequelize, Prospect, ProspectActivity, IdempotencyKey, User } from '../models/index.js';
 import { logger } from '../utils/logger.js';
+import { processLeadOutcome as defaultProcessLeadOutcome } from './leadOutcomeService.js';
 
 export const IDEMPOTENCY_SCOPE = 'external:outcome';
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -75,6 +76,10 @@ const defaultDeps = {
   sequelize,
   models: { Prospect, ProspectActivity, IdempotencyKey, User },
   logger,
+  // Reused from the Lyfe path so the external path fires the SAME down-funnel
+  // CAPI events (ConfirmedResident/ClosedWon) with identical dedup/event_id/
+  // back-date/per-campaign-pixel semantics. Injected for testability.
+  processLeadOutcome: defaultProcessLeadOutcome,
 };
 
 export function makeExternalLeadOutcomeService(overrides = {}) {
@@ -91,24 +96,40 @@ export function makeExternalLeadOutcomeService(overrides = {}) {
    *   outcome_reported_at only on 2xx, so non-2xx keeps the outcome visible as
    *   unreported (and the mktr-leads sweep will re-fire it).
    */
+  /**
+   * Fire the down-funnel CAPI for a mirrored prospect, reusing the Lyfe path's
+   * sender (deterministic event_id, mark-on-success dedup, per-campaign pixel;
+   * Meta event_id is the concurrency guard). Only SC/PR-confirmed statuses emit
+   * events. Returns { retryable }: true ONLY on a genuine transient (5xx/network)
+   * failure → caller returns non-2xx so the mktr-leads sweep re-fires. `guarded`
+   * (CAPI off) and `permanent` (4xx) are NOT retryable (no sweep storm).
+   */
+  async function fireCapi(prospect, mapped, occurredAt) {
+    if (mapped !== 'qualified' && mapped !== 'won') return { retryable: false };
+    try {
+      const r = await d.processLeadOutcome({
+        external_id: prospect.id,
+        new_status: mapped,
+        occurred_at: occurredAt,
+      });
+      return { retryable: (r?.transientFailed?.length ?? 0) > 0 };
+    } catch (err) {
+      d.logger.error(
+        { event: 'external_outcome_capi_error', prospect_id: prospect.id, error: err?.message || String(err) },
+        '[external-outcome] CAPI dispatch threw — treating as retryable'
+      );
+      return { retryable: true };
+    }
+  }
+
   async function processExternalLeadOutcome(payload) {
-    const { eventId, data } = payload;
+    const { eventId, data, timestamp } = payload;
     const { externalId, deliveryId, mktrLeadsStatus } = data;
     const key = `${IDEMPOTENCY_SCOPE}:${eventId}`;
+    const mapped = STATUS_MAP[mktrLeadsStatus] ?? null;
 
-    // Replay fast-path. Expired rows linger until the hourly purge — take them
-    // over so a re-occurrence after the TTL (status flapped back) is processed.
-    const existing = await m.IdempotencyKey.findOne({ where: { key } });
-    if (existing) {
-      if (new Date(existing.expiresAt).getTime() > Date.now()) {
-        return {
-          statusCode: existing.responseCode ?? 200,
-          body: existing.responseBody ?? { success: true, replay: true },
-        };
-      }
-      await existing.destroy();
-    }
-
+    // Load up front — the prospect is needed for CAPI on BOTH fresh and replay
+    // paths (a previously-failed send must be re-attempted by the sweep).
     const prospect = await m.Prospect.findByPk(externalId, {
       include: [{ model: m.User, as: 'assignedAgent', attributes: ['id', 'mktrLeadsId'] }],
     });
@@ -129,7 +150,26 @@ export function makeExternalLeadOutcomeService(overrides = {}) {
       return { statusCode: 422, body: { success: false, error: 'not_a_mktr_leads_prospect' } };
     }
 
-    const mapped = STATUS_MAP[mktrLeadsStatus] ?? null;
+    // Fold the CAPI retry decision into the HTTP status. The status mirror is
+    // already durable; non-2xx is returned ONLY when a transient CAPI failure
+    // should be re-driven by the mktr-leads sweep (re-fires while
+    // status_changed_at > outcome_reported_at). guarded/permanent stay 2xx.
+    const withCapi = async (code, body) => {
+      const { retryable } = await fireCapi(prospect, mapped, timestamp);
+      return { statusCode: retryable ? 503 : code, body };
+    };
+
+    // Replay fast-path: the mirror was already applied. Still (re)attempt CAPI so
+    // a previously-failed send is retried. Expired rows linger until the hourly
+    // purge — take them over so a re-occurrence after the TTL is processed.
+    const existing = await m.IdempotencyKey.findOne({ where: { key } });
+    if (existing) {
+      if (new Date(existing.expiresAt).getTime() > Date.now()) {
+        return withCapi(existing.responseCode ?? 200, existing.responseBody ?? { success: true, replay: true });
+      }
+      await existing.destroy();
+    }
+
     const previousLeadStatus = prospect.leadStatus;
 
     try {
@@ -189,12 +229,14 @@ export function makeExternalLeadOutcomeService(overrides = {}) {
         return responseBody;
       });
 
-      return { statusCode: 200, body };
+      // Mirror committed → fire CAPI post-commit and fold into the status code.
+      return withCapi(200, body);
     } catch (err) {
       // Concurrent duplicate: another request claimed the key mid-flight and
-      // (by claim-last ordering) has already applied the same event.
+      // (by claim-last ordering) has already applied the same event. Still
+      // (re)attempt CAPI so the send is not skipped.
       if (err?.name === 'SequelizeUniqueConstraintError') {
-        return { statusCode: 200, body: { success: true, replay: true } };
+        return withCapi(200, { success: true, replay: true });
       }
       throw err;
     }

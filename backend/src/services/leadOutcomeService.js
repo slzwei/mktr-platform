@@ -125,7 +125,12 @@ export function makeLeadOutcomeService(overrides = {}) {
 
     const dispatched = [];
     const duplicate = [];
-    const failed = [];
+    const failed = []; // back-compat: union of all not-sent (incl. guarded)
+    // Granular classification so callers (e.g. the external path) can decide
+    // whether a not-sent result is worth retrying.
+    const guarded = []; // CAPI disabled / ineligible — never retry
+    const transientFailed = []; // 5xx / network — retryable
+    const permanentFailed = []; // 4xx (or unknown not-sent) — do not auto-retry
 
     for (const key of keys) {
       const { markerKey } = EVENTS[key];
@@ -156,6 +161,13 @@ export function makeLeadOutcomeService(overrides = {}) {
       } else {
         // Not marked → reconciliation / next trigger can retry. (`guarded` = CAPI off.)
         failed.push(eventName);
+        if (result?.reason === 'guarded') {
+          guarded.push(eventName);
+        } else if (result?.error != null || (typeof result?.status === 'number' && result.status >= 500)) {
+          transientFailed.push(eventName);
+        } else {
+          permanentFailed.push(eventName);
+        }
         d.logger.warn(
           { prospect_id: prospect.id, event_name: eventName, reason: result?.reason, status: result?.status },
           '[lead-outcome] dispatch not sent (left re-tryable)'
@@ -163,7 +175,7 @@ export function makeLeadOutcomeService(overrides = {}) {
       }
     }
 
-    return { dispatched, duplicate, failed };
+    return { dispatched, duplicate, failed, guarded, transientFailed, permanentFailed };
   }
 
   return { processLeadOutcome };

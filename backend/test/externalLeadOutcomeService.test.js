@@ -33,12 +33,26 @@ function buildDeps(overrides = {}) {
     create: jest.fn().mockResolvedValue(undefined),
   };
   const sequelize = { transaction: jest.fn((fn) => fn('tx')) };
+  // Stub the reused Lyfe CAPI sender. Default = a clean send (no transientFailed)
+  // so the HTTP code reflects the mirror outcome; override per-test to exercise
+  // the guarded / transient / permanent classification.
+  const processLeadOutcome =
+    overrides.processLeadOutcome ??
+    jest.fn().mockResolvedValue({
+      dispatched: [],
+      duplicate: [],
+      failed: [],
+      guarded: [],
+      transientFailed: [],
+      permanentFailed: [],
+    });
   const service = makeExternalLeadOutcomeService({
     sequelize,
     models: { Prospect, ProspectActivity, IdempotencyKey, User: {} },
     logger: silentLogger,
+    processLeadOutcome,
   });
-  return { service, prospect, Prospect, ProspectActivity, IdempotencyKey, sequelize };
+  return { service, prospect, Prospect, ProspectActivity, IdempotencyKey, sequelize, processLeadOutcome };
 }
 
 function payload(overrides = {}) {
@@ -154,18 +168,24 @@ describe('processExternalLeadOutcome', () => {
     expect(result.statusCode).toBe(200);
   });
 
-  it('replays the stored response for a live idempotency key without touching the prospect', async () => {
+  it('replays the stored mirror body but STILL re-attempts CAPI (lets the sweep retry a failed send)', async () => {
     const existingKey = {
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       responseCode: 200,
       responseBody: { success: true, appliedLeadStatus: 'won' },
       destroy: jest.fn(),
     };
-    const { service, Prospect } = buildDeps({ existingKey });
+    const { service, Prospect, ProspectActivity, processLeadOutcome } = buildDeps({ existingKey });
     const result = await service.processExternalLeadOutcome(payload());
+    // Cached mirror body returned; mirror NOT re-applied.
     expect(result).toEqual({ statusCode: 200, body: { success: true, appliedLeadStatus: 'won' } });
-    expect(Prospect.findByPk).not.toHaveBeenCalled();
+    expect(ProspectActivity.create).not.toHaveBeenCalled();
     expect(existingKey.destroy).not.toHaveBeenCalled();
+    // But the prospect IS loaded and CAPI re-attempted (marker-gated dedup).
+    expect(Prospect.findByPk).toHaveBeenCalled();
+    expect(processLeadOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ external_id: 'prospect-uuid-1', new_status: 'won' })
+    );
   });
 
   it('takes over an expired idempotency key and processes the event anew', async () => {
@@ -197,5 +217,72 @@ describe('processExternalLeadOutcome', () => {
     const { service, ProspectActivity } = buildDeps();
     ProspectActivity.create.mockRejectedValue(new Error('db down'));
     await expect(service.processExternalLeadOutcome(payload())).rejects.toThrow('db down');
+  });
+
+  // ── Down-funnel CAPI (ConfirmedResident / ClosedWon) ──────────────────────
+  it('fires CAPI for qualified (ConfirmedResident) via the reused Lyfe sender', async () => {
+    const prospect = makeProspect({ leadStatus: 'contacted' });
+    const { service, processLeadOutcome } = buildDeps({ prospect });
+    const result = await service.processExternalLeadOutcome(
+      payload({ eventId: 'lead-uuid-1:qualified', data: { mktrLeadsStatus: 'qualified' } })
+    );
+    expect(result.statusCode).toBe(200);
+    expect(processLeadOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ external_id: 'prospect-uuid-1', new_status: 'qualified' })
+    );
+  });
+
+  it('does NOT fire CAPI for non-SC/PR statuses (e.g. lost)', async () => {
+    const prospect = makeProspect({ leadStatus: 'contacted' });
+    const { service, processLeadOutcome } = buildDeps({ prospect });
+    await service.processExternalLeadOutcome(
+      payload({ eventId: 'lead-uuid-1:lost', data: { mktrLeadsStatus: 'lost' } })
+    );
+    expect(processLeadOutcome).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 on a transient CAPI failure so the sweep re-fires', async () => {
+    const processLeadOutcome = jest.fn().mockResolvedValue({
+      dispatched: [], duplicate: [], failed: ['ConfirmedResident'],
+      guarded: [], transientFailed: ['ConfirmedResident'], permanentFailed: [],
+    });
+    const { service } = buildDeps({ processLeadOutcome });
+    const result = await service.processExternalLeadOutcome(
+      payload({ eventId: 'lead-uuid-1:qualified', data: { mktrLeadsStatus: 'qualified' } })
+    );
+    expect(result.statusCode).toBe(503);
+  });
+
+  it('stays 2xx when CAPI is guarded (disabled) — no sweep storm', async () => {
+    const processLeadOutcome = jest.fn().mockResolvedValue({
+      dispatched: [], duplicate: [], failed: ['ConfirmedResident'],
+      guarded: ['ConfirmedResident'], transientFailed: [], permanentFailed: [],
+    });
+    const { service } = buildDeps({ processLeadOutcome });
+    const result = await service.processExternalLeadOutcome(
+      payload({ eventId: 'lead-uuid-1:qualified', data: { mktrLeadsStatus: 'qualified' } })
+    );
+    expect(result.statusCode).toBe(200);
+  });
+
+  it('stays 2xx on a permanent (4xx) CAPI failure — not auto-retried', async () => {
+    const processLeadOutcome = jest.fn().mockResolvedValue({
+      dispatched: [], duplicate: [], failed: ['ConfirmedResident'],
+      guarded: [], transientFailed: [], permanentFailed: ['ConfirmedResident'],
+    });
+    const { service } = buildDeps({ processLeadOutcome });
+    const result = await service.processExternalLeadOutcome(
+      payload({ eventId: 'lead-uuid-1:qualified', data: { mktrLeadsStatus: 'qualified' } })
+    );
+    expect(result.statusCode).toBe(200);
+  });
+
+  it('returns 503 if the CAPI sender throws (treated as transient)', async () => {
+    const processLeadOutcome = jest.fn().mockRejectedValue(new Error('db blip'));
+    const { service } = buildDeps({ processLeadOutcome });
+    const result = await service.processExternalLeadOutcome(
+      payload({ eventId: 'lead-uuid-1:qualified', data: { mktrLeadsStatus: 'qualified' } })
+    );
+    expect(result.statusCode).toBe(503);
   });
 });
