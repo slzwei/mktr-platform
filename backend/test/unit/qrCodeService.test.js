@@ -34,6 +34,7 @@ function buildMocks() {
 
   const Campaign = {
     findOne: jest.fn().mockResolvedValue({ id: 'camp-1', name: 'Test', status: 'active' }),
+    findByPk: jest.fn().mockResolvedValue({ id: 'camp-1', design_config: {} }),
   };
 
   const Car = {

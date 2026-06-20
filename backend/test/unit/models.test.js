@@ -28,8 +28,11 @@ describe('Sequelize Models (definitions & validations)', () => {
     it('has email field with isEmail validation', () => {
       const emailAttr = attrs(User).email;
       expect(emailAttr).toBeDefined();
-      expect(emailAttr.allowNull).toBe(false);
-      expect(emailAttr.validate.isEmail).toBe(true);
+      // Nullable since migration 025 — Lyfe agents authenticate via phone OTP and
+      // frequently have no email (the model no longer synthesises a placeholder).
+      expect(emailAttr.allowNull).toBe(true);
+      // isEmail is configured with a custom message object, not the bare `true`.
+      expect(emailAttr.validate.isEmail).toBeTruthy();
     });
 
     it('has password field that allows null (OAuth users)', () => {
