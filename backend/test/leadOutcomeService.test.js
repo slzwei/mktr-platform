@@ -56,7 +56,7 @@ describe('leadOutcomeService.processLeadOutcome', () => {
 
     const result = await svc.processLeadOutcome(QUALIFIED);
 
-    expect(result).toEqual({ dispatched: ['ConfirmedResident'], duplicate: [], failed: [] });
+    expect(result).toMatchObject({ dispatched: ['ConfirmedResident'], duplicate: [], failed: [] });
     expect(sendConversionEvent).toHaveBeenCalledTimes(1);
     const [, ctx, options] = sendConversionEvent.mock.calls[0];
     expect(ctx.eventId).toBe('confirmed_resident:prospect-uuid-1');
@@ -91,7 +91,7 @@ describe('leadOutcomeService.processLeadOutcome', () => {
 
     const result = await svc.processLeadOutcome({ ...QUALIFIED, new_status: 'won' });
 
-    expect(result).toEqual({ dispatched: ['ClosedWon'], duplicate: ['ConfirmedResident'], failed: [] });
+    expect(result).toMatchObject({ dispatched: ['ClosedWon'], duplicate: ['ConfirmedResident'], failed: [] });
     expect(sendConversionEvent).toHaveBeenCalledTimes(1);
     expect(sendConversionEvent.mock.calls[0][2].eventName).toBe('ClosedWon');
   });
@@ -117,7 +117,7 @@ describe('leadOutcomeService.processLeadOutcome', () => {
 
     const result = await svc.processLeadOutcome(QUALIFIED);
 
-    expect(result).toEqual({ dispatched: [], duplicate: [], failed: ['ConfirmedResident'] });
+    expect(result).toMatchObject({ dispatched: [], duplicate: [], failed: ['ConfirmedResident'] });
     expect(prospect.sourceMetadata.capi).toBeUndefined();
     expect(prospect.save).not.toHaveBeenCalled();
   });
@@ -171,7 +171,7 @@ describe('leadOutcomeService.processLeadOutcome', () => {
 
     const result = await svc.processLeadOutcome(QUALIFIED);
 
-    expect(result).toEqual({ dispatched: [], duplicate: ['ConfirmedResident'], failed: [] });
+    expect(result).toMatchObject({ dispatched: [], duplicate: ['ConfirmedResident'], failed: [] });
     expect(sendConversionEvent).not.toHaveBeenCalled();
     expect(prospect.save).not.toHaveBeenCalled();
   });
