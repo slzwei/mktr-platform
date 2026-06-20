@@ -1,5 +1,6 @@
-import { asyncHandler } from '../middleware/errorHandler.js';
+import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import * as campaignService from '../services/campaignService.js';
+import * as leadPackageService from '../services/leadPackageService.js';
 import { loadCampaignReadiness } from '../services/campaignReadinessService.js';
 import { loadQuizAnalytics } from '../services/quizAnalyticsService.js';
 
@@ -56,6 +57,50 @@ export const getCampaignReadiness = asyncHandler(async (req, res) => {
   const readiness = await loadCampaignReadiness(req.params.id);
 
   res.json({ success: true, data: { readiness } });
+});
+
+// --- Campaign Launch Workspace (admin, mounted under /api/admin/campaigns) ---
+
+export const getDeliveryPool = asyncHandler(async (req, res) => {
+  const data = await leadPackageService.getCampaignDeliveryPool(req.params.id);
+  res.json({ success: true, data });
+});
+
+export const bulkAssignDeliveryPool = asyncHandler(async (req, res) => {
+  const { packageId, agentIds } = req.body;
+  const data = await leadPackageService.bulkAssignPackage({
+    campaignId: req.params.id,
+    packageId,
+    agentIds,
+  });
+  res.status(201).json({ success: true, message: 'Package assigned to agents', data });
+});
+
+export const setLaunchState = asyncHandler(async (req, res) => {
+  const { state, force } = req.body;
+  if (!['active', 'paused'].includes(state)) {
+    throw new AppError('state must be "active" or "paused"', 400);
+  }
+
+  // Readiness gate on activate: block go-live when the campaign would drop
+  // leads (empty funded pool / webhook off), unless explicitly forced.
+  if (state === 'active' && !force) {
+    const readiness = await loadCampaignReadiness(req.params.id);
+    if (readiness.applicable && !readiness.ready) {
+      return res.status(409).json({
+        success: false,
+        message: 'Campaign is not ready to go live. Resolve the issues or force activation.',
+        data: { readiness },
+      });
+    }
+  }
+
+  const campaign = await campaignService.setCampaignLaunchState(req.params.id, state, req);
+  res.json({
+    success: true,
+    message: state === 'active' ? 'Campaign activated' : 'Campaign paused',
+    data: { campaign },
+  });
 });
 
 export const getCampaignQuizAnalytics = asyncHandler(async (req, res) => {

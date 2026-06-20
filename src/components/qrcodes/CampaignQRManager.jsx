@@ -12,7 +12,7 @@ import ExistingQRCodes from"./ExistingQRCodes";
 import PromotionalQRForm from"./PromotionalQRForm";
 import CarQRDirectory from"./CarQRDirectory";
 
-export default function CampaignQRManager({ campaign, onBack }) {
+export default function CampaignQRManager({ campaign, onBack, embedded = false }) {
  const [qrTags, setQrTags] = useState([]);
  const [loading, setLoading] = useState(true);
  const [activeTab, setActiveTab] = useState("existing");
@@ -59,8 +59,9 @@ export default function CampaignQRManager({ campaign, onBack }) {
  const carQRs = qrTags.filter(qr => qr.type === 'car');
 
  return (
- <div className="p-6 lg:p-8 bg-muted min-h-screen">
- <div className="max-w-7xl mx-auto">
+ <div className={embedded ? "" : "p-6 lg:p-8 bg-muted min-h-screen"}>
+ <div className={embedded ? "" : "max-w-7xl mx-auto"}>
+ {!embedded && (
  <div className="flex items-center gap-4 mb-8">
  <Button variant="outline" onClick={onBack}>
  <ArrowLeft className="w-4 h-4 mr-2"/>
@@ -82,6 +83,7 @@ export default function CampaignQRManager({ campaign, onBack }) {
  </div>
  </div>
  </div>
+ )}
 
  <Tabs value={activeTab} onValueChange={setActiveTab}>
  <TabsList className="grid w-full grid-cols-3 mb-8">

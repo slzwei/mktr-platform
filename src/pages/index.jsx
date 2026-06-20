@@ -49,6 +49,7 @@ const AdminAgentDetail = lazy(() => import('./AdminAgentDetail'));
 const AdminUsers = lazy(() => import('./AdminUsers'));
 const AdminFleet = lazy(() => import('./AdminFleet'));
 const AdminCampaignDesigner = lazy(() => import('./AdminCampaignDesigner'));
+const AdminCampaignWorkspace = lazy(() => import('./AdminCampaignWorkspace'));
 const AdminCommissions = lazy(() => import('./AdminCommissions'));
 const AdminShortLinks = lazy(() => import('./AdminShortLinks'));
 const AdminLeadPackages = lazy(() => import('./AdminLeadPackages'));
@@ -181,6 +182,25 @@ function PagesContent() {
  <ProtectedRoute requiredRole="admin">
  <DashboardLayout>
  <AdminCampaignForm />
+ </DashboardLayout>
+ </ProtectedRoute>
+ }
+ />
+ {/* Campaign Launch Workspace — unified create/edit/design/pool/sources/launch. */}
+ <Route
+ path="/admin/campaigns/workspace" element={
+ <ProtectedRoute requiredRole="admin">
+ <DashboardLayout>
+ <AdminCampaignWorkspace />
+ </DashboardLayout>
+ </ProtectedRoute>
+ }
+ />
+ <Route
+ path="/admin/campaigns/:id/workspace" element={
+ <ProtectedRoute requiredRole="admin">
+ <DashboardLayout>
+ <AdminCampaignWorkspace />
  </DashboardLayout>
  </ProtectedRoute>
  }

@@ -182,6 +182,8 @@ export async function createCampaign(body, user) {
   if (commission_amount_fleet !== undefined) campaignData.commission_amount_fleet = commission_amount_fleet;
   if (defaultAssignmentMode !== undefined) campaignData.defaultAssignmentMode = defaultAssignmentMode;
   if (enforceLeadQuota !== undefined) campaignData.enforceLeadQuota = enforceLeadQuota;
+  if (body.metaPixelId !== undefined) campaignData.metaPixelId = body.metaPixelId || null;
+  if (body.tiktokPixelId !== undefined) campaignData.tiktokPixelId = body.tiktokPixelId || null;
 
   const campaign = await Campaign.create(campaignData);
 
@@ -244,6 +246,8 @@ export async function updateCampaign(id, body, req) {
   if (commission_amount_fleet !== undefined) updateData.commission_amount_fleet = commission_amount_fleet;
   if (defaultAssignmentMode !== undefined) updateData.defaultAssignmentMode = defaultAssignmentMode;
   if (enforceLeadQuota !== undefined) updateData.enforceLeadQuota = enforceLeadQuota;
+  if (body.metaPixelId !== undefined) updateData.metaPixelId = body.metaPixelId || null;
+  if (body.tiktokPixelId !== undefined) updateData.tiktokPixelId = body.tiktokPixelId || null;
 
   await campaign.update(updateData);
 
@@ -274,6 +278,37 @@ export async function updateCampaign(id, body, req) {
   plain.ad_playlist = mediaItemsToPlaylist(plain.mediaItems);
   plain.assigned_agents = agentRows.map(r => r.agentId);
   return plain;
+}
+
+/**
+ * Set a campaign's launch state to 'active' or 'paused'.
+ *
+ * Dedicated path (NOT updateCampaign) so we never trip its is_active→draft
+ * mapping: pausing sets status='paused' (not 'draft'). Rejects archived
+ * campaigns (status changes there go through restore/archive), and fans out a
+ * device manifest refresh exactly like updateCampaign — PHV tablets only serve
+ * status:'active' campaigns, so activate/pause must re-notify devices.
+ * Readiness gating (block activate when not ready) is enforced by the caller
+ * (controller) so it can return the readiness payload on a 409.
+ */
+export async function setCampaignLaunchState(id, state, req) {
+  if (!['active', 'paused'].includes(state)) {
+    throw new AppError('Invalid launch state', 400);
+  }
+  const where = buildOwnerWhere(req, { id });
+  const campaign = await Campaign.findOne({ where });
+  if (!campaign) throw new AppError('Campaign not found or access denied', 404);
+  if (campaign.status === 'archived') {
+    throw new AppError('Archived campaigns cannot be activated or paused. Restore it first.', 400);
+  }
+
+  const isActive = state === 'active';
+  await campaign.update({ is_active: isActive, status: isActive ? 'active' : 'paused' });
+
+  // Fan-out: refresh device manifests (same as updateCampaign content changes).
+  await notifyDevices(id);
+
+  return campaign.toJSON();
 }
 
 /**

@@ -11,7 +11,7 @@ import Loader2 from"lucide-react/icons/loader-2";
 import { Campaign } from"@/api/entities";
 import { leadPackageTemplateSchema } from"@/schemas/leadPackage";
 
-export default function LeadPackageTemplateDialog({ open, onOpenChange, onSubmit, editingPackage = null }) {
+export default function LeadPackageTemplateDialog({ open, onOpenChange, onSubmit, editingPackage = null, lockCampaignId = null, lockCampaignName = null }) {
  const [campaigns, setCampaigns] = useState([]);
 
  const {
@@ -37,12 +37,14 @@ export default function LeadPackageTemplateDialog({ open, onOpenChange, onSubmit
 
  useEffect(() => {
  if (open) {
- loadCampaigns();
+ // In locked mode the campaign is fixed by the workspace (and may be a
+ // draft, which the active-only list would exclude), so skip the fetch.
+ if (!lockCampaignId) loadCampaigns();
  reset(editingPackage
  ? {
  name: editingPackage.name ||"",
  description: editingPackage.description ||"",
- campaignId: editingPackage.campaignId ||"",
+ campaignId: lockCampaignId || editingPackage.campaignId ||"",
  type: editingPackage.type ||"basic",
  leadCount: editingPackage.leadCount || 100,
  price: editingPackage.price || 0,
@@ -52,7 +54,7 @@ export default function LeadPackageTemplateDialog({ open, onOpenChange, onSubmit
  : {
  name:"",
  description:"",
- campaignId:"",
+ campaignId: lockCampaignId ||"",
  type:"basic",
  leadCount: 100,
  price: 0,
@@ -61,7 +63,7 @@ export default function LeadPackageTemplateDialog({ open, onOpenChange, onSubmit
  }
  );
  }
- }, [open, editingPackage, reset]);
+ }, [open, editingPackage, reset, lockCampaignId]);
 
  const loadCampaigns = async () => {
  try {
@@ -108,6 +110,9 @@ export default function LeadPackageTemplateDialog({ open, onOpenChange, onSubmit
 
  <div className="space-y-2">
  <Label htmlFor="campaign">Campaign *</Label>
+ {lockCampaignId ? (
+ <Input value={lockCampaignName || 'This campaign'} disabled readOnly />
+ ) : (
  <Controller
  name="campaignId" control={control}
  render={({ field }) => (
@@ -125,6 +130,7 @@ export default function LeadPackageTemplateDialog({ open, onOpenChange, onSubmit
  </Select>
  )}
  />
+ )}
  {errors.campaignId && (
  <p className="text-destructive text-xs mt-1">{errors.campaignId.message}</p>
  )}
