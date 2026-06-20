@@ -89,8 +89,14 @@ export async function createAdminLink({ targetUrl, campaignId, purpose = 'share'
     throw new AppError('targetUrl is required', 400);
   }
 
-  // Prevent open redirect — only allow https URLs, block dangerous schemes
-  const parsed = new URL(targetUrl); // throws on invalid URL
+  // Prevent open redirect — only allow https URLs, block dangerous schemes.
+  // Guard new URL() so a malformed targetUrl yields a 400, not an uncaught 500.
+  let parsed;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    throw new AppError('Invalid targetUrl', 400);
+  }
   if (!['https:', 'http:'].includes(parsed.protocol)) {
     throw new AppError('Only http/https URLs are allowed', 400);
   }
@@ -148,11 +154,16 @@ export async function listLinks({ page = 1, limit = 20, search = '', campaignId,
     where.slug = { [Op.like]: `%${sanitizedSearch}%` };
   }
 
+  // Clamp pagination so malformed query params (?page=-1, ?limit=abc) don't reach
+  // Sequelize as a negative/NaN LIMIT/OFFSET, which throws → 500.
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(Math.max(1, parseInt(limit, 10) || 20), 200);
+
   const { rows, count } = await ShortLink.findAndCountAll({
     where,
     order: [['createdAt', 'DESC']],
-    offset: (Number(page) - 1) * Number(limit),
-    limit: Number(limit)
+    offset: (pageNum - 1) * limitNum,
+    limit: limitNum
   });
   return { items: rows, total: count };
 }

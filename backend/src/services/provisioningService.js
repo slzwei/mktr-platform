@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { ProvisioningSession, Device } from '../models/index.js';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Create a new provisioning session with a 1-hour expiry.
  * Returns { expiresAt } on success, or { alreadyExists: true } for duplicates.
@@ -33,6 +35,11 @@ export async function createSession({ sessionCode, ipAddress }) {
  * Returns { status, deviceKey? } or null if not found.
  */
 export async function checkSession(code) {
+  // sessionCode is a UUID column: a non-UUID code can't match any row and would
+  // make Postgres throw "invalid input syntax for type uuid" (→ 500). Treat a
+  // malformed code as simply not found.
+  if (!code || !UUID_RE.test(code)) return null;
+
   const session = await ProvisioningSession.findOne({
     where: { sessionCode: code }
   });

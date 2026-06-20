@@ -59,7 +59,11 @@ export function normalizeAgentSort(sortBy, order) {
  */
 export async function listAgents(query) {
   const { page = 1, limit = 10, search, status, sortBy = 'createdAt', order = 'DESC' } = query;
-  const offset = (page - 1) * limit;
+  // Clamp pagination so malformed query params (?page=0, ?limit=-1) don't reach
+  // Sequelize as a negative/NaN LIMIT/OFFSET, which throws → 500.
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(Math.max(1, parseInt(limit, 10) || 10), 200);
+  const offset = (pageNum - 1) * limitNum;
 
   const whereConditions = { role: 'agent' };
 
@@ -86,8 +90,8 @@ export async function listAgents(query) {
 
   const { count, rows: agents } = await User.findAndCountAll({
     where: whereConditions,
-    limit: parseInt(limit),
-    offset: parseInt(offset),
+    limit: limitNum,
+    offset,
     order: [[normalizedSortBy, normalizedOrder]],
     attributes: {
       exclude: ['password'],
@@ -124,10 +128,10 @@ export async function listAgents(query) {
   return {
     agents: agentsWithStats,
     pagination: {
-      currentPage: parseInt(page),
-      totalPages: Math.ceil(count / limit),
+      currentPage: pageNum,
+      totalPages: Math.ceil(count / limitNum),
       totalItems: count,
-      itemsPerPage: parseInt(limit)
+      itemsPerPage: limitNum
     }
   };
 }

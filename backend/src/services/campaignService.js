@@ -72,7 +72,11 @@ function buildOwnerWhere(req, extra = {}) {
  */
 export async function listCampaigns(user, query, req) {
   const { page = 1, limit = 10, status, type, search, createdBy } = query;
-  const offset = (page - 1) * limit;
+  // Clamp pagination so malformed query params (?page=-1&limit=-5, ?page=abc)
+  // don't reach Sequelize as a negative/NaN LIMIT/OFFSET, which throws → 500.
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(Math.max(1, parseInt(limit, 10) || 10), 200);
+  const offset = (pageNum - 1) * limitNum;
 
   const where = buildCampaignWhere(req);
 
@@ -90,8 +94,8 @@ export async function listCampaigns(user, query, req) {
 
   const { count, rows: campaigns } = await Campaign.findAndCountAll({
     where,
-    limit: parseInt(limit),
-    offset: parseInt(offset),
+    limit: limitNum,
+    offset,
     order: [['createdAt', 'DESC']],
     attributes: {
       include: [
@@ -118,10 +122,10 @@ export async function listCampaigns(user, query, req) {
   return {
     campaigns: campaignsJson,
     pagination: {
-      currentPage: parseInt(page),
-      totalPages: Math.ceil(count / limit),
+      currentPage: pageNum,
+      totalPages: Math.ceil(count / limitNum),
       totalItems: count,
-      itemsPerPage: parseInt(limit)
+      itemsPerPage: limitNum
     }
   };
 }
@@ -167,8 +171,13 @@ export async function getCampaign(id, req) {
 export async function createCampaign(body, user) {
   const { name, min_age, max_age, start_date, end_date, is_active, assigned_agents, commission_amount_driver, commission_amount_fleet, defaultAssignmentMode, ad_playlist, enforceLeadQuota } = body;
 
+  // Defense-in-depth: strip HTML tags from the name so a stored payload like
+  // `<img src=x onerror=...>` can't ride along into any surface that renders it
+  // unescaped (e.g. PDF/email templates), independent of frontend escaping.
+  const safeName = typeof name === 'string' ? name.replace(/<[^>]*>/g, '').trim() : name;
+
   const campaignData = {
-    name,
+    name: safeName,
     min_age: min_age || 18,
     max_age: max_age || 65,
     start_date,
@@ -184,6 +193,14 @@ export async function createCampaign(body, user) {
   if (enforceLeadQuota !== undefined) campaignData.enforceLeadQuota = enforceLeadQuota;
   if (body.metaPixelId !== undefined) campaignData.metaPixelId = body.metaPixelId || null;
   if (body.tiktokPixelId !== undefined) campaignData.tiktokPixelId = body.tiktokPixelId || null;
+  // Allow design_config at creation time (mirrors updateCampaign) so a campaign
+  // can be created with its designer config in one call, not create-then-update.
+  if (body.design_config !== undefined) {
+    campaignData.design_config =
+      body.design_config && typeof body.design_config === 'object'
+        ? { ...body.design_config, customerHost: normalizeCustomerHostChoice(body.design_config.customerHost) }
+        : body.design_config;
+  }
 
   const campaign = await Campaign.create(campaignData);
 

@@ -253,9 +253,11 @@ export function makeCommissionService(overrides = {}) {
       {
         status: 'approved',
         approvedBy: userId,
+        // metadata is a `json` column; the `||` merge operator is jsonb-only, so
+        // cast before concatenating (the result casts back to json on assignment).
         metadata: _sequelize.literal(
           `CASE WHEN metadata IS NULL THEN '${approvalData.replace(/'/g, "''")}'::jsonb ` +
-          `ELSE metadata || '${approvalData.replace(/'/g, "''")}'::jsonb END`
+          `ELSE metadata::jsonb || '${approvalData.replace(/'/g, "''")}'::jsonb END`
         )
       },
       { where: { id: { [Op.in]: commissionIds }, status: 'pending' } }

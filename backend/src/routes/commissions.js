@@ -24,6 +24,11 @@ router.get('/stats/overview', authenticateToken, requireAgentOrAdmin, asyncHandl
 // Get agent commission summary
 router.get('/agents/:agentId/summary', authenticateToken, requireAdmin, asyncHandler(ctrl.getAgentCommissionSummary));
 
+// Bulk approve commissions (Admin only). MUST be registered before the
+// `/:id/approve` route below, otherwise Express captures "bulk" as :id and the
+// single-approve handler 500s on `invalid input syntax for type uuid: "bulk"`.
+router.patch('/bulk/approve', authenticateToken, requireAdmin, asyncHandler(ctrl.bulkApproveCommissions));
+
 // Get commission by ID (agents see own, admins see all)
 router.get('/:id', authenticateToken, requireAgentOrAdmin, asyncHandler(ctrl.getCommission));
 
@@ -35,8 +40,5 @@ router.patch('/:id/approve', authenticateToken, requireAdmin, asyncHandler(ctrl.
 
 // Mark commission as paid (Admin only)
 router.patch('/:id/pay', authenticateToken, requireAdmin, asyncHandler(ctrl.payCommission));
-
-// Bulk approve commissions (Admin only)
-router.patch('/bulk/approve', authenticateToken, requireAdmin, asyncHandler(ctrl.bulkApproveCommissions));
 
 export default router;
