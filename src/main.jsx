@@ -8,6 +8,7 @@ import '@/index.css'
 import { queryClient } from '@/lib/queryClient'
 import { scrubEvent, scrubBreadcrumb } from '@/lib/sentryScrub'
 import MKTRAnimatedLogo from '@/components/MKTRAnimatedLogo'
+import { SPLASH_KEY, safeSessionGet, safeSessionSet, shouldSuppressSplash } from '@/lib/splash'
 
 // Initialize Sentry
 const sentryDsn = import.meta.env.VITE_SENTRY_DSN
@@ -24,18 +25,19 @@ if (sentryDsn) {
 }
 
 function Boot() {
- const [showSplash, setShowSplash] = useState(() => sessionStorage.getItem('mktr_splash_shown') !== '1')
+ const [showSplash, setShowSplash] = useState(
+ () => !shouldSuppressSplash() && safeSessionGet(SPLASH_KEY) !== '1'
+ )
  useEffect(() => {
- // API client now reads token from localStorage on each request — no manual setToken needed
  if (showSplash) {
  const minSplashMs = 1500
  const timer = setTimeout(() => {
- sessionStorage.setItem('mktr_splash_shown', '1')
+ safeSessionSet(SPLASH_KEY, '1')
  setShowSplash(false)
  }, minSplashMs)
  return () => clearTimeout(timer)
  }
- }, [])
+ }, [showSplash])
  return showSplash ? <MKTRAnimatedLogo /> : <App />
 }
 
