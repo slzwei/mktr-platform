@@ -6,6 +6,17 @@
 
 ## 0. Changelog
 
+### v4 — scheduler changed to IN-PROCESS (at build/deploy time, 2026-06-22)
+The Render MCP **can't create Docker cron jobs** (dashboard-only), and a standalone
+Render Cron Job would have to **duplicate the backend's `DB_*` secrets + the Meta
+token**. Since the backend is **single-instance** and the sync is **idempotent**,
+the scheduler now lives **in-process** in `bootstrap.js` (gated by
+`REDEEMED_AUDIENCE_SYNC_ENABLED`; interval `REDEEMED_AUDIENCE_SYNC_INTERVAL_HOURS`,
+default 24; initial run ~60s post-boot). It inherits DB + Meta creds with zero
+secret duplication and is enabled by flipping one non-secret env var on
+`mktr-backend-jo6r`. `scripts/sync-redeemed-audience.js` + the `RUN_MODE` entrypoint
+stay for manual runs. **Supersedes D3** (was "Render Cron Job"). Code: PR #56.
+
 ### v3 — second pass, re-verified against real code (do-not-assume audit)
 - **Redaction guidance corrected (was mechanically wrong).** Pino redact paths
   match **keys in logged objects**, not env-var names — adding

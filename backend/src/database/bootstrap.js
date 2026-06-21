@@ -122,6 +122,31 @@ export async function bootstrapDatabase() {
         logger.warn('[ReleaseSweep] periodic sweep failed', { error: err?.message });
       }
     }, 2 * 60 * 1000); // every 2 min
+
+    // Redeemed-audience exclusion sync (Meta customer list). Pushes hashed
+    // redeemers into the exclusion audience so people who already redeemed stop
+    // seeing ads. Runs IN-PROCESS (the backend is single-instance — no
+    // double-fire) so it inherits the DB + Meta credentials without a separate
+    // Render service (the Render MCP can't create Docker cron jobs, and a
+    // standalone cron would have to duplicate the DB secrets). Gated by
+    // REDEEMED_AUDIENCE_SYNC_ENABLED; an initial run ~60s after boot keeps it
+    // fresh across deploys, then it repeats every
+    // REDEEMED_AUDIENCE_SYNC_INTERVAL_HOURS (default 24). Idempotent (additive +
+    // Meta person-level dedup), so extra runs are harmless.
+    if (String(process.env.REDEEMED_AUDIENCE_SYNC_ENABLED || 'false').toLowerCase() === 'true') {
+      const intervalHours = Math.max(1, Number(process.env.REDEEMED_AUDIENCE_SYNC_INTERVAL_HOURS) || 24);
+      const runRedeemedAudienceSync = async () => {
+        try {
+          const { syncRedeemedAudience } = await import('../services/redeemedAudienceService.js');
+          await syncRedeemedAudience();
+        } catch (err) {
+          logger.warn('[RedeemedAudience] periodic sync failed (non-fatal)', { error: err?.message });
+        }
+      };
+      setTimeout(runRedeemedAudienceSync, 60_000);
+      setInterval(runRedeemedAudienceSync, intervalHours * 60 * 60 * 1000);
+      logger.info(`[RedeemedAudience] periodic sync scheduled (${intervalHours}h interval)`);
+    }
   }
 
   logger.info('Database bootstrap complete.');
