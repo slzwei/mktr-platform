@@ -3,6 +3,7 @@ import { Op } from 'sequelize';
 import { Prospect } from '../models/index.js';
 import { hashEmail, hashPhone } from '../utils/piiHashing.js';
 import { logger } from '../utils/logger.js';
+import { sendEmail } from './mailer.js';
 
 /**
  * Redeemed-audience sync — pushes redeemers (hashed email + phone) from our own
@@ -31,7 +32,7 @@ const MAX_BATCH = 10000; // Meta cap: ≤10,000 users per /users request
 const AUDIENCE_SCHEMA = ['EMAIL', 'PHONE'];
 const SYNTHETIC_EMAIL_SUFFIX = '@calls.mktr.sg'; // Retell placeholder addresses
 
-const defaultDeps = { Prospect, fetch: globalThis.fetch };
+const defaultDeps = { Prospect, fetch: globalThis.fetch, sendEmail };
 
 /** Read the configured Graph API version at call time (env-overridable). */
 function graphVersion() {
@@ -142,8 +143,26 @@ export async function uploadBatch(
 }
 
 /**
+ * Email a "bad run" alert (hard failure, or Meta rejected records) to
+ * REDEEMED_AUDIENCE_ALERT_EMAIL when configured. Fire-and-forget: never throws,
+ * never blocks the sync result. Body carries counts + the error message only —
+ * never PII or invalid_entry_samples. Sender defaults to the mailer's
+ * noreply@mktr.sg.
+ */
+async function sendBadRunAlert(d, subject, body) {
+  const to = process.env.REDEEMED_AUDIENCE_ALERT_EMAIL;
+  if (!to) return;
+  try {
+    await d.sendEmail({ to, subject, text: body });
+    logger.info({ to }, 'redeemed_audience.sync.alert_sent');
+  } catch (err) {
+    logger.warn({ err: err.message }, 'redeemed_audience.sync.alert_failed');
+  }
+}
+
+/**
  * Orchestrate a full sync. Never throws — errors land in Sentry + structured
- * logs (counts only). Returns a summary object.
+ * logs (counts only) + an optional email alert. Returns a summary object.
  */
 export async function syncRedeemedAudience(deps = {}) {
   const d = { ...defaultDeps, ...deps };
@@ -200,10 +219,42 @@ export async function syncRedeemedAudience(deps = {}) {
       { eligible: rows.length, totalReceived, totalInvalid, mode },
       'redeemed_audience.sync.done'
     );
+    if (totalInvalid > 0) {
+      await sendBadRunAlert(
+        d,
+        `⚠️ MKTR redeemed-audience sync — ${totalInvalid} record(s) rejected`,
+        [
+          'The redeemed-audience sync completed but Meta rejected some records.',
+          '',
+          `Eligible:  ${rows.length}`,
+          `Received:  ${totalReceived}`,
+          `Invalid:   ${totalInvalid}`,
+          `Audience:  ${audienceId}`,
+          `Time:      ${new Date().toISOString()}`,
+          '',
+          'Check Render logs (mktr-backend-jo6r, search "redeemed_audience").',
+        ].join('\n')
+      );
+    }
     return { synced: true, eligible: rows.length, totalReceived, totalInvalid };
   } catch (err) {
     Sentry.captureException(err, { tags: { source: 'redeemed_audience_sync' } });
     logger.error({ err: err.message }, 'redeemed_audience.sync.failed');
+    await sendBadRunAlert(
+      d,
+      '⚠️ MKTR redeemed-audience sync FAILED',
+      [
+        'The redeemed-audience sync failed — no redeemers were uploaded this run.',
+        '',
+        `Error:     ${err.message}`,
+        `Audience:  ${process.env.META_REDEEMED_AUDIENCE_ID || '(unset)'}`,
+        `Mode:      ${process.env.REDEEMED_AUDIENCE_SYNC_MODE || 'add'}`,
+        `Time:      ${new Date().toISOString()}`,
+        '',
+        'It will retry on the next scheduled run (~24h) or next deploy.',
+        'Check Render logs (mktr-backend-jo6r, search "redeemed_audience") + Sentry (source:redeemed_audience_sync).',
+      ].join('\n')
+    );
     return { synced: false, error: err.message };
   }
 }
