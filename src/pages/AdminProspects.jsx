@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from"react";
-import { useQuery, useQueryClient } from"@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from"@tanstack/react-query";
 import { Prospect } from"@/api/entities";
 import { useCurrentUser } from"@/hooks/queries/useUsersQuery";
 import { useUpdateProspect, useDeleteProspect } from"@/hooks/queries/useProspectsQuery";
@@ -129,9 +129,19 @@ export default function AdminProspects() {
  });
  }, [location.search]);
 
+ // Debounce the free-text search so we issue one server query after the user
+ // pauses typing, not one per keystroke. The input stays bound to
+ // `filters.search` (instant), so typing never lags; only the value that
+ // flows into the query key is delayed. Discrete filters apply immediately.
+ const [debouncedSearch, setDebouncedSearch] = useState(filters.search);
+ useEffect(() => {
+ const t = setTimeout(() => setDebouncedSearch(filters.search), 300);
+ return () => clearTimeout(t);
+ }, [filters.search]);
+
  const queryParams = useMemo(() => {
  const params = { page: currentPage, limit: itemsPerPage };
- if (filters.search) params.search = filters.search;
+ if (debouncedSearch) params.search = debouncedSearch;
  if (filters.status !=="all") params.leadStatus = filters.status;
  if (filters.campaign !=="all") params.campaignId = filters.campaign;
  if (filters.qrTagId !=="all") params.qrTagId = filters.qrTagId;
@@ -141,11 +151,16 @@ export default function AdminProspects() {
  else params.leadSource = filters.source;
  }
  return params;
- }, [filters, currentPage, itemsPerPage]);
+ }, [debouncedSearch, filters.status, filters.campaign, filters.qrTagId, filters.source, currentPage, itemsPerPage]);
 
  const { data: prospectsResponse, isLoading: prospectsLoading } = useQuery({
  queryKey: ['prospects', 'list', queryParams],
  queryFn: () => Prospect.list(queryParams),
+ // Keep the previous page's rows rendered while the next query loads so a
+ // search/filter/page change never drops the whole view into the loading
+ // skeleton — that full unmount was stealing focus from the search box on
+ // every keystroke.
+ placeholderData: keepPreviousData,
  });
  const { data: campaigns = [] } = useCampaignLookup();
 
