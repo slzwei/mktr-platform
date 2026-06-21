@@ -177,7 +177,8 @@ Retell AI performs the call and provides analysis natively. MKTR stores the resu
 
 ## Priority Queue (Top 5 Next Actions)
 
-1. **FIX B5 (LOW)**: `setTimeout`-based webhook retries lost on restart. Consider persistent job queue.
+1. **DEPLOY redeemed-audience sync (2026-06-22)**: code + 21 unit tests ready (`backend/src/services/redeemedAudienceService.js`, `scripts/sync-redeemed-audience.js`, shared `utils/sentryInit.js`). Pushes hashed redeemers into Meta customer-list exclusion `52506028688033` (seeded w/ 49, already excluded on the live $10 ad set). Remaining: set env on Render, create a daily Render Cron Job (`RUN_MODE=cron-redeemed-audience`), probe the `ads_management` token + `usersreplace`, flip `REDEEMED_AUDIENCE_SYNC_ENABLED=true`. Plan: `docs/plans/meta-redeemed-audience-sync.md`.
+2. **FIX B5 (LOW)**: `setTimeout`-based webhook retries lost on restart. Consider persistent job queue.
 
 ---
 
