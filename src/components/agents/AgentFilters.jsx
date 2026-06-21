@@ -28,7 +28,7 @@ export default function AgentFilters({
  <Input
  placeholder="Search agents..." value={searchTerm}
  onChange={(e) => onSearchChange(e.target.value)}
- className="pl-9 h-9 bg-muted/50 border-border focus:bg-background dark:focus:bg-foreground" />
+ className="pl-9 h-9 bg-muted/50 border-border focus:bg-background" />
  </div>
  <div className="w-full lg:w-[180px]">
  <Select value={statusFilter} onValueChange={onStatusFilterChange}>

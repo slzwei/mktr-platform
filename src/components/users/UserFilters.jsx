@@ -68,7 +68,7 @@ export default function UserFilters({
  <Input
  placeholder="Search users by name or email..." value={searchTerm}
  onChange={(e) => onSearchChange(e.target.value)}
- className="pl-9 h-10 bg-muted/50 border-border focus:bg-background dark:focus:bg-foreground transition-colors" />
+ className="pl-9 h-10 bg-muted/50 border-border focus:bg-background transition-colors" />
  </div>
  <Select value={roleFilter} onValueChange={onRoleFilterChange}>
  <SelectTrigger className="w-full sm:w-[150px] h-10">

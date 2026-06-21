@@ -166,7 +166,7 @@ export default function MyProspects() {
  <div className="relative w-full sm:w-72">
  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"/>
  <Input
- placeholder="Search prospects..." className="pl-9 bg-muted border-border focus:bg-background dark:focus:bg-foreground transition-colors" value={searchQuery}
+ placeholder="Search prospects..." className="pl-9 bg-muted border-border focus:bg-background transition-colors" value={searchQuery}
  onChange={(e) => setSearchQuery(e.target.value)}
  />
  </div>

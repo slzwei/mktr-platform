@@ -114,7 +114,7 @@ const AdminLeadPackages = () => {
  <Input
  placeholder="Search packages..." value={searchTerm}
  onChange={(e) => setSearchTerm(e.target.value)}
- className="pl-9 bg-muted border-border focus:bg-background dark:focus:bg-foreground transition-colors" />
+ className="pl-9 bg-muted border-border focus:bg-background transition-colors" />
  </div>
  </div>
 

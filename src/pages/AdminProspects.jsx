@@ -351,7 +351,7 @@ export default function AdminProspects() {
  <Input
  placeholder="Search prospects..." value={filters.search}
  onChange={(e) => setFilters({ ...filters, search: e.target.value })}
- className="pl-9 h-10 bg-muted/50 border-border focus:bg-background dark:focus:bg-foreground transition-colors" />
+ className="pl-9 h-10 bg-muted/50 border-border focus:bg-background transition-colors" />
  </div>
  <ProspectFilters filters={filters} onFilterChange={setFilters} campaigns={campaigns} />
  </div>
