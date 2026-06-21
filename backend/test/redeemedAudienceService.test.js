@@ -35,6 +35,7 @@ const ENV_KEYS = [
   'META_GRAPH_API_VERSION',
   'REDEEMED_AUDIENCE_REQUIRE_CONSENT',
   'REDEEMED_AUDIENCE_SYNC_MODE',
+  'REDEEMED_AUDIENCE_ALERT_EMAIL',
 ];
 const envBackup = {};
 
@@ -262,5 +263,39 @@ describe('syncRedeemedAudience', () => {
     const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(result.eligible).toBe(1);
+  });
+
+  it('emails a failure alert when REDEEMED_AUDIENCE_ALERT_EMAIL is set', async () => {
+    process.env.REDEEMED_AUDIENCE_ALERT_EMAIL = 'ops@example.com';
+    const fetchSpy = jest.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
+    const sendEmail = jest.fn().mockResolvedValue({ success: true });
+    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect, sendEmail });
+    expect(result.synced).toBe(false);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    const arg = sendEmail.mock.calls[0][0];
+    expect(arg.to).toBe('ops@example.com');
+    expect(arg.subject).toMatch(/FAILED/);
+    expect(arg.text).toMatch(/HTTP 500/);
+  });
+
+  it('does NOT email when REDEEMED_AUDIENCE_ALERT_EMAIL is unset', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
+    const sendEmail = jest.fn();
+    await syncRedeemedAudience({ fetch: fetchSpy, Prospect, sendEmail });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('emails an alert when Meta rejects records (num_invalid_entries > 0)', async () => {
+    process.env.REDEEMED_AUDIENCE_ALERT_EMAIL = 'ops@example.com';
+    const fetchSpy = okFetch({ num_received: 1, num_invalid_entries: 1 });
+    const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
+    const sendEmail = jest.fn().mockResolvedValue({ success: true });
+    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect, sendEmail });
+    expect(result.synced).toBe(true);
+    expect(result.totalInvalid).toBe(1);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail.mock.calls[0][0].subject).toMatch(/rejected/);
   });
 });
