@@ -1,30 +1,16 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import * as Sentry from '@sentry/node';
-import { scrubEvent, scrubBreadcrumb } from './utils/sentryScrub.js';
+import { initSentry } from './utils/sentryInit.js';
 
 // Load environment variables immediately
 dotenv.config();
 
-// Initialize Sentry before anything else.
-// MKTR currently shares the `lyfe-sg` Sentry project — events are
-// distinguished by the `service` tag below. To split into a dedicated
-// project: create one in Sentry UI, swap SENTRY_DSN, no code changes
-// needed (the `service` tag is harmless on a dedicated project).
-if (process.env.SENTRY_DSN) {
-  Sentry.init({
-    dsn: process.env.SENTRY_DSN,
-    environment: process.env.NODE_ENV || 'development',
-    tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-    beforeSend: scrubEvent,
-    beforeBreadcrumb: scrubBreadcrumb,
-    initialScope: {
-      tags: {
-        service: 'mktr-backend',
-      },
-    },
-  });
-}
+// Initialize Sentry before anything else. The shared helper wires the PII
+// scrubbers, so standalone cron entrypoints (e.g. sync-redeemed-audience.js)
+// get identical scrubbing instead of a bare Sentry.init(). MKTR currently
+// shares the `lyfe-sg` Sentry project — events are distinguished by the
+// `service` tag. To split: create a project in Sentry UI and swap SENTRY_DSN.
+initSentry({ service: 'mktr-backend' });
 
 const PORT = process.env.PORT || 3001;
 const app = express();

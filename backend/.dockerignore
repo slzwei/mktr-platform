@@ -20,4 +20,5 @@ test/
 load/
 scripts/*
 !scripts/sa61-weekly-reminder.js
+!scripts/sync-redeemed-audience.js
 docker-compose*.yml
