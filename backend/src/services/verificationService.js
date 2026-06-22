@@ -5,9 +5,18 @@ import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 
+// AWS SNS SMS config. The region + sender ID must match our SSIR-registered
+// identity in AWS, or Singapore telcos relabel the sender as "Likely-SCAM".
+// "MKTR" is the SSIR-registered sender ID (Live, case-sensitive) and it is
+// registered in ap-southeast-1 — both are defaulted here so a missing env var
+// can't silently regress OTP SMS back to the scam label. Kept in lock-step with
+// lyfe-app's custom-sms-hook, which hardcodes the same "MKTR" / ap-southeast-1.
+const SMS_REGION = process.env.AWS_REGION || 'ap-southeast-1';
+const SMS_SENDER_ID = process.env.AWS_SNS_SENDER_ID || 'MKTR';
+
 // Initialize SNS Client
 const snsClient = new SNSClient({
-  region: process.env.AWS_REGION || 'us-east-1',
+  region: SMS_REGION,
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
@@ -80,14 +89,11 @@ const sendWhatsAppOtpMeta = async (phone, code) => {
 // Helper to send OTP via SMS (AWS SNS)
 const sendSmsOtp = async (fullPhone, code) => {
   const messageAttributes = {
-    'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' }
+    'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
+    // Always attach the registered sender ID (defaults to "MKTR") so SG telcos
+    // don't relabel the message "Likely-SCAM". See SMS_SENDER_ID above.
+    'AWS.SNS.SMS.SenderID': { DataType: 'String', StringValue: SMS_SENDER_ID }
   };
-  if (process.env.AWS_SNS_SENDER_ID) {
-    messageAttributes['AWS.SNS.SMS.SenderID'] = {
-      DataType: 'String',
-      StringValue: process.env.AWS_SNS_SENDER_ID
-    };
-  }
   const command = new PublishCommand({
     PhoneNumber: fullPhone,
     Message: `Your verification code is: ${code}`,
