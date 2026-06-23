@@ -364,6 +364,28 @@ export default function ProspectDetails({ prospect, campaigns, onStatusUpdate, o
  )}
  </CardContent>
  </Card>
+
+ {/* Admin-only: cross-campaign repeat-signup flag (flag, not block). */}
+ {userRole === 'admin' && details?.repeatSignup?.campaignCount > 1 && (
+ <Card className="border-amber-300 dark:border-amber-700 shadow-sm">
+ <CardContent className="p-5 space-y-3">
+ <h4 className="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-2">
+ <Tag className="w-3.5 h-3.5"/>
+ Signed up for {details.repeatSignup.campaignCount} campaigns
+ </h4>
+ <div className="space-y-1.5">
+ {details.repeatSignup.campaigns.map((c) => (
+ <div key={c.id} className="flex items-center justify-between gap-2 text-sm">
+ <span className="text-foreground">{c.name}</span>
+ <span className="text-xs text-muted-foreground whitespace-nowrap">
+ {c.signedUpAt ? format(new Date(c.signedUpAt), 'MMM d, yyyy') : ''}
+ </span>
+ </div>
+ ))}
+ </div>
+ </CardContent>
+ </Card>
+ )}
  </div>
  </div>
  </div>

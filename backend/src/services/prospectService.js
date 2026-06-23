@@ -15,6 +15,7 @@ import { resolveAssignedAgentId, resolveLeadRouting, getSystemAgentId, resolveLe
 import { deductLeadCredit, chargeLeadCredit, deductExternalLeadBalance } from './leadCredits.js';
 import { decideAssignment } from './leadQuota.js';
 import { hasValidExternalConsent } from './externalConsent.js';
+import { repeatSignupDetail, repeatSignupCounts } from './repeatSignup.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { dispatchEvent } from './webhookService.js';
@@ -819,6 +820,14 @@ export function makeProspectService(overrides = {}) {
       throw new d.AppError('Prospect not found or access denied', 404);
     }
 
+    // Admin-only: cross-campaign repeat-signup visibility (flag, not block).
+    // Omitted entirely for non-admins (this endpoint is shared with the agent
+    // detail modal). Resilient — a failed enrichment never breaks the view.
+    if (user?.role === 'admin') {
+      const repeatSignup = await repeatSignupDetail(d.sequelize, { phone: prospect.phone, email: prospect.email }).catch(() => null);
+      if (repeatSignup) prospect.setDataValue('repeatSignup', repeatSignup);
+    }
+
     return prospect;
   }
 
@@ -1336,6 +1345,17 @@ export function makeProspectService(overrides = {}) {
         },
       ],
     });
+
+    // Admin-only: attach a light cross-campaign repeat-signup count per row for
+    // the list badge. Non-admins never receive it (this list endpoint is shared
+    // with the agent MyProspects view). Resilient — failure → no badge data.
+    if (user?.role === 'admin' && prospects.length > 0) {
+      const counts = await repeatSignupCounts(
+        d.sequelize,
+        prospects.map((p) => ({ id: p.id, phone: p.phone, email: p.email }))
+      ).catch(() => new Map());
+      for (const p of prospects) p.setDataValue('repeatSignupCount', counts.get(p.id) ?? null);
+    }
 
     return {
       prospects,

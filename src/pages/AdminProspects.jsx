@@ -426,6 +426,11 @@ export default function AdminProspects() {
  <span className="font-medium text-foreground group-hover:text-primary dark:group-hover:text-primary transition-colors">
  {prospect.name}
  </span>
+ {prospect.repeatSignupCount > 1 && (
+ <span className="ml-2 inline-block align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" title={`Signed up for ${prospect.repeatSignupCount} campaigns`}>
+ ⚠ {prospect.repeatSignupCount} campaigns
+ </span>
+ )}
  {prospect.assigned_agent_name ? (
  <span className="block text-xs text-muted-foreground font-normal mt-0.5">
  Agent: {prospect.assigned_agent_name}
@@ -506,7 +511,14 @@ export default function AdminProspects() {
  {prospect.name?.charAt(0)}
  </div>
  <div>
- <div className="font-medium text-foreground">{prospect.name}</div>
+ <div className="font-medium text-foreground flex items-center gap-2">
+ {prospect.name}
+ {prospect.repeatSignupCount > 1 && (
+ <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" title={`Signed up for ${prospect.repeatSignupCount} campaigns`}>
+ ⚠ {prospect.repeatSignupCount}
+ </span>
+ )}
+ </div>
  <div className="text-xs text-muted-foreground">{format(new Date(prospect.created_date), 'MMM d, h:mm a')}</div>
  </div>
  </div>

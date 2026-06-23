@@ -185,5 +185,9 @@ export default function normalizeProspect(p) {
  sourceMetadata: p.sourceMetadata || null,
  ad: deriveAd(p.sourceMetadata),
  referral: deriveReferral(p.sourceMetadata),
+ // Admin-only cross-campaign repeat-signup flag (backend omits both for
+ // non-admins; null → no badge / no section).
+ repeatSignupCount: p.repeatSignupCount ?? null,
+ repeatSignup: p.repeatSignup || null,
  };
 }
