@@ -274,6 +274,7 @@ export default function LeadCapture() {
         monthly_income: formData.monthly_income,
         consent_contact: formData.consent_contact,
         consent_terms: formData.consent_terms,
+        consent_third_party: formData.consent_third_party,
         leadSource: isReferral ? 'referral' : qrTag?.id ? 'qr_code' : 'website',
         campaignId: campaign?.id,
         qrTagId: qrTag?.id,

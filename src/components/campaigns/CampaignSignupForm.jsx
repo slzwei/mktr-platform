@@ -64,12 +64,16 @@ export default function CampaignSignupForm({
   // Financial-consultant exclusion gate: null = not answered, 'public' = show form, 'advisor' = blocked.
   const [advisorAck, setAdvisorAck] = useState(null);
 
-  // Two PDPA consent checkboxes — campaign T&C is required (opt-in), contact
-  // consent defaults to ticked (opt-out). The opt-out path is documented in
-  // /PersonalDataPolicy: untick to suppress hashed em/ph in Meta CAPI payloads
-  // and direct-marketing follow-ups by agents.
+  // Three PDPA consent checkboxes — campaign T&C is required (opt-in); contact
+  // consent defaults to ticked (opt-out, documented in /PersonalDataPolicy:
+  // untick to suppress hashed em/ph in Meta CAPI payloads and direct-marketing
+  // follow-ups by agents). Third-party-disclosure consent is a SEPARATE, opt-in
+  // (un-ticked) checkbox — its own granular consent so it never rides on the
+  // CAPI/contact toggle. It gates sharing the lead with an external buyer-agent
+  // (the consentMetadata.external evidence; absence => internal-only delivery).
   const [consentContact, setConsentContact] = useState(true);
   const [consentTerms, setConsentTerms] = useState(false);
+  const [consentThirdParty, setConsentThirdParty] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
 
   const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -276,6 +280,7 @@ export default function CampaignSignupForm({
       campaign_id: campaignId,
       consent_contact: consentContact,
       consent_terms: consentTerms,
+      consent_third_party: consentThirdParty,
     };
 
     // Preview: stop here — never call onSubmit (which would create a real
@@ -856,6 +861,17 @@ export default function CampaignSignupForm({
               terms and conditions
             </button>
             . <span style={{ color: TOKENS.required }}>*</span>
+          </ConsentCheckbox>
+
+          <ConsentCheckbox
+            checked={consentThirdParty}
+            onChange={setConsentThirdParty}
+            accent={accent}
+            id="consent_third_party"
+          >
+            I consent to my contact details being disclosed to a partner financial advisory representative
+            — who may be from a third-party agency — so that they may contact me about relevant financial
+            products and services.
           </ConsentCheckbox>
         </div>
 
