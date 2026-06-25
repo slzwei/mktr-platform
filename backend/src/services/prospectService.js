@@ -14,7 +14,7 @@ import {
 import { resolveAssignedAgentId, resolveLeadRouting, getSystemAgentId, resolveLeadAssignment } from './systemAgent.js';
 import { deductLeadCredit, chargeLeadCredit, deductExternalLeadBalance } from './leadCredits.js';
 import { decideAssignment } from './leadQuota.js';
-import { hasValidExternalConsent } from './externalConsent.js';
+import { hasValidExternalConsent, buildExternalConsentEvidence } from './externalConsent.js';
 import { repeatSignupDetail, repeatSignupCounts } from './repeatSignup.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -78,6 +78,7 @@ const defaultDeps = {
   deductLeadCredit,
   deductExternalLeadBalance,
   hasValidExternalConsent,
+  buildExternalConsentEvidence,
   chargeLeadCredit,
   decideAssignment,
   buildProspectWhere,
@@ -116,6 +117,10 @@ export function makeProspectService(overrides = {}) {
     // Consent flags: preserve explicit `false` (user opted out) via !== undefined check.
     const consentContact = safeBody.consent_contact;
     const consentTerms = safeBody.consent_terms;
+    // Third-party-disclosure consent — the explicit opt-in that gates EXTERNAL
+    // (MKTR Leads buyer-agent) delivery. Distinct from the marketing booleans above;
+    // recorded as consentMetadata.external evidence below, never as a CAPI signal.
+    const consentThirdParty = safeBody.consent_third_party;
 
     // Quiz funnel submission (re-scored server-side after the campaign loads),
     // ad attribution (UTM) and referral identity (the sharer's prospect UUID from
@@ -136,6 +141,10 @@ export function makeProspectService(overrides = {}) {
       eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
       registrationEventId: _re, ttclid: _tc, ttp: _tp,
       consent_contact: _cc, consent_terms: _ct, consent_third_party: _ctp,
+      // consentMetadata is SERVER-authoritative — the third-party-consent evidence is
+      // built below from consent_third_party. Drop any client-supplied value so external
+      // consent can never be forged via the body (defence-in-depth beyond route stripUnknown).
+      consentMetadata: _cm,
       quizResult: _qr, referralRef: _rref,
       utm_source: _us, utm_medium: _um, utm_campaign: _ucmp, utm_content: _ucnt, utm_term: _utm,
       ...bodyWithoutMeta
@@ -158,6 +167,17 @@ export function makeProspectService(overrides = {}) {
     };
     if (Object.keys(capiSourceMetadata).length > 0) {
       incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), ...capiSourceMetadata };
+    }
+
+    // Third-party-disclosure consent evidence. Written ONLY when the person ticked
+    // the box (=> consentMetadata.external), which — together with the campaign's
+    // externalEligible flag — unlocks external delivery via the allowExternal gate
+    // below (hasValidExternalConsent). Unticked => null => nothing written => never external.
+    const externalConsent = d.buildExternalConsentEvidence(consentThirdParty, {
+      sourceUrl: eventSourceUrl,
+    });
+    if (externalConsent) {
+      incoming.consentMetadata = { ...(incoming.consentMetadata || {}), external: externalConsent };
     }
 
     // Capture the campaign the caller explicitly asked for (e.g. a bare

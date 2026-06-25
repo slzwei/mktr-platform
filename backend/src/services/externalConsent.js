@@ -64,3 +64,52 @@ export function extractExternalConsent(prospectOrMeta) {
   if (meta && typeof meta === 'object' && meta.external) return meta.external;
   return null;
 }
+
+/**
+ * Current third-party-disclosure consent wording version. A label tying each
+ * recorded consent to the exact copy the person agreed to. BUMP IT (to the date
+ * the copy changes) whenever the consent_third_party checkbox wording on the
+ * lead-capture form (CampaignSignupForm.jsx) is edited.
+ */
+export const THIRD_PARTY_CONSENT_VERSION = '2026-06-26';
+
+/**
+ * Contact channels the third-party-disclosure consent covers. Recorded on every
+ * captured consent so a downstream buyer-agent knows how the person agreed to be
+ * reached. Keep in sync with what the privacy policy / consent copy actually says.
+ */
+export const THIRD_PARTY_CONSENT_CHANNELS = Object.freeze(['phone', 'whatsapp', 'email']);
+
+/**
+ * Build the `consentMetadata.external` evidence for a lead-capture submission.
+ *
+ * Returns the evidence ONLY when the person affirmatively ticked the third-party
+ * disclosure box (consented === true). For an unticked / missing / non-true box it
+ * returns null so NOTHING is written — absence is the fail-safe (no evidence =>
+ * never external => no competitor-PII leak). The returned object is guaranteed to
+ * satisfy hasValidExternalConsent().
+ *
+ * @param {boolean} consented - the consent_third_party flag from the form.
+ * @param {{ sourceUrl?: string, at?: string }} [opts] - sourceUrl: capture-page URL
+ *   (audit breadcrumb); at: ISO timestamp (missing/unparseable falls back to now).
+ * @returns {{version:string,consentedAt:string,channels:string[],sourceUrl?:string}|null}
+ */
+export function buildExternalConsentEvidence(consented, opts = {}) {
+  if (consented !== true) return null;
+
+  // Use a caller-supplied timestamp only if it actually parses; otherwise fall back to
+  // now — so the returned evidence is ALWAYS valid per hasValidExternalConsent().
+  const at = typeof opts.at === 'string' ? opts.at.trim() : '';
+  const consentedAt = at && !Number.isNaN(Date.parse(at)) ? at : new Date().toISOString();
+  const sourceUrl =
+    typeof opts.sourceUrl === 'string' && opts.sourceUrl.trim().length > 0
+      ? opts.sourceUrl.trim()
+      : undefined;
+
+  return {
+    version: THIRD_PARTY_CONSENT_VERSION,
+    consentedAt,
+    channels: [...THIRD_PARTY_CONSENT_CHANNELS],
+    ...(sourceUrl ? { sourceUrl } : {}),
+  };
+}
