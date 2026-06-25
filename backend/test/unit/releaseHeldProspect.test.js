@@ -14,7 +14,7 @@ function buildMocks() {
     id: 'mktr-user-1', lyfeId: null, mktrLeadsId: 'app-agent-1',
     role: 'agent', isActive: true, firstName: 'Hui', lastName: 'Xin', phone: '6585337192', email: 'h@x',
   };
-  const heldProspect = { id: 'p-1', campaignId: 'camp-1', quarantineReason: 'no_funded_agent' };
+  const heldProspect = { id: 'p-1', campaignId: 'camp-1', quarantineReason: 'no_funded_agent', quarantinedAt: new Date() };
 
   const models = {
     Prospect: {
@@ -131,5 +131,39 @@ describe('releaseHeldProspect (unit)', () => {
     expect(res).toEqual({ status: 'assigned', leadId: 'p-1' });
     expect(deps.models.User.findOne).not.toHaveBeenCalled();
     expect(deps.sequelize.query).not.toHaveBeenCalled();
+  });
+
+  it('FAILS CLOSED: no delivery row persisted (webhooks off / no subscriber) → undeliverable, rolls back', async () => {
+    const { deps, mockTx } = buildMocks();
+    deps.persistEventDeliveries.mockResolvedValue([]); // nothing to deliver to
+
+    const res = await svc(deps).releaseHeldProspect('p-1', 'app-agent-1', {});
+
+    expect(res.status).toBe('undeliverable');
+    expect(mockTx.rollback).toHaveBeenCalled(); // the release is rolled back — lead stays held
+    expect(mockTx.commit).not.toHaveBeenCalled();
+    expect(deps.deductLeadCredit).not.toHaveBeenCalled();
+    expect(deps.flushDeliveries).not.toHaveBeenCalled();
+  });
+
+  it('already-released prospect (quarantinedAt null) → already_handled BEFORE agent resolution', async () => {
+    const { deps } = buildMocks();
+    deps.models.Prospect.findByPk = jest.fn().mockResolvedValue({ id: 'p-1', campaignId: 'camp-1', quarantineReason: null, quarantinedAt: null });
+
+    const res = await svc(deps).releaseHeldProspect('p-1', 'app-agent-1', {});
+
+    expect(res.status).toBe('already_handled');
+    expect(deps.models.User.findOne).not.toHaveBeenCalled(); // no invalid_agent on a handled lead
+    expect(deps.sequelize.query).not.toHaveBeenCalled();
+  });
+
+  it('records the idempotency key INSIDE the release transaction', async () => {
+    const { deps, mockTx } = buildMocks();
+    await svc(deps).releaseHeldProspect('p-1', 'app-agent-1', { idempotencyKey: 'k-1' });
+
+    expect(deps.models.IdempotencyKey.create).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'k-1', scope: 'external:held-assign', responseBody: expect.objectContaining({ status: 'assigned' }) }),
+      { transaction: mockTx },
+    );
   });
 });
