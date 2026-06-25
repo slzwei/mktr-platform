@@ -181,6 +181,13 @@ export const schemas = {
     // metaCapiService._buildPayload's `marketingConsent` check.
     consent_contact: Joi.boolean().optional(),
     consent_terms: Joi.boolean().optional(),
+    // Third-party-disclosure consent (separate opt-in checkbox added to the
+    // public form in a446577). Whitelisted so the submission stops 400ing on the
+    // unknown key. Turning it into the `consentMetadata.external` evidence that
+    // actually unlocks external/buyer-agent delivery is a follow-up — see
+    // services/externalConsent.hasValidExternalConsent; until then external stays
+    // inert and the flag is stripped server-side (prospectService) rather than persisted.
+    consent_third_party: Joi.boolean().optional(),
     // Quiz funnel: raw answers + an advisory client-computed result. The server
     // RE-SCORES authoritatively from campaign.design_config.quiz (see
     // prospectService.createProspect) and stashes the result in
