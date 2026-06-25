@@ -9,6 +9,7 @@ import {
   ProspectActivity,
   AgentGroup,
   AgentGroupMember,
+  IdempotencyKey,
   sequelize,
 } from '../models/index.js';
 import { resolveAssignedAgentId, resolveLeadRouting, getSystemAgentId, resolveLeadAssignment } from './systemAgent.js';
@@ -18,7 +19,7 @@ import { hasValidExternalConsent, buildExternalConsentEvidence } from './externa
 import { repeatSignupDetail, repeatSignupCounts } from './repeatSignup.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { dispatchEvent } from './webhookService.js';
+import { dispatchEvent, persistEventDeliveries, flushDeliveries } from './webhookService.js';
 import {
   sendLeadEvent as metaSendLeadEvent,
   sendCompleteRegistrationEvent as metaSendCompleteRegistrationEvent,
@@ -69,7 +70,7 @@ const PROSPECT_UPDATE_FIELDS = [
 ];
 
 const defaultDeps = {
-  models: { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, AgentGroup, AgentGroupMember },
+  models: { Prospect, User, Campaign, QrTag, Commission, Attribution, ProspectActivity, AgentGroup, AgentGroupMember, IdempotencyKey },
   sequelize,
   resolveAssignedAgentId,
   resolveLeadRouting,
@@ -83,6 +84,8 @@ const defaultDeps = {
   decideAssignment,
   buildProspectWhere,
   dispatchEvent,
+  persistEventDeliveries,
+  flushDeliveries,
   sendLeadEvent: metaSendLeadEvent,
   sendCompleteRegistrationEvent: metaSendCompleteRegistrationEvent,
   sendTikTokLeadEvent,
@@ -1486,12 +1489,141 @@ export function makeProspectService(overrides = {}) {
     return { count, held };
   }
 
+  /**
+   * Release a HELD (quarantined) prospect to a mktr-leads agent and deliver it.
+   *
+   * The held-only counterpart to assignProspect, purpose-built for the external
+   * mktr-leads admin dispatch endpoint. Unlike assignProspect it can NEVER fall
+   * into the normal-reassignment path: a request that arrives after the lead is
+   * already released returns `already_handled` (no second charge, no second
+   * `lead.assigned`). The release UPDATE and the `lead.created` delivery row are
+   * written in ONE transaction (outbox), so a crash can never leave a lead
+   * un-held yet undelivered (recoverPendingRetries flushes the row on restart).
+   *
+   * Agent identity is resolved by `mktrLeadsId` ONLY — never by phone, which can
+   * resolve a Lyfe-owned or provenance-less user whose webhook destination would
+   * not be mktr_leads. A manual admin assign is an explicit override: it always
+   * delivers and only best-effort deducts a campaign credit (the lead was held
+   * precisely because nobody was funded).
+   *
+   * @returns {Promise<{status:'assigned'|'already_handled'|'invalid_agent'|'not_found'|'not_assignable_external', leadId?:string, agent?:object}>}
+   */
+  async function releaseHeldProspect(prospectId, agentMktrLeadsId, opts = {}) {
+    const { idempotencyKey = null, actorUserId = null } = opts;
+    const IDEMP_SCOPE = 'external:held-assign';
+
+    // Replay: a retried request with the same key returns the first result verbatim.
+    if (idempotencyKey) {
+      const existing = await m.IdempotencyKey.findOne({ where: { key: idempotencyKey, scope: IDEMP_SCOPE } });
+      if (existing && existing.expiresAt > new Date() && existing.responseBody) {
+        return existing.responseBody;
+      }
+    }
+
+    // Resolve the destination agent by mktrLeadsId ONLY (phone is unsafe — it can
+    // resolve a Lyfe-owned / provenance-less user whose destination ≠ mktr_leads).
+    const agent = agentMktrLeadsId
+      ? await m.User.findOne({ where: { mktrLeadsId: agentMktrLeadsId, role: 'agent', isActive: true } })
+      : null;
+    if (!agent) return { status: 'invalid_agent' };
+
+    const prospect = await m.Prospect.findByPk(prospectId);
+    if (!prospect) return { status: 'not_found' };
+    // External-buyer holds can never be manually released to an internal agent.
+    if (prospect.quarantineReason === 'no_funded_external_buyer') {
+      return { status: 'not_assignable_external' };
+    }
+
+    // Atomic release + delivery intent (transactional outbox).
+    const t = await d.sequelize.transaction();
+    let result;
+    let deliveryPairs = [];
+    try {
+      // Held-only conditional release: gated on the row STILL being a no_funded_agent
+      // hold, so a racing duplicate or the auto sweep loses the row lock and sees
+      // `quarantinedAt IS NULL` → 0 rows → already_handled (never a second delivery).
+      const [rows] = await d.sequelize.query(
+        `UPDATE prospects
+            SET "assignedAgentId" = :agentId, "lastContactDate" = NOW(),
+                "quarantinedAt" = NULL, "quarantineReason" = NULL, "updatedAt" = NOW()
+          WHERE id = :prospectId AND "quarantinedAt" IS NOT NULL
+            AND "quarantineReason" = 'no_funded_agent'
+          RETURNING id`,
+        { replacements: { agentId: agent.id, prospectId }, transaction: t }
+      );
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        result = { status: 'already_handled' };
+      } else {
+        await m.ProspectActivity.create({
+          prospectId,
+          type: 'assigned',
+          actorUserId,
+          description: `Released from hold and assigned to ${agent.firstName} ${agent.lastName}`.trim(),
+          metadata: { assignedAgentId: agent.id, released: true, via: 'external_app' },
+        }, { transaction: t });
+
+        const withCampaign = await m.Prospect.findByPk(prospectId, {
+          include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+          transaction: t,
+        });
+
+        // Destination is mktr_leads (agent has mktrLeadsId set); the receiver matches
+        // `routing.agentExternalId` against agents.mktr_user_id, so the webhook id MUST
+        // be externalIdForDestination(agent,'mktr_leads') === agent.mktrLeadsId.
+        const destination = destinationForAgent(agent);
+        const agentForWebhook = {
+          phone: agent.phone || null,
+          email: agent.email || null,
+          name: `${agent.firstName || ''} ${agent.lastName || ''}`.trim(),
+          id: externalIdForDestination(agent, destination),
+        };
+
+        deliveryPairs = await d.persistEventDeliveries(
+          'lead.created',
+          () => buildLeadCreatedPayload(withCampaign, 'direct', agentForWebhook, agent.id, withCampaign?.campaign || null, null, null),
+          { destination },
+          t
+        );
+
+        result = { status: 'assigned', leadId: prospectId, agent: { firstName: agent.firstName, lastName: agent.lastName } };
+      }
+
+      await t.commit();
+    } catch (err) {
+      await t.rollback();
+      throw err;
+    }
+
+    // Post-commit side-effects — never block or roll back the durable release.
+    if (result.status === 'assigned') {
+      await d.deductLeadCredit({ agentId: agent.id, campaignId: prospect.campaignId || null })
+        .catch((err) => d.logger.error('[releaseHeldProspect] credit deduct failed', { error: err?.message || String(err) }));
+      d.flushDeliveries(deliveryPairs);
+    }
+
+    // Best-effort idempotency record (held-only semantics already guarantee
+    // correctness; this just lets an exact retry replay the same response).
+    if (idempotencyKey && (result.status === 'assigned' || result.status === 'already_handled')) {
+      await m.IdempotencyKey.create({
+        key: idempotencyKey,
+        scope: IDEMP_SCOPE,
+        responseBody: result,
+        responseCode: 200,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      }).catch(() => { /* duplicate key / race — the winning row stands */ });
+    }
+
+    return result;
+  }
+
   return {
     createProspect,
     getProspect,
     updateProspect,
     deleteProspect,
     assignProspect,
+    releaseHeldProspect,
     bulkAssignProspects,
     getProspectStats,
     listProspects,
@@ -1507,6 +1639,7 @@ export const getProspect = _default.getProspect;
 export const updateProspect = _default.updateProspect;
 export const deleteProspect = _default.deleteProspect;
 export const assignProspect = _default.assignProspect;
+export const releaseHeldProspect = _default.releaseHeldProspect;
 export const bulkAssignProspects = _default.bulkAssignProspects;
 export const getProspectStats = _default.getProspectStats;
 export const listProspects = _default.listProspects;
