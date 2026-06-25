@@ -135,7 +135,7 @@ export function makeProspectService(overrides = {}) {
     const {
       eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
       registrationEventId: _re, ttclid: _tc, ttp: _tp,
-      consent_contact: _cc, consent_terms: _ct,
+      consent_contact: _cc, consent_terms: _ct, consent_third_party: _ctp,
       quizResult: _qr, referralRef: _rref,
       utm_source: _us, utm_medium: _um, utm_campaign: _ucmp, utm_content: _ucnt, utm_term: _utm,
       ...bodyWithoutMeta

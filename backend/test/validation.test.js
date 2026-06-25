@@ -222,6 +222,65 @@ describe('schemas.leadPackageCreate', () => {
   });
 });
 
+describe('schemas.prospectCreate', () => {
+  // Minimal valid public lead-capture body (firstName/email/leadSource required).
+  const validBody = {
+    firstName: 'Jane',
+    email: 'jane@example.com',
+    leadSource: 'website',
+  };
+
+  it('accepts the minimal required body', () => {
+    const { ok } = valid(schemas.prospectCreate, validBody);
+    expect(ok).toBe(true);
+  });
+
+  // Regression for the production outage: the form ships consent_third_party as a
+  // boolean (un-ticked => false survives the client null/''/undefined filter), so
+  // every submit carried the key. Before it was whitelisted the schema rejected the
+  // whole request with `"consent_third_party" is not allowed` and the lead was lost.
+  it('accepts consent_third_party:false (un-ticked box — the failing case)', () => {
+    const { ok, error } = valid(schemas.prospectCreate, { ...validBody, consent_third_party: false });
+    expect(error).toBeUndefined();
+    expect(ok).toBe(true);
+  });
+
+  it('accepts consent_third_party:true (ticked box)', () => {
+    const { ok } = valid(schemas.prospectCreate, { ...validBody, consent_third_party: true });
+    expect(ok).toBe(true);
+  });
+
+  it('accepts all three consent flags together', () => {
+    const { ok } = valid(schemas.prospectCreate, {
+      ...validBody,
+      consent_contact: true,
+      consent_terms: true,
+      consent_third_party: false,
+    });
+    expect(ok).toBe(true);
+  });
+
+  it('omitting consent_third_party is fine (optional)', () => {
+    const { ok } = valid(schemas.prospectCreate, validBody);
+    expect(ok).toBe(true);
+  });
+
+  it('rejects a non-boolean consent_third_party', () => {
+    const { ok, error } = valid(schemas.prospectCreate, { ...validBody, consent_third_party: 'yes' });
+    expect(ok).toBe(false);
+    expect(error.details[0].path).toEqual(['consent_third_party']);
+  });
+
+  // Guard: the fix is surgical — whitelist THIS field only. Until the scoped
+  // stripUnknown hardening (Layer 2) ships, the schema must still reject genuinely
+  // unknown keys so contract drift on other fields keeps failing loudly.
+  it('still rejects a genuinely unknown field', () => {
+    const { ok, error } = valid(schemas.prospectCreate, { ...validBody, totally_unknown_field: true });
+    expect(ok).toBe(false);
+    expect(error.details[0].path).toEqual(['totally_unknown_field']);
+  });
+});
+
 describe('schemas (regression — no driverCreate)', () => {
   it('does not export driverCreate (deleted as dead 2026-05-13)', () => {
     expect(schemas.driverCreate).toBeUndefined();
