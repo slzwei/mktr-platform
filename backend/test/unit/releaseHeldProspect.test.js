@@ -166,4 +166,17 @@ describe('releaseHeldProspect (unit)', () => {
       { transaction: mockTx },
     );
   });
+
+  it('concurrent same-key: a unique-violation on the key create replays the winner result (no 500)', async () => {
+    const { deps, mockTx } = buildMocks();
+    deps.models.IdempotencyKey.create.mockRejectedValue(Object.assign(new Error('dup'), { name: 'SequelizeUniqueConstraintError' }));
+    deps.models.IdempotencyKey.findOne
+      .mockResolvedValueOnce(null) // top replay check: key not yet visible
+      .mockResolvedValueOnce({ expiresAt: new Date(Date.now() + 60_000), responseBody: { status: 'assigned', leadId: 'p-1' } }); // catch: winner's row
+
+    const res = await svc(deps).releaseHeldProspect('p-1', 'app-agent-1', { idempotencyKey: 'k-1' });
+
+    expect(res).toEqual({ status: 'assigned', leadId: 'p-1' });
+    expect(mockTx.rollback).toHaveBeenCalled();
+  });
 });
