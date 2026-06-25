@@ -1459,11 +1459,14 @@ export function makeProspectService(overrides = {}) {
    * existing assignProspect (PATCH /:id/assign) or the auto-release sweep on top-up.
    */
   async function listHeldProspects(user, params = {}) {
-    const { campaignId } = params;
+    const { campaignId, quarantineReason } = params;
     const limit = Math.min(parseInt(params.limit, 10) || 100, 500);
     const scopeFilter = await d.buildProspectWhere(user);
     const where = { ...scopeFilter, quarantinedAt: { [Op.ne]: null } };
     if (campaignId) where.campaignId = campaignId;
+    // Filter by reason IN the query (before the limit) so assignable holds are never
+    // hidden behind a page of external-buyer holds.
+    if (quarantineReason) where.quarantineReason = quarantineReason;
 
     const { count, rows } = await m.Prospect.findAndCountAll({
       where,
@@ -1520,19 +1523,22 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
-    // Resolve the destination agent by mktrLeadsId ONLY (phone is unsafe — it can
-    // resolve a Lyfe-owned / provenance-less user whose destination ≠ mktr_leads).
-    const agent = agentMktrLeadsId
-      ? await m.User.findOne({ where: { mktrLeadsId: agentMktrLeadsId, role: 'agent', isActive: true } })
-      : null;
-    if (!agent) return { status: 'invalid_agent' };
-
+    // Load the prospect FIRST so a retry after a successful release reports
+    // already_handled — not invalid_agent if the chosen agent was since deactivated.
     const prospect = await m.Prospect.findByPk(prospectId);
     if (!prospect) return { status: 'not_found' };
     // External-buyer holds can never be manually released to an internal agent.
     if (prospect.quarantineReason === 'no_funded_external_buyer') {
       return { status: 'not_assignable_external' };
     }
+    if (!prospect.quarantinedAt) return { status: 'already_handled' };
+
+    // Resolve the destination agent by mktrLeadsId ONLY (phone is unsafe — it can
+    // resolve a Lyfe-owned / provenance-less user whose destination ≠ mktr_leads).
+    const agent = agentMktrLeadsId
+      ? await m.User.findOne({ where: { mktrLeadsId: agentMktrLeadsId, role: 'agent', isActive: true } })
+      : null;
+    if (!agent) return { status: 'invalid_agent' };
 
     // Atomic release + delivery intent (transactional outbox).
     const t = await d.sequelize.transaction();
@@ -1585,8 +1591,28 @@ export function makeProspectService(overrides = {}) {
           { destination },
           t
         );
+        // Fail closed: NEVER release a lead we cannot durably deliver. An empty set
+        // means webhooks are disabled or no subscriber is tagged for this
+        // destination — roll back so the lead stays held instead of vanishing.
+        if (deliveryPairs.length === 0) {
+          await t.rollback();
+          return { status: 'undeliverable' };
+        }
 
         result = { status: 'assigned', leadId: prospectId, agent: { firstName: agent.firstName, lastName: agent.lastName } };
+      }
+
+      // Record idempotency atomically with the release so an exact retry replays this
+      // result verbatim. A concurrent same-key duplicate loses the unique PK and rolls
+      // back — harmless, since the held-only release already prevents any double effect.
+      if (idempotencyKey) {
+        await m.IdempotencyKey.create({
+          key: idempotencyKey,
+          scope: IDEMP_SCOPE,
+          responseBody: result,
+          responseCode: 200,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        }, { transaction: t });
       }
 
       await t.commit();
@@ -1600,18 +1626,6 @@ export function makeProspectService(overrides = {}) {
       await d.deductLeadCredit({ agentId: agent.id, campaignId: prospect.campaignId || null })
         .catch((err) => d.logger.error('[releaseHeldProspect] credit deduct failed', { error: err?.message || String(err) }));
       d.flushDeliveries(deliveryPairs);
-    }
-
-    // Best-effort idempotency record (held-only semantics already guarantee
-    // correctness; this just lets an exact retry replay the same response).
-    if (idempotencyKey && (result.status === 'assigned' || result.status === 'already_handled')) {
-      await m.IdempotencyKey.create({
-        key: idempotencyKey,
-        scope: IDEMP_SCOPE,
-        responseBody: result,
-        responseCode: 200,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      }).catch(() => { /* duplicate key / race — the winning row stands */ });
     }
 
     return result;

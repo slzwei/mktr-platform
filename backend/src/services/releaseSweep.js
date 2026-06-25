@@ -117,6 +117,14 @@ export function makeReleaseSweep(overrides = {}) {
           { destination },
           t
         );
+        // Fail closed: never release a CHARGED lead we cannot durably deliver. No
+        // subscriber for this destination (or webhooks disabled) → roll back the
+        // claim + charge (re-hold) and stop; every lead here would hit the same wall.
+        if (deliveryPairs.length === 0) {
+          await t.rollback();
+          d.logger.warn('[ReleaseSweep] no delivery subscriber — re-holding', { campaignId, prospectId: held.id, destination });
+          break;
+        }
 
         await t.commit();
         didRelease = true;

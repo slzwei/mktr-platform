@@ -114,16 +114,25 @@ describe('externalHeldLeadsController.assignHeldLead', () => {
     ['invalid_agent', 400],
     ['not_found', 404],
     ['not_assignable_external', 409],
+    ['undeliverable', 503],
   ])('maps %s → %i', async (status, code) => {
     releaseMock.mockResolvedValue({ status });
-    const req = makeReq({ timestamp: new Date().toISOString(), prospectId: 'p1', agentMktrUserId: 'a1' });
+    const req = makeReq({ timestamp: new Date().toISOString(), prospectId: 'p1', agentMktrUserId: 'a1', idempotencyKey: 'k' });
     const res = makeRes();
     await assignHeldLead(req, res);
     expect(res.statusCode).toBe(code);
   });
 
   it('400s when prospectId or agentMktrUserId is missing', async () => {
-    const req = makeReq({ timestamp: new Date().toISOString(), prospectId: 'p1' });
+    const req = makeReq({ timestamp: new Date().toISOString(), prospectId: 'p1', idempotencyKey: 'k' });
+    const res = makeRes();
+    await assignHeldLead(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(releaseMock).not.toHaveBeenCalled();
+  });
+
+  it('400s when idempotencyKey is missing (mandatory replay contract)', async () => {
+    const req = makeReq({ timestamp: new Date().toISOString(), prospectId: 'p1', agentMktrUserId: 'a1' });
     const res = makeRes();
     await assignHeldLead(req, res);
     expect(res.statusCode).toBe(400);

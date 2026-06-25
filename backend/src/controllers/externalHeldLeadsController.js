@@ -81,10 +81,13 @@ export async function listHeldLeads(req, res) {
 
   try {
     const { campaignId } = req.body || {};
-    // `{ role: 'admin' }` → buildProspectWhere returns {} (fleet-wide). Only
-    // no_funded_agent holds are assignable to internal agents; external-buyer
-    // holds are filtered out (assignHeldLead would 409 them anyway).
-    const { held } = await listHeldProspects({ role: 'admin' }, { campaignId, limit: 50 });
+    // `{ role: 'admin' }` → buildProspectWhere returns {} (fleet-wide). The reason
+    // filter is applied IN the query (before the 50-row limit) so assignable holds
+    // are never hidden behind a page of external-buyer holds.
+    const { held } = await listHeldProspects(
+      { role: 'admin' },
+      { campaignId, quarantineReason: 'no_funded_agent', limit: 50 },
+    );
     const rows = (held || [])
       .filter((h) => h.quarantineReason === 'no_funded_agent')
       .map((h) => ({
@@ -113,11 +116,16 @@ export async function assignHeldLead(req, res) {
   if (!prospectId || !agentMktrUserId) {
     return res.status(400).json({ success: false, error: 'prospectId and agentMktrUserId are required' });
   }
+  // Mandatory so an exact retry replays the original result (the broker EF always
+  // sends one). HMAC + held-only release still guarantee no double effect without it.
+  if (!idempotencyKey || typeof idempotencyKey !== 'string') {
+    return res.status(400).json({ success: false, error: 'idempotencyKey is required' });
+  }
 
   try {
     // agentMktrUserId is the app's agents.mktr_user_id (== MKTR users.mktrLeadsId).
     const result = await releaseHeldProspect(prospectId, agentMktrUserId, {
-      idempotencyKey: idempotencyKey || null,
+      idempotencyKey,
       actorUserId: null,
     });
     const codeByStatus = {
@@ -126,6 +134,7 @@ export async function assignHeldLead(req, res) {
       invalid_agent: 400,
       not_found: 404,
       not_assignable_external: 409,
+      undeliverable: 503,
     };
     const code = codeByStatus[result.status] || 500;
     return res.status(code).json({ success: code < 400, ...result });
