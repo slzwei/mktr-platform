@@ -158,12 +158,15 @@ describe('webhookDispatch (unit)', () => {
       const payloadBuilder = jest.fn().mockReturnValue({ event: 'lead.created' });
       await service.dispatchEvent('lead.created', payloadBuilder);
 
+      // dispatchEvent persists with no transaction (the txn-aware path is
+      // persistEventDeliveries, used by the held-release outbox callers).
       expect(mocks.WebhookDelivery.create).toHaveBeenCalledWith(
         expect.objectContaining({
           subscriberId: 'sub-1',
           eventType: 'lead.created',
           status: 'pending',
-        })
+        }),
+        { transaction: null }
       );
     });
 

@@ -66,67 +66,100 @@ export function makeWebhookService(overrides = {}) {
   }
 
   /**
-   * Dispatch an event to all active webhook subscribers.
-   * Fire-and-forget — does not throw.
+   * Persist the `webhook_deliveries` rows for an event WITHOUT sending them.
+   *
+   * When a `transaction` is supplied the delivery rows are created inside it, so a
+   * caller can make a state change and its delivery INTENT atomic (transactional
+   * outbox): either the state change and the pending delivery rows both commit, or
+   * neither does. This closes the window where a process could clear a row's hold
+   * and then crash before the delivery row exists, stranding a lead that is no
+   * longer held yet was never queued for delivery. The actual send is deferred —
+   * hand the returned pairs to flushDeliveries() AFTER the transaction commits;
+   * recoverPendingRetries() is the backstop if the process dies before the flush.
+   *
+   * Returns an array of { delivery, subscriber } (empty when webhooks are disabled
+   * or nothing matches). Honours the same destination-aware filtering as before.
    */
-  async function dispatchEvent(eventType, payloadBuilder, options = {}) {
+  async function persistEventDeliveries(eventType, payloadBuilder, options = {}, transaction = null) {
     if (String(process.env.WEBHOOK_ENABLED || 'false').toLowerCase() !== 'true') {
-      return;
+      return [];
     }
 
-    try {
-      const subscribers = await d.WebhookSubscriber.findAll({
-        where: { enabled: true }
-      });
+    const subscribers = await d.WebhookSubscriber.findAll({
+      where: { enabled: true },
+      transaction,
+    });
 
-      // Filter to subscribers interested in this event type
-      let matched = subscribers.filter(sub => {
-        const events = sub.events || [];
-        return events.includes(eventType);
-      });
+    // Filter to subscribers interested in this event type
+    let matched = subscribers.filter(sub => {
+      const events = sub.events || [];
+      return events.includes(eventType);
+    });
 
-      // Destination-aware delivery: when a caller passes `destination`, deliver
-      // ONLY to subscribers tagged for that app (metadata.destination) so a lead's
-      // PII never crosses apps. A null/unknown destination is DEFAULT-DENIED (e.g.
-      // an assignee with no Lyfe/mktr-leads provenance, like the System Agent).
-      // Callers that omit `destination` keep the legacy event-type-only behaviour.
-      if ('destination' in options) {
-        const { destination } = options;
-        const eventMatchCount = matched.length;
-        matched = destination
-          ? matched.filter(sub => (sub.metadata?.destination || null) === destination)
-          : [];
-        if (eventMatchCount > 0 && matched.length === 0) {
-          d.logger.warn('[Webhook] lead_webhook_default_denied', {
-            event: 'lead_webhook_default_denied',
-            eventType,
-            destination: destination || null,
-          });
-        }
-      }
-
-      if (matched.length === 0) {
-        d.logger.debug('[Webhook] No active subscribers for event', { eventType });
-        return;
-      }
-
-      // Build payload once
-      const payload = payloadBuilder();
-
-      for (const subscriber of matched) {
-        const deliveryId = crypto.randomUUID();
-
-        const delivery = await d.WebhookDelivery.create({
-          subscriberId: subscriber.id,
-          deliveryId,
+    // Destination-aware delivery: when a caller passes `destination`, deliver
+    // ONLY to subscribers tagged for that app (metadata.destination) so a lead's
+    // PII never crosses apps. A null/unknown destination is DEFAULT-DENIED (e.g.
+    // an assignee with no Lyfe/mktr-leads provenance, like the System Agent).
+    // Callers that omit `destination` keep the legacy event-type-only behaviour.
+    if ('destination' in options) {
+      const { destination } = options;
+      const eventMatchCount = matched.length;
+      matched = destination
+        ? matched.filter(sub => (sub.metadata?.destination || null) === destination)
+        : [];
+      if (eventMatchCount > 0 && matched.length === 0) {
+        d.logger.warn('[Webhook] lead_webhook_default_denied', {
+          event: 'lead_webhook_default_denied',
           eventType,
-          payload: { ...payload, deliveryId },
-          status: 'pending'
+          destination: destination || null,
         });
-
-        // Fire-and-forget with concurrency limit
-        enqueueDelivery(delivery, subscriber);
       }
+    }
+
+    if (matched.length === 0) {
+      d.logger.debug('[Webhook] No active subscribers for event', { eventType });
+      return [];
+    }
+
+    // Build payload once
+    const payload = payloadBuilder();
+
+    const pairs = [];
+    for (const subscriber of matched) {
+      const deliveryId = crypto.randomUUID();
+
+      const delivery = await d.WebhookDelivery.create({
+        subscriberId: subscriber.id,
+        deliveryId,
+        eventType,
+        payload: { ...payload, deliveryId },
+        status: 'pending'
+      }, { transaction });
+
+      pairs.push({ delivery, subscriber });
+    }
+    return pairs;
+  }
+
+  /**
+   * Kick off the (fire-and-forget, concurrency-limited) sends for delivery rows
+   * already persisted by persistEventDeliveries(). Call this AFTER the owning
+   * transaction (if any) has committed.
+   */
+  function flushDeliveries(pairs) {
+    for (const { delivery, subscriber } of (pairs || [])) {
+      enqueueDelivery(delivery, subscriber);
+    }
+  }
+
+  /**
+   * Dispatch an event to all active webhook subscribers.
+   * Fire-and-forget — does not throw. (persist immediately, then flush.)
+   */
+  async function dispatchEvent(eventType, payloadBuilder, options = {}) {
+    try {
+      const pairs = await persistEventDeliveries(eventType, payloadBuilder, options);
+      flushDeliveries(pairs);
     } catch (err) {
       d.logger.error('[Webhook] dispatchEvent error', { eventType, error: err.message });
     }
@@ -431,13 +464,15 @@ export function makeWebhookService(overrides = {}) {
     }
   }
 
-  return { dispatchEvent, attemptDelivery, retryDelivery, retryAllFailed,
+  return { dispatchEvent, persistEventDeliveries, flushDeliveries, attemptDelivery, retryDelivery, retryAllFailed,
            getDeadLetterQueue, purgeDeadLetters, getDeliveryStats, getQueueStats, recoverPendingRetries };
 }
 
 // --- Backward-compatible named exports ---
 const _default = makeWebhookService();
 export const dispatchEvent = _default.dispatchEvent;
+export const persistEventDeliveries = _default.persistEventDeliveries;
+export const flushDeliveries = _default.flushDeliveries;
 export const attemptDelivery = _default.attemptDelivery;
 export const retryDelivery = _default.retryDelivery;
 export const retryAllFailed = _default.retryAllFailed;

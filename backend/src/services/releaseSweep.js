@@ -2,8 +2,8 @@ import { Op } from 'sequelize';
 import { Prospect, ProspectActivity, Campaign, User, sequelize } from '../models/index.js';
 import { resolveLeadRouting } from './systemAgent.js';
 import { chargeLeadCredit } from './leadCredits.js';
-import { dispatchEvent } from './webhookService.js';
-import { buildLeadCreatedPayload } from './prospectHelpers.js';
+import { persistEventDeliveries, flushDeliveries } from './webhookService.js';
+import { buildLeadCreatedPayload, destinationForAgent, externalIdForDestination } from './prospectHelpers.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -23,7 +23,8 @@ import { logger } from '../utils/logger.js';
 
 const defaultDeps = {
   Prospect, ProspectActivity, Campaign, User, sequelize,
-  resolveLeadRouting, chargeLeadCredit, dispatchEvent, buildLeadCreatedPayload, logger,
+  resolveLeadRouting, chargeLeadCredit, persistEventDeliveries, flushDeliveries,
+  buildLeadCreatedPayload, destinationForAgent, externalIdForDestination, logger,
 };
 
 // Safety bound so a single sweep can never loop unboundedly.
@@ -58,6 +59,7 @@ export function makeReleaseSweep(overrides = {}) {
       const agentId = routing.agentId;
       const t = await d.sequelize.transaction();
       let didRelease = false;
+      let deliveryPairs = [];
       try {
         // Atomic claim — exactly one releaser wins this held prospect.
         const [claimRows] = await d.sequelize.query(
@@ -78,6 +80,44 @@ export function makeReleaseSweep(overrides = {}) {
           await t.rollback();
           break; // credits exhausted — stop the sweep
         }
+
+        await d.ProspectActivity.create({
+          prospectId: held.id,
+          type: 'assigned',
+          actorUserId: null,
+          description: 'Auto-released from hold (lead-quota top-up) and assigned',
+          metadata: { assignedAgentId: agentId, released: true, via: 'auto_sweep' },
+        }, { transaction: t });
+
+        // Destination-aware delivery: load the agent's provenance (lyfeId AND
+        // mktrLeadsId) so the lead.created routes to the agent's OWN app with the
+        // correct external id — NOT a legacy event-type broadcast to every subscriber,
+        // which would leak a mktr-leads lead's PII to Lyfe and carry the wrong id.
+        const agent = await d.User.findByPk(agentId, {
+          attributes: ['id', 'lyfeId', 'mktrLeadsId', 'phone', 'email', 'firstName', 'lastName'],
+          transaction: t,
+        });
+        const destination = agent ? d.destinationForAgent(agent) : null;
+        const agentForWebhook = agent ? {
+          phone: agent.phone || null,
+          email: agent.email || null,
+          name: `${agent.firstName || ''} ${agent.lastName || ''}`.trim(),
+          id: d.externalIdForDestination(agent, destination),
+        } : null;
+        const withCampaign = await d.Prospect.findByPk(held.id, {
+          include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+          transaction: t,
+        });
+
+        // Persist the first lead.created delivery row INSIDE the tx (outbox) so a
+        // crash after commit can't strand a released, charged lead that was never queued.
+        deliveryPairs = await d.persistEventDeliveries(
+          'lead.created',
+          () => d.buildLeadCreatedPayload(withCampaign, 'direct', agentForWebhook, agentId, withCampaign?.campaign || null, null, null),
+          { destination },
+          t
+        );
+
         await t.commit();
         didRelease = true;
       } catch (err) {
@@ -88,33 +128,7 @@ export function makeReleaseSweep(overrides = {}) {
 
       if (didRelease) {
         released++;
-        await held.reload().catch(() => {});
-
-        await d.ProspectActivity.create({
-          prospectId: held.id,
-          type: 'assigned',
-          actorUserId: null,
-          description: 'Auto-released from hold (lead-quota top-up) and assigned',
-          metadata: { assignedAgentId: agentId, released: true, via: 'auto_sweep' },
-        }).catch(() => {});
-
-        const agent = await d.User.findByPk(agentId, {
-          attributes: ['id', 'lyfeId', 'phone', 'email', 'firstName', 'lastName'],
-        });
-        const agentForWebhook = agent ? {
-          phone: agent.phone || null,
-          email: agent.email || null,
-          name: `${agent.firstName || ''} ${agent.lastName || ''}`.trim(),
-          id: agent.lyfeId || agent.id,
-        } : null;
-        const withCampaign = await d.Prospect.findByPk(held.id, {
-          include: [{ association: 'campaign', attributes: ['id', 'name'] }],
-        });
-
-        // First delivery to Lyfe (held leads never fired a create webhook).
-        d.dispatchEvent('lead.created', () =>
-          d.buildLeadCreatedPayload(held, 'direct', agentForWebhook, agentId, withCampaign?.campaign || null, null, null)
-        ).catch((err) => d.logger.error('[ReleaseSweep] webhook error', { error: err?.message || String(err) }));
+        d.flushDeliveries(deliveryPairs);
       }
     }
 
