@@ -23,8 +23,10 @@ const leadCaptureLimit = rateLimit({
 // Get all prospects
 router.get('/', authenticateToken, prospectController.listProspects);
 
-// Create new prospect (lead capture) — rate-limited, no auth required
-router.post('/', leadCaptureLimit, validate(schemas.prospectCreate), prospectController.createProspect);
+// Create new prospect (lead capture) — rate-limited, no auth required.
+// stripUnknown: this public endpoint must never 400 (and lose a lead) over an
+// additive/unknown frontend field — see validate() in middleware/validation.js.
+router.post('/', leadCaptureLimit, validate(schemas.prospectCreate, { stripUnknown: true }), prospectController.createProspect);
 
 // Held (quarantined) lead-quota queue — must precede '/:id' so 'held' is not read as an id.
 router.get('/held', authenticateToken, requireAgentOrAdmin, prospectController.listHeldProspects);

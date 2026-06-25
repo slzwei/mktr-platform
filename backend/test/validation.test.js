@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
-import { schemas } from '../src/middleware/validation.js';
+import Joi from 'joi';
+import { schemas, validate } from '../src/middleware/validation.js';
 
 const valid = (schema, body) => {
   const { error, value } = schema.validate(body, { abortEarly: false });
@@ -284,5 +285,72 @@ describe('schemas.prospectCreate', () => {
 describe('schemas (regression — no driverCreate)', () => {
   it('does not export driverCreate (deleted as dead 2026-05-13)', () => {
     expect(schemas.driverCreate).toBeUndefined();
+  });
+});
+
+describe('validate() middleware — stripUnknown opt-in (public lead-capture hardening)', () => {
+  // Run the middleware with a fake req/res/next — no Express, no DB.
+  const run = (schema, body, options) => {
+    const req = { body, originalUrl: '/test' };
+    const res = {
+      statusCode: undefined,
+      payload: undefined,
+      status(code) { this.statusCode = code; return this; },
+      json(p) { this.payload = p; return this; },
+    };
+    let nexted = false;
+    validate(schema, options)(req, res, () => { nexted = true; });
+    return { req, res, nexted };
+  };
+
+  const sample = Joi.object({
+    a: Joi.string().required(),
+    b: Joi.number().optional(),
+  });
+
+  it('default (no options) rejects unknown keys with 400 — back-compat preserved', () => {
+    const { res, nexted } = run(sample, { a: 'x', junk: 1 });
+    expect(nexted).toBe(false);
+    expect(res.statusCode).toBe(400);
+    expect(res.payload.errors[0].field).toBe('junk');
+  });
+
+  it('default (no options) does NOT swap req.body (raw body preserved for other routes)', () => {
+    const body = { a: 'x', b: 2 };
+    const { req, nexted } = run(sample, body);
+    expect(nexted).toBe(true);
+    expect(req.body).toBe(body); // same reference — middleware did not reassign
+  });
+
+  it('stripUnknown:true drops unknown keys, calls next(), keeps known fields', () => {
+    const { req, res, nexted } = run(
+      sample,
+      { a: 'x', b: 2, junk: 1, consentMetadata: { external: {} } },
+      { stripUnknown: true },
+    );
+    expect(res.statusCode).toBeUndefined();
+    expect(nexted).toBe(true);
+    expect(req.body).toEqual({ a: 'x', b: 2 });
+    expect('junk' in req.body).toBe(false);
+    expect('consentMetadata' in req.body).toBe(false); // consent-forgery defence
+  });
+
+  it('stripUnknown:true still 400s on a real validation error (missing required)', () => {
+    const { res, nexted } = run(sample, { b: 2, junk: 1 }, { stripUnknown: true });
+    expect(nexted).toBe(false);
+    expect(res.statusCode).toBe(400);
+    expect(res.payload.errors.some((e) => e.field === 'a')).toBe(true);
+  });
+
+  it('prospectCreate + stripUnknown: an unknown future field is dropped, not rejected (no lead loss)', () => {
+    const { req, res, nexted } = run(
+      schemas.prospectCreate,
+      { firstName: 'Jane', email: 'jane@example.com', leadSource: 'website', some_future_field: true },
+      { stripUnknown: true },
+    );
+    expect(res.statusCode).toBeUndefined();
+    expect(nexted).toBe(true);
+    expect('some_future_field' in req.body).toBe(false);
+    expect(req.body.firstName).toBe('Jane');
   });
 });

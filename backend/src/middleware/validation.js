@@ -1,9 +1,18 @@
 import Joi from 'joi';
+import { logger } from '../utils/logger.js';
 
-// Validation middleware
-export const validate = (schema) => {
+// Validation middleware.
+//
+// Optional per-route Joi options (2nd arg) let a route opt into stripUnknown.
+// The PUBLIC lead-capture route (POST /prospects) uses { stripUnknown: true } so
+// an additive frontend field (frontend/backend contract drift) is DROPPED rather
+// than 400ing the whole submission and losing the lead — a recurring failure mode
+// for that revenue-critical endpoint, and a defence against a client injecting
+// server-controlled keys (e.g. consentMetadata) it must never set. Internal /
+// admin routes deliberately omit it so typos and stale clients keep failing loudly.
+export const validate = (schema, options = {}) => {
   return (req, res, next) => {
-    const { error } = schema.validate(req.body, { abortEarly: false });
+    const { error, value } = schema.validate(req.body, { abortEarly: false, ...options });
 
     if (error) {
       const details = error.details.map(detail => ({
@@ -17,6 +26,22 @@ export const validate = (schema) => {
         details: 'Invalid request data',
         errors: details
       });
+    }
+
+    // Only when a route explicitly opted into stripping do we swap in the
+    // sanitized body; every other route keeps the raw req.body untouched, so this
+    // change cannot alter Joi type-coercion behaviour for them.
+    if (options.stripUnknown && value && typeof value === 'object') {
+      const stripped = Object.keys(req.body || {}).filter((k) => !(k in value));
+      if (stripped.length > 0) {
+        // A stripped key almost always means frontend/backend contract drift.
+        // Warn so the next mismatch isn't silent now that it no longer 400s.
+        logger.warn(
+          { route: req.originalUrl, strippedKeys: stripped },
+          'validate(): dropped unknown request keys'
+        );
+      }
+      req.body = value;
     }
 
     next();
