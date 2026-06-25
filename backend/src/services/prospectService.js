@@ -1618,6 +1618,13 @@ export function makeProspectService(overrides = {}) {
       await t.commit();
     } catch (err) {
       await t.rollback();
+      // A concurrent request with the SAME idempotency key won the unique PK — replay
+      // its recorded result instead of surfacing a 500 (the held-only release already
+      // guaranteed no double effect).
+      if (idempotencyKey && (err?.name === 'SequelizeUniqueConstraintError' || err?.original?.code === '23505')) {
+        const winner = await m.IdempotencyKey.findOne({ where: { key: idempotencyKey, scope: IDEMP_SCOPE } });
+        if (winner?.responseBody) return winner.responseBody;
+      }
       throw err;
     }
 
