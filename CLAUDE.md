@@ -99,6 +99,19 @@ Nameservers at Cloudflare (`chance.ns.cloudflare.com`, `liv.ns.cloudflare.com`) 
 - redeem-frontend Static Site (Render): `VITE_BRAND=redeem`, `VITE_API_URL=/api` (relative — Render rewrites `/api/*` → `https://api.mktr.sg/api/*` so cookies live on `.redeem.sg`). Vite plugin emits brand-aware `robots.txt` + `sitemap.xml` per build.
 - Both static sites bake the public pixel IDs at build time: `VITE_META_PIXEL_ID=1402034528611431` and `VITE_TIKTOK_PIXEL_ID=D8GJ6T3C77UDLID6746G` (TikTok added to `mktr-platform`/mktr.sg on 2026-06-17 to match redeem.sg). `VITE_*` vars are baked into `dist` at build, so changing a pixel id requires a redeploy.
 
+### Deploying & verifying a frontend change (push ≠ live)
+
+All three services auto-deploy from `main` on commit: `mktr-platform` static site (`srv-d2s3che3jp1c738qlgjg` → mktr.sg), `redeem-frontend` (`srv-d88qhph9rddc738nk0d0` → redeem.sg), `mktr-backend-jo6r` (`srv-d2s9p0emcj7s73acd9lg` → api.mktr.sg). **Pushing to `main` is NOT proof it shipped** — two layers can hide a change, and both bit us on 2026-06-26:
+
+1. **Auto-deploy can silently drop a push.** The GitHub→Render webhook occasionally never fires — commit `d8f6c08` pushed cleanly but *no* deploy registered for ~1h (dashboard still read "Updated 1h ago"). After pushing, **confirm a NEW deploy appeared**: Render MCP `list_deploys` for the service, or the dashboard "Updated" column. If none within ~1–2 min, **re-trigger** — `git commit --allow-empty -m "re-trigger deploy" && git push` (a fresh push gets its own webhook delivery), or dashboard **Manual Deploy → "Deploy latest commit"**. There is no Render API key in env and no MCP deploy-trigger tool, so the empty-commit push is the only *autonomous* re-trigger; Manual Deploy is the user-side fallback.
+
+2. **mktr.sg & redeem.sg are Cloudflare-fronted; `index.html` is edge-cached `s-maxage=300`.** Even after a green deploy, the bare URL can serve the *old* `index.html` for up to ~5 min. It self-heals on TTL; a Cloudflare cache purge makes it instant (no CF token in env → user-side dashboard action).
+
+**How to actually verify "live"** — Vite content-hashes every chunk, so the `index-<hash>.js` reference flips iff the code changed:
+- **Origin** (bypasses the custom-domain cache): `curl -s https://mktr-platform.onrender.com/ | grep -o 'assets/index-[^."]*\.js'`. If this hash differs from what mktr.sg serves, the deploy is good and only the edge is stale.
+- **Cache-bust** the real domain to read true origin through Cloudflare: `curl -s "https://mktr.sg/?cb=$(date +%s)" | grep -o 'assets/index-[^."]*\.js'`.
+- **Definitive**: `curl` the live JS chunk and `grep` for a string unique to your change (e.g. `Sign out`). Don't grep for a string that already existed in the old bundle.
+
 ## Meta Ads — Advertising Account, Pixel & CAPI
 
 Paid acquisition (Facebook/Instagram) for the lead-capture funnel. All assets live under one Meta **business portfolio**. Topology verified 2026-06-04:
