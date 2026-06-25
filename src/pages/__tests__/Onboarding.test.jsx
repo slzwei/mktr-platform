@@ -5,12 +5,13 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 // Mock authStore
 const mockRefreshUser = vi.fn();
+const mockLogout = vi.fn();
 vi.mock('@/stores/authStore', () => ({
  useAuthStore: (selector) => {
  if (typeof selector === 'function') {
- return selector({ refreshUser: mockRefreshUser });
+ return selector({ refreshUser: mockRefreshUser, logout: mockLogout });
  }
- return { refreshUser: mockRefreshUser };
+ return { refreshUser: mockRefreshUser, logout: mockLogout };
  },
 }));
 

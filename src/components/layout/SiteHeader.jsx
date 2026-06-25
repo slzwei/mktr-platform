@@ -70,12 +70,23 @@ export default function SiteHeader() {
  {/* Desktop CTA */}
  <div className=" hidden md:flex items-center gap-3">
  {isAuthed ? (
+ <>
+ <button
+ onClick={() => {
+ logout();
+ navigate("/");
+ }}
+ className="px-4 py-2 text-sm font-medium text-background/60 hover:text-background/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-terracotta rounded-lg"
+ >
+ Log Out
+ </button>
  <Link
  to={dashboardPath}
  className="px-5 py-2 text-sm font-semibold text-background rounded-full transition-colors bg-terracotta hover:bg-terracotta-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-terracotta focus-visible:ring-offset-2 focus-visible:ring-offset-ink"
  >
  Dashboard
  </Link>
+ </>
  ) : (
  <>
  <Link

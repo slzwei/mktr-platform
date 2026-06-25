@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Loader2 from 'lucide-react/icons/loader-2';
 import ArrowLeft from 'lucide-react/icons/arrow-left';
+import LogOut from 'lucide-react/icons/log-out';
 import makeModelsRaw from '@/data/mktr_make_models.json';
 import { sendOtp, verifyOtp } from '@/components/lib/customFunctions';
 import {
@@ -36,6 +37,7 @@ const makesToModels = Object.keys(makeModelsRaw || {}).reduce((acc, make) => {
 export default function Onboarding() {
  const navigate = useNavigate();
  const refreshUser = useAuthStore((s) => s.refreshUser);
+ const logout = useAuthStore((s) => s.logout);
  const [user, setUser] = useState(null);
  const [step, setStep] = useState(0);
  const [maxVisitedStep, setMaxVisitedStep] = useState(0);
@@ -531,6 +533,19 @@ export default function Onboarding() {
  Back to Home
  </Button>
  </Link>
+ </div>
+ <div className="absolute top-6 right-6 z-10">
+ <Button
+ variant="outline"
+ className="gap-2"
+ onClick={() => {
+ logout();
+ navigate('/');
+ }}
+ >
+ <LogOut className="w-4 h-4"/>
+ Sign out
+ </Button>
  </div>
  <Card className={`w-full max-w-2xl bg-card rounded-2xl shadow-2xl border border-border overflow-hidden`}>
  <CardHeader className="border-b">
