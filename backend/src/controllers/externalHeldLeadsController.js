@@ -66,8 +66,10 @@ function verifyExternalHmac(req) {
   return null;
 }
 
-// PII is minimised for the queue view — the admin dispatches by name + campaign,
-// and does not need to contact the lead from this surface.
+// The list keeps the masked fields (firstName + lastInitial + maskedPhone) for the queue row
+// and back-compat with older app builds, AND additively returns the FULL name / phone / email
+// so the admin can open a held lead and contact/qualify it. This surface is admin-only — the
+// broker EF re-checks the LIVE admin role — so the unmasked PII never reaches a non-admin.
 function maskPhone(phone) {
   if (!phone || typeof phone !== 'string') return null;
   const digits = phone.replace(/\D/g, '');
@@ -87,8 +89,11 @@ export async function listHeldLeads(req, res) {
     const rows = (orphans || []).map((o) => ({
       id: o.id,
       firstName: o.firstName || null,
+      lastName: o.lastName || null,
       lastInitial: o.lastName ? String(o.lastName).trim().charAt(0).toUpperCase() : null,
+      phone: o.phone || null,
       maskedPhone: maskPhone(o.phone),
+      email: o.email || null,
       campaignId: o.campaignId,
       campaignName: o.campaignName,
       leadSource: o.leadSource,
