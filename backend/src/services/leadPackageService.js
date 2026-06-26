@@ -117,8 +117,9 @@ export async function assignPackage({ agentId, packageId }) {
     purchaseDate: new Date()
   });
 
-  // New funded package → drain any held lead-quota queue for its campaign (async,
-  // fire-and-forget; the assignment response must not wait on the sweep).
+  // New funded package → trigger the held-queue sweep for its campaign (async,
+  // fire-and-forget). NOTE: auto-release is currently DISABLED (held leads are
+  // manual-only) so this sweep no-ops — retained as the hook to re-enable it.
   if (pkg.campaignId) {
     // Dynamic import keeps releaseSweep (and its systemAgent/webhook graph) out of this
     // module's static dependency graph — avoids coupling and keeps unit-test mocks lean.
@@ -203,7 +204,8 @@ export async function updateAssignment(id, { leadsRemaining }) {
       status: newCount === 0 ? 'exhausted' : 'active'
     });
 
-    // Top-up (credits increased) → drain the held queue for this assignment's campaign.
+    // Top-up (credits increased) → trigger the held-queue sweep for this campaign.
+    // NOTE: auto-release is DISABLED (held leads are manual-only) — this sweep no-ops today.
     if (newCount > prevCount) {
       const pkg = await LeadPackage.findByPk(assignment.leadPackageId, { attributes: ['campaignId'] });
       if (pkg?.campaignId) {

@@ -7,7 +7,9 @@ import { buildLeadCreatedPayload, destinationForAgent, externalIdForDestination 
 import { logger } from '../utils/logger.js';
 
 /**
- * Auto-release sweep for lead-quota held queues.
+ * Auto-release sweep for lead-quota held queues. DISABLED BY DEFAULT
+ * (AUTO_RELEASE_ENABLED = false): held leads are manual-only — an admin assigns them from
+ * the dispatch queue (Leads tab). The mechanics below apply only if it is re-enabled.
  *
  * When an agent's credits increase (package assigned / topped up), the held queue for
  * that campaign is drained FIFO (oldest quarantinedAt first), releasing leads to funded
@@ -21,51 +23,46 @@ import { logger } from '../utils/logger.js';
  * to Lyfe (it never saw the suppressed create webhook).
  */
 
+// Held leads are MANUAL-ONLY: once a lead lands in the held queue it must be assigned by
+// an admin from the dispatch queue (the Leads tab) — it is NEVER auto-released to an agent
+// (not on credit top-up, not on startup, regardless of age). This switch disables the
+// auto-release sweep entirely. Flip to true only to restore the old top-up auto-release.
+const AUTO_RELEASE_ENABLED = false;
+
 const defaultDeps = {
   Prospect, ProspectActivity, Campaign, User, sequelize,
   resolveLeadRouting, chargeLeadCredit, persistEventDeliveries, flushDeliveries,
   buildLeadCreatedPayload, destinationForAgent, externalIdForDestination, logger,
+  autoReleaseEnabled: AUTO_RELEASE_ENABLED,
 };
 
 // Safety bound so a single sweep can never loop unboundedly.
 const MAX_RELEASE_PER_SWEEP = 500;
-
-// A lead that signed up more than this many days ago is NEVER auto-released to an
-// agent — it must wait in the admin dispatch queue for a human to decide. (A stale
-// lead must not silently buzz an agent as if it were fresh.) The dispatch queue
-// surfaces these with NO age cap, so nothing is lost — only the *automatic* path is gated.
-const AUTO_RELEASE_MAX_AGE_DAYS = 7;
 
 export function makeReleaseSweep(overrides = {}) {
   const d = { ...defaultDeps, ...overrides };
 
   async function sweepCampaign(campaignId) {
     if (!campaignId) return 0;
+    // Auto-release is disabled: held leads are manual-only (an admin assigns them from the
+    // dispatch queue / Leads tab). The sweep is retained but no-ops unless re-enabled.
+    if (!d.autoReleaseEnabled) return 0;
 
     // Only quota-enforced campaigns ever hold leads; skip everything else cheaply.
     const campaign = await d.Campaign.findByPk(campaignId);
     if (!campaign || campaign.enforceLeadQuota !== true) return 0;
 
-    // Only auto-release leads that are still FRESH; stale ones wait for the admin.
-    const freshCutoff = new Date(Date.now() - AUTO_RELEASE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
     let released = 0;
     for (let i = 0; i < MAX_RELEASE_PER_SWEEP; i++) {
       // Oldest held lead for this campaign (FIFO). Only INTERNAL lead-quota holds
       // (quarantineReason 'no_funded_agent') are eligible — external holds
       // ('no_funded_external_buyer') must NEVER be released to Lyfe by this internal
       // sweep; they can only ever be delivered via the external (MKTR Leads) channel.
-      // Stale leads (signed up before freshCutoff) are skipped — they must be dispatched
-      // by an admin from the queue, never auto-released here.
       const held = await d.Prospect.findOne({
-        where: {
-          campaignId,
-          quarantinedAt: { [Op.ne]: null },
-          quarantineReason: 'no_funded_agent',
-          createdAt: { [Op.gt]: freshCutoff },
-        },
+        where: { campaignId, quarantinedAt: { [Op.ne]: null }, quarantineReason: 'no_funded_agent' },
         order: [['quarantinedAt', 'ASC']],
       });
-      if (!held) break; // no fresh held leads left to auto-release
+      if (!held) break; // queue drained
 
       // Pick a funded agent (round-robin among campaign package agents with credits).
       const routing = await d.resolveLeadRouting({ reqUser: null, requestedAgentId: null, campaignId, qrTagId: null });
@@ -161,18 +158,12 @@ export function makeReleaseSweep(overrides = {}) {
 
   /** Periodic backstop: sweep every quota campaign that currently has held leads. */
   async function sweepAll() {
-    // Only consider campaigns with at least one FRESH held lead; campaigns whose holds
-    // are all stale have nothing auto-releasable (those wait for an admin to dispatch).
-    const freshCutoff = new Date(Date.now() - AUTO_RELEASE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
+    // Auto-release is disabled: held leads are manual-only. No-op unless re-enabled.
+    if (!d.autoReleaseEnabled) return 0;
     const rows = await d.Prospect.findAll({
       attributes: ['campaignId'],
       // Internal lead-quota holds only — external holds are not releasable here.
-      where: {
-        quarantinedAt: { [Op.ne]: null },
-        quarantineReason: 'no_funded_agent',
-        campaignId: { [Op.ne]: null },
-        createdAt: { [Op.gt]: freshCutoff },
-      },
+      where: { quarantinedAt: { [Op.ne]: null }, quarantineReason: 'no_funded_agent', campaignId: { [Op.ne]: null } },
       group: ['campaignId'],
     });
     let total = 0;

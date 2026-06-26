@@ -250,24 +250,25 @@ describe('updateProspect reassign leak (closed)', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-describe('auto-release sweep', () => {
-  it('drains held leads to a newly-funded agent, credit-bounded (partial top-up)', async () => {
+// Auto-release is DISABLED — held leads are MANUAL-ONLY: the sweep never assigns a held
+// lead to an agent, and a credit top-up does not drain the held queue. Held leads wait in
+// the dispatch queue for an admin to assign them.
+describe('held leads are manual-only (auto-release disabled)', () => {
+  it('sweepCampaign never releases — held leads stay held even with a funded agent', async () => {
     const c = await quotaCampaign();
     const r1 = await postLead(c.id);
     const r2 = await postLead(c.id);
     const r3 = await postLead(c.id); // 3 held (unfunded)
 
-    const { agent } = await fundedAgent(c.id, 2); // only 2 credits
+    await fundedAgent(c.id, 2); // a funded agent exists, but auto-release is OFF
 
-    const released = await sweepCampaign(c.id);
-    expect(released).toBe(2);
+    expect(await sweepCampaign(c.id)).toBe(0); // the sweep is a no-op
 
     const ps = await Promise.all([r1, r2, r3].map(prospectFromRes));
-    expect(ps.filter((p) => p.quarantinedAt === null && p.assignedAgentId === agent.id)).toHaveLength(2);
-    expect(ps.filter((p) => p.quarantinedAt !== null)).toHaveLength(1); // 1 stays held (credits exhausted)
+    expect(ps.filter((p) => p.quarantinedAt !== null)).toHaveLength(3); // all 3 stay held
   });
 
-  it('releases nothing for a campaign with no funded agent', async () => {
+  it('is a no-op for a campaign with no funded agent', async () => {
     const c = await quotaCampaign();
     await postLead(c.id); // held
     expect(await sweepCampaign(c.id)).toBe(0);
@@ -278,7 +279,7 @@ describe('auto-release sweep', () => {
     expect(await sweepCampaign(c.id)).toBe(0);
   });
 
-  it('a credit top-up via PATCH /assignments/:id auto-triggers a release (end-to-end)', async () => {
+  it('a credit top-up does NOT auto-release a held lead — it stays held for manual dispatch', async () => {
     const c = await quotaCampaign();
     const r = await postLead(c.id); // held (no funded agent yet)
     const heldId = r.body.data.prospect.id;
@@ -293,14 +294,11 @@ describe('auto-release sweep', () => {
       .send({ leadsRemaining: 3 });
     expect(up.status).toBe(200);
 
-    // The sweep is fire-and-forget; poll briefly (≤3s) for the auto-release.
-    let p;
-    for (let i = 0; i < 30; i++) {
-      p = await Prospect.findByPk(heldId);
-      if (p.quarantinedAt === null) break;
-      await new Promise((res) => setTimeout(res, 100));
-    }
-    expect(p.quarantinedAt).toBeNull();
-    expect(p.assignedAgentId).toBe(agent.id);
+    // The top-up fires the (now-disabled) sweep fire-and-forget; give it a beat, then
+    // confirm the lead is STILL held — auto-release is off, so it waits for manual dispatch.
+    await new Promise((res) => setTimeout(res, 500));
+    const p = await Prospect.findByPk(heldId);
+    expect(p.quarantinedAt).not.toBeNull();       // still held
+    expect(p.assignedAgentId).not.toBe(agent.id); // never auto-assigned
   }, 15000);
 });

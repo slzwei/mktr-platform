@@ -111,8 +111,9 @@ export async function bootstrapDatabase() {
       logger.info('[AgentSync] periodic sync scheduled (10 min interval)');
     }
 
-    // Lead-quota safety net: drain held queues every 2 minutes in case a package
-    // top-up did not fire its inline release sweep.
+    // Lead-quota safety net: periodic held-queue sweep (every 2 min). NOTE: auto-release
+    // is currently DISABLED (held leads are manual-only), so sweepAll no-ops today —
+    // retained as the periodic hook in case auto-release is re-enabled.
     setInterval(async () => {
       try {
         const { sweepAll } = await import('../services/releaseSweep.js');
