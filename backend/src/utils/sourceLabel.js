@@ -85,4 +85,50 @@ export function signupActivityDescription(campaignName, opts = {}) {
   return desc.length > 255 ? desc.slice(0, 255) : desc;
 }
 
-export default { signupSourcePhrase, signupActivityDescription };
+// Held leads never pass through the mktr-leads receiver (deriveLeadSource), so derive the
+// SAME short label here for the admin dispatch queue — a held lead must read the same source
+// it'll show once delivered. Granular fb/ig split (signupSourcePhrase above lumps them as
+// "Meta"); an/msg/meta roll up to the Meta brand — matching receive-mktr-lead/leadSource.ts.
+const LABEL_FACEBOOK = new Set(['facebook', 'fb']);
+const LABEL_INSTAGRAM = new Set(['instagram', 'ig']);
+const LABEL_META = new Set(['meta', 'an', 'audience_network', 'audiencenetwork', 'msg', 'messenger']);
+const LABEL_TIKTOK = new Set(['tiktok', 'tt', 'tiktokads', 'tiktok_ads', 'tiktok-ads']);
+
+function adPlatformLabel(utmSource) {
+  const s = String(utmSource || '').toLowerCase();
+  if (LABEL_FACEBOOK.has(s)) return 'Facebook';
+  if (LABEL_INSTAGRAM.has(s)) return 'Instagram';
+  if (LABEL_META.has(s)) return 'Meta';
+  if (LABEL_TIKTOK.has(s)) return 'TikTok';
+  return s ? s.slice(0, 64).replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '';
+}
+
+/**
+ * Short source label ("Instagram ad", "Meta ad", "QR code", "Web form", …) for a prospect —
+ * mirrors the mktr-leads receiver's deriveLeadSource().label so a HELD lead's source reads
+ * identically to the same lead once it's delivered to an agent. Keep in sync with
+ * mktr-leads/supabase/functions/receive-mktr-lead/leadSource.ts.
+ */
+export function signupSourceLabel({ leadSource, qrTag, sourceMetadata } = {}) {
+  const meta = sourceMetadata || {};
+  const source = String(leadSource || '').toLowerCase();
+
+  if (source === 'referral') return 'Referral';
+  if ((qrTag && (qrTag.slug || qrTag.externalId)) || source === 'qr_code') return 'QR code';
+  if (source === 'call_bot') return 'Voice call';
+
+  const utmSource = meta.utm?.utm_source;
+  if (utmSource) {
+    const name = adPlatformLabel(utmSource);
+    return name ? `${name} ad` : 'Ad';
+  }
+
+  const esu = meta.eventSourceUrl || '';
+  if (meta.fbc || /[?&]fbclid=/i.test(esu)) return 'Meta click';
+  if (meta.ttclid || /[?&]ttclid=/i.test(esu)) return 'TikTok click';
+
+  if (source === '' || source === 'website') return 'Web form';
+  return source.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export default { signupSourcePhrase, signupActivityDescription, signupSourceLabel };

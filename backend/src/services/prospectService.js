@@ -29,7 +29,7 @@ import {
   sendTikTokCompleteRegistrationEvent,
 } from './tiktokEventsService.js';
 import { logger } from '../utils/logger.js';
-import { signupActivityDescription } from '../utils/sourceLabel.js';
+import { signupActivityDescription, signupSourceLabel } from '../utils/sourceLabel.js';
 import {
   normalizePhone,
   buildLeadCreatedPayload,
@@ -1519,7 +1519,12 @@ export function makeProspectService(overrides = {}) {
 
     const { count, rows } = await m.Prospect.findAndCountAll({
       where,
-      include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+      include: [
+        { association: 'campaign', attributes: ['id', 'name'] },
+        // qrTag drives the "QR code" source label for a bound-QR lead whose leadSource isn't
+        // 'qr_code' — full parity with the receiver's deriveLeadSource (slug/externalId only).
+        { association: 'qrTag', attributes: ['slug', 'externalId'] },
+      ],
       order: [['createdAt', 'ASC']], // FIFO by signup (held + unassigned interleaved)
       limit: lim,
     });
@@ -1531,6 +1536,10 @@ export function makeProspectService(overrides = {}) {
       phone: p.phone,
       email: p.email,
       leadSource: p.leadSource,
+      // Rich, delivered-lead-equivalent label ("Instagram ad", "Meta ad", "Web form", …)
+      // derived from sourceMetadata.utm — so the held queue reads the same source the lead
+      // will show once assigned, not the coarse capture channel.
+      sourceLabel: signupSourceLabel({ leadSource: p.leadSource, qrTag: p.qrTag, sourceMetadata: p.sourceMetadata }),
       campaignId: p.campaignId,
       campaignName: p.campaign?.name || null,
       reason: p.quarantinedAt ? 'no_funded_agent' : 'unassigned',

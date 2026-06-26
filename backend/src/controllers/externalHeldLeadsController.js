@@ -97,6 +97,7 @@ export async function listHeldLeads(req, res) {
       campaignId: o.campaignId,
       campaignName: o.campaignName,
       leadSource: o.leadSource,
+      sourceLabel: o.sourceLabel || null,
       reason: o.reason,
       since: o.since,
       createdAt: o.createdAt,

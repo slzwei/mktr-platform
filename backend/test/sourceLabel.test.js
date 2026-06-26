@@ -1,4 +1,4 @@
-import { signupSourcePhrase, signupActivityDescription } from '../src/utils/sourceLabel.js';
+import { signupSourcePhrase, signupActivityDescription, signupSourceLabel } from '../src/utils/sourceLabel.js';
 
 describe('signupSourcePhrase', () => {
   describe('QR scans', () => {
@@ -131,5 +131,52 @@ describe('signupActivityDescription', () => {
       sourceMetadata: { utm: { utm_source: 'x'.repeat(128) } },
     });
     expect(desc.length).toBeLessThanOrEqual(255);
+  });
+});
+
+// Short label for the held-queue detail view. Mirrors the mktr-leads receiver's
+// deriveLeadSource().label so a held lead reads the SAME source it'll show once delivered.
+describe('signupSourceLabel', () => {
+  it('splits Facebook vs Instagram (the phrase helper lumps them as Meta)', () => {
+    expect(signupSourceLabel({ leadSource: 'website', sourceMetadata: { utm: { utm_source: 'fb' } } })).toBe('Facebook ad');
+    expect(signupSourceLabel({ leadSource: 'website', sourceMetadata: { utm: { utm_source: 'instagram' } } })).toBe(
+      'Instagram ad'
+    );
+  });
+
+  it.each(['meta', 'an', 'audience_network', 'msg', 'messenger'])('rolls Meta sub-network %s up to "Meta ad"', (src) => {
+    expect(signupSourceLabel({ leadSource: 'website', sourceMetadata: { utm: { utm_source: src } } })).toBe('Meta ad');
+  });
+
+  it.each(['tiktok', 'tt', 'tiktok_ads', 'TikTokAds'])('labels TikTok alias %s', (src) => {
+    expect(signupSourceLabel({ leadSource: 'website', sourceMetadata: { utm: { utm_source: src } } })).toBe('TikTok ad');
+  });
+
+  it('title-cases an unknown utm_source', () => {
+    expect(signupSourceLabel({ leadSource: 'website', sourceMetadata: { utm: { utm_source: 'google' } } })).toBe(
+      'Google ad'
+    );
+  });
+
+  it('click-ids only → "{platform} click", not an ad', () => {
+    expect(signupSourceLabel({ leadSource: 'website', sourceMetadata: { ttclid: 'x' } })).toBe('TikTok click');
+    expect(signupSourceLabel({ leadSource: 'website', sourceMetadata: { fbc: 'fb.1.x' } })).toBe('Meta click');
+  });
+
+  it('referral / QR / voice / web-form / unknown', () => {
+    expect(signupSourceLabel({ leadSource: 'referral' })).toBe('Referral');
+    expect(signupSourceLabel({ leadSource: 'qr_code' })).toBe('QR code');
+    // Bound QR tag wins even when leadSource is the coarse 'website' (receiver parity).
+    expect(signupSourceLabel({ leadSource: 'website', qrTag: { slug: 'booth-a' } })).toBe('QR code');
+    expect(signupSourceLabel({ leadSource: 'call_bot' })).toBe('Voice call');
+    expect(signupSourceLabel({ leadSource: 'website' })).toBe('Web form');
+    expect(signupSourceLabel({})).toBe('Web form');
+    expect(signupSourceLabel({ leadSource: 'lead_import' })).toBe('Lead Import');
+  });
+
+  it('the reported case: a "website" capture off an Instagram ad reads "Instagram ad", not "Website"', () => {
+    expect(signupSourceLabel({ leadSource: 'website', sourceMetadata: { utm: { utm_source: 'ig' } } })).toBe(
+      'Instagram ad'
+    );
   });
 });
