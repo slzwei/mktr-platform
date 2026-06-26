@@ -53,6 +53,7 @@ const LeadPackageAssignment = {
 
 const User = {
   findByPk: jest.fn().mockResolvedValue(mockAgent),
+  findOne: jest.fn().mockResolvedValue(mockAgent),
 };
 
 const Campaign = {
@@ -101,6 +102,7 @@ const {
   updatePackage,
   assignPackage,
   getAgentAssignments,
+  getExternalAgentPackages,
   deleteAssignment,
   updateAssignment,
   deletePackage,
@@ -329,6 +331,106 @@ describe('leadPackageService (unit)', () => {
         requesterId: 'agent-1',
         requesterRole: 'agent',
       })).rejects.toThrow('Access denied');
+    });
+  });
+
+  // ────────────────────────────────────────────────
+  // getExternalAgentPackages (mktr-leads "My Packages")
+  // ────────────────────────────────────────────────
+
+  describe('getExternalAgentPackages', () => {
+    const assignmentWithPkg = {
+      id: 'assign-1',
+      agentId: 'agent-1',
+      status: 'active',
+      leadsRemaining: 37,
+      leadsTotal: 100,
+      purchaseDate: new Date('2026-06-01T00:00:00.000Z'),
+      package: {
+        name: 'Premium SG Leads',
+        type: 'premium',
+        qualityScore: 8,
+        currency: 'SGD',
+        commissionStructure: { agentCommission: 12, referralBonus: 0, tierBonuses: {} },
+        validityPeriod: 30,
+        campaign: { name: 'Retirement Income' },
+      },
+    };
+
+    it('self-scopes: resolves the agent by mktrLeadsId + role=agent + isActive, then scopes assignments to that id', async () => {
+      User.findOne.mockResolvedValue({ id: 'agent-1' });
+      LeadPackageAssignment.findAll.mockResolvedValue([assignmentWithPkg]);
+
+      await getExternalAgentPackages('mktr-user-123');
+
+      expect(User.findOne.mock.calls[0][0].where).toEqual({
+        mktrLeadsId: 'mktr-user-123',
+        role: 'agent',
+        isActive: true,
+      });
+      expect(LeadPackageAssignment.findAll.mock.calls[0][0].where).toEqual({ agentId: 'agent-1' });
+    });
+
+    it('returns an empty list for an unknown / ineligible id — no throw, no DB read for assignments', async () => {
+      User.findOne.mockResolvedValue(null);
+      LeadPackageAssignment.findAll.mockClear();
+
+      const result = await getExternalAgentPackages('not-an-agent');
+
+      expect(result).toEqual({ packages: [] });
+      expect(LeadPackageAssignment.findAll).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty list for a blank id without touching the DB', async () => {
+      User.findOne.mockClear();
+      const result = await getExternalAgentPackages('');
+      expect(result).toEqual({ packages: [] });
+      expect(User.findOne).not.toHaveBeenCalled();
+    });
+
+    it('maps assignment + package to a flat DTO with a derived expiry (purchase + validity days)', async () => {
+      User.findOne.mockResolvedValue({ id: 'agent-1' });
+      LeadPackageAssignment.findAll.mockResolvedValue([assignmentWithPkg]);
+
+      const { packages } = await getExternalAgentPackages('mktr-user-123');
+
+      expect(packages).toHaveLength(1);
+      expect(packages[0]).toMatchObject({
+        id: 'assign-1',
+        name: 'Premium SG Leads',
+        type: 'premium',
+        status: 'active',
+        leadsRemaining: 37,
+        leadsTotal: 100,
+        qualityScore: 8,
+        commissionPerLead: 12,
+        currency: 'SGD',
+        campaignName: 'Retirement Income',
+        validityDays: 30,
+      });
+      expect(packages[0].expiresAt).toBe(new Date('2026-07-01T00:00:00.000Z').toISOString());
+    });
+
+    it('hides a zero/absent commission and null validity (no misleading $0, no fake expiry)', async () => {
+      User.findOne.mockResolvedValue({ id: 'agent-1' });
+      LeadPackageAssignment.findAll.mockResolvedValue([
+        {
+          ...assignmentWithPkg,
+          package: {
+            ...assignmentWithPkg.package,
+            commissionStructure: { agentCommission: 0 },
+            validityPeriod: null,
+            qualityScore: null,
+          },
+        },
+      ]);
+
+      const { packages } = await getExternalAgentPackages('mktr-user-123');
+
+      expect(packages[0].commissionPerLead).toBeNull();
+      expect(packages[0].qualityScore).toBeNull();
+      expect(packages[0].validityDays).toBeNull();
+      expect(packages[0].expiresAt).toBeNull();
     });
   });
 
