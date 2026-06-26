@@ -30,6 +30,12 @@ const defaultDeps = {
 // Safety bound so a single sweep can never loop unboundedly.
 const MAX_RELEASE_PER_SWEEP = 500;
 
+// A lead that signed up more than this many days ago is NEVER auto-released to an
+// agent — it must wait in the admin dispatch queue for a human to decide. (A stale
+// lead must not silently buzz an agent as if it were fresh.) The dispatch queue
+// surfaces these with NO age cap, so nothing is lost — only the *automatic* path is gated.
+const AUTO_RELEASE_MAX_AGE_DAYS = 7;
+
 export function makeReleaseSweep(overrides = {}) {
   const d = { ...defaultDeps, ...overrides };
 
@@ -40,17 +46,26 @@ export function makeReleaseSweep(overrides = {}) {
     const campaign = await d.Campaign.findByPk(campaignId);
     if (!campaign || campaign.enforceLeadQuota !== true) return 0;
 
+    // Only auto-release leads that are still FRESH; stale ones wait for the admin.
+    const freshCutoff = new Date(Date.now() - AUTO_RELEASE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
     let released = 0;
     for (let i = 0; i < MAX_RELEASE_PER_SWEEP; i++) {
       // Oldest held lead for this campaign (FIFO). Only INTERNAL lead-quota holds
       // (quarantineReason 'no_funded_agent') are eligible — external holds
       // ('no_funded_external_buyer') must NEVER be released to Lyfe by this internal
       // sweep; they can only ever be delivered via the external (MKTR Leads) channel.
+      // Stale leads (signed up before freshCutoff) are skipped — they must be dispatched
+      // by an admin from the queue, never auto-released here.
       const held = await d.Prospect.findOne({
-        where: { campaignId, quarantinedAt: { [Op.ne]: null }, quarantineReason: 'no_funded_agent' },
+        where: {
+          campaignId,
+          quarantinedAt: { [Op.ne]: null },
+          quarantineReason: 'no_funded_agent',
+          createdAt: { [Op.gt]: freshCutoff },
+        },
         order: [['quarantinedAt', 'ASC']],
       });
-      if (!held) break; // queue drained
+      if (!held) break; // no fresh held leads left to auto-release
 
       // Pick a funded agent (round-robin among campaign package agents with credits).
       const routing = await d.resolveLeadRouting({ reqUser: null, requestedAgentId: null, campaignId, qrTagId: null });
@@ -146,10 +161,18 @@ export function makeReleaseSweep(overrides = {}) {
 
   /** Periodic backstop: sweep every quota campaign that currently has held leads. */
   async function sweepAll() {
+    // Only consider campaigns with at least one FRESH held lead; campaigns whose holds
+    // are all stale have nothing auto-releasable (those wait for an admin to dispatch).
+    const freshCutoff = new Date(Date.now() - AUTO_RELEASE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
     const rows = await d.Prospect.findAll({
       attributes: ['campaignId'],
       // Internal lead-quota holds only — external holds are not releasable here.
-      where: { quarantinedAt: { [Op.ne]: null }, quarantineReason: 'no_funded_agent', campaignId: { [Op.ne]: null } },
+      where: {
+        quarantinedAt: { [Op.ne]: null },
+        quarantineReason: 'no_funded_agent',
+        campaignId: { [Op.ne]: null },
+        createdAt: { [Op.gt]: freshCutoff },
+      },
       group: ['campaignId'],
     });
     let total = 0;

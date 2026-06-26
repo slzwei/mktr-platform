@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { Op } from 'sequelize';
 import '../setup.js';
 import { makeReleaseSweep } from '../../src/services/releaseSweep.js';
 
@@ -49,6 +50,19 @@ describe('releaseSweep.sweepCampaign (unit)', () => {
     expect(deps.Prospect.findOne.mock.calls[0][0].where).toMatchObject({
       quarantineReason: 'no_funded_agent',
     });
+  });
+
+  it('auto-releases only FRESH leads: the FIFO query caps lead age at a ~7-day createdAt cutoff', async () => {
+    const { deps } = buildMocks();
+    deps.Prospect.findOne.mockResolvedValue(null); // empty queue — inspect the query shape only
+    const before = Date.now();
+    await makeReleaseSweep(deps).sweepCampaign('camp-1');
+    const cutoff = deps.Prospect.findOne.mock.calls[0][0].where.createdAt[Op.gt];
+    expect(cutoff).toBeInstanceOf(Date);
+    // Stale leads (signed up before the cutoff) are excluded from the auto-release path.
+    const windowMs = before - cutoff.getTime();
+    expect(windowMs).toBeGreaterThanOrEqual(7 * 24 * 60 * 60 * 1000 - 5000);
+    expect(windowMs).toBeLessThanOrEqual(7 * 24 * 60 * 60 * 1000 + 5000);
   });
 
   it('drains the held queue FIFO: releases each funded lead, charges, persists+flushes lead.created', async () => {
