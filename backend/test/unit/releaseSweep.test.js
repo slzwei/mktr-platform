@@ -1,5 +1,4 @@
 import { jest } from '@jest/globals';
-import { Op } from 'sequelize';
 import '../setup.js';
 import { makeReleaseSweep } from '../../src/services/releaseSweep.js';
 
@@ -28,6 +27,7 @@ function buildMocks(campaignOverrides = {}) {
     flushDeliveries: jest.fn(),
     buildLeadCreatedPayload: jest.fn(() => ({})),
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+    autoReleaseEnabled: true, // these tests exercise the release path; production default is false
   };
   return { deps, mockTx, agent };
 }
@@ -52,17 +52,18 @@ describe('releaseSweep.sweepCampaign (unit)', () => {
     });
   });
 
-  it('auto-releases only FRESH leads: the FIFO query caps lead age at a ~7-day createdAt cutoff', async () => {
+  it('auto-release is OFF by default (held leads are MANUAL-only): the sweep is a complete no-op', async () => {
     const { deps } = buildMocks();
-    deps.Prospect.findOne.mockResolvedValue(null); // empty queue — inspect the query shape only
-    const before = Date.now();
-    await makeReleaseSweep(deps).sweepCampaign('camp-1');
-    const cutoff = deps.Prospect.findOne.mock.calls[0][0].where.createdAt[Op.gt];
-    expect(cutoff).toBeInstanceOf(Date);
-    // Stale leads (signed up before the cutoff) are excluded from the auto-release path.
-    const windowMs = before - cutoff.getTime();
-    expect(windowMs).toBeGreaterThanOrEqual(7 * 24 * 60 * 60 * 1000 - 5000);
-    expect(windowMs).toBeLessThanOrEqual(7 * 24 * 60 * 60 * 1000 + 5000);
+    delete deps.autoReleaseEnabled; // fall through to the production default (AUTO_RELEASE_ENABLED = false)
+    const sweep = makeReleaseSweep(deps);
+    expect(await sweep.sweepCampaign('camp-1')).toBe(0);
+    expect(await sweep.sweepAll()).toBe(0);
+    // Nothing is read, charged, or delivered — held leads simply stay in the queue.
+    expect(deps.Campaign.findByPk).not.toHaveBeenCalled();
+    expect(deps.Prospect.findOne).not.toHaveBeenCalled();
+    expect(deps.Prospect.findAll).not.toHaveBeenCalled();
+    expect(deps.chargeLeadCredit).not.toHaveBeenCalled();
+    expect(deps.persistEventDeliveries).not.toHaveBeenCalled();
   });
 
   it('drains the held queue FIFO: releases each funded lead, charges, persists+flushes lead.created', async () => {
