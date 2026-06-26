@@ -1529,6 +1529,7 @@ export function makeProspectService(overrides = {}) {
       firstName: p.firstName,
       lastName: p.lastName,
       phone: p.phone,
+      email: p.email,
       leadSource: p.leadSource,
       campaignId: p.campaignId,
       campaignName: p.campaign?.name || null,

@@ -76,11 +76,11 @@ describe('externalHeldLeadsController — auth', () => {
 });
 
 describe('externalHeldLeadsController.listHeldLeads', () => {
-  it('surfaces held + System-Agent orphans, masked, with reason/since', async () => {
+  it('surfaces held + System-Agent orphans with masked + full PII and reason/since', async () => {
     orphansMock.mockResolvedValue({
       count: 2,
       orphans: [
-        { id: 'p1', firstName: 'Jane', lastName: 'Doe', phone: '6591234567', leadSource: 'meta', campaignId: 'c1', campaignName: 'Cab', reason: 'no_funded_agent', since: 't1', createdAt: 't1' },
+        { id: 'p1', firstName: 'Jane', lastName: 'Doe', phone: '6591234567', email: 'jane@example.com', leadSource: 'meta', campaignId: 'c1', campaignName: 'Cab', reason: 'no_funded_agent', since: 't1', createdAt: 't1' },
         { id: 'p2', firstName: 'Sam', lastName: 'Lim', phone: '6599999999', leadSource: 'meta', campaignId: 'c1', campaignName: 'Cab', reason: 'unassigned', since: 't2', createdAt: 't2' },
       ],
     });
@@ -94,8 +94,9 @@ describe('externalHeldLeadsController.listHeldLeads', () => {
     const [a, b] = res.body.held;
     expect(a).toMatchObject({ id: 'p1', firstName: 'Jane', lastInitial: 'D', maskedPhone: '••••4567', campaignName: 'Cab', reason: 'no_funded_agent', since: 't1' });
     expect(b).toMatchObject({ id: 'p2', reason: 'unassigned' });
-    expect(a.email).toBeUndefined(); // email not exposed
-    expect(a.lastName).toBeUndefined(); // full surname not exposed
+    // Full PII is now returned ADDITIVELY (admin-only surface) alongside the masked fields.
+    expect(a).toMatchObject({ lastName: 'Doe', phone: '6591234567', email: 'jane@example.com' });
+    expect(a.maskedPhone).toBe('••••4567'); // masked field retained for back-compat
   });
 });
 
