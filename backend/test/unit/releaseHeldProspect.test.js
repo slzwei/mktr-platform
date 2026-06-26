@@ -22,7 +22,7 @@ function buildMocks() {
         .mockResolvedValueOnce(heldProspect) // pre-txn read (reason / campaignId)
         .mockResolvedValue({ ...heldProspect, campaign: { id: 'camp-1', name: 'C' } }), // withCampaign (in txn)
     },
-    User: { findOne: jest.fn().mockResolvedValue(agent) },
+    User: { findOne: jest.fn().mockResolvedValue(agent), findByPk: jest.fn().mockResolvedValue({ id: 'system-agent-id', lyfeId: null, mktrLeadsId: null }) },
     ProspectActivity: { create: jest.fn().mockResolvedValue({}) },
     IdempotencyKey: { findOne: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({}) },
   };

@@ -1492,6 +1492,17 @@ export function makeProspectService(overrides = {}) {
     return { count, held };
   }
 
+  // The System-Agent routing fallback is only a true orphan marker when it has NO delivery
+  // destination (no lyfeId / mktrLeadsId) — its leads were never delivered anywhere. If
+  // DEFAULT_AGENT_ID ever points at a REAL fallback agent (whose leads DO get delivered),
+  // this returns null so those leads can never be mistaken for orphans (Codex B/P1).
+  async function orphanSystemAgentId() {
+    const id = await d.getSystemAgentId();
+    if (!id) return null;
+    const u = await m.User.findByPk(id, { attributes: ['id', 'lyfeId', 'mktrLeadsId'] });
+    return u && !u.lyfeId && !u.mktrLeadsId ? id : null;
+  }
+
   /**
    * Fleet-wide list of dispatchable ORPHANS for the external admin queue: no_funded_agent
    * HOLDS *and* leads parked on the phantom System Agent (the soft-campaign fallback,
@@ -1499,14 +1510,11 @@ export function makeProspectService(overrides = {}) {
    * ('no_funded_agent' | 'unassigned') and a `since` timestamp.
    */
   async function listDispatchableOrphans({ campaignId = null, limit } = {}) {
-    const systemAgentId = await d.getSystemAgentId();
+    const systemAgentId = await orphanSystemAgentId();
     const lim = Math.min(parseInt(limit, 10) || 50, 200);
-    const where = {
-      [Op.or]: [
-        { quarantinedAt: { [Op.ne]: null }, quarantineReason: 'no_funded_agent' },
-        { assignedAgentId: systemAgentId, quarantinedAt: null },
-      ],
-    };
+    const orphanClauses = [{ quarantinedAt: { [Op.ne]: null }, quarantineReason: 'no_funded_agent' }];
+    if (systemAgentId) orphanClauses.push({ assignedAgentId: systemAgentId, quarantinedAt: null });
+    const where = { [Op.or]: orphanClauses };
     if (campaignId) where.campaignId = campaignId;
 
     const { count, rows } = await m.Prospect.findAndCountAll({
@@ -1575,9 +1583,9 @@ export function makeProspectService(overrides = {}) {
     // An orphan = a lead with no real owner: a no_funded_agent HOLD, or one parked on
     // the phantom System Agent (the soft-campaign fallback — never delivered anywhere).
     // Anything else is a real assigned lead and must not be touched here.
-    const systemAgentId = await d.getSystemAgentId();
+    const systemAgentId = await orphanSystemAgentId();
     const isHeld = !!prospect.quarantinedAt && prospect.quarantineReason === 'no_funded_agent';
-    const isUnassigned = !prospect.quarantinedAt && prospect.assignedAgentId === systemAgentId;
+    const isUnassigned = !prospect.quarantinedAt && !!systemAgentId && prospect.assignedAgentId === systemAgentId;
     if (!isHeld && !isUnassigned) return { status: 'already_handled' };
 
     // Resolve the destination agent by mktrLeadsId ONLY (phone is unsafe — it can
