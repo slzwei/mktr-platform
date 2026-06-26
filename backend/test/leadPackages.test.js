@@ -421,7 +421,7 @@ describe('LeadPackage assignment', () => {
     expect(res.body.data.assignment.status).toBe('active')
   })
 
-  it('PATCH /api/lead-packages/assignments/:id — setting leadsRemaining to 0 sets status to exhausted', async () => {
+  it('PATCH /api/lead-packages/assignments/:id — setting leadsRemaining to 0 sets status to completed', async () => {
     const res = await request(app)
       .patch(`/api/lead-packages/assignments/${assignmentId}`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -429,7 +429,7 @@ describe('LeadPackage assignment', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.data.assignment.leadsRemaining).toBe(0)
-    expect(res.body.data.assignment.status).toBe('exhausted')
+    expect(res.body.data.assignment.status).toBe('completed')
   })
 
   it('PATCH /api/lead-packages/assignments/:id — rejects negative leadsRemaining', async () => {
