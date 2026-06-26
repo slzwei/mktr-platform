@@ -36,6 +36,7 @@ function buildMocks() {
     persistEventDeliveries: jest.fn().mockResolvedValue([{ delivery: { id: 'd' }, subscriber: { id: 's' } }]),
     flushDeliveries: jest.fn(),
     deductLeadCredit: jest.fn().mockResolvedValue(true),
+    getSystemAgentId: jest.fn().mockResolvedValue('system-agent-id'),
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
   };
   return { deps, mockTx, agent, heldProspect };
@@ -44,6 +45,20 @@ function buildMocks() {
 const svc = (deps) => makeProspectService(deps);
 
 describe('releaseHeldProspect (unit)', () => {
+  it('rescues a System-Agent orphan (not held): reassigns + delivers via lead.created', async () => {
+    const { deps, mockTx } = buildMocks();
+    deps.models.Prospect.findByPk = jest.fn()
+      .mockResolvedValueOnce({ id: 'p-1', campaignId: 'camp-1', quarantineReason: null, quarantinedAt: null, assignedAgentId: 'system-agent-id' })
+      .mockResolvedValue({ id: 'p-1', campaignId: 'camp-1', campaign: { id: 'camp-1', name: 'C' } });
+    deps.sequelize.query.mockResolvedValue([[{ id: 'p-1' }]]); // conditional reassign matched
+
+    const res = await svc(deps).releaseHeldProspect('p-1', 'app-agent-1', {});
+
+    expect(res).toMatchObject({ status: 'assigned', leadId: 'p-1' });
+    expect(deps.persistEventDeliveries).toHaveBeenCalledWith('lead.created', expect.any(Function), { destination: 'mktr_leads' }, mockTx);
+    expect(mockTx.commit).toHaveBeenCalled();
+  });
+
   it('releases a held lead: atomic release, mktr_leads-scoped delivery persisted IN the tx, post-commit deduct + flush', async () => {
     const { deps, mockTx } = buildMocks();
 
