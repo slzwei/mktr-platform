@@ -1522,8 +1522,9 @@ export function makeProspectService(overrides = {}) {
       include: [
         { association: 'campaign', attributes: ['id', 'name'] },
         // qrTag drives the "QR code" source label for a bound-QR lead whose leadSource isn't
-        // 'qr_code' — full parity with the receiver's deriveLeadSource (slug/externalId only).
-        { association: 'qrTag', attributes: ['slug', 'externalId'] },
+        // 'qr_code'. Select only REAL columns — QrTag has `slug` but NO `externalId` (that field
+        // exists on the webhook payload's qrTag, not the model), so signupSourceLabel keys off slug.
+        { association: 'qrTag', attributes: ['id', 'slug'] },
       ],
       order: [['createdAt', 'ASC']], // FIFO by signup (held + unassigned interleaved)
       limit: lim,
