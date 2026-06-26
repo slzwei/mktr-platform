@@ -11,11 +11,11 @@ import crypto from 'crypto';
 
 const SECRET = 'test-external-app-secret';
 
-const listHeldMock = jest.fn();
+const orphansMock = jest.fn();
 const releaseMock = jest.fn();
 
 jest.unstable_mockModule('../src/services/prospectService.js', () => ({
-  listHeldProspects: listHeldMock,
+  listDispatchableOrphans: orphansMock,
   releaseHeldProspect: releaseMock,
 }));
 jest.unstable_mockModule('../src/utils/logger.js', () => ({
@@ -30,7 +30,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   process.env.EXTERNAL_APP_SECRET = SECRET;
-  listHeldMock.mockReset();
+  orphansMock.mockReset();
   releaseMock.mockReset();
 });
 
@@ -55,7 +55,7 @@ describe('externalHeldLeadsController — auth', () => {
     const res = makeRes();
     await listHeldLeads(req, res);
     expect(res.statusCode).toBe(401);
-    expect(listHeldMock).not.toHaveBeenCalled();
+    expect(orphansMock).not.toHaveBeenCalled();
   });
 
   it('rejects a stale timestamp with 401', async () => {
@@ -76,12 +76,12 @@ describe('externalHeldLeadsController — auth', () => {
 });
 
 describe('externalHeldLeadsController.listHeldLeads', () => {
-  it('returns only no_funded_agent holds, masked', async () => {
-    listHeldMock.mockResolvedValue({
+  it('surfaces held + System-Agent orphans, masked, with reason/since', async () => {
+    orphansMock.mockResolvedValue({
       count: 2,
-      held: [
-        { id: 'p1', firstName: 'Jane', lastName: 'Doe', phone: '6591234567', email: 'j@x', leadSource: 'meta', campaignId: 'c1', campaignName: 'Cab', quarantineReason: 'no_funded_agent', quarantinedAt: 't', createdAt: 't' },
-        { id: 'p2', firstName: 'Ext', lastName: 'Buyer', phone: '6599999999', quarantineReason: 'no_funded_external_buyer', campaignId: 'c1' },
+      orphans: [
+        { id: 'p1', firstName: 'Jane', lastName: 'Doe', phone: '6591234567', leadSource: 'meta', campaignId: 'c1', campaignName: 'Cab', reason: 'no_funded_agent', since: 't1', createdAt: 't1' },
+        { id: 'p2', firstName: 'Sam', lastName: 'Lim', phone: '6599999999', leadSource: 'meta', campaignId: 'c1', campaignName: 'Cab', reason: 'unassigned', since: 't2', createdAt: 't2' },
       ],
     });
     const req = makeReq({ timestamp: new Date().toISOString() });
@@ -89,11 +89,13 @@ describe('externalHeldLeadsController.listHeldLeads', () => {
     await listHeldLeads(req, res);
 
     expect(res.statusCode).toBe(null); // res.json without status() → 200 default
-    expect(res.body.count).toBe(1); // external-buyer hold filtered out
-    const row = res.body.held[0];
-    expect(row).toMatchObject({ id: 'p1', firstName: 'Jane', lastInitial: 'D', maskedPhone: '••••4567', campaignName: 'Cab' });
-    expect(row.email).toBeUndefined(); // email not exposed
-    expect(row.lastName).toBeUndefined(); // full surname not exposed
+    expect(orphansMock).toHaveBeenCalledWith({ campaignId: undefined, limit: 50 });
+    expect(res.body.count).toBe(2);
+    const [a, b] = res.body.held;
+    expect(a).toMatchObject({ id: 'p1', firstName: 'Jane', lastInitial: 'D', maskedPhone: '••••4567', campaignName: 'Cab', reason: 'no_funded_agent', since: 't1' });
+    expect(b).toMatchObject({ id: 'p2', reason: 'unassigned' });
+    expect(a.email).toBeUndefined(); // email not exposed
+    expect(a.lastName).toBeUndefined(); // full surname not exposed
   });
 });
 

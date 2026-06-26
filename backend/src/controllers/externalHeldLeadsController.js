@@ -16,7 +16,7 @@
 
 import crypto from 'crypto';
 import { logger } from '../utils/logger.js';
-import { listHeldProspects, releaseHeldProspect } from '../services/prospectService.js';
+import { listDispatchableOrphans, releaseHeldProspect } from '../services/prospectService.js';
 
 const MAX_AGE_MS = 5 * 60 * 1000;
 const MAX_FUTURE_MS = 2 * 60 * 1000; // tolerate clock skew
@@ -81,26 +81,21 @@ export async function listHeldLeads(req, res) {
 
   try {
     const { campaignId } = req.body || {};
-    // `{ role: 'admin' }` → buildProspectWhere returns {} (fleet-wide). The reason
-    // filter is applied IN the query (before the 50-row limit) so assignable holds
-    // are never hidden behind a page of external-buyer holds.
-    const { held } = await listHeldProspects(
-      { role: 'admin' },
-      { campaignId, quarantineReason: 'no_funded_agent', limit: 50 },
-    );
-    const rows = (held || [])
-      .filter((h) => h.quarantineReason === 'no_funded_agent')
-      .map((h) => ({
-        id: h.id,
-        firstName: h.firstName || null,
-        lastInitial: h.lastName ? String(h.lastName).trim().charAt(0).toUpperCase() : null,
-        maskedPhone: maskPhone(h.phone),
-        campaignId: h.campaignId,
-        campaignName: h.campaignName,
-        leadSource: h.leadSource,
-        quarantinedAt: h.quarantinedAt,
-        createdAt: h.createdAt,
-      }));
+    // Fleet-wide orphans = no_funded_agent HOLDS + leads parked on the phantom System
+    // Agent (soft-campaign fallback). Both need a real owner; the queue surfaces both.
+    const { orphans } = await listDispatchableOrphans({ campaignId, limit: 50 });
+    const rows = (orphans || []).map((o) => ({
+      id: o.id,
+      firstName: o.firstName || null,
+      lastInitial: o.lastName ? String(o.lastName).trim().charAt(0).toUpperCase() : null,
+      maskedPhone: maskPhone(o.phone),
+      campaignId: o.campaignId,
+      campaignName: o.campaignName,
+      leadSource: o.leadSource,
+      reason: o.reason,
+      since: o.since,
+      createdAt: o.createdAt,
+    }));
     return res.json({ success: true, count: rows.length, held: rows });
   } catch (err) {
     logger.error('[external-held] list failed', { error: err?.message || String(err) });
