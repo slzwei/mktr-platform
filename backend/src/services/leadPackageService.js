@@ -192,7 +192,11 @@ export async function getExternalAgentPackages(mktrLeadsId) {
   if (!agent) return { packages: [] };
 
   const assignments = await LeadPackageAssignment.findAll({
-    where: { agentId: agent.id },
+    // Only states an agent's "My Packages" view should reflect: 'active' = still
+    // receivable, 'completed'/'exhausted' = ran dry (shown as the OUT-OF-LEADS card).
+    // 'cancelled'/'expired' are dead — never receivable — so excluding them keeps a
+    // stale assignment with leftover credits from inflating the headline.
+    where: { agentId: agent.id, status: ['active', 'completed', 'exhausted'] },
     include: [
       {
         model: LeadPackage,

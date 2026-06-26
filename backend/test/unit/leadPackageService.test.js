@@ -368,7 +368,10 @@ describe('leadPackageService (unit)', () => {
         role: 'agent',
         isActive: true,
       });
-      expect(LeadPackageAssignment.findAll.mock.calls[0][0].where).toEqual({ agentId: 'agent-1' });
+      expect(LeadPackageAssignment.findAll.mock.calls[0][0].where).toEqual({
+        agentId: 'agent-1',
+        status: ['active', 'completed', 'exhausted'],
+      });
     });
 
     it('returns an empty list for an unknown / ineligible id — no throw, no DB read for assignments', async () => {
