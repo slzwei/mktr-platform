@@ -201,7 +201,10 @@ export async function updateAssignment(id, { leadsRemaining }) {
     const prevCount = assignment.leadsRemaining;
     await assignment.update({
       leadsRemaining: newCount,
-      status: newCount === 0 ? 'exhausted' : 'active'
+      // 'completed' is the terminal "no credits left" status used everywhere else
+      // (leadCredits.js natural drain). 'exhausted' is NOT in the live Postgres enum
+      // (enum_lead_package_assignments_status) so writing it throws a DatabaseError.
+      status: newCount === 0 ? 'completed' : 'active'
     });
 
     // Top-up (credits increased) → trigger the held-queue sweep for this campaign.

@@ -77,7 +77,7 @@ export default function ManagePackagesDialog({
  ${
  assignment.status ==="active" ?"bg-success/10 text-success border-success/30" :"" }
  ${
- assignment.status ==="exhausted" ?"bg-muted text-muted-foreground border-border" :"" }
+ assignment.status ==="completed" ?"bg-muted text-muted-foreground border-border" :"" }
  ${
  assignment.status ==="expired" ?"bg-warning/10 text-warning border-warning/30" :"" }
  `}

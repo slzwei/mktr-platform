@@ -24,7 +24,7 @@ const LeadPackageAssignment = sequelize.define('LeadPackageAssignment', {
         }
     },
     status: {
-        type: DataTypes.ENUM('active', 'completed', 'cancelled', 'expired', 'exhausted'),
+        type: DataTypes.ENUM('active', 'completed', 'cancelled', 'expired'),
         defaultValue: 'active'
     },
     leadsRemaining: {

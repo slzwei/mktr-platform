@@ -348,14 +348,14 @@ describe('leadPackageService (unit)', () => {
       );
     });
 
-    it('sets status to exhausted when leadsRemaining is 0', async () => {
+    it('sets status to completed when leadsRemaining is 0', async () => {
       const assignment = { ...mockAssignment, update: jest.fn().mockResolvedValue(true) };
       LeadPackageAssignment.findByPk.mockResolvedValue(assignment);
 
       await updateAssignment('assign-1', { leadsRemaining: 0 });
 
       expect(assignment.update).toHaveBeenCalledWith(
-        expect.objectContaining({ leadsRemaining: 0, status: 'exhausted' })
+        expect.objectContaining({ leadsRemaining: 0, status: 'completed' })
       );
     });
 
