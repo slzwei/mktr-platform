@@ -172,6 +172,76 @@ export async function getAgentAssignments({ agentId, requesterId, requesterRole 
 }
 
 /**
+ * External (mktr-leads buyer app) → an agent's OWN lead-package assignments.
+ *
+ * Self-scoping by design: resolves the agent by `mktrLeadsId` AND `role:'agent'` AND
+ * `isActive:true` — the SAME guard as releaseHeldProspect's destination resolver, so a
+ * stale / cross-source / non-agent id can never read someone's packages. An unknown or
+ * ineligible id returns an empty list (never throws, never leaks existence). Returns a
+ * flat, display-ready DTO; the only id exposed is the assignment's own.
+ *
+ * Called by externalAgentPackagesController (HMAC + AGENT_PACKAGES_EXTERNAL_ENABLED gated).
+ */
+export async function getExternalAgentPackages(mktrLeadsId) {
+  if (!mktrLeadsId || typeof mktrLeadsId !== 'string') return { packages: [] };
+
+  const agent = await User.findOne({
+    where: { mktrLeadsId, role: 'agent', isActive: true },
+    attributes: ['id']
+  });
+  if (!agent) return { packages: [] };
+
+  const assignments = await LeadPackageAssignment.findAll({
+    // Only states an agent's "My Packages" view should reflect: 'active' = still
+    // receivable, 'completed'/'exhausted' = ran dry (shown as the OUT-OF-LEADS card).
+    // 'cancelled'/'expired' are dead — never receivable — so excluding them keeps a
+    // stale assignment with leftover credits from inflating the headline.
+    where: { agentId: agent.id, status: ['active', 'completed', 'exhausted'] },
+    include: [
+      {
+        model: LeadPackage,
+        as: 'package',
+        attributes: ['name', 'type', 'qualityScore', 'currency', 'commissionStructure', 'validityPeriod'],
+        include: [{ model: Campaign, as: 'campaign', attributes: ['name'] }]
+      }
+    ],
+    order: [['purchaseDate', 'DESC']]
+  });
+
+  const packages = assignments.map((a) => {
+    const pkg = a.package || null;
+    const validityDays = pkg?.validityPeriod ?? null;
+    const purchasedAt = a.purchaseDate ? new Date(a.purchaseDate) : null;
+    // Expiry is derived, not stored — only when the package carries a validity window.
+    const expiresAt =
+      purchasedAt && Number.isFinite(validityDays) && validityDays > 0
+        ? new Date(purchasedAt.getTime() + validityDays * 86400000).toISOString()
+        : null;
+    // commissionStructure is JSON ({ agentCommission, ... }), default 0. Pass the agent's
+    // per-lead cut through only when it's a positive number — the UI hides it otherwise so
+    // a default/absent value never renders as a misleading "$0/lead".
+    const agentCommission = pkg?.commissionStructure?.agentCommission;
+    return {
+      id: a.id,
+      name: pkg?.name || 'Lead package',
+      type: pkg?.type || null,
+      status: a.status,
+      leadsRemaining: a.leadsRemaining,
+      leadsTotal: a.leadsTotal,
+      qualityScore: pkg?.qualityScore ?? null,
+      commissionPerLead: typeof agentCommission === 'number' && agentCommission > 0 ? agentCommission : null,
+      currency: pkg?.currency || 'USD',
+      campaignName: pkg?.campaign?.name || null,
+      purchaseDate: purchasedAt ? purchasedAt.toISOString() : null,
+      validityDays,
+      expiresAt
+    };
+  });
+
+  return { packages };
+}
+
+/**
  * Delete a package assignment by ID.
  */
 export async function deleteAssignment(id) {
