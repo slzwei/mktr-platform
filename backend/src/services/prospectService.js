@@ -1553,13 +1553,15 @@ export function makeProspectService(overrides = {}) {
 
   /**
    * Assign an ORPHANED prospect (a no_funded_agent HOLD, or a lead parked on the phantom
-   * System Agent fallback) to a mktr-leads agent and deliver it via a fresh lead.created.
+   * System Agent fallback) to a mktr-leads agent and deliver it via a fresh `lead.assigned`
+   * — the lead is new to the destination app, so the receiver INSERTs it from that payload
+   * AND records an explicit "assigned @ now" activity in the lead's timeline.
    *
    * The held-only counterpart to assignProspect, purpose-built for the external
    * mktr-leads admin dispatch endpoint. Unlike assignProspect it can NEVER fall
    * into the normal-reassignment path: a request that arrives after the lead is
    * already released returns `already_handled` (no second charge, no second
-   * `lead.assigned`). The release UPDATE and the `lead.created` delivery row are
+   * delivery). The release UPDATE and the `lead.assigned` delivery row are
    * written in ONE transaction (outbox), so a crash can never leave a lead
    * un-held yet undelivered (recoverPendingRetries flushes the row on restart).
    *
@@ -1643,19 +1645,19 @@ export function makeProspectService(overrides = {}) {
         });
 
         // Destination is mktr_leads (agent has mktrLeadsId set); the receiver matches
-        // `routing.agentExternalId` against agents.mktr_user_id, so the webhook id MUST
-        // be externalIdForDestination(agent,'mktr_leads') === agent.mktrLeadsId.
+        // `routing.agentExternalId` against agents.mktr_user_id. buildLeadAssignedPayload sets
+        // that id via externalIdForDestination(agent,'mktr_leads') === agent.mktrLeadsId.
         const destination = destinationForAgent(agent);
-        const agentForWebhook = {
-          phone: agent.phone || null,
-          email: agent.email || null,
-          name: `${agent.firstName || ''} ${agent.lastName || ''}`.trim(),
-          id: externalIdForDestination(agent, destination),
-        };
 
+        // Fire lead.assigned (NOT lead.created) so the mktr-leads receiver records an explicit
+        // "assigned @ now" activity on top of "received @ signup" — the dispatched lead's timeline
+        // then shows the assignment AND its time, matching the MKTR-side activity logged above.
+        // The lead is brand-new to the destination app, so the receiver INSERTs it from this
+        // payload (the proven lead.assigned-inserts-new path); the lead block is identical to
+        // buildLeadCreatedPayload, so delivery is otherwise unchanged.
         deliveryPairs = await d.persistEventDeliveries(
-          'lead.created',
-          () => buildLeadCreatedPayload(withCampaign, 'direct', agentForWebhook, agent.id, withCampaign?.campaign || null, null, null),
+          'lead.assigned',
+          () => buildLeadAssignedPayload(withCampaign, agent, withCampaign),
           { destination },
           t
         );
