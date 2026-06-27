@@ -1708,6 +1708,187 @@ export function makeProspectService(overrides = {}) {
     return result;
   }
 
+  /**
+   * Reassign an ASSIGNED lead to a different mktr-leads agent (admin, from the app). Wraps
+   * assignProspect (which fires lead.assigned → the mktr-leads receiver re-points the single
+   * shared row, so the PREVIOUS agent loses RLS access — same-app reassign fires no disputed
+   * lead.unassigned). Idempotent: a retry with the same key replays; re-targeting the SAME agent
+   * is a no-op (no double charge). NOT for held/orphan leads — those use releaseHeldProspect.
+   *
+   * @returns {Promise<{status:'reassigned'|'invalid_agent'|'not_found'|'not_assignable', leadId?:string, agent?:object}>}
+   */
+  async function reassignProspectExternal(prospectId, agentMktrLeadsId, opts = {}) {
+    const { idempotencyKey = null, actorUserId = null } = opts;
+    const IDEMP_SCOPE = 'external:admin-reassign';
+
+    // Claim the idempotency key FIRST (unique PK) so concurrent / retried same-key requests can
+    // never both run assignProspect (which always charges + dispatches). A completed claim replays
+    // its result; a still-running claim reports in_progress (the caller retries).
+    if (idempotencyKey) {
+      const existing = await m.IdempotencyKey.findOne({ where: { key: idempotencyKey, scope: IDEMP_SCOPE } });
+      if (existing) return existing.responseBody ?? { status: 'error', error: 'in_progress' };
+      try {
+        await m.IdempotencyKey.create({
+          key: idempotencyKey, scope: IDEMP_SCOPE, responseBody: null, responseCode: null,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        });
+      } catch (err) {
+        if (err?.name === 'SequelizeUniqueConstraintError' || err?.original?.code === '23505') {
+          const winner = await m.IdempotencyKey.findOne({ where: { key: idempotencyKey, scope: IDEMP_SCOPE } });
+          return winner?.responseBody ?? { status: 'error', error: 'in_progress' };
+        }
+        throw err;
+      }
+    }
+
+    // Record the outcome (success OR validation failure) on the claimed key so a retry replays it.
+    const record = async (result) => {
+      if (idempotencyKey) {
+        await m.IdempotencyKey.update(
+          { responseBody: result, responseCode: 200 },
+          { where: { key: idempotencyKey, scope: IDEMP_SCOPE } },
+        ).catch(() => {});
+      }
+      return result;
+    };
+
+    // Resolve the destination by mktrLeadsId ONLY (excludes Lyfe / provenance-less users).
+    const agent = agentMktrLeadsId
+      ? await m.User.findOne({ where: { mktrLeadsId: agentMktrLeadsId, role: 'agent', isActive: true } })
+      : null;
+    if (!agent) return record({ status: 'invalid_agent' });
+
+    const prospect = await m.Prospect.findByPk(prospectId);
+    if (!prospect) return record({ status: 'not_found' });
+    // Only a lead currently assigned to a real agent is reassignable here; held/orphan leads go
+    // through the held queue (releaseHeldProspect) so we never double-handle them.
+    if (prospect.quarantinedAt || !prospect.assignedAgentId) return record({ status: 'not_assignable' });
+
+    // Same-app scope: the lead's CURRENT owner must be a mktr-leads agent (a Lyfe-owned lead would
+    // route through the Lyfe app — out of scope, and its receiver isn't wired for this).
+    const currentOwner = await m.User.findByPk(prospect.assignedAgentId, { attributes: ['id', 'lyfeId', 'mktrLeadsId'] });
+    if (destinationForAgent(currentOwner) !== 'mktr_leads') return record({ status: 'not_assignable' });
+
+    const agentBrief = { firstName: agent.firstName, lastName: agent.lastName };
+    try {
+      // Already with the target → no-op so a retry / re-pick never double-charges the agent.
+      if (prospect.assignedAgentId !== agent.id) {
+        await assignProspect(prospectId, agent.id, { id: actorUserId });
+      }
+    } catch (err) {
+      // assignProspect isn't transactional; record the failure so a retry replays it (no re-charge),
+      // then surface to the controller.
+      await record({ status: 'error', error: 'reassign_failed' });
+      throw err;
+    }
+    return record({ status: 'reassigned', leadId: prospectId, agent: agentBrief });
+  }
+
+  /**
+   * Return an ASSIGNED lead to the held queue (admin pull-back from the mktr-leads app). Re-holds
+   * the prospect (quarantineReason='no_funded_agent', so the existing queue + releaseHeldProspect
+   * handle it) and fires lead.unassigned WITH `returnedToHeld` so the mktr-leads receiver
+   * SOFT-DELETES (vanishes) the lead instead of disputing it — the previous agent loses RLS
+   * visibility, admins keep it, and a later dispatch un-hides it. NO refund (consistent with
+   * reassign). Idempotent; fail-closed (never re-hold a lead we can't durably vanish).
+   *
+   * @returns {Promise<{status:'returned'|'already_handled'|'not_found'|'undeliverable', leadId?:string}>}
+   */
+  async function returnProspectToHeld(prospectId, opts = {}) {
+    const { idempotencyKey = null, actorUserId = null } = opts;
+    const IDEMP_SCOPE = 'external:admin-return-held';
+
+    if (idempotencyKey) {
+      const existing = await m.IdempotencyKey.findOne({ where: { key: idempotencyKey, scope: IDEMP_SCOPE } });
+      if (existing && existing.expiresAt > new Date() && existing.responseBody) {
+        return existing.responseBody;
+      }
+    }
+
+    const prospect = await m.Prospect.findByPk(prospectId);
+    if (!prospect) return { status: 'not_found' };
+    const previousAgentId = prospect.assignedAgentId;
+    // A held/orphan or already-unassigned lead is already in the queue → already_handled (so a
+    // retry after a successful return replays as a no-op).
+    if (prospect.quarantinedAt || !previousAgentId) return { status: 'already_handled' };
+
+    const prevAgent = await m.User.findByPk(previousAgentId, { attributes: ['id', 'lyfeId', 'mktrLeadsId'] });
+    const prevDestination = destinationForAgent(prevAgent);
+    // Same-app scope: only a mktr-leads-owned lead can be returned here (the vanish is delivered
+    // to the mktr-leads receiver; a Lyfe-owned lead is out of scope).
+    if (prevDestination !== 'mktr_leads') return { status: 'not_assignable' };
+    const previousAgentExternalId = externalIdForDestination(prevAgent, prevDestination);
+
+    const t = await d.sequelize.transaction();
+    let result;
+    let deliveryPairs = [];
+    try {
+      // Conditional re-hold: gated on the row STILL being assigned to this agent and not held, so
+      // a racing duplicate loses the row lock → 0 rows → already_handled (never a second vanish).
+      const [rows] = await d.sequelize.query(
+        `UPDATE prospects
+            SET "assignedAgentId" = NULL, "quarantinedAt" = NOW(),
+                "quarantineReason" = 'no_funded_agent', "updatedAt" = NOW()
+          WHERE id = :prospectId AND "assignedAgentId" = :previousAgentId AND "quarantinedAt" IS NULL
+          RETURNING id`,
+        { replacements: { prospectId, previousAgentId }, transaction: t }
+      );
+
+      if (!Array.isArray(rows) || rows.length === 0) {
+        result = { status: 'already_handled' };
+      } else {
+        await m.ProspectActivity.create({
+          prospectId,
+          type: 'assigned',
+          actorUserId,
+          description: 'Returned to held queue by admin',
+          metadata: { previousAgentId, returnedToHeld: true, via: 'external_app' },
+        }, { transaction: t });
+
+        // Vanish the lead from the previous agent's app — the receiver soft-deletes on returnedToHeld.
+        deliveryPairs = await d.persistEventDeliveries(
+          'lead.unassigned',
+          () => buildLeadUnassignedPayload(prospect, previousAgentExternalId, { returnedToHeld: true }),
+          { destination: prevDestination },
+          t
+        );
+        // Fail closed: never re-hold a lead we cannot durably vanish from the agent's app.
+        if (deliveryPairs.length === 0) {
+          await t.rollback();
+          return { status: 'undeliverable' };
+        }
+
+        result = { status: 'returned', leadId: prospectId };
+      }
+
+      if (idempotencyKey) {
+        await m.IdempotencyKey.create({
+          key: idempotencyKey,
+          scope: IDEMP_SCOPE,
+          responseBody: result,
+          responseCode: 200,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        }, { transaction: t });
+      }
+
+      await t.commit();
+    } catch (err) {
+      await t.rollback();
+      if (idempotencyKey && (err?.name === 'SequelizeUniqueConstraintError' || err?.original?.code === '23505')) {
+        const winner = await m.IdempotencyKey.findOne({ where: { key: idempotencyKey, scope: IDEMP_SCOPE } });
+        if (winner?.responseBody) return winner.responseBody;
+      }
+      throw err;
+    }
+
+    // Post-commit: flush the vanish delivery. NO credit refund (consistent with reassign).
+    if (result.status === 'returned') {
+      d.flushDeliveries(deliveryPairs);
+    }
+
+    return result;
+  }
+
   return {
     createProspect,
     getProspect,
@@ -1715,6 +1896,8 @@ export function makeProspectService(overrides = {}) {
     deleteProspect,
     assignProspect,
     releaseHeldProspect,
+    reassignProspectExternal,
+    returnProspectToHeld,
     listDispatchableOrphans,
     bulkAssignProspects,
     getProspectStats,
@@ -1732,6 +1915,8 @@ export const updateProspect = _default.updateProspect;
 export const deleteProspect = _default.deleteProspect;
 export const assignProspect = _default.assignProspect;
 export const releaseHeldProspect = _default.releaseHeldProspect;
+export const reassignProspectExternal = _default.reassignProspectExternal;
+export const returnProspectToHeld = _default.returnProspectToHeld;
 export const listDispatchableOrphans = _default.listDispatchableOrphans;
 export const bulkAssignProspects = _default.bulkAssignProspects;
 export const getProspectStats = _default.getProspectStats;
