@@ -193,10 +193,15 @@ export async function getExternalAgentPackages(mktrLeadsId) {
 
   const assignments = await LeadPackageAssignment.findAll({
     // Only states an agent's "My Packages" view should reflect: 'active' = still
-    // receivable, 'completed'/'exhausted' = ran dry (shown as the OUT-OF-LEADS card).
+    // receivable, 'completed' = ran dry (shown as the OUT-OF-LEADS card — the COUNT,
+    // not the enum, drives that on the app side via derivePackageState).
     // 'cancelled'/'expired' are dead — never receivable — so excluding them keeps a
     // stale assignment with leftover credits from inflating the headline.
-    where: { agentId: agent.id, status: ['active', 'completed', 'exhausted'] },
+    // NOTE: do NOT add 'exhausted' here — it is NOT a label in the live enum
+    // (enum_lead_package_assignments_status = active|completed|cancelled|expired), so
+    // Postgres throws "invalid input value for enum" on the IN-list and the whole
+    // query 500s for EVERY agent (this exact bug blanked the screen, fixed 2026-06-27).
+    where: { agentId: agent.id, status: ['active', 'completed'] },
     include: [
       {
         model: LeadPackage,

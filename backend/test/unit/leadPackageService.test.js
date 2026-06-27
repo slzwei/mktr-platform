@@ -370,8 +370,16 @@ describe('leadPackageService (unit)', () => {
       });
       expect(LeadPackageAssignment.findAll.mock.calls[0][0].where).toEqual({
         agentId: 'agent-1',
-        status: ['active', 'completed', 'exhausted'],
+        status: ['active', 'completed'],
       });
+      // Guard: the queried statuses MUST be a subset of the live Postgres enum
+      // (enum_lead_package_assignments_status = active|completed|cancelled|expired).
+      // A stray label like 'exhausted' makes Postgres throw "invalid input value for
+      // enum" on the IN-list → the whole "My Packages" screen 500s for every agent.
+      // (This test previously asserted 'exhausted' and locked the bug in — fixed 2026-06-27.)
+      const VALID_STATUS = ['active', 'completed', 'cancelled', 'expired'];
+      const queriedStatus = LeadPackageAssignment.findAll.mock.calls[0][0].where.status;
+      expect(queriedStatus.every((s) => VALID_STATUS.includes(s))).toBe(true);
     });
 
     it('returns an empty list for an unknown / ineligible id — no throw, no DB read for assignments', async () => {
