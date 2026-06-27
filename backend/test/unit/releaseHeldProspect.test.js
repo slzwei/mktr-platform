@@ -45,7 +45,7 @@ function buildMocks() {
 const svc = (deps) => makeProspectService(deps);
 
 describe('releaseHeldProspect (unit)', () => {
-  it('rescues a System-Agent orphan (not held): reassigns + delivers via lead.created', async () => {
+  it('rescues a System-Agent orphan (not held): reassigns + delivers via lead.assigned', async () => {
     const { deps, mockTx } = buildMocks();
     deps.models.Prospect.findByPk = jest.fn()
       .mockResolvedValueOnce({ id: 'p-1', campaignId: 'camp-1', quarantineReason: null, quarantinedAt: null, assignedAgentId: 'system-agent-id' })
@@ -55,7 +55,7 @@ describe('releaseHeldProspect (unit)', () => {
     const res = await svc(deps).releaseHeldProspect('p-1', 'app-agent-1', {});
 
     expect(res).toMatchObject({ status: 'assigned', leadId: 'p-1' });
-    expect(deps.persistEventDeliveries).toHaveBeenCalledWith('lead.created', expect.any(Function), { destination: 'mktr_leads' }, mockTx);
+    expect(deps.persistEventDeliveries).toHaveBeenCalledWith('lead.assigned', expect.any(Function), { destination: 'mktr_leads' }, mockTx);
     expect(mockTx.commit).toHaveBeenCalled();
   });
 
@@ -73,7 +73,7 @@ describe('releaseHeldProspect (unit)', () => {
     expect(deps.sequelize.query).toHaveBeenCalled();
     // Delivery row persisted INSIDE the tx (outbox), destination-scoped to mktr_leads.
     expect(deps.persistEventDeliveries).toHaveBeenCalledWith(
-      'lead.created', expect.any(Function), { destination: 'mktr_leads' }, mockTx,
+      'lead.assigned', expect.any(Function), { destination: 'mktr_leads' }, mockTx,
     );
     expect(mockTx.commit).toHaveBeenCalled();
     // Post-commit: best-effort campaign-scoped deduct + flush of the persisted delivery.
