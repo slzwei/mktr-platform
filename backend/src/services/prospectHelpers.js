@@ -157,7 +157,7 @@ export function buildLeadAssignedPayload(prospect, agent, prospectWithCampaign) 
 /**
  * Build the webhook payload for a 'lead.unassigned' event.
  */
-export function buildLeadUnassignedPayload(prospect, previousAgentLyfeId) {
+export function buildLeadUnassignedPayload(prospect, previousAgentLyfeId, opts = {}) {
   return {
     event: 'lead.unassigned',
     timestamp: new Date().toISOString(),
@@ -171,7 +171,11 @@ export function buildLeadUnassignedPayload(prospect, previousAgentLyfeId) {
         leadSource: prospect.leadSource,
         sourceMetadata: prospect.sourceMetadata
       },
-      previousAgentId: previousAgentLyfeId
+      previousAgentId: previousAgentLyfeId,
+      // Admin pull-back to the held queue: signals the mktr-leads receiver to SOFT-DELETE
+      // (vanish) the lead instead of marking it disputed. Omitted for normal cross-app
+      // unassignment, which keeps the existing dispute behavior.
+      ...(opts.returnedToHeld ? { returnedToHeld: true } : {})
     }
   };
 }
