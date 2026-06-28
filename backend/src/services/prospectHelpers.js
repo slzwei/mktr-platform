@@ -203,3 +203,64 @@ export function buildLeadHeldPayload(prospect, campaign, reason) {
     }
   };
 }
+
+/** Format a budget object ({ min, max, currency, timeframe }) into one display string, or null. */
+function formatBudget(budget) {
+  if (!budget || typeof budget !== 'object') return null;
+  const { min, max, currency, timeframe } = budget;
+  if (min == null && max == null) return null;
+  const cur = currency ? ` ${currency}` : '';
+  const range =
+    min != null && max != null
+      ? `${min} – ${max}${cur}`
+      : max != null
+        ? `Up to ${max}${cur}`
+        : `From ${min}${cur}`;
+  return timeframe ? `${range} · ${timeframe}` : range;
+}
+
+/**
+ * Derive the held-lead enrichment the admin detail view shows for an orphan prospect —
+ * the SAME personal / firmographic data a delivered lead surfaces, plus the extra
+ * demographics the receiver's note-enrichment happens to drop. Returns:
+ *   { birthday, details }
+ * where `birthday` is the RAW date-of-birth string (the app owns its DD/MM/YYYY
+ * formatting, so birthday formatting lives in exactly one place) and `details` is an
+ * ordered, display-ready [{ label, value }] list of every OTHER populated field.
+ * Campaign / source / email are NOT included here — they are already discrete DTO
+ * fields the queue + detail view render directly.
+ */
+export function buildHeldLeadEnrichment(prospect) {
+  if (!prospect) return { birthday: null, details: [] };
+  const demo = prospect.demographics && typeof prospect.demographics === 'object' ? prospect.demographics : {};
+  const loc = prospect.location && typeof prospect.location === 'object' ? prospect.location : {};
+
+  const birthday = typeof demo.dateOfBirth === 'string' && demo.dateOfBirth.trim() ? demo.dateOfBirth.trim() : null;
+
+  const details = [];
+  const push = (label, value) => {
+    if (value == null) return;
+    const s = String(value).trim();
+    if (s) details.push({ label, value: s });
+  };
+
+  // Personal — birthday is intentionally omitted (carried discretely, formatted app-side).
+  push('Age', demo.age);
+  push('Gender', demo.gender);
+  push('Marital status', demo.maritalStatus);
+  push('Monthly income', demo.income);
+  push('Education', demo.education);
+  // Location
+  push('Postal code', loc.postalCode || loc.zipCode);
+  push('Address', loc.address);
+  // Firmographic
+  push('Company', prospect.company);
+  push('Job title', prospect.jobTitle);
+  push('Industry', prospect.industry);
+  // Intent
+  const interests = Array.isArray(prospect.interests) ? prospect.interests.filter(Boolean) : [];
+  if (interests.length) push('Interests', interests.join(', '));
+  push('Budget', formatBudget(prospect.budget));
+
+  return { birthday, details };
+}

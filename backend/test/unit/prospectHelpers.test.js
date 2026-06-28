@@ -5,6 +5,7 @@ import {
   buildLeadAssignedPayload,
   buildLeadUnassignedPayload,
   buildLeadHeldPayload,
+  buildHeldLeadEnrichment,
 } from '../../src/services/prospectHelpers.js';
 
 describe('prospectHelpers', () => {
@@ -334,6 +335,63 @@ describe('prospectHelpers', () => {
       const payload = buildLeadHeldPayload(prospect, campaign, 'no_funded_agent');
       expect(new Date(payload.timestamp).toISOString()).toBe(payload.timestamp);
       expect(new Date(payload.data.heldAt).toISOString()).toBe(payload.data.heldAt);
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // buildHeldLeadEnrichment
+  // ──────────────────────────────────────────────
+  describe('buildHeldLeadEnrichment', () => {
+    it('returns the RAW birthday plus an ordered, display-ready details list', () => {
+      const { birthday, details } = buildHeldLeadEnrichment({
+        demographics: { dateOfBirth: '1990-04-12', age: 35, gender: 'Female', maritalStatus: 'Married', income: '$5,000', education: "Bachelor's" },
+        location: { postalCode: '530123', address: '1 Marina Blvd' },
+        company: 'Acme Pte Ltd',
+        jobTitle: 'Director',
+        industry: 'F&B',
+        interests: ['Savings', 'Protection'],
+        budget: { min: 200, max: 500, currency: 'SGD', timeframe: 'monthly' },
+      });
+      // Birthday is carried raw — the app owns DD/MM/YYYY formatting.
+      expect(birthday).toBe('1990-04-12');
+      // …and is NOT duplicated inside details.
+      expect(details.find((r) => /birth/i.test(r.label))).toBeUndefined();
+      expect(details).toEqual([
+        { label: 'Age', value: '35' },
+        { label: 'Gender', value: 'Female' },
+        { label: 'Marital status', value: 'Married' },
+        { label: 'Monthly income', value: '$5,000' },
+        { label: 'Education', value: "Bachelor's" },
+        { label: 'Postal code', value: '530123' },
+        { label: 'Address', value: '1 Marina Blvd' },
+        { label: 'Company', value: 'Acme Pte Ltd' },
+        { label: 'Job title', value: 'Director' },
+        { label: 'Industry', value: 'F&B' },
+        { label: 'Interests', value: 'Savings, Protection' },
+        { label: 'Budget', value: '200 – 500 SGD · monthly' },
+      ]);
+    });
+
+    it('falls back to location.zipCode for postal and omits empty / default fields', () => {
+      const { birthday, details } = buildHeldLeadEnrichment({
+        demographics: { age: null, gender: '', dateOfBirth: '' },
+        location: { zipCode: '049315', address: '' },
+        company: '  ',
+        interests: [],
+        budget: { min: null, max: null, currency: 'USD', timeframe: '' },
+      });
+      expect(birthday).toBeNull(); // blank DOB → null, never ''
+      expect(details).toEqual([{ label: 'Postal code', value: '049315' }]);
+    });
+
+    it('formats an open-ended budget and trims whitespace into omission', () => {
+      const { details } = buildHeldLeadEnrichment({ budget: { max: 1000, currency: 'SGD' } });
+      expect(details).toEqual([{ label: 'Budget', value: 'Up to 1000 SGD' }]);
+    });
+
+    it('returns a safe empty shape for a null / empty prospect', () => {
+      expect(buildHeldLeadEnrichment(null)).toEqual({ birthday: null, details: [] });
+      expect(buildHeldLeadEnrichment({})).toEqual({ birthday: null, details: [] });
     });
   });
 });

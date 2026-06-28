@@ -36,6 +36,7 @@ import {
   buildLeadHeldPayload,
   buildLeadAssignedPayload,
   buildLeadUnassignedPayload,
+  buildHeldLeadEnrichment,
   destinationForAgent,
   externalIdForDestination,
 } from './prospectHelpers.js';
@@ -1549,23 +1550,33 @@ export function makeProspectService(overrides = {}) {
       limit: lim,
     });
 
-    const orphans = rows.map((p) => ({
-      id: p.id,
-      firstName: p.firstName,
-      lastName: p.lastName,
-      phone: p.phone,
-      email: p.email,
-      leadSource: p.leadSource,
-      // Rich, delivered-lead-equivalent label ("Instagram ad", "Meta ad", "Web form", …)
-      // derived from sourceMetadata.utm — so the held queue reads the same source the lead
-      // will show once assigned, not the coarse capture channel.
-      sourceLabel: signupSourceLabel({ leadSource: p.leadSource, qrTag: p.qrTag, sourceMetadata: p.sourceMetadata }),
-      campaignId: p.campaignId,
-      campaignName: p.campaign?.name || null,
-      reason: p.quarantinedAt ? 'no_funded_agent' : 'unassigned',
-      since: p.quarantinedAt || p.createdAt,
-      createdAt: p.createdAt,
-    }));
+    const orphans = rows.map((p) => {
+      // Full personal / firmographic data the admin detail view shows (DOB, postal,
+      // company, …) — parity with a delivered lead, plus the demographics it drops.
+      const { birthday, details } = buildHeldLeadEnrichment(p);
+      return {
+        id: p.id,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        phone: p.phone,
+        email: p.email,
+        leadSource: p.leadSource,
+        // Rich, delivered-lead-equivalent label ("Instagram ad", "Meta ad", "Web form", …)
+        // derived from sourceMetadata.utm — so the held queue reads the same source the lead
+        // will show once assigned, not the coarse capture channel.
+        sourceLabel: signupSourceLabel({ leadSource: p.leadSource, qrTag: p.qrTag, sourceMetadata: p.sourceMetadata }),
+        // Raw DOB string — the buyer app formats it to DD/MM/YYYY (one formatter, app-side).
+        birthday,
+        // Ordered, display-ready [{ label, value }] enrichment rows (no PII beyond what the
+        // admin-only detail view already shows; never enters the non-PII summary projection).
+        details,
+        campaignId: p.campaignId,
+        campaignName: p.campaign?.name || null,
+        reason: p.quarantinedAt ? 'no_funded_agent' : 'unassigned',
+        since: p.quarantinedAt || p.createdAt,
+        createdAt: p.createdAt,
+      };
+    });
 
     return { count, orphans };
   }

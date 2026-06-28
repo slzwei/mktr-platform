@@ -80,7 +80,7 @@ describe('externalHeldLeadsController.listHeldLeads', () => {
     orphansMock.mockResolvedValue({
       count: 2,
       orphans: [
-        { id: 'p1', firstName: 'Jane', lastName: 'Doe', phone: '6591234567', email: 'jane@example.com', leadSource: 'meta', campaignId: 'c1', campaignName: 'Cab', reason: 'no_funded_agent', since: 't1', createdAt: 't1' },
+        { id: 'p1', firstName: 'Jane', lastName: 'Doe', phone: '6591234567', email: 'jane@example.com', birthday: '1990-04-12', details: [{ label: 'Postal code', value: '530123' }], leadSource: 'meta', campaignId: 'c1', campaignName: 'Cab', reason: 'no_funded_agent', since: 't1', createdAt: 't1' },
         { id: 'p2', firstName: 'Sam', lastName: 'Lim', phone: '6599999999', leadSource: 'meta', campaignId: 'c1', campaignName: 'Cab', reason: 'unassigned', since: 't2', createdAt: 't2' },
       ],
     });
@@ -97,13 +97,17 @@ describe('externalHeldLeadsController.listHeldLeads', () => {
     // Full PII is now returned ADDITIVELY (admin-only surface) alongside the masked fields.
     expect(a).toMatchObject({ lastName: 'Doe', phone: '6591234567', email: 'jane@example.com' });
     expect(a.maskedPhone).toBe('••••4567'); // masked field retained for back-compat
+    // Full personal / firmographic detail flows through for the admin lead view.
+    expect(a).toMatchObject({ birthday: '1990-04-12', details: [{ label: 'Postal code', value: '530123' }] });
+    // An orphan without enrichment degrades to safe empties (never undefined).
+    expect(b).toMatchObject({ birthday: null, details: [] });
   });
 
   it('summary mode returns ids + campaign + since ONLY (no PII enters the sweep path)', async () => {
     orphansMock.mockResolvedValue({
       count: 1,
       orphans: [
-        { id: 'p1', firstName: 'Jane', lastName: 'Doe', phone: '6591234567', email: 'jane@example.com', leadSource: 'meta', campaignId: 'c1', campaignName: 'Cab', reason: 'no_funded_agent', since: 't1', createdAt: 't1' },
+        { id: 'p1', firstName: 'Jane', lastName: 'Doe', phone: '6591234567', email: 'jane@example.com', birthday: '1990-04-12', details: [{ label: 'Postal code', value: '530123' }], leadSource: 'meta', campaignId: 'c1', campaignName: 'Cab', reason: 'no_funded_agent', since: 't1', createdAt: 't1' },
       ],
     });
     const req = makeReq({ timestamp: new Date().toISOString(), summary: true });
@@ -112,6 +116,7 @@ describe('externalHeldLeadsController.listHeldLeads', () => {
 
     expect(res.body.count).toBe(1);
     const [a] = res.body.held;
+    // toEqual (exact) proves the personal enrichment (birthday/details) is stripped too.
     expect(a).toEqual({ id: 'p1', campaignName: 'Cab', since: 't1' });
     // The cron sweep must never receive lead PII.
     expect(a.firstName).toBeUndefined();
