@@ -103,6 +103,10 @@ export async function listHeldLeads(req, res) {
       phone: o.phone || null,
       maskedPhone: maskPhone(o.phone),
       email: o.email || null,
+      // Full personal / firmographic detail for the admin lead view (DOB raw → app formats
+      // it; `details` is the ordered display-ready enrichment). Admin-only surface.
+      birthday: o.birthday || null,
+      details: Array.isArray(o.details) ? o.details : [],
       campaignId: o.campaignId,
       campaignName: o.campaignName,
       leadSource: o.leadSource,
