@@ -525,9 +525,10 @@ describe('leadPackageService (unit)', () => {
         .rejects.toThrow('Missing required fields');
     });
 
-    it('throws when campaignId is missing', async () => {
-      await expect(createPackage({ name: 'Test', price: 100, leadCount: 10 }))
-        .rejects.toThrow('Missing required fields');
+    it('allows a null campaign (campaignId is now optional — admin "No campaign")', async () => {
+      await createPackage({ name: 'Test', price: 100, leadCount: 10, createdBy: 'admin-1' });
+      const createArg = LeadPackage.create.mock.calls[0][0];
+      expect(createArg.campaignId).toBeNull();
     });
 
     it('accepts custom type', async () => {

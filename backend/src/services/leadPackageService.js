@@ -32,22 +32,62 @@ export async function listPackages({ status, campaignId, userRole }) {
   return { packages };
 }
 
+// ── Admin-package field normalizers ──────────────────────────────────────────
+// Shared by create + update. `null` clears an optional field; a `0`/absent
+// commission means "no commission" (the DTO hides non-positive so it never renders
+// a misleading "$0/lead"). Kept module-local + exported for unit tests.
+export function normalizeQuality(q) {
+  if (q === null || q === undefined || q === '') return null;
+  const n = parseInt(q, 10);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(10, Math.max(1, n));
+}
+export function normalizeValidity(d) {
+  if (d === null || d === undefined || d === '') return null;
+  const n = Number(d);
+  return Number.isFinite(n) && n >= 1 ? Math.round(n) : null;
+}
+export function normalizeCommission(c) {
+  const n = Number(c);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /**
  * Create a new lead package template.
+ *
+ * Backward-compatible with the internal (web) controller, which passes only
+ * { name, price, leadCount, campaignId, type, createdBy } — the rest default.
+ * The external admin surface (HMAC) passes the full payload incl. the net-new
+ * fields. `createdBy` is a non-null FK to users.id — the caller (controller)
+ * supplies a concrete id (web: req.user.id; external: resolveCreator). campaignId
+ * is now nullable; currency is forced SGD (SG market; non-editable in the UI).
  */
-export async function createPackage({ name, price, leadCount, campaignId, type, createdBy }) {
-  if (!name || price === undefined || price === null || !leadCount || !campaignId) {
+export async function createPackage({
+  name, price, leadCount, campaignId = null, type, createdBy,
+  status, description, isPublic, qualityScore, validityPeriod, agentCommission,
+}) {
+  if (!name || price === undefined || price === null || !leadCount) {
     throw new AppError('Missing required fields', 400);
   }
+  // createdBy is a non-null FK enforced at the DB + supplied by every caller
+  // (web: req.user.id; external: resolveCreator). Kept lenient here — the original
+  // contract — so the existing unit tests that omit it stay valid.
 
+  const ALLOWED_CREATE_STATUS = ['draft', 'active', 'inactive'];
   const pkg = await LeadPackage.create({
     name,
     price,
     leadCount,
-    campaignId,
+    campaignId: campaignId ?? null,
     type: type || 'basic',
     createdBy,
-    status: 'active'
+    status: ALLOWED_CREATE_STATUS.includes(status) ? status : 'active',
+    description: description ?? null,
+    isPublic: isPublic === undefined ? true : !!isPublic,
+    currency: 'SGD',
+    qualityScore: normalizeQuality(qualityScore),
+    validityPeriod: normalizeValidity(validityPeriod),
+    commissionStructure: { agentCommission: normalizeCommission(agentCommission), referralBonus: 0, tierBonuses: {} },
   });
 
   return { package: pkg };
@@ -64,12 +104,25 @@ export async function updatePackage(id, fields) {
     throw new AppError('Package not found', 404);
   }
 
+  // NOTE: `currency` is deliberately absent — it is forced SGD at create and is
+  // never editable (length-only validation on the column would otherwise accept
+  // any 3-char string). `campaignId: null` IS honoured (null !== undefined) so the
+  // UI's "No campaign" clears it.
   const ALLOWED = ['name', 'description', 'price', 'leadCount', 'campaignId', 'type', 'isPublic', 'status'];
   const updates = {};
   for (const key of ALLOWED) {
     if (fields[key] !== undefined) {
       updates[key] = fields[key];
     }
+  }
+  // Optional/clearable numeric fields — normalize (null clears).
+  if (fields.qualityScore !== undefined) updates.qualityScore = normalizeQuality(fields.qualityScore);
+  if (fields.validityPeriod !== undefined) updates.validityPeriod = normalizeValidity(fields.validityPeriod);
+  // agentCommission lives inside the commissionStructure JSON — MERGE so a partial
+  // update never clobbers referralBonus / tierBonuses.
+  if (fields.agentCommission !== undefined) {
+    const prev = pkg.commissionStructure || {};
+    updates.commissionStructure = { ...prev, agentCommission: normalizeCommission(fields.agentCommission) };
   }
 
   if (Object.keys(updates).length > 0) {
@@ -246,6 +299,270 @@ export async function getExternalAgentPackages(mktrLeadsId) {
   return { packages };
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// External admin surface (mktr-leads admin app → /api/external/admin-packages).
+// HMAC-authed (no JWT user). Catalog ops are GLOBAL (same catalog as the web
+// admin, by design). Assignment ops are SCOPED to mktr-leads-sourced agents
+// (User.mktrLeadsId NOT NULL) so an mktr-leads admin can never mutate a
+// Lyfe/internal assignment by a guessed UUID.
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Resolve a non-null `createdBy` (FK → users.id) for an externally-created package.
+ * Prefer the acting admin when they're a synced MKTR user (auditable); else a
+ * configured system creator. Throws if neither resolves (deploy-inert until set).
+ */
+export async function resolveCreator(actorMktrUserId) {
+  if (actorMktrUserId && typeof actorMktrUserId === 'string') {
+    const u = await User.findOne({ where: { mktrLeadsId: actorMktrUserId }, attributes: ['id'] });
+    if (u) return u.id;
+  }
+  const fallback = process.env.ADMIN_PACKAGES_CREATOR_USER_ID;
+  if (fallback) return fallback;
+  // Last resort: attribute to the oldest active MKTR admin (the web package creator
+  // always exists), so catalog.create works even without the env override set.
+  const admin = await User.findOne({
+    where: { role: 'admin', isActive: true },
+    order: [['createdAt', 'ASC']],
+    attributes: ['id'],
+  });
+  if (admin) return admin.id;
+  throw new AppError('No package creator available (no actor, env, or admin user)', 500);
+}
+
+/** Catalog list for the admin app — full fields + per-package assignmentCount (Archive vs Delete). */
+export async function getExternalAdminCatalog() {
+  const packages = await LeadPackage.findAll({
+    include: [{ model: Campaign, as: 'campaign', attributes: ['id', 'name', 'status'] }],
+    order: [['createdAt', 'DESC']],
+  });
+  // One grouped COUNT (avoid N+1). `sequelize.fn/col` — the bare `fn` is not imported.
+  const counts = await LeadPackageAssignment.findAll({
+    attributes: ['leadPackageId', [sequelize.fn('COUNT', sequelize.col('id')), 'n']],
+    group: ['leadPackageId'],
+    raw: true,
+  });
+  const countBy = new Map(counts.map((c) => [c.leadPackageId, Number(c.n)]));
+  return {
+    packages: packages.map((p) => ({
+      id: p.id,
+      name: p.name,
+      type: p.type,
+      status: p.status,
+      description: p.description ?? null,
+      price: Number(p.price),
+      leadCount: p.leadCount,
+      currency: p.currency || 'SGD',
+      qualityScore: p.qualityScore ?? null,
+      commissionPerLead:
+        typeof p.commissionStructure?.agentCommission === 'number' && p.commissionStructure.agentCommission > 0
+          ? p.commissionStructure.agentCommission
+          : null,
+      validityDays: p.validityPeriod ?? null,
+      campaignId: p.campaignId ?? null,
+      campaignName: p.campaign?.name ?? null,
+      campaignStatus: p.campaign?.status ?? null,
+      isPublic: p.isPublic,
+      assignmentCount: countBy.get(p.id) ?? 0,
+    })),
+  };
+}
+
+/** Campaign picker for the create/edit form — active campaigns + (when editing) the still-selected one. */
+export async function listCampaignsForPicker(selectedId) {
+  const active = await Campaign.findAll({
+    where: { is_active: true },
+    attributes: ['id', 'name', 'status'],
+    order: [['name', 'ASC']],
+  });
+  const out = active.map((c) => ({ id: c.id, name: c.name, status: c.status }));
+  if (selectedId && !out.some((c) => c.id === selectedId)) {
+    const sel = await Campaign.findByPk(selectedId, { attributes: ['id', 'name', 'status'] });
+    if (sel) out.unshift({ id: sel.id, name: sel.name, status: sel.status });
+  }
+  return { campaigns: out };
+}
+
+/**
+ * One mktr-leads agent's assignments for the admin per-agent screen. Self-scoped
+ * resolution (mktrLeadsId + role:'agent' + isActive) like getExternalAgentPackages,
+ * but returns ALL four statuses (so the app groups Past), adds priceSnapshot, and
+ * caps at 100 newest (cancelled history is unbounded). No agent identity — the app
+ * already holds the AgentRow locally.
+ */
+export async function getExternalAdminAgentAssignments(mktrLeadsId) {
+  if (!mktrLeadsId || typeof mktrLeadsId !== 'string') return { packages: [] };
+  const agent = await User.findOne({ where: { mktrLeadsId, role: 'agent', isActive: true }, attributes: ['id'] });
+  if (!agent) return { packages: [] };
+
+  const assignments = await LeadPackageAssignment.findAll({
+    where: { agentId: agent.id },
+    include: [
+      {
+        model: LeadPackage,
+        as: 'package',
+        attributes: ['name', 'type', 'qualityScore', 'currency', 'commissionStructure', 'validityPeriod'],
+        include: [{ model: Campaign, as: 'campaign', attributes: ['name'] }],
+      },
+    ],
+    order: [['purchaseDate', 'DESC']],
+    limit: 100,
+  });
+
+  const packages = assignments.map((a) => {
+    const pkg = a.package || null;
+    const validityDays = pkg?.validityPeriod ?? null;
+    const purchasedAt = a.purchaseDate ? new Date(a.purchaseDate) : null;
+    const expiresAt =
+      purchasedAt && Number.isFinite(validityDays) && validityDays > 0
+        ? new Date(purchasedAt.getTime() + validityDays * 86400000).toISOString()
+        : null;
+    const agentCommission = pkg?.commissionStructure?.agentCommission;
+    return {
+      id: a.id,
+      name: pkg?.name || 'Lead package',
+      type: pkg?.type || null,
+      status: a.status,
+      leadsRemaining: a.leadsRemaining,
+      leadsTotal: a.leadsTotal,
+      qualityScore: pkg?.qualityScore ?? null,
+      commissionPerLead: typeof agentCommission === 'number' && agentCommission > 0 ? agentCommission : null,
+      currency: pkg?.currency || 'SGD',
+      campaignName: pkg?.campaign?.name || null,
+      purchaseDate: purchasedAt ? purchasedAt.toISOString() : null,
+      validityDays,
+      expiresAt,
+      priceSnapshot: a.priceSnapshot != null ? Number(a.priceSnapshot) : null,
+    };
+  });
+  return { packages };
+}
+
+/** Load an assignment ONLY if its agent is mktr-leads-sourced (write-scope guard). */
+async function loadMktrLeadsAssignment(assignmentId) {
+  if (!assignmentId || typeof assignmentId !== 'string') return null;
+  return LeadPackageAssignment.findOne({
+    where: { id: assignmentId },
+    include: [
+      {
+        model: User,
+        as: 'agent',
+        attributes: ['id', 'mktrLeadsId'],
+        where: { mktrLeadsId: { [Op.ne]: null } },
+        required: true,
+      },
+    ],
+  });
+}
+
+/**
+ * Assign an ACTIVE catalog package to a mktr-leads agent. Active-only guard +
+ * duplicate guard under the same per-package advisory lock bulkAssignPackage uses
+ * (no unique (agentId,leadPackageId) index). Optional custom leadsTotal override.
+ * Returns a typed status: assigned | exists | package_inactive | invalid_agent.
+ */
+export async function assignPackageExternal({ agentMktrUserId, packageId, leadsTotalOverride }) {
+  if (!agentMktrUserId || !packageId) throw new AppError('agentMktrUserId and packageId are required', 400);
+
+  const agent = await User.findOne({
+    where: { mktrLeadsId: agentMktrUserId, role: 'agent', isActive: true },
+    attributes: ['id'],
+  });
+  if (!agent) return { status: 'invalid_agent' };
+
+  const pkg = await LeadPackage.findByPk(packageId);
+  if (!pkg) throw new AppError('Package not found', 404);
+  if (pkg.status !== 'active') return { status: 'package_inactive' };
+
+  const result = await sequelize.transaction(async (t) => {
+    await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:k))', {
+      replacements: { k: `lpa:${packageId}` },
+      transaction: t,
+    });
+    const existing = await LeadPackageAssignment.findOne({
+      where: { leadPackageId: packageId, agentId: agent.id, status: 'active' },
+      transaction: t,
+    });
+    if (existing) return { status: 'exists', assignmentId: existing.id };
+
+    const override = Number(leadsTotalOverride);
+    const total = Number.isFinite(override) && override >= 1 ? Math.round(override) : pkg.leadCount;
+    const a = await LeadPackageAssignment.create(
+      {
+        agentId: agent.id,
+        leadPackageId: packageId,
+        leadsTotal: total,
+        leadsRemaining: total,
+        priceSnapshot: pkg.price,
+        status: 'active',
+        purchaseDate: new Date(),
+      },
+      { transaction: t }
+    );
+    return { status: 'assigned', assignmentId: a.id };
+  });
+
+  // New funded package → campaign sweep (no-op today; retained as the re-enable hook).
+  if (result.status === 'assigned' && pkg.campaignId) {
+    import('./releaseSweep.js')
+      .then((m) => m.sweepCampaign(pkg.campaignId))
+      .catch((err) => logger.error('[ReleaseSweep] assignPackageExternal trigger failed', { error: err?.message || String(err) }));
+  }
+  return result;
+}
+
+/**
+ * Top up an assignment. Delta ("add N") increments BOTH leadsRemaining and
+ * leadsTotal (so the ratio never exceeds 100% — fixes the 150/100 bug). An
+ * advanced absolute `setRemaining` correction is also supported. Never resurrects
+ * a cancelled/expired row.
+ */
+export async function topUpAssignment({ assignmentId, addLeads, setRemaining }) {
+  const a = await loadMktrLeadsAssignment(assignmentId);
+  if (!a) throw new AppError('Assignment not found', 404);
+  if (a.status !== 'active' && a.status !== 'completed') {
+    throw new AppError('Cannot modify a cancelled or expired assignment', 409);
+  }
+
+  const prevRemaining = a.leadsRemaining;
+  if (setRemaining !== undefined) {
+    const n = parseInt(setRemaining, 10);
+    if (isNaN(n) || n < 0) throw new AppError('Invalid lead count', 400);
+    await a.update({ leadsRemaining: n, status: n === 0 ? 'completed' : 'active' });
+  } else {
+    const add = parseInt(addLeads, 10);
+    if (isNaN(add) || add < 1) throw new AppError('Invalid amount', 400);
+    await a.update({ leadsRemaining: a.leadsRemaining + add, leadsTotal: a.leadsTotal + add, status: 'active' });
+  }
+
+  if (a.leadsRemaining > prevRemaining) {
+    const pkg = await LeadPackage.findByPk(a.leadPackageId, { attributes: ['campaignId'] });
+    if (pkg?.campaignId) {
+      import('./releaseSweep.js')
+        .then((m) => m.sweepCampaign(pkg.campaignId))
+        .catch((err) => logger.error('[ReleaseSweep] topUpAssignment trigger failed', { error: err?.message || String(err) }));
+    }
+  }
+  return { assignment: a };
+}
+
+/** Cancel an assignment → status:'cancelled' (preferred stop; preserves row + history). Idempotent. */
+export async function cancelAssignment(assignmentId) {
+  const a = await loadMktrLeadsAssignment(assignmentId);
+  if (!a) throw new AppError('Assignment not found', 404);
+  if (a.status === 'cancelled') return { assignment: a };
+  await a.update({ status: 'cancelled' });
+  return { assignment: a };
+}
+
+/** Remove an assignment → destroys the row (history lost). Scoped to mktr-leads agents. */
+export async function removeAssignmentExternal(assignmentId) {
+  const a = await loadMktrLeadsAssignment(assignmentId);
+  if (!a) throw new AppError('Assignment not found', 404);
+  await a.destroy();
+  return { ok: true };
+}
+
 /**
  * Delete a package assignment by ID.
  */
@@ -314,6 +631,7 @@ export async function deletePackage(id) {
     await pkg.update({ status: 'archived' });
     return {
       archived: true,
+      assignmentCount,
       message: 'Package archived (assignments exist)',
       package: pkg
     };
@@ -321,9 +639,15 @@ export async function deletePackage(id) {
     await pkg.destroy();
     return {
       archived: false,
+      assignmentCount: 0,
       message: 'Package deleted successfully'
     };
   }
+}
+
+/** Live assignment count for a package — drives the UI's Archive-vs-Delete label (A10). */
+export async function getPackageAssignmentCount(id) {
+  return LeadPackageAssignment.count({ where: { leadPackageId: id } });
 }
 
 /**
