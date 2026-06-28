@@ -33,6 +33,7 @@ import { signupActivityDescription, signupSourceLabel } from '../utils/sourceLab
 import {
   normalizePhone,
   buildLeadCreatedPayload,
+  buildLeadHeldPayload,
   buildLeadAssignedPayload,
   buildLeadUnassignedPayload,
   destinationForAgent,
@@ -545,6 +546,7 @@ export function makeProspectService(overrides = {}) {
     //     (charged:true ⇒ skip the best-effort deduct below to avoid double-charging).
     //     Soft/exempt routes are unchanged: assign + best-effort deduct.
     let quarantined = false;
+    let heldReason = null;
     let finalAgentId = assignedAgentId;
     const prospect = await d.sequelize.transaction(async (t) => {
       // The internal quota gate applies ONLY to the internal path. For external
@@ -566,6 +568,7 @@ export function makeProspectService(overrides = {}) {
         });
       }
       quarantined = decision.action === 'quarantine';
+      heldReason = quarantined ? decision.quarantineReason : null;
       finalAgentId = quarantined ? null : (decision.assignedAgentId ?? null);
 
       const newProspect = await m.Prospect.create(
@@ -722,6 +725,22 @@ export function makeProspectService(overrides = {}) {
         { destination: leadDestination }
       ).catch((err) => {
         d.logger.error('[Webhook] dispatch error', { error: err?.message || String(err) });
+      });
+    }
+
+    // Held (no_funded_agent) → ping the mktr-leads admin held queue so a pending
+    // lead is never silent. ONLY this reason: the external (no_funded_external_buyer)
+    // hold is a DIFFERENT, fenced pool that is NOT in that admin queue, so it must
+    // not ping. Gated by HELD_LEAD_PING_ENABLED; the sweep is the completeness net.
+    if (
+      quarantined &&
+      heldReason === 'no_funded_agent' &&
+      String(process.env.HELD_LEAD_PING_ENABLED || 'false').toLowerCase() === 'true'
+    ) {
+      d.dispatchEvent('lead.held', () => buildLeadHeldPayload(prospect, sourceCampaign, heldReason), {
+        destination: 'mktr_leads',
+      }).catch((err) => {
+        d.logger.error('[Webhook] lead.held dispatch error', { error: err?.message || String(err) });
       });
     }
 

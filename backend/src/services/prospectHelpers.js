@@ -179,3 +179,27 @@ export function buildLeadUnassignedPayload(prospect, previousAgentLyfeId, opts =
     }
   };
 }
+
+/**
+ * Build the payload for a 'lead.held' event — fired when a lead is QUARANTINED as
+ * `no_funded_agent` and lands in the mktr-leads admin held / pending-assignment
+ * queue. It has NO owner agent, so unlike lead.created it carries NO routing and
+ * only the minimum the receiver needs to ping the admin fleet (no lead PII beyond
+ * what the held queue already shows the admin): the prospect id (the dedup key the
+ * sweep also uses), the campaign, and the hold reason. Delivered ONLY to the
+ * destination='mktr_leads' subscriber.
+ */
+export function buildLeadHeldPayload(prospect, campaign, reason) {
+  return {
+    event: 'lead.held',
+    timestamp: new Date().toISOString(),
+    data: {
+      lead: {
+        externalId: prospect.id
+      },
+      campaign: campaign ? { externalId: campaign.id, name: campaign.name } : null,
+      reason: reason || 'no_funded_agent',
+      heldAt: new Date().toISOString()
+    }
+  };
+}

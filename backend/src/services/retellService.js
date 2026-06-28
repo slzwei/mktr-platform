@@ -9,7 +9,7 @@ import { sendLeadAssignmentEmail } from './mailer.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
-import { destinationForAgent, externalIdForDestination } from './prospectHelpers.js';
+import { destinationForAgent, externalIdForDestination, buildLeadHeldPayload } from './prospectHelpers.js';
 
 const IDEMPOTENCY_SCOPE = 'retell:call';
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -376,6 +376,16 @@ export function makeRetellService(overrides = {}) {
           campaign: campaign ? { externalId: campaign.id, name: campaign.name } : null
         }
       }), { destination: retellDestination });
+
+      // Held → ping the mktr-leads admin held queue so a pending lead is never silent.
+      // Explicitly require no_funded_agent (the only reason that lands in that queue) so
+      // a future decideAssignment reason can never leak the wrong hold. Gated by
+      // HELD_LEAD_PING_ENABLED; the sweep is the completeness net.
+      if (quarantined && decision.quarantineReason === 'no_funded_agent' && String(process.env.HELD_LEAD_PING_ENABLED || 'false').toLowerCase() === 'true') {
+        d.dispatchEvent('lead.held', () => buildLeadHeldPayload(prospect, campaign, decision.quarantineReason), {
+          destination: 'mktr_leads',
+        }).catch((err) => d.logger.error('[Webhook] lead.held dispatch error', { error: err?.message || String(err) }));
+      }
 
       // ── Email notification (fire-and-forget) ──
       const notifyAgent = quarantined
