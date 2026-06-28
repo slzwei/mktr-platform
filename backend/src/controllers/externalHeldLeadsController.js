@@ -82,10 +82,19 @@ export async function listHeldLeads(req, res) {
   if (authErr) return res.status(authErr.code).json({ success: false, error: authErr.error });
 
   try {
-    const { campaignId } = req.body || {};
+    const { campaignId, summary } = req.body || {};
     // Fleet-wide orphans = no_funded_agent HOLDS + leads parked on the phantom System
     // Agent (soft-campaign fallback). Both need a real owner; the queue surfaces both.
     const { orphans } = await listDispatchableOrphans({ campaignId, limit: 50 });
+
+    // NON-PII summary projection for the server-side safety-net sweep
+    // (sweep-held-leads): ids + campaign + age ONLY. Lead phone/email/name never
+    // enter the cron path — the sweep only needs the dedup id + campaign for the ping.
+    if (summary === true) {
+      const held = (orphans || []).map((o) => ({ id: o.id, campaignName: o.campaignName, since: o.since }));
+      return res.json({ success: true, count: held.length, held });
+    }
+
     const rows = (orphans || []).map((o) => ({
       id: o.id,
       firstName: o.firstName || null,

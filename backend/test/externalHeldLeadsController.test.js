@@ -98,6 +98,28 @@ describe('externalHeldLeadsController.listHeldLeads', () => {
     expect(a).toMatchObject({ lastName: 'Doe', phone: '6591234567', email: 'jane@example.com' });
     expect(a.maskedPhone).toBe('••••4567'); // masked field retained for back-compat
   });
+
+  it('summary mode returns ids + campaign + since ONLY (no PII enters the sweep path)', async () => {
+    orphansMock.mockResolvedValue({
+      count: 1,
+      orphans: [
+        { id: 'p1', firstName: 'Jane', lastName: 'Doe', phone: '6591234567', email: 'jane@example.com', leadSource: 'meta', campaignId: 'c1', campaignName: 'Cab', reason: 'no_funded_agent', since: 't1', createdAt: 't1' },
+      ],
+    });
+    const req = makeReq({ timestamp: new Date().toISOString(), summary: true });
+    const res = makeRes();
+    await listHeldLeads(req, res);
+
+    expect(res.body.count).toBe(1);
+    const [a] = res.body.held;
+    expect(a).toEqual({ id: 'p1', campaignName: 'Cab', since: 't1' });
+    // The cron sweep must never receive lead PII.
+    expect(a.firstName).toBeUndefined();
+    expect(a.lastName).toBeUndefined();
+    expect(a.phone).toBeUndefined();
+    expect(a.maskedPhone).toBeUndefined();
+    expect(a.email).toBeUndefined();
+  });
 });
 
 describe('externalHeldLeadsController.assignHeldLead', () => {

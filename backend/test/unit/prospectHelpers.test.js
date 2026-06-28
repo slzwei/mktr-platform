@@ -4,6 +4,7 @@ import {
   buildLeadCreatedPayload,
   buildLeadAssignedPayload,
   buildLeadUnassignedPayload,
+  buildLeadHeldPayload,
 } from '../../src/services/prospectHelpers.js';
 
 describe('prospectHelpers', () => {
@@ -283,6 +284,56 @@ describe('prospectHelpers', () => {
       const payload = buildLeadUnassignedPayload(prospect, 'lyfe-prev-agent');
       expect(() => new Date(payload.timestamp)).not.toThrow();
       expect(new Date(payload.timestamp).toISOString()).toBe(payload.timestamp);
+    });
+  });
+
+  // ──────────────────────────────────────────────
+  // buildLeadHeldPayload
+  // ──────────────────────────────────────────────
+
+  describe('buildLeadHeldPayload', () => {
+    const prospect = {
+      id: 'p-held-1',
+      firstName: 'Jane',
+      lastName: 'Doe',
+      phone: '+6591234567',
+      email: 'jane@test.com',
+    };
+    const campaign = { id: 'c-1', name: 'Test Campaign' };
+
+    it('sets event to lead.held with the prospect id as the dedup key', () => {
+      const payload = buildLeadHeldPayload(prospect, campaign, 'no_funded_agent');
+      expect(payload.event).toBe('lead.held');
+      expect(payload.data.lead.externalId).toBe('p-held-1');
+    });
+
+    it('carries NO lead PII — only the externalId (lock-screen / cron safe)', () => {
+      const payload = buildLeadHeldPayload(prospect, campaign, 'no_funded_agent');
+      expect(Object.keys(payload.data.lead)).toEqual(['externalId']);
+      expect(payload.data.lead.firstName).toBeUndefined();
+      expect(payload.data.lead.phone).toBeUndefined();
+      expect(payload.data.lead.email).toBeUndefined();
+    });
+
+    it('includes campaign externalId + name when provided', () => {
+      const payload = buildLeadHeldPayload(prospect, campaign, 'no_funded_agent');
+      expect(payload.data.campaign).toEqual({ externalId: 'c-1', name: 'Test Campaign' });
+    });
+
+    it('emits null campaign when none is provided', () => {
+      const payload = buildLeadHeldPayload(prospect, null, 'no_funded_agent');
+      expect(payload.data.campaign).toBeNull();
+    });
+
+    it('defaults reason to no_funded_agent', () => {
+      const payload = buildLeadHeldPayload(prospect, campaign, undefined);
+      expect(payload.data.reason).toBe('no_funded_agent');
+    });
+
+    it('has valid ISO timestamp + heldAt', () => {
+      const payload = buildLeadHeldPayload(prospect, campaign, 'no_funded_agent');
+      expect(new Date(payload.timestamp).toISOString()).toBe(payload.timestamp);
+      expect(new Date(payload.data.heldAt).toISOString()).toBe(payload.data.heldAt);
     });
   });
 });
