@@ -125,6 +125,7 @@ describe('Migration idempotency (requires DB)', () => {
     '016-drop-unused-json-columns.js',
     '017-drop-campaign-metrics-json.js',
     '024-drop-agent-group-json-columns.js',
+    '040-create-payments.js', // createTable + partial unique indexes + post-assertion (financial table)
   ];
 
   for (const file of representativeMigrations) {
