@@ -24,7 +24,7 @@ for (const file of modelFiles) {
 function defineAssociations() {
   const {
     User, Campaign, Car, FleetOwner, Driver, Prospect, QrTag,
-    Commission, LeadPackage, LeadPackageAssignment, CampaignPreview,
+    Commission, LeadPackage, LeadPackageAssignment, Payment, CampaignPreview,
     QrScan, Attribution, SessionVisit, ProspectActivity, UserPayout,
     Device, BeaconEvent, Impression, ShortLink, ShortLinkClick,
     Vehicle, WebhookSubscriber, WebhookDelivery, AgentGroup,
@@ -116,6 +116,15 @@ function defineAssociations() {
   LeadPackageAssignment.belongsTo(User, { foreignKey: 'agentId', as: 'agent', onDelete: 'CASCADE' });
   LeadPackageAssignment.belongsTo(LeadPackage, { foreignKey: 'leadPackageId', as: 'package', onDelete: 'CASCADE' });
 
+  // Payment associations — immutable financial records. SET NULL on parent delete
+  // (never cascade): a deleted agent/package/assignment must not erase a payment.
+  User.hasMany(Payment, { foreignKey: 'agentId', as: 'payments', onDelete: 'SET NULL' });
+  Payment.belongsTo(User, { foreignKey: 'agentId', as: 'agent', onDelete: 'SET NULL' });
+  LeadPackage.hasMany(Payment, { foreignKey: 'leadPackageId', as: 'payments', onDelete: 'SET NULL' });
+  Payment.belongsTo(LeadPackage, { foreignKey: 'leadPackageId', as: 'package', onDelete: 'SET NULL' });
+  LeadPackageAssignment.hasOne(Payment, { foreignKey: 'leadPackageAssignmentId', as: 'payment', onDelete: 'SET NULL' });
+  Payment.belongsTo(LeadPackageAssignment, { foreignKey: 'leadPackageAssignmentId', as: 'assignment', onDelete: 'SET NULL' });
+
   // Device associations
   Device.hasMany(BeaconEvent, { foreignKey: 'deviceId', as: 'events', onDelete: 'CASCADE' });
   Device.hasMany(Impression, { foreignKey: 'deviceId', as: 'impressions', onDelete: 'CASCADE' });
@@ -180,7 +189,7 @@ for (const [modelName, alias] of criticalAssociations) {
 // Named exports (destructured from models object for backward compatibility)
 export const {
   User, Campaign, Car, FleetOwner, Driver, Prospect, QrTag,
-  Commission, LeadPackage, LeadPackageAssignment, CampaignPreview,
+  Commission, LeadPackage, LeadPackageAssignment, Payment, CampaignPreview,
   QrScan, Attribution, SessionVisit, ProspectActivity, UserPayout,
   Device, BeaconEvent, Impression, IdempotencyKey, ShortLink,
   ShortLinkClick, RoundRobinCursor, Verification, ProvisioningSession,
