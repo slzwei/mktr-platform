@@ -1241,6 +1241,29 @@ export function makeProspectService(overrides = {}) {
           }
         }
       }
+
+      // Log a ProspectActivity per newly-assigned lead so BULK assignment lands on the unified
+      // timeline too — single-assign already logs (assignProspect), this path historically wrote
+      // none, so bulk-assigned leads were missing their "assigned" event. Best-effort (post-commit,
+      // like the credit deduction above) — never fail the assignment over an audit-row write.
+      await m.ProspectActivity.bulkCreate(
+        full.map((p) => {
+          const prevId = lockedById.get(p.id)?.assignedAgentId;
+          return {
+            prospectId: p.id,
+            type: 'assigned',
+            actorUserId: user?.id || null,
+            description: `Assigned to ${agent.firstName} ${agent.lastName}`.trim(),
+            // Flag a reassignment (a prior owner existed) as a BOOLEAN so the timeline renders
+            // 'reassigned' — never expose who held it before.
+            metadata: {
+              assignedAgentId: agent.id,
+              via: 'bulk_assign',
+              ...(prevId && prevId !== agentId ? { reassigned: true } : {}),
+            },
+          };
+        })
+      ).catch((err) => d.logger.error('Failed to log bulk-assign activity', { error: err?.message || String(err) }));
     }
 
     return { affectedCount, agent };
@@ -1919,6 +1942,29 @@ export function makeProspectService(overrides = {}) {
     return result;
   }
 
+  /**
+   * All ProspectActivity rows for a prospect (oldest-first), with actorUserId explicitly
+   * selected (the getProspect include omits it). Read-only; powers the external lead-timeline
+   * endpoint that feeds the mktr-leads held detail's merged history.
+   */
+  async function getProspectActivities(prospectId, { limit = 200 } = {}) {
+    if (!prospectId) return [];
+    const rows = await m.ProspectActivity.findAll({
+      where: { prospectId },
+      attributes: ['id', 'type', 'description', 'actorUserId', 'metadata', 'createdAt'],
+      order: [['createdAt', 'ASC']],
+      limit: Math.min(parseInt(limit, 10) || 200, 500),
+    });
+    return rows.map((a) => ({
+      id: a.id,
+      type: a.type,
+      description: a.description,
+      actorUserId: a.actorUserId,
+      metadata: a.metadata,
+      createdAt: a.createdAt,
+    }));
+  }
+
   return {
     createProspect,
     getProspect,
@@ -1929,6 +1975,7 @@ export function makeProspectService(overrides = {}) {
     reassignProspectExternal,
     returnProspectToHeld,
     listDispatchableOrphans,
+    getProspectActivities,
     bulkAssignProspects,
     getProspectStats,
     listProspects,
@@ -1948,6 +1995,7 @@ export const releaseHeldProspect = _default.releaseHeldProspect;
 export const reassignProspectExternal = _default.reassignProspectExternal;
 export const returnProspectToHeld = _default.returnProspectToHeld;
 export const listDispatchableOrphans = _default.listDispatchableOrphans;
+export const getProspectActivities = _default.getProspectActivities;
 export const bulkAssignProspects = _default.bulkAssignProspects;
 export const getProspectStats = _default.getProspectStats;
 export const listProspects = _default.listProspects;
