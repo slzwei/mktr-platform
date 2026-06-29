@@ -27,6 +27,13 @@ export const logger = pino({
       'apikey',
       'headers.apikey',
       'serviceRoleKey',
+      // DNC Registry: the RSA signing key + the signed request signature/header.
+      'privateKey',
+      'DNC_PRIVATE_KEY',
+      'appSignature',
+      'signature',
+      'authorization',
+      'secret',
     ],
     censor: '[REDACTED]',
   },

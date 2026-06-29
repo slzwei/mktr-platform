@@ -3,7 +3,7 @@
 // patterns. Substring-based, case-insensitive match on key names so
 // `agentPhone`, `lead_email`, `staff_full_name`, etc. all get redacted.
 
-const PII_KEY_PATTERN = /phone|email|nric|name|token|jwt|address|otp|password/i;
+const PII_KEY_PATTERN = /phone|email|nric|name|token|jwt|address|otp|password|signature|secret|private_?key|authorization/i;
 
 export function scrubObject(input) {
   if (input == null || typeof input !== 'object') return input;
