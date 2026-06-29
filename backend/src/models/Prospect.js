@@ -238,7 +238,45 @@ const Prospect = sequelize.define('Prospect', {
   quarantineReason: {
     type: DataTypes.STRING(64),
     allowNull: true,
-    comment: 'Why the lead was quarantined, e.g. no_funded_agent.'
+    comment: 'Why the lead was quarantined, e.g. no_funded_agent. DNC adds dnc_pending / dnc_registered.'
+  },
+  // --- DNC (Do Not Call) scrubbing — see docs/plans/dnc-scrubbing.md + migration 041 ---
+  // Discrete columns for the fields we filter on; full evidence in dncMetadata.
+  // Indexes (dncStatus, dncValidUntil) are created in migration 041, not here.
+  dncStatus: {
+    type: DataTypes.STRING(16),
+    allowNull: true,
+    comment: 'DNC check state: pending|clear|registered|error|skipped. NULL = never checked.'
+  },
+  dncNoVoiceCall: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    comment: 'true = registered on the DNC no-voice-call register (do NOT call).'
+  },
+  dncNoTextMessage: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    comment: 'true = registered on the DNC no-text-message register.'
+  },
+  dncNoFax: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    comment: 'true = registered on the DNC no-fax register.'
+  },
+  dncCheckedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'Timestamp of the last successful DNC check.'
+  },
+  dncValidUntil: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'DNC result validity end date (from API msg). Cache hit while now() < this.'
+  },
+  dncMetadata: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'DNC check evidence (transactionId, createdTime, rawMsg, statusCode, checkOnBehalf, numberChecked).'
   }
 }, {
   tableName: 'prospects',

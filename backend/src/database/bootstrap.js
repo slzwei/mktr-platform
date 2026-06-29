@@ -148,6 +148,24 @@ export async function bootstrapDatabase() {
       setInterval(runRedeemedAudienceSync, intervalHours * 60 * 60 * 1000);
       logger.info(`[RedeemedAudience] periodic sync scheduled (${intervalHours}h interval)`);
     }
+
+    // DNC re-scrub / retry backfill — recovers dnc_pending leads whose check errored or
+    // timed out at capture (releases on clear). In-process, gated by DNC_BACKFILL_ENABLED;
+    // the re-entrancy guard + DB job lock live in the service (paid API → no double-fire).
+    if (String(process.env.DNC_BACKFILL_ENABLED || 'false').toLowerCase() === 'true') {
+      const intervalMin = Math.max(5, Number(process.env.DNC_BACKFILL_INTERVAL_MINUTES) || 30);
+      const runDncBackfillSafe = async () => {
+        try {
+          const { runDncBackfill } = await import('../services/dncBackfillService.js');
+          await runDncBackfill();
+        } catch (err) {
+          logger.warn('[DNC] backfill run failed (non-fatal)', { error: err?.message });
+        }
+      };
+      setTimeout(runDncBackfillSafe, 90_000);
+      setInterval(runDncBackfillSafe, intervalMin * 60 * 1000);
+      logger.info(`[DNC] backfill scheduled (${intervalMin}m interval)`);
+    }
   }
 
   logger.info('Database bootstrap complete.');

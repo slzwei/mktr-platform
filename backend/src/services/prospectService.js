@@ -15,6 +15,8 @@ import {
 import { resolveAssignedAgentId, resolveLeadRouting, getSystemAgentId, resolveLeadAssignment } from './systemAgent.js';
 import { deductLeadCredit, chargeLeadCredit, deductExternalLeadBalance } from './leadCredits.js';
 import { decideAssignment } from './leadQuota.js';
+import { dncEnforcement, formatDncNumber, checkAndRecord as dncCheckAndRecord } from './dncService.js';
+import { gateHeldDncLead } from './dncGate.js';
 import { hasValidExternalConsent, buildExternalConsentEvidence } from './externalConsent.js';
 import { repeatSignupDetail, repeatSignupCounts } from './repeatSignup.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
@@ -85,6 +87,10 @@ const defaultDeps = {
   buildExternalConsentEvidence,
   chargeLeadCredit,
   decideAssignment,
+  dncEnforcement,
+  formatDncNumber,
+  dncCheckAndRecord,
+  gateHeldDncLead,
   buildProspectWhere,
   dispatchEvent,
   persistEventDeliveries,
@@ -329,6 +335,15 @@ export function makeProspectService(overrides = {}) {
       incoming.phone = normalizePhone(incoming.phone);
     }
 
+    // DNC (Do Not Call) scrubbing mode for this lead. 'off' unless scrubbing is configured
+    // AND the number is in DNC scope (Singapore). block → born held pending a check;
+    // flag → checked post-commit, result attached to the payload. docs/plans/dnc-scrubbing.md.
+    const dncMode = d.dncEnforcement();
+    const dncNumber = dncMode !== 'off' && incoming.phone ? d.formatDncNumber(incoming.phone) : null;
+    const dncBlockApplies = dncMode === 'block' && !!dncNumber;
+    const dncFlagApplies = dncMode === 'flag' && !!dncNumber;
+    const dncWillCheck = dncBlockApplies || dncFlagApplies;
+
     // Enforce: a phone can register once per campaign, but can register for different campaigns
     if (incoming.phone && incoming.campaignId) {
       const existing = await m.Prospect.findOne({
@@ -550,6 +565,10 @@ export function makeProspectService(overrides = {}) {
     let quarantined = false;
     let heldReason = null;
     let finalAgentId = assignedAgentId;
+    // DNC block-mode hold bookkeeping — set inside the tx, consumed post-commit.
+    let dncHeld = false;
+    let dncIntendedAgentId = null;
+    let dncAlreadyCharged = false;
     const prospect = await d.sequelize.transaction(async (t) => {
       // The internal quota gate applies ONLY to the internal path. For external
       // leads default to a plain "assign" directive so the shared activity/deduct
@@ -569,6 +588,18 @@ export function makeProspectService(overrides = {}) {
           charge: d.chargeLeadCredit,
         });
       }
+
+      // DNC block-mode gate: a normally-assignable INTERNAL lead is HELD pending a DNC
+      // check (released post-commit on clear). Never overrides an existing quarantine
+      // (quota / external) or an external-buyer route. The credit is charged on release
+      // (unless decideAssignment already charged a funded gated route → dncAlreadyCharged).
+      if (dncBlockApplies && decision.action !== 'quarantine' && !externalAgentId) {
+        dncIntendedAgentId = decision.assignedAgentId ?? assignedAgentId ?? null;
+        dncAlreadyCharged = decision.charged === true;
+        dncHeld = true;
+        decision = { action: 'quarantine', quarantineReason: 'dnc_pending', charged: dncAlreadyCharged, via: routeVia };
+      }
+
       quarantined = decision.action === 'quarantine';
       heldReason = quarantined ? decision.quarantineReason : null;
       finalAgentId = quarantined ? null : (decision.assignedAgentId ?? null);
@@ -580,6 +611,10 @@ export function makeProspectService(overrides = {}) {
           externalAgentId,
           quarantinedAt: quarantined ? new Date() : null,
           quarantineReason: quarantined ? decision.quarantineReason : null,
+          // DNC: mark pending up-front (crash-safe — the backfill finds a stranded row);
+          // stash the intended agent so the post-commit clear-release knows who to deliver to.
+          ...(dncWillCheck ? { dncStatus: 'pending' } : {}),
+          ...(dncHeld ? { dncMetadata: { intendedAgentId: dncIntendedAgentId, alreadyCharged: dncAlreadyCharged } } : {}),
         },
         { transaction: t }
       );
@@ -620,7 +655,9 @@ export function makeProspectService(overrides = {}) {
             description:
               decision.quarantineReason === 'no_funded_external_buyer'
                 ? 'Held — no funded MKTR Leads (external) buyer'
-                : 'Held — no funded agent (lead quota)',
+                : decision.quarantineReason === 'dnc_pending'
+                  ? 'Held — pending DNC (Do Not Call) check'
+                  : 'Held — no funded agent (lead quota)',
             metadata: { quarantined: true, reason: decision.quarantineReason, via: routeVia },
           },
           { transaction: t }
@@ -684,6 +721,21 @@ export function makeProspectService(overrides = {}) {
     // Reflect the committed outcome (null when quarantined) for the rest of the
     // function — webhook dispatch, agent load, and the returned payload.
     assignedAgentId = finalAgentId;
+
+    // --- DNC scrubbing (post-commit, synchronous before dispatch) ---
+    // Block mode: the lead was born held (dnc_pending). Check, then release-on-clear (which
+    // fires its own first lead.created) or keep held (dnc_registered) — so the normal
+    // lead.created below stays suppressed (quarantined). Flag mode: check + record so the
+    // lead.created payload below carries the result; the lead delivers regardless.
+    if (dncHeld) {
+      await d.gateHeldDncLead(prospect).catch((err) =>
+        d.logger.error('[DNC] gate error', { error: err?.message || String(err) })
+      );
+    } else if (dncFlagApplies) {
+      await d
+        .dncCheckAndRecord(prospect)
+        .catch((err) => d.logger.error('[DNC] check error', { error: err?.message || String(err) }));
+    }
 
     // --- Webhook dispatch (AFTER transaction commits, fire-and-forget) ---
     // Always load the assigned agent's provenance (lyfeId/mktrLeadsId) by id — NOT
@@ -1036,6 +1088,17 @@ export function makeProspectService(overrides = {}) {
     if (prospect.quarantineReason === 'no_funded_external_buyer') {
       throw new d.AppError(
         'This lead is held for the MKTR Leads (external) buyer pool and cannot be manually assigned to an internal agent.',
+        409
+      );
+    }
+
+    // DNC fence: a lead held by the DNC gate must NOT be manually released (that would
+    // bypass scrubbing and hand a Do-Not-Call number to an adviser). It releases itself
+    // automatically once the DNC check clears (gate / backfill). assignProspect's claim
+    // below is reason-blind, so this guard is the fence.
+    if (prospect.quarantineReason === 'dnc_pending' || prospect.quarantineReason === 'dnc_registered') {
+      throw new d.AppError(
+        'This lead is held by the DNC (Do Not Call) gate and cannot be manually assigned — it releases automatically once the DNC check clears.',
         409
       );
     }

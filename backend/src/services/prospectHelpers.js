@@ -57,6 +57,23 @@ export function externalIdForDestination(agent, destination) {
 }
 
 /**
+ * The DNC scrubbing block carried on a delivered lead so the agent app can flag / disable
+ * outbound contact per channel. Returns null when the lead has no DNC data (scrubbing off
+ * or not yet checked), so payloads are byte-for-byte unchanged when DNC is disabled.
+ */
+export function dncPayloadBlock(prospect) {
+  if (!prospect || prospect.dncStatus == null) return null;
+  return {
+    status: prospect.dncStatus,
+    noVoiceCall: prospect.dncNoVoiceCall === true,
+    noTextMessage: prospect.dncNoTextMessage === true,
+    noFax: prospect.dncNoFax === true,
+    checkedAt: prospect.dncCheckedAt || null,
+    validUntil: prospect.dncValidUntil || null,
+  };
+}
+
+/**
  * Build the webhook payload for a 'lead.created' event.
  */
 export function buildLeadCreatedPayload(prospect, routingMode, agentForWebhook, assignedAgentId, sourceCampaign, sourceQrTag, agentGroup) {
@@ -84,6 +101,7 @@ export function buildLeadCreatedPayload(prospect, routingMode, agentForWebhook, 
         sourceMetadata: prospect.sourceMetadata,
         recordingUrl: prospect.sourceMetadata?.recordingUrl || null,
         transcript: prospect.sourceMetadata?.retellCallId ? prospect.notes : null,
+        dnc: dncPayloadBlock(prospect),
         createdAt: prospect.createdAt
       },
       routing: {
@@ -139,6 +157,7 @@ export function buildLeadAssignedPayload(prospect, agent, prospectWithCampaign) 
         sourceMetadata: meta,
         recordingUrl: meta.recordingUrl || null,
         transcript: meta.retellCallId ? prospect.notes : null,
+        dnc: dncPayloadBlock(prospect),
         createdAt: prospect.createdAt
       },
       routing: {
