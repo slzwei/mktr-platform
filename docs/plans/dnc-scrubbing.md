@@ -368,9 +368,11 @@ All findings below were verified against the actual source before folding in.
 - `createProspect` (web/QR) — block-mode born-held + post-commit gate; flag-mode check+record (§5.3).
 - `assignProspect` DNC fence; `dnc` payload block on `buildLeadCreatedPayload` + `buildLeadAssignedPayload` (§5.4). `releaseSweep` is already candidate-scoped to `no_funded_agent`, so it's DNC-safe as-is.
 - Config (`env.example`) + redaction (`logger.js`, `sentryScrub.js`) + `https-proxy-agent` dep declared.
+- `retellService.js` — same born-held-pending hook for the voice-bot source (27 retell unit tests green; inert when DNC off).
+- `dncBackfillService.js` + `bootstrap.js` — recovery job for `dnc_pending` held leads (error/timeout retry + no-API release backlog via `gateHeldDncLead`), in-process re-entrancy guard + `pg_try_advisory_xact_lock` job lock, excludes terminal `won`/`lost`, gated by `DNC_BACKFILL_ENABLED` (4 tests).
 - Everything is behind `DNC_API_ENABLED` (`dncEnforcement → 'off'`) → **ships dark**; the existing pipeline is byte-for-byte unchanged when DNC is disabled.
 
-**Remaining:**
-- **Retell source** (`retellService.js`) — the born-held-pending hook is not yet wired there. The web/QR funnel (redeem.sg/LeadCapture) is the Prudential path; Retell is a secondary source. Until wired, Retell leads aren't scrubbed even when DNC is on.
-- **Backfill** (`dncBackfillService.js` + bootstrap) — re-scrub/retry job, no-API release backlog, reverse flip, and the `lead.updated` event (needs Lyfe subscriber + receiver + a lyfe-app handler). Until done: error/timeout-held leads aren't auto-retried and results aren't revalidated before expiry.
+**Deferred (next iteration — design §5.5 / §8.8):**
+- Advanced backfill: revalidation of clear/registered results before `dncValidUntil`; reverse-flip release of long-held `dnc_registered` leads (needs agent re-resolution — `dncMetadata.intendedAgentId` is overwritten on a successful check); `lead.updated` for already-delivered leads that flip clear→registered (needs a lyfe-app receiver + the subscriber event). The shipped backfill covers the critical error/timeout recovery + the no-API release backlog.
+- Retell call direction (§8.8): currently scrubs `prospect.phone` (= `to_number`); if Retell calls are inbound, the consumer is `from_number` — confirm and fix the mapping.
 - `https-proxy-agent` is declared in `package.json` + lockfile; the proxy path dynamic-imports it only when `DNC_HTTPS_PROXY` is set.

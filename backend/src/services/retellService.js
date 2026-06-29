@@ -9,7 +9,9 @@ import { sendLeadAssignmentEmail } from './mailer.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
-import { destinationForAgent, externalIdForDestination, buildLeadHeldPayload } from './prospectHelpers.js';
+import { destinationForAgent, externalIdForDestination, buildLeadHeldPayload, dncPayloadBlock } from './prospectHelpers.js';
+import { dncEnforcement, formatDncNumber, checkAndRecord as dncCheckAndRecord } from './dncService.js';
+import { gateHeldDncLead } from './dncGate.js';
 
 const IDEMPOTENCY_SCOPE = 'retell:call';
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -38,6 +40,10 @@ const defaultDeps = {
   resolveLeadRouting,
   chargeLeadCredit,
   decideAssignment,
+  dncEnforcement,
+  formatDncNumber,
+  dncCheckAndRecord,
+  gateHeldDncLead,
   dispatchEvent,
   sendLeadAssignmentEmail,
   AppError,
@@ -250,6 +256,15 @@ export function makeRetellService(overrides = {}) {
       routeVia = routing.via;
     }
 
+    // DNC scrubbing mode for this lead (number from the Retell call). docs/plans/dnc-scrubbing.md.
+    // NOTE: scrubs prospect.phone (= to_number), the number an agent calls back. If Retell calls
+    // are inbound, the consumer is from_number — confirm the mapping (design §8.8).
+    const dncMode = d.dncEnforcement();
+    const dncNumber = dncMode !== 'off' && to_number ? d.formatDncNumber(to_number) : null;
+    const dncBlockApplies = dncMode === 'block' && !!dncNumber;
+    const dncFlagApplies = dncMode === 'flag' && !!dncNumber;
+    const dncWillCheck = dncBlockApplies || dncFlagApplies;
+
     // ── Create prospect in a transaction (with idempotency key) ──
     // Lead-quota gate: decideAssignment charges authoritatively for a funded gated
     // route, or quarantines (held) when no funded agent. Retell never best-effort
@@ -266,7 +281,22 @@ export function makeRetellService(overrides = {}) {
         charge: d.chargeLeadCredit,
       });
       quarantined = decision.action === 'quarantine';
+      let heldReason = quarantined ? decision.quarantineReason : null;
       assignedAgentId = quarantined ? null : (decision.assignedAgentId ?? null);
+
+      // DNC block-mode gate (mirrors prospectService.createProspect): a normally-assignable
+      // lead is HELD pending the DNC check; released post-commit on clear.
+      let dncHeld = false;
+      let dncIntendedAgentId = null;
+      let dncAlreadyCharged = false;
+      if (dncBlockApplies && !quarantined) {
+        dncIntendedAgentId = assignedAgentId;
+        dncAlreadyCharged = decision.charged === true;
+        dncHeld = true;
+        quarantined = true;
+        heldReason = 'dnc_pending';
+        assignedAgentId = null;
+      }
 
       const prospect = await d.Prospect.create({
         firstName,
@@ -281,7 +311,9 @@ export function makeRetellService(overrides = {}) {
         campaignId,
         assignedAgentId,
         quarantinedAt: quarantined ? new Date() : null,
-        quarantineReason: quarantined ? decision.quarantineReason : null,
+        quarantineReason: quarantined ? heldReason : null,
+        ...(dncWillCheck ? { dncStatus: 'pending' } : {}),
+        ...(dncHeld ? { dncMetadata: { intendedAgentId: dncIntendedAgentId, alreadyCharged: dncAlreadyCharged } } : {}),
         preferences: {
           contactMethod: 'phone',
           contactTime: '',
@@ -327,6 +359,19 @@ export function makeRetellService(overrides = {}) {
 
       await t.commit();
 
+      // ── DNC scrubbing (post-commit) ──
+      // Block: gate the held lead (release-on-clear → first lead.created, or keep held).
+      // Flag: check + record so the inline lead.created below carries the DNC result.
+      if (dncHeld) {
+        await d.gateHeldDncLead(prospect).catch((err) =>
+          d.logger.error('[DNC] retell gate error', { error: err?.message || String(err) })
+        );
+      } else if (dncFlagApplies) {
+        await d.dncCheckAndRecord(prospect).catch((err) =>
+          d.logger.error('[DNC] retell check error', { error: err?.message || String(err) })
+        );
+      }
+
       // ── Fire outgoing webhooks (post-commit, fire-and-forget) ──
       // Look up assigned agent for routing info
       let agentForWebhook = null;
@@ -363,6 +408,7 @@ export function makeRetellService(overrides = {}) {
             sourceMetadata: prospect.sourceMetadata,
             recordingUrl: recording_url || null,
             transcript: prospect.notes,
+            dnc: dncPayloadBlock(prospect),
             createdAt: prospect.createdAt
           },
           routing: {
