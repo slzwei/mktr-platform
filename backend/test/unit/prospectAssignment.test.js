@@ -83,7 +83,7 @@ function buildMocks() {
 
   const Commission = { create: jest.fn().mockResolvedValue({}) };
   const Attribution = { findOne: jest.fn().mockResolvedValue(null) };
-  const ProspectActivity = { create: jest.fn().mockResolvedValue({}) };
+  const ProspectActivity = { create: jest.fn().mockResolvedValue({}), bulkCreate: jest.fn().mockResolvedValue([]) };
   const AgentGroup = { findByPk: jest.fn().mockResolvedValue(null) };
   const AgentGroupMember = { findAll: jest.fn().mockResolvedValue([]) };
 
@@ -446,6 +446,24 @@ describe('prospectAssignment (unit)', () => {
       const assignedCalls = mocks.dispatchEvent.mock.calls.filter((c) => c[0] === 'lead.assigned');
       expect(assignedCalls).toHaveLength(2);
       expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.assigned', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
+    });
+
+    it('logs a ProspectActivity per bulk-assigned lead (so bulk assignment is on the timeline)', async () => {
+      mocks.models.Prospect.findAll.mockResolvedValue([
+        { id: 'p-1', firstName: 'A', assignedAgentId: null, campaignId: 'camp-1', campaign: mocks.mockCampaign },
+        { id: 'p-2', firstName: 'B', assignedAgentId: null, campaignId: 'camp-1', campaign: mocks.mockCampaign },
+      ]);
+      mocks.models.Prospect.update.mockResolvedValue([2, [
+        { id: 'p-1', campaignId: 'camp-1' },
+        { id: 'p-2', campaignId: 'camp-1' },
+      ]]);
+
+      await service.bulkAssignProspects(['p-1', 'p-2'], 'agent-1', admin);
+
+      expect(mocks.models.ProspectActivity.bulkCreate).toHaveBeenCalledTimes(1);
+      const rows = mocks.models.ProspectActivity.bulkCreate.mock.calls[0][0];
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toMatchObject({ prospectId: 'p-1', type: 'assigned', metadata: { via: 'bulk_assign' } });
     });
 
     it('deducts lead credits per campaign from the RETURNING rows', async () => {
