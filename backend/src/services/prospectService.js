@@ -40,6 +40,7 @@ import {
   destinationForAgent,
   externalIdForDestination,
 } from './prospectHelpers.js';
+import { fetchLeadActivitiesFromSupabase, mergeProspectTimeline } from './webLeadTimelineService.js';
 import { scoreQuiz } from './quizScoringService.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -866,9 +867,28 @@ export function makeProspectService(overrides = {}) {
     // Admin-only: cross-campaign repeat-signup visibility (flag, not block).
     // Omitted entirely for non-admins (this endpoint is shared with the agent
     // detail modal). Resilient — a failed enrichment never breaks the view.
+    // Admin-only enrichments. The unified `timeline` merges the agent-engagement half (Supabase
+    // lead_activities) with this prospect's ProspectActivity so the web Activity Timeline matches
+    // the mktr-leads app. ADMIN-GATED on purpose: the engagement is the external buyer's private
+    // notes, which must not surface to a non-admin web user (agents can open the same detail modal).
+    // Gated additionally on the export-EF URL (deploy-inert until set). Run in PARALLEL with the
+    // repeat-signup lookup so neither blocks the other; both are resilient (a miss never breaks the
+    // view, and the timeline degrades to ProspectActivity-only on a Supabase miss).
     if (user?.role === 'admin') {
-      const repeatSignup = await repeatSignupDetail(d.sequelize, { phone: prospect.phone, email: prospect.email }).catch(() => null);
+      const wantTimeline = !!process.env.SUPABASE_LEAD_ACTIVITIES_URL;
+      const [repeatSignup, timelineFetch] = await Promise.all([
+        repeatSignupDetail(d.sequelize, { phone: prospect.phone, email: prospect.email }).catch(() => null),
+        wantTimeline
+          ? fetchLeadActivitiesFromSupabase(prospect.id).catch(() => ({ rows: [], ok: false }))
+          : Promise.resolve(null),
+      ]);
       if (repeatSignup) prospect.setDataValue('repeatSignup', repeatSignup);
+      if (timelineFetch) {
+        prospect.setDataValue(
+          'timeline',
+          mergeProspectTimeline(prospect.activities || [], timelineFetch.rows, { ok: timelineFetch.ok }),
+        );
+      }
     }
 
     return prospect;
