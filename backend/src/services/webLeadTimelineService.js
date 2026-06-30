@@ -70,6 +70,9 @@ export function mergeProspectTimeline(prospectActivities, leadActivities, { ok =
     description: a.description ?? null,
     metadata: a.metadata ?? null,
     created_at: a.created_at,
+    // Canonical entry precomputed by the export EF (mktr-leads owns the kind contract). Carried
+    // through so the web renders it directly instead of re-deriving the kind from a local copy.
+    entry: a.entry ?? null,
   }));
 
   const mktrRows = ok ? mktr.filter((r) => r.metadata?.source !== 'mktr-leads') : mktr;
@@ -77,6 +80,7 @@ export function mergeProspectTimeline(prospectActivities, leadActivities, { ok =
 
   return [
     ...mktrRows.map((row) => ({ origin: 'mktr', row })),
-    ...appRows.map((row) => ({ origin: 'app', row })),
+    // Split `entry` out as a sibling so `row` stays the raw row (the dedup above keyed on its metadata).
+    ...appRows.map(({ entry, ...row }) => ({ origin: 'app', row, entry })),
   ].sort((a, b) => tsOf(b) - tsOf(a) || String(b.row.id).localeCompare(String(a.row.id)));
 }

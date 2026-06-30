@@ -112,7 +112,13 @@ export function normalizeProspectActivity(a) {
 export function buildTimeline(details) {
   if (Array.isArray(details?.timeline)) {
     return details.timeline
-      .map((x) => (x?.origin === 'app' ? normalizeLeadActivity(x.row) : normalizeProspectActivity(x?.row)))
+      .map((x) =>
+        x?.origin === 'app'
+          ? // Prefer the EF-computed canonical entry (single source of truth, parity-tested against
+            // the app). Fall back to the local normalizer only for older backends that omit `entry`.
+            (x.entry ?? normalizeLeadActivity(x.row))
+          : normalizeProspectActivity(x?.row),
+      )
       .filter(Boolean);
   }
   return (details?.activities || []).map(normalizeProspectActivity).filter(Boolean);
