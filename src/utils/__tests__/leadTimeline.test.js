@@ -25,6 +25,12 @@ describe('leadTimeline — web normalizers (canonical model, parity with the app
     expect(normalizeLeadActivity({ id: 'a3', type: 'status', description: 'Marked as Disputed', created_at: 't' }).kind).toBe('disputed');
     expect(normalizeLeadActivity({ id: 'a4', type: 'unassignment', metadata: { returned_to_held: true }, created_at: 't' }).kind).toBe('returned');
     expect(normalizeLeadActivity({ id: 'a5', type: 'some_future_type', created_at: 't' }).kind).toBe('updated');
+    // a `viewed` engagement row → 'viewed' kind, titled with the actor from metadata.actor_name
+    expect(
+      normalizeLeadActivity({ id: 'a6', type: 'viewed', metadata: { actor_name: 'Lee Yi Heng' }, created_at: 't' }),
+    ).toMatchObject({ kind: 'viewed', title: 'Viewed by Lee Yi Heng' });
+    // …and a plain "Viewed" when no actor was resolved
+    expect(normalizeLeadActivity({ id: 'a7', type: 'viewed', created_at: 't' }).title).toBe('Viewed');
   });
 
   it('buildTimeline merges tagged rows by origin, preserving the backend order', () => {

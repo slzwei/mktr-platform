@@ -47,7 +47,14 @@ const LEAD_ACTIVITY_KIND = {
   account_deleted: 'account_deleted',
   archived: 'archived',
   unarchived: 'unarchived',
+  viewed: 'viewed',
 };
+
+/** The web is admin-only oversight, so a viewed row reads "Viewed by {agent}" — actor name comes
+ * from the export EF's `metadata.actor_name` (the app shows "Viewed by you" to the agent instead). */
+function viewedTitle(m) {
+  return typeof m.actor_name === 'string' && m.actor_name ? `Viewed by ${m.actor_name}` : KIND_TITLE.viewed;
+}
 
 /** Normalise ONE Supabase lead_activities row → canonical entry (or null for config rows). */
 export function normalizeLeadActivity(a) {
@@ -60,7 +67,7 @@ export function normalizeLeadActivity(a) {
   return {
     id: a.id,
     kind,
-    title: typeof m.title === 'string' ? m.title : KIND_TITLE[kind],
+    title: typeof m.title === 'string' ? m.title : kind === 'viewed' ? viewedTitle(m) : KIND_TITLE[kind],
     note: kind === 'lead_created' || kind === 'assigned' || kind === 'reassigned' ? null : a.description || null,
     outcome: typeof m.outcome === 'string' ? m.outcome : null,
     nextStep: typeof m.next_step === 'string' ? m.next_step : null,
