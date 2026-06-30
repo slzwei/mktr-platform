@@ -29,6 +29,30 @@ export function nextTimestamp(now = Date.now()) {
   return lastTs;
 }
 
+// In-process hourly credit budget — a safety cap that sits BELOW every paid DNC call
+// (create, Retell, backfill, and the form /dnc/check) so no single caller can drain
+// prepaid credits. Resets hourly; single-instance backend → in-memory is sufficient.
+let budgetWindowStart = Date.now();
+let budgetSpent = 0;
+
+function withinBudget(count) {
+  const now = Date.now();
+  if (now - budgetWindowStart > 3_600_000) {
+    budgetWindowStart = now;
+    budgetSpent = 0;
+  }
+  const cap = Number(process.env.DNC_HOURLY_BUDGET) || 1000;
+  if (budgetSpent + count > cap) return false;
+  budgetSpent += count;
+  return true;
+}
+
+/** Test helper — reset the hourly budget window. */
+export function _resetDncBudget() {
+  budgetWindowStart = Date.now();
+  budgetSpent = 0;
+}
+
 // ── Config ────────────────────────────────────────────────────────────────────
 
 /** PEM private keys are often stored with literal "\n"; restore real newlines. */
@@ -191,6 +215,11 @@ export async function checkNumbers(numbers, opts = {}, deps = {}) {
   const fetchImpl = deps.fetch || nodeFetch;
   const checkOnBehalf = opts.checkOnBehalf || cfg.checkOnBehalf;
 
+  // Budget guard — refuse (fail-open) rather than bill beyond the hourly cap.
+  if (!deps.skipBudget && !(deps.withinBudget || withinBudget)(numbers.length)) {
+    return { budgetExceeded: true, statusCode: null, results: [], validUntil: null, transactionId: null, createdTime: null, rawMsg: null };
+  }
+
   const doCall = async () => {
     const timestamp = (deps.nextTimestamp || nextTimestamp)();
     const baseString = buildBaseString({ orgCode: cfg.orgCode, eServiceId: cfg.eServiceId, timestamp });
@@ -295,7 +324,13 @@ export async function checkAndRecord(prospect, deps = {}) {
   }
 
   if (hasFreshDnc(prospect)) {
-    return { status: prospect.dncStatus, cached: true };
+    return {
+      status: prospect.dncStatus,
+      noVoiceCall: prospect.dncNoVoiceCall === true,
+      noTextMessage: prospect.dncNoTextMessage === true,
+      noFax: prospect.dncNoFax === true,
+      cached: true,
+    };
   }
 
   let result;
@@ -306,6 +341,12 @@ export async function checkAndRecord(prospect, deps = {}) {
     log.error({ err: err.message, prospect_id: prospect.id }, 'dnc.check.error');
     await persistDnc(prospect, { dncStatus: 'pending' }, deps).catch(() => {});
     return { status: 'pending', error: err.message };
+  }
+
+  if (result.budgetExceeded) {
+    log.warn({ prospect_id: prospect.id }, 'dnc.check.budget_exceeded');
+    await persistDnc(prospect, { dncStatus: 'pending' }, deps).catch(() => {});
+    return { status: 'pending', reason: 'budget_exceeded' };
   }
 
   const mapped = mapStatusCode(result.statusCode);

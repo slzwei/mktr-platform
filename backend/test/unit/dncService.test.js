@@ -233,7 +233,7 @@ describe('checkAndRecord (mock fetch + models)', () => {
     const deps = mkDeps({});
     const future = new Date(Date.now() + 86400000);
     const out = await dnc.checkAndRecord({ id: 'p4', phone: '90000001', dncStatus: 'clear', dncValidUntil: future }, deps);
-    expect(out).toEqual({ status: 'clear', cached: true });
+    expect(out).toEqual({ status: 'clear', noVoiceCall: false, noTextMessage: false, noFax: false, cached: true });
     expect(deps.fetch).not.toHaveBeenCalled();
   });
 
@@ -252,5 +252,56 @@ describe('checkAndRecord (mock fetch + models)', () => {
     const out = await dnc.checkAndRecord({ id: 'p6', phone: '90000001' }, deps);
     expect(out.status).toBe('disabled');
     expect(deps.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('budget guard (checkNumbers)', () => {
+  const { privateKey } = keypair();
+  const cfg = {
+    enabled: true, baseUrl: 'https://x/realtime', orgCode: 'O', eServiceId: 'E',
+    privateKey, checkOnBehalf: 'N', proxy: null, timeoutMs: 5000,
+  };
+  const okFetch = () => jest.fn().mockResolvedValue({ status: 200, json: async () => ({ status_code: 'S000', numbers: [] }) });
+
+  beforeEach(() => dnc._resetDncBudget());
+
+  it('refuses (budgetExceeded, no network) once over the hourly cap', async () => {
+    const prev = process.env.DNC_HOURLY_BUDGET;
+    process.env.DNC_HOURLY_BUDGET = '2';
+    const fetch = okFetch();
+    const r1 = await dnc.checkNumbers(['90000001', '90000002'], { cfg }, { fetch, skipLock: true });
+    expect(r1.budgetExceeded).toBeFalsy();
+    const r2 = await dnc.checkNumbers(['90000003'], { cfg }, { fetch, skipLock: true });
+    expect(r2.budgetExceeded).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1); // the over-budget call never hit the network
+    process.env.DNC_HOURLY_BUDGET = prev;
+  });
+
+  it('skipBudget bypasses the cap', async () => {
+    const prev = process.env.DNC_HOURLY_BUDGET;
+    process.env.DNC_HOURLY_BUDGET = '0';
+    const fetch = okFetch();
+    const r = await dnc.checkNumbers(['90000001'], { cfg }, { fetch, skipLock: true, skipBudget: true });
+    expect(r.budgetExceeded).toBeFalsy();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    process.env.DNC_HOURLY_BUDGET = prev;
+  });
+});
+
+describe('checkAndRecord cache hit returns channel flags', () => {
+  const { privateKey } = keypair();
+  const cfg = {
+    enabled: true, baseUrl: 'https://x/realtime', orgCode: 'O', eServiceId: 'E',
+    privateKey, checkOnBehalf: 'N', proxy: null, timeoutMs: 5000,
+  };
+  it('reuses stored channel flags without calling the API', async () => {
+    const fetch = jest.fn();
+    const future = new Date(Date.now() + 86400000);
+    const out = await dnc.checkAndRecord(
+      { id: 'p', phone: '90000001', dncStatus: 'registered', dncValidUntil: future, dncNoVoiceCall: true, dncNoTextMessage: false, dncNoFax: false },
+      { fetch, skipLock: true, cfg, Prospect: { update: jest.fn() }, ProspectActivity: { create: jest.fn() } }
+    );
+    expect(out).toEqual({ status: 'registered', noVoiceCall: true, noTextMessage: false, noFax: false, cached: true });
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

@@ -338,7 +338,10 @@ export function makeProspectService(overrides = {}) {
     // DNC (Do Not Call) scrubbing mode for this lead. 'off' unless scrubbing is configured
     // AND the number is in DNC scope (Singapore). block → born held pending a check;
     // flag → checked post-commit, result attached to the payload. docs/plans/dnc-scrubbing.md.
-    const dncMode = d.dncEnforcement();
+    // Per-campaign gate: only campaigns that opted in (design_config.dncCheckAtSubmit) ever
+    // hit the paid DNC API — scopes credit spend (and the public create endpoint's exposure)
+    // to opted-in campaigns. The global enforcement mode (block/flag) still applies on top.
+    const dncMode = sourceCampaign?.design_config?.dncCheckAtSubmit === true ? d.dncEnforcement() : 'off';
     const dncNumber = dncMode !== 'off' && incoming.phone ? d.formatDncNumber(incoming.phone) : null;
     const dncBlockApplies = dncMode === 'block' && !!dncNumber;
     const dncFlagApplies = dncMode === 'flag' && !!dncNumber;
