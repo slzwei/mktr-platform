@@ -1,0 +1,30 @@
+Thank you. You're all set.
+
+Hello {{firstName}},
+
+We've received your request for {{campaignName}}.
+
+A member of our team will reach out within 24 hours to arrange a time for your complimentary gift and a relaxed, no pressure financial wellness review. There is nothing else you need to do right now.
+
+------------------------------------------------------------
+
+SHARE AND GET CREDITED
+
+Share your personal link with friends. When someone signs up through it, you are credited as their referrer.
+
+Your referral link:
+{{shareUrl}}
+
+------------------------------------------------------------
+
+Did not request this? No action is needed. You can safely ignore this email.
+
+Warm regards,
+The {{brandName}} team
+
+------------------------------------------------------------
+
+{{brandWordmark}}
+You are receiving this because you submitted a request to {{brandName}}.
+{{footerEntity}}
+(c) {{year}} {{brandName}}. All rights reserved.

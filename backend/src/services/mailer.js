@@ -1,7 +1,18 @@
 import nodemailer from 'nodemailer';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { logger } from '../utils/logger.js';
 import { normalizeCustomerHostChoice, customerHostOrigin } from '../utils/customerHost.js';
 import { getOrCreateProspectShareLink } from './shortlinkService.js';
+
+// Lead-capture confirmation email: the designer's production, table-based HTML email
+// (design_handoff_lead_confirmation_email). Read once at boot from the co-located copy so it
+// ships with the backend regardless of the deploy root. Do NOT reformat or sanitize it; the
+// inline styles and MSO conditional comments are deliberate email-client requirements.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const CONFIRMATION_EMAIL_HTML = readFileSync(join(__dirname, 'email-templates/confirmation-email.html'), 'utf8');
+const CONFIRMATION_EMAIL_TXT = readFileSync(join(__dirname, 'email-templates/confirmation-email.txt'), 'utf8');
 
 // D12: per-origin from-address. Lead-capture confirmations sent from the
 // redeem.sg flow use noreply@redeem.sg; admin / agent emails keep the
@@ -256,26 +267,23 @@ export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOv
   }
 
   const firstName = prospect.firstName || 'there';
-  const safeFirstName = escapeHtml(firstName);
-  const safeCampaign = escapeHtml(campaignName);
   const subject = `We've received your interest in ${campaignName}`;
 
-  // Brand the confirmation email by the campaign's customer host: redeem.sg
-  // (default) shows the Redeem brand; an mktr.sg campaign must show MKTR to the
-  // customer. Backend code is not bundled into the frontend dist, so the MKTR
-  // literals here do not affect the redeem-build brand-isolation grep.
+  // Brand the confirmation email by the campaign's customer host: redeem.sg (default) shows
+  // the Redeem brand; an mktr.sg campaign shows MKTR. Backend code is not bundled into the
+  // frontend dist, so the MKTR literals here do not affect the redeem-build brand grep.
   const hostChoice = normalizeCustomerHostChoice(prospect.campaign?.design_config?.customerHost);
   const isMktrHost = hostChoice === 'mktr';
   const brandName = isMktrHost ? 'MKTR' : 'Redeem';
-  const headerImage = isMktrHost
-    ? 'https://mktr.sg/email/confetti-header.gif'
-    : 'https://redeem.sg/email/confetti-header.gif';
-  const footerEntityHtml = isMktrHost
+  const brandWordmark = isMktrHost ? 'MKTR' : 'Redeem.';
+  const footerEntity = isMktrHost
     ? 'MKTR PTE. LTD. (UEN 202507548M)'
-    : 'Redeem &middot; A service of MKTR PTE. LTD. (UEN 202507548M)';
-  const footerEntityText = isMktrHost
-    ? 'MKTR PTE. LTD. (UEN 202507548M)'
-    : 'Redeem · A service of MKTR PTE. LTD. (UEN 202507548M)';
+    : 'Redeem, a service of MKTR PTE. LTD. (UEN 202507548M)';
+  // heroLogo is the only brand-conditional merge field that is HTML (Redeem = Fraunces text
+  // wordmark, MKTR = the hosted wordmark image), so it is NOT escaped in the substitution.
+  const heroLogo = isMktrHost
+    ? '<img src="https://mktr.sg/email/new-mktr-wordmark-light.png" width="150" height="53" alt="MKTR" style="display:block;margin:0 auto;border:0;outline:none;">'
+    : '<span style="font-family:\'Fraunces\',Georgia,\'Times New Roman\',serif;font-size:38px;line-height:42px;font-weight:600;letter-spacing:0.005em;color:#FFFCF7;">RedeemSG</span>';
 
   // Referral link: prefer the canonical shareUrl minted at prospect creation (identical to
   // the in-app share dialog). Only self-derive as a fallback when the caller didn't pass it
@@ -296,55 +304,28 @@ export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOv
       shareUrl = `${origin}/LeadCapture?campaign_id=${prospect.campaign.id}&ref=${prospect.id}`;
     }
   }
-  // escapeHtml the URL for the href attribute (& → &amp; etc.) — the value is server-built,
-  // but this stays consistent with the rest of the template's escaping.
-  const safeShareUrl = escapeHtml(shareUrl);
-  const referralHtml = shareUrl
-    ? `
-    <p style="margin-top:32px;">Know someone who'd be keen? Share your personal referral link &mdash; when a friend signs up through it, you're credited as their referrer:</p>
-    <p style="text-align:center;"><a href="${safeShareUrl}" class="action-btn" style="word-break:break-all;">Share my referral link</a></p>
-    <p style="font-size:13px; color:#6B7280; word-break:break-all;">${safeShareUrl}</p>`
-    : '';
-
-  const content = `
-    <p>Hi ${safeFirstName},</p>
-    <p>Thank you for your interest in <strong>${safeCampaign}</strong>.</p>
-    <p>We've received your submission and a member of our team will be in touch with you shortly &mdash; usually within 24 hours.</p>
-    <p>If you didn't submit this request, you can safely ignore this email.</p>
-    <p>&mdash; The ${brandName} team</p>
-    ${referralHtml}
-  `;
-
-  const html = getModernTemplate(
-    "We've received your submission",
-    content,
-    null,
-    {
-      headerTitle: brandName,
-      headerImage,
-      headerImageAlt: 'Thank you!',
-      footerHtml: `<p>&copy; ${new Date().getFullYear()} ${footerEntityHtml}</p>`,
-    }
+  // Render the designer's production template (design_handoff_lead_confirmation_email) by
+  // substituting merge fields. firstName, campaignName and shareUrl are user or operator
+  // derived, so they are HTML-escaped exactly as before; heroLogo is intentional markup and
+  // the brand literals and year are controlled, so they pass through raw. The plain-text part
+  // is never escaped. Unknown placeholders are left intact so a render check can flag them.
+  const fields = {
+    firstName,
+    campaignName,
+    shareUrl: shareUrl || '',
+    brandName,
+    brandWordmark,
+    footerEntity,
+    year: new Date().getFullYear(),
+    heroLogo,
+  };
+  const escapeFields = new Set(['firstName', 'campaignName', 'shareUrl']);
+  const html = CONFIRMATION_EMAIL_HTML.replace(/\{\{(\w+)\}\}/g, (_, k) =>
+    k in fields ? (escapeFields.has(k) ? escapeHtml(fields[k]) : String(fields[k])) : `{{${k}}}`
   );
-
-  const referralText = shareUrl
-    ? `
-
-Know someone who'd be keen? Share your personal referral link — when a friend signs up through it, you're credited as their referrer:
-${shareUrl}`
-    : '';
-
-  const text = `Hi ${firstName},
-
-Thank you for your interest in ${campaignName}.
-
-We've received your submission and a member of our team will be in touch with you shortly — usually within 24 hours.
-
-If you didn't submit this request, you can safely ignore this email.
-
-— The ${brandName} team${referralText}
-
-© ${new Date().getFullYear()} ${footerEntityText}`;
+  const text = CONFIRMATION_EMAIL_TXT.replace(/\{\{(\w+)\}\}/g, (_, k) =>
+    k in fields ? String(fields[k]) : `{{${k}}}`
+  );
 
   logger.info('Sending lead confirmation email', { to: prospect.email, prospectId: prospect.id, campaign: campaignName, brand: brandName });
 
