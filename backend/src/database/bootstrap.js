@@ -261,7 +261,7 @@ async function ensureMktrLeadsWebhookSubscriber() {
   // lead.held → the admin held-queue ping (only the mktr-leads app has that surface;
   // the Lyfe subscriber intentionally does NOT subscribe to it). The events-diff in
   // the update guard below self-heals this onto the existing subscriber on deploy.
-  const requiredEvents = ['lead.created', 'lead.assigned', 'lead.unassigned', 'lead.held'];
+  const requiredEvents = ['lead.created', 'lead.assigned', 'lead.unassigned', 'lead.held', 'lead.deleted'];
 
   const existing = await WebhookSubscriber.findOne({ where: { name: SUBSCRIBER_NAME } });
 
