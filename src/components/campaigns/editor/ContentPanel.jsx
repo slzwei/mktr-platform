@@ -460,6 +460,23 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
           </div>
         </div>
 
+        {/* Compliance — DNC check at submit */}
+        <div className="space-y-3 pt-4 border-t">
+          <Label className="text-sm font-semibold text-foreground">Compliance</Label>
+          <p className="text-xs text-muted-foreground -mt-1">Runs automatically when the prospect submits.</p>
+          <div className="flex items-center justify-between gap-3 py-1">
+            <div className="flex flex-col">
+              <span className="text-sm text-foreground">Check Do Not Call (DNC) at submit</span>
+              <span className="text-xs text-muted-foreground">Checks each number against Singapore&apos;s DNC Registry. If the number is registered, the prospect must give explicit consent before they can submit.</span>
+            </div>
+            <Switch
+              aria-label="Check Do Not Call (DNC) at submit"
+              checked={currentDesign.dncCheckAtSubmit === true}
+              onCheckedChange={(checked) => onDesignChange('dncCheckAtSubmit', checked)}
+            />
+          </div>
+        </div>
+
         {/* Terms & Conditions */}
  <div className="space-y-3 pt-4 border-t">
  <Label className="text-sm font-semibold text-foreground">Terms & Conditions</Label>
