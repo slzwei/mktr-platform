@@ -155,6 +155,9 @@ class APIClient {
  }
  const err = new Error(data.message || `HTTP ${response.status}: ${response.statusText}`);
  err.status = response.status;
+ // Preserve the structured payload an operational error opts into (e.g. the existing
+ // lead's canonical share link on a duplicate-signup 409), so callers can act on it.
+ err.data = data && typeof data === 'object' ? data.data : undefined;
  throw err;
  }
 

@@ -39,11 +39,18 @@ export const trackEvent = asyncHandler(async (req, res) => {
 export const trackReferral = asyncHandler(async (req, res) => {
   assertAllowedOrigin(req);
 
-  const sid = getSessionId(req);
   const { campaignId, ref } = req.body || {};
-  await analyticsService.trackReferral(sid, campaignId);
-  // Best-effort referrer name for the "Referred by …" badge. Same-campaign-guarded in
-  // the service (no cross-campaign name harvest); null when not resolvable.
+  // Referrer name for the "Referred by …" badge — resolved REGARDLESS of session
+  // (same-campaign-guarded in the service; no cross-campaign name harvest). A fresh
+  // referee clicking a /share/ link has no `sid` cookie yet, so gating this on a session
+  // would silently hide the badge for the exact people it's meant for.
   const referrerName = await prospectService.resolveReferrerName({ ref, campaignId });
+  // Click attribution is best-effort: it needs a session, but never block the badge on it.
+  try {
+    const sid = getSessionId(req);
+    await analyticsService.trackReferral(sid, campaignId);
+  } catch {
+    /* no session (direct /share/ click) — skip click tracking, still return the name */
+  }
   res.json({ success: true, data: { referrerName } });
 });

@@ -7,7 +7,7 @@ import { makeProspectService } from '../services/prospectService.js';
 //   2. shareUrl mint — createProspect returns the canonical per-prospect share link, built
 //      on the campaign's host via the injected getOrCreateProspectShareLink.
 
-function buildService({ campaign, shareLinkImpl } = {}) {
+function buildService({ campaign, shareLinkImpl, duplicate } = {}) {
   const fakeTx = {};
   const overrides = {
     models: {
@@ -17,7 +17,8 @@ function buildService({ campaign, shareLinkImpl } = {}) {
         findByPk: async () => campaign ?? { id: 'camp-1', design_config: {} },
       },
       Prospect: {
-        findOne: async () => null,
+        // duplicate (when provided) = the existing same-campaign lead found by phone.
+        findOne: async () => duplicate ?? null,
         create: async (data) => ({ id: 'prospect-new', ...data }),
         // prospectWithCampaign reload — benign null keeps the harness DB-free; the mint
         // falls back to the default ('redeem') host, which is all we assert on.
@@ -95,5 +96,39 @@ describe('createProspect — canonical shareUrl mint', () => {
     const { prospect, shareUrl } = await svc.createProspect({ ...baseBody }, null, ctx);
     expect(prospect.id).toBe('prospect-new');
     expect(shareUrl).toBeNull();
+  });
+});
+
+describe('createProspect — duplicate signup returns the existing lead\'s canonical link', () => {
+  it('409 carries the existing prospect id + its canonical shareUrl (not a fresh anonymous mint)', async () => {
+    const svc = buildService({
+      campaign: { id: 'camp-1', status: 'active', design_config: {} },
+      duplicate: { id: 'existing-1' },
+      shareLinkImpl: async () => ({ slug: 'dupslug', url: '/share/dupslug' }),
+    });
+    await expect(
+      svc.createProspect({ ...baseBody, phone: '91234567' }, null, ctx)
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      data: {
+        alreadyRegistered: true,
+        prospectId: 'existing-1',
+        shareUrl: expect.stringMatching(/\/share\/dupslug$/),
+      },
+    });
+  });
+
+  it('still rejects with 409 when the link mint fails (no shareUrl, prospectId preserved)', async () => {
+    const svc = buildService({
+      campaign: { id: 'camp-1', status: 'active', design_config: {} },
+      duplicate: { id: 'existing-1' },
+      shareLinkImpl: async () => { throw new Error('shortlink down'); },
+    });
+    await expect(
+      svc.createProspect({ ...baseBody, phone: '91234567' }, null, ctx)
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      data: { alreadyRegistered: true, prospectId: 'existing-1' },
+    });
   });
 });

@@ -395,7 +395,29 @@ export function makeProspectService(overrides = {}) {
         },
       });
       if (existing) {
-        throw new d.AppError('This phone number has already signed up for this campaign.', 409);
+        // Already registered: hand back THIS lead's canonical, attributed share link so the
+        // share dialog shows their stable /share/{slug} (not a fresh anonymous ref=1 mint on
+        // every open). Submit is OTP-gated, so the caller has proven they own this phone —
+        // safe to return their referral link. Best-effort: a mint failure must never turn the
+        // clean 409 into a 500 (the SPA can still resolve the link via prospectId).
+        const err = new d.AppError('This phone number has already signed up for this campaign.', 409);
+        err.data = { alreadyRegistered: true, prospectId: existing.id };
+        try {
+          const hostChoice = normalizeCustomerHostChoice(sourceCampaign?.design_config?.customerHost);
+          const origin = customerHostOrigin(hostChoice);
+          const { url } = await d.getOrCreateProspectShareLink({
+            prospectId: existing.id,
+            campaignId: incoming.campaignId,
+            origin,
+          });
+          err.data.shareUrl = `${origin}${url}`;
+        } catch (e) {
+          d.logger.warn('Duplicate-signup share link mint failed (non-blocking)', {
+            prospectId: existing.id,
+            err: e?.message,
+          });
+        }
+        throw err;
       }
     }
 

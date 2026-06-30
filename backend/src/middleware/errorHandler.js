@@ -90,6 +90,10 @@ export const errorHandler = (err, req, res, _next) => {
     return res.status(err.statusCode).json({
       success: false,
       message: err.message,
+      // Structured, non-sensitive payload an operational error opts into carrying (e.g. the
+      // existing prospect's canonical share link on a duplicate-signup 409). Only present
+      // when the thrower explicitly sets err.data.
+      ...(err.data ? { data: err.data } : {}),
       ...(isDev && err.details ? { details: err.details } : {}),
     });
   }

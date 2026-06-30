@@ -376,6 +376,11 @@ export default function LeadCapture() {
         setDuplicateCountdown(5);
         setSubmitted(false);
         setShareOpen(false);
+        // Already-registered: use THEIR canonical attributed link from the 409 so the share
+        // dialog shows their stable /share/{slug} instead of minting a fresh anonymous one.
+        // (No new email is sent on a duplicate, so emailedLink stays false.)
+        if (err?.data?.shareUrl) setServerShareUrl(err.data.shareUrl);
+        if (err?.data?.prospectId) setSubmittedProspectId(err.data.prospectId);
         setError("You have already signed up for this campaign. We'll open the share options in 5 seconds.");
         return;
       }
