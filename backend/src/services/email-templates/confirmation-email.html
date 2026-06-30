@@ -184,16 +184,16 @@
                         </td>
                       </tr>
 
-                      <!-- Visible, selectable link + Copy button (real text; works with images off) -->
+                      <!-- Visible, selectable referral link as plain text (NOT a link, so tapping it
+                           does not navigate away). Email clients strip JS, so a true clipboard copy
+                           cannot run in the message: long-press on mobile or select on desktop to copy.
+                           The share buttons below are the one-tap actions. Works with images off. -->
                       <tr>
                         <td style="padding-bottom:18px;">
                           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FBF3E6; border:1px solid #E8D7B8; border-radius:10px;">
                             <tr>
-                              <td valign="middle" style="padding:6px 6px 6px 16px;">
-                                <a href="{{shareUrl}}" class="copy-url" style="font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,Courier,monospace; font-size:14px; line-height:20px; color:#3D1F0B; word-break:break-all; text-decoration:none;">{{shareUrl}}</a>
-                              </td>
-                              <td valign="middle" align="right" style="padding:6px 6px 6px 4px; white-space:nowrap;">
-                                <a href="{{shareUrl}}" data-copy="{{shareUrl}}" class="copy-btn" style="display:inline-block; background-color:#3D1F0B; color:#FFFCF7; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif; font-size:13px; font-weight:600; letter-spacing:0.02em; line-height:18px; padding:9px 16px; border-radius:7px; text-decoration:none;">Copy</a>
+                              <td valign="middle" align="center" style="padding:13px 18px;">
+                                <span class="copy-url" style="font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,Courier,monospace; font-size:14px; line-height:20px; color:#3D1F0B; word-break:break-all;">{{shareUrl}}</span>
                               </td>
                             </tr>
                           </table>
@@ -229,7 +229,7 @@
                       </tr>
                       <tr>
                         <td align="center" style="padding-top:16px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif; font-size:13px; line-height:18px; color:#9A7E5E;">
-                          Share it in a tap, or copy your link with the button above.
+                          Tap a button to share, or copy the link above.
                         </td>
                       </tr>
                     </table>
