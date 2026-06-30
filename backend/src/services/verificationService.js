@@ -4,6 +4,7 @@ import { Campaign, Verification } from '../models/index.js';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { markPhoneVerified } from './verifiedPhoneStore.js';
 
 // AWS SNS SMS config. The region + sender ID must match our SSIR-registered
 // identity in AWS, or Singapore telcos relabel the sender as "Likely-SCAM".
@@ -224,7 +225,11 @@ export async function checkVerificationCode({ phone, code, countryCode = '+65' }
     };
   }
 
-  // Valid — destroy record to prevent reuse
+  // Valid — stamp a short-lived "recently verified" marker (BEFORE destroying the
+  // single-use row) so the DNC consent-gate check (POST /api/dnc/check) can confirm the
+  // caller controls this number without re-reading the now-destroyed row. See
+  // verifiedPhoneStore.js. Then destroy the row to prevent code reuse.
+  markPhoneVerified(fullPhone);
   await record.destroy();
 
   return {

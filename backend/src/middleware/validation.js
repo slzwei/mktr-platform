@@ -213,6 +213,14 @@ export const schemas = {
     // services/externalConsent.hasValidExternalConsent; until then external stays
     // inert and the flag is stripped server-side (prospectService) rather than persisted.
     consent_third_party: Joi.boolean().optional(),
+    // DNC (Do Not Call) consent — the explicit opt-in the consent gate shows ONLY when
+    // the prospect's OTP-verified number is on Singapore's DNC Registry. Whitelisted so
+    // the public submit (stripUnknown) keeps it instead of dropping it. The server BUILDS
+    // the authoritative consentMetadata.dnc evidence from this intent boolean
+    // (prospectService) — the DNC *fact* comes from the server-side check, never the
+    // client; this flag only records that the person ticked the box. That evidence is what
+    // releases an otherwise-held DNC-registered lead (services/dncConsent.hasValidDncConsent).
+    consent_dnc: Joi.boolean().optional(),
     // Quiz funnel: raw answers + an advisory client-computed result. The server
     // RE-SCORES authoritatively from campaign.design_config.quiz (see
     // prospectService.createProspect) and stashes the result in
