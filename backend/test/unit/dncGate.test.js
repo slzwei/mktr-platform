@@ -59,6 +59,56 @@ describe('gateHeldDncLead', () => {
     expect(release).toHaveBeenCalled();
   });
 
+  it('REGISTERED on voice + documented consent → RELEASED (consent override)', async () => {
+    const release = jest.fn().mockResolvedValue({ released: true });
+    const checkAndRecord = jest.fn().mockResolvedValue({ status: 'registered', noVoiceCall: true });
+    const update = jest.fn();
+    const prospect = { id: 'p6', dncMetadata: { intendedAgentId: 'a1' }, update };
+    const out = await gate.gateHeldDncLead(prospect, {
+      checkAndRecord,
+      releaseDncClearedLead: release,
+      hasValidDncConsent: jest.fn().mockReturnValue(true),
+      logger: baseLogger,
+    });
+    expect(out).toMatchObject({ outcome: 'released', status: 'registered', consentOverride: true });
+    expect(release).toHaveBeenCalledWith({ prospect, agentId: 'a1', alreadyCharged: false }, expect.anything());
+    expect(update).not.toHaveBeenCalled(); // never relabeled dnc_registered
+  });
+
+  it('REGISTERED on voice + NO consent → kept held (override does not fire)', async () => {
+    const release = jest.fn();
+    const checkAndRecord = jest.fn().mockResolvedValue({ status: 'registered', noVoiceCall: true });
+    const update = jest.fn().mockResolvedValue();
+    const prospect = { id: 'p7', dncMetadata: { intendedAgentId: 'a1' }, update };
+    const out = await gate.gateHeldDncLead(prospect, {
+      checkAndRecord,
+      releaseDncClearedLead: release,
+      hasValidDncConsent: jest.fn().mockReturnValue(false),
+      logger: baseLogger,
+    });
+    expect(out).toMatchObject({ outcome: 'held', status: 'registered' });
+    expect(out.consentOverride).toBeUndefined();
+    expect(update).toHaveBeenCalledWith({ quarantineReason: 'dnc_registered' });
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it('REGISTERED on voice + REAL consentMetadata.dnc evidence → released (end-to-end with the real validator)', async () => {
+    // No hasValidDncConsent override → exercises the real services/dncConsent validator.
+    const release = jest.fn().mockResolvedValue({ released: true });
+    const checkAndRecord = jest.fn().mockResolvedValue({ status: 'registered', noVoiceCall: true });
+    const prospect = {
+      id: 'p8',
+      dncMetadata: { intendedAgentId: 'a1' },
+      consentMetadata: {
+        dnc: { consented: true, version: '2026-06-30', consentedAt: '2026-06-30T08:00:00.000Z', channels: ['voice', 'text', 'fax'] },
+      },
+      update: jest.fn(),
+    };
+    const out = await gate.gateHeldDncLead(prospect, { checkAndRecord, releaseDncClearedLead: release, logger: baseLogger });
+    expect(out).toMatchObject({ outcome: 'released', status: 'registered', consentOverride: true });
+    expect(release).toHaveBeenCalled();
+  });
+
   it('PENDING → stays held, no release, no relabel', async () => {
     const release = jest.fn();
     const update = jest.fn();

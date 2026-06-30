@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiClient } from '@/api/client';
 import FieldRenderer from '@/components/campaigns/signup/FieldRenderer';
 import OTPVerification from '@/components/campaigns/signup/OTPVerification';
+import DncConsentGate from '@/components/campaigns/signup/DncConsentGate';
 import MarketingConsentDialog from '@/components/legal/MarketingConsentDialog';
 import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
 import { heroFontStack } from '@/lib/heroFonts';
@@ -40,6 +41,7 @@ export default function CampaignSignupForm({
   const headingFont = heroFontStack(campaign?.design_config?.heroFont);
   const sgPrOnly = campaign?.design_config?.sgPrOnly === true;
   const excludeAdvisors = campaign?.design_config?.excludeAdvisors === true;
+  const dncCheckAtSubmit = campaign?.design_config?.dncCheckAtSubmit === true;
 
   const [formData, setFormData] = useState({
     name: '',
@@ -52,6 +54,9 @@ export default function CampaignSignupForm({
   });
   const [otp, setOtp] = useState('');
   const [otpState, setOtpState] = useState('idle');
+  // DNC consent gate (inert unless dncCheckAtSubmit). 'unknown' | 'checking' | 'on_dnc' | 'clear'.
+  const [dncStatus, setDncStatus] = useState('unknown');
+  const [dncConsent, setDncConsent] = useState(false);
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState('');
   const [previewNotice, setPreviewNotice] = useState('');
@@ -205,6 +210,8 @@ export default function CampaignSignupForm({
     setOtpState('idle');
     setOtp('');
     setError('');
+    setDncStatus('unknown');
+    setDncConsent(false);
     setResendCooldown(0);
   };
 
@@ -281,6 +288,9 @@ export default function CampaignSignupForm({
       consent_contact: consentContact,
       consent_terms: consentTerms,
       consent_third_party: consentThirdParty,
+      // DNC consent intent (the server builds the authoritative evidence). Only sent when
+      // the gate was actually shown for this lead.
+      ...(dncCheckAtSubmit && dncStatus === 'on_dnc' ? { consent_dnc: dncConsent } : {}),
     };
 
     // Preview: stop here — never call onSubmit (which would create a real
@@ -312,6 +322,18 @@ export default function CampaignSignupForm({
   const handleOtpVerified = () => {
     setOtpState('verified');
     setShowSuccessTick(false);
+    // DNC check — fired only AFTER OTP is verified (so the result can't be used as an
+    // "is X on DNC?" oracle) and only when the campaign opted in. Fail-open: any error /
+    // non-SG / preview leaves dncStatus 'clear' so no gate appears (the backend scrub is
+    // the compliance net).
+    if (dncCheckAtSubmit && !previewMode) {
+      setDncStatus('checking');
+      setDncConsent(false);
+      apiClient
+        .post('/dnc/check', { phone: formData.phone, countryCode: '+65', campaignId }, { skipAuth: true })
+        .then((res) => setDncStatus(res?.data?.registered ? 'on_dnc' : 'clear'))
+        .catch(() => setDncStatus('clear'));
+    }
   };
 
   // Inline verification panel — slides down beneath the phone field (no modal).
@@ -352,7 +374,28 @@ export default function CampaignSignupForm({
     phoneOtpPanel,
   };
 
-  const renderField = (fieldId) => <FieldRenderer key={fieldId} fieldId={fieldId} {...fieldRendererProps} />;
+  // DNC consent gate: rendered beneath the verified phone field when the campaign opted in
+  // and the verified number is on the registry. While open and not consented, the other
+  // fields lock and submit is disabled. Entirely inert when dncCheckAtSubmit is off.
+  const dncGateOpen = dncCheckAtSubmit && dncStatus === 'on_dnc';
+  const gateLocked = dncGateOpen && !dncConsent;
+  const renderField = (fieldId) => {
+    if (fieldId === 'phone') {
+      return (
+        <Fragment key="phone">
+          <FieldRenderer fieldId="phone" {...fieldRendererProps} />
+          {dncGateOpen && (
+            <DncConsentGate
+              consented={dncConsent}
+              onGiveConsent={() => setDncConsent(true)}
+              onRevoke={() => setDncConsent(false)}
+            />
+          )}
+        </Fragment>
+      );
+    }
+    return <FieldRenderer key={fieldId} fieldId={fieldId} {...fieldRendererProps} locked={gateLocked} />;
+  };
 
   const submitDisabled =
     otpState !== 'verified' ||
@@ -360,7 +403,9 @@ export default function CampaignSignupForm({
     ageError !== '' ||
     dobIncomplete ||
     !isValidEmail(formData.email) ||
-    !consentTerms;
+    !consentTerms ||
+    (dncCheckAtSubmit && dncStatus === 'checking') ||
+    gateLocked;
 
   // SG/PR eligibility gate (campaign.design_config.sgPrOnly): a Yes/No screening
   // card shown before the form. "Yes" reveals + animates the form in; "No" shows a

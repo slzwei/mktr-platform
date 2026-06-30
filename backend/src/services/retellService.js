@@ -259,7 +259,8 @@ export function makeRetellService(overrides = {}) {
     // DNC scrubbing mode for this lead (number from the Retell call). docs/plans/dnc-scrubbing.md.
     // NOTE: scrubs prospect.phone (= to_number), the number an agent calls back. If Retell calls
     // are inbound, the consumer is from_number — confirm the mapping (design §8.8).
-    const dncMode = d.dncEnforcement();
+    // Per-campaign gate — only campaigns opted into design_config.dncCheckAtSubmit hit the API.
+    const dncMode = campaign?.design_config?.dncCheckAtSubmit === true ? d.dncEnforcement() : 'off';
     const dncNumber = dncMode !== 'off' && to_number ? d.formatDncNumber(to_number) : null;
     const dncBlockApplies = dncMode === 'block' && !!dncNumber;
     const dncFlagApplies = dncMode === 'flag' && !!dncNumber;

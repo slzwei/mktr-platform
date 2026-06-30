@@ -1,5 +1,18 @@
+import { Lock } from 'lucide-react';
 import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
 import { readableTextOn } from '@/lib/contrast';
+
+// Greyed, non-editable field treatment used while the DNC consent gate is open.
+// !important overrides the inputs' inline styles; pointer-events:none blocks editing.
+const LOCKED_FIELD_CSS = `
+  .lc-field-locked input, .lc-field-locked select {
+    background-color: #F0E7D4 !important;
+    border-color: #E2D6BC !important;
+    color: #A8916E !important;
+    pointer-events: none;
+  }
+  .lc-field-locked select { cursor: default !important; }
+`;
 
 /**
  * Per-field renderer for the public lead-capture form.
@@ -115,6 +128,9 @@ export default function FieldRenderer({
   dobIncomplete,
   ageError,
   renderAgeRestrictionHint,
+  // When true, the field renders locked (greyed + lock icon, non-editable) — used by the
+  // DNC consent gate until the prospect consents.
+  locked,
 }) {
   // name / email / phone are always visible. Phone is the lead pipeline's
   // identity/dedup key (phone+OTP), so it can never be hidden via config.
@@ -130,7 +146,8 @@ export default function FieldRenderer({
     return { required: true, optional: false };
   };
 
-  switch (fieldId) {
+  const node = (() => {
+    switch (fieldId) {
     case 'name':
       return (
         <div style={{ marginBottom: 20 }}>
@@ -408,7 +425,21 @@ export default function FieldRenderer({
 
     default:
       return null;
-  }
+    }
+  })();
+
+  if (!locked) return node;
+  return (
+    <div className="lc-field-locked" aria-disabled="true" style={{ position: 'relative', opacity: 0.5 }}>
+      <style>{LOCKED_FIELD_CSS}</style>
+      {node}
+      <Lock
+        size={14}
+        aria-hidden="true"
+        style={{ position: 'absolute', right: 18, top: 42, stroke: '#B6A07C', pointerEvents: 'none' }}
+      />
+    </div>
+  );
 }
 
 function SelectChevron() {

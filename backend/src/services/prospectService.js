@@ -18,6 +18,7 @@ import { decideAssignment } from './leadQuota.js';
 import { dncEnforcement, formatDncNumber, checkAndRecord as dncCheckAndRecord } from './dncService.js';
 import { gateHeldDncLead } from './dncGate.js';
 import { hasValidExternalConsent, buildExternalConsentEvidence } from './externalConsent.js';
+import { buildDncConsentEvidence } from './dncConsent.js';
 import { repeatSignupDetail, repeatSignupCounts } from './repeatSignup.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -85,6 +86,7 @@ const defaultDeps = {
   deductExternalLeadBalance,
   hasValidExternalConsent,
   buildExternalConsentEvidence,
+  buildDncConsentEvidence,
   chargeLeadCredit,
   decideAssignment,
   dncEnforcement,
@@ -133,6 +135,12 @@ export function makeProspectService(overrides = {}) {
     // (MKTR Leads buyer-agent) delivery. Distinct from the marketing booleans above;
     // recorded as consentMetadata.external evidence below, never as a CAPI signal.
     const consentThirdParty = safeBody.consent_third_party;
+    // DNC (Do Not Call) consent — the opt-in the consent gate shows only when the verified
+    // number is on Singapore's DNC Registry. Intent boolean only; the server BUILDS the
+    // authoritative consentMetadata.dnc evidence from it below (the DNC fact itself comes
+    // from the server-side check, never the client). Recorded as consentMetadata.dnc, never
+    // a CAPI signal.
+    const consentDnc = safeBody.consent_dnc;
 
     // Quiz funnel submission (re-scored server-side after the campaign loads),
     // ad attribution (UTM) and referral identity (the sharer's prospect UUID from
@@ -152,7 +160,7 @@ export function makeProspectService(overrides = {}) {
     const {
       eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
       registrationEventId: _re, ttclid: _tc, ttp: _tp,
-      consent_contact: _cc, consent_terms: _ct, consent_third_party: _ctp,
+      consent_contact: _cc, consent_terms: _ct, consent_third_party: _ctp, consent_dnc: _cd,
       // consentMetadata is SERVER-authoritative — the third-party-consent evidence is
       // built below from consent_third_party. Drop any client-supplied value so external
       // consent can never be forged via the body (defence-in-depth beyond route stripUnknown).
@@ -190,6 +198,18 @@ export function makeProspectService(overrides = {}) {
     });
     if (externalConsent) {
       incoming.consentMetadata = { ...(incoming.consentMetadata || {}), external: externalConsent };
+    }
+
+    // DNC (Do Not Call) consent evidence. Written ONLY when the prospect ticked the consent
+    // box the gate shows when their OTP-verified number is on Singapore's DNC Registry. This
+    // is the documented opt-in the post-commit DNC gate (gateHeldDncLead) reads to RELEASE an
+    // otherwise-held registered lead — PDPA evidence that a DNC-registered person agreed to be
+    // contacted by this advertiser. SERVER-built from the consent_dnc intent boolean (the
+    // client's consentMetadata is dropped above, so this can't be forged); unticked/absent =>
+    // null => nothing written => the registered lead stays held (the fail-safe).
+    const dncConsent = d.buildDncConsentEvidence(consentDnc, { sourceUrl: eventSourceUrl });
+    if (dncConsent) {
+      incoming.consentMetadata = { ...(incoming.consentMetadata || {}), dnc: dncConsent };
     }
 
     // Capture the campaign the caller explicitly asked for (e.g. a bare
@@ -338,7 +358,10 @@ export function makeProspectService(overrides = {}) {
     // DNC (Do Not Call) scrubbing mode for this lead. 'off' unless scrubbing is configured
     // AND the number is in DNC scope (Singapore). block → born held pending a check;
     // flag → checked post-commit, result attached to the payload. docs/plans/dnc-scrubbing.md.
-    const dncMode = d.dncEnforcement();
+    // Per-campaign gate: only campaigns that opted in (design_config.dncCheckAtSubmit) ever
+    // hit the paid DNC API — scopes credit spend (and the public create endpoint's exposure)
+    // to opted-in campaigns. The global enforcement mode (block/flag) still applies on top.
+    const dncMode = sourceCampaign?.design_config?.dncCheckAtSubmit === true ? d.dncEnforcement() : 'off';
     const dncNumber = dncMode !== 'off' && incoming.phone ? d.formatDncNumber(incoming.phone) : null;
     const dncBlockApplies = dncMode === 'block' && !!dncNumber;
     const dncFlagApplies = dncMode === 'flag' && !!dncNumber;

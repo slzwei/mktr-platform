@@ -3,6 +3,7 @@ import { chargeLeadCredit } from './leadCredits.js';
 import { persistEventDeliveries, flushDeliveries } from './webhookService.js';
 import { buildLeadCreatedPayload, destinationForAgent, externalIdForDestination } from './prospectHelpers.js';
 import { checkAndRecord as dncCheckAndRecord } from './dncService.js';
+import { hasValidDncConsent } from './dncConsent.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -24,6 +25,7 @@ const defaultDeps = {
   destinationForAgent,
   externalIdForDestination,
   checkAndRecord: dncCheckAndRecord,
+  hasValidDncConsent,
   logger,
   // Injectable so gateHeldDncLead can be unit-tested without the release tx (the real
   // function is hoisted and bound below).
@@ -129,7 +131,9 @@ export async function releaseDncClearedLead({ prospect, agentId, alreadyCharged 
 /**
  * Post-commit gate for a lead born held `dnc_pending`. Runs the DNC check, then:
  *   - clear, OR registered but voice-clear → release to the intended agent (first lead.created)
- *   - registered on voice → keep held, relabel `dnc_registered`
+ *   - registered on voice + documented DNC consent → release (the consent override — the
+ *     consumer ticked the consent gate, evidence in consentMetadata.dnc)
+ *   - registered on voice + NO consent → keep held, relabel `dnc_registered`
  *   - pending/error → stays `dnc_pending`; the backfill retries.
  * Never throws. Returns { outcome: 'released'|'held', status }.
  */
@@ -147,12 +151,29 @@ export async function gateHeldDncLead(prospect, overrides = {}) {
     return { outcome: 'held', status: 'error' };
   }
 
-  // Voice is the channel agents use; registered-on-voice is the block trigger. A lead
-  // registered only on text/fax (voice clear) is still deliverable, with flags in the payload.
-  const deliver = result.status === 'clear' || (result.status === 'registered' && !result.noVoiceCall);
+  // Voice is the channel agents use; registered-on-voice is the block trigger. A lead is
+  // delivered when ANY of:
+  //   - clear (not on the register), OR
+  //   - registered only on text/fax (voice clear) — still deliverable, flags in the payload, OR
+  //   - registered on voice BUT the consumer gave documented DNC consent at opt-in (the
+  //     consent gate) — the lawful override. The evidence (consentMetadata.dnc) is
+  //     server-built at capture, so a forged client flag can never reach here.
+  const consentOverride = result.status === 'registered' && d.hasValidDncConsent(prospect);
+  const deliver =
+    result.status === 'clear' ||
+    (result.status === 'registered' && !result.noVoiceCall) ||
+    consentOverride;
   if (deliver) {
+    if (consentOverride) {
+      d.logger.info('[DNC] registered lead released on documented consent (override)', { prospectId: prospect.id });
+    }
     const rel = await d.releaseDncClearedLead({ prospect, agentId: intendedAgentId, alreadyCharged }, overrides);
-    return { outcome: rel.released ? 'released' : 'held', status: result.status, release: rel };
+    return {
+      outcome: rel.released ? 'released' : 'held',
+      status: result.status,
+      release: rel,
+      ...(consentOverride ? { consentOverride: true } : {}),
+    };
   }
   if (result.status === 'registered') {
     await prospect.update({ quarantineReason: 'dnc_registered' }).catch(() => {});
