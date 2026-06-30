@@ -46,6 +46,19 @@ describe('leadTimeline — web normalizers (canonical model, parity with the app
     ]);
   });
 
+  it('prefers the EF-supplied canonical entry for app rows (no local re-derivation)', () => {
+    const entry = { id: 'a1', kind: 'viewed', title: 'Viewed by Lee Yi Heng', note: null, outcome: null, nextStep: null, at: 't1' };
+    const details = { timeline: [{ origin: 'app', row: { id: 'a1', type: 'viewed', metadata: {}, created_at: 't1' }, entry }] };
+    expect(buildTimeline(details)).toEqual([entry]);
+  });
+
+  it('falls back to local normalize when an app row lacks entry (older backend)', () => {
+    const details = {
+      timeline: [{ origin: 'app', row: { id: 'a2', type: 'viewed', metadata: { actor_name: 'Lee Yi Heng' }, created_at: 't' } }],
+    };
+    expect(buildTimeline(details)[0]).toMatchObject({ kind: 'viewed', title: 'Viewed by Lee Yi Heng' });
+  });
+
   it('buildTimeline falls back to ProspectActivity-only when no merged timeline is present', () => {
     const details = { activities: [{ id: 'm1', type: 'created', description: 'Signed up', createdAt: 't' }] };
     expect(buildTimeline(details).map((e) => e.kind)).toEqual(['lead_created']);

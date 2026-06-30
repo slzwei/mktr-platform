@@ -41,4 +41,13 @@ describe('mergeProspectTimeline', () => {
     expect(mergeProspectTimeline(null, null, {})).toEqual([]);
     expect(mergeProspectTimeline([], [], { ok: true })).toEqual([]);
   });
+
+  it('carries the EF-precomputed entry as a sibling, keeping row raw', () => {
+    const entry = { id: 'a1', kind: 'viewed', title: 'Viewed by Lee Yi Heng', at: '2026-06-28T09:00:00Z' };
+    const a = [{ id: 'a1', type: 'viewed', metadata: {}, created_at: '2026-06-28T09:00:00Z', entry }];
+    const [item] = mergeProspectTimeline([], a, { ok: true });
+    expect(item).toMatchObject({ origin: 'app', entry });
+    expect(item.row).not.toHaveProperty('entry'); // row stays the raw row
+    expect(item.row).toMatchObject({ id: 'a1', type: 'viewed' });
+  });
 });
