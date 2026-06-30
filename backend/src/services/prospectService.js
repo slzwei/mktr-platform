@@ -31,6 +31,8 @@ import {
   sendTikTokLeadEvent,
   sendTikTokCompleteRegistrationEvent,
 } from './tiktokEventsService.js';
+import { getOrCreateProspectShareLink } from './shortlinkService.js';
+import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { logger } from '../utils/logger.js';
 import { signupActivityDescription, signupSourceLabel } from '../utils/sourceLabel.js';
 import {
@@ -101,6 +103,7 @@ const defaultDeps = {
   sendCompleteRegistrationEvent: metaSendCompleteRegistrationEvent,
   sendTikTokLeadEvent,
   sendTikTokCompleteRegistrationEvent,
+  getOrCreateProspectShareLink,
   AppError,
   logger,
 };
@@ -300,6 +303,22 @@ export function makeProspectService(overrides = {}) {
       incoming.campaignId ? m.Campaign.findByPk(incoming.campaignId) : null,
       incoming.qrTagId ? m.QrTag.findByPk(incoming.qrTagId) : null,
     ]);
+
+    // Campaign on/off gate: a paused/draft/completed/archived campaign stops accepting
+    // public signups, so its referral + lead-capture links stop working at the source (the
+    // SPA already hides the form for inactive campaigns — this closes the direct-API
+    // bypass). Block only when the campaign exists AND its status is a known non-active
+    // value; a missing status (legacy rows / DI test mocks) is treated as allowed so the
+    // gate never rejects a live campaign on field drift. 'active' is the canonical "on"
+    // signal (what the device fleet serves), set together with is_active on pause/activate.
+    if (
+      incoming.campaignId &&
+      sourceCampaign &&
+      sourceCampaign.status != null &&
+      sourceCampaign.status !== 'active'
+    ) {
+      throw new d.AppError('This campaign is no longer active.', 410);
+    }
 
     // External (MKTR Leads) eligibility. INERT until per-source consent capture writes
     // consentMetadata.external — hasValidExternalConsent returns false for all current
@@ -887,7 +906,34 @@ export function makeProspectService(overrides = {}) {
         include: [{ association: 'campaign', attributes: ['id', 'name', 'design_config'] }],
       })) || prospect;
 
-    return { prospect, assignedAgentId, assignedAgent, prospectWithCampaign, quarantined };
+    // Mint the prospect's ONE canonical referral share link now, on the campaign's
+    // canonical host, so the confirmation email and the SPA share dialog hand out the
+    // identical /share/{slug}. Non-blocking: a failure must never break lead creation —
+    // the email + SPA fall back to the long ?ref= URL. Injected via deps so DI unit tests
+    // can stub it (keeps them DB-free).
+    let shareUrl = null;
+    const shareCampaignId = prospect.campaignId;
+    if (shareCampaignId) {
+      try {
+        const hostChoice = normalizeCustomerHostChoice(
+          prospectWithCampaign?.campaign?.design_config?.customerHost
+        );
+        const origin = customerHostOrigin(hostChoice);
+        const { url } = await d.getOrCreateProspectShareLink({
+          prospectId: prospect.id,
+          campaignId: shareCampaignId,
+          origin,
+        });
+        shareUrl = `${origin}${url}`;
+      } catch (err) {
+        d.logger.warn('Referral share link mint failed (non-blocking)', {
+          prospectId: prospect.id,
+          err: err?.message,
+        });
+      }
+    }
+
+    return { prospect, assignedAgentId, assignedAgent, prospectWithCampaign, quarantined, shareUrl };
   }
 
   /**

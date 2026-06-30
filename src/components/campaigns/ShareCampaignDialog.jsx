@@ -8,23 +8,23 @@ import { apiClient } from '@/api/client';
  * Reusable share dialog for campaigns.
  * Renders as a mobile-friendly bottom sheet overlay (no Radix dialog).
  */
-export default function ShareCampaignDialog({ open, onOpenChange, campaignName, campaignId, longShareUrl }) {
+export default function ShareCampaignDialog({ open, onOpenChange, campaignName, campaignId, prospectId, serverShareUrl, longShareUrl }) {
  const [shortening, setShortening] = useState(false);
  const [shortShareUrl, setShortShareUrl] = useState('');
  const [copied, setCopied] = useState(false);
 
- // Generate a shortlink each time the dialog opens
+ // Generate a shortlink when the dialog opens — UNLESS the backend already handed us the
+ // canonical link at submit (serverShareUrl), which we then use directly. The fallback mint
+ // passes prospectId so the endpoint returns the SAME per-prospect row the email uses (not
+ // a fresh anonymous slug); only a duplicate-signup (no prospectId) falls back to targetUrl.
  useEffect(() => {
  (async () => {
- if (open) {
+ if (open && !serverShareUrl) {
  setShortening(true);
  try {
  const resp = await apiClient.post(
  '/shortlinks/public/share',
- {
- targetUrl: longShareUrl,
- campaignId,
- },
+ prospectId ? { prospectId } : { targetUrl: longShareUrl, campaignId },
  { skipAuth: true }
  );
  const url = resp?.data?.url;
@@ -38,7 +38,7 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
  setShortShareUrl('');
  }
  })();
- }, [open, longShareUrl, campaignId]);
+ }, [open, longShareUrl, campaignId, prospectId, serverShareUrl]);
 
  // Lock body scroll when open
  useEffect(() => {
@@ -52,7 +52,7 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
  };
  }, [open]);
 
- const shareUrl = shortShareUrl || longShareUrl;
+ const shareUrl = serverShareUrl || shortShareUrl || longShareUrl;
 
  if (!open) return null;
 

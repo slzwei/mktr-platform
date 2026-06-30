@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { sequelize } from '../database/connection.js';
 
 const ShortLink = sequelize.define('ShortLink', {
@@ -29,6 +29,13 @@ const ShortLink = sequelize.define('ShortLink', {
       key: 'id'
     }
   },
+  // The prospect whose canonical referral share link this is. Exactly one share link
+  // per prospect (partial-unique below), so the confirmation email and the in-app share
+  // dialog resolve the same row. NULL for admin / campaign-level / legacy links.
+  prospectId: {
+    type: DataTypes.UUID,
+    allowNull: true
+  },
   createdBy: {
     type: DataTypes.UUID,
     allowNull: true,
@@ -54,7 +61,15 @@ const ShortLink = sequelize.define('ShortLink', {
   indexes: [
     { unique: true, fields: ['slug'] },
     { fields: ['campaignId'] },
-    { fields: ['purpose'] }
+    { fields: ['purpose'] },
+    // Partial unique: one share link per prospect (NULLs excluded). Mirrors migration
+    // 042 so a dev sync({force}) reproduces the prod constraint.
+    {
+      name: 'short_links_prospect_id_unique',
+      unique: true,
+      fields: ['prospectId'],
+      where: { prospectId: { [Op.ne]: null } }
+    }
   ]
 });
 

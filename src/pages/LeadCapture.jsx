@@ -56,6 +56,9 @@ export default function LeadCapture() {
   // The created prospect's id — embedded in the share URL (?ref={id}) so a
   // friend's referred submit can be attributed back to this sharer.
   const [submittedProspectId, setSubmittedProspectId] = useState(null);
+  // The canonical short share link the backend minted at creation — identical to the one
+  // in the confirmation email. Preferred over the locally-built long URL when present.
+  const [serverShareUrl, setServerShareUrl] = useState(null);
   const [duplicateDetected, setDuplicateDetected] = useState(false);
   const [duplicateCountdown, setDuplicateCountdown] = useState(5);
   // Quiz funnel result (answers + client-scored result). Set when the in-front
@@ -320,6 +323,8 @@ export default function LeadCapture() {
         // Keep the new prospect's id so this submitter's share links carry
         // their identity (?ref={id}) instead of the anonymous ref=1.
         setSubmittedProspectId(result?.data?.prospect?.id || null);
+        // Canonical short share link minted server-side (matches the confirmation email).
+        setServerShareUrl(result?.data?.shareUrl || null);
         // Fire Pixel Lead with the same eventId we sent to the backend so Meta
         // (and TikTok) deduplicate this against the server-side dispatch. The OTP
         // gate is enforced upstream in CampaignSignupForm; reaching this branch
@@ -467,6 +472,8 @@ export default function LeadCapture() {
         onOpenChange={setShareOpen}
         campaignName={campaign?.name}
         campaignId={campaign?.id}
+        prospectId={submittedProspectId}
+        serverShareUrl={serverShareUrl}
         longShareUrl={longShareUrl}
       />
     </LeadCaptureLayout>

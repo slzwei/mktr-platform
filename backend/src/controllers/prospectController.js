@@ -49,7 +49,7 @@ export const createProspect = asyncHandler(async (req, res) => {
     ttp: req.body?.ttp,
   };
 
-  const { prospect, assignedAgentId, assignedAgent, prospectWithCampaign } = await prospectService.createProspect(
+  const { prospect, assignedAgentId, assignedAgent, prospectWithCampaign, shareUrl } = await prospectService.createProspect(
     req.body,
     req.user,
     { cookies: req.cookies, headers: req.headers, meta }
@@ -64,7 +64,9 @@ export const createProspect = asyncHandler(async (req, res) => {
 
   // Confirmation email to the lead (from noreply@redeem.sg). Fire-and-forget;
   // the function itself filters out synthetic Retell emails and missing fields.
-  sendLeadConfirmationEmail(prospectWithCampaign || prospect).catch(err =>
+  // Pass the canonical shareUrl minted at creation so the email's "Refer a friend"
+  // link is byte-identical to the one the SPA shows post-submit.
+  sendLeadConfirmationEmail(prospectWithCampaign || prospect, { shareUrl }).catch(err =>
     console.error(`Failed to send confirmation email to lead for prospect ${prospect.id}:`, err.message || err)
   );
 
@@ -75,7 +77,9 @@ export const createProspect = asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     message: 'Prospect created successfully',
-    data: { prospect: { id: prospect.id } }
+    // shareUrl: the prospect's canonical referral link (same row the email uses). It only
+    // carries the prospect's own UUID (already public in the share link) — no sourceMetadata.
+    data: { prospect: { id: prospect.id }, shareUrl: shareUrl || null }
   });
 });
 

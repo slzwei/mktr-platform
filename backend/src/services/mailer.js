@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { logger } from '../utils/logger.js';
-import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
+import { normalizeCustomerHostChoice, customerHostOrigin } from '../utils/customerHost.js';
+import { getOrCreateProspectShareLink } from './shortlinkService.js';
 
 // D12: per-origin from-address. Lead-capture confirmations sent from the
 // redeem.sg flow use noreply@redeem.sg; admin / agent emails keep the
@@ -236,7 +237,7 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-export async function sendLeadConfirmationEmail(prospect) {
+export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOverride } = {}) {
   if (!prospect?.email) {
     logger.warn('Skipping lead confirmation email: prospect has no email', { prospectId: prospect?.id });
     return { success: false, message: 'Missing prospect email' };
@@ -276,12 +277,42 @@ export async function sendLeadConfirmationEmail(prospect) {
     ? 'MKTR PTE. LTD. (UEN 202507548M)'
     : 'Redeem · A service of MKTR PTE. LTD. (UEN 202507548M)';
 
+  // Referral link: prefer the canonical shareUrl minted at prospect creation (identical to
+  // the in-app share dialog). Only self-derive as a fallback when the caller didn't pass it
+  // (keeps the email self-contained); fall back to the long ?ref= URL if minting fails so
+  // the email always ships a working link. Non-blocking either way.
+  let shareUrl = shareUrlOverride || null;
+  if (!shareUrl && prospect.campaign?.id) {
+    const origin = customerHostOrigin(hostChoice);
+    try {
+      const { url } = await getOrCreateProspectShareLink({
+        prospectId: prospect.id,
+        campaignId: prospect.campaign.id,
+        origin,
+      });
+      shareUrl = `${origin}${url}`;
+    } catch (err) {
+      logger.warn('Confirmation email: share link unavailable, using long URL', { prospectId: prospect.id, err: err?.message });
+      shareUrl = `${origin}/LeadCapture?campaign_id=${prospect.campaign.id}&ref=${prospect.id}`;
+    }
+  }
+  // escapeHtml the URL for the href attribute (& → &amp; etc.) — the value is server-built,
+  // but this stays consistent with the rest of the template's escaping.
+  const safeShareUrl = escapeHtml(shareUrl);
+  const referralHtml = shareUrl
+    ? `
+    <p style="margin-top:32px;">Know someone who'd be keen? Share your personal referral link &mdash; when a friend signs up through it, you're credited as their referrer:</p>
+    <p style="text-align:center;"><a href="${safeShareUrl}" class="action-btn" style="word-break:break-all;">Share my referral link</a></p>
+    <p style="font-size:13px; color:#6B7280; word-break:break-all;">${safeShareUrl}</p>`
+    : '';
+
   const content = `
     <p>Hi ${safeFirstName},</p>
     <p>Thank you for your interest in <strong>${safeCampaign}</strong>.</p>
     <p>We've received your submission and a member of our team will be in touch with you shortly &mdash; usually within 24 hours.</p>
     <p>If you didn't submit this request, you can safely ignore this email.</p>
     <p>&mdash; The ${brandName} team</p>
+    ${referralHtml}
   `;
 
   const html = getModernTemplate(
@@ -296,6 +327,13 @@ export async function sendLeadConfirmationEmail(prospect) {
     }
   );
 
+  const referralText = shareUrl
+    ? `
+
+Know someone who'd be keen? Share your personal referral link — when a friend signs up through it, you're credited as their referrer:
+${shareUrl}`
+    : '';
+
   const text = `Hi ${firstName},
 
 Thank you for your interest in ${campaignName}.
@@ -304,7 +342,7 @@ We've received your submission and a member of our team will be in touch with yo
 
 If you didn't submit this request, you can safely ignore this email.
 
-— The ${brandName} team
+— The ${brandName} team${referralText}
 
 © ${new Date().getFullYear()} ${footerEntityText}`;
 

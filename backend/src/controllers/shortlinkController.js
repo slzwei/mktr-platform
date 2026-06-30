@@ -2,7 +2,14 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import * as shortlinkService from '../services/shortlinkService.js';
 
 export const createShareLink = asyncHandler(async (req, res) => {
-  const data = await shortlinkService.createShareLink(req.body || {});
+  const body = req.body || {};
+  // Prospect-aware path: when the SPA passes a prospectId (post-submit share), resolve the
+  // ONE canonical per-prospect link (same row the confirmation email uses) instead of
+  // minting a fresh slug from the client-supplied targetUrl. Server derives the campaign +
+  // host from the prospect, so the client can't bind a link to a mismatched host/campaign.
+  const data = body.prospectId
+    ? await shortlinkService.getOrCreateProspectShareLinkById({ prospectId: body.prospectId })
+    : await shortlinkService.createShareLink(body);
   res.status(201).json({ success: true, data });
 });
 

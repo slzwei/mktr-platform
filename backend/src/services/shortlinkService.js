@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import { Op } from 'sequelize';
-import { ShortLink, ShortLinkClick, sequelize } from '../models/index.js';
+import { ShortLink, ShortLinkClick, Prospect, sequelize } from '../models/index.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
 
 const generateSlug = (len = 8) => {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -11,13 +12,15 @@ const generateSlug = (len = 8) => {
 };
 
 async function allocateSlug() {
-  let slug = generateSlug(8);
-  let tries = 0;
-  while (await ShortLink.findOne({ where: { slug } })) {
-    slug = generateSlug(8);
-    if (++tries > 5) break;
+  for (let tries = 0; tries < 8; tries++) {
+    const slug = generateSlug(8);
+    if (!(await ShortLink.findOne({ where: { slug } }))) return slug;
   }
-  return slug;
+  // 36^8 ≈ 2.8e12 keyspace — reaching here needs an astronomically full table. Throw
+  // rather than return an unchecked (possibly colliding) slug that would trip the unique
+  // constraint on insert: callers treat shortlink minting as non-blocking and fall back
+  // to the long URL.
+  throw new AppError('Could not allocate a unique short link slug', 500);
 }
 
 /**
@@ -79,6 +82,95 @@ export async function createShareLink({ targetUrl, campaignId }) {
   });
 
   return { slug, url: `/share/${slug}` };
+}
+
+/**
+ * Get-or-create the ONE canonical referral share link for a prospect.
+ *
+ * Both the confirmation email (server, at prospect creation) and the in-app share dialog
+ * resolve through here so they hand the prospect the SAME `/share/{slug}`. The link is
+ * keyed by `prospectId` (partial-unique index, migration 042) — `findOne` first to avoid
+ * wasting a slug on the hot already-exists path, then `create` with a unique-violation
+ * catch so concurrent callers converge on the one row. No fixed TTL: the link lives as
+ * long as the campaign is active (enforced at submit), so `expiresAt` is null.
+ *
+ * @param {object} a
+ * @param {string} a.prospectId  The prospect this link belongs to (= the share `ref`).
+ * @param {string} a.campaignId  The campaign the link points at.
+ * @param {string} a.origin      Canonical customer origin (customerHostOrigin output).
+ */
+export async function getOrCreateProspectShareLink({ prospectId, campaignId, origin }) {
+  if (!prospectId || !campaignId || !origin) {
+    throw new AppError('prospectId, campaignId and origin are required', 400);
+  }
+
+  // origin is server-computed, but validate defensively: http(s) + an owned host, then
+  // normalize to a bare origin (no path/query/trailing slash) so the slug only ever 302s
+  // to one of our domains.
+  let parsed;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    throw new AppError('Invalid origin', 400);
+  }
+  if (!['https:', 'http:'].includes(parsed.protocol) || !isOwnedRedirectHost(parsed.hostname)) {
+    throw new AppError('origin host is not allowed', 400);
+  }
+  const cleanOrigin = parsed.origin;
+
+  const existing = await ShortLink.findOne({ where: { prospectId } });
+  if (existing) return { slug: existing.slug, url: `/share/${existing.slug}` };
+
+  const targetUrl = `${cleanOrigin}/LeadCapture?campaign_id=${campaignId}&ref=${prospectId}`;
+  try {
+    const link = await ShortLink.create({
+      slug: await allocateSlug(),
+      targetUrl,
+      purpose: 'share',
+      campaignId,
+      prospectId,
+      createdBy: null,
+      expiresAt: null,
+    });
+    return { slug: link.slug, url: `/share/${link.slug}` };
+  } catch (err) {
+    // Race: a concurrent mint won the unique(prospectId) index. Re-find and return that
+    // row so the email and the SPA still converge on one canonical link.
+    const isUnique =
+      err?.name === 'SequelizeUniqueConstraintError' ||
+      err?.original?.code === '23505' ||
+      err?.parent?.code === '23505';
+    if (isUnique) {
+      const again = await ShortLink.findOne({ where: { prospectId } });
+      if (again) return { slug: again.slug, url: `/share/${again.slug}` };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Public-endpoint entry point: resolve a prospect's canonical share link by id alone.
+ * Loads the prospect to derive the campaign + canonical host server-side (never trusting
+ * a client-supplied host/campaign), then delegates to getOrCreateProspectShareLink. Lets
+ * the in-app share dialog reuse the exact link the email minted even on the fallback path.
+ */
+export async function getOrCreateProspectShareLinkById({ prospectId }) {
+  if (!prospectId || typeof prospectId !== 'string') {
+    throw new AppError('prospectId is required', 400);
+  }
+  const prospect = await Prospect.findByPk(prospectId, {
+    include: [{ association: 'campaign', attributes: ['id', 'design_config'] }],
+  });
+  if (!prospect || !prospect.campaignId) {
+    throw new AppError('Prospect not found', 404);
+  }
+  const hostChoice = normalizeCustomerHostChoice(prospect.campaign?.design_config?.customerHost);
+  const origin = customerHostOrigin(hostChoice);
+  return getOrCreateProspectShareLink({
+    prospectId: prospect.id,
+    campaignId: prospect.campaignId,
+    origin,
+  });
 }
 
 /**
