@@ -1,4 +1,4 @@
-import { Op } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import {
   Prospect,
   User,
@@ -39,6 +39,7 @@ import {
   normalizePhone,
   buildLeadCreatedPayload,
   buildLeadHeldPayload,
+  buildLeadDeletedPayload,
   buildLeadAssignedPayload,
   buildLeadUnassignedPayload,
   buildHeldLeadEnrichment,
@@ -1106,15 +1107,59 @@ export function makeProspectService(overrides = {}) {
    */
   async function deleteProspect(id, user) {
     const scopeFilter = await d.buildProspectWhere(user);
-    const whereConditions = { id, ...scopeFilter };
 
-    const prospect = await m.Prospect.findOne({ where: whereConditions });
+    // Fire lead.deleted to the mktr-leads mirror so the deletion propagates (the
+    // receiver soft-deletes its copy; otherwise the lead is orphaned on the
+    // agent's page). Transactional outbox: persist the delivery row INSIDE the
+    // same (managed) txn as the destroy so they commit together — no crash window
+    // that re-creates the orphan. The prospect is row-locked for the txn so a
+    // concurrent reassignment can't shift the destination under us. The managed
+    // txn auto-commits on resolve / auto-rolls-back (and rethrows) on a throw, so
+    // a hard error => delete fails + admin retries, with NO orphan/partial state.
+    let deliveryPairs = [];
+    await d.sequelize.transaction(async (t) => {
+      const prospect = await m.Prospect.findOne({
+        where: { id, ...scopeFilter },
+        transaction: t,
+        lock: Transaction.LOCK.UPDATE,
+      });
+      if (!prospect) {
+        throw new d.AppError('Prospect not found or access denied', 404);
+      }
 
-    if (!prospect) {
-      throw new d.AppError('Prospect not found or access denied', 404);
-    }
+      // Only the mktr-leads receiver handles lead.deleted. Held / unassigned /
+      // System-Agent (no assignee) or a non-mktr_leads destination => no mirrored
+      // row to clean => skip the emit.
+      let destination = null;
+      if (prospect.assignedAgentId) {
+        const agent = await m.User.findByPk(prospect.assignedAgentId, {
+          attributes: ['id', 'lyfeId', 'mktrLeadsId'],
+          transaction: t,
+        });
+        destination = destinationForAgent(agent);
+      }
 
-    await prospect.destroy();
+      if (destination === 'mktr_leads') {
+        deliveryPairs = await d.persistEventDeliveries(
+          'lead.deleted',
+          () => buildLeadDeletedPayload(prospect),
+          { destination },
+          t
+        );
+        // BEST-EFFORT (unlike releaseHeldProspect's fail-closed rollback): an empty
+        // set means webhooks are disabled or no subscriber is tagged. Deleting is an
+        // admin cleanup action that must NOT be blocked on mirror delivery — proceed.
+        if (deliveryPairs.length === 0) {
+          d.logger.warn('[Webhook] lead.deleted not queued (webhooks off / no subscriber) — deleting anyway', {
+            prospectId: prospect.id,
+          });
+        }
+      }
+
+      await prospect.destroy({ transaction: t });
+    });
+
+    d.flushDeliveries(deliveryPairs); // post-commit, fire-and-forget
   }
 
   /**

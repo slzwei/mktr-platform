@@ -223,6 +223,24 @@ export function buildLeadHeldPayload(prospect, campaign, reason) {
   };
 }
 
+/**
+ * Build the payload for a 'lead.deleted' event — fired when an admin deletes a
+ * prospect on MKTR so the mktr-leads mirror can soft-delete its copy. Minimal
+ * (like lead.held): the receiver looks the lead up by externalId, so no other PII
+ * crosses the wire. Delivered ONLY to the destination='mktr_leads' subscriber.
+ */
+export function buildLeadDeletedPayload(prospect) {
+  return {
+    event: 'lead.deleted',
+    timestamp: new Date().toISOString(),
+    data: {
+      lead: {
+        externalId: prospect.id
+      }
+    }
+  };
+}
+
 /** Format a budget object ({ min, max, currency, timeframe }) into one display string, or null. */
 function formatBudget(budget) {
   if (!budget || typeof budget !== 'object') return null;
