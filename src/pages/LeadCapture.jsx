@@ -53,12 +53,17 @@ export default function LeadCapture() {
   const [submitted, setSubmitted] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [referralMarked, setReferralMarked] = useState(false);
+  // Referrer display name for the "Referred by …" badge (same-campaign-guarded server-side).
+  const [referrerName, setReferrerName] = useState(null);
   // The created prospect's id — embedded in the share URL (?ref={id}) so a
   // friend's referred submit can be attributed back to this sharer.
   const [submittedProspectId, setSubmittedProspectId] = useState(null);
   // The canonical short share link the backend minted at creation — identical to the one
   // in the confirmation email. Preferred over the locally-built long URL when present.
   const [serverShareUrl, setServerShareUrl] = useState(null);
+  // True after a fresh signup where an email was provided — the confirmation email (which
+  // carries this same link) was dispatched, so the share dialog can say "also in your inbox".
+  const [emailedLink, setEmailedLink] = useState(false);
   const [duplicateDetected, setDuplicateDetected] = useState(false);
   const [duplicateCountdown, setDuplicateCountdown] = useState(5);
   // Quiz funnel result (answers + client-scored result). Set when the in-front
@@ -248,7 +253,10 @@ export default function LeadCapture() {
         const params = new URLSearchParams(location.search);
         const ref = params.get('ref') || params.get('refshare');
         if (ref && campaign && !referralMarked) {
-          await apiClient.post('/analytics/referrals', { campaignId: campaign.id });
+          // Marks the referral click AND returns the referrer's name (same-campaign
+          // guarded; null for the anonymous ref=1 or a cross-campaign/unknown referrer).
+          const resp = await apiClient.post('/analytics/referrals', { campaignId: campaign.id, ref });
+          if (resp?.data?.referrerName) setReferrerName(resp.data.referrerName);
           setReferralMarked(true);
         }
       } catch {
@@ -325,6 +333,8 @@ export default function LeadCapture() {
         setSubmittedProspectId(result?.data?.prospect?.id || null);
         // Canonical short share link minted server-side (matches the confirmation email).
         setServerShareUrl(result?.data?.shareUrl || null);
+        // We email the confirmation (with this link) only when an email was provided.
+        setEmailedLink(!!(formData.email && String(formData.email).trim()));
         // Fire Pixel Lead with the same eventId we sent to the backend so Meta
         // (and TikTok) deduplicate this against the server-side dispatch. The OTP
         // gate is enforced upstream in CampaignSignupForm; reaching this branch
@@ -447,6 +457,28 @@ export default function LeadCapture() {
         />
       ) : (
         <div ref={formRef}>
+          {referrerName && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                margin: '0 auto 16px',
+                padding: '8px 16px',
+                maxWidth: 'fit-content',
+                background: TOKENS.storyCard,
+                border: `1px solid ${TOKENS.hairline}`,
+                borderRadius: 999,
+                color: TOKENS.body,
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              <span aria-hidden="true">👋</span>
+              <span>Referred by {referrerName}</span>
+            </div>
+          )}
           <QuizGate
             quiz={design.quiz}
             themeColor={design.themeColor}
@@ -475,6 +507,7 @@ export default function LeadCapture() {
         prospectId={submittedProspectId}
         serverShareUrl={serverShareUrl}
         longShareUrl={longShareUrl}
+        emailedLink={emailedLink}
       />
     </LeadCaptureLayout>
   );

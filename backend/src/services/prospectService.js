@@ -2154,3 +2154,25 @@ export const listProspects = _default.listProspects;
 export const listHeldProspects = _default.listHeldProspects;
 export const scheduleFollowUp = _default.scheduleFollowUp;
 export const trackProspectView = _default.trackProspectView;
+
+/**
+ * Resolve a referrer's display name for the public lead-capture "Referred by" badge.
+ * Mirrors the same-campaign privacy guard in createProspect (see the referral block):
+ * a name is returned ONLY when the referrer prospect is in the SAME campaign, so the
+ * public path can't harvest names across campaigns by probing UUIDs. Returns null for
+ * the legacy anonymous ref ('1'), a non-UUID, a missing prospect, a cross-campaign
+ * referrer, or any lookup error (never throws — display is best-effort).
+ */
+export async function resolveReferrerName({ ref, campaignId } = {}) {
+  if (!ref || ref === '1' || !campaignId || !UUID_RE.test(ref)) return null;
+  try {
+    const referrer = await Prospect.findByPk(ref, {
+      attributes: ['firstName', 'lastName', 'campaignId'],
+    });
+    if (!referrer || String(referrer.campaignId) !== String(campaignId)) return null;
+    const name = [referrer.firstName, referrer.lastName].filter(Boolean).join(' ').trim();
+    return name || null;
+  } catch {
+    return null;
+  }
+}

@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import CheckCircle from 'lucide-react/icons/check-circle';
 import X from 'lucide-react/icons/x';
+import Mail from 'lucide-react/icons/mail';
 import { apiClient } from '@/api/client';
 
 /**
  * Reusable share dialog for campaigns.
  * Renders as a mobile-friendly bottom sheet overlay (no Radix dialog).
  */
-export default function ShareCampaignDialog({ open, onOpenChange, campaignName, campaignId, prospectId, serverShareUrl, longShareUrl }) {
+export default function ShareCampaignDialog({ open, onOpenChange, campaignName, campaignId, prospectId, serverShareUrl, longShareUrl, emailedLink = false }) {
  const [shortening, setShortening] = useState(false);
  const [shortShareUrl, setShortShareUrl] = useState('');
  const [copied, setCopied] = useState(false);
@@ -106,6 +107,14 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
  {copied ? 'Copied' : 'Copy'}
  </Button>
  </div>
+
+ {/* Reassure the user the same link is in their inbox (the confirmation email carries it). */}
+ {emailedLink && (
+ <p className="text-[11px] text-muted-foreground text-center leading-snug flex items-center justify-center gap-1">
+ <Mail className="w-3 h-3" aria-hidden="true" />
+ We&apos;ve also sent this link to your email.
+ </p>
+ )}
 
  {/* Social share buttons */}
  <div className="grid grid-cols-2 gap-3">

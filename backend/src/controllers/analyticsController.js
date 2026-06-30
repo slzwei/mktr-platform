@@ -1,5 +1,6 @@
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import * as analyticsService from '../services/analyticsService.js';
+import * as prospectService from '../services/prospectService.js';
 
 const allowedOrigins = new Set([
   'https://mktr.sg',
@@ -39,7 +40,10 @@ export const trackReferral = asyncHandler(async (req, res) => {
   assertAllowedOrigin(req);
 
   const sid = getSessionId(req);
-  const { campaignId } = req.body || {};
+  const { campaignId, ref } = req.body || {};
   await analyticsService.trackReferral(sid, campaignId);
-  res.json({ success: true });
+  // Best-effort referrer name for the "Referred by …" badge. Same-campaign-guarded in
+  // the service (no cross-campaign name harvest); null when not resolvable.
+  const referrerName = await prospectService.resolveReferrerName({ ref, campaignId });
+  res.json({ success: true, data: { referrerName } });
 });
