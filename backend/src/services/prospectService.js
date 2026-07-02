@@ -2057,10 +2057,15 @@ export function makeProspectService(overrides = {}) {
         await assignProspect(prospectId, agent.id, { id: actorUserId }, { batch });
       }
     } catch (err) {
-      // assignProspect isn't transactional; record the failure so a retry replays it (no re-charge),
-      // then surface to the controller.
-      await record({ status: 'error', error: 'reassign_failed' });
-      throw err;
+      // assignProspect isn't transactional; record the failure so a retry replays it (no
+      // re-charge) and RETURN it as a typed result — a throw surfaces as a generic 500 and
+      // the caller's app would misbucket the FIRST response as a retryable transport
+      // failure instead of the sticky needs-attention state the recorded replay enforces.
+      d.logger.error('[external-reassign] assignProspect failed', {
+        prospectId,
+        error: err?.message || String(err),
+      });
+      return record({ status: 'error', error: 'reassign_failed' });
     }
     return record({ status: 'reassigned', leadId: prospectId, agent: agentBrief });
   }
