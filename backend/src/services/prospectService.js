@@ -45,6 +45,7 @@ import {
   buildHeldLeadEnrichment,
   destinationForAgent,
   externalIdForDestination,
+  withBatchContext,
 } from './prospectHelpers.js';
 import { fetchLeadActivitiesFromSupabase, mergeProspectTimeline } from './webLeadTimelineService.js';
 import { scoreQuiz } from './quizScoringService.js';
@@ -1164,8 +1165,11 @@ export function makeProspectService(overrides = {}) {
 
   /**
    * Assign a single prospect to an agent. Returns { prospect, agent } for email side-effect.
+   * `opts.batch` ({ id, size }, pre-validated) rides into the delivery webhooks so the
+   * receiving app can coalesce a bulk fan-out's pushes into one summary.
    */
-  async function assignProspect(prospectId, agentId, user) {
+  async function assignProspect(prospectId, agentId, user, opts = {}) {
+    const { batch = null } = opts;
     const prospect = await m.Prospect.findByPk(prospectId);
     if (!prospect) {
       throw new d.AppError('Prospect not found', 404);
@@ -1287,7 +1291,10 @@ export function makeProspectService(overrides = {}) {
         id: externalIdForDestination(agent, releaseDestination),
       };
       d.dispatchEvent('lead.created', () =>
-        buildLeadCreatedPayload(prospect, 'direct', agentForWebhook, agentId, prospectWithCampaign?.campaign || null, null, null),
+        withBatchContext(
+          buildLeadCreatedPayload(prospect, 'direct', agentForWebhook, agentId, prospectWithCampaign?.campaign || null, null, null),
+          batch
+        ),
         { destination: releaseDestination }
       );
 
@@ -1318,9 +1325,11 @@ export function makeProspectService(overrides = {}) {
 
     // Fire lead.assigned webhook to the NEW owner's app.
     const newDestination = destinationForAgent(agent);
-    d.dispatchEvent('lead.assigned', () => buildLeadAssignedPayload(prospect, agent, prospectWithCampaign), {
-      destination: newDestination,
-    });
+    d.dispatchEvent(
+      'lead.assigned',
+      () => withBatchContext(buildLeadAssignedPayload(prospect, agent, prospectWithCampaign), batch),
+      { destination: newDestination }
+    );
 
     // Cross-app reassignment: if the PREVIOUS owner lived in a different app, that app
     // still holds a copy of this lead that would otherwise linger. Tell it to release the
@@ -1846,7 +1855,7 @@ export function makeProspectService(overrides = {}) {
    * @returns {Promise<{status:'assigned'|'already_handled'|'invalid_agent'|'not_found'|'not_assignable_external', leadId?:string, agent?:object}>}
    */
   async function releaseHeldProspect(prospectId, agentMktrLeadsId, opts = {}) {
-    const { idempotencyKey = null, actorUserId = null } = opts;
+    const { idempotencyKey = null, actorUserId = null, batch = null } = opts;
     const IDEMP_SCOPE = 'external:held-assign';
 
     // Replay: a retried request with the same key returns the first result verbatim.
@@ -1929,7 +1938,7 @@ export function makeProspectService(overrides = {}) {
         // buildLeadCreatedPayload, so delivery is otherwise unchanged.
         deliveryPairs = await d.persistEventDeliveries(
           'lead.assigned',
-          () => buildLeadAssignedPayload(withCampaign, agent, withCampaign),
+          () => withBatchContext(buildLeadAssignedPayload(withCampaign, agent, withCampaign), batch),
           { destination },
           t
         );
@@ -1990,7 +1999,7 @@ export function makeProspectService(overrides = {}) {
    * @returns {Promise<{status:'reassigned'|'invalid_agent'|'not_found'|'not_assignable', leadId?:string, agent?:object}>}
    */
   async function reassignProspectExternal(prospectId, agentMktrLeadsId, opts = {}) {
-    const { idempotencyKey = null, actorUserId = null } = opts;
+    const { idempotencyKey = null, actorUserId = null, batch = null } = opts;
     const IDEMP_SCOPE = 'external:admin-reassign';
 
     // Claim the idempotency key FIRST (unique PK) so concurrent / retried same-key requests can
@@ -2045,13 +2054,18 @@ export function makeProspectService(overrides = {}) {
     try {
       // Already with the target → no-op so a retry / re-pick never double-charges the agent.
       if (prospect.assignedAgentId !== agent.id) {
-        await assignProspect(prospectId, agent.id, { id: actorUserId });
+        await assignProspect(prospectId, agent.id, { id: actorUserId }, { batch });
       }
     } catch (err) {
-      // assignProspect isn't transactional; record the failure so a retry replays it (no re-charge),
-      // then surface to the controller.
-      await record({ status: 'error', error: 'reassign_failed' });
-      throw err;
+      // assignProspect isn't transactional; record the failure so a retry replays it (no
+      // re-charge) and RETURN it as a typed result — a throw surfaces as a generic 500 and
+      // the caller's app would misbucket the FIRST response as a retryable transport
+      // failure instead of the sticky needs-attention state the recorded replay enforces.
+      d.logger.error('[external-reassign] assignProspect failed', {
+        prospectId,
+        error: err?.message || String(err),
+      });
+      return record({ status: 'error', error: 'reassign_failed' });
     }
     return record({ status: 'reassigned', leadId: prospectId, agent: agentBrief });
   }

@@ -301,3 +301,25 @@ export function buildHeldLeadEnrichment(prospect) {
 
   return { birthday, details };
 }
+
+/**
+ * Validate a bulk batch context ({ id, size }) from an external request body.
+ * The mktr-leads admin app fans a bulk op out as N single-lead calls, each
+ * carrying the SAME batch — MKTR echoes it into every per-lead webhook so the
+ * receiver can coalesce the N pushes into one summary ("14 leads assigned to
+ * you"). Malformed shapes return null (per-lead pushes, the pre-bulk behavior)
+ * rather than erroring: the batch is a delivery-UX hint, never a correctness input.
+ */
+export function parseBatchContext(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const { id, size } = raw;
+  if (typeof id !== 'string' || id.length < 8 || id.length > 64) return null;
+  if (!Number.isInteger(size) || size < 1 || size > 500) return null;
+  return { id, size };
+}
+
+/** Echo a validated batch context into a webhook payload's data block (no-op when null). */
+export function withBatchContext(payload, batch) {
+  if (!batch) return payload;
+  return { ...payload, data: { ...payload.data, batch } };
+}
