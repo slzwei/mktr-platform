@@ -17,6 +17,7 @@
 import crypto from 'crypto';
 import { logger } from '../utils/logger.js';
 import { reassignProspectExternal, returnProspectToHeld } from '../services/prospectService.js';
+import { parseBatchContext } from '../services/prospectHelpers.js';
 
 const MAX_AGE_MS = 5 * 60 * 1000;
 const MAX_FUTURE_MS = 2 * 60 * 1000; // tolerate clock skew
@@ -77,10 +78,17 @@ export async function reassignLead(req, res) {
   if (!idempotencyKey || typeof idempotencyKey !== 'string') {
     return res.status(400).json({ success: false, error: 'idempotencyKey is required' });
   }
+  // Optional bulk batch context — echoed into the delivery webhook so the receiver
+  // coalesces N per-lead pushes into one summary. Malformed → null (per-lead pushes).
+  const batch = parseBatchContext(req.body?.batch);
 
   try {
     // agentMktrUserId is the app's agents.mktr_user_id (== MKTR users.mktrLeadsId).
-    const result = await reassignProspectExternal(prospectId, agentMktrUserId, { idempotencyKey, actorUserId: null });
+    const result = await reassignProspectExternal(prospectId, agentMktrUserId, {
+      idempotencyKey,
+      actorUserId: null,
+      batch,
+    });
     const codeByStatus = { reassigned: 200, invalid_agent: 400, not_found: 404, not_assignable: 409 };
     const code = codeByStatus[result.status] || 500;
     return res.status(code).json({ success: code < 400, ...result });

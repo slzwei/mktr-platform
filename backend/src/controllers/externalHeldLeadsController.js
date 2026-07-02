@@ -17,6 +17,7 @@
 import crypto from 'crypto';
 import { logger } from '../utils/logger.js';
 import { listDispatchableOrphans, releaseHeldProspect } from '../services/prospectService.js';
+import { parseBatchContext } from '../services/prospectHelpers.js';
 
 const MAX_AGE_MS = 5 * 60 * 1000;
 const MAX_FUTURE_MS = 2 * 60 * 1000; // tolerate clock skew
@@ -136,11 +137,16 @@ export async function assignHeldLead(req, res) {
     return res.status(400).json({ success: false, error: 'idempotencyKey is required' });
   }
 
+  // Optional bulk batch context — echoed into the delivery webhook so the receiver
+  // coalesces N per-lead pushes into one summary. Malformed → null (per-lead pushes).
+  const batch = parseBatchContext(req.body?.batch);
+
   try {
     // agentMktrUserId is the app's agents.mktr_user_id (== MKTR users.mktrLeadsId).
     const result = await releaseHeldProspect(prospectId, agentMktrUserId, {
       idempotencyKey,
       actorUserId: null,
+      batch,
     });
     const codeByStatus = {
       assigned: 200,
