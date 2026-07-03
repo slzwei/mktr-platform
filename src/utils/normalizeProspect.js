@@ -178,6 +178,10 @@ export default function normalizeProspect(p) {
  assigned_agent_id: assignedAgentId,
  assigned_agent_name: assignedAgentName,
  assignedAgentId: p.assignedAgentId,
+ // Hold state (admin list): drives the Held badge, the Assignment filter, and
+ // the bulk-assign eligibility preview (fenced holds are skipped server-side).
+ quarantinedAt: p.quarantinedAt || null,
+ quarantineReason: p.quarantineReason || null,
  campaign_id: p.campaignId || p.campaign_id ||"",
  campaign: p.campaign,
  notes: p.notes,
