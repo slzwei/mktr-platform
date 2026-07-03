@@ -113,7 +113,11 @@ export const deleteProspect = asyncHandler(async (req, res) => {
 
 export const bulkAssignProspects = asyncHandler(async (req, res) => {
   const { prospectIds, agentId } = req.body;
-  const { affectedCount, agent } = await prospectService.bulkAssignProspects(prospectIds, agentId, req.user);
+  const { affectedCount, releasedCount, skipped, agent } = await prospectService.bulkAssignProspects(
+    prospectIds,
+    agentId,
+    req.user
+  );
 
   // Notify agent about bulk assignment (fire-and-forget)
   if (affectedCount > 0) {
@@ -125,7 +129,29 @@ export const bulkAssignProspects = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     message: `${affectedCount} prospects assigned successfully`,
-    data: { affectedCount }
+    data: { affectedCount, releasedCount, skipped }
+  });
+});
+
+export const bulkReturnProspects = asyncHandler(async (req, res) => {
+  const { prospectIds } = req.body;
+  const counts = await prospectService.bulkReturnProspectsToHeld(prospectIds, req.user);
+
+  res.json({
+    success: true,
+    message: `${counts.returned + counts.promoted} prospects returned to the held queue`,
+    data: counts
+  });
+});
+
+export const bulkDeleteProspects = asyncHandler(async (req, res) => {
+  const { prospectIds } = req.body;
+  const counts = await prospectService.bulkDeleteProspects(prospectIds, req.user);
+
+  res.json({
+    success: true,
+    message: `${counts.deleted} prospects deleted`,
+    data: counts
   });
 });
 

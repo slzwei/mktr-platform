@@ -464,8 +464,27 @@ export function makeWebhookService(overrides = {}) {
     }
   }
 
+  /**
+   * Pre-flight check for bulk operations: can `eventType` actually be delivered to
+   * `destination` right now? False when webhooks are globally disabled or no enabled
+   * subscriber is tagged for the destination. Transient send failures are NOT this
+   * check's concern (the persistent delivery queue retries those) — this closes the
+   * silent-misconfig hole where a bulk op would mutate rows and strand every lead.
+   * A null destination returns true: no delivery is possible or expected (e.g. a
+   * local-only assignee), matching single-op behavior.
+   */
+  async function hasDeliverableSubscriber(eventType, destination) {
+    if (!destination) return true;
+    if (String(process.env.WEBHOOK_ENABLED || 'false').toLowerCase() !== 'true') return false;
+    const subscribers = await d.WebhookSubscriber.findAll({ where: { enabled: true } });
+    return subscribers.some(
+      (sub) => (sub.events || []).includes(eventType) && (sub.metadata?.destination || null) === destination
+    );
+  }
+
   return { dispatchEvent, persistEventDeliveries, flushDeliveries, attemptDelivery, retryDelivery, retryAllFailed,
-           getDeadLetterQueue, purgeDeadLetters, getDeliveryStats, getQueueStats, recoverPendingRetries };
+           getDeadLetterQueue, purgeDeadLetters, getDeliveryStats, getQueueStats, recoverPendingRetries,
+           hasDeliverableSubscriber };
 }
 
 // --- Backward-compatible named exports ---
@@ -480,3 +499,4 @@ export const getDeadLetterQueue = _default.getDeadLetterQueue;
 export const purgeDeadLetters = _default.purgeDeadLetters;
 export const getDeliveryStats = _default.getDeliveryStats;
 export const recoverPendingRetries = _default.recoverPendingRetries;
+export const hasDeliverableSubscriber = _default.hasDeliverableSubscriber;

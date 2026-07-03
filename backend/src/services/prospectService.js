@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Op, Transaction } from 'sequelize';
 import {
   Prospect,
@@ -22,7 +23,7 @@ import { buildDncConsentEvidence } from './dncConsent.js';
 import { repeatSignupDetail, repeatSignupCounts } from './repeatSignup.js';
 import { buildProspectWhere } from '../middleware/prospectScope.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { dispatchEvent, persistEventDeliveries, flushDeliveries } from './webhookService.js';
+import { dispatchEvent, persistEventDeliveries, flushDeliveries, hasDeliverableSubscriber } from './webhookService.js';
 import {
   sendLeadEvent as metaSendLeadEvent,
   sendCompleteRegistrationEvent as metaSendCompleteRegistrationEvent,
@@ -56,6 +57,18 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // otherwise reach Postgres and throw ("invalid input value for enum"), so the
 // list endpoint validates against it and returns no matches for unknown values.
 const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'proposal_sent', 'negotiating', 'won', 'lost', 'nurturing'];
+
+// Assignment-state filter values for the admin list (D6). Unknown values degrade to
+// an empty page (same pattern as VALID_LEAD_STATUSES).
+const VALID_ASSIGNMENT_FILTERS = ['assigned', 'unassigned', 'held'];
+
+// Hold reasons a MANUAL admin (re)assign may release. Everything else is fenced:
+// 'no_funded_external_buyer' (external buyer pool), 'dnc_pending'/'dnc_registered'
+// (DNC gate). 'returned_by_admin' is the web-admin return flavor — deliberately
+// distinct from 'no_funded_agent' so returned leads never surface in the EXTERNAL
+// held queue (listDispatchableOrphans) or its release path (releaseHeldProspect),
+// both of which filter on 'no_funded_agent'.
+const RELEASABLE_HOLD_REASONS = ['no_funded_agent', 'returned_by_admin'];
 
 const PROSPECT_UPDATE_FIELDS = [
   'firstName',
@@ -101,6 +114,7 @@ const defaultDeps = {
   dispatchEvent,
   persistEventDeliveries,
   flushDeliveries,
+  hasDeliverableSubscriber,
   sendLeadEvent: metaSendLeadEvent,
   sendCompleteRegistrationEvent: metaSendCompleteRegistrationEvent,
   sendTikTokLeadEvent,
@@ -1244,10 +1258,12 @@ export function makeProspectService(overrides = {}) {
     }
 
     // A manual admin assign is an EXEMPT route (decision a): it always delivers and does
-    // a best-effort deduct. If the prospect is currently HELD under lead-quota, this is a
-    // RELEASE — clear the hold ATOMICALLY (so a double-click / concurrent sweep can't
-    // deliver twice) and fire lead.created, the FIRST delivery to Lyfe (which never saw
-    // the suppressed create webhook), NOT lead.assigned.
+    // a best-effort deduct. If the prospect is currently HELD, this is a RELEASE — clear
+    // the hold ATOMICALLY (so a double-click / concurrent sweep can't deliver twice) and
+    // fire lead.assigned. Always lead.assigned, never lead.created: both receivers UPSERT
+    // on assigned (insert if unknown, re-point + un-hide if known), whereas a duplicate
+    // lead.created is a silent no-op — so a returned-to-held lead released via
+    // lead.created would never re-surface in the agent's app.
     if (prospect.quarantinedAt) {
       const [releaseRows] = await d.sequelize.query(
         `UPDATE prospects
@@ -1280,19 +1296,19 @@ export function makeProspectService(overrides = {}) {
         .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
 
       const prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
-        include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+        include: [
+          { association: 'campaign', attributes: ['id', 'name'] },
+          { association: 'qrTag', attributes: ['id', 'slug'] },
+        ],
       });
 
       const releaseDestination = destinationForAgent(agent);
-      const agentForWebhook = {
-        phone: agent.phone || null,
-        email: agent.email || null,
-        name: `${agent.firstName || ''} ${agent.lastName || ''}`.trim(),
-        id: externalIdForDestination(agent, releaseDestination),
-      };
-      d.dispatchEvent('lead.created', () =>
+      d.dispatchEvent('lead.assigned', () =>
         withBatchContext(
-          buildLeadCreatedPayload(prospect, 'direct', agentForWebhook, agentId, prospectWithCampaign?.campaign || null, null, null),
+          buildLeadAssignedPayload(prospect, agent, prospectWithCampaign, {
+            qrTag: prospectWithCampaign?.qrTag || null,
+            routingMode: 'direct',
+          }),
           batch
         ),
         { destination: releaseDestination }
@@ -1320,14 +1336,24 @@ export function makeProspectService(overrides = {}) {
       .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
 
     const prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
-      include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+      include: [
+        { association: 'campaign', attributes: ['id', 'name'] },
+        { association: 'qrTag', attributes: ['id', 'slug'] },
+      ],
     });
 
     // Fire lead.assigned webhook to the NEW owner's app.
     const newDestination = destinationForAgent(agent);
     d.dispatchEvent(
       'lead.assigned',
-      () => withBatchContext(buildLeadAssignedPayload(prospect, agent, prospectWithCampaign), batch),
+      () =>
+        withBatchContext(
+          buildLeadAssignedPayload(prospect, agent, prospectWithCampaign, {
+            qrTag: prospectWithCampaign?.qrTag || null,
+            routingMode: 'direct',
+          }),
+          batch
+        ),
       { destination: newDestination }
     );
 
@@ -1353,12 +1379,14 @@ export function makeProspectService(overrides = {}) {
   }
 
   /**
-   * Bulk assign prospects to an agent. Returns { affectedCount, agent } for email side-effect.
+   * Bulk assign prospects to an agent. Returns { affectedCount, releasedCount, skipped, agent }
+   * — counts feed the controller's email side-effect and the UI's skip-accounting toast.
    */
   async function bulkAssignProspects(prospectIds, agentId, user) {
     if (!prospectIds || !Array.isArray(prospectIds) || !agentId) {
       throw new d.AppError('Prospect IDs array and agent ID are required', 400);
     }
+    const requestedIds = [...new Set(prospectIds)];
 
     const agent = await m.User.findOne({
       where: {
@@ -1372,18 +1400,35 @@ export function makeProspectService(overrides = {}) {
       throw new d.AppError('Invalid or inactive agent', 400);
     }
 
+    // Pre-flight (bulk-only): assignment mutates rows first and delivers after, so refuse
+    // to run when delivery is IMPOSSIBLE (webhooks disabled / no subscriber tagged for the
+    // agent's app) — otherwise the whole batch would be stranded: assigned in MKTR, never
+    // surfaced in the agent's app. Transient send failures are fine (the persistent
+    // delivery queue retries); this guards misconfiguration only. A destination-less
+    // (local-only) agent passes: no delivery is expected, matching single-assign.
+    const newDestination = destinationForAgent(agent);
+    if (!(await d.hasDeliverableSubscriber('lead.assigned', newDestination))) {
+      throw new d.AppError(
+        "Lead delivery is not configured for this agent's app (webhooks disabled or no subscriber) — bulk assign would strand the leads. Fix webhook configuration and retry.",
+        409
+      );
+    }
+
     const scopeFilter = await d.buildProspectWhere(user);
     const whereConditions = {
-      id: { [Op.in]: prospectIds },
-      // Bulk assign skips HELD leads — releasing a held lead must deliver it to Lyfe,
-      // which bulk update can't do per-lead. Release held leads via single assign
-      // (PATCH /:id/assign) or the auto-release sweep.
-      quarantinedAt: null,
-      // Skip rows already assigned to THIS agent (IS DISTINCT FROM semantics —
-      // a bare Op.ne would also exclude unassigned NULL rows). Re-assigning a
-      // no-op row used to double-charge the agent for a lead they already held.
-      [Op.or]: [{ assignedAgentId: null }, { assignedAgentId: { [Op.ne]: agentId } }],
+      id: { [Op.in]: requestedIds },
       ...scopeFilter,
+      [Op.and]: [
+        // HELD rows are eligible only for the releasable reasons — bulk assign then acts
+        // as a RELEASE (the quarantine is cleared in the same atomic UPDATE below, and
+        // lead.assigned upserts at the receiver). Fenced reasons (external buyer pool,
+        // DNC gate) stay excluded, mirroring single-assign's guards.
+        { [Op.or]: [{ quarantinedAt: null }, { quarantineReason: { [Op.in]: RELEASABLE_HOLD_REASONS } }] },
+        // Skip rows already assigned to THIS agent (IS DISTINCT FROM semantics —
+        // a bare Op.ne would also exclude unassigned NULL rows). Re-assigning a
+        // no-op row used to double-charge the agent for a lead they already held.
+        { [Op.or]: [{ assignedAgentId: null }, { assignedAgentId: { [Op.ne]: agentId } }] },
+      ],
     };
 
     // Lock the candidate rows and update them inside ONE transaction so the webhook side
@@ -1395,23 +1440,50 @@ export function makeProspectService(overrides = {}) {
     // of an outer join — and fetch campaign data for the payloads afterwards.
     let result = [0, []];
     const lockedById = new Map();
+    let requestedRows = [];
     await d.sequelize.transaction(async (transaction) => {
       const locked = await m.Prospect.findAll({
         where: whereConditions,
-        attributes: ['id', 'assignedAgentId', 'campaignId'],
+        attributes: ['id', 'assignedAgentId', 'campaignId', 'quarantinedAt'],
         transaction,
         lock: true,
       });
       for (const row of locked) lockedById.set(row.id, row);
       result = await m.Prospect.update(
-        { assignedAgentId: agentId, lastContactDate: new Date() },
+        // Release + assign is ONE atomic write: clearing the hold here means a concurrent
+        // release (external dispatch / double-submit) blocks on the row lock, re-reads
+        // quarantinedAt IS NULL, and matches nothing — never a second delivery.
+        { assignedAgentId: agentId, lastContactDate: new Date(), quarantinedAt: null, quarantineReason: null },
         // Update exactly the locked set; RETURNING reports the rows actually changed.
         { where: { id: { [Op.in]: [...lockedById.keys()] } }, returning: ['id', 'campaignId'], transaction }
       );
+      // Snapshot every requested (in-scope) row for skip classification, same txn so the
+      // classification matches what the locked UPDATE saw.
+      requestedRows = await m.Prospect.findAll({
+        where: { id: { [Op.in]: requestedIds }, ...scopeFilter },
+        attributes: ['id', 'assignedAgentId', 'quarantinedAt', 'quarantineReason'],
+        transaction,
+      });
     });
 
     const affectedCount = result[0];
     const affectedRows = result[1] || [];
+
+    // Skip accounting for the UI toast: classify every requested id that did NOT change.
+    // (Post-UPDATE snapshot: affected rows are classified off the pre-UPDATE lock set.)
+    const requestedById = new Map(requestedRows.map((r) => [r.id, r]));
+    const skipped = { notFound: 0, alreadyAssigned: 0, heldFenced: 0 };
+    let releasedCount = 0;
+    for (const id of requestedIds) {
+      if (lockedById.has(id)) {
+        if (lockedById.get(id).quarantinedAt) releasedCount += 1;
+        continue;
+      }
+      const row = requestedById.get(id);
+      if (!row) skipped.notFound += 1;
+      else if (row.quarantinedAt && !RELEASABLE_HOLD_REASONS.includes(row.quarantineReason)) skipped.heldFenced += 1;
+      else skipped.alreadyAssigned += 1;
+    }
     if (affectedCount > 0) {
       const countsByCampaign = new Map();
       for (const row of affectedRows) {
@@ -1429,11 +1501,17 @@ export function makeProspectService(overrides = {}) {
       // lead.assigned to the new owner, plus — for a CROSS-app reassignment — lead.unassigned
       // to the previous owner so its copy in the other app doesn't linger. Payload rows are
       // fetched with their campaign; previous owners come from the locked snapshot.
-      const newDestination = destinationForAgent(agent);
+      // One batch context for the whole fan-out: the mktr-leads receiver coalesces the N
+      // per-lead pushes into a single "{size} leads assigned to you" summary (Lyfe ignores
+      // batch for now — per-lead pushes, the pre-batch behavior).
+      const batch = affectedCount > 1 ? { id: randomUUID(), size: affectedCount } : null;
       const affectedIds = affectedRows.map((row) => row.id);
       const full = await m.Prospect.findAll({
         where: { id: { [Op.in]: affectedIds } },
-        include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+        include: [
+          { association: 'campaign', attributes: ['id', 'name'] },
+          { association: 'qrTag', attributes: ['id', 'slug'] },
+        ],
       });
 
       const prevOwnerIds = [
@@ -1453,9 +1531,13 @@ export function makeProspectService(overrides = {}) {
       }
 
       for (const p of full) {
-        d.dispatchEvent('lead.assigned', () => buildLeadAssignedPayload(p, agent, p), {
-          destination: newDestination,
-        });
+        d.dispatchEvent('lead.assigned', () =>
+          withBatchContext(
+            buildLeadAssignedPayload(p, agent, p, { qrTag: p.qrTag || null, routingMode: 'direct' }),
+            batch
+          ),
+          { destination: newDestination }
+        );
 
         const prevId = lockedById.get(p.id)?.assignedAgentId;
         const prevAgent = prevId && prevId !== agentId ? prevAgentById.get(prevId) : null;
@@ -1476,25 +1558,28 @@ export function makeProspectService(overrides = {}) {
       // like the credit deduction above) — never fail the assignment over an audit-row write.
       await m.ProspectActivity.bulkCreate(
         full.map((p) => {
-          const prevId = lockedById.get(p.id)?.assignedAgentId;
+          const lockedRow = lockedById.get(p.id);
+          const prevId = lockedRow?.assignedAgentId;
           return {
             prospectId: p.id,
             type: 'assigned',
             actorUserId: user?.id || null,
             description: `Assigned to ${agent.firstName} ${agent.lastName}`.trim(),
             // Flag a reassignment (a prior owner existed) as a BOOLEAN so the timeline renders
-            // 'reassigned' — never expose who held it before.
+            // 'reassigned' — never expose who held it before. `released` marks a row that was
+            // HELD when the bulk assign claimed it (audit parity with single-release).
             metadata: {
               assignedAgentId: agent.id,
               via: 'bulk_assign',
               ...(prevId && prevId !== agentId ? { reassigned: true } : {}),
+              ...(lockedRow?.quarantinedAt ? { released: true } : {}),
             },
           };
         })
       ).catch((err) => d.logger.error('Failed to log bulk-assign activity', { error: err?.message || String(err) }));
     }
 
-    return { affectedCount, agent };
+    return { affectedCount, releasedCount, skipped, agent };
   }
 
   /**
@@ -1574,6 +1659,7 @@ export function makeProspectService(overrides = {}) {
       priority,
       leadSource,
       assignedAgentId,
+      assignment,
       campaignId,
       search,
       dateFrom,
@@ -1594,6 +1680,17 @@ export function makeProspectService(overrides = {}) {
     if (leadStatus && !VALID_LEAD_STATUSES.includes(leadStatus)) {
       return { prospects: [], pagination: { currentPage: pageNum, totalPages: 0, totalItems: 0, itemsPerPage: limitNum } };
     }
+    if (assignment && !VALID_ASSIGNMENT_FILTERS.includes(assignment)) {
+      return { prospects: [], pagination: { currentPage: pageNum, totalPages: 0, totalItems: 0, itemsPerPage: limitNum } };
+    }
+
+    // Assignment-state filter: 'unassigned' means truly in limbo (not held — held rows
+    // have their own bucket so the admin's pending pool and the strays stay separable).
+    if (assignment === 'assigned') whereConditions.assignedAgentId = { [Op.ne]: null };
+    else if (assignment === 'unassigned') {
+      whereConditions.assignedAgentId = null;
+      whereConditions.quarantinedAt = null;
+    } else if (assignment === 'held') whereConditions.quarantinedAt = { [Op.ne]: null };
 
     if (qrTagId) whereConditions.qrTagId = qrTagId;
     if (leadStatus) whereConditions.leadStatus = leadStatus;
@@ -1921,7 +2018,10 @@ export function makeProspectService(overrides = {}) {
         }, { transaction: t });
 
         const withCampaign = await m.Prospect.findByPk(prospectId, {
-          include: [{ association: 'campaign', attributes: ['id', 'name'] }],
+          include: [
+            { association: 'campaign', attributes: ['id', 'name'] },
+            { association: 'qrTag', attributes: ['id', 'slug'] },
+          ],
           transaction: t,
         });
 
@@ -1938,7 +2038,14 @@ export function makeProspectService(overrides = {}) {
         // buildLeadCreatedPayload, so delivery is otherwise unchanged.
         deliveryPairs = await d.persistEventDeliveries(
           'lead.assigned',
-          () => withBatchContext(buildLeadAssignedPayload(withCampaign, agent, withCampaign), batch),
+          () =>
+            withBatchContext(
+              buildLeadAssignedPayload(withCampaign, agent, withCampaign, {
+                qrTag: withCampaign?.qrTag || null,
+                routingMode: 'direct',
+              }),
+              batch
+            ),
           { destination },
           t
         );
@@ -2071,17 +2178,36 @@ export function makeProspectService(overrides = {}) {
   }
 
   /**
-   * Return an ASSIGNED lead to the held queue (admin pull-back from the mktr-leads app). Re-holds
-   * the prospect (quarantineReason='no_funded_agent', so the existing queue + releaseHeldProspect
-   * handle it) and fires lead.unassigned WITH `returnedToHeld` so the mktr-leads receiver
-   * SOFT-DELETES (vanishes) the lead instead of disputing it — the previous agent loses RLS
-   * visibility, admins keep it, and a later dispatch un-hides it. NO refund (consistent with
-   * reassign). Idempotent; fail-closed (never re-hold a lead we can't durably vanish).
+   * Return an ASSIGNED lead to the held queue (admin pull-back). Re-holds the prospect and
+   * fires lead.unassigned WITH `returnedToHeld` so the previous agent's app drops it — the
+   * mktr-leads receiver SOFT-DELETES (vanishes) the lead instead of disputing it; the Lyfe
+   * receiver nulls its assigned_to (the agent loses RLS visibility — same effect, flag
+   * ignored). Admins keep it, and a later dispatch (lead.assigned upsert) re-surfaces it.
+   * NO refund (consistent with reassign). Idempotent; fail-closed for deliverable owners
+   * (never re-hold a lead we can't durably vanish).
    *
-   * @returns {Promise<{status:'returned'|'already_handled'|'not_found'|'undeliverable', leadId?:string}>}
+   * Two callers, two flavors:
+   * - EXTERNAL (mktr-leads admin app, defaults): reason 'no_funded_agent' so the existing
+   *   external held queue + releaseHeldProspect handle it; mktr-leads-owned leads only.
+   * - WEB ADMIN (bulk return, opts): reason 'returned_by_admin' — deliberately invisible
+   *   to the external queue/release/sweep (all filter 'no_funded_agent'), so a returned
+   *   Lyfe-owned lead can never leak to the external buyer pool. `anyDestination` admits
+   *   Lyfe-owned and no-destination owners (System Agent — nothing was ever delivered, so
+   *   the vanish is skipped and fail-closed does not apply). `promoteUnassigned` folds
+   *   already-unassigned strays into the held pool (no webhook — nothing to vanish).
+   *
+   * @returns {Promise<{status:'returned'|'promoted'|'already_handled'|'not_assignable'|'not_found'|'undeliverable', leadId?:string}>}
    */
   async function returnProspectToHeld(prospectId, opts = {}) {
-    const { idempotencyKey = null, actorUserId = null } = opts;
+    const {
+      idempotencyKey = null,
+      actorUserId = null,
+      reason = 'no_funded_agent',
+      via = 'external_app',
+      anyDestination = false,
+      promoteUnassigned = false,
+      scopeWhere = null,
+    } = opts;
     const IDEMP_SCOPE = 'external:admin-return-held';
 
     if (idempotencyKey) {
@@ -2091,18 +2217,50 @@ export function makeProspectService(overrides = {}) {
       }
     }
 
-    const prospect = await m.Prospect.findByPk(prospectId);
+    const prospect = await m.Prospect.findOne({ where: { id: prospectId, ...(scopeWhere || {}) } });
     if (!prospect) return { status: 'not_found' };
     const previousAgentId = prospect.assignedAgentId;
-    // A held/orphan or already-unassigned lead is already in the queue → already_handled (so a
-    // retry after a successful return replays as a no-op).
-    if (prospect.quarantinedAt || !previousAgentId) return { status: 'already_handled' };
+    // A held lead is already in a queue → already_handled (a retry after a successful
+    // return replays as a no-op).
+    if (prospect.quarantinedAt) return { status: 'already_handled' };
+
+    // ── Promotion arm (web-admin only): an unassigned, unheld stray joins the held pool.
+    // No webhook — it has no owner app copy to vanish. Conditional UPDATE = race-safe.
+    if (!previousAgentId) {
+      if (!promoteUnassigned) return { status: 'already_handled' };
+      const pt = await d.sequelize.transaction();
+      try {
+        const [rows] = await d.sequelize.query(
+          `UPDATE prospects
+              SET "quarantinedAt" = NOW(), "quarantineReason" = :reason, "updatedAt" = NOW()
+            WHERE id = :prospectId AND "assignedAgentId" IS NULL AND "quarantinedAt" IS NULL
+            RETURNING id`,
+          { replacements: { prospectId, reason }, transaction: pt }
+        );
+        if (!Array.isArray(rows) || rows.length === 0) {
+          await pt.rollback();
+          return { status: 'already_handled' };
+        }
+        await m.ProspectActivity.create({
+          prospectId,
+          type: 'assigned',
+          actorUserId,
+          description: 'Moved to held queue by admin',
+          metadata: { promoted: true, via },
+        }, { transaction: pt });
+        await pt.commit();
+        return { status: 'promoted', leadId: prospectId };
+      } catch (err) {
+        await pt.rollback();
+        throw err;
+      }
+    }
 
     const prevAgent = await m.User.findByPk(previousAgentId, { attributes: ['id', 'lyfeId', 'mktrLeadsId'] });
     const prevDestination = destinationForAgent(prevAgent);
-    // Same-app scope: only a mktr-leads-owned lead can be returned here (the vanish is delivered
-    // to the mktr-leads receiver; a Lyfe-owned lead is out of scope).
-    if (prevDestination !== 'mktr_leads') return { status: 'not_assignable' };
+    // External flavor stays same-app-scoped: only a mktr-leads-owned lead can be returned
+    // (its broker + receiver own that contract). The web-admin flavor admits any owner.
+    if (!anyDestination && prevDestination !== 'mktr_leads') return { status: 'not_assignable' };
     const previousAgentExternalId = externalIdForDestination(prevAgent, prevDestination);
 
     const t = await d.sequelize.transaction();
@@ -2114,10 +2272,10 @@ export function makeProspectService(overrides = {}) {
       const [rows] = await d.sequelize.query(
         `UPDATE prospects
             SET "assignedAgentId" = NULL, "quarantinedAt" = NOW(),
-                "quarantineReason" = 'no_funded_agent', "updatedAt" = NOW()
+                "quarantineReason" = :reason, "updatedAt" = NOW()
           WHERE id = :prospectId AND "assignedAgentId" = :previousAgentId AND "quarantinedAt" IS NULL
           RETURNING id`,
-        { replacements: { prospectId, previousAgentId }, transaction: t }
+        { replacements: { prospectId, previousAgentId, reason }, transaction: t }
       );
 
       if (!Array.isArray(rows) || rows.length === 0) {
@@ -2128,21 +2286,26 @@ export function makeProspectService(overrides = {}) {
           type: 'assigned',
           actorUserId,
           description: 'Returned to held queue by admin',
-          metadata: { previousAgentId, returnedToHeld: true, via: 'external_app' },
+          metadata: { previousAgentId, returnedToHeld: true, via },
         }, { transaction: t });
 
-        // Vanish the lead from the previous agent's app — the receiver soft-deletes on returnedToHeld.
-        deliveryPairs = await d.persistEventDeliveries(
-          'lead.unassigned',
-          () => buildLeadUnassignedPayload(prospect, previousAgentExternalId, { returnedToHeld: true }),
-          { destination: prevDestination },
-          t
-        );
-        // Fail closed: never re-hold a lead we cannot durably vanish from the agent's app.
-        if (deliveryPairs.length === 0) {
-          await t.rollback();
-          return { status: 'undeliverable' };
+        if (prevDestination) {
+          // Vanish the lead from the previous agent's app — the mktr-leads receiver
+          // soft-deletes on returnedToHeld; Lyfe nulls assigned_to.
+          deliveryPairs = await d.persistEventDeliveries(
+            'lead.unassigned',
+            () => buildLeadUnassignedPayload(prospect, previousAgentExternalId, { returnedToHeld: true }),
+            { destination: prevDestination },
+            t
+          );
+          // Fail closed: never re-hold a lead we cannot durably vanish from the agent's app.
+          if (deliveryPairs.length === 0) {
+            await t.rollback();
+            return { status: 'undeliverable' };
+          }
         }
+        // No-destination owner (System Agent / provenance-less): nothing was ever
+        // delivered, so there is nothing to vanish — the re-hold alone is complete.
 
         result = { status: 'returned', leadId: prospectId };
       }
@@ -2173,6 +2336,69 @@ export function makeProspectService(overrides = {}) {
     }
 
     return result;
+  }
+
+  /**
+   * Bulk return leads to the held queue (web admin). Fan-out over the hardened single op
+   * — the same pattern the mktr-leads admin app uses for its bulk — because per-row
+   * fail-closed vanish semantics don't fit one set-based transaction: each row either
+   * fully returns (re-hold + vanish delivery committed together) or reports why not.
+   * `returned_by_admin` keeps every returned lead OUT of the external buyer queue.
+   * No idempotency keys: the single op's conditional UPDATE makes re-runs no-ops.
+   */
+  async function bulkReturnProspectsToHeld(prospectIds, user) {
+    if (!prospectIds || !Array.isArray(prospectIds) || prospectIds.length === 0) {
+      throw new d.AppError('Prospect IDs array is required', 400);
+    }
+    const requestedIds = [...new Set(prospectIds)];
+    const scopeWhere = await d.buildProspectWhere(user);
+
+    const counts = { returned: 0, promoted: 0, alreadyHeld: 0, undeliverable: 0, notFound: 0 };
+    for (const id of requestedIds) {
+      const r = await returnProspectToHeld(id, {
+        actorUserId: user?.id || null,
+        reason: 'returned_by_admin',
+        via: 'web_admin',
+        anyDestination: true,
+        promoteUnassigned: true,
+        scopeWhere,
+      });
+      if (r.status === 'returned') counts.returned += 1;
+      else if (r.status === 'promoted') counts.promoted += 1;
+      else if (r.status === 'already_handled') counts.alreadyHeld += 1;
+      else if (r.status === 'undeliverable') counts.undeliverable += 1;
+      else counts.notFound += 1;
+    }
+    return counts;
+  }
+
+  /**
+   * Bulk delete prospects (web admin). Fan-out over the hardened single delete — each row
+   * keeps its transactional-outbox lead.deleted (mktr-leads-owned rows only; a Lyfe-owned
+   * row's app copy is orphaned, the same documented limitation as single delete). One bad
+   * row never aborts the rest.
+   */
+  async function bulkDeleteProspects(prospectIds, user) {
+    if (!prospectIds || !Array.isArray(prospectIds) || prospectIds.length === 0) {
+      throw new d.AppError('Prospect IDs array is required', 400);
+    }
+    const requestedIds = [...new Set(prospectIds)];
+
+    const counts = { deleted: 0, notFound: 0, failed: 0 };
+    for (const id of requestedIds) {
+      try {
+        await deleteProspect(id, user);
+        counts.deleted += 1;
+      } catch (err) {
+        if (err?.statusCode === 404) {
+          counts.notFound += 1;
+        } else {
+          counts.failed += 1;
+          d.logger.error('[bulk-delete] delete failed', { prospectId: id, error: err?.message || String(err) });
+        }
+      }
+    }
+    return counts;
   }
 
   /**
@@ -2207,6 +2433,8 @@ export function makeProspectService(overrides = {}) {
     releaseHeldProspect,
     reassignProspectExternal,
     returnProspectToHeld,
+    bulkReturnProspectsToHeld,
+    bulkDeleteProspects,
     listDispatchableOrphans,
     getProspectActivities,
     bulkAssignProspects,
@@ -2227,6 +2455,8 @@ export const assignProspect = _default.assignProspect;
 export const releaseHeldProspect = _default.releaseHeldProspect;
 export const reassignProspectExternal = _default.reassignProspectExternal;
 export const returnProspectToHeld = _default.returnProspectToHeld;
+export const bulkReturnProspectsToHeld = _default.bulkReturnProspectsToHeld;
+export const bulkDeleteProspects = _default.bulkDeleteProspects;
 export const listDispatchableOrphans = _default.listDispatchableOrphans;
 export const getProspectActivities = _default.getProspectActivities;
 export const bulkAssignProspects = _default.bulkAssignProspects;

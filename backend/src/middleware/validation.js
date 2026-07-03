@@ -156,6 +156,17 @@ export const schemas = {
     status: Joi.string().valid('active', 'inactive').optional()
   }),
 
+  // Bulk lead ops (admin). Max 200 ids matches the list endpoint's page-size clamp —
+  // a bulk op can never outgrow what one page of selection could have produced.
+  prospectBulkAssign: Joi.object({
+    prospectIds: Joi.array().items(Joi.string().uuid()).min(1).max(200).required(),
+    agentId: Joi.string().uuid().required()
+  }),
+
+  prospectBulkIds: Joi.object({
+    prospectIds: Joi.array().items(Joi.string().uuid()).min(1).max(200).required()
+  }),
+
   // Prospect schemas
   prospectCreate: Joi.object({
     firstName: Joi.string().min(1).max(50).required(),

@@ -107,6 +107,9 @@ function buildMocks() {
   const chargeLeadCredit = jest.fn().mockResolvedValue(true);
   const buildProspectWhere = jest.fn().mockResolvedValue({});
   const dispatchEvent = jest.fn().mockResolvedValue(undefined);
+  // Bulk assign's webhook pre-flight — deliverable by default so assignment tests
+  // exercise the assignment logic, not the misconfig guard.
+  const hasDeliverableSubscriber = jest.fn().mockResolvedValue(true);
 
   const AppError = class extends Error {
     constructor(message, statusCode) {
@@ -137,6 +140,7 @@ function buildMocks() {
     chargeLeadCredit,
     buildProspectWhere,
     dispatchEvent,
+    hasDeliverableSubscriber,
     AppError,
     logger,
   };
@@ -153,6 +157,7 @@ function makeService(mocks, overrides = {}) {
     chargeLeadCredit: mocks.chargeLeadCredit,
     buildProspectWhere: mocks.buildProspectWhere,
     dispatchEvent: mocks.dispatchEvent,
+    hasDeliverableSubscriber: mocks.hasDeliverableSubscriber,
     AppError: mocks.AppError,
     logger: mocks.logger,
     ...overrides,
@@ -359,19 +364,25 @@ describe('prospectAssignment (unit)', () => {
       expect(payload.data.routing.agentExternalId).toBe('lyfe-agent-1');
     });
 
-    it('releases a HELD lead: clears quarantine atomically, deducts, fires lead.created (not lead.assigned)', async () => {
+    it('releases a HELD lead: clears quarantine atomically, deducts, fires lead.assigned (never lead.created — a duplicate create is a no-op at both receivers, so a returned lead would never re-surface)', async () => {
       const held = { ...mocks.mockProspect, quarantinedAt: new Date(), reload: jest.fn().mockResolvedValue(true) };
       mocks.models.Prospect.findByPk
         .mockResolvedValueOnce(held)
-        .mockResolvedValueOnce({ ...held, campaign: { id: 'camp-1', name: 'C' } });
+        .mockResolvedValueOnce({ ...held, campaign: { id: 'camp-1', name: 'C' }, qrTag: { id: 'qr-9', slug: 'sl' } });
       mocks.sequelize.query.mockResolvedValue([[{ id: 'prospect-1' }]]); // claim won
 
       await service.assignProspect('prospect-1', 'agent-1', admin);
 
       expect(mocks.sequelize.query).toHaveBeenCalled();
       expect(mocks.deductLeadCredit).toHaveBeenCalledWith({ agentId: 'agent-1', campaignId: 'camp-1' });
-      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
-      expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.assigned', expect.any(Function));
+      expect(mocks.dispatchEvent).toHaveBeenCalledWith('lead.assigned', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
+      expect(mocks.dispatchEvent).not.toHaveBeenCalledWith('lead.created', expect.any(Function), expect.anything());
+      // Insert-parity payload: the destination app may not know this lead yet, so the
+      // assigned payload carries the created payload's qrTag block + routing.mode.
+      const builder = mocks.dispatchEvent.mock.calls.find((c) => c[0] === 'lead.assigned')[1];
+      const payload = builder();
+      expect(payload.data.qrTag).toEqual({ externalId: 'qr-9', slug: 'sl' });
+      expect(payload.data.routing.mode).toBe('direct');
     });
 
     it('refuses to manually release an EXTERNAL hold (no_funded_external_buyer) to an internal agent', async () => {
@@ -503,11 +514,16 @@ describe('prospectAssignment (unit)', () => {
 
       // The same-agent exclusion lives on the locked SELECT (the UPDATE then targets the
       // locked id set). IS DISTINCT FROM semantics: unassigned (NULL) rows still match,
-      // rows already held by agent-1 do not.
+      // rows already held by agent-1 do not. It sits under Op.and alongside the
+      // releasable-hold clause (quarantine-free OR a releasable hold reason).
       const where = mocks.models.Prospect.findAll.mock.calls[0][0].where;
-      expect(where[Op.or]).toEqual([
+      expect(where[Op.and][1][Op.or]).toEqual([
         { assignedAgentId: null },
         { assignedAgentId: { [Op.ne]: 'agent-1' } },
+      ]);
+      expect(where[Op.and][0][Op.or]).toEqual([
+        { quarantinedAt: null },
+        { quarantineReason: { [Op.in]: ['no_funded_agent', 'returned_by_admin'] } },
       ]);
       expect(mocks.deductLeadCredit).not.toHaveBeenCalled();
     });
