@@ -60,6 +60,23 @@ export default function ProspectFilters({ filters, onFilterChange, campaigns }) 
  <SelectItem value="other">Other</SelectItem>
  </SelectContent>
  </Select>
+
+ {/* Assignment state: Held = the pending pool (returned / quota-held leads
+ awaiting reassignment); Unassigned = strays with no agent and no hold. */}
+ <Select
+ value={filters.assignment || 'all'}
+ onValueChange={(value) => handleFilterChange('assignment', value)}
+ >
+ <SelectTrigger className="w-36">
+ <SelectValue placeholder="Assignment"/>
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem value="all">All Leads</SelectItem>
+ <SelectItem value="assigned">Assigned</SelectItem>
+ <SelectItem value="unassigned">Unassigned</SelectItem>
+ <SelectItem value="held">Held</SelectItem>
+ </SelectContent>
+ </Select>
  </div>
  );
 }

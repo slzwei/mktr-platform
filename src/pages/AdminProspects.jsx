@@ -1,9 +1,19 @@
-import { useState, useEffect, useMemo } from"react";
+import { useState, useEffect, useMemo, useCallback } from"react";
 import { useQuery, useQueryClient, keepPreviousData } from"@tanstack/react-query";
 import { Prospect } from"@/api/entities";
 import { useCurrentUser } from"@/hooks/queries/useUsersQuery";
-import { useUpdateProspect, useDeleteProspect } from"@/hooks/queries/useProspectsQuery";
+import {
+ useUpdateProspect,
+ useDeleteProspect,
+ useBulkAssignProspects,
+ useBulkReturnProspects,
+ useBulkDeleteProspects,
+} from"@/hooks/queries/useProspectsQuery";
 import { useCampaignLookup } from"@/hooks/queries/useCampaignsQuery";
+import useRowSelection from"@/hooks/useRowSelection";
+import BulkActionBar from"@/components/bulk/BulkActionBar";
+import BulkAssignDialog from"@/components/bulk/BulkAssignDialog";
+import { holdReasonLabel } from"@/constants/holdReasons";
 import { Card, CardContent, CardHeader } from"@/components/ui/card";
 import { Button } from"@/components/ui/button";
 import { Input } from"@/components/ui/input";
@@ -23,8 +33,7 @@ import {
  FileSpreadsheet,
  FileText,
  Trash2,
- User,
- X
+ User
 } from"lucide-react";
 import { Checkbox } from"@/components/ui/checkbox";
 import { toast } from"sonner";
@@ -103,31 +112,27 @@ export default function AdminProspects() {
  const { data: user } = useCurrentUser();
  const updateProspectMutation = useUpdateProspect();
  const deleteProspectMutation = useDeleteProspect();
+ const bulkAssignMutation = useBulkAssignProspects();
+ const bulkReturnMutation = useBulkReturnProspects();
+ const bulkDeleteMutation = useBulkDeleteProspects();
 
  const [selectedProspect, setSelectedProspect] = useState(null);
  const [deleteConfirm, setDeleteConfirm] = useState(null);
+ const [bulkAssignOpen, setBulkAssignOpen] = useState(false);
+ const [bulkReturnOpen, setBulkReturnOpen] = useState(false);
+ const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
  const [filters, setFilters] = useState(() => {
  const params = new URLSearchParams(window.location.search);
  return {
  search:"", status:"all",
  campaign: params.get('campaign') ||"all",
  qrTagId: params.get('qrTagId') ||"all",
- source:"all" };
+ source:"all",
+ assignment:"all" };
  });
  const [currentPage, setCurrentPage] = useState(1);
  const [itemsPerPage, setItemsPerPage] = useState(25);
- const [selectedIds, setSelectedIds] = useState(() => new Set());
  const isMobile = useIsMobile();
-
- useEffect(() => {
- const params = new URLSearchParams(location.search);
- const campaignId = params.get('campaign') ||"all";
- const qrTagId = params.get('qrTagId') ||"all";
- setFilters(prev => {
- if (prev.campaign === campaignId && prev.qrTagId === qrTagId) return prev;
- return { ...prev, campaign: campaignId, qrTagId: qrTagId };
- });
- }, [location.search]);
 
  // Debounce the free-text search so we issue one server query after the user
  // pauses typing, not one per keystroke. The input stays bound to
@@ -145,15 +150,16 @@ export default function AdminProspects() {
  if (filters.status !=="all") params.leadStatus = filters.status;
  if (filters.campaign !=="all") params.campaignId = filters.campaign;
  if (filters.qrTagId !=="all") params.qrTagId = filters.qrTagId;
+ if (filters.assignment !=="all") params.assignment = filters.assignment;
  if (filters.source !=="all") {
  if (filters.source ==="qr") params.leadSource ="qr_code";
  else if (filters.source ==="form") params.leadSource ="website";
  else params.leadSource = filters.source;
  }
  return params;
- }, [debouncedSearch, filters.status, filters.campaign, filters.qrTagId, filters.source, currentPage, itemsPerPage]);
+ }, [debouncedSearch, filters.status, filters.campaign, filters.qrTagId, filters.source, filters.assignment, currentPage, itemsPerPage]);
 
- const { data: prospectsResponse, isLoading: prospectsLoading } = useQuery({
+ const { data: prospectsResponse, isLoading: prospectsLoading, isPlaceholderData } = useQuery({
  queryKey: ['prospects', 'list', queryParams],
  queryFn: () => Prospect.list(queryParams),
  // Keep the previous page's rows rendered while the next query loads so a
@@ -173,32 +179,102 @@ export default function AdminProspects() {
  currentPage, totalPages: 1, totalItems: prospects.length, itemsPerPage
  };
 
- // Clear row selection whenever the visible set changes (page / filters / page size).
- useEffect(() => { setSelectedIds(new Set()); }, [queryParams]);
+ // Row selection survives page turns (Map of row snapshots, so exports and the
+ // assign preview keep working across pages). It is cleared SYNCHRONOUSLY in the
+ // filter/search handlers below — an effect watching queryParams would wipe it on
+ // every page turn and let keepPreviousData's stale rows be selected under a new
+ // filter.
+ const selection = useRowSelection(prospects);
+
+ // Any filter/search change redefines the working set — clear the selection in the
+ // same event, then apply the filter. Page turns intentionally do NOT clear.
+ const applyFilters = useCallback((next) => {
+ selection.clear();
+ setCurrentPage(1);
+ setFilters(next);
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [selection.clear]);
+
+ useEffect(() => {
+ const params = new URLSearchParams(location.search);
+ const campaignId = params.get('campaign') ||"all";
+ const qrTagId = params.get('qrTagId') ||"all";
+ setFilters(prev => {
+ if (prev.campaign === campaignId && prev.qrTagId === qrTagId) return prev;
+ selection.clear();
+ setCurrentPage(1);
+ return { ...prev, campaign: campaignId, qrTagId: qrTagId };
+ });
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [location.search]);
 
  const exportRows = useMemo(
- () => (selectedIds.size > 0 ? prospects.filter((p) => selectedIds.has(p.id)) : prospects),
- [prospects, selectedIds]
+ () => (selection.count > 0 ? selection.selectedRows : prospects),
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ [prospects, selection.selected]
  );
- const allSelected = prospects.length > 0 && prospects.every((p) => selectedIds.has(p.id));
- const someSelected = selectedIds.size > 0 && !allSelected;
-
- const toggleSelectAll = () => {
- setSelectedIds((prev) => {
- const everyVisibleSelected = prospects.length > 0 && prospects.every((p) => prev.has(p.id));
- return everyVisibleSelected ? new Set() : new Set(prospects.map((p) => p.id));
- });
- };
- const toggleSelectOne = (id) => {
- setSelectedIds((prev) => {
- const next = new Set(prev);
- if (next.has(id)) next.delete(id); else next.add(id);
- return next;
- });
- };
- const clearSelection = () => setSelectedIds(new Set());
+ const heldSelectedCount = useMemo(
+ () => selection.selectedRows.filter((r) => r.quarantinedAt).length,
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ [selection.selected]
+ );
+ const bulkBusy = bulkAssignMutation.isPending || bulkReturnMutation.isPending || bulkDeleteMutation.isPending;
 
  const handleRefresh = () => queryClient.invalidateQueries({ queryKey: ['prospects'] });
+
+ // Up-to-five-name preview for the bulk confirm dialogs.
+ const previewNames = (rows, max = 5) => {
+ const names = rows.slice(0, max).map((r) => r.name || 'Unnamed');
+ const extra = rows.length - names.length;
+ return extra > 0 ? `${names.join(', ')} and ${extra} more` : names.join(', ');
+ };
+
+ const handleBulkAssign = async (agentId) => {
+ try {
+ const res = await bulkAssignMutation.mutateAsync({ prospectIds: selection.selectedIds, agentId });
+ const skippedTotal = res?.skipped ? Object.values(res.skipped).reduce((a, b) => a + b, 0) : 0;
+ const parts = [`${res?.affectedCount ?? 0} assigned`];
+ if (res?.releasedCount > 0) parts.push(`${res.releasedCount} released from held`);
+ if (skippedTotal > 0) parts.push(`${skippedTotal} skipped`);
+ toast.success(parts.join(' · '));
+ setBulkAssignOpen(false);
+ selection.clear();
+ } catch (error) {
+ toast.error(error?.message || 'Bulk assign failed');
+ }
+ };
+
+ const handleBulkReturn = async () => {
+ try {
+ const res = await bulkReturnMutation.mutateAsync({ prospectIds: selection.selectedIds });
+ const moved = (res?.returned ?? 0) + (res?.promoted ?? 0);
+ const parts = [`${moved} returned to held`];
+ if (res?.alreadyHeld > 0) parts.push(`${res.alreadyHeld} already held`);
+ if (res?.notFound > 0) parts.push(`${res.notFound} not found`);
+ if (res?.undeliverable > 0) {
+ toast.warning(`${res.undeliverable} could not be returned — lead delivery is not configured for the owning app.`);
+ }
+ toast.success(parts.join(' · '));
+ setBulkReturnOpen(false);
+ selection.clear();
+ } catch (error) {
+ toast.error(error?.message || 'Return to held failed');
+ }
+ };
+
+ const handleBulkDelete = async () => {
+ try {
+ const res = await bulkDeleteMutation.mutateAsync({ prospectIds: selection.selectedIds });
+ const parts = [`${res?.deleted ?? 0} deleted`];
+ if (res?.notFound > 0) parts.push(`${res.notFound} not found`);
+ if (res?.failed > 0) parts.push(`${res.failed} failed`);
+ toast.success(parts.join(' · '));
+ setBulkDeleteOpen(false);
+ selection.clear();
+ } catch (error) {
+ toast.error(error?.message || 'Bulk delete failed');
+ }
+ };
 
  const handleStatusUpdate = async (prospectId, newStatus) => {
  try {
@@ -214,9 +290,10 @@ export default function AdminProspects() {
  } catch (error) { console.error('Error deleting prospect:', error); }
  };
 
- // Exports act on the current selection if any rows are ticked, otherwise the whole visible page.
+ // Exports act on the current selection if any rows are ticked (across pages),
+ // otherwise the whole visible page.
  const exportFileName = (ext) =>
- `prospects_${format(new Date(), 'ddMMyyyy_HHmm')}${selectedIds.size > 0 ? '_selected' : ''}.${ext}`;
+ `prospects_${format(new Date(), 'ddMMyyyy_HHmm')}${selection.count > 0 ? '_selected' : ''}.${ext}`;
 
  const fmtDob = (v) => {
  if (!v) return '';
@@ -267,7 +344,7 @@ export default function AdminProspects() {
  const autoTable = autoTableModule.default;
  const doc = new jsPDF({ orientation: 'landscape' });
  const generatedAt = format(new Date(), 'dd MMM yyyy, h:mm a');
- const scopeLabel = selectedIds.size > 0 ? `${exportRows.length} selected` : `${exportRows.length} total`;
+ const scopeLabel = selection.count > 0 ? `${exportRows.length} selected` : `${exportRows.length} total`;
  doc.setFontSize(14);
  doc.text('Prospects Export', 14, 15);
  doc.setFontSize(9);
@@ -331,11 +408,11 @@ export default function AdminProspects() {
  <div className="flex items-center gap-2">
  <Button variant="outline" className="bg-card" onClick={exportToCSV} disabled={exportRows.length === 0}>
  <FileSpreadsheet className="w-4 h-4 mr-2"/>
- Export CSV{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+ Export CSV{selection.count > 0 ? ` (${selection.count})` : ''}
  </Button>
  <Button variant="outline" className="bg-card" onClick={exportToPDF} disabled={exportRows.length === 0}>
  <FileText className="w-4 h-4 mr-2"/>
- Export PDF{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+ Export PDF{selection.count > 0 ? ` (${selection.count})` : ''}
  </Button>
  </div>
  }
@@ -350,10 +427,10 @@ export default function AdminProspects() {
  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4"/>
  <Input
  placeholder="Search prospects..." value={filters.search}
- onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+ onChange={(e) => applyFilters({ ...filters, search: e.target.value })}
  className="pl-9 h-10 bg-muted/50 border-border focus:bg-background transition-colors" />
  </div>
- <ProspectFilters filters={filters} onFilterChange={setFilters} campaigns={campaigns} />
+ <ProspectFilters filters={filters} onFilterChange={applyFilters} campaigns={campaigns} />
  </div>
  <div className="flex items-center gap-2 text-sm text-muted-foreground">
  <span className=" hidden sm:inline">Rows per page:</span>
@@ -371,19 +448,6 @@ export default function AdminProspects() {
  </CardHeader>
 
  <CardContent className="p-0">
- {selectedIds.size > 0 && (
- <div className="flex items-center justify-between gap-3 px-4 lg:px-6 py-2.5 bg-primary/5 border-b border-border">
- <span className="text-sm font-medium text-foreground">
- {selectedIds.size} selected
- </span>
- <Button
- variant="ghost" size="sm" onClick={clearSelection}
- className="h-8 text-muted-foreground hover:text-foreground">
- <X className="w-4 h-4 mr-1.5"/>
- Clear
- </Button>
- </div>
- )}
  {!isMobile ? (
  <div className="overflow-x-auto">
  <Table>
@@ -391,8 +455,9 @@ export default function AdminProspects() {
  <TableRow className="bg-muted/50 hover:bg-muted/50 border-border">
  <TableHead className="py-3 pl-6 pr-2 w-[44px]">
  <Checkbox
- checked={allSelected ? true : someSelected ?"indeterminate" : false}
- onCheckedChange={toggleSelectAll}
+ checked={selection.allVisibleSelected ? true : selection.someVisibleSelected ?"indeterminate" : false}
+ onCheckedChange={selection.toggleAllVisible}
+ disabled={isPlaceholderData}
  aria-label="Select all prospects on this page" />
  </TableHead>
  <TableHead className="py-3 px-6 font-medium text-muted-foreground">Prospect</TableHead>
@@ -409,12 +474,15 @@ export default function AdminProspects() {
  return (
  <TableRow
  key={prospect.id}
- className={`hover:bg-muted/50 transition-colors border-border group cursor-pointer ${selectedIds.has(prospect.id) ?"bg-primary/5" :""}`} onClick={() => setSelectedProspect(prospect)}
+ className={`hover:bg-muted/50 transition-colors border-border group cursor-pointer ${selection.isSelected(prospect.id) ?"bg-primary/5" :""}`} onClick={() => setSelectedProspect(prospect)}
  >
  <TableCell className="pl-6 pr-2" onClick={(e) => e.stopPropagation()}>
+ {/* onClick (not onCheckedChange) so shift-click range selection sees the
+ modifier; preventDefault stops Radix's own toggle — checked stays
+ fully controlled. Keyboard Space still fires click (shiftKey false). */}
  <Checkbox
- checked={selectedIds.has(prospect.id)}
- onCheckedChange={() => toggleSelectOne(prospect.id)}
+ checked={selection.isSelected(prospect.id)}
+ onClick={(e) => { e.preventDefault(); selection.toggleRow(prospect, { shiftKey: e.shiftKey }); }}
  aria-label={`Select ${prospect.name}`} />
  </TableCell>
  <TableCell className="px-6 py-4">
@@ -431,7 +499,12 @@ export default function AdminProspects() {
  ⚠ {prospect.repeatSignupCount} campaigns
  </span>
  )}
- {prospect.assigned_agent_name ? (
+ {prospect.quarantinedAt ? (
+ <span
+ className="block text-xs font-medium mt-0.5 text-amber-700 dark:text-amber-400" title={holdReasonLabel(prospect.quarantineReason)}>
+ Held — {holdReasonLabel(prospect.quarantineReason)}
+ </span>
+ ) : prospect.assigned_agent_name ? (
  <span className="block text-xs text-muted-foreground font-normal mt-0.5">
  Agent: {prospect.assigned_agent_name}
  </span>
@@ -494,10 +567,10 @@ export default function AdminProspects() {
  ) : prospects.map((prospect) => (
  <div
  key={prospect.id}
- className={`flex items-start gap-3 p-4 ${selectedIds.has(prospect.id) ?"bg-primary/5" :""}`}>
+ className={`flex items-start gap-3 p-4 ${selection.isSelected(prospect.id) ?"bg-primary/5" :""}`}>
  <Checkbox
- checked={selectedIds.has(prospect.id)}
- onCheckedChange={() => toggleSelectOne(prospect.id)}
+ checked={selection.isSelected(prospect.id)}
+ onClick={(e) => { e.preventDefault(); selection.toggleRow(prospect, { shiftKey: e.shiftKey }); }}
  aria-label={`Select ${prospect.name}`}
  className="mt-1.5" />
  <button
@@ -562,6 +635,58 @@ export default function AdminProspects() {
  confirmText="Delete" destructive
  confirmIcon={<Trash2 className="w-4 h-4"/>}
  onConfirm={() => deleteConfirm && handleDeleteProspect(deleteConfirm.id)}
+ />
+
+ {/* ── Bulk selection actions ─────────────────────────────── */}
+ <BulkActionBar
+ count={selection.count}
+ heldCount={heldSelectedCount}
+ busy={bulkBusy}
+ onAssign={() => setBulkAssignOpen(true)}
+ onReturnToHeld={() => setBulkReturnOpen(true)}
+ onDelete={() => setBulkDeleteOpen(true)}
+ onExportCSV={exportToCSV}
+ onExportPDF={exportToPDF}
+ onClear={selection.clear}
+ />
+
+ <BulkAssignDialog
+ open={bulkAssignOpen}
+ onOpenChange={setBulkAssignOpen}
+ selectedRows={selection.selectedRows}
+ busy={bulkAssignMutation.isPending}
+ onConfirm={handleBulkAssign}
+ />
+
+ <ConfirmDialog
+ open={bulkReturnOpen}
+ onOpenChange={setBulkReturnOpen}
+ title={`Return ${selection.count} lead${selection.count === 1 ? '' : 's'} to the held queue?`}
+ description={
+ <>
+ <span className="font-medium">{previewNames(selection.selectedRows)}</span>
+ {' '}will be pulled back from their agents and moved to the Held queue, pending
+ reassignment. The previous agents lose access; credits are not refunded. You can
+ re-assign them anytime from the Held filter.
+ </>
+ }
+ confirmText="Return to held" onConfirm={handleBulkReturn}
+ />
+
+ <ConfirmDialog
+ open={bulkDeleteOpen}
+ onOpenChange={setBulkDeleteOpen}
+ title={`Delete ${selection.count} prospect${selection.count === 1 ? '' : 's'}?`}
+ description={
+ <>
+ <span className="font-medium">{previewNames(selection.selectedRows)}</span>
+ {' '}will be permanently deleted from MKTR. This can't be undone. Copies already
+ delivered to a Lyfe agent's app are not removed by this action.
+ </>
+ }
+ confirmText="Delete" destructive
+ confirmIcon={<Trash2 className="w-4 h-4"/>}
+ onConfirm={handleBulkDelete}
  />
  </div>
  </div>

@@ -28,9 +28,16 @@ vi.mock('@/hooks/queries/useUsersQuery', () => ({
  useCurrentUser: () => ({ data: { id: 'u-1', role: 'admin' } }),
 }));
 
+const mockBulkAssign = { mutateAsync: vi.fn(), isPending: false };
+const mockBulkReturn = { mutateAsync: vi.fn(), isPending: false };
+const mockBulkDelete = { mutateAsync: vi.fn(), isPending: false };
+
 vi.mock('@/hooks/queries/useProspectsQuery', () => ({
  useUpdateProspect: () => ({ mutateAsync: vi.fn() }),
  useDeleteProspect: () => ({ mutateAsync: vi.fn() }),
+ useBulkAssignProspects: () => mockBulkAssign,
+ useBulkReturnProspects: () => mockBulkReturn,
+ useBulkDeleteProspects: () => mockBulkDelete,
 }));
 
 vi.mock('@/hooks/queries/useCampaignsQuery', () => ({
@@ -39,6 +46,7 @@ vi.mock('@/hooks/queries/useCampaignsQuery', () => ({
 
 vi.mock('@/api/entities', () => ({
  Prospect: { list: vi.fn() },
+ User: { getAgents: vi.fn().mockResolvedValue([]) },
 }));
 
 vi.mock('@/hooks/use-mobile', () => ({
@@ -80,6 +88,8 @@ vi.mock('@/utils/normalizeProspect', async (importOriginal) => {
  assigned_agent_name: p.assignedAgent ? `${p.assignedAgent.firstName} ${p.assignedAgent.lastName}` : null,
  phone: p.phone || '',
  sourceMetadata: p.sourceMetadata || null,
+ quarantinedAt: p.quarantinedAt || null,
+ quarantineReason: p.quarantineReason || null,
  ad: actual.deriveAd(p.sourceMetadata),
  referral: actual.deriveReferral(p.sourceMetadata),
  }),
@@ -339,6 +349,53 @@ describe('AdminProspects', () => {
  renderProspects();
  fireEvent.click(screen.getByRole('checkbox', { name: /select john doe/i }));
  expect(screen.queryByTestId('prospect-details')).not.toBeInTheDocument();
+ });
+
+ it('selection reveals the bulk action bar (assign / return to held / delete)', () => {
+ mockProspectsData.prospects = twoProspects;
+ renderProspects();
+ fireEvent.click(screen.getByRole('checkbox', { name: /select john doe/i }));
+ expect(screen.getByRole('button', { name: /assign to agent/i })).toBeInTheDocument();
+ expect(screen.getByRole('button', { name: /return to held/i })).toBeInTheDocument();
+ expect(screen.getByRole('button', { name: /^delete$/i })).toBeInTheDocument();
+ });
+
+ it('shift-click selects the range between the anchor and the clicked row', () => {
+ mockProspectsData.prospects = twoProspects;
+ renderProspects();
+ fireEvent.click(screen.getByRole('checkbox', { name: /select john doe/i }));
+ fireEvent.click(screen.getByRole('checkbox', { name: /select jane roe/i }), { shiftKey: true });
+ expect(screen.getByText('2 selected')).toBeInTheDocument();
+ });
+
+ it('changing a filter clears the selection', () => {
+ mockProspectsData.prospects = twoProspects;
+ renderProspects();
+ fireEvent.click(screen.getByRole('checkbox', { name: /select john doe/i }));
+ expect(screen.getByText('1 selected')).toBeInTheDocument();
+ fireEvent.click(screen.getByTestId('filter-status'));
+ expect(screen.queryByText('1 selected')).not.toBeInTheDocument();
+ });
+
+ it('Escape clears the selection', () => {
+ mockProspectsData.prospects = twoProspects;
+ renderProspects();
+ fireEvent.click(screen.getByRole('checkbox', { name: /select john doe/i }));
+ expect(screen.getByText('1 selected')).toBeInTheDocument();
+ fireEvent.keyDown(window, { key: 'Escape' });
+ expect(screen.queryByText('1 selected')).not.toBeInTheDocument();
+ });
+
+ it('marks held rows and counts them on the bar', () => {
+ mockProspectsData.prospects = [
+ { ...twoProspects[0], quarantinedAt: '2025-01-17T10:00:00Z', quarantineReason: 'returned_by_admin' },
+ twoProspects[1],
+ ];
+ renderProspects();
+ expect(screen.getByText(/held — returned by admin/i)).toBeInTheDocument();
+ fireEvent.click(screen.getByRole('checkbox', { name: /select all prospects/i }));
+ expect(screen.getByText(/2 selected/)).toBeInTheDocument();
+ expect(screen.getByText(/1 held/)).toBeInTheDocument();
  });
 
  // --- Source attribution badges ---

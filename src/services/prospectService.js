@@ -37,6 +37,14 @@ export async function bulkAssignProspects(prospectIds, agentId) {
  return Prospect.bulkAssign(prospectIds, agentId);
 }
 
+export async function bulkReturnProspectsToHeld(prospectIds) {
+ return Prospect.bulkReturnToHeld(prospectIds);
+}
+
+export async function bulkDeleteProspects(prospectIds) {
+ return Prospect.bulkDelete(prospectIds);
+}
+
 export async function getProspectStats() {
  return Prospect.getStats();
 }

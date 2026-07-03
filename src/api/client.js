@@ -498,6 +498,16 @@ class ProspectEntity extends BaseEntity {
  return response.data;
  }
 
+ async bulkReturnToHeld(prospectIds) {
+ const response = await apiClient.patch(`${this.endpoint}/bulk/return-to-held`, { prospectIds });
+ return response.data;
+ }
+
+ async bulkDelete(prospectIds) {
+ const response = await apiClient.post(`${this.endpoint}/bulk/delete`, { prospectIds });
+ return response.data;
+ }
+
  async getStats() {
  const response = await apiClient.get(`${this.endpoint}/stats/overview`);
  return response.data;

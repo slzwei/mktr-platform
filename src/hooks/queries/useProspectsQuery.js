@@ -54,3 +54,19 @@ export function useBulkAssignProspects() {
  onSuccess: () => queryClient.invalidateQueries({ queryKey: ['prospects'] }),
  });
 }
+
+export function useBulkReturnProspects() {
+ const queryClient = useQueryClient();
+ return useMutation({
+ mutationFn: ({ prospectIds }) => prospectService.bulkReturnProspectsToHeld(prospectIds),
+ onSuccess: () => queryClient.invalidateQueries({ queryKey: ['prospects'] }),
+ });
+}
+
+export function useBulkDeleteProspects() {
+ const queryClient = useQueryClient();
+ return useMutation({
+ mutationFn: ({ prospectIds }) => prospectService.bulkDeleteProspects(prospectIds),
+ onSuccess: () => queryClient.invalidateQueries({ queryKey: ['prospects'] }),
+ });
+}
