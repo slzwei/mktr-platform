@@ -14,9 +14,11 @@
 import { Op } from 'sequelize';
 import { Payment, LeadPackage, LeadPackageAssignment, User, Campaign, sequelize } from '../models/index.js';
 import * as hitpay from './hitpayClient.js';
+import { buildPurchaseDocument, docTypeForStatus } from './billingDocumentService.js';
 import { logger } from '../utils/logger.js';
 
 const VALID_CHECKOUT_MODES = ['in_app', 'web', 'off'];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Strict money string → integer cents. Rejects non-canonical input (exponent, >2 decimals,
@@ -40,7 +42,7 @@ function toPurchaseStatus(s) {
 }
 
 export function makeBillingService(overrides = {}) {
-  const d = { Payment, LeadPackage, LeadPackageAssignment, User, Campaign, sequelize, hitpay, logger, ...overrides };
+  const d = { Payment, LeadPackage, LeadPackageAssignment, User, Campaign, sequelize, hitpay, buildPurchaseDocument, logger, ...overrides };
 
   /** Server-controlled in-app-checkout kill switch (App-Store mitigation). */
   function checkoutMode() {
@@ -218,6 +220,36 @@ export function makeBillingService(overrides = {}) {
   }
 
   /**
+   * One purchase from the caller's history as a branded PDF: receipt for
+   * paid/refunded, invoice for pending. Scope matches getHistory exactly — the
+   * caller must be the PAYER or (for team purchases) the BENEFICIARY, so every
+   * documentable history row resolves. Typed outcomes — ok | invalid_agent |
+   * not_found | unsupported_status. purchaseId is validated as a UUID up front so
+   * a malformed id is a typed miss, not a Sequelize error.
+   */
+  async function getDocument({ agentMktrUserId, purchaseId }) {
+    const agent = await resolveAgent(agentMktrUserId);
+    if (!agent) return { status: 'invalid_agent' };
+    if (typeof purchaseId !== 'string' || !UUID_RE.test(purchaseId)) return { status: 'not_found' };
+    const payment = await d.Payment.findOne({
+      where: { id: purchaseId, [Op.or]: [{ agentId: agent.id }, { beneficiaryUserId: agent.id }] },
+    });
+    if (!payment) return { status: 'not_found' };
+    if (!docTypeForStatus(payment.status)) return { status: 'unsupported_status' };
+    // BILLED TO is always the PAYER. When the caller is the beneficiary, resolve the
+    // payer row best-effort (same as getHistory's payerNames) — a vanished payer
+    // degrades to the renderer's generic fallback, never blocks the document.
+    let payer = agent;
+    if (String(payment.agentId ?? '') !== String(agent.id)) {
+      payer = payment.agentId
+        ? await d.User.findByPk(payment.agentId, { attributes: ['id', 'firstName', 'lastName', 'fullName', 'email'] }).catch(() => null)
+        : null;
+    }
+    const { docType, filename, buffer } = await d.buildPurchaseDocument({ payment, agent: payer });
+    return { status: 'ok', docType, filename, pdfBase64: buffer.toString('base64') };
+  }
+
+  /**
    * Fulfill a verified, completed HitPay webhook. One transaction; the Payment row is
    * the idempotency anchor (FOR UPDATE lock + only-pending flip). Grants from snapshots.
    * Returns a typed status so the caller can pick 200 (durable) vs 5xx (retryable).
@@ -332,7 +364,7 @@ export function makeBillingService(overrides = {}) {
     return result;
   }
 
-  return { getCatalog, createCheckout, getPurchaseStatus, getHistory, fulfillFromWebhook, checkoutMode };
+  return { getCatalog, createCheckout, getPurchaseStatus, getHistory, getDocument, fulfillFromWebhook, checkoutMode };
 }
 
 // --- Backward-compatible named exports (house pattern) ---
@@ -341,4 +373,5 @@ export const getCatalog = _default.getCatalog;
 export const createCheckout = _default.createCheckout;
 export const getPurchaseStatus = _default.getPurchaseStatus;
 export const getHistory = _default.getHistory;
+export const getDocument = _default.getDocument;
 export const fulfillFromWebhook = _default.fulfillFromWebhook;
