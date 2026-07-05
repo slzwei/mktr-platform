@@ -131,8 +131,8 @@ export function makeMktrLeadsAgentManagementService(overrides = {}) {
 
     const row = await d.client.setAgentActive(mktrUserId, isActive === true);
     if (!row) {
-      // Unknown id — or an admin row, which the client's role=eq.agent filter
-      // refuses to touch by construction.
+      // Unknown id — or an admin row, which the client's role=in.(agent,manager)
+      // filter refuses to touch by construction (managers ARE manageable here).
       throw new AppError('mktr-leads agent not found (admins cannot be managed from here)', 404);
     }
 
