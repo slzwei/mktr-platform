@@ -61,7 +61,7 @@ describe('mktrLeadsClient write-backs', () => {
   describe('setAgentActive / updateAgentFields (PATCH agents)', () => {
     const okRow = { mktr_user_id: 'mu_1', is_active: false };
 
-    it('PATCHes with the role=eq.agent hard guard and an ENCODED id, returns the row', async () => {
+    it('PATCHes with the role=in.(agent,manager) hard guard and an ENCODED id, returns the row', async () => {
       fetchMock.mockResolvedValue({ ok: true, json: async () => [okRow], text: async () => '' });
 
       const row = await client.setAgentActive('mu/1 weird', false);
@@ -69,7 +69,7 @@ describe('mktrLeadsClient write-backs', () => {
       const [url, opts] = fetchMock.mock.calls[0];
       expect(url).toContain('/rest/v1/agents?');
       expect(url).toContain(`mktr_user_id=eq.${encodeURIComponent('mu/1 weird')}`);
-      expect(url).toContain('role=eq.agent'); // admins untouchable by construction
+      expect(url).toContain('role=in.(agent,manager)'); // admins untouchable by construction
       expect(opts.method).toBe('PATCH');
       expect(opts.headers.Prefer).toBe('return=representation');
       expect(JSON.parse(opts.body)).toEqual({ is_active: false });

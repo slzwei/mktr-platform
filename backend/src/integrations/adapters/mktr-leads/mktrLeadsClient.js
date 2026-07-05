@@ -103,9 +103,12 @@ const SELECT_COLUMNS = 'mktr_user_id,full_name,email,phone,role,is_active,agency
 /**
  * Fetch ALL mktr-leads agents — active AND inactive.
  *
- * `role=eq.agent` is filtered AT THE SOURCE and is mandatory: mktr-leads has an
- * `admin` role that must never become an assignable MKTR agent (a promotion to
- * admin drops the row from this list → the sync retires it locally).
+ * `role=in.(agent,manager)` is filtered AT THE SOURCE and is mandatory: mktr-leads
+ * has an `admin` role that must never become an assignable MKTR agent (a promotion
+ * to admin drops the row from this list → the sync retires it locally). Managers
+ * ARE lead buyers — they hold their own leads — so an agent→manager promotion keeps
+ * the row IN this feed and must never trip the two-phase retirement (FMEA F09);
+ * the upstream role rides `externalRole` while the local users row stays role=agent.
  *
  * `is_active` is intentionally NOT filtered (unlike Lyfe): the adapter declares
  * `mirrorsIsActive`, so runSync mirrors each row's is_active directly. Fetching
@@ -124,7 +127,7 @@ export async function fetchAgents() {
   let rows;
   try {
     rows = await breaker.fire(
-      `${url}/rest/v1/agents?role=eq.agent&select=${SELECT_COLUMNS}&order=full_name`,
+      `${url}/rest/v1/agents?role=in.(agent,manager)&select=${SELECT_COLUMNS}&order=full_name`,
       authHeaders(key)
     );
   } catch (err) {
@@ -207,14 +210,14 @@ export async function createInvitation({ phone, fullName, email, agency }) {
 }
 
 /**
- * PATCH one mktr-leads agent row. The `role=eq.agent` filter is a hard guard:
- * admin rows can never be touched from here, whatever the caller passes.
+ * PATCH one mktr-leads agent row. The `role=in.(agent,manager)` filter is a hard
+ * guard: admin rows can never be touched from here, whatever the caller passes.
  * Returns the updated row, or null when nothing matched (unknown id / admin).
  */
 async function patchAgent(mktrUserId, payload) {
   const { url, key } = getConfig();
   const response = await fetch(
-    `${url}/rest/v1/agents?mktr_user_id=eq.${encodeURIComponent(mktrUserId)}&role=eq.agent`,
+    `${url}/rest/v1/agents?mktr_user_id=eq.${encodeURIComponent(mktrUserId)}&role=in.(agent,manager)`,
     {
       method: 'PATCH',
       headers: { ...authHeaders(key), Prefer: 'return=representation' },

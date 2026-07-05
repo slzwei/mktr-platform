@@ -36,6 +36,18 @@ const ROWS = [
     agency: 'Acme Advisory',
     created_at: '2026-06-03T00:00:00Z',
   },
+  {
+    // Manager — a lead buyer like any agent; must stay in the feed (F09) and
+    // carry role='manager' through externalRole.
+    mktr_user_id: 'mu_4',
+    full_name: 'Dan Koh',
+    email: 'dan@example.com',
+    phone: '6581112222',
+    role: 'manager',
+    is_active: true,
+    agency: 'Acme Advisory',
+    created_at: '2026-06-04T00:00:00Z',
+  },
 ];
 
 describe('mktrLeadsClient', () => {
@@ -61,18 +73,20 @@ describe('mktrLeadsClient', () => {
     delete process.env.MKTR_LEADS_SUPABASE_SERVICE_ROLE_KEY;
   });
 
-  it('fetchAgents filters role=agent at the source (NOT is_active — inactive rows are mirrored) and normalizes', async () => {
+  it('fetchAgents filters role to agent+manager at the source (NOT is_active — inactive rows are mirrored) and normalizes', async () => {
     const agents = await client.fetchAgents();
 
     const url = fetchMock.mock.calls[0][0];
     expect(url).toContain('/rest/v1/agents?');
-    expect(url).toContain('role=eq.agent');
+    // Managers are lead buyers and must stay in the feed — leaving it trips the
+    // two-phase retirement (F09). Admins remain excluded at the source.
+    expect(url).toContain('role=in.(agent,manager)');
     // Deactivated agents must stay in the fetched set: absence means DELETED
     // upstream (two-phase hard-delete). is_active is mirrored row-wise instead.
     expect(url).not.toContain('is_active=eq.true');
     expect(url).toContain('select=mktr_user_id,full_name,email,phone,role,is_active,agency,created_at');
 
-    expect(agents).toHaveLength(3);
+    expect(agents).toHaveLength(4);
     expect(agents[0]).toMatchObject({
       externalId: 'mu_1', // the mktr_user_id, NOT an auth id
       fullName: 'Ada Tan',
@@ -88,6 +102,9 @@ describe('mktrLeadsClient', () => {
     expect(agents[1].email).toBeNull(); // do NOT synthesize
     // Inactive rows pass through with isActive=false for row-wise mirroring.
     expect(agents[2]).toMatchObject({ externalId: 'mu_3', isActive: false });
+    // Managers normalize like agents, with the upstream role on externalRole —
+    // agentSync stores it as users.external_role while local role stays 'agent'.
+    expect(agents[3]).toMatchObject({ externalId: 'mu_4', externalRole: 'manager', isActive: true });
   });
 
   it('caches list results within TTL (no second fetch)', async () => {
@@ -149,7 +166,7 @@ describe('MktrLeadsAdapter contract', () => {
     client.invalidateCache();
     global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ROWS, text: async () => '' });
     const agents = await MktrLeadsAdapter.listAgents();
-    expect(agents.map((a) => a.externalId)).toEqual(['mu_1', 'mu_2', 'mu_3']);
+    expect(agents.map((a) => a.externalId)).toEqual(['mu_1', 'mu_2', 'mu_3', 'mu_4']);
     delete process.env.MKTR_LEADS_SUPABASE_URL;
     delete process.env.MKTR_LEADS_SUPABASE_SERVICE_ROLE_KEY;
   });
