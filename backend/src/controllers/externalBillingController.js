@@ -82,7 +82,10 @@ function sendError(res, err, op) {
 export async function catalog(req, res) {
   try {
     const data = await getCatalog();
-    return res.json({ success: true, ...data });
+    // beneficiarySupported = the capability flag the app's buy-for-team UI gates on:
+    // a deployed backend that understands beneficiaryMktrUserId advertises it here,
+    // so an OTA'd app can never send a beneficiary this server would silently drop.
+    return res.json({ success: true, beneficiarySupported: true, ...data });
   } catch (err) {
     return sendError(res, err, 'catalog');
   }
@@ -90,16 +93,16 @@ export async function catalog(req, res) {
 
 // ── Checkout (create purchase) ────────────────────────────────────────────────
 export async function checkout(req, res) {
-  const { agentMktrUserId, packageId } = req.body || {};
+  const { agentMktrUserId, packageId, beneficiaryMktrUserId } = req.body || {};
   if (!agentMktrUserId || !packageId) {
     return res.status(400).json({ success: false, error: 'agentMktrUserId and packageId are required' });
   }
   try {
-    const r = await createCheckout({ agentMktrUserId, packageId });
+    const r = await createCheckout({ agentMktrUserId, packageId, beneficiaryMktrUserId });
     if (r.status === 'created') {
-      return res.status(201).json({ success: true, checkoutUrl: r.url, purchaseId: r.purchaseId });
+      return res.status(201).json({ success: true, checkoutUrl: r.url, purchaseId: r.purchaseId, beneficiarySupported: true });
     }
-    const codeByStatus = { invalid_agent: 400, package_inactive: 409, package_unpriced: 409, provider_error: 502 };
+    const codeByStatus = { invalid_agent: 400, invalid_beneficiary: 400, package_inactive: 409, package_unpriced: 409, provider_error: 502 };
     const code = codeByStatus[r.status] || 500;
     return res.status(code).json({ success: false, status: r.status });
   } catch (err) {

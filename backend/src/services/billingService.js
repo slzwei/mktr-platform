@@ -11,6 +11,7 @@
  *
  * DI-factory (house pattern) so it unit-tests without a DB or network.
  */
+import { Op } from 'sequelize';
 import { Payment, LeadPackage, LeadPackageAssignment, User, Campaign, sequelize } from '../models/index.js';
 import * as hitpay from './hitpayClient.js';
 import { logger } from '../utils/logger.js';
@@ -87,12 +88,25 @@ export function makeBillingService(overrides = {}) {
   /**
    * Create a pending Payment + a HitPay payment request. The Payment.id is the HitPay
    * reference_number, so the webhook correlates back by PK. Typed outcomes:
-   * created | invalid_agent | package_inactive | package_unpriced | provider_error.
+   * created | invalid_agent | invalid_beneficiary | package_inactive | package_unpriced
+   * | provider_error.
+   *
+   * beneficiaryMktrUserId (optional): a mktr-leads MANAGER buying FOR a team member —
+   * the payer stays agentMktrUserId, the grant goes to the beneficiary. Team membership
+   * is validated by the mktr-agent-store broker (the only caller with the Supabase
+   * truth); here both parties just have to be live local buyers.
    */
-  async function createCheckout({ agentMktrUserId, packageId }) {
+  async function createCheckout({ agentMktrUserId, packageId, beneficiaryMktrUserId }) {
     if (!agentMktrUserId || !packageId) return { status: 'invalid_agent' };
     const agent = await resolveAgent(agentMktrUserId);
     if (!agent) return { status: 'invalid_agent' };
+
+    // Same-person "beneficiary" collapses to a plain self purchase.
+    let beneficiary = null;
+    if (beneficiaryMktrUserId && beneficiaryMktrUserId !== agentMktrUserId) {
+      beneficiary = await resolveAgent(beneficiaryMktrUserId);
+      if (!beneficiary) return { status: 'invalid_beneficiary' };
+    }
 
     const pkg = await d.LeadPackage.findByPk(packageId, {
       include: [{ model: d.Campaign, as: 'campaign', attributes: ['name'] }],
@@ -102,8 +116,15 @@ export function makeBillingService(overrides = {}) {
     if (!(price > 0) || (pkg.currency || 'SGD') !== 'SGD') return { status: 'package_unpriced' };
 
     // Pending Payment first so its id is the HitPay reference_number + the idempotency anchor.
+    // Beneficiary is SNAPSHOTTED here (id + immutable forTeam marker + display name):
+    // fulfillment grants from these fields, never from webhook input.
     const payment = await d.Payment.create({
       agentId: agent.id,
+      beneficiaryUserId: beneficiary ? beneficiary.id : null,
+      forTeam: !!beneficiary,
+      beneficiaryName: beneficiary
+        ? beneficiary.fullName || `${beneficiary.firstName || ''} ${beneficiary.lastName || ''}`.trim() || null
+        : null,
       leadPackageId: pkg.id,
       provider: 'hitpay',
       amount: price,
@@ -126,7 +147,7 @@ export function makeBillingService(overrides = {}) {
         purpose: pkg.name,
       });
       await payment.update({ providerRequestId: id });
-      d.logger.info('[billing] checkout.created', { purchaseId: payment.id, agentId: agent.id, packageId: pkg.id, amount: price });
+      d.logger.info('[billing] checkout.created', { purchaseId: payment.id, agentId: agent.id, beneficiaryId: beneficiary?.id ?? null, packageId: pkg.id, amount: price });
       return { status: 'created', url, purchaseId: payment.id };
     } catch (err) {
       await payment.update({ status: 'failed' }).catch(() => {});
@@ -144,20 +165,55 @@ export function makeBillingService(overrides = {}) {
     return { status: toPurchaseStatus(payment.status) };
   }
 
-  /** The agent's OWN purchase history (self-scoped, newest 50). */
+  /**
+   * The caller's purchase history (newest 50): rows they PAID for plus team
+   * purchases that CREDITED them. Each row carries a direction so the app can
+   * label it — 'self' | 'for_team' (payer view, + beneficiaryName snapshot) |
+   * 'from_manager' (grantee view, + payerName resolved best-effort).
+   */
   async function getHistory({ agentMktrUserId }) {
     const agent = await resolveAgent(agentMktrUserId);
     if (!agent) return { purchases: [] };
-    const rows = await d.Payment.findAll({ where: { agentId: agent.id }, order: [['createdAt', 'DESC']], limit: 50 });
-    const purchases = rows.map((p) => ({
-      id: p.id,
-      packageName: p.packageName || 'Lead package',
-      leadCount: p.leadCount,
-      amount: Number(p.amount),
-      currency: p.currency || 'SGD',
-      status: toPurchaseStatus(p.status),
-      createdAt: (p.createdAt instanceof Date ? p.createdAt : new Date(p.createdAt)).toISOString(),
-    }));
+    const rows = await d.Payment.findAll({
+      where: { [Op.or]: [{ agentId: agent.id }, { beneficiaryUserId: agent.id }] },
+      order: [['createdAt', 'DESC']],
+      limit: 50,
+    });
+
+    // Payer names for the rows that credited the caller (manager-funded).
+    const payerIds = [
+      ...new Set(
+        rows
+          .filter((p) => p.forTeam && String(p.beneficiaryUserId) === String(agent.id) && p.agentId)
+          .map((p) => p.agentId),
+      ),
+    ];
+    const payerNames = new Map();
+    if (payerIds.length > 0) {
+      const payers = await d.User.findAll({
+        where: { id: payerIds },
+        attributes: ['id', 'firstName', 'lastName', 'fullName'],
+      }).catch(() => []);
+      for (const u of payers) {
+        payerNames.set(String(u.id), u.fullName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || null);
+      }
+    }
+
+    const purchases = rows.map((p) => {
+      const direction = !p.forTeam ? 'self' : String(p.agentId) === String(agent.id) ? 'for_team' : 'from_manager';
+      return {
+        id: p.id,
+        packageName: p.packageName || 'Lead package',
+        leadCount: p.leadCount,
+        amount: Number(p.amount),
+        currency: p.currency || 'SGD',
+        status: toPurchaseStatus(p.status),
+        createdAt: (p.createdAt instanceof Date ? p.createdAt : new Date(p.createdAt)).toISOString(),
+        direction,
+        beneficiaryName: direction === 'for_team' ? (p.beneficiaryName ?? null) : null,
+        payerName: direction === 'from_manager' ? (payerNames.get(String(p.agentId)) ?? null) : null,
+      };
+    });
     return { purchases };
   }
 
@@ -219,21 +275,27 @@ export function makeBillingService(overrides = {}) {
         return { status: 'rejected' };
       }
 
-      // Parent (agent/package) deleted between checkout and settlement → can't build the assignment
-      // (NOT NULL FKs). Don't 500 forever: record the money as PAID (truthful) but UNFULFILLED, for
-      // manual review / the Phase-2 reconciliation sweep (paid-without-assignment).
-      if (!payment.agentId || !payment.leadPackageId) {
+      // The GRANTEE: the snapshotted beneficiary for a team purchase, else the payer.
+      // forTeam is immutable and survives the beneficiary FK SET NULL, so an explicit
+      // team purchase NEVER silently falls back to crediting the payer.
+      const granteeId = payment.forTeam ? payment.beneficiaryUserId : payment.agentId;
+
+      // Parent (grantee/package) deleted between checkout and settlement → can't build the
+      // assignment (NOT NULL FKs) — or a team purchase's beneficiary vanished. Don't 500
+      // forever: record the money as PAID (truthful) but UNFULFILLED, for manual review /
+      // the reconciliation sweep (paid-without-assignment).
+      if (!granteeId || !payment.leadPackageId) {
         await payment.update(
           { status: 'paid', providerPaymentId: providerPaymentId ? String(providerPaymentId) : payment.providerPaymentId, rawWebhook: payload },
           { transaction: t },
         );
-        d.logger.error('[billing] fulfillment.unfulfillable — paid but agent/package missing; manual review', { ref, agentId: payment.agentId, leadPackageId: payment.leadPackageId });
+        d.logger.error('[billing] fulfillment.unfulfillable — paid but grantee/package missing; manual review', { ref, agentId: payment.agentId, beneficiaryUserId: payment.beneficiaryUserId, forTeam: payment.forTeam === true, leadPackageId: payment.leadPackageId });
         return { status: 'paid_unfulfilled' };
       }
 
       const assignment = await d.LeadPackageAssignment.create(
         {
-          agentId: payment.agentId,
+          agentId: granteeId,
           leadPackageId: payment.leadPackageId,
           leadsTotal: payment.leadCount,
           leadsRemaining: payment.leadCount,
@@ -254,7 +316,7 @@ export function makeBillingService(overrides = {}) {
         { transaction: t },
       );
 
-      d.logger.info('[billing] fulfillment.paid', { ref, agentId: payment.agentId, assignmentId: assignment.id, leadCount: payment.leadCount });
+      d.logger.info('[billing] fulfillment.paid', { ref, agentId: payment.agentId, granteeId, forTeam: payment.forTeam === true, assignmentId: assignment.id, leadCount: payment.leadCount });
       return { status: 'fulfilled', assignmentId: assignment.id, leadPackageId: payment.leadPackageId };
     });
 
