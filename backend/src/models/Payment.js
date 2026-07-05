@@ -24,6 +24,28 @@ const Payment = sequelize.define('Payment', {
     allowNull: true, // SET NULL on user delete — keep the financial record
     references: { model: 'users', key: 'id' },
   },
+  /**
+   * Manager "buy for team" (migration 043): the GRANTEE when forTeam. NULL = self
+   * purchase, or the beneficiary was deleted before settlement — forTeam
+   * disambiguates, and fulfillment then records paid-without-assignment instead
+   * of silently crediting the payer.
+   */
+  beneficiaryUserId: {
+    type: DataTypes.UUID,
+    allowNull: true, // SET NULL on user delete — keep the financial record
+    references: { model: 'users', key: 'id' },
+  },
+  /** Immutable team-purchase marker — survives beneficiary FK SET NULL. */
+  forTeam: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
+  /** Display snapshot of the beneficiary at checkout (history labels outlive deletion). */
+  beneficiaryName: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
   leadPackageId: {
     type: DataTypes.UUID,
     allowNull: true,

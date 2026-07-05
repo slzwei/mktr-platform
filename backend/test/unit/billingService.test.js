@@ -36,6 +36,10 @@ function build({
   assignment = { id: 'asg-1' },
   hitpayThrows = false,
   hitpayResult = { id: 'hp-req-1', url: 'https://hit-pay.com/pay/abc' },
+  // Beneficiary tests: resolveAgent is called per party — map mktrLeadsId → user row.
+  usersByMktrId = null,
+  // History payer-name lookups (User.findAll).
+  payerRows = [],
 } = {}) {
   const createdPayments = [];
   const Payment = {
@@ -49,7 +53,10 @@ function build({
   };
   const LeadPackage = { findByPk: jest.fn(async () => pkg) };
   const LeadPackageAssignment = { create: jest.fn(async () => assignment) };
-  const User = { findOne: jest.fn(async () => agent) };
+  const User = {
+    findOne: jest.fn(async (q) => (usersByMktrId ? (usersByMktrId[q?.where?.mktrLeadsId] ?? null) : agent)),
+    findAll: jest.fn(async () => payerRows),
+  };
   const Campaign = {};
   const sequelize = { transaction: jest.fn(async (cb) => cb({ LOCK: { UPDATE: 'UPDATE' } })) };
   const hitpay = {
@@ -239,5 +246,102 @@ describe('billingService status/history/catalog', () => {
     expect(r.packages.map((p) => p.id)).toEqual(['p1']);
     expect(r.packages[0]).toMatchObject({ name: 'A', leadCount: 20, price: 200, currency: 'SGD', campaignName: 'C', isRecommended: false });
     expect(['in_app', 'web', 'off']).toContain(r.checkoutMode);
+  });
+});
+
+describe('billingService — beneficiary purchases (manager buy-for-team, migration 043)', () => {
+  const okManager = { id: 'mgr-1', firstName: 'M', lastName: 'G', fullName: 'M G', email: 'm@g.co' };
+  const okMember = { id: 'ben-1', firstName: 'B', lastName: 'N', fullName: 'Ben N', email: 'b@n.co' };
+
+  it('snapshots beneficiary + forTeam + name at checkout', async () => {
+    const { svc, createdPayments } = build({
+      pkg: activePkg(),
+      usersByMktrId: { 'mu-mgr': okManager, 'mu-ben': okMember },
+    });
+    const r = await svc.createCheckout({
+      agentMktrUserId: 'mu-mgr',
+      packageId: 'pkg-1',
+      beneficiaryMktrUserId: 'mu-ben',
+    });
+    expect(r.status).toBe('created');
+    expect(createdPayments[0]).toMatchObject({
+      agentId: 'mgr-1',
+      beneficiaryUserId: 'ben-1',
+      forTeam: true,
+      beneficiaryName: 'Ben N',
+    });
+  });
+
+  it('rejects an unknown beneficiary (typed, before any Payment row exists)', async () => {
+    const { svc, Payment } = build({ pkg: activePkg(), usersByMktrId: { 'mu-mgr': okManager } });
+    const r = await svc.createCheckout({
+      agentMktrUserId: 'mu-mgr',
+      packageId: 'pkg-1',
+      beneficiaryMktrUserId: 'mu-ghost',
+    });
+    expect(r.status).toBe('invalid_beneficiary');
+    expect(Payment.create).not.toHaveBeenCalled();
+  });
+
+  it('a same-person beneficiary collapses to a plain self purchase', async () => {
+    const { svc, createdPayments } = build({ pkg: activePkg(), usersByMktrId: { 'mu-mgr': okManager } });
+    const r = await svc.createCheckout({
+      agentMktrUserId: 'mu-mgr',
+      packageId: 'pkg-1',
+      beneficiaryMktrUserId: 'mu-mgr',
+    });
+    expect(r.status).toBe('created');
+    expect(createdPayments[0]).toMatchObject({ forTeam: false, beneficiaryUserId: null, beneficiaryName: null });
+  });
+
+  it('fulfillment grants the assignment to the BENEFICIARY, never the payer', async () => {
+    const payment = fakePayment({ agentId: 'mgr-1', beneficiaryUserId: 'ben-1', forTeam: true });
+    const { svc, LeadPackageAssignment } = build({ payment });
+    const r = await svc.fulfillFromWebhook({
+      reference_number: 'pay-1',
+      payment_request_id: 'hp-req-1',
+      status: 'completed',
+      amount: '200.00',
+      currency: 'SGD',
+    });
+    expect(r.status).toBe('fulfilled');
+    expect(LeadPackageAssignment.create).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: 'ben-1' }),
+      expect.anything(),
+    );
+  });
+
+  it('a team purchase whose beneficiary vanished lands paid_unfulfilled — NO payer fallback', async () => {
+    // forTeam survives the FK SET NULL: the marker is what blocks the silent payer credit.
+    const payment = fakePayment({ agentId: 'mgr-1', beneficiaryUserId: null, forTeam: true });
+    const { svc, LeadPackageAssignment } = build({ payment });
+    const r = await svc.fulfillFromWebhook({
+      reference_number: 'pay-1',
+      payment_request_id: 'hp-req-1',
+      status: 'completed',
+      amount: '200.00',
+      currency: 'SGD',
+    });
+    expect(r.status).toBe('paid_unfulfilled');
+    expect(LeadPackageAssignment.create).not.toHaveBeenCalled();
+    expect(payment.status).toBe('paid'); // the money is recorded truthfully
+  });
+
+  it('history carries directions: self / for_team (+beneficiaryName) / from_manager (+payerName)', async () => {
+    const rows = [
+      { id: 'p1', agentId: 'mgr-1', forTeam: false, beneficiaryUserId: null, beneficiaryName: null, packageName: 'A', leadCount: 10, amount: '90.00', currency: 'SGD', status: 'paid', createdAt: new Date('2026-07-01') },
+      { id: 'p2', agentId: 'mgr-1', forTeam: true, beneficiaryUserId: 'ben-1', beneficiaryName: 'Ben N', packageName: 'B', leadCount: 20, amount: '200.00', currency: 'SGD', status: 'paid', createdAt: new Date('2026-07-02') },
+      { id: 'p3', agentId: 'boss-9', forTeam: true, beneficiaryUserId: 'mgr-1', beneficiaryName: 'M G', packageName: 'C', leadCount: 5, amount: '50.00', currency: 'SGD', status: 'paid', createdAt: new Date('2026-07-03') },
+    ];
+    const { svc, Payment } = build({
+      usersByMktrId: { 'mu-mgr': okManager },
+      payerRows: [{ id: 'boss-9', fullName: 'Big Boss', firstName: 'Big', lastName: 'Boss' }],
+    });
+    Payment.findAll.mockResolvedValue(rows);
+    const r = await svc.getHistory({ agentMktrUserId: 'mu-mgr' });
+    const byId = Object.fromEntries(r.purchases.map((p) => [p.id, p]));
+    expect(byId.p1).toMatchObject({ direction: 'self', beneficiaryName: null, payerName: null });
+    expect(byId.p2).toMatchObject({ direction: 'for_team', beneficiaryName: 'Ben N' });
+    expect(byId.p3).toMatchObject({ direction: 'from_manager', payerName: 'Big Boss' });
   });
 });
