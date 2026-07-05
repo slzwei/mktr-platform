@@ -6,10 +6,11 @@
  *   POST /checkout       → create a HitPay payment → { checkoutUrl, purchaseId }
  *   POST /status         → poll one of the agent's purchases → { status }
  *   POST /history        → the agent's purchase history → { purchases }
+ *   POST /document       → receipt (paid/refunded) / invoice (pending) PDF → { docType, filename, pdfBase64 }
  *   POST /hitpay-webhook → HitPay settlement → fulfill (grant the LeadPackageAssignment)
  *
  * ── Auth ────────────────────────────────────────────────────────────────────
- * The four agent-facing actions use the SAME HMAC-SHA256-over-rawBody scheme as the
+ * The five agent-facing actions use the SAME HMAC-SHA256-over-rawBody scheme as the
  * other /api/external/ surfaces (header `X-Webhook-Signature: sha256=<hex>`, freshness
  * on the signed body `timestamp`, ±5 min) keyed by EXTERNAL_APP_SECRET — the mktr-leads
  * `mktr-agent-store` broker edge function (agent-JWT gated, self-scopes the caller's own
@@ -20,7 +21,7 @@
 import crypto from 'crypto';
 import { logger } from '../utils/logger.js';
 import { verifyWebhook as verifyHitpayWebhook } from '../services/hitpayClient.js';
-import { getCatalog, createCheckout, getPurchaseStatus, getHistory, fulfillFromWebhook } from '../services/billingService.js';
+import { getCatalog, createCheckout, getPurchaseStatus, getHistory, getDocument, fulfillFromWebhook } from '../services/billingService.js';
 
 const MAX_AGE_MS = 5 * 60 * 1000;
 const MAX_FUTURE_MS = 2 * 60 * 1000; // tolerate clock skew
@@ -135,6 +136,25 @@ export async function history(req, res) {
     return res.json({ success: true, purchases: r.purchases });
   } catch (err) {
     return sendError(res, err, 'history');
+  }
+}
+
+// ── Document (receipt / invoice PDF, base64) ──────────────────────────────────
+export async function document(req, res) {
+  const { agentMktrUserId, purchaseId } = req.body || {};
+  if (!agentMktrUserId || !purchaseId) {
+    return res.status(400).json({ success: false, error: 'agentMktrUserId and purchaseId are required' });
+  }
+  try {
+    const r = await getDocument({ agentMktrUserId, purchaseId });
+    if (r.status === 'ok') {
+      res.set('Cache-Control', 'no-store'); // financial/PII payload
+      return res.json({ success: true, docType: r.docType, filename: r.filename, pdfBase64: r.pdfBase64 });
+    }
+    const codeByStatus = { invalid_agent: 400, not_found: 404, unsupported_status: 409 };
+    return res.status(codeByStatus[r.status] || 500).json({ success: false, status: r.status });
+  } catch (err) {
+    return sendError(res, err, 'document');
   }
 }
 

@@ -1,7 +1,7 @@
 /**
  * MKTR Leads buyer app → lead-package PURCHASE (HitPay checkout).
  *
- * Mounted at `/api/external/billing`. The four agent-facing actions are HMAC-SHA256
+ * Mounted at `/api/external/billing`. The five agent-facing actions are HMAC-SHA256
  * over the raw body (EXTERNAL_APP_SECRET); `/hitpay-webhook` is authed by HitPay's own
  * signature inside the handler. rawBody capture + the rate-limiter exemption for the
  * `/api/external/` prefix are wired in server_internal.js (same as the other external surfaces).
@@ -17,6 +17,7 @@ import {
   checkout,
   status,
   history,
+  document,
   hitpayWebhook,
 } from '../controllers/externalBillingController.js';
 
@@ -33,6 +34,7 @@ router.post('/catalog', requireExternalHmac, catalog);
 router.post('/checkout', requireExternalHmac, checkout);
 router.post('/status', requireExternalHmac, status);
 router.post('/history', requireExternalHmac, history);
+router.post('/document', requireExternalHmac, document);
 
 // HitPay settlement — authed by HitPay's signature inside the handler (NOT EXTERNAL_APP_SECRET).
 router.post('/hitpay-webhook', hitpayWebhook);

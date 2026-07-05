@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { Op } from 'sequelize';
 import '../setup.js';
 import { makeBillingService } from '../../src/services/billingService.js';
 
@@ -343,5 +344,109 @@ describe('billingService — beneficiary purchases (manager buy-for-team, migrat
     expect(byId.p1).toMatchObject({ direction: 'self', beneficiaryName: null, payerName: null });
     expect(byId.p2).toMatchObject({ direction: 'for_team', beneficiaryName: 'Ben N' });
     expect(byId.p3).toMatchObject({ direction: 'from_manager', payerName: 'Big Boss' });
+  });
+});
+
+describe('billingService.getDocument', () => {
+  const UUID = '3f2a9c1b-7d4e-4a2b-9c1d-8e5f6a7b8c9d';
+  const docBuilder = () =>
+    jest.fn(async ({ payment }) => ({
+      docType: payment.status === 'pending' ? 'invoice' : 'receipt',
+      filename: 'MKTR-Receipt-3F2A9C1B.pdf',
+      buffer: Buffer.from('%PDF-fake'),
+    }));
+
+  test('invalid_agent when no synced active agent', async () => {
+    const { svc } = build({ agent: null });
+    expect((await svc.getDocument({ agentMktrUserId: 'm1', purchaseId: UUID })).status).toBe('invalid_agent');
+  });
+
+  test('not_found for a malformed purchaseId — never reaches the DB', async () => {
+    const { svc, Payment } = build({ agent: okAgent });
+    for (const bad of ['pay-1', '', "x' OR 1=1", null, undefined, 123]) {
+      expect((await svc.getDocument({ agentMktrUserId: 'm1', purchaseId: bad })).status).toBe('not_found');
+    }
+    expect(Payment.findOne).not.toHaveBeenCalled();
+  });
+
+  test('history-scoped lookup: WHERE id + (payer OR beneficiary); miss → not_found', async () => {
+    const { svc, Payment } = build({ agent: okAgent, payment: null });
+    const r = await svc.getDocument({ agentMktrUserId: 'm1', purchaseId: UUID });
+    expect(r.status).toBe('not_found');
+    const where = Payment.findOne.mock.calls[0][0].where;
+    expect(where.id).toBe(UUID);
+    expect(where[Op.or]).toEqual([{ agentId: 'agent-1' }, { beneficiaryUserId: 'agent-1' }]);
+  });
+
+  test('beneficiary caller gets the document, BILLED TO the resolved PAYER', async () => {
+    // Caller agent-1 is the BENEFICIARY of a manager-funded purchase (paid by mgr-9).
+    const payment = fakePayment({ status: 'paid', agentId: 'mgr-9', beneficiaryUserId: 'agent-1', forTeam: true, beneficiaryName: 'A B' });
+    const payer = { id: 'mgr-9', firstName: 'M', lastName: 'G', fullName: 'M G', email: 'm@g.co' };
+    const buildDoc = docBuilder();
+    const base = build({ agent: okAgent, payment });
+    const User = { ...base.User, findByPk: jest.fn(async () => payer) };
+    const svc = makeBillingService({
+      Payment: base.Payment, LeadPackage: {}, LeadPackageAssignment: {}, User, Campaign: {},
+      sequelize: {}, hitpay: {}, buildPurchaseDocument: buildDoc, logger: { info() {}, warn() {}, error() {} },
+    });
+    const r = await svc.getDocument({ agentMktrUserId: 'm1', purchaseId: UUID });
+    expect(r.status).toBe('ok');
+    expect(User.findByPk).toHaveBeenCalledWith('mgr-9', expect.anything());
+    expect(buildDoc).toHaveBeenCalledWith({ payment, agent: payer });
+  });
+
+  test('beneficiary document survives a vanished payer (renderer fallback, never blocked)', async () => {
+    const payment = fakePayment({ status: 'paid', agentId: null, beneficiaryUserId: 'agent-1', forTeam: true });
+    const buildDoc = docBuilder();
+    const base = build({ agent: okAgent, payment });
+    const User = { ...base.User, findByPk: jest.fn() };
+    const svc = makeBillingService({
+      Payment: base.Payment, LeadPackage: {}, LeadPackageAssignment: {}, User, Campaign: {},
+      sequelize: {}, hitpay: {}, buildPurchaseDocument: buildDoc, logger: { info() {}, warn() {}, error() {} },
+    });
+    const r = await svc.getDocument({ agentMktrUserId: 'm1', purchaseId: UUID });
+    expect(r.status).toBe('ok');
+    expect(User.findByPk).not.toHaveBeenCalled(); // agentId is null — nothing to resolve
+    expect(buildDoc).toHaveBeenCalledWith({ payment, agent: null });
+  });
+
+  test('unsupported_status for failed/expired/comp — no PDF built', async () => {
+    for (const status of ['failed', 'expired', 'comp']) {
+      const buildDoc = docBuilder();
+      const base = build({ agent: okAgent, payment: fakePayment({ status }) });
+      const svc = makeBillingService({
+        Payment: base.Payment, LeadPackage: {}, LeadPackageAssignment: {}, User: base.User, Campaign: {},
+        sequelize: {}, hitpay: {}, buildPurchaseDocument: buildDoc, logger: { info() {}, warn() {}, error() {} },
+      });
+      expect((await svc.getDocument({ agentMktrUserId: 'm1', purchaseId: UUID })).status).toBe('unsupported_status');
+      expect(buildDoc).not.toHaveBeenCalled();
+    }
+  });
+
+  test('ok — paid → receipt rendered to base64; builder gets the payment + live agent', async () => {
+    const payment = fakePayment({ status: 'paid' });
+    const buildDoc = docBuilder();
+    const base = build({ agent: okAgent, payment });
+    const svc = makeBillingService({
+      Payment: base.Payment, LeadPackage: {}, LeadPackageAssignment: {}, User: base.User, Campaign: {},
+      sequelize: {}, hitpay: {}, buildPurchaseDocument: buildDoc, logger: { info() {}, warn() {}, error() {} },
+    });
+    const r = await svc.getDocument({ agentMktrUserId: 'm1', purchaseId: UUID });
+    expect(r).toEqual({
+      status: 'ok',
+      docType: 'receipt',
+      filename: 'MKTR-Receipt-3F2A9C1B.pdf',
+      pdfBase64: Buffer.from('%PDF-fake').toString('base64'),
+    });
+    expect(buildDoc).toHaveBeenCalledWith({ payment, agent: okAgent });
+  });
+
+  test('ok — pending → invoice docType', async () => {
+    const base = build({ agent: okAgent, payment: fakePayment({ status: 'pending' }) });
+    const svc = makeBillingService({
+      Payment: base.Payment, LeadPackage: {}, LeadPackageAssignment: {}, User: base.User, Campaign: {},
+      sequelize: {}, hitpay: {}, buildPurchaseDocument: docBuilder(), logger: { info() {}, warn() {}, error() {} },
+    });
+    expect((await svc.getDocument({ agentMktrUserId: 'm1', purchaseId: UUID })).docType).toBe('invoice');
   });
 });
