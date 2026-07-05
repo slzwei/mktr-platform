@@ -127,8 +127,14 @@ export function buildLeadCreatedPayload(prospect, routingMode, agentForWebhook, 
 
 /**
  * Build the webhook payload for a 'lead.assigned' event.
+ *
+ * `opts.qrTag` / `opts.routingMode` mirror the created payload's `qrTag` block and
+ * `routing.mode`: manual dispatch always fires lead.assigned (never lead.created — a
+ * duplicate create is a silent no-op at both receivers), so when the destination app
+ * has never seen the lead it INSERTS from this payload and needs the same QR/source
+ * context a create would have carried.
  */
-export function buildLeadAssignedPayload(prospect, agent, prospectWithCampaign) {
+export function buildLeadAssignedPayload(prospect, agent, prospectWithCampaign, opts = {}) {
   const meta = prospect.sourceMetadata || {};
   return {
     event: 'lead.assigned',
@@ -161,6 +167,7 @@ export function buildLeadAssignedPayload(prospect, agent, prospectWithCampaign) 
         createdAt: prospect.createdAt
       },
       routing: {
+        mode: opts.routingMode || null,
         agentExternalId: externalIdForDestination(agent, destinationForAgent(agent)),
         agentName: [agent.firstName, agent.lastName].filter(Boolean).join(' '),
         agentEmail: agent.email,
@@ -168,7 +175,11 @@ export function buildLeadAssignedPayload(prospect, agent, prospectWithCampaign) 
       },
       campaign: prospectWithCampaign?.campaign
         ? { externalId: prospectWithCampaign.campaign.id, name: prospectWithCampaign.campaign.name }
-        : null
+        : null,
+      qrTag: {
+        externalId: opts.qrTag?.id || null,
+        slug: opts.qrTag?.slug || null
+      }
     }
   };
 }

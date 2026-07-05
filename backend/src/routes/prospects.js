@@ -40,8 +40,10 @@ router.put('/:id', authenticateToken, requireAgentOrAdmin, prospectController.up
 // Delete prospect
 router.delete('/:id', authenticateToken, requireAgentOrAdmin, prospectController.deleteProspect);
 
-// Bulk assign prospects (must be registered before /:id/assign to avoid param capture)
-router.patch('/bulk/assign', authenticateToken, requireAgentOrAdmin, prospectController.bulkAssignProspects);
+// Bulk lead ops (must be registered before /:id routes to avoid param capture)
+router.patch('/bulk/assign', authenticateToken, requireAgentOrAdmin, validate(schemas.prospectBulkAssign), prospectController.bulkAssignProspects);
+router.patch('/bulk/return-to-held', authenticateToken, requireAgentOrAdmin, validate(schemas.prospectBulkIds), prospectController.bulkReturnProspects);
+router.post('/bulk/delete', authenticateToken, requireAgentOrAdmin, validate(schemas.prospectBulkIds), prospectController.bulkDeleteProspects);
 
 // Assign prospect to agent
 router.patch('/:id/assign', authenticateToken, requireAgentOrAdmin, prospectController.assignProspect);

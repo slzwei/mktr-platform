@@ -445,6 +445,172 @@ describe('Bulk assign', () => {
   })
 })
 
+// Web-admin bulk lead ops: return-to-held, held release via bulk assign, bulk delete,
+// and the assignment-state list filter. The test agent has no lyfeId/mktrLeadsId
+// (destination null), so returns need no vanish delivery and assigns pass the
+// webhook pre-flight even with WEBHOOK_ENABLED=false.
+describe('Bulk return-to-held / bulk delete / assignment filter', () => {
+  let campaign, assigned, stray
+
+  beforeAll(async () => {
+    campaign = await createTestCampaign(adminUser.id)
+    assigned = await createTestProspect(campaign.id, { assignedAgentId: agentUser.id })
+    stray = await createTestProspect(campaign.id)
+  })
+
+  it('PATCH /bulk/return-to-held — returns an assigned lead and promotes an unassigned stray', async () => {
+    const res = await request(app)
+      .patch('/api/prospects/bulk/return-to-held')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ prospectIds: [assigned.id, stray.id] })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.returned).toBe(1)
+    expect(res.body.data.promoted).toBe(1)
+
+    await assigned.reload()
+    expect(assigned.assignedAgentId).toBeNull()
+    expect(assigned.quarantinedAt).not.toBeNull()
+    expect(assigned.quarantineReason).toBe('returned_by_admin')
+  })
+
+  it('re-running the return is a no-op (alreadyHeld)', async () => {
+    const res = await request(app)
+      .patch('/api/prospects/bulk/return-to-held')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ prospectIds: [assigned.id, stray.id] })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.returned).toBe(0)
+    expect(res.body.data.alreadyHeld).toBe(2)
+  })
+
+  it('returned_by_admin holds never surface in the EXTERNAL held queue (no_funded_agent only)', async () => {
+    const res = await request(app)
+      .get('/api/prospects/held')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const returnedHold = (res.body.data?.held || res.body.held || []).find((h) => h.id === assigned.id)
+    // listHeldProspects lists ALL quarantined rows (reason included) — the returned
+    // lead may appear there, but must carry the web-admin reason, and the external
+    // orphan queue (filtered on no_funded_agent) must not release it. Assert the
+    // reason so a regression back to 'no_funded_agent' fails loudly.
+    if (returnedHold) expect(returnedHold.quarantineReason).toBe('returned_by_admin')
+  })
+
+  it('GET /api/prospects?assignment=held — lists the returned leads with quarantine fields', async () => {
+    const res = await request(app)
+      .get(`/api/prospects?assignment=held&campaignId=${campaign.id}&limit=100`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const ids = res.body.data.prospects.map((p) => p.id)
+    expect(ids).toEqual(expect.arrayContaining([assigned.id, stray.id]))
+    const row = res.body.data.prospects.find((p) => p.id === assigned.id)
+    expect(row.quarantineReason).toBe('returned_by_admin')
+  })
+
+  it('GET /api/prospects?assignment=unassigned — excludes held leads', async () => {
+    const res = await request(app)
+      .get(`/api/prospects?assignment=unassigned&campaignId=${campaign.id}&limit=100`)
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    const ids = res.body.data.prospects.map((p) => p.id)
+    expect(ids).not.toContain(assigned.id)
+    expect(ids).not.toContain(stray.id)
+  })
+
+  it('GET /api/prospects?assignment=bogus — unknown filter degrades to an empty page', async () => {
+    const res = await request(app)
+      .get('/api/prospects?assignment=bogus')
+      .set('Authorization', `Bearer ${adminToken}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.prospects).toEqual([])
+  })
+
+  it('PATCH /bulk/assign — releases the returned_by_admin holds (clears quarantine, reports releasedCount)', async () => {
+    const res = await request(app)
+      .patch('/api/prospects/bulk/assign')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ prospectIds: [assigned.id, stray.id], agentId: agentUser.id })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.affectedCount).toBe(2)
+    expect(res.body.data.releasedCount).toBe(2)
+
+    await assigned.reload()
+    expect(assigned.assignedAgentId).toBe(agentUser.id)
+    expect(assigned.quarantinedAt).toBeNull()
+    expect(assigned.quarantineReason).toBeNull()
+  })
+
+  it('PATCH /bulk/assign — skip accounting reports already-assigned and missing rows', async () => {
+    const res = await request(app)
+      .patch('/api/prospects/bulk/assign')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        prospectIds: [assigned.id, '00000000-0000-0000-0000-00000000dead'],
+        agentId: agentUser.id
+      })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.affectedCount).toBe(0)
+    expect(res.body.data.skipped).toEqual({ notFound: 1, alreadyAssigned: 1, heldFenced: 0 })
+  })
+
+  it('POST /bulk/delete — deletes rows, counts unknown ids, never aborts the batch', async () => {
+    const doomed1 = await createTestProspect(campaign.id)
+    const doomed2 = await createTestProspect(campaign.id)
+
+    const res = await request(app)
+      .post('/api/prospects/bulk/delete')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ prospectIds: [doomed1.id, doomed2.id, '00000000-0000-0000-0000-00000000dead'] })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.deleted).toBe(2)
+    expect(res.body.data.notFound).toBe(1)
+
+    const gone = await request(app)
+      .get(`/api/prospects/${doomed1.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(gone.status).toBe(404)
+  })
+
+  it('bulk routes validate ids: non-UUID entries and oversized arrays 400', async () => {
+    const bad = await request(app)
+      .patch('/api/prospects/bulk/return-to-held')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ prospectIds: ['not-a-uuid'] })
+    expect(bad.status).toBe(400)
+
+    const oversized = await request(app)
+      .post('/api/prospects/bulk/delete')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ prospectIds: Array.from({ length: 201 }, (_, i) => `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`) })
+    expect(oversized.status).toBe(400)
+  })
+
+  it('agents cannot bulk-return other agents\' leads (scope filter)', async () => {
+    const otherCampaign = await createTestCampaign(adminUser.id)
+    const adminsLead = await createTestProspect(otherCampaign.id, { assignedAgentId: adminUser.id })
+
+    const res = await request(app)
+      .patch('/api/prospects/bulk/return-to-held')
+      .set('Authorization', `Bearer ${_agentToken}`)
+      .send({ prospectIds: [adminsLead.id] })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.notFound).toBe(1)
+
+    await adminsLead.reload()
+    expect(adminsLead.quarantinedAt).toBeNull()
+  })
+})
+
 describe('Schedule follow-up', () => {
   let campaign, prospect
 

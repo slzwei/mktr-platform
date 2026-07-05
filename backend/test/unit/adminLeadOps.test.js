@@ -9,7 +9,12 @@ function baseDeps(overrides = {}) {
   const mockTx = { commit: jest.fn().mockResolvedValue(undefined), rollback: jest.fn().mockResolvedValue(undefined) };
   const deps = {
     models: {
-      Prospect: { findByPk: jest.fn() },
+      // returnProspectToHeld loads via scope-aware findOne; tests arrange through
+      // findByPk, so findOne delegates to it (same resolved prospect).
+      Prospect: (() => {
+        const findByPk = jest.fn();
+        return { findByPk, findOne: jest.fn((args) => findByPk(args?.where?.id)) };
+      })(),
       User: { findOne: jest.fn(), findByPk: jest.fn() },
       ProspectActivity: { create: jest.fn().mockResolvedValue({}) },
       IdempotencyKey: {
