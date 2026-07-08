@@ -164,10 +164,45 @@ function defineAssociations() {
   AgentGroupMember.belongsTo(AgentGroup, { foreignKey: 'agentGroupId', as: 'group' });
   AgentGroupMember.belongsTo(User, { foreignKey: 'userId', as: 'user', onDelete: 'SET NULL' });
 
-  // Redeem Ops associations (Phase 1 — docs/redeem-ops/ERD.md §3.19). Audit rows
-  // are append-only and must survive actor deletion: SET NULL, never cascade.
-  const { RedeemOpsAuditEvent } = models;
+  // Redeem Ops associations (docs/redeem-ops/ERD.md). Append-only history/audit
+  // rows must survive actor deletion: SET NULL, never cascade from users.
+  const {
+    RedeemOpsAuditEvent, PartnerOrganisation, PartnerLocation, PartnerContact,
+    PartnerAssignmentEvent, PartnerStageEvent, OutreachActivity,
+  } = models;
   RedeemOpsAuditEvent.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
+
+  // Partner CRM (Phase 2)
+  PartnerOrganisation.belongsTo(User, { foreignKey: 'ownerUserId', as: 'owner', onDelete: 'SET NULL' });
+  PartnerOrganisation.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'RESTRICT' });
+  PartnerOrganisation.belongsTo(PartnerOrganisation, { foreignKey: 'mergedIntoId', as: 'mergedInto', onDelete: 'SET NULL' });
+  PartnerOrganisation.hasMany(PartnerLocation, { foreignKey: 'partnerOrganisationId', as: 'locations', onDelete: 'CASCADE' });
+  PartnerLocation.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner' });
+  PartnerOrganisation.hasMany(PartnerContact, { foreignKey: 'partnerOrganisationId', as: 'contacts', onDelete: 'CASCADE' });
+  PartnerContact.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner' });
+  PartnerOrganisation.hasMany(PartnerAssignmentEvent, { foreignKey: 'partnerOrganisationId', as: 'assignmentEvents', onDelete: 'CASCADE' });
+  PartnerAssignmentEvent.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner' });
+  PartnerAssignmentEvent.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
+  PartnerAssignmentEvent.belongsTo(User, { foreignKey: 'fromUserId', as: 'fromUser', onDelete: 'SET NULL' });
+  PartnerAssignmentEvent.belongsTo(User, { foreignKey: 'toUserId', as: 'toUser', onDelete: 'SET NULL' });
+  PartnerOrganisation.hasMany(PartnerStageEvent, { foreignKey: 'partnerOrganisationId', as: 'stageEvents', onDelete: 'CASCADE' });
+  PartnerStageEvent.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner' });
+  PartnerStageEvent.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
+  PartnerOrganisation.hasMany(OutreachActivity, { foreignKey: 'partnerOrganisationId', as: 'activities', onDelete: 'CASCADE' });
+  OutreachActivity.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner' });
+  OutreachActivity.belongsTo(PartnerContact, { foreignKey: 'contactId', as: 'contact', onDelete: 'SET NULL' });
+  OutreachActivity.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
+
+  // Outreach work (Phase 3)
+  const { OutreachTask, ProspectingPool, ProspectingPoolMember } = models;
+  PartnerOrganisation.hasMany(OutreachTask, { foreignKey: 'partnerOrganisationId', as: 'tasks', onDelete: 'CASCADE' });
+  OutreachTask.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner' });
+  OutreachTask.belongsTo(PartnerContact, { foreignKey: 'contactId', as: 'contact', onDelete: 'SET NULL' });
+  OutreachTask.belongsTo(User, { foreignKey: 'assigneeUserId', as: 'assignee', onDelete: 'CASCADE' });
+  OutreachTask.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'RESTRICT' });
+  ProspectingPool.hasMany(ProspectingPoolMember, { foreignKey: 'poolId', as: 'members', onDelete: 'CASCADE' });
+  ProspectingPoolMember.belongsTo(ProspectingPool, { foreignKey: 'poolId', as: 'pool' });
+  ProspectingPoolMember.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner', onDelete: 'CASCADE' });
 }
 
 defineAssociations();
@@ -201,7 +236,9 @@ export const {
   Vehicle, WebhookSubscriber, WebhookDelivery, AgentGroup,
   AgentGroupMember, DeviceCampaignAssignment, VehicleCampaignAssignment,
   CampaignMediaItem, CampaignAgentAssignment, ExternalAgent, ExternalCampaignAgent,
-  WaitlistSignup, RedeemOpsAuditEvent
+  WaitlistSignup, RedeemOpsAuditEvent, PartnerOrganisation, PartnerLocation,
+  PartnerContact, PartnerAssignmentEvent, PartnerStageEvent, OutreachActivity,
+  OutreachTask, ProspectingPool, ProspectingPoolMember
 } = models;
 
 export { sequelize };

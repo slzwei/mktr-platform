@@ -24,6 +24,35 @@ export const PIPELINE_STAGES = [
 
 export const PARTNER_AVAILABILITY = ['available', 'owned', 'follow_up_later', 'restricted', 'disqualified'];
 
+/**
+ * Allowed pipeline transitions (docs/redeem-ops/ERD.md §6). Server-enforced in
+ * partnerService.changeStage — drag-and-drop or API, same rules. super_admin /
+ * ops_admin may force any transition (audited with a required reason).
+ */
+export const STAGE_TRANSITIONS = {
+  UNCLAIMED: ['CLAIMED'],
+  CLAIMED: ['RESEARCHING', 'CONTACTED', 'FOLLOW_UP_LATER', 'NO_RESPONSE', 'NOT_INTERESTED', 'DISQUALIFIED'],
+  RESEARCHING: ['CONTACTED', 'FOLLOW_UP_LATER', 'NOT_INTERESTED', 'DISQUALIFIED'],
+  CONTACTED: ['REPLIED', 'NO_RESPONSE', 'FOLLOW_UP_LATER', 'NOT_INTERESTED', 'DISQUALIFIED'],
+  REPLIED: ['MEETING_BOOKED', 'PROPOSAL_SENT', 'FOLLOW_UP_LATER', 'NOT_INTERESTED', 'DISQUALIFIED'],
+  MEETING_BOOKED: ['MEETING_COMPLETED', 'NO_RESPONSE', 'FOLLOW_UP_LATER', 'NOT_INTERESTED'],
+  MEETING_COMPLETED: ['PROPOSAL_SENT', 'NEGOTIATING', 'PARTNERED', 'FOLLOW_UP_LATER', 'NOT_INTERESTED'],
+  PROPOSAL_SENT: ['NEGOTIATING', 'PARTNERED', 'NO_RESPONSE', 'FOLLOW_UP_LATER', 'NOT_INTERESTED'],
+  NEGOTIATING: ['PARTNERED', 'PROPOSAL_SENT', 'FOLLOW_UP_LATER', 'NOT_INTERESTED'],
+  PARTNERED: ['FOLLOW_UP_LATER'],
+  FOLLOW_UP_LATER: ['CONTACTED', 'REPLIED', 'MEETING_BOOKED', 'PROPOSAL_SENT', 'NEGOTIATING', 'NOT_INTERESTED', 'DISQUALIFIED'],
+  NO_RESPONSE: ['CONTACTED', 'FOLLOW_UP_LATER', 'NOT_INTERESTED', 'DISQUALIFIED'],
+  NOT_INTERESTED: ['FOLLOW_UP_LATER', 'CONTACTED'],
+  DISQUALIFIED: [],
+};
+
+/** Activity types that count as real outreach (bump lastActivityAt / clear flags). */
+export const MEANINGFUL_ACTIVITY_TYPES = [
+  'call_attempt', 'call_connected', 'whatsapp_sent', 'whatsapp_reply', 'email_sent',
+  'email_reply', 'instagram_dm', 'facebook_message', 'meeting_booked',
+  'meeting_completed', 'proposal_sent', 'follow_up',
+];
+
 export const ACTIVITY_TYPES = [
   'call_attempt',
   'call_connected',
@@ -69,6 +98,7 @@ export const SUB_ROLE_LABELS = {
 export function publicConstants() {
   return {
     pipelineStages: PIPELINE_STAGES,
+    stageTransitions: STAGE_TRANSITIONS,
     partnerAvailability: PARTNER_AVAILABILITY,
     activityTypes: ACTIVITY_TYPES,
     rewardTypes: REWARD_TYPES,

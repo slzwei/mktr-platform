@@ -14,6 +14,7 @@ import Building2 from 'lucide-react/icons/building-2';
 export default function RedeemOpsHome() {
   const user = useAuthStore((s) => s.user);
   const canManageTeam = hasCapability(user, 'team.manage_access');
+  const canSeeTeam = hasCapability(user, 'analytics.view_team');
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -25,36 +26,48 @@ export default function RedeemOpsHome() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
+        {canSeeTeam && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Users className="w-4 h-4" aria-hidden="true" />
+                Team &amp; access
+              </CardTitle>
+              <CardDescription>
+                {canManageTeam
+                  ? 'Invite outreach staff and manage Redeem Ops sub-roles.'
+                  : 'See who is on the Redeem Ops team.'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild size="sm">
+                <Link to="/redeem-ops/team">Open Team</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Users className="w-4 h-4" aria-hidden="true" />
-              Team &amp; access
-            </CardTitle>
-            <CardDescription>
-              {canManageTeam
-                ? 'Invite outreach staff and manage Redeem Ops sub-roles.'
-                : 'See who is on the Redeem Ops team.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild size="sm">
-              <Link to="/redeem-ops/team">Open Team</Link>
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base text-muted-foreground">
               <Building2 className="w-4 h-4" aria-hidden="true" />
               Partner CRM
             </CardTitle>
             <CardDescription>
-              Business search, duplicate-safe claiming, activity timeline, and the partner
-              pipeline arrive in Phase 2.
+              Search the shared business database, claim prospects, log outreach, move the pipeline.
             </CardDescription>
           </CardHeader>
+          <CardContent className="flex gap-2">
+            <Button asChild size="sm">
+              <Link to="/redeem-ops/queue">My queue</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/redeem-ops/partners">Partners</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/redeem-ops/pools">Pools</Link>
+            </Button>
+          </CardContent>
         </Card>
       </div>
     </div>

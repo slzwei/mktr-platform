@@ -15,6 +15,7 @@ import {
  Package,
  Search,
 } from 'lucide-react';
+import { hasCapability as hasRedeemOpsCapability } from '@/lib/redeemOpsPermissions';
 import NotificationBell from './NotificationBell.jsx';
 import CommandPalette from './CommandPalette.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
@@ -96,14 +97,20 @@ const getNavigationItems = (user) => {
  ];
 
  // Redeem Ops — flag-gated internal staff surface (docs/redeem-ops/ROUTE_MAP.md §2).
+ // Items carry the capability their page requires; the nav mirrors the server
+ // gate so nobody sees a link the API would 403 (Codex P1 review finding 6).
  const REDEEM_OPS_UI = import.meta.env.VITE_REDEEM_OPS_ENABLED === 'true';
  const redeemOpsSections = [
  {
  label: 'Redeem Ops',
  items: [
- { title: 'Overview', url: '/redeem-ops', icon: LayoutDashboard },
- { title: 'Team', url: '/redeem-ops/team', icon: Users },
- ],
+ { title: 'My Queue', url: '/redeem-ops/queue', icon: LayoutDashboard },
+ { title: 'Partners', url: '/redeem-ops/partners', icon: Users, capability: 'partners.view' },
+ { title: 'Pipeline', url: '/redeem-ops/pipeline', icon: Settings, capability: 'pipeline.view_team' },
+ { title: 'Tasks', url: '/redeem-ops/tasks', icon: FileText, capability: 'tasks.manage' },
+ { title: 'Pools', url: '/redeem-ops/pools', icon: Package, capability: 'pools.claim_next' },
+ { title: 'Team', url: '/redeem-ops/team', icon: Users, capability: 'analytics.view_team' },
+ ].filter((item) => !item.capability || hasRedeemOpsCapability(user, item.capability)),
  },
  ];
 

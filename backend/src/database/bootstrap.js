@@ -149,6 +149,24 @@ export async function bootstrapDatabase() {
       logger.info(`[RedeemedAudience] periodic sync scheduled (${intervalHours}h interval)`);
     }
 
+    // Redeem Ops claim-inactivity sweep (docs/redeem-ops/ERD.md §6). Flags
+    // at-risk (48h no first outreach) and stale (14d no meaningful activity)
+    // partners — NEVER auto-releases; managers act on the flags. In-process like
+    // the sweeps above; a dark deploy (flag off) schedules nothing.
+    if (String(process.env.REDEEM_OPS_ENABLED || 'false').toLowerCase() === 'true') {
+      const runRedeemOpsSweepSafe = async () => {
+        try {
+          const { runRedeemOpsStaleSweep } = await import('../services/redeemOps/staleSweep.js');
+          await runRedeemOpsStaleSweep();
+        } catch (err) {
+          logger.warn('[RedeemOps] stale sweep failed (non-fatal)', { error: err?.message });
+        }
+      };
+      setTimeout(runRedeemOpsSweepSafe, 120_000);
+      setInterval(runRedeemOpsSweepSafe, 30 * 60 * 1000); // every 30 min
+      logger.info('[RedeemOps] stale sweep scheduled (30m interval)');
+    }
+
     // DNC re-scrub / retry backfill — recovers dnc_pending leads whose check errored or
     // timed out at capture (releases on clear). In-process, gated by DNC_BACKFILL_ENABLED;
     // the re-entrancy guard + DB job lock live in the service (paid API → no double-fire).
