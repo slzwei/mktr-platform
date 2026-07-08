@@ -1,4 +1,3 @@
-import { QueryTypes } from 'sequelize';
 import { PartnerOrganisation, PartnerAssignmentEvent, PartnerStageEvent, User, sequelize } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
