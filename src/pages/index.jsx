@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import RedeemOpsRoute from '@/components/auth/RedeemOpsRoute';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { BrowserRouter as Router, Route, Routes, useNavigate } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
@@ -71,6 +72,12 @@ const DriverPayslip = lazy(() => import('./DriverPayslip'));
 const MyProspects = lazy(() => import('./MyProspects'));
 const ProspectDetailPage = lazy(() => import('./ProspectDetailPage'));
 const AgentProfile = lazy(() => import('./AgentProfile'));
+
+// Redeem Ops — flag-gated internal staff surface (docs/redeem-ops/ROUTE_MAP.md §2).
+// Dark until VITE_REDEEM_OPS_ENABLED=true is baked into the build.
+const REDEEM_OPS_ENABLED = import.meta.env.VITE_REDEEM_OPS_ENABLED === 'true';
+const RedeemOpsHome = lazy(() => import('./redeemops/RedeemOpsHome'));
+const RedeemOpsTeam = lazy(() => import('./redeemops/RedeemOpsTeam'));
 
 function PagesContent() {
  const navigate = useNavigate();
@@ -427,6 +434,30 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
+
+ {/* Redeem Ops — flag-gated internal staff surface */}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops" element={
+ <RedeemOpsRoute>
+ <DashboardLayout>
+ <RedeemOpsHome />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/team" element={
+ <RedeemOpsRoute>
+ <DashboardLayout>
+ <RedeemOpsTeam />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
 
  {/* Other protected routes */}
  <Route

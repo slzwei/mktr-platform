@@ -143,9 +143,13 @@ export async function inviteUser(email, fullName, role, owedLeadsCount, inviterE
     throw new AppError('email, full_name and role are required', 400);
   }
 
-  const allowedRoles = ['agent', 'fleet_owner', 'driver_partner'];
+  // 'redeem_ops' arrives WITHOUT a sub-role via this generic path — the user is
+  // created capability-less until a super admin grants one (the dedicated
+  // POST /api/redeem-ops/team/invite sets the sub-role at invite time and is the
+  // preferred flow — docs/redeem-ops/PERMISSION_MATRIX.md).
+  const allowedRoles = ['agent', 'fleet_owner', 'driver_partner', 'redeem_ops'];
   if (!allowedRoles.includes(role)) {
-    throw new AppError('Invalid role. Must be one of agent, fleet_owner, driver_partner', 400);
+    throw new AppError('Invalid role. Must be one of agent, fleet_owner, driver_partner, redeem_ops', 400);
   }
 
   const extraFields = {};

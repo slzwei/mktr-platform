@@ -1,10 +1,17 @@
-import { publicHostFromRequest, isRedeemHost } from '../utils/publicHost.js';
+import { publicHostFromRequest, isRedeemHost, isOpsHost } from '../utils/publicHost.js';
 import { logger } from '../utils/logger.js';
 
 // D13: auth / admin / agent / driver flows must not be reachable from the
 // public redeem.sg static site. Render route rules redirect those at the
 // edge; this middleware is the backend belt-and-braces — if the redirect
 // is bypassed or misconfigured, the API call is rejected here.
+//
+// ops.redeem.sg (the internal Redeem Ops surface — docs/redeem-ops/
+// RECOMMENDED_ARCHITECTURE.md §5) sits on the redeem apex but is NOT a
+// consumer host: it gets a NARROW allowlist (staff auth, the redeem-ops
+// namespace, notifications) and stays blocked from every other internal
+// prefix at the host layer. Host policy is defence-in-depth only — role +
+// capability middleware remain the real gates.
 //
 // We compare against the *validated* public host (allowlist-checked),
 // never raw `req.hostname` or unfiltered headers. Requests that don't
@@ -21,22 +28,53 @@ const BLOCKED_PATH_PREFIXES = [
   '/api/mktr-leads',
   '/api/webhooks',
   '/api/integrations',
+  '/api/redeem-ops',
 ];
 
-function isBlockedPath(pathname) {
+const OPS_ALLOWED_PREFIXES = [
+  '/api/auth',
+  '/api/redeem-ops',
+  '/api/notifications',
+];
+
+function matchesPrefix(pathname, prefixes) {
   if (!pathname) return false;
-  for (const prefix of BLOCKED_PATH_PREFIXES) {
+  for (const prefix of prefixes) {
     if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return true;
   }
   return false;
 }
 
+function isBlockedPath(pathname) {
+  return matchesPrefix(pathname, BLOCKED_PATH_PREFIXES);
+}
+
 export function blockRedeemForInternalRoutes(req, res, next) {
   // Only check API requests (this middleware mounts on /api in server_internal).
   const pathname = req.originalUrl ? req.originalUrl.split('?')[0] : req.path;
+  const publicHost = publicHostFromRequest(req);
+
+  // ops.redeem.sg is a STRICT-allowlist internal surface: only staff auth, the
+  // redeem-ops namespace, and notifications exist there — EVERY other /api path
+  // 403s at the host layer, including public capture endpoints and any future
+  // namespace not on the blocklist (Codex Phase-1 review, finding 1).
+  if (isOpsHost(publicHost)) {
+    if (!matchesPrefix(pathname, OPS_ALLOWED_PREFIXES)) {
+      logger.warn('Blocked API call from ops.redeem.sg (outside allowlist)', {
+        path: pathname,
+        publicHost,
+        origin: req.get('origin') || null,
+      });
+      return res.status(403).json({
+        success: false,
+        message: 'This API is not available on ops.redeem.sg.',
+      });
+    }
+    return next();
+  }
+
   if (!isBlockedPath(pathname)) return next();
 
-  const publicHost = publicHostFromRequest(req);
   if (isRedeemHost(publicHost)) {
     logger.warn('Blocked internal API call from redeem.sg', {
       path: pathname,

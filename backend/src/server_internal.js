@@ -73,6 +73,9 @@ export const init = async (app) => {
     'https://www.mktr.sg',
     'https://redeem.sg',
     'https://www.redeem.sg',
+    // Internal Redeem Ops surface (defence-in-depth: it proxies /api same-origin,
+    // so CORS rarely applies — docs/redeem-ops/RECOMMENDED_ARCHITECTURE.md §5).
+    'https://ops.redeem.sg',
   ];
   const envOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim()) : [];
 

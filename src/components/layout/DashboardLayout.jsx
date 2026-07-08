@@ -95,7 +95,22 @@ const getNavigationItems = (user) => {
  { title: 'Payslip', url: '/DriverPayslip', icon: FileText },
  ];
 
- if (user.role === 'admin') return adminSections;
+ // Redeem Ops — flag-gated internal staff surface (docs/redeem-ops/ROUTE_MAP.md §2).
+ const REDEEM_OPS_UI = import.meta.env.VITE_REDEEM_OPS_ENABLED === 'true';
+ const redeemOpsSections = [
+ {
+ label: 'Redeem Ops',
+ items: [
+ { title: 'Overview', url: '/redeem-ops', icon: LayoutDashboard },
+ { title: 'Team', url: '/redeem-ops/team', icon: Users },
+ ],
+ },
+ ];
+
+ if (user.role === 'admin') {
+ return REDEEM_OPS_UI ? [...adminSections, ...redeemOpsSections] : adminSections;
+ }
+ if (user.role === 'redeem_ops') return REDEEM_OPS_UI ? redeemOpsSections : [];
 
  // Non-admin roles: wrap flat items in a single section with no label
  const wrapFlat = (items) => [{ label: null, items }];
@@ -111,6 +126,7 @@ const getUserDisplayRole = (user) => {
  if (user.role === 'agent') return 'Sales Agent';
  if (user.role === 'fleet_owner') return 'Fleet Owner';
  if (user.role === 'driver_partner') return 'Driver Partner';
+ if (user.role === 'redeem_ops') return 'Redeem Ops';
  return 'User';
 };
 
@@ -120,6 +136,7 @@ const getUserDisplayRole = (user) => {
 const getPortalRole = (role) => {
  if (role === 'admin') return 'Admin';
  if (role === 'agent') return 'Agent';
+ if (role === 'redeem_ops') return 'Redeem Ops';
  return 'Portal';
 };
 

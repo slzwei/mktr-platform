@@ -15,6 +15,8 @@ export function getDefaultRouteForRole(role) {
  return '/FleetOwnerDashboard'
  case 'driver_partner':
  return '/DriverDashboard'
+ case 'redeem_ops':
+ return '/redeem-ops'
  case 'customer':
  return '/Onboarding'
  default:

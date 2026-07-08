@@ -15,7 +15,7 @@ import { logger } from '../utils/logger.js';
  * @param {Function} params.getEmailContent - function({ firstName, inviteLink, companyName, companyUrl, expiryDays, roleLabel }) => { subject, html, text }
  * @returns {Promise<{ user: Object, inviteLink: string }>}
  */
-export async function sendRoleInvitation({ email, fullName, role, inviterEmail, extraFields = {}, getEmailContent }) {
+export async function sendRoleInvitation({ email, fullName, role, inviterEmail, extraFields = {}, getEmailContent, transaction = null }) {
   if (!email || !fullName) {
     throw new AppError('email and full_name are required', 400);
   }
@@ -26,7 +26,9 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
   }
 
   // Check for existing user
-  const existing = await User.findOne({ where: { email } });
+  const existing = await User.findOne(
+    transaction ? { where: { email }, transaction } : { where: { email } }
+  );
   if (existing) {
     throw new AppError('A user with this email already exists. Permanently delete the existing user first to send a new invitation.', 400);
   }
@@ -40,8 +42,11 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
   const invitationToken = uuidv4();
   const invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-  // Create user record
-  const user = await User.create({
+  // Create user record. Optional caller transaction (additive — the call shape
+  // for existing callers stays byte-identical) lets access grants commit
+  // atomically with their audit row (redeem-ops invite: user + access.invited
+  // audit are all-or-nothing).
+  const userPayload = {
     email,
     firstName,
     lastName,
@@ -51,7 +56,10 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
     invitationToken,
     invitationExpires,
     ...extraFields
-  });
+  };
+  const user = transaction
+    ? await User.create(userPayload, { transaction })
+    : await User.create(userPayload);
 
   // Build invite link
   const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
@@ -60,7 +68,13 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
   // Get email content from caller-provided template function and send
   const companyName = process.env.COMPANY_NAME || 'MKTR';
   const companyUrl = process.env.COMPANY_URL || process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
-  const roleLabel = role === 'agent' ? 'Agent' : role === 'fleet_owner' ? 'Fleet Owner' : 'Driver Partner';
+  const ROLE_LABELS = {
+    agent: 'Agent',
+    fleet_owner: 'Fleet Owner',
+    driver_partner: 'Driver Partner',
+    redeem_ops: 'Redeem Ops',
+  };
+  const roleLabel = ROLE_LABELS[role] || 'User';
 
   const { subject, html, text } = getEmailContent({
     firstName,

@@ -56,6 +56,10 @@ export const googleLogin = async (req, res) => {
           id: result.user.id,
           email: result.user.email,
           role: result.user.role,
+          // Redeem Ops sub-role — frontend capability checks read this
+          // (src/lib/redeemOpsPermissions.js); the other auth flows return
+          // toJSON() which includes it, so this hand-built shape must too.
+          redeemOpsRole: result.user.redeemOpsRole,
           full_name: result.user.fullName,
           firstName: result.user.firstName,
           lastName: result.user.lastName,
