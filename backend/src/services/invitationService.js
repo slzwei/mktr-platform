@@ -26,7 +26,9 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
   }
 
   // Check for existing user
-  const existing = await User.findOne({ where: { email }, transaction });
+  const existing = await User.findOne(
+    transaction ? { where: { email }, transaction } : { where: { email } }
+  );
   if (existing) {
     throw new AppError('A user with this email already exists. Permanently delete the existing user first to send a new invitation.', 400);
   }
@@ -40,10 +42,11 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
   const invitationToken = uuidv4();
   const invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-  // Create user record. Optional caller transaction (additive — existing callers
-  // unchanged) lets access grants commit atomically with their audit row
-  // (redeem-ops invite: user + access.invited audit are all-or-nothing).
-  const user = await User.create({
+  // Create user record. Optional caller transaction (additive — the call shape
+  // for existing callers stays byte-identical) lets access grants commit
+  // atomically with their audit row (redeem-ops invite: user + access.invited
+  // audit are all-or-nothing).
+  const userPayload = {
     email,
     firstName,
     lastName,
@@ -53,7 +56,10 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
     invitationToken,
     invitationExpires,
     ...extraFields
-  }, { transaction });
+  };
+  const user = transaction
+    ? await User.create(userPayload, { transaction })
+    : await User.create(userPayload);
 
   // Build invite link
   const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
