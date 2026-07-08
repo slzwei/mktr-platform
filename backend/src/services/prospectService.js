@@ -33,7 +33,18 @@ import {
   sendTikTokCompleteRegistrationEvent,
 } from './tiktokEventsService.js';
 import { getOrCreateProspectShareLink } from './shortlinkService.js';
+import { isPhoneRecentlyVerified } from './verifiedPhoneStore.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
+
+// Redeem Ops capture hook (docs/redeem-ops/MKTR_INTEGRATION.md §2): a
+// dependency-INVERTED callback — this module never imports Redeem Ops code.
+// bootstrap (the composition root) registers the real implementation when the
+// module is enabled; the default is a no-op. Removing the registration makes
+// lead capture byte-identical to the pre-Redeem-Ops behaviour.
+let _leadCapturedHook = null;
+export function registerLeadCapturedHook(fn) {
+  _leadCapturedHook = typeof fn === 'function' ? fn : null;
+}
 import { logger } from '../utils/logger.js';
 import { signupActivityDescription, signupSourceLabel } from '../utils/sourceLabel.js';
 import {
@@ -120,6 +131,8 @@ const defaultDeps = {
   sendTikTokLeadEvent,
   sendTikTokCompleteRegistrationEvent,
   getOrCreateProspectShareLink,
+  isPhoneRecentlyVerified,
+  onLeadCaptured: (prospect) => (_leadCapturedHook ? _leadCapturedHook(prospect) : null),
   AppError,
   logger,
 };
@@ -206,6 +219,17 @@ export function makeProspectService(overrides = {}) {
     };
     if (Object.keys(capiSourceMetadata).length > 0) {
       incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), ...capiSourceMetadata };
+    }
+
+    // Server-side phone-verification stamp (docs/redeem-ops/MKTR_INTEGRATION.md §2.0):
+    // written iff the OTP marker is live at create time. Durable evidence that
+    // Redeem Ops reward issuance REQUIRES — a raw unverified POST still captures
+    // as a lead but can never mint reward value (anti-farming precondition).
+    if (incoming.phone && d.isPhoneRecentlyVerified?.(incoming.phone)) {
+      incoming.sourceMetadata = {
+        ...(incoming.sourceMetadata || {}),
+        phoneVerifiedAt: new Date().toISOString(),
+      };
     }
 
     // Third-party-disclosure consent evidence. Written ONLY when the person ticked
@@ -929,6 +953,23 @@ export function makeProspectService(overrides = {}) {
       d.sendTikTokCompleteRegistrationEvent(prospect, { eventId: registrationEventId, ...tiktokCtxBase }).catch((err) => {
         d.logger.error('[TikTok] sendTikTokCompleteRegistrationEvent error', { error: err?.message || String(err) });
       });
+    }
+
+    // Redeem Ops reward-entitlement hook — post-commit, fire-and-forget (a
+    // Redeem Ops failure must never fail or slow lead capture). No-op unless
+    // bootstrap registered the callback (module flag on). Idempotent downstream
+    // via the unique (activationId, prospectId) anchor.
+    if (!quarantined) {
+      try {
+        const hookResult = d.onLeadCaptured?.(prospect);
+        if (hookResult && typeof hookResult.catch === 'function') {
+          hookResult.catch((err) =>
+            d.logger.error('[RedeemOps] onLeadCaptured error', { error: err?.message || String(err) })
+          );
+        }
+      } catch (err) {
+        d.logger.error('[RedeemOps] onLeadCaptured error', { error: err?.message || String(err) });
+      }
     }
 
     // Pre-load agent + prospect-with-campaign for the caller's fire-and-forget

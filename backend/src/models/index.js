@@ -217,6 +217,23 @@ function defineAssociations() {
   Activation.belongsTo(RewardOffer, { foreignKey: 'rewardOfferId', as: 'rewardOffer', onDelete: 'RESTRICT' });
   Activation.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
 
+  // Fulfilment (Phase 6) — entitlement references the canonical MKTR lead by FK
+  // (SET NULL on lead delete; no PII copies). History tables are append-only.
+  const { RewardEntitlement, Redemption, RedemptionEvent } = models;
+  RewardEntitlement.belongsTo(RewardOffer, { foreignKey: 'rewardOfferId', as: 'rewardOffer', onDelete: 'RESTRICT' });
+  RewardEntitlement.belongsTo(Activation, { foreignKey: 'activationId', as: 'activation', onDelete: 'RESTRICT' });
+  RewardEntitlement.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect', onDelete: 'SET NULL' });
+  RewardEntitlement.belongsTo(User, { foreignKey: 'unlockedByUserId', as: 'unlockedBy', onDelete: 'SET NULL' });
+  Activation.hasMany(RewardEntitlement, { foreignKey: 'activationId', as: 'entitlements', onDelete: 'RESTRICT' });
+  Redemption.belongsTo(RewardEntitlement, { foreignKey: 'entitlementId', as: 'entitlement', onDelete: 'RESTRICT' });
+  Redemption.belongsTo(RewardOffer, { foreignKey: 'rewardOfferId', as: 'rewardOffer', onDelete: 'RESTRICT' });
+  Redemption.belongsTo(Activation, { foreignKey: 'activationId', as: 'activation', onDelete: 'RESTRICT' });
+  Redemption.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner', onDelete: 'RESTRICT' });
+  Redemption.belongsTo(PartnerLocation, { foreignKey: 'locationId', as: 'location', onDelete: 'SET NULL' });
+  Redemption.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
+  RedemptionEvent.belongsTo(RewardEntitlement, { foreignKey: 'entitlementId', as: 'entitlement', onDelete: 'CASCADE' });
+  RedemptionEvent.belongsTo(Redemption, { foreignKey: 'redemptionId', as: 'redemption', onDelete: 'CASCADE' });
+
   // Outreach work (Phase 3)
   const { OutreachTask, ProspectingPool, ProspectingPoolMember } = models;
   PartnerOrganisation.hasMany(OutreachTask, { foreignKey: 'partnerOrganisationId', as: 'tasks', onDelete: 'CASCADE' });
@@ -264,7 +281,8 @@ export const {
   PartnerContact, PartnerAssignmentEvent, PartnerStageEvent, OutreachActivity,
   OutreachTask, ProspectingPool, ProspectingPoolMember, RewardOffer,
   RewardTermsVersion, RewardOfferLocation, RewardInventoryEvent,
-  PartnerOnboardingItem, Activation
+  PartnerOnboardingItem, Activation, RewardEntitlement, Redemption,
+  RedemptionEvent
 } = models;
 
 export { sequelize };

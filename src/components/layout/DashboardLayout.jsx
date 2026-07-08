@@ -111,6 +111,7 @@ const getNavigationItems = (user) => {
  { title: 'Pools', url: '/redeem-ops/pools', icon: Package, capability: 'pools.claim_next' },
  { title: 'Rewards', url: '/redeem-ops/rewards', icon: Package, capability: 'rewards.view' },
  { title: 'Activations', url: '/redeem-ops/activations', icon: Link2, capability: 'activations.view' },
+ { title: 'Redemptions', url: '/redeem-ops/redemptions', icon: QrCode, capability: 'redemptions.verify' },
  { title: 'Team', url: '/redeem-ops/team', icon: Users, capability: 'analytics.view_team' },
  ].filter((item) => !item.capability || hasRedeemOpsCapability(user, item.capability)),
  },

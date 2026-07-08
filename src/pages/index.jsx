@@ -13,6 +13,7 @@ import {
 
 const LeadCapture = lazy(() => import('./LeadCapture'));
 const LeadCaptureDemo = lazy(() => import('./LeadCaptureDemo'));
+const RewardClaim = lazy(() => import('./RewardClaim'));
 const PublicPreview = lazy(() => import('./public/Preview'));
 const TrackRedirect = lazy(() => import('./TrackRedirect'));
 const ShareRedirect = lazy(() => import('./ShareRedirect'));
@@ -88,6 +89,7 @@ const RedeemOpsRewards = lazy(() => import('./redeemops/RewardsPage'));
 const RedeemOpsRewardDetail = lazy(() => import('./redeemops/RewardDetail'));
 const RedeemOpsActivations = lazy(() => import('./redeemops/ActivationsPage'));
 const RedeemOpsActivationDetail = lazy(() => import('./redeemops/ActivationDetail'));
+const RedeemOpsRedemptions = lazy(() => import('./redeemops/RedemptionsPage'));
 
 function PagesContent() {
  const navigate = useNavigate();
@@ -120,6 +122,8 @@ function PagesContent() {
  <Route path="/p/:slug" element={<PublicPreview />} />
  <Route path="/t/:slug" element={<TrackRedirect />} />
  <Route path="/share/:slug" element={<ShareRedirect />} />
+ {/* Consumer reward journey — reservation pass / voucher (docs/redeem-ops/ROUTE_MAP.md) */}
+ <Route path="/r/:token" element={<RewardClaim />} />
 
  {/* Design exploration prototypes — mktr build only */}
  <Route path="/preview" element={IS_REDEEM_BUILD ? <MktrOnlyRedirect /> : <PreviewHub />} />
@@ -573,6 +577,17 @@ function PagesContent() {
  <RedeemOpsRoute capability="activations.view">
  <DashboardLayout>
  <RedeemOpsActivationDetail />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/redemptions" element={
+ <RedeemOpsRoute capability="redemptions.verify">
+ <DashboardLayout>
+ <RedeemOpsRedemptions />
  </DashboardLayout>
  </RedeemOpsRoute>
  }

@@ -218,4 +218,22 @@ export const redeemOpsApi = {
     const res = await apiClient.get(`/redeem-ops/activations/${id}/campaign-metrics`);
     return res.data;
   },
+
+  // ── Fulfilment (Phase 6) ───────────────────────────────────────────────
+  async listEntitlements(params = {}) {
+    const res = await apiClient.get('/redeem-ops/entitlements', params);
+    return res.data;
+  },
+  async verifyVoucher(token) {
+    const res = await apiClient.post('/redeem-ops/redemptions/verify', { token });
+    return res.data;
+  },
+  async completeRedemption(token, extra = {}) {
+    const res = await apiClient.post('/redeem-ops/redemptions/complete', { token, ...extra });
+    return res.data;
+  },
+  async listRedemptions(params = {}) {
+    const res = await apiClient.get('/redeem-ops/redemptions', params);
+    return res.data;
+  },
 };

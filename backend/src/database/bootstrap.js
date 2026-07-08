@@ -165,6 +165,55 @@ export async function bootstrapDatabase() {
       setTimeout(runRedeemOpsSweepSafe, 120_000);
       setInterval(runRedeemOpsSweepSafe, 30 * 60 * 1000); // every 30 min
       logger.info('[RedeemOps] stale sweep scheduled (30m interval)');
+
+      // Phase 6 fulfilment (docs/redeem-ops/MKTR_INTEGRATION.md §2). This is the
+      // COMPOSITION ROOT for the dependency-inverted capture hook: prospectService
+      // never imports Redeem Ops — we register the callback here, so removing this
+      // block returns lead capture to byte-identical pre-Redeem-Ops behaviour.
+      // Additionally gated by REDEEM_OPS_ENTITLEMENTS_ENABLED so partners/rewards
+      // can go live before reward issuance does.
+      if (String(process.env.REDEEM_OPS_ENTITLEMENTS_ENABLED || 'false').toLowerCase() === 'true') {
+        await safeRun('Redeem Ops entitlement hook', async () => {
+          const { registerLeadCapturedHook } = await import('../services/prospectService.js');
+          const { makeEntitlementService } = await import('../services/redeemOps/entitlementService.js');
+          const { makeFulfilmentNotify } = await import('../services/redeemOps/fulfilmentNotify.js');
+          const notify = makeFulfilmentNotify();
+          const entitlements = makeEntitlementService({
+            notifyUnlock: ({ entitlement, prospect, voucherToken }) =>
+              notify.sendVoucherEmail({ entitlement, prospect, voucherToken }),
+          });
+          registerLeadCapturedHook(async (prospect) => {
+            const r = await entitlements.issueForProspect(prospect, { via: 'hook' });
+            if (r?.entitlement && r.reason === null && r.presentationToken && !r.voucherToken) {
+              // agent_unlock policy: deliver the reservation pass (fire-and-forget)
+              notify.sendReservationEmail({
+                entitlement: r.entitlement, prospect, presentationToken: r.presentationToken,
+              }).catch((err) => logger.error('[RedeemOps] reservation email failed', { error: err?.message }));
+            } else if (r?.voucherToken) {
+              notify.sendVoucherEmail({
+                entitlement: r.entitlement, prospect, voucherToken: r.voucherToken,
+              }).catch((err) => logger.error('[RedeemOps] voucher email failed', { error: err?.message }));
+            }
+          });
+          logger.info('[RedeemOps] entitlement capture hook registered');
+        });
+
+        // Reservation expiry + missed-lead reconciliation (at-least-once backstop
+        // for the hook; idempotent via the unique (activationId, prospectId) anchor).
+        const runFulfilmentSweepSafe = async () => {
+          try {
+            const { makeEntitlementService } = await import('../services/redeemOps/entitlementService.js');
+            const svc = makeEntitlementService();
+            await svc.expireReservations();
+            await svc.reconcileMissedLeads();
+          } catch (err) {
+            logger.warn('[RedeemOps] fulfilment sweep failed (non-fatal)', { error: err?.message });
+          }
+        };
+        setTimeout(runFulfilmentSweepSafe, 180_000);
+        setInterval(runFulfilmentSweepSafe, 15 * 60 * 1000); // every 15 min
+        logger.info('[RedeemOps] fulfilment sweep scheduled (15m interval)');
+      }
     }
 
     // DNC re-scrub / retry backfill — recovers dnc_pending leads whose check errored or
