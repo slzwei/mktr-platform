@@ -193,6 +193,30 @@ function defineAssociations() {
   OutreachActivity.belongsTo(PartnerContact, { foreignKey: 'contactId', as: 'contact', onDelete: 'SET NULL' });
   OutreachActivity.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
 
+  // Rewards, onboarding, activations (Phases 4–5)
+  const {
+    RewardOffer, RewardTermsVersion, RewardOfferLocation, RewardInventoryEvent,
+    PartnerOnboardingItem, Activation,
+  } = models;
+  PartnerOrganisation.hasMany(RewardOffer, { foreignKey: 'partnerOrganisationId', as: 'rewardOffers', onDelete: 'RESTRICT' });
+  RewardOffer.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner', onDelete: 'RESTRICT' });
+  RewardOffer.hasMany(RewardTermsVersion, { foreignKey: 'rewardOfferId', as: 'termsVersions', onDelete: 'CASCADE' });
+  RewardTermsVersion.belongsTo(RewardOffer, { foreignKey: 'rewardOfferId', as: 'offer' });
+  RewardOffer.hasMany(RewardOfferLocation, { foreignKey: 'rewardOfferId', as: 'offerLocations', onDelete: 'CASCADE' });
+  RewardOfferLocation.belongsTo(RewardOffer, { foreignKey: 'rewardOfferId', as: 'offer' });
+  RewardOfferLocation.belongsTo(PartnerLocation, { foreignKey: 'partnerLocationId', as: 'location', onDelete: 'CASCADE' });
+  RewardOffer.hasMany(RewardInventoryEvent, { foreignKey: 'rewardOfferId', as: 'inventoryEvents', onDelete: 'RESTRICT' });
+  RewardInventoryEvent.belongsTo(RewardOffer, { foreignKey: 'rewardOfferId', as: 'offer' });
+  RewardInventoryEvent.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
+  PartnerOrganisation.hasMany(PartnerOnboardingItem, { foreignKey: 'partnerOrganisationId', as: 'onboardingItems', onDelete: 'CASCADE' });
+  PartnerOnboardingItem.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner' });
+  PartnerOnboardingItem.belongsTo(User, { foreignKey: 'assigneeUserId', as: 'assignee', onDelete: 'SET NULL' });
+  PartnerOrganisation.hasMany(Activation, { foreignKey: 'partnerOrganisationId', as: 'activations', onDelete: 'RESTRICT' });
+  Activation.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner', onDelete: 'RESTRICT' });
+  RewardOffer.hasMany(Activation, { foreignKey: 'rewardOfferId', as: 'activations', onDelete: 'RESTRICT' });
+  Activation.belongsTo(RewardOffer, { foreignKey: 'rewardOfferId', as: 'rewardOffer', onDelete: 'RESTRICT' });
+  Activation.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
+
   // Outreach work (Phase 3)
   const { OutreachTask, ProspectingPool, ProspectingPoolMember } = models;
   PartnerOrganisation.hasMany(OutreachTask, { foreignKey: 'partnerOrganisationId', as: 'tasks', onDelete: 'CASCADE' });
@@ -238,7 +262,9 @@ export const {
   CampaignMediaItem, CampaignAgentAssignment, ExternalAgent, ExternalCampaignAgent,
   WaitlistSignup, RedeemOpsAuditEvent, PartnerOrganisation, PartnerLocation,
   PartnerContact, PartnerAssignmentEvent, PartnerStageEvent, OutreachActivity,
-  OutreachTask, ProspectingPool, ProspectingPoolMember
+  OutreachTask, ProspectingPool, ProspectingPoolMember, RewardOffer,
+  RewardTermsVersion, RewardOfferLocation, RewardInventoryEvent,
+  PartnerOnboardingItem, Activation
 } = models;
 
 export { sequelize };

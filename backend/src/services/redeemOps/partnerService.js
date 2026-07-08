@@ -13,6 +13,7 @@ import {
   PIPELINE_STAGES, STAGE_TRANSITIONS, PARTNER_AVAILABILITY,
   ACTIVITY_TYPES, MEANINGFUL_ACTIVITY_TYPES,
 } from './constants.js';
+import { makeOnboardingService } from './onboardingService.js';
 
 /**
  * Partner CRM core (docs/redeem-ops/ERD.md §3.1–3.6, brief §13–§18).
@@ -25,9 +26,8 @@ export function makePartnerService(overrides = {}) {
     PartnerStageEvent, OutreachActivity, User, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     dedupe: makeDedupeService(),
-    // PARTNERED hook — Phase 4 injects the onboarding-checklist seed here
-    // (changeStage guards on typeof, so null = no-op until then).
-    onPartnered: null,
+    // PARTNERED → seed the onboarding checklist (brief §22); injectable for tests.
+    onPartnered: (partner, _user, t) => makeOnboardingService().seedChecklist(partner.id, t),
     ...overrides,
   };
 
