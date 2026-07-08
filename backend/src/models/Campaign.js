@@ -180,6 +180,34 @@ const Campaign = sequelize.define('Campaign', {
     type: DataTypes.STRING(64),
     allowNull: true,
     field: 'tiktok_pixel_id'
+  },
+  // Campaign-first Buy Leads store (mktr-leads app, migration 044): the prospect-facing
+  // signup gift the buying agent must purchase from MKTR and hand over at the appointment,
+  // plus plain-text agent obligations. Read by billingService.getCatalog →
+  // /api/external/billing/catalog; authored on the web platform (SQL-seeded until then).
+  giftName: {
+    type: DataTypes.STRING(120),
+    allowNull: true,
+    field: 'gift_name'
+  },
+  giftPriceFromMktr: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    field: 'gift_price_from_mktr',
+    validate: {
+      min: 0
+    }
+  },
+  giftNote: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    field: 'gift_note'
+  },
+  agentNotes: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    field: 'agent_notes',
+    comment: 'string[] agent obligations; NULL treated as [] by the catalog'
   }
 }, {
   tableName: 'campaigns',

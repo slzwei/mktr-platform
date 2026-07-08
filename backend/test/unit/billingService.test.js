@@ -250,6 +250,93 @@ describe('billingService status/history/catalog', () => {
   });
 });
 
+describe('billingService catalog — campaign grouping (migration 044)', () => {
+  const catalogSvc = (rows) => {
+    const LeadPackage = { findAll: jest.fn(async () => rows) };
+    const svc = makeBillingService({
+      LeadPackage, Campaign: {}, Payment: {}, LeadPackageAssignment: {}, User: {},
+      sequelize: {}, hitpay: {}, logger: { info() {}, warn() {}, error() {} },
+    });
+    return { svc, LeadPackage };
+  };
+
+  // Raw rows as Sequelize returns them: DECIMAL → string, campaign via the include.
+  const careShield = {
+    id: 'c-care', name: 'CPF CareShield Life — Free Luggage', description: 'Warm CareShield reviews.',
+    giftName: '20″ cabin luggage', giftPriceFromMktr: '25.00', giftNote: null,
+    agentNotes: ['Mention the luggage.', '  Collect from Ubi.  ', '', 7, null],
+  };
+  const alwaysOn = {
+    id: 'c-life', name: 'Always-On Life', description: '   ',
+    giftName: null, giftPriceFromMktr: null, giftNote: null, agentNotes: null,
+  };
+  const rows = [
+    { id: 'p1', name: 'CareShield — Premium', type: 'premium', leadCount: 20, price: '200.00', currency: 'SGD', isRecommended: true, campaignId: 'c-care', campaign: careShield },
+    { id: 'p2', name: 'Travel — Custom', type: 'custom', leadCount: 15, price: '165.00', currency: 'SGD', campaignId: null, campaign: null },
+    { id: 'p3', name: 'Life — Starter', type: 'basic', leadCount: 10, price: '90.00', currency: 'SGD', campaignId: 'c-life', campaign: alwaysOn },
+    { id: 'p4', name: 'CareShield — Starter', type: 'basic', leadCount: 10, price: '90.00', currency: 'SGD', campaignId: 'c-care', campaign: careShield },
+    // Non-buyable rows must vanish from ALL three views (and can empty a campaign out entirely).
+    { id: 'p5', name: 'CareShield — Draft', type: 'basic', leadCount: 5, price: '0', currency: 'SGD', campaignId: 'c-care', campaign: careShield },
+    { id: 'p6', name: 'US only', type: 'basic', leadCount: 5, price: '50.00', currency: 'USD', campaignId: 'c-usd', campaign: { id: 'c-usd', name: 'USD Campaign' } },
+  ];
+
+  test('groups buyables by campaign (first-occurrence order) + splits generalPackages + keeps the legacy flat list verbatim', async () => {
+    const { svc } = catalogSvc(rows);
+    const r = await svc.getCatalog();
+
+    // Legacy flat list: every buyable, original (newest-first) order, unchanged shape.
+    expect(r.packages.map((p) => p.id)).toEqual(['p1', 'p2', 'p3', 'p4']);
+    expect(r.packages[0]).toMatchObject({ campaignName: 'CPF CareShield Life — Free Luggage', isRecommended: true });
+
+    // Campaign-grouped view.
+    expect(r.campaigns.map((c) => c.id)).toEqual(['c-care', 'c-life']); // c-usd never appears — no buyable package
+    expect(r.campaigns[0].packages.map((p) => p.id)).toEqual(['p1', 'p4']);
+    expect(r.campaigns[1].packages.map((p) => p.id)).toEqual(['p3']);
+    expect(r.generalPackages.map((p) => p.id)).toEqual(['p2']);
+  });
+
+  test('gift + notes + description mapping: priced gift, sanitized notes, blank description → null', async () => {
+    const { svc } = catalogSvc(rows);
+    const r = await svc.getCatalog();
+
+    expect(r.campaigns[0].description).toBe('Warm CareShield reviews.');
+    expect(r.campaigns[0].gift).toEqual({ name: '20″ cabin luggage', priceFromMktr: 25, note: null });
+    expect(r.campaigns[0].notes).toEqual(['Mention the luggage.', 'Collect from Ubi.']);
+
+    // Description-only campaign: blank description → null, no gift, notes [].
+    expect(r.campaigns[1]).toMatchObject({ description: null, gift: null, notes: [] });
+  });
+
+  test('gift degradations: 0/absent price → priceFromMktr null; blank name → gift null; note trimmed', async () => {
+    const voucher = {
+      id: 'c-motor', name: 'Q3 Motor Switch', description: 'Motor renewals.',
+      giftName: 'S$10 NTUC FairPrice voucher', giftPriceFromMktr: '0', giftNote: '  Codes are emailed after purchase.  ',
+      agentNotes: ['Confirm the outlet preference.'],
+    };
+    const blankGift = { id: 'c-blank', name: 'Blank Gift', description: null, giftName: '   ', giftPriceFromMktr: '25.00', giftNote: 'x', agentNotes: [] };
+    const { svc } = catalogSvc([
+      { id: 'q1', name: 'Motor — Premium', type: 'premium', leadCount: 20, price: '200.00', currency: 'SGD', campaignId: 'c-motor', campaign: voucher },
+      { id: 'q2', name: 'Blank — Basic', type: 'basic', leadCount: 5, price: '45.00', currency: 'SGD', campaignId: 'c-blank', campaign: blankGift },
+    ]);
+    const r = await svc.getCatalog();
+    expect(r.campaigns[0].gift).toEqual({ name: 'S$10 NTUC FairPrice voucher', priceFromMktr: null, note: 'Codes are emailed after purchase.' });
+    expect(r.campaigns[1].gift).toBeNull(); // blank name kills the gift regardless of other fields
+  });
+
+  test('the buyability filter stays in the DB where + query shape carries the 044 campaign attributes', async () => {
+    const { svc, LeadPackage } = catalogSvc([]);
+    await svc.getCatalog();
+    expect(LeadPackage.findAll).toHaveBeenCalledWith(expect.objectContaining({
+      where: { status: 'active', isPublic: true },
+      order: [['createdAt', 'DESC']],
+      include: [expect.objectContaining({
+        as: 'campaign',
+        attributes: ['id', 'name', 'description', 'giftName', 'giftPriceFromMktr', 'giftNote', 'agentNotes'],
+      })],
+    }));
+  });
+});
+
 describe('billingService — beneficiary purchases (manager buy-for-team, migration 043)', () => {
   const okManager = { id: 'mgr-1', firstName: 'M', lastName: 'G', fullName: 'M G', email: 'm@g.co' };
   const okMember = { id: 'ben-1', firstName: 'B', lastName: 'N', fullName: 'Ben N', email: 'b@n.co' };

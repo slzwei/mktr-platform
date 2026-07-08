@@ -41,6 +41,25 @@ function toPurchaseStatus(s) {
   return 'failed'; // failed | expired | comp
 }
 
+/**
+ * Campaign gift DTO for the store (migration 044 columns). NULL unless a non-blank
+ * gift_name exists; a missing/0 price degrades to null (the app drops the price line,
+ * never renders "S$0 from MKTR").
+ */
+function campaignGift(c) {
+  const name = typeof c?.giftName === 'string' ? c.giftName.trim() : '';
+  if (!name) return null;
+  const price = Number(c?.giftPriceFromMktr);
+  const note = typeof c?.giftNote === 'string' && c.giftNote.trim() ? c.giftNote.trim() : null;
+  return { name, priceFromMktr: Number.isFinite(price) && price > 0 ? price : null, note };
+}
+
+/** agent_notes JSONB → clean string[] (NULL / non-array / blank entries → dropped). */
+function campaignNotes(c) {
+  if (!Array.isArray(c?.agentNotes)) return [];
+  return c.agentNotes.filter((s) => typeof s === 'string' && s.trim()).map((s) => s.trim());
+}
+
 export function makeBillingService(overrides = {}) {
   const d = { Payment, LeadPackage, LeadPackageAssignment, User, Campaign, sequelize, hitpay, buildPurchaseDocument, logger, ...overrides };
 
@@ -64,27 +83,72 @@ export function makeBillingService(overrides = {}) {
     });
   }
 
-  /** Buyable catalog (active + public + priced in SGD) + the checkout kill switch. */
+  /**
+   * Buyable catalog (active + public + priced in SGD) + the checkout kill switch —
+   * flat AND campaign-grouped:
+   *
+   *   packages         legacy flat list, KEPT VERBATIM — the shipped app cohorts read
+   *                    only this, so it must never shrink or reshape.
+   *   campaigns        campaign-first store view: every campaign with ≥1 buyable
+   *                    package, carrying description + gift + notes (migration 044)
+   *                    and its own packages. Ordered by first occurrence over the
+   *                    newest-first package list (= recency).
+   *   generalPackages  buyable packages with no campaign (campaignId null).
+   *
+   * Grouping reads the RAW rows (campaignId is not part of the package DTO). Campaign
+   * status is deliberately NOT consulted — buyability rules are identical to the flat
+   * list so nothing currently on sale de-lists.
+   */
   async function getCatalog() {
-    const packages = await d.LeadPackage.findAll({
+    const rows = await d.LeadPackage.findAll({
       where: { status: 'active', isPublic: true },
-      include: [{ model: d.Campaign, as: 'campaign', attributes: ['name'] }],
+      include: [
+        {
+          model: d.Campaign,
+          as: 'campaign',
+          attributes: ['id', 'name', 'description', 'giftName', 'giftPriceFromMktr', 'giftNote', 'agentNotes'],
+        },
+      ],
       order: [['createdAt', 'DESC']],
     });
-    const buyable = packages
-      .filter((p) => Number(p.price) > 0 && (p.currency || 'SGD') === 'SGD')
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        type: p.type ?? null,
-        leadCount: p.leadCount,
-        price: Number(p.price),
-        currency: p.currency || 'SGD',
-        campaignName: p.campaign?.name ?? null,
-        // false until the admin-flag column ships (catalog still works — app hides "featured" when none).
-        isRecommended: p.isRecommended === true,
-      }));
-    return { packages: buyable, checkoutMode: checkoutMode() };
+    const buyableRows = rows.filter((p) => Number(p.price) > 0 && (p.currency || 'SGD') === 'SGD');
+    const toDto = (p) => ({
+      id: p.id,
+      name: p.name,
+      type: p.type ?? null,
+      leadCount: p.leadCount,
+      price: Number(p.price),
+      currency: p.currency || 'SGD',
+      campaignName: p.campaign?.name ?? null,
+      isRecommended: p.isRecommended === true,
+    });
+
+    const campaigns = [];
+    const byCampaignId = new Map();
+    const generalPackages = [];
+    for (const p of buyableRows) {
+      const c = p.campaignId ? p.campaign : null;
+      if (!c) {
+        generalPackages.push(toDto(p));
+        continue;
+      }
+      let entry = byCampaignId.get(c.id);
+      if (!entry) {
+        entry = {
+          id: c.id,
+          name: c.name,
+          description: typeof c.description === 'string' && c.description.trim() ? c.description : null,
+          gift: campaignGift(c),
+          notes: campaignNotes(c),
+          packages: [],
+        };
+        byCampaignId.set(c.id, entry);
+        campaigns.push(entry);
+      }
+      entry.packages.push(toDto(p));
+    }
+
+    return { packages: buyableRows.map(toDto), campaigns, generalPackages, checkoutMode: checkoutMode() };
   }
 
   /**
