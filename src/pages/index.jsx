@@ -78,6 +78,12 @@ const AgentProfile = lazy(() => import('./AgentProfile'));
 const REDEEM_OPS_ENABLED = import.meta.env.VITE_REDEEM_OPS_ENABLED === 'true';
 const RedeemOpsHome = lazy(() => import('./redeemops/RedeemOpsHome'));
 const RedeemOpsTeam = lazy(() => import('./redeemops/RedeemOpsTeam'));
+const RedeemOpsPartnersList = lazy(() => import('./redeemops/PartnersList'));
+const RedeemOpsPartnerDetail = lazy(() => import('./redeemops/PartnerDetail'));
+const RedeemOpsMyQueue = lazy(() => import('./redeemops/MyQueue'));
+const RedeemOpsTasks = lazy(() => import('./redeemops/TasksPage'));
+const RedeemOpsPools = lazy(() => import('./redeemops/PoolsPage'));
+const RedeemOpsTeamPipeline = lazy(() => import('./redeemops/TeamPipeline'));
 
 function PagesContent() {
  const navigate = useNavigate();
@@ -450,9 +456,75 @@ function PagesContent() {
  {REDEEM_OPS_ENABLED && (
  <Route
  path="/redeem-ops/team" element={
- <RedeemOpsRoute>
+ <RedeemOpsRoute capability="analytics.view_team">
  <DashboardLayout>
  <RedeemOpsTeam />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/partners" element={
+ <RedeemOpsRoute capability="partners.view">
+ <DashboardLayout>
+ <RedeemOpsPartnersList />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/partners/:id" element={
+ <RedeemOpsRoute capability="partners.view">
+ <DashboardLayout>
+ <RedeemOpsPartnerDetail />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/queue" element={
+ <RedeemOpsRoute>
+ <DashboardLayout>
+ <RedeemOpsMyQueue />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/tasks" element={
+ <RedeemOpsRoute capability="tasks.manage">
+ <DashboardLayout>
+ <RedeemOpsTasks />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/pools" element={
+ <RedeemOpsRoute capability="pools.claim_next">
+ <DashboardLayout>
+ <RedeemOpsPools />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/pipeline" element={
+ <RedeemOpsRoute capability="pipeline.view_team">
+ <DashboardLayout>
+ <RedeemOpsTeamPipeline />
  </DashboardLayout>
  </RedeemOpsRoute>
  }
