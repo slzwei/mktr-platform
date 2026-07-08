@@ -63,6 +63,55 @@ function TimelineEntry({ entry }) {
   );
 }
 
+const ONBOARDING_STATUS_BADGE = { done: 'default', in_progress: 'secondary', pending: 'outline', na: 'outline' };
+
+function OnboardingChecklist({ partnerId }) {
+  const queryClient = useQueryClient();
+  const itemsQuery = useQuery({
+    queryKey: ['redeem-ops', 'partner', partnerId, 'onboarding'],
+    queryFn: () => redeemOpsApi.getOnboarding(partnerId),
+  });
+  const updateMutation = useMutation({
+    mutationFn: ({ itemId, status }) => redeemOpsApi.updateOnboardingItem(itemId, { status }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partner', partnerId, 'onboarding'] }),
+    onError: (err) => toast.error('Could not update item', { description: err.message }),
+  });
+
+  const items = itemsQuery.data || [];
+  const doneCount = items.filter((i) => i.status === 'done' || i.status === 'na').length;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Onboarding checklist</CardTitle>
+        <p className="text-sm text-muted-foreground">{doneCount} of {items.length} complete</p>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {items.map((item) => (
+          <div key={item.id} className="flex items-center justify-between gap-2 border-b border-border pb-2 last:border-0">
+            <span className="text-sm">{item.label}</span>
+            <Select
+              value={item.status}
+              onValueChange={(status) => updateMutation.mutate({ itemId: item.id, status })}
+            >
+              <SelectTrigger className="w-36 h-8">
+                <Badge variant={ONBOARDING_STATUS_BADGE[item.status] || 'outline'}>
+                  {item.status.replaceAll('_', ' ')}
+                </Badge>
+              </SelectTrigger>
+              <SelectContent>
+                {['pending', 'in_progress', 'done', 'na'].map((s) => (
+                  <SelectItem key={s} value={s}>{s.replaceAll('_', ' ')}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 const EMPTY_ACTIVITY = { type: 'call_attempt', summary: '', details: '', outcome: '', contactId: '' };
 const EMPTY_CONTACT = { name: '', roleTitle: '', mobile: '', email: '', preferredChannel: '' };
 const EMPTY_LOCATION = { name: '', addressLine: '', postalCode: '', phone: '' };
@@ -159,6 +208,7 @@ export default function PartnerDetail() {
   const isOwner = partner.ownerUserId === user?.id;
   const isUnowned = !partner.ownerUserId;
   const canReassign = hasCapability(user, 'partners.reassign');
+  const canOnboard = hasCapability(user, 'onboarding.manage');
   const allowedNext = constants.data?.stageTransitions?.[partner.pipelineStage] || [];
   const activityTypes = constants.data?.activityTypes || [];
 
@@ -230,6 +280,9 @@ export default function PartnerDetail() {
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="contacts">Contacts ({partner.contacts?.length || 0})</TabsTrigger>
           <TabsTrigger value="locations">Locations ({partner.locations?.length || 0})</TabsTrigger>
+          {partner.pipelineStage === 'PARTNERED' && canOnboard && (
+            <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="timeline">
@@ -315,6 +368,12 @@ export default function PartnerDetail() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {partner.pipelineStage === 'PARTNERED' && canOnboard && (
+          <TabsContent value="onboarding">
+            <OnboardingChecklist partnerId={id} />
+          </TabsContent>
+        )}
       </Tabs>
 
       <Dialog open={activityOpen} onOpenChange={setActivityOpen}>

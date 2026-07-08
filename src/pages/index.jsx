@@ -84,6 +84,10 @@ const RedeemOpsMyQueue = lazy(() => import('./redeemops/MyQueue'));
 const RedeemOpsTasks = lazy(() => import('./redeemops/TasksPage'));
 const RedeemOpsPools = lazy(() => import('./redeemops/PoolsPage'));
 const RedeemOpsTeamPipeline = lazy(() => import('./redeemops/TeamPipeline'));
+const RedeemOpsRewards = lazy(() => import('./redeemops/RewardsPage'));
+const RedeemOpsRewardDetail = lazy(() => import('./redeemops/RewardDetail'));
+const RedeemOpsActivations = lazy(() => import('./redeemops/ActivationsPage'));
+const RedeemOpsActivationDetail = lazy(() => import('./redeemops/ActivationDetail'));
 
 function PagesContent() {
  const navigate = useNavigate();
@@ -525,6 +529,50 @@ function PagesContent() {
  <RedeemOpsRoute capability="pipeline.view_team">
  <DashboardLayout>
  <RedeemOpsTeamPipeline />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/rewards" element={
+ <RedeemOpsRoute capability="rewards.view">
+ <DashboardLayout>
+ <RedeemOpsRewards />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/rewards/:id" element={
+ <RedeemOpsRoute capability="rewards.view">
+ <DashboardLayout>
+ <RedeemOpsRewardDetail />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/activations" element={
+ <RedeemOpsRoute capability="activations.view">
+ <DashboardLayout>
+ <RedeemOpsActivations />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/activations/:id" element={
+ <RedeemOpsRoute capability="activations.view">
+ <DashboardLayout>
+ <RedeemOpsActivationDetail />
  </DashboardLayout>
  </RedeemOpsRoute>
  }

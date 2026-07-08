@@ -138,4 +138,84 @@ export const redeemOpsApi = {
     const res = await apiClient.post(`/redeem-ops/pools/${poolId}/claim-next`, {});
     return res.data;
   },
+
+  // ── Rewards + onboarding (Phase 4) ─────────────────────────────────────
+  async listRewards(params = {}) {
+    const res = await apiClient.get('/redeem-ops/rewards', params);
+    return res.data?.offers || [];
+  },
+  async getReward(id) {
+    const res = await apiClient.get(`/redeem-ops/rewards/${id}`);
+    return res.data;
+  },
+  async createReward(body) {
+    const res = await apiClient.post('/redeem-ops/rewards', body);
+    return res.data?.offer;
+  },
+  async updateReward(id, body) {
+    const res = await apiClient.put(`/redeem-ops/rewards/${id}`, body);
+    return res.data?.offer;
+  },
+  async setRewardStatus(id, status) {
+    const res = await apiClient.patch(`/redeem-ops/rewards/${id}/status`, { status });
+    return res.data?.offer;
+  },
+  async addRewardTerms(id, body) {
+    const res = await apiClient.post(`/redeem-ops/rewards/${id}/terms`, body);
+    return res.data?.terms;
+  },
+  async setRewardLocations(id, partnerLocationIds) {
+    const res = await apiClient.put(`/redeem-ops/rewards/${id}/locations`, { partnerLocationIds });
+    return res.data;
+  },
+  async adjustRewardInventory(id, body) {
+    const res = await apiClient.post(`/redeem-ops/rewards/${id}/inventory`, body);
+    return res.data;
+  },
+  async getRewardLedger(id, params = {}) {
+    const res = await apiClient.get(`/redeem-ops/rewards/${id}/ledger`, params);
+    return res.data?.events || [];
+  },
+  async getOnboarding(partnerId) {
+    const res = await apiClient.get(`/redeem-ops/partners/${partnerId}/onboarding`);
+    return res.data?.items || [];
+  },
+  async updateOnboardingItem(itemId, body) {
+    const res = await apiClient.patch(`/redeem-ops/onboarding/${itemId}`, body);
+    return res.data?.item;
+  },
+
+  // ── Activations + campaign reference (Phase 5) ─────────────────────────
+  async searchCampaigns(params = {}) {
+    const res = await apiClient.get('/redeem-ops/campaigns', params);
+    return res.data?.campaigns || [];
+  },
+  async listActivations(params = {}) {
+    const res = await apiClient.get('/redeem-ops/activations', params);
+    return res.data?.activations || [];
+  },
+  async getActivation(id) {
+    const res = await apiClient.get(`/redeem-ops/activations/${id}`);
+    return res.data;
+  },
+  async createActivation(body) {
+    const res = await apiClient.post('/redeem-ops/activations', body);
+    return res.data?.activation;
+  },
+  async linkActivationCampaign(id, campaignId) {
+    const res = await apiClient.patch(`/redeem-ops/activations/${id}/campaign`, { campaignId });
+    return res.data?.activation;
+  },
+  async changeActivationAllocation(id, delta, reason) {
+    const res = await apiClient.patch(`/redeem-ops/activations/${id}/allocation`, { delta, reason });
+    return res.data?.activation;
+  },
+  async setActivationStatus(id, status) {
+    const res = await apiClient.patch(`/redeem-ops/activations/${id}/status`, { status });
+    return res.data?.activation;
+  },
+  async getActivationMetrics(id) {
+    const res = await apiClient.get(`/redeem-ops/activations/${id}/campaign-metrics`);
+    return res.data;
+  },
 };
