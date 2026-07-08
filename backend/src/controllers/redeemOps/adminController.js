@@ -54,26 +54,34 @@ export const inviteTeamMember = asyncHandler(async (req, res) => {
   const { email, full_name, redeemOpsRole } = value;
   const roleLabel = `Redeem Ops — ${SUB_ROLE_LABELS[redeemOpsRole]}`;
 
-  const { user, inviteLink } = await sendRoleInvitation({
-    email,
-    fullName: full_name,
-    role: 'redeem_ops',
-    inviterEmail: req.user?.email,
-    extraFields: { redeemOpsRole },
-    getEmailContent: ({ firstName, inviteLink: link, companyName, companyUrl, expiryDays }) => ({
-      subject: getRoleInviteSubject({ companyName, roleLabel }),
-      html: getRoleInviteEmail({ firstName, inviteLink: link, companyName, companyUrl, expiryDays, roleLabel }),
-      text: getRoleInviteText({ firstName, inviteLink: link, companyName, expiryDays, roleLabel }),
-    }),
-  });
-
-  await recordAuditEvent({
-    actorUser: req.user,
-    action: 'access.invited',
-    entityType: 'user',
-    entityId: user.id,
-    after: { email, redeemOpsRole },
-    requestId: req.id || null,
+  // Access grant + its audit row commit atomically (Codex review finding 4):
+  // a persisted invite without an audit trail must be impossible. The invite
+  // email is best-effort inside the service; a rolled-back tx just leaves a
+  // dead token link, never an unaudited account.
+  const { user, inviteLink } = await sequelize.transaction(async (t) => {
+    const result = await sendRoleInvitation({
+      email,
+      fullName: full_name,
+      role: 'redeem_ops',
+      inviterEmail: req.user?.email,
+      extraFields: { redeemOpsRole },
+      transaction: t,
+      getEmailContent: ({ firstName, inviteLink: link, companyName, companyUrl, expiryDays }) => ({
+        subject: getRoleInviteSubject({ companyName, roleLabel }),
+        html: getRoleInviteEmail({ firstName, inviteLink: link, companyName, companyUrl, expiryDays, roleLabel }),
+        text: getRoleInviteText({ firstName, inviteLink: link, companyName, expiryDays, roleLabel }),
+      }),
+    });
+    await recordAuditEvent({
+      actorUser: req.user,
+      action: 'access.invited',
+      entityType: 'user',
+      entityId: result.user.id,
+      after: { email, redeemOpsRole },
+      requestId: req.id || null,
+      transaction: t,
+    });
+    return result;
   });
 
   res.status(201).json({

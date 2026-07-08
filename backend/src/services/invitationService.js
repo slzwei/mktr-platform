@@ -15,7 +15,7 @@ import { logger } from '../utils/logger.js';
  * @param {Function} params.getEmailContent - function({ firstName, inviteLink, companyName, companyUrl, expiryDays, roleLabel }) => { subject, html, text }
  * @returns {Promise<{ user: Object, inviteLink: string }>}
  */
-export async function sendRoleInvitation({ email, fullName, role, inviterEmail, extraFields = {}, getEmailContent }) {
+export async function sendRoleInvitation({ email, fullName, role, inviterEmail, extraFields = {}, getEmailContent, transaction = null }) {
   if (!email || !fullName) {
     throw new AppError('email and full_name are required', 400);
   }
@@ -26,7 +26,7 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
   }
 
   // Check for existing user
-  const existing = await User.findOne({ where: { email } });
+  const existing = await User.findOne({ where: { email }, transaction });
   if (existing) {
     throw new AppError('A user with this email already exists. Permanently delete the existing user first to send a new invitation.', 400);
   }
@@ -40,7 +40,9 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
   const invitationToken = uuidv4();
   const invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-  // Create user record
+  // Create user record. Optional caller transaction (additive — existing callers
+  // unchanged) lets access grants commit atomically with their audit row
+  // (redeem-ops invite: user + access.invited audit are all-or-nothing).
   const user = await User.create({
     email,
     firstName,
@@ -51,7 +53,7 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
     invitationToken,
     invitationExpires,
     ...extraFields
-  });
+  }, { transaction });
 
   // Build invite link
   const frontendBase = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';

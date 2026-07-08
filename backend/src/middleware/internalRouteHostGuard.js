@@ -52,9 +52,29 @@ function isBlockedPath(pathname) {
 export function blockRedeemForInternalRoutes(req, res, next) {
   // Only check API requests (this middleware mounts on /api in server_internal).
   const pathname = req.originalUrl ? req.originalUrl.split('?')[0] : req.path;
+  const publicHost = publicHostFromRequest(req);
+
+  // ops.redeem.sg is a STRICT-allowlist internal surface: only staff auth, the
+  // redeem-ops namespace, and notifications exist there — EVERY other /api path
+  // 403s at the host layer, including public capture endpoints and any future
+  // namespace not on the blocklist (Codex Phase-1 review, finding 1).
+  if (isOpsHost(publicHost)) {
+    if (!matchesPrefix(pathname, OPS_ALLOWED_PREFIXES)) {
+      logger.warn('Blocked API call from ops.redeem.sg (outside allowlist)', {
+        path: pathname,
+        publicHost,
+        origin: req.get('origin') || null,
+      });
+      return res.status(403).json({
+        success: false,
+        message: 'This API is not available on ops.redeem.sg.',
+      });
+    }
+    return next();
+  }
+
   if (!isBlockedPath(pathname)) return next();
 
-  const publicHost = publicHostFromRequest(req);
   if (isRedeemHost(publicHost)) {
     logger.warn('Blocked internal API call from redeem.sg', {
       path: pathname,
@@ -64,18 +84,6 @@ export function blockRedeemForInternalRoutes(req, res, next) {
     return res.status(403).json({
       success: false,
       message: 'Internal admin/auth/agent/driver APIs are only available on mktr.sg.',
-    });
-  }
-
-  if (isOpsHost(publicHost) && !matchesPrefix(pathname, OPS_ALLOWED_PREFIXES)) {
-    logger.warn('Blocked internal API call from ops.redeem.sg', {
-      path: pathname,
-      publicHost,
-      origin: req.get('origin') || null,
-    });
-    return res.status(403).json({
-      success: false,
-      message: 'This API is not available on ops.redeem.sg.',
     });
   }
 

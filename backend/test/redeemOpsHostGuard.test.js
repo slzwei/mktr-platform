@@ -43,11 +43,15 @@ describe('internalRouteHostGuard — redeem-ops + ops-host policy', () => {
     expect(run('/api/notifications', 'ops.redeem.sg').nextCalled).toBe(true);
   });
 
-  test('ops.redeem.sg is blocked from the other internal prefixes at the host layer', () => {
+  test('ops.redeem.sg is STRICT-allowlist: every other /api path 403s, blocklisted or not', () => {
     expect(run('/api/admin/campaigns', 'ops.redeem.sg').statusCode).toBe(403);
     expect(run('/api/users', 'ops.redeem.sg').statusCode).toBe(403);
     expect(run('/api/agents', 'ops.redeem.sg').statusCode).toBe(403);
     expect(run('/api/webhooks/stats', 'ops.redeem.sg').statusCode).toBe(403);
+    // Not on the blocklist — still refused on the ops surface (strict allowlist)
+    expect(run('/api/campaigns', 'ops.redeem.sg').statusCode).toBe(403);
+    expect(run('/api/prospects', 'ops.redeem.sg').statusCode).toBe(403);
+    expect(run('/api/verify/send', 'ops.redeem.sg').statusCode).toBe(403);
   });
 
   test('mktr.sg passes everything at the host layer', () => {
@@ -60,8 +64,8 @@ describe('internalRouteHostGuard — redeem-ops + ops-host policy', () => {
     expect(run('/api/integrations/lyfe/lead-outcome', null).nextCalled).toBe(true);
   });
 
-  test('non-internal public paths are never touched', () => {
+  test('public capture paths stay open on the consumer host', () => {
     expect(run('/api/prospects', 'redeem.sg').nextCalled).toBe(true);
-    expect(run('/api/verify/send', 'ops.redeem.sg').nextCalled).toBe(true);
+    expect(run('/api/verify/send', 'redeem.sg').nextCalled).toBe(true);
   });
 });

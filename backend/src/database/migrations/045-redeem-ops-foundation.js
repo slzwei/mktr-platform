@@ -55,8 +55,29 @@ export async function up(queryInterface, Sequelize) {
         defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
       },
     });
-    await queryInterface.addIndex('redeem_ops_audit_events', ['entityType', 'entityId', 'createdAt'], { name: 'idx_roae_entity' });
-    await queryInterface.addIndex('redeem_ops_audit_events', ['actorUserId', 'createdAt'], { name: 'idx_roae_actor' });
-    await queryInterface.addIndex('redeem_ops_audit_events', ['action', 'createdAt'], { name: 'idx_roae_action' });
   }
+
+  // Indexes OUTSIDE the table-exists branch (Codex review): the runner is
+  // non-transactional, so a crash between createTable and an index must not
+  // leave a rerun that skips index creation. IF NOT EXISTS makes each step
+  // independently idempotent.
+  await queryInterface.sequelize.query(
+    'CREATE INDEX IF NOT EXISTS idx_roae_entity ON redeem_ops_audit_events ("entityType", "entityId", "createdAt")'
+  );
+  await queryInterface.sequelize.query(
+    'CREATE INDEX IF NOT EXISTS idx_roae_actor ON redeem_ops_audit_events ("actorUserId", "createdAt")'
+  );
+  await queryInterface.sequelize.query(
+    'CREATE INDEX IF NOT EXISTS idx_roae_action ON redeem_ops_audit_events ("action", "createdAt")'
+  );
+}
+
+export async function down(queryInterface) {
+  await queryInterface.sequelize.query('DROP TABLE IF EXISTS redeem_ops_audit_events CASCADE');
+  const usersTable = await queryInterface.describeTable('users');
+  if (usersTable.redeemOpsRole) {
+    await queryInterface.removeColumn('users', 'redeemOpsRole');
+  }
+  // Postgres cannot remove an enum value without recreating the type; the
+  // 'redeem_ops' role value stays as a harmless no-op (029 precedent).
 }
