@@ -58,7 +58,7 @@ export function getTransporter() {
 }
 
 
-export async function sendEmail({ to, subject, html, text, context, from }) {
+export async function sendEmail({ to, subject, html, text, context, from, attachments }) {
   // Resolve from-address by context (lead-capture flows pass context='redeem',
   // admin flows omit it). An explicit `from` arg overrides both.
   const resolvedFrom = from || resolveEmailFrom(context);
@@ -71,7 +71,11 @@ export async function sendEmail({ to, subject, html, text, context, from }) {
   }
 
   try {
-    await transporter.sendMail({ from: resolvedFrom, to, subject, html, text });
+    // `attachments` (optional, nodemailer passthrough) carries CID-inline images —
+    // the Redeem Ops voucher QR ships as an attachment, not a remote URL, so it
+    // renders with remote images blocked and the token stays out of image-proxy
+    // logs (docs/redeem-ops/MKTR_INTEGRATION.md §2).
+    await transporter.sendMail({ from: resolvedFrom, to, subject, html, text, ...(attachments ? { attachments } : {}) });
     return { success: true };
   } catch (err) {
     // Surface SES/SMTP rejection details — Nodemailer attaches `code`,
