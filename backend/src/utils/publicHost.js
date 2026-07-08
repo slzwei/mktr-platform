@@ -14,6 +14,11 @@ const ALLOWED_PUBLIC_HOSTS = new Set([
   'www.mktr.sg',
   'redeem.sg',
   'www.redeem.sg',
+  // Internal Redeem Ops staff surface (docs/redeem-ops/RECOMMENDED_ARCHITECTURE.md §5).
+  // NOT a redeem-consumer host: isRedeemHost() deliberately excludes it, and the host
+  // guard gives it a narrow internal allowlist instead of the consumer block. Auth
+  // cookies stay host-only here (cookieDomainForPublicHost returns undefined).
+  'ops.redeem.sg',
 ]);
 
 /**
@@ -70,6 +75,12 @@ export function isRedeemHost(host) {
   if (!host) return false;
   const h = String(host).toLowerCase();
   return h === 'redeem.sg' || h === 'www.redeem.sg';
+}
+
+/** The internal Redeem Ops staff surface — never a consumer redeem host. */
+export function isOpsHost(host) {
+  if (!host) return false;
+  return String(host).toLowerCase() === 'ops.redeem.sg';
 }
 
 export function isMktrHost(host) {

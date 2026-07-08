@@ -163,6 +163,11 @@ function defineAssociations() {
   AgentGroup.hasMany(AgentGroupMember, { foreignKey: 'agentGroupId', as: 'members', onDelete: 'CASCADE' });
   AgentGroupMember.belongsTo(AgentGroup, { foreignKey: 'agentGroupId', as: 'group' });
   AgentGroupMember.belongsTo(User, { foreignKey: 'userId', as: 'user', onDelete: 'SET NULL' });
+
+  // Redeem Ops associations (Phase 1 — docs/redeem-ops/ERD.md §3.19). Audit rows
+  // are append-only and must survive actor deletion: SET NULL, never cascade.
+  const { RedeemOpsAuditEvent } = models;
+  RedeemOpsAuditEvent.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor', onDelete: 'SET NULL' });
 }
 
 defineAssociations();
@@ -196,7 +201,7 @@ export const {
   Vehicle, WebhookSubscriber, WebhookDelivery, AgentGroup,
   AgentGroupMember, DeviceCampaignAssignment, VehicleCampaignAssignment,
   CampaignMediaItem, CampaignAgentAssignment, ExternalAgent, ExternalCampaignAgent,
-  WaitlistSignup
+  WaitlistSignup, RedeemOpsAuditEvent
 } = models;
 
 export { sequelize };

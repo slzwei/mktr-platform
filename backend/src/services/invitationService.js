@@ -60,7 +60,13 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
   // Get email content from caller-provided template function and send
   const companyName = process.env.COMPANY_NAME || 'MKTR';
   const companyUrl = process.env.COMPANY_URL || process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
-  const roleLabel = role === 'agent' ? 'Agent' : role === 'fleet_owner' ? 'Fleet Owner' : 'Driver Partner';
+  const ROLE_LABELS = {
+    agent: 'Agent',
+    fleet_owner: 'Fleet Owner',
+    driver_partner: 'Driver Partner',
+    redeem_ops: 'Redeem Ops',
+  };
+  const roleLabel = ROLE_LABELS[role] || 'User';
 
   const { subject, html, text } = getEmailContent({
     firstName,

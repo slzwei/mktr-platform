@@ -44,9 +44,20 @@ const User = sequelize.define('User', {
     }
   },
   role: {
-    type: DataTypes.ENUM('admin', 'agent', 'fleet_owner', 'driver_partner', 'customer'),
+    // 'redeem_ops' (migration 045) = internal Redeem Ops staff. Deliberately a
+    // separate value so these users are invisible to every requireRole gate,
+    // to agent-sync sweeps (scoped to role='agent'), and to lead routing.
+    type: DataTypes.ENUM('admin', 'agent', 'fleet_owner', 'driver_partner', 'customer', 'redeem_ops'),
     allowNull: false,
     defaultValue: 'customer'
+  },
+  // Redeem Ops sub-role (docs/redeem-ops/PERMISSION_MATRIX.md): super_admin |
+  // ops_admin | bdm | outreach_exec | campaign_ops | redemption_ops | analyst.
+  // NULL = no Redeem Ops access; role='admin' is an implicit super_admin in
+  // middleware/redeemOpsAuth.js regardless of this column.
+  redeemOpsRole: {
+    type: DataTypes.STRING(32),
+    allowNull: true
   },
   phone: {
     type: DataTypes.STRING,
