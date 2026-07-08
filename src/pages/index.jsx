@@ -90,6 +90,7 @@ const RedeemOpsRewardDetail = lazy(() => import('./redeemops/RewardDetail'));
 const RedeemOpsActivations = lazy(() => import('./redeemops/ActivationsPage'));
 const RedeemOpsActivationDetail = lazy(() => import('./redeemops/ActivationDetail'));
 const RedeemOpsRedemptions = lazy(() => import('./redeemops/RedemptionsPage'));
+const RedeemOpsAnalytics = lazy(() => import('./redeemops/AnalyticsPage'));
 
 function PagesContent() {
  const navigate = useNavigate();
@@ -588,6 +589,17 @@ function PagesContent() {
  <RedeemOpsRoute capability="redemptions.verify">
  <DashboardLayout>
  <RedeemOpsRedemptions />
+ </DashboardLayout>
+ </RedeemOpsRoute>
+ }
+ />
+ )}
+ {REDEEM_OPS_ENABLED && (
+ <Route
+ path="/redeem-ops/analytics" element={
+ <RedeemOpsRoute capability="analytics.view_own">
+ <DashboardLayout>
+ <RedeemOpsAnalytics />
  </DashboardLayout>
  </RedeemOpsRoute>
  }

@@ -26,6 +26,7 @@ router.get('/activations/:id', requireRedeemOps('activations.view'), ctrl.getAct
 router.patch('/activations/:id/campaign', requireRedeemOps('activations.link_campaign'), ctrl.linkCampaign);
 router.patch('/activations/:id/allocation', requireRedeemOps('activations.allocate_inventory'), ctrl.changeAllocation);
 router.patch('/activations/:id/status', requireRedeemOps('activations.manage'), ctrl.setStatus);
+router.patch('/activations/:id/renewal', requireRedeemOps('activations.manage'), ctrl.setRenewal);
 router.get('/activations/:id/campaign-metrics', requireRedeemOps('campaigns.read_reference'), ctrl.getCampaignMetrics);
 
 export default router;

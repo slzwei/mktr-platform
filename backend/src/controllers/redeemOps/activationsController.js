@@ -71,6 +71,15 @@ export const setStatus = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { activation } });
 });
 
+export const setRenewal = asyncHandler(async (req, res) => {
+  const body = validateBody(
+    Joi.object({ renewalOutcome: Joi.string().valid('renewed', 'not_renewed', 'pending').required() }),
+    req.body
+  );
+  const activation = await activationService.setRenewal(req.params.id, body.renewalOutcome, req.user, req.id);
+  res.json({ success: true, data: { activation } });
+});
+
 export const getCampaignMetrics = asyncHandler(async (req, res) => {
   const activation = await activationService.getActivation(req.params.id);
   if (!activation.campaignId) throw new AppError('No campaign linked to this activation', 400);

@@ -112,6 +112,7 @@ const getNavigationItems = (user) => {
  { title: 'Rewards', url: '/redeem-ops/rewards', icon: Package, capability: 'rewards.view' },
  { title: 'Activations', url: '/redeem-ops/activations', icon: Link2, capability: 'activations.view' },
  { title: 'Redemptions', url: '/redeem-ops/redemptions', icon: QrCode, capability: 'redemptions.verify' },
+ { title: 'Analytics', url: '/redeem-ops/analytics', icon: DollarSign, capability: 'analytics.view_own' },
  { title: 'Team', url: '/redeem-ops/team', icon: Users, capability: 'analytics.view_team' },
  ].filter((item) => !item.capability || hasRedeemOpsCapability(user, item.capability)),
  },

@@ -165,3 +165,32 @@ contacts, activities, follow-ups, daily queue → Phases 2–3. 10. Pipeline mov
 audit. 14. No second campaign builder → enforced by `RECOMMENDED_ARCHITECTURE.md` §10 +
 projection-only campaign access. 15. No duplicate lead DB → entitlements reference `prospects.id`
 only.
+
+## BUILD STATUS — 2026-07-09: Phases 1–7 SHIPPED (dark)
+
+All phases are merged to `main` and deployed dark:
+PR #94 (Phase 1, Codex-reviewed), #95 (Phases 2+3 = V1), #96 (Phases 4+5),
+#97 (Phase 6), Phase 7 analytics in the follow-on PR. Every CI run was at the
+house baseline (only the pre-existing `test/unit/shortlinkService.test.js`
+failure, identical on main). Migrations 045–050 are applied to production by
+the auto-deploy (all additive; routes stay unmounted).
+
+**Go-live runbook (user-side actions — env + DNS are dashboard operations):**
+1. Render `mktr-backend-jo6r`: set `REDEEM_OPS_ENABLED=true` → mounts
+   `/api/redeem-ops/*`, schedules the stale sweep.
+2. Render `mktr-platform` static site: set `VITE_REDEEM_OPS_ENABLED=true` +
+   redeploy → `/redeem-ops/*` dogfood surface on mktr.sg (admins see the nav).
+3. Invite the outreach staff from `/redeem-ops/team` (sub-role at invite).
+4. When V1 is validated: create the `ops.redeem.sg` static site per
+   `RECOMMENDED_ARCHITECTURE.md` §5 (VITE_SURFACE build gate = follow-on task;
+   interim: same mktr build) + Cloudflare CNAME.
+5. Rewards go-live needs nothing extra (same flag). Voucher issuance
+   additionally needs `REDEEM_OPS_ENTITLEMENTS_ENABLED=true` (hook + sweeps +
+   `/api/reward-claim` + unlock surfaces).
+6. Consultant-app scan/unlock screens are follow-on work in the `lyfe-app` and
+   `mktr-leads` repos (endpoints live: `POST /api/integrations/lyfe/entitlement-unlock`,
+   `POST /api/external/entitlements/unlock`).
+
+**Deferred (documented, not blocking):** `VITE_SURFACE=ops` bundle isolation
+(host guard + capabilities already enforce the boundary server-side), CSV
+import (§32), global search (§33), partner portal (future).

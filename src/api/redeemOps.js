@@ -236,4 +236,26 @@ export const redeemOpsApi = {
     const res = await apiClient.get('/redeem-ops/redemptions', params);
     return res.data;
   },
+
+  // ── Analytics (Phase 7) ────────────────────────────────────────────────
+  async getOutreachAnalytics(params = {}) {
+    const res = await apiClient.get('/redeem-ops/analytics/outreach', params);
+    return res.data;
+  },
+  async getCategoryAnalytics() {
+    const res = await apiClient.get('/redeem-ops/analytics/categories');
+    return res.data;
+  },
+  async getRewardAnalytics() {
+    const res = await apiClient.get('/redeem-ops/analytics/rewards');
+    return res.data;
+  },
+  async getActivationAnalytics() {
+    const res = await apiClient.get('/redeem-ops/analytics/activations');
+    return res.data;
+  },
+  async setActivationRenewal(id, renewalOutcome) {
+    const res = await apiClient.patch(`/redeem-ops/activations/${id}/renewal`, { renewalOutcome });
+    return res.data?.activation;
+  },
 };

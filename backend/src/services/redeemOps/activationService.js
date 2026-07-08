@@ -198,7 +198,24 @@ export function makeActivationService(overrides = {}) {
     return activation;
   }
 
-  return { listActivations, getActivation, createActivation, linkCampaign, changeAllocation, setStatus };
+  /** Record the renewal outcome (brief §29 partner renewal) — audited. */
+  async function setRenewal(id, renewalOutcome, user, requestId = null) {
+    if (!['renewed', 'not_renewed', 'pending'].includes(renewalOutcome)) {
+      throw new AppError('renewalOutcome must be renewed | not_renewed | pending', 400);
+    }
+    const activation = await getActivation(id);
+    const before = { renewalOutcome: activation.renewalOutcome };
+    await d.sequelize.transaction(async (t) => {
+      await activation.update({ renewalOutcome }, { transaction: t });
+      await d.audit.recordAuditEvent({
+        actorUser: user, action: 'activation.renewal_recorded', entityType: 'activation',
+        entityId: id, before, after: { renewalOutcome }, requestId, transaction: t,
+      });
+    });
+    return activation;
+  }
+
+  return { listActivations, getActivation, createActivation, linkCampaign, changeAllocation, setStatus, setRenewal };
 }
 
 const _default = makeActivationService();
