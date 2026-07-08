@@ -84,6 +84,14 @@ const LeadPackage = sequelize.define('LeadPackage', {
     type: DataTypes.BOOLEAN,
     defaultValue: true
   },
+  // Admin-flagged featured SKU (migration 044) — billingService.getCatalog passes it
+  // through and the mktr-leads store features the first flagged one per campaign.
+  isRecommended: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'is_recommended'
+  },
   isCustomizable: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
