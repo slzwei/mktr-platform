@@ -59,6 +59,20 @@
   --ro-tag-purple-fg: #6a3fd1;
   --ro-tag-gray-bg: #f0f2f4;
   --ro-tag-gray-fg: #4c555e;
+  /* Hint text — deliberately much fainter than entered values so empty
+     fields can never read as pre-filled. */
+  --ro-placeholder: #b7bec5;
+}
+
+/* Placeholders read as hints, not values — every input/textarea on the ops
+   surface, including forms inside portaled dialogs. */
+:root:has(.ro-app) ::placeholder {
+  color: var(--ro-placeholder);
+  opacity: 1; /* Firefox applies its own opacity otherwise */
+}
+/* Radix Select triggers showing their placeholder */
+:root:has(.ro-app) [data-placeholder] {
+  color: var(--ro-placeholder);
 }
 
 /* Everything on screen is Redeem Ops while .ro-app is mounted — portals too. */
@@ -246,7 +260,7 @@
   background-repeat: no-repeat;
   background-position: 14px center;
 }
-.ro-search::placeholder { color: var(--ro-text-3); }
+.ro-search::placeholder { color: var(--ro-placeholder); }
 .ro-search:focus {
   outline: 2px solid var(--ro-azure);
   outline-offset: 1px;
