@@ -18,10 +18,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import Plus from 'lucide-react/icons/plus';
+import { RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
 
-const STATUS_BADGE = { active: 'default', draft: 'secondary', paused: 'outline', ended: 'outline' };
 const EMPTY = { partnerOrganisationId: '', title: '', rewardType: 'free_service', retailValue: '', committedQuantity: '' };
 
 export default function RewardsPage() {
@@ -65,20 +64,16 @@ export default function RewardsPage() {
   const rewardTypes = constants.data?.rewardTypes || [];
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Rewards</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Partner-funded reward supply — every quantity movement is ledgered.
-          </p>
-        </div>
-        {canManage && (
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" aria-hidden="true" /> New reward
+    <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-5">
+      <RoPageHeader
+        title="Rewards"
+        sub="Partner-funded reward supply — every quantity movement is ledgered."
+        actions={canManage && (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> New reward
           </Button>
         )}
-      </div>
+      />
 
       <Card>
         <CardContent className="pt-4">
@@ -102,7 +97,7 @@ export default function RewardsPage() {
                     <TableCell className="text-muted-foreground">
                       {o.partner?.tradingName || o.partner?.legalName || '—'}
                     </TableCell>
-                    <TableCell><Badge variant={STATUS_BADGE[o.status] || 'secondary'}>{o.status}</Badge></TableCell>
+                    <TableCell><RoTag tone={o.status} size="sm">{prettyEnum(o.status)}</RoTag></TableCell>
                     <TableCell className="text-right">{o.committedQuantity}</TableCell>
                     <TableCell className="text-right">{o.allocatedQuantity}</TableCell>
                     <TableCell className="text-right">{o.issuedQuantity}</TableCell>

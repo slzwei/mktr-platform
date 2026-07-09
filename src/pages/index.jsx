@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import RedeemOpsRoute from '@/components/auth/RedeemOpsRoute';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import RedeemOpsLayout from '@/components/redeemops/RedeemOpsLayout';
 import { BrowserRouter as Router, Route, Routes, useNavigate } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
 import { brand } from '@/lib/brand';
@@ -455,9 +456,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops" element={
  <RedeemOpsRoute>
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsHome />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -466,9 +467,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/team" element={
  <RedeemOpsRoute capability="analytics.view_team">
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsTeam />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -477,9 +478,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/partners" element={
  <RedeemOpsRoute capability="partners.view">
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsPartnersList />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -488,9 +489,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/partners/:id" element={
  <RedeemOpsRoute capability="partners.view">
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsPartnerDetail />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -499,9 +500,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/queue" element={
  <RedeemOpsRoute>
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsMyQueue />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -510,9 +511,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/tasks" element={
  <RedeemOpsRoute capability="tasks.manage">
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsTasks />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -521,9 +522,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/pools" element={
  <RedeemOpsRoute capability="pools.claim_next">
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsPools />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -532,9 +533,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/pipeline" element={
  <RedeemOpsRoute capability="pipeline.view_team">
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsTeamPipeline />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -543,9 +544,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/rewards" element={
  <RedeemOpsRoute capability="rewards.view">
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsRewards />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -554,9 +555,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/rewards/:id" element={
  <RedeemOpsRoute capability="rewards.view">
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsRewardDetail />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -565,9 +566,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/activations" element={
  <RedeemOpsRoute capability="activations.view">
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsActivations />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -576,9 +577,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/activations/:id" element={
  <RedeemOpsRoute capability="activations.view">
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsActivationDetail />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -587,9 +588,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/redemptions" element={
  <RedeemOpsRoute capability="redemptions.verify">
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsRedemptions />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />
@@ -598,9 +599,9 @@ function PagesContent() {
  <Route
  path="/redeem-ops/analytics" element={
  <RedeemOpsRoute capability="analytics.view_own">
- <DashboardLayout>
+ <RedeemOpsLayout>
  <RedeemOpsAnalytics />
- </DashboardLayout>
+ </RedeemOpsLayout>
  </RedeemOpsRoute>
  }
  />

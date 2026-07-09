@@ -1,0 +1,294 @@
+/*
+ * Redeem Ops — Fresha-language theme (design source of truth:
+ * claude.ai/design "Redeem Ops Design System", tokens.css).
+ *
+ * Scoping: RedeemOpsLayout renders a `.ro-app` wrapper that owns the full
+ * viewport. Radix portals (Dialog/Select/Dropdown/Sonner) mount on <body>,
+ * OUTSIDE that wrapper, so the shadcn variables are re-declared on
+ * `:root:has(.ro-app)` — the whole document speaks Fresha while a Redeem Ops
+ * screen is mounted, and reverts to Tropic the moment it unmounts. Nothing
+ * here leaks into the mktr admin, which never mounts `.ro-app`.
+ */
+
+:root:has(.ro-app) {
+  /* shadcn semantic variables — Bunker #0D1619 / white / Azure #037AFF */
+  --background: 0 0% 100%;
+  --foreground: 195 32% 7%;
+  --card: 0 0% 100%;
+  --card-foreground: 195 32% 7%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 195 32% 7%;
+  --primary: 195 32% 7%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 200 20% 97%;
+  --secondary-foreground: 210 10% 40%;
+  --muted: 210 15% 95%;
+  --muted-foreground: 210 10% 40%;
+  --accent: 200 20% 97%;
+  --accent-foreground: 195 32% 7%;
+  --destructive: 5 61% 46%;
+  --destructive-foreground: 0 0% 100%;
+  --info: 212 100% 51%;
+  --info-foreground: 0 0% 100%;
+  --success: 142 66% 27%;
+  --success-foreground: 0 0% 100%;
+  --warning: 42 100% 28%;
+  --warning-foreground: 0 0% 100%;
+  --border: 210 12% 91%;
+  --input: 210 11% 85%;
+  --ring: 212 100% 51%;
+  --radius: 1rem;
+
+  /* Fresha raw tokens (tag pastels etc.) for the ro-* classes below */
+  --ro-bunker: #0d1619;
+  --ro-text-2: #5c6670;
+  --ro-text-3: #98a1aa;
+  --ro-border: #e4e7ea;
+  --ro-border-strong: #d5d9dd;
+  --ro-subtle: #f6f8f9;
+  --ro-azure: #037aff;
+  --ro-tag-blue-bg: #e5f1ff;
+  --ro-tag-blue-fg: #0364d3;
+  --ro-tag-green-bg: #e3f5e9;
+  --ro-tag-green-fg: #177239;
+  --ro-tag-yellow-bg: #fff2d6;
+  --ro-tag-yellow-fg: #8f6400;
+  --ro-tag-red-bg: #fdeae8;
+  --ro-tag-red-fg: #bd3a2e;
+  --ro-tag-purple-bg: #f0eafe;
+  --ro-tag-purple-fg: #6a3fd1;
+  --ro-tag-gray-bg: #f0f2f4;
+  --ro-tag-gray-fg: #4c555e;
+}
+
+/* Everything on screen is Redeem Ops while .ro-app is mounted — portals too. */
+:root:has(.ro-app) body {
+  font-family: 'Figtree', -apple-system, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Fresha rounds every action into a pill; checkboxes become circles. */
+:root:has(.ro-app) button {
+  border-radius: 9999px;
+}
+:root:has(.ro-app) [role='tablist'] {
+  border-radius: 9999px;
+}
+
+.ro-app {
+  min-height: 100vh;
+  display: flex;
+  background: #fff;
+  color: var(--ro-bunker);
+  font-family: 'Figtree', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Dark icon rail ──────────────────────────────────────────────────── */
+.ro-rail {
+  width: 78px;
+  flex: none;
+  background: var(--ro-bunker);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+  gap: 4px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  z-index: 30;
+}
+.ro-rail-logo {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ro-bunker);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 16px;
+  margin-bottom: 14px;
+}
+.ro-rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  align-items: center;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.ro-rail-item {
+  width: 62px;
+  padding: 9px 0 7px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.62);
+  text-decoration: none;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.ro-rail-item svg {
+  width: 19px;
+  height: 19px;
+}
+.ro-rail-item span {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.ro-rail-item:hover {
+  color: rgba(255, 255, 255, 0.92);
+}
+.ro-rail-item.active {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+.ro-rail-me {
+  margin-top: auto;
+}
+
+/* ── Content column ──────────────────────────────────────────────────── */
+.ro-main {
+  flex: 1;
+  min-width: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+/* ── Page header ─────────────────────────────────────────────────────── */
+.ro-title {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0;
+}
+.ro-sub {
+  font-size: 14px;
+  color: var(--ro-text-2);
+  margin: 4px 0 0;
+}
+
+/* ── Status tags — six pastel families ───────────────────────────────── */
+.ro-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.ro-tag--blue { color: var(--ro-tag-blue-fg); background: var(--ro-tag-blue-bg); }
+.ro-tag--green { color: var(--ro-tag-green-fg); background: var(--ro-tag-green-bg); }
+.ro-tag--yellow { color: var(--ro-tag-yellow-fg); background: var(--ro-tag-yellow-bg); }
+.ro-tag--red { color: var(--ro-tag-red-fg); background: var(--ro-tag-red-bg); }
+.ro-tag--purple { color: var(--ro-tag-purple-fg); background: var(--ro-tag-purple-bg); }
+.ro-tag--gray { color: var(--ro-tag-gray-fg); background: var(--ro-tag-gray-bg); }
+.ro-tag--outline { color: var(--ro-text-2); background: #fff; border-color: var(--ro-border); }
+.ro-tag--faded { opacity: 0.62; }
+.ro-tag--sm { height: 22px; padding: 0 9px; font-size: 11.5px; }
+
+/* ── Avatars — deterministic pastel initials ─────────────────────────── */
+.ro-avatar {
+  border-radius: 9999px;
+  display: inline-grid;
+  place-items: center;
+  font-weight: 700;
+  flex: none;
+  user-select: none;
+}
+
+/* ── Stat tiles ──────────────────────────────────────────────────────── */
+.ro-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.ro-tile {
+  background: #fff;
+  border: 1px solid var(--ro-border);
+  border-radius: 16px;
+  padding: 16px 18px;
+}
+.ro-tile b {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  display: block;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.ro-tile span {
+  font-size: 12.5px;
+  color: var(--ro-text-2);
+  font-weight: 500;
+}
+.ro-tile--hot b { color: var(--ro-tag-red-fg); }
+
+/* ── Search input (pill with magnifier) ──────────────────────────────── */
+.ro-search {
+  height: 40px;
+  border: 1px solid var(--ro-border-strong);
+  border-radius: 9999px;
+  background: #fff;
+  padding: 0 16px 0 38px;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--ro-bunker);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%235C6670' stroke-width='2.2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.3-4.3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 14px center;
+}
+.ro-search::placeholder { color: var(--ro-text-3); }
+.ro-search:focus {
+  outline: 2px solid var(--ro-azure);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+/* ── Timeline icon circles (replaces border-left stripes) ────────────── */
+.ro-icon-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+/* ── Progress bar (onboarding) ───────────────────────────────────────── */
+.ro-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--ro-tag-gray-bg);
+  overflow: hidden;
+}
+.ro-progress i {
+  display: block;
+  height: 100%;
+  background: var(--ro-azure);
+  border-radius: 9999px;
+  transition: width 300ms ease;
+}
+
+/* ── Docket group labels ─────────────────────────────────────────────── */
+.ro-group-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 12px 20px 6px;
+}
+
+/* Azure text links (Fresha: azure points, black pills act) */
+.ro-link {
+  color: var(--ro-azure);
+  font-weight: 600;
+  text-decoration: none;
+}
+.ro-link:hover { text-decoration: underline; }

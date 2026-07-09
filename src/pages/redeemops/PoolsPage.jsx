@@ -12,8 +12,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import Plus from 'lucide-react/icons/plus';
+import { RoPageHeader, RoTag } from '@/components/redeemops/ui';
 
 export default function PoolsPage() {
   const user = useAuthStore((s) => s.user);
@@ -55,20 +55,16 @@ export default function PoolsPage() {
   const pools = poolsQuery.data || [];
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Prospecting pools</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Curated prospect lists — hit “Claim next” to pull your next business, no cherry-picking, no collisions.
-          </p>
-        </div>
-        {canManage && (
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" aria-hidden="true" /> New pool
+    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-5">
+      <RoPageHeader
+        title="Prospecting pools"
+        sub="Curated prospect lists — hit “Claim next” to pull your next business, no cherry-picking, no collisions."
+        actions={canManage && (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> New pool
           </Button>
         )}
-      </div>
+      />
 
       <div className="grid gap-4 sm:grid-cols-2">
         {pools.map((pool) => {
@@ -84,8 +80,8 @@ export default function PoolsPage() {
               </CardHeader>
               <CardContent className="flex items-center justify-between">
                 <div className="flex gap-2">
-                  <Badge variant="secondary">{available} available</Badge>
-                  <Badge variant="outline">{claimed} claimed</Badge>
+                  <RoTag tone={available > 0 ? 'active' : 'ended'}>{available} available</RoTag>
+                  <RoTag tone="inactive">{claimed} claimed</RoTag>
                 </div>
                 <Button
                   size="sm"

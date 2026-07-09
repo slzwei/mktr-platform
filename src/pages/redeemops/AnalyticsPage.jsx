@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
+import { RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
 
 function Section({ title, description, children }) {
   return (
@@ -47,13 +47,11 @@ export default function AnalyticsPage() {
   });
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Acquisition numbers come from MKTR's own metrics — nothing is re-counted here.
-        </p>
-      </div>
+    <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-5">
+      <RoPageHeader
+        title="Analytics"
+        sub="Acquisition numbers come from MKTR's own metrics — nothing is re-counted here."
+      />
 
       <Section title={teamWide ? 'Outreach — by team member' : 'Outreach — your performance'}>
         <Table>
@@ -170,7 +168,7 @@ export default function AnalyticsPage() {
                       {f.rewardTitle} <span className="text-muted-foreground">· {f.partnerName}</span>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{f.campaignName || 'Not linked'}</TableCell>
-                    <TableCell><Badge variant={f.status === 'active' ? 'default' : 'secondary'}>{f.status}</Badge></TableCell>
+                    <TableCell><RoTag tone={f.status} size="sm">{prettyEnum(f.status)}</RoTag></TableCell>
                     <TableCell className="text-right">
                       {f.acquisition?.totalLeads ?? f.acquisition?.leads ?? '—'}
                     </TableCell>

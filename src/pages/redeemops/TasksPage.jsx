@@ -5,13 +5,12 @@ import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
 import { useAuthStore } from '@/stores/authStore';
 import { hasCapability } from '@/lib/redeemOpsPermissions';
-import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { RoPageHeader, RoTag } from '@/components/redeemops/ui';
 
 const VIEWS = [
   { key: 'today', label: 'Due today', params: { due: 'today' } },
@@ -20,8 +19,6 @@ const VIEWS = [
   { key: 'mine', label: 'All mine', params: {} },
   { key: 'team', label: 'Team', params: { scope: 'team' }, managerOnly: true },
 ];
-
-const PRIORITY_BADGE = { high: 'destructive', medium: 'secondary', low: 'outline' };
 
 export default function TasksPage() {
   const user = useAuthStore((s) => s.user);
@@ -49,13 +46,11 @@ export default function TasksPage() {
   const tasks = tasksQuery.data?.tasks || [];
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Follow-ups are tasks, not notes — create them from a partner's page.
-        </p>
-      </div>
+    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-5">
+      <RoPageHeader
+        title="Tasks"
+        sub="Follow-ups are tasks, not notes — create them from a partner's page."
+      />
 
       <Tabs value={view} onValueChange={setView}>
         <TabsList>
@@ -65,8 +60,8 @@ export default function TasksPage() {
         </TabsList>
       </Tabs>
 
-      <Card>
-        <CardContent className="pt-4">
+      <div className="rounded-2xl border border-border bg-white overflow-hidden">
+        <div className="px-2 py-1">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -84,7 +79,7 @@ export default function TasksPage() {
                   <TableRow key={t.id}>
                     <TableCell className="font-medium">{t.title}</TableCell>
                     <TableCell>
-                      <Link to={`/redeem-ops/partners/${t.partner?.id}`} className="underline text-sm">
+                      <Link to={`/redeem-ops/partners/${t.partner?.id}`} className="ro-link text-sm">
                         {t.partner?.tradingName || t.partner?.brandName || t.partner?.legalName || '—'}
                       </Link>
                     </TableCell>
@@ -93,7 +88,7 @@ export default function TasksPage() {
                       {t.hasTime ? ` ${new Date(t.dueAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={PRIORITY_BADGE[t.priority] || 'secondary'}>{t.priority}</Badge>
+                      <RoTag tone={t.priority} size="sm">{t.priority}</RoTag>
                     </TableCell>
                     {view === 'team' && (
                       <TableCell className="text-muted-foreground text-sm">{t.assignee?.fullName || '—'}</TableCell>
@@ -130,8 +125,8 @@ export default function TasksPage() {
               </TableBody>
             </Table>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

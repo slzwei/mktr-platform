@@ -17,8 +17,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import UserPlus from 'lucide-react/icons/user-plus';
+import { RoTag, RoAvatar } from '@/components/redeemops/ui';
 
 const TEAM_KEY = ['redeem-ops', 'team'];
 
@@ -63,19 +63,19 @@ export default function RedeemOpsTeam() {
   const team = teamQuery.data || [];
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div className="flex items-start justify-between gap-4">
+    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Team &amp; access</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <h1 className="ro-title">Team &amp; access</h1>
+          <p className="ro-sub">
             Redeem Ops staff and their sub-roles. Admins are implicit super admins.
           </p>
         </div>
         {canManage && (
           <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
             <DialogTrigger asChild>
-              <Button size="sm">
-                <UserPlus className="w-4 h-4 mr-2" aria-hidden="true" />
+              <Button>
+                <UserPlus className="w-4 h-4 mr-1.5" aria-hidden="true" />
                 Invite staff
               </Button>
             </DialogTrigger>
@@ -161,7 +161,10 @@ export default function RedeemOpsTeam() {
                 {team.map((member) => (
                   <TableRow key={member.id}>
                     <TableCell className="font-medium">
-                      {member.fullName || [member.firstName, member.lastName].filter(Boolean).join(' ') || '—'}
+                      <span className="flex items-center gap-2.5">
+                        <RoAvatar name={member.fullName || member.email} size={30} />
+                        {member.fullName || [member.firstName, member.lastName].filter(Boolean).join(' ') || '—'}
+                      </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{member.email}</TableCell>
                     <TableCell>
@@ -182,15 +185,15 @@ export default function RedeemOpsTeam() {
                           </SelectContent>
                         </Select>
                       ) : (
-                        <Badge variant="secondary">
+                        <RoTag tone="primary" size="sm">
                           {subRoleLabels[member.redeemOpsRole] || member.redeemOpsRole || '—'}
-                        </Badge>
+                        </RoTag>
                       )}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={member.isActive ? 'default' : 'outline'}>
+                      <RoTag tone={member.isActive ? 'active' : 'inactive'} size="sm">
                         {member.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
+                      </RoTag>
                     </TableCell>
                   </TableRow>
                 ))}
