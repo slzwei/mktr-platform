@@ -19,6 +19,9 @@ const router = express.Router();
 // Entitlements
 router.get('/entitlements', requireRedeemOps('entitlements.view'), ctrl.listEntitlements);
 router.post('/entitlements', requireRedeemOps('entitlements.issue_manual'), ctrl.issueManual);
+// Manual unlock (testing / counter fallback). The capability gates the route;
+// the service additionally enforces assigned-consultant binding for non-admins.
+router.post('/entitlements/unlock', requireRedeemOps('entitlements.issue_manual'), ctrl.unlockEntitlement);
 router.patch('/entitlements/:id/cancel', requireRedeemOps('entitlements.issue_manual'), ctrl.cancelEntitlement);
 
 // Redemption console (voucher verify → complete; unmasked holder identity here only)

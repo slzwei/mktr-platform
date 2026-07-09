@@ -14,6 +14,35 @@ export const listEntitlements = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+export const unlockEntitlement = asyncHandler(async (req, res) => {
+  const body = validateBody(
+    Joi.object({
+      prospectId: Joi.string().uuid(),
+      presentationToken: Joi.string().max(256),
+    }).or('prospectId', 'presentationToken'),
+    req.body
+  );
+  // Service enforces the consultant binding: non-admin callers must be the
+  // lead's assigned consultant; role=admin overrides (audited as via=manual).
+  const result = await entitlementService.unlockEntitlement(body, req.user, 'manual');
+  const e = result.entitlement;
+  res.json({
+    success: true,
+    data: {
+      already: result.already,
+      // The raw voucher token is NOT returned here — it travels to the
+      // consumer via the unlock email; staff see only the hint.
+      entitlement: {
+        id: e.id,
+        status: e.status,
+        tokenHint: e.tokenHint,
+        expiresAt: e.expiresAt,
+        unlockedVia: e.unlockedVia,
+      },
+    },
+  });
+});
+
 export const issueManual = asyncHandler(async (req, res) => {
   const body = validateBody(
     Joi.object({

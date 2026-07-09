@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
+import { useAuthStore } from '@/stores/authStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -13,12 +14,27 @@ import { RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
 
 export default function RedemptionsPage() {
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === 'admin';
   const [token, setToken] = useState('');
   const [verified, setVerified] = useState(null);
 
   const historyQuery = useQuery({
     queryKey: ['redeem-ops', 'redemptions'],
     queryFn: () => redeemOpsApi.listRedemptions(),
+  });
+  const entitlementsQuery = useQuery({
+    queryKey: ['redeem-ops', 'entitlements'],
+    queryFn: () => redeemOpsApi.listEntitlements({ limit: 15 }),
+  });
+
+  const unlockMutation = useMutation({
+    mutationFn: (prospectId) => redeemOpsApi.unlockEntitlement({ prospectId }),
+    onSuccess: (data) => {
+      toast.success(data?.already ? 'Already unlocked' : 'Voucher unlocked — email with QR sent to the customer');
+      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'entitlements'] });
+    },
+    onError: (err) => toast.error('Unlock failed', { description: err.message }),
   });
 
   const verifyMutation = useMutation({
@@ -102,6 +118,53 @@ export default function RedemptionsPage() {
               )}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Reservations &amp; vouchers</CardTitle>
+          <CardDescription>
+            Every captured lead's reward, from locked reservation to redeemed voucher.
+            {isAdmin ? ' As admin you can unlock a reservation manually (audited) — normally the assigned consultant does this at the meeting.' : ''}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-0">
+            {(entitlementsQuery.data?.entitlements || []).map((e) => (
+              <div key={e.id} className="flex items-center gap-3 py-2.5 border-t border-border first:border-t-0">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold m-0 truncate">
+                    {[e.prospect?.firstName, e.prospect?.lastName].filter(Boolean).join(' ') || 'Customer'}
+                    <span className="font-normal" style={{ color: 'var(--ro-text-3)' }}>
+                      {e.prospect?.phone ? ` · ${e.prospect.phone}` : ''}
+                    </span>
+                  </p>
+                  <p className="text-xs m-0 truncate" style={{ color: 'var(--ro-text-2)' }}>
+                    {e.rewardOffer?.title || '—'}
+                    {e.activation?.campaignNameSnapshot ? ` · ${e.activation.campaignNameSnapshot}` : ''}
+                    {e.tokenHint ? ` · code …${e.tokenHint}` : ''}
+                  </p>
+                </div>
+                <RoTag tone={e.status} size="sm">{prettyEnum(e.status)}</RoTag>
+                {isAdmin && e.status === 'eligible' && e.prospect?.id && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={unlockMutation.isPending}
+                    onClick={() => unlockMutation.mutate(e.prospect.id)}
+                  >
+                    Unlock
+                  </Button>
+                )}
+              </div>
+            ))}
+            {!entitlementsQuery.isLoading && (entitlementsQuery.data?.entitlements || []).length === 0 && (
+              <p className="text-sm text-center py-6 m-0" style={{ color: 'var(--ro-text-2)' }}>
+                No reservations yet — they appear when customers sign up on an active activation's campaign.
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
 

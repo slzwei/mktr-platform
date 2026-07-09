@@ -4,6 +4,7 @@ import { User } from '../models/index.js';
 import { generateToken } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { isAllowedPublicHost } from '../utils/publicHost.js';
 
 // Simple in-memory login attempt tracker (resets on server restart)
 const loginAttempts = new Map();
@@ -223,15 +224,31 @@ export async function googleIdTokenLogin({ email, googleSub, name, picture }) {
  * @returns {{ user: object, token: string }}
  */
 export async function googleOAuthCallback(code, origin) {
-  // Determine redirect_uri that matches the initial Google auth request
+  // Determine redirect_uri that matches the initial Google auth request.
+  // The SPA always initiates with `window.location.origin + /auth/google/callback`
+  // (Login.jsx), and Google requires the token exchange to repeat the exact
+  // same redirect_uri — so when the request comes from one of our allowlisted
+  // public hosts (mktr.sg / ops.redeem.sg / …) the origin-derived URI is the
+  // only correct one. Env pin / FRONTEND_BASE_URL remain the fallback for
+  // everything else (unknown origins, server-side callers).
   const explicitRedirectUri = process.env.GOOGLE_REDIRECT_URI;
   const isLocalhost = origin && (origin.includes('localhost') || origin.includes('127.0.0.1'));
+
+  let originHost;
+  try {
+    originHost = origin ? new URL(origin).host : undefined;
+  } catch {
+    originHost = undefined;
+  }
+  const isAllowlistedOrigin = isAllowedPublicHost(originHost);
 
   const derivedFrontendBaseUrl = isLocalhost
     ? origin
     : process.env.FRONTEND_BASE_URL || origin || 'http://localhost:5173';
 
-  const finalRedirectUri = explicitRedirectUri || `${derivedFrontendBaseUrl}/auth/google/callback`;
+  const finalRedirectUri = isAllowlistedOrigin
+    ? `${origin}/auth/google/callback`
+    : explicitRedirectUri || `${derivedFrontendBaseUrl}/auth/google/callback`;
 
   logger.debug('OAuth token exchange redirect_uri', { redirectUri: finalRedirectUri });
 

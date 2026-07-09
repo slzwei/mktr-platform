@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -13,7 +13,106 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Plus from 'lucide-react/icons/plus';
-import { RoPageHeader, RoTag } from '@/components/redeemops/ui';
+import { RoPageHeader, RoTag, RoAvatar, RoStageTag } from '@/components/redeemops/ui';
+
+function useDebounced(value, ms = 300) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
+}
+
+/** Search-and-tick dialog for stocking a pool with businesses. */
+function AddMembersDialog({ pool, onClose }) {
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState({});
+  const debounced = useDebounced(search);
+
+  const results = useQuery({
+    queryKey: ['redeem-ops', 'pool-add-search', debounced],
+    queryFn: () => redeemOpsApi.listPartners({ limit: 10, ...(debounced ? { search: debounced } : {}) }),
+    enabled: !!pool,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: () => redeemOpsApi.addPoolMembers(pool.id, Object.keys(selected)),
+    onSuccess: (data) => {
+      const added = data?.added ?? Object.keys(selected).length;
+      toast.success(`Added ${added} business${added === 1 ? '' : 'es'} to ${pool.name}`);
+      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'pools'] });
+      onClose();
+    },
+    onError: (err) => toast.error('Could not add businesses', { description: err.message }),
+  });
+
+  const partners = results.data?.partners || [];
+  const count = Object.keys(selected).length;
+
+  return (
+    <Dialog open={!!pool} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add businesses to “{pool?.name}”</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-1">
+          <input
+            className="ro-search w-full"
+            placeholder="Search name, phone or UEN"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <div className="max-h-64 overflow-y-auto rounded-xl border border-border">
+            {partners.map((p) => {
+              const name = p.tradingName || p.brandName || p.legalName;
+              const checked = !!selected[p.id];
+              return (
+                <label
+                  key={p.id}
+                  className="flex items-center gap-3 px-3.5 py-2.5 border-t border-border first:border-t-0 cursor-pointer hover:bg-[var(--ro-subtle)]"
+                >
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 accent-[var(--ro-bunker)]"
+                    checked={checked}
+                    onChange={() => setSelected((s) => {
+                      const next = { ...s };
+                      if (next[p.id]) delete next[p.id]; else next[p.id] = true;
+                      return next;
+                    })}
+                  />
+                  <RoAvatar name={name} size={30} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold truncate">{name}</span>
+                    <span className="block text-xs truncate" style={{ color: 'var(--ro-text-2)' }}>
+                      {[p.category, p.owner?.fullName && `owned by ${p.owner.fullName}`].filter(Boolean).join(' · ') || '—'}
+                    </span>
+                  </span>
+                  <RoStageTag stage={p.pipelineStage} size="sm" />
+                </label>
+              );
+            })}
+            {!results.isLoading && partners.length === 0 && (
+              <p className="text-sm text-center py-6 m-0" style={{ color: 'var(--ro-text-2)' }}>
+                No businesses match.
+              </p>
+            )}
+          </div>
+          <p className="text-xs m-0" style={{ color: 'var(--ro-text-3)' }}>
+            Unclaimed businesses become claimable via “Claim next”; owned ones are skipped by the queue until released.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button disabled={count === 0 || addMutation.isPending} onClick={() => addMutation.mutate()}>
+            {addMutation.isPending ? 'Adding…' : `Add ${count || ''} selected`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function PoolsPage() {
   const user = useAuthStore((s) => s.user);
@@ -25,6 +124,7 @@ export default function PoolsPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', category: '', area: '' });
+  const [addTarget, setAddTarget] = useState(null);
 
   const createMutation = useMutation({
     mutationFn: () => redeemOpsApi.createPool(form),
@@ -78,18 +178,25 @@ export default function PoolsPage() {
                   {[pool.category, pool.area].filter(Boolean).join(' · ') || pool.description || '—'}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="flex items-center justify-between">
+              <CardContent className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex gap-2">
                   <RoTag tone={available > 0 ? 'active' : 'ended'}>{available} available</RoTag>
                   <RoTag tone="inactive">{claimed} claimed</RoTag>
                 </div>
-                <Button
-                  size="sm"
-                  disabled={claimMutation.isPending || available === 0}
-                  onClick={() => claimMutation.mutate(pool.id)}
-                >
-                  {claimMutation.isPending ? 'Claiming…' : 'Claim next'}
-                </Button>
+                <div className="flex gap-2">
+                  {canManage && (
+                    <Button size="sm" variant="outline" onClick={() => setAddTarget(pool)}>
+                      Add businesses
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    disabled={claimMutation.isPending || available === 0}
+                    onClick={() => claimMutation.mutate(pool.id)}
+                  >
+                    {claimMutation.isPending ? 'Claiming…' : 'Claim next'}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           );
@@ -102,6 +209,8 @@ export default function PoolsPage() {
           </Card>
         )}
       </div>
+
+      {addTarget && <AddMembersDialog pool={addTarget} onClose={() => setAddTarget(null)} />}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
