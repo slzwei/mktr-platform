@@ -53,6 +53,10 @@ export async function sendRoleInvitation({ email, fullName, role, inviterEmail, 
     role,
     isActive: true,
     emailVerified: false,
+    // An admin-issued invite IS the approval — invited accounts must not queue
+    // behind the self-signup review gate (User.approvalStatus defaults to
+    // 'pending', which sent invited staff to /PendingApproval after accepting).
+    approvalStatus: 'approved',
     invitationToken,
     invitationExpires,
     ...extraFields
