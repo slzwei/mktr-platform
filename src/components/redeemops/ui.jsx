@@ -6,6 +6,25 @@
  */
 import { cn } from '@/lib/utils';
 
+/* Display labels for Redeem Ops sub-roles — mirrors backend
+   services/redeemOps/constants.js SUB_ROLE_LABELS (display-only). */
+const RO_ROLE_LABELS = {
+  super_admin: 'Super Admin',
+  ops_admin: 'Ops Admin',
+  bdm: 'Business Development Manager',
+  outreach_exec: 'Outreach Executive',
+  campaign_ops: 'Campaign Ops',
+  redemption_ops: 'Redemption Ops',
+  analyst: 'Analyst',
+};
+
+/** Human title for the signed-in principal shown in the account menu. */
+export function roRoleLabel(user) {
+  if (!user) return '';
+  if (user.role === 'admin') return 'Administrator';
+  return RO_ROLE_LABELS[user.redeemOpsRole] || 'Redeem Ops';
+}
+
 /** Sentence-case a SCREAMING_SNAKE enum: MEETING_BOOKED → "Meeting booked". */
 export function prettyEnum(value) {
   if (!value) return '';
