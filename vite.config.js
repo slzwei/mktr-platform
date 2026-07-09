@@ -34,6 +34,19 @@ for (const [k, v] of Object.entries(BRAND_HTML_DEFAULTS)) {
 // Public routes only — internal/admin paths are excluded from sitemap and
 // disallowed in robots so search engines do not index login/admin surfaces.
 function brandSeoFiles() {
+  // ops.redeem.sg is an internal staff tool — nothing on it should ever be
+  // indexed, so its robots.txt is a blanket disallow and it gets no sitemap.
+  if (process.env.VITE_SURFACE === 'ops') {
+    const robots = ['User-agent: *', 'Disallow: /', ''].join('\n')
+    return {
+      name: 'mktr-brand-seo-files',
+      apply: 'build',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: 'robots.txt', source: robots })
+      },
+    }
+  }
+
   const host = BRAND === 'redeem' ? 'redeem.sg' : 'mktr.sg'
   const base = `https://${host}`
   // Routes that should be indexed on each brand.

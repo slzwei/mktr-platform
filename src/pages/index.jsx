@@ -3,7 +3,7 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import RedeemOpsRoute from '@/components/auth/RedeemOpsRoute';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import RedeemOpsLayout from '@/components/redeemops/RedeemOpsLayout';
-import { BrowserRouter as Router, Route, Routes, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
 import { brand } from '@/lib/brand';
 import {
@@ -93,6 +93,68 @@ const RedeemOpsActivationDetail = lazy(() => import('./redeemops/ActivationDetai
 const RedeemOpsRedemptions = lazy(() => import('./redeemops/RedemptionsPage'));
 const RedeemOpsAnalytics = lazy(() => import('./redeemops/AnalyticsPage'));
 
+// ops.redeem.sg — dedicated staff surface (docs/redeem-ops/
+// USER_SURFACES_AND_DEPLOYMENT_BOUNDARIES.md). Mirrors the VITE_BRAND pattern:
+// the ops build registers ONLY auth + redeem-ops routes; everything else
+// redirects into /redeem-ops. The backend independently enforces the same
+// boundary (internalRouteHostGuard's strict ops allowlist).
+const IS_OPS_SURFACE = import.meta.env.VITE_SURFACE === 'ops';
+
+/**
+ * The 14 redeem-ops routes, shared verbatim between the mktr.sg dogfood
+ * surface and the ops.redeem.sg build so the two can never drift.
+ */
+function redeemOpsRouteElements() {
+  if (!REDEEM_OPS_ENABLED) return [];
+  const routes = [
+    { path: '/redeem-ops', capability: null, Page: RedeemOpsHome },
+    { path: '/redeem-ops/team', capability: 'analytics.view_team', Page: RedeemOpsTeam },
+    { path: '/redeem-ops/partners', capability: 'partners.view', Page: RedeemOpsPartnersList },
+    { path: '/redeem-ops/partners/:id', capability: 'partners.view', Page: RedeemOpsPartnerDetail },
+    { path: '/redeem-ops/queue', capability: null, Page: RedeemOpsMyQueue },
+    { path: '/redeem-ops/tasks', capability: 'tasks.manage', Page: RedeemOpsTasks },
+    { path: '/redeem-ops/pools', capability: 'pools.claim_next', Page: RedeemOpsPools },
+    { path: '/redeem-ops/pipeline', capability: 'pipeline.view_team', Page: RedeemOpsTeamPipeline },
+    { path: '/redeem-ops/rewards', capability: 'rewards.view', Page: RedeemOpsRewards },
+    { path: '/redeem-ops/rewards/:id', capability: 'rewards.view', Page: RedeemOpsRewardDetail },
+    { path: '/redeem-ops/activations', capability: 'activations.view', Page: RedeemOpsActivations },
+    { path: '/redeem-ops/activations/:id', capability: 'activations.view', Page: RedeemOpsActivationDetail },
+    { path: '/redeem-ops/redemptions', capability: 'redemptions.verify', Page: RedeemOpsRedemptions },
+    { path: '/redeem-ops/analytics', capability: 'analytics.view_own', Page: RedeemOpsAnalytics },
+  ];
+  return routes.map(({ path, capability, Page }) => (
+    <Route
+      key={path}
+      path={path}
+      element={
+        <RedeemOpsRoute capability={capability || undefined}>
+          <RedeemOpsLayout>
+            <Page />
+          </RedeemOpsLayout>
+        </RedeemOpsRoute>
+      }
+    />
+  ));
+}
+
+/** ops.redeem.sg route table: auth + redeem-ops, nothing else. */
+function OpsSurfaceRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to="/redeem-ops" replace />} />
+      <Route path="/CustomerLogin" element={<CustomerLogin />} />
+      <Route path="/ForgotPassword" element={<ForgotPassword />} />
+      <Route path="/auth/google/callback" element={<GoogleCallback />} />
+      <Route path="/auth/accept-invite" element={<AcceptInvite />} />
+      <Route path="/PendingApproval" element={<PendingApproval />} />
+      {redeemOpsRouteElements()}
+      {/* Anything else (old links, admin paths) lands on the queue; the
+          route guard bounces logged-out visitors to /CustomerLogin. */}
+      <Route path="*" element={<Navigate to="/redeem-ops" replace />} />
+    </Routes>
+  );
+}
+
 function PagesContent() {
  const navigate = useNavigate();
 
@@ -116,6 +178,7 @@ function PagesContent() {
  </div>
  }
  >
+ {IS_OPS_SURFACE ? <OpsSurfaceRoutes /> : (
  <Routes>
  {/* Public routes - no protection needed. Lead capture flow stays on both brands. */}
  <Route path="/" element={brand.showHomepage ? <Homepage /> : (IS_REDEEM_BUILD ? <RedeemPlaceholder /> : <LeadCapture />)} />
@@ -451,161 +514,8 @@ function PagesContent() {
  }
  />
 
- {/* Redeem Ops — flag-gated internal staff surface */}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops" element={
- <RedeemOpsRoute>
- <RedeemOpsLayout>
- <RedeemOpsHome />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/team" element={
- <RedeemOpsRoute capability="analytics.view_team">
- <RedeemOpsLayout>
- <RedeemOpsTeam />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/partners" element={
- <RedeemOpsRoute capability="partners.view">
- <RedeemOpsLayout>
- <RedeemOpsPartnersList />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/partners/:id" element={
- <RedeemOpsRoute capability="partners.view">
- <RedeemOpsLayout>
- <RedeemOpsPartnerDetail />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/queue" element={
- <RedeemOpsRoute>
- <RedeemOpsLayout>
- <RedeemOpsMyQueue />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/tasks" element={
- <RedeemOpsRoute capability="tasks.manage">
- <RedeemOpsLayout>
- <RedeemOpsTasks />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/pools" element={
- <RedeemOpsRoute capability="pools.claim_next">
- <RedeemOpsLayout>
- <RedeemOpsPools />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/pipeline" element={
- <RedeemOpsRoute capability="pipeline.view_team">
- <RedeemOpsLayout>
- <RedeemOpsTeamPipeline />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/rewards" element={
- <RedeemOpsRoute capability="rewards.view">
- <RedeemOpsLayout>
- <RedeemOpsRewards />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/rewards/:id" element={
- <RedeemOpsRoute capability="rewards.view">
- <RedeemOpsLayout>
- <RedeemOpsRewardDetail />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/activations" element={
- <RedeemOpsRoute capability="activations.view">
- <RedeemOpsLayout>
- <RedeemOpsActivations />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/activations/:id" element={
- <RedeemOpsRoute capability="activations.view">
- <RedeemOpsLayout>
- <RedeemOpsActivationDetail />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/redemptions" element={
- <RedeemOpsRoute capability="redemptions.verify">
- <RedeemOpsLayout>
- <RedeemOpsRedemptions />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
- {REDEEM_OPS_ENABLED && (
- <Route
- path="/redeem-ops/analytics" element={
- <RedeemOpsRoute capability="analytics.view_own">
- <RedeemOpsLayout>
- <RedeemOpsAnalytics />
- </RedeemOpsLayout>
- </RedeemOpsRoute>
- }
- />
- )}
+ {/* Redeem Ops — flag-gated internal staff surface (shared with ops.redeem.sg) */}
+ {redeemOpsRouteElements()}
 
  {/* Other protected routes */}
  <Route
@@ -643,6 +553,7 @@ function PagesContent() {
  }
  />
  </Routes>
+ )}
  </Suspense>
  </ErrorBoundary>
  );
