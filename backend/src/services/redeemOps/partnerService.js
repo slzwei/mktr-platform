@@ -1,7 +1,7 @@
 import { Op } from 'sequelize';
 import {
   PartnerOrganisation, PartnerLocation, PartnerContact, PartnerAssignmentEvent,
-  PartnerStageEvent, OutreachActivity, User, sequelize,
+  PartnerStageEvent, OutreachActivity, RewardOffer, Activation, User, sequelize,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
@@ -23,7 +23,7 @@ import { makeOnboardingService } from './onboardingService.js';
 export function makePartnerService(overrides = {}) {
   const d = {
     PartnerOrganisation, PartnerLocation, PartnerContact, PartnerAssignmentEvent,
-    PartnerStageEvent, OutreachActivity, User, sequelize, logger,
+    PartnerStageEvent, OutreachActivity, RewardOffer, Activation, User, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     dedupe: makeDedupeService(),
     // PARTNERED → seed the onboarding checklist (brief §22); injectable for tests.
@@ -505,11 +505,42 @@ export function makePartnerService(overrides = {}) {
     });
   }
 
+  /**
+   * Hard-delete a mistakenly created business (docs case: typo duplicate with
+   * no history). Guarded: PARTNERED rows and anything carrying reward offers
+   * or activations are refused (the DB backs this with ON DELETE RESTRICT) —
+   * merge or disqualify those instead. Children (contacts, locations, events,
+   * activities, tasks, pool memberships) cascade at the DB level. The audit
+   * row is written in the same transaction, before the destroy.
+   */
+  async function deletePartner(id, user, requestId = null) {
+    return d.sequelize.transaction(async (t) => {
+      const partner = await getLivePartner(id, { transaction: t, lock: t.LOCK.UPDATE });
+      if (partner.pipelineStage === 'PARTNERED') {
+        throw new AppError('Partnered businesses cannot be deleted — merge duplicates or disqualify instead', 409);
+      }
+      const [offers, activations] = await Promise.all([
+        d.RewardOffer.count({ where: { partnerOrganisationId: id }, transaction: t }),
+        d.Activation.count({ where: { partnerOrganisationId: id }, transaction: t }),
+      ]);
+      if (offers > 0 || activations > 0) {
+        throw new AppError('This business has rewards or activations attached — it cannot be deleted', 409);
+      }
+      const snapshot = partner.toJSON();
+      await d.audit.recordAuditEvent({
+        actorUser: user, action: 'partner.deleted', entityType: 'partner_organisation',
+        entityId: id, before: snapshot, after: null, requestId, transaction: t,
+      });
+      await partner.destroy({ transaction: t });
+      return snapshot;
+    });
+  }
+
   return {
     listPartners, getPartner, createPartner, updatePartner, changeStage,
     getTimeline, logActivity, editActivity, voidActivity,
     addContact, updateContact, archiveContact, addLocation, updateLocation,
-    mergePartners, canActOnRow,
+    mergePartners, deletePartner, canActOnRow,
   };
 }
 

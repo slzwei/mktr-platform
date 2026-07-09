@@ -31,6 +31,7 @@ export const CAPABILITIES = [
   'partners.reassign',
   'partners.restrict_disqualify',
   'partners.merge',
+  'partners.delete',
   'partners.import',
   'contacts.manage',
   'locations.manage',

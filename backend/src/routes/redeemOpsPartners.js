@@ -33,6 +33,9 @@ router.patch('/partners/:id/stage', requireRedeemOps('pipeline.move'), ctrl.chan
 
 // Merge (destructive-adjacent — ops_admin+)
 router.post('/partners/:id/merge', requireRedeemOps('partners.merge'), ctrl.mergePartners);
+// Mistake-eraser only: service refuses PARTNERED rows and anything with
+// rewards/activations (DB RESTRICT backs it). Real duplicates → merge.
+router.delete('/partners/:id', requireRedeemOps('partners.delete'), ctrl.deletePartner);
 
 // Timeline + activities
 router.get('/partners/:id/timeline', requireRedeemOps('partners.view'), ctrl.getTimeline);

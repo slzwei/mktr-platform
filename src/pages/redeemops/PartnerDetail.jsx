@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
@@ -148,6 +148,7 @@ const EMPTY_LOCATION = { name: '', addressLine: '', postalCode: '', phone: '' };
 
 export default function PartnerDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
 
@@ -229,6 +230,16 @@ export default function PartnerDetail() {
       queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'queue'] });
     },
     onError: (err) => toast.error('Could not create task', { description: err.message }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => redeemOpsApi.deletePartner(id),
+    onSuccess: () => {
+      toast.success('Business deleted');
+      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partners'] });
+      navigate('/redeem-ops/partners');
+    },
+    onError: (err) => toast.error('Could not delete', { description: err.message }),
   });
 
   const [contactForm, setContactForm] = useState(EMPTY_CONTACT);
@@ -452,6 +463,24 @@ export default function PartnerDetail() {
             <div className="rounded-2xl border border-border bg-white p-5">
               <p className="text-[15px] font-bold m-0 mb-2">Notes</p>
               <p className="text-[13.5px] leading-relaxed m-0 whitespace-pre-wrap" style={{ color: 'var(--ro-text-2)' }}>{partner.notes}</p>
+            </div>
+          )}
+
+          {hasCapability(user, 'partners.delete') && partner.pipelineStage !== 'PARTNERED' && (
+            <div className="pt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  if (window.confirm(`Permanently delete "${name}"? Only for businesses created by mistake — its contacts, tasks and activity go with it. Real duplicates should be merged instead.`)) {
+                    deleteMutation.mutate();
+                  }
+                }}
+              >
+                {deleteMutation.isPending ? 'Deleting…' : 'Delete business'}
+              </Button>
             </div>
           )}
         </div>
