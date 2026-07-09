@@ -224,6 +224,12 @@ export const redeemOpsApi = {
     const res = await apiClient.get('/redeem-ops/entitlements', params);
     return res.data;
   },
+  async unlockEntitlement(body) {
+    // { prospectId } or { presentationToken }. Manual unlock — admins only
+    // in practice (server enforces the assigned-consultant binding otherwise).
+    const res = await apiClient.post('/redeem-ops/entitlements/unlock', body);
+    return res.data;
+  },
   async verifyVoucher(token) {
     const res = await apiClient.post('/redeem-ops/redemptions/verify', { token });
     return res.data;

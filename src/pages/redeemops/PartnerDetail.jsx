@@ -212,6 +212,25 @@ export default function PartnerDetail() {
     onError: (err) => toast.error('Could not log activity', { description: err.message }),
   });
 
+  const [taskOpen, setTaskOpen] = useState(false);
+  const [task, setTask] = useState({ title: '', dueDate: '', priority: 'medium' });
+  const taskMutation = useMutation({
+    mutationFn: () => redeemOpsApi.createTask({
+      partnerOrganisationId: id,
+      title: task.title.trim(),
+      dueAt: new Date(`${task.dueDate}T09:00:00`).toISOString(),
+      priority: task.priority,
+    }),
+    onSuccess: () => {
+      toast.success('Task created');
+      setTaskOpen(false);
+      setTask({ title: '', dueDate: '', priority: 'medium' });
+      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'queue'] });
+    },
+    onError: (err) => toast.error('Could not create task', { description: err.message }),
+  });
+
   const [contactForm, setContactForm] = useState(EMPTY_CONTACT);
   const contactMutation = useMutation({
     mutationFn: () => redeemOpsApi.addContact(id, contactForm),
@@ -293,6 +312,9 @@ export default function PartnerDetail() {
           )}
           {isOwner && (
             <Button variant="outline" onClick={() => releaseMutation.mutate()}>Release</Button>
+          )}
+          {hasCapability(user, 'tasks.manage') && (
+            <Button variant="outline" onClick={() => setTaskOpen(true)}>Add task</Button>
           )}
           {(isOwner || canReassign) && (
             <Button variant="outline" onClick={() => setActivityOpen(true)}>Log activity</Button>
@@ -434,6 +456,53 @@ export default function PartnerDetail() {
           )}
         </div>
       </div>
+
+      <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add task</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label>What needs doing? *</Label>
+              <Input
+                value={task.title}
+                onChange={(e) => setTask((t) => ({ ...t, title: e.target.value }))}
+                placeholder="Follow up on proposal"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Due date *</Label>
+                <Input
+                  type="date"
+                  value={task.dueDate}
+                  onChange={(e) => setTask((t) => ({ ...t, dueDate: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Priority</Label>
+                <Select value={task.priority} onValueChange={(priority) => setTask((t) => ({ ...t, priority }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => taskMutation.mutate()}
+              disabled={!task.title.trim() || !task.dueDate || taskMutation.isPending}
+            >
+              {taskMutation.isPending ? 'Saving…' : 'Create task'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={activityOpen} onOpenChange={setActivityOpen}>
         <DialogContent>
