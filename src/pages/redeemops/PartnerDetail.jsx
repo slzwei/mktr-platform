@@ -36,6 +36,11 @@ function timelineIcon(entry) {
   if (entry.kind === 'stage') {
     return { Icon: ArrowRight, bg: 'var(--ro-tag-purple-bg)', fg: 'var(--ro-tag-purple-fg)' };
   }
+  if (entry.kind === 'audit') {
+    return entry.data.action === 'partner.created'
+      ? { Icon: Plus, bg: 'var(--ro-tag-green-bg)', fg: 'var(--ro-tag-green-fg)' }
+      : { Icon: Pencil, bg: 'var(--ro-tag-yellow-bg)', fg: 'var(--ro-tag-yellow-fg)' };
+  }
   if (entry.kind !== 'activity') {
     return { Icon: Plus, bg: 'var(--ro-tag-gray-bg)', fg: 'var(--ro-tag-gray-fg)' };
   }
@@ -49,6 +54,37 @@ function timelineIcon(entry) {
     return { Icon: Calendar, bg: 'var(--ro-tag-blue-bg)', fg: 'var(--ro-tag-blue-fg)' };
   }
   return { Icon: FileText, bg: 'var(--ro-tag-gray-bg)', fg: 'var(--ro-tag-gray-fg)' };
+}
+
+/* Human labels for field-history diffs; derived/internal keys are hidden. */
+const FIELD_LABELS = {
+  tradingName: 'Business name',
+  legalName: 'Legal name',
+  brandName: 'Brand name',
+  category: 'Category',
+  subcategory: 'Subcategory',
+  primaryPhone: 'Phone',
+  primaryEmail: 'Email',
+  instagramHandle: 'Instagram',
+  tiktokHandle: 'TikTok',
+  website: 'Website',
+  uen: 'UEN',
+  facebookUrl: 'Facebook',
+  linkedinUrl: 'LinkedIn',
+  source: 'Source',
+  notes: 'Notes',
+};
+
+function fieldDiffs(before = {}, after = {}) {
+  const diffs = [];
+  for (const [key, label] of Object.entries(FIELD_LABELS)) {
+    if (!(key in (after || {}))) continue;
+    const prev = before?.[key] ?? null;
+    const next = after?.[key] ?? null;
+    if (String(prev ?? '') === String(next ?? '')) continue;
+    diffs.push({ key, label, prev, next });
+  }
+  return diffs;
 }
 
 function TimelineEntry({ entry }) {
@@ -72,9 +108,42 @@ function TimelineEntry({ entry }) {
     const e = entry.data;
     title = `Stage moved: ${prettyEnum(e.fromStage || '—')} → ${prettyEnum(e.toStage)}`;
     meta = `${e.actor?.fullName || 'System'} · ${at}${e.reason ? ` · ${e.reason}` : ''}`;
+  } else if (entry.kind === 'audit') {
+    const e = entry.data;
+    if (e.action === 'partner.created') {
+      title = 'Business added';
+      body = e.after?.name ? (
+        <p className="text-[13.5px] m-0 mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
+          {e.after.name}{e.after.category ? ` · ${e.after.category}` : ''}
+        </p>
+      ) : null;
+    } else {
+      const diffs = fieldDiffs(e.before, e.after);
+      title = 'Details edited';
+      body = diffs.length > 0 ? (
+        <div className="mt-1 space-y-0.5">
+          {diffs.map((dff) => (
+            <p key={dff.key} className="text-[13px] m-0 leading-relaxed" style={{ color: 'var(--ro-text-2)' }}>
+              <span className="font-semibold">{dff.label}:</span>{' '}
+              <span className="line-through" style={{ color: 'var(--ro-text-3)' }}>{String(dff.prev ?? '') || '—'}</span>
+              {' → '}
+              <span>{String(dff.next ?? '') || '—'}</span>
+            </p>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[13px] m-0 mt-0.5" style={{ color: 'var(--ro-text-3)' }}>Internal fields updated</p>
+      );
+    }
+    meta = `${e.actor?.fullName || 'System'} · ${at}`;
   } else {
     const e = entry.data;
-    title = `Ownership: ${prettyEnum(e.kind)}${e.toUser ? ` → ${e.toUser.fullName}` : ''}`;
+    const K = String(e.kind || '');
+    if (K === 'claim') title = `Claimed by ${e.toUser?.fullName || e.actor?.fullName || 'someone'}`;
+    else if (K === 'release') title = `Released back to the pool${e.fromUser?.fullName ? ` by ${e.fromUser.fullName}` : ''}`;
+    else if (K === 'assign') title = `Assigned to ${e.toUser?.fullName || '—'}${e.fromUser?.fullName ? ` (from ${e.fromUser.fullName})` : ''}`;
+    else if (K === 'merge') title = 'Duplicate record merged in';
+    else title = `Ownership: ${prettyEnum(K)}${e.toUser ? ` → ${e.toUser.fullName}` : ''}`;
     meta = `${e.actor?.fullName || 'System'} · ${at}${e.reason ? ` · ${e.reason}` : ''}`;
   }
 

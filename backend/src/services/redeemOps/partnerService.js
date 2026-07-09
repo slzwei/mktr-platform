@@ -1,7 +1,8 @@
 import { Op } from 'sequelize';
 import {
   PartnerOrganisation, PartnerLocation, PartnerContact, PartnerAssignmentEvent,
-  PartnerStageEvent, OutreachActivity, RewardOffer, Activation, User, sequelize,
+  PartnerStageEvent, OutreachActivity, RewardOffer, Activation, RedeemOpsAuditEvent,
+  User, sequelize,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
@@ -23,7 +24,8 @@ import { makeOnboardingService } from './onboardingService.js';
 export function makePartnerService(overrides = {}) {
   const d = {
     PartnerOrganisation, PartnerLocation, PartnerContact, PartnerAssignmentEvent,
-    PartnerStageEvent, OutreachActivity, RewardOffer, Activation, User, sequelize, logger,
+    PartnerStageEvent, OutreachActivity, RewardOffer, Activation, RedeemOpsAuditEvent,
+    User, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     dedupe: makeDedupeService(),
     // PARTNERED → seed the onboarding checklist (brief §22); injectable for tests.
@@ -247,7 +249,7 @@ export function makePartnerService(overrides = {}) {
   async function getTimeline(id, query = {}) {
     await getLivePartner(id, { attributes: ['id', 'mergedIntoId'] });
     const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 50));
-    const [activities, stageEvents, assignmentEvents] = await Promise.all([
+    const [activities, stageEvents, assignmentEvents, auditEvents] = await Promise.all([
       d.OutreachActivity.findAll({
         where: { partnerOrganisationId: id, voidedAt: null },
         include: [
@@ -273,12 +275,25 @@ export function makePartnerService(overrides = {}) {
         order: [['createdAt', 'DESC']],
         limit,
       }),
+      // Field-history entries (Salesforce-style): creation + detail edits with
+      // before/after diffs come straight off the immutable audit trail.
+      d.RedeemOpsAuditEvent.findAll({
+        where: {
+          entityType: 'partner_organisation',
+          entityId: String(id),
+          action: { [Op.in]: ['partner.created', 'partner.edited'] },
+        },
+        include: [{ model: d.User, as: 'actor', attributes: ['id', 'fullName'] }],
+        order: [['createdAt', 'DESC']],
+        limit,
+      }),
     ]);
 
     const entries = [
       ...activities.map((a) => ({ kind: 'activity', at: a.occurredAt, data: a })),
       ...stageEvents.map((e) => ({ kind: 'stage', at: e.createdAt, data: e })),
       ...assignmentEvents.map((e) => ({ kind: 'assignment', at: e.createdAt, data: e })),
+      ...auditEvents.map((e) => ({ kind: 'audit', at: e.createdAt, data: e })),
     ].sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, limit);
 
     return { entries };
