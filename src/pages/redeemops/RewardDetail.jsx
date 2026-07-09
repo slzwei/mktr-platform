@@ -13,17 +13,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-
-function Counter({ label, value }) {
-  return (
-    <div className="text-center">
-      <p className="text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
-    </div>
-  );
-}
+import { RoTag, RoStatTile, prettyEnum } from '@/components/redeemops/ui';
 
 export default function RewardDetail() {
   const { id } = useParams();
@@ -74,41 +65,38 @@ export default function RewardDetail() {
   const remaining = offer.committedQuantity - offer.allocatedQuantity;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-4">
-      <Card>
-        <CardContent className="pt-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight">{offer.title}</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {offer.partner?.tradingName || offer.partner?.legalName}
-                {' · '}{offer.rewardType.replaceAll('_', ' ')}
-                {offer.retailValue ? ` · worth S$${offer.retailValue}` : ''}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant={offer.status === 'active' ? 'default' : 'secondary'}>{offer.status}</Badge>
-              {canManage && (
-                <Select value={offer.status} onValueChange={(s) => statusMutation.mutate(s)}>
-                  <SelectTrigger className="w-32 h-9"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {['draft', 'active', 'paused', 'ended'].map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-5 gap-3 mt-5">
-            <Counter label="Committed" value={offer.committedQuantity} />
-            <Counter label="Allocated" value={offer.allocatedQuantity} />
-            <Counter label="Unallocated" value={remaining} />
-            <Counter label="Issued" value={offer.issuedQuantity} />
-            <Counter label="Redeemed" value={offer.redeemedQuantity} />
-          </div>
-        </CardContent>
-      </Card>
+    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="ro-title text-[26px]">{offer.title}</h1>
+          <p className="ro-sub">
+            {offer.partner?.tradingName || offer.partner?.legalName}
+            {' · '}{prettyEnum(offer.rewardType)}
+            {offer.retailValue ? ` · worth S$${offer.retailValue}` : ''}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <RoTag tone={offer.status}>{prettyEnum(offer.status)}</RoTag>
+          {canManage && (
+            <Select value={offer.status} onValueChange={(s) => statusMutation.mutate(s)}>
+              <SelectTrigger className="w-32 h-10"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {['draft', 'active', 'paused', 'ended'].map((s) => (
+                  <SelectItem key={s} value={s}>{prettyEnum(s)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      </div>
+
+      <div className="ro-tiles">
+        <RoStatTile label="Committed" value={offer.committedQuantity} />
+        <RoStatTile label="Allocated" value={offer.allocatedQuantity} />
+        <RoStatTile label="Unallocated" value={remaining} />
+        <RoStatTile label="Issued" value={offer.issuedQuantity} />
+        <RoStatTile label="Redeemed" value={offer.redeemedQuantity} />
+      </div>
 
       <Tabs defaultValue="ledger">
         <TabsList>
@@ -122,10 +110,10 @@ export default function RewardDetail() {
             <CardContent className="pt-5 space-y-2">
               {(ledgerQuery.data || []).map((e) => (
                 <div key={e.id} className="flex items-center justify-between border-b border-border pb-2 last:border-0 text-sm">
-                  <span>
-                    <Badge variant="outline" className="mr-2">{e.type.replaceAll('_', ' ')}</Badge>
-                    {e.quantity} unit{e.quantity === 1 ? '' : 's'}
-                    {e.reason ? <span className="text-muted-foreground"> — {e.reason}</span> : ''}
+                  <span className="flex items-center gap-2">
+                    <RoTag tone="inactive" size="sm">{prettyEnum(e.type)}</RoTag>
+                    <span className="tabular-nums">{e.quantity} unit{e.quantity === 1 ? '' : 's'}</span>
+                    {e.reason ? <span className="text-muted-foreground">— {e.reason}</span> : ''}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     {e.actor?.fullName || e.actorType} · {new Date(e.createdAt).toLocaleString()}

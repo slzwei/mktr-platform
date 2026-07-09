@@ -3,10 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -16,15 +12,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import Plus from 'lucide-react/icons/plus';
 import AlertTriangle from 'lucide-react/icons/alert-triangle';
-
-const STAGE_BADGE = {
-  PARTNERED: 'default',
-  DISQUALIFIED: 'destructive',
-  NOT_INTERESTED: 'destructive',
-};
+import { RoStageTag, RoAvatar, RoOwner, RoPageHeader, prettyEnum } from '@/components/redeemops/ui';
 
 function useDebounced(value, ms = 300) {
   const [debounced, setDebounced] = useState(value);
@@ -119,105 +109,115 @@ export default function PartnersList() {
   const stages = constants.data?.pipelineStages || [];
   const needsOverride = (duplicates?.exact?.length || 0) > 0;
 
-  return (
-    <div className="p-6 max-w-6xl mx-auto space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Partners</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            The shared business database — search before you add, claim before you contact.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => { setCreateOpen(true); setDuplicates(null); }}>
-          <Plus className="w-4 h-4 mr-2" aria-hidden="true" /> Add business
-        </Button>
-      </div>
+  const partnerName = (p) => p.tradingName || p.brandName || p.legalName;
+  const partnerMeta = (p) => [p.category, p.instagramHandle && `@${p.instagramHandle}`, p.primaryPhone]
+    .filter(Boolean).slice(0, 2).join(' · ');
 
-      <div className="flex flex-wrap gap-2">
-        <Input
-          placeholder="Search name, phone, UEN, @handle, domain…"
+  return (
+    <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-5">
+      <RoPageHeader
+        title="Partners"
+        sub={pagination ? `${pagination.total} business${pagination.total === 1 ? '' : 'es'} on the books — search before you add, claim before you contact.` : 'The shared business database — search before you add, claim before you contact.'}
+        actions={(
+          <Button onClick={() => { setCreateOpen(true); setDuplicates(null); }}>
+            <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> Add business
+          </Button>
+        )}
+      />
+
+      <div className="flex flex-wrap gap-2 items-center">
+        <input
+          className="ro-search w-full max-w-xs"
+          placeholder="Search name, phone, UEN or @handle"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          className="max-w-sm"
         />
-        <Select value={stage} onValueChange={(v) => { setStage(v); setPage(1); }}>
-          <SelectTrigger className="w-48"><SelectValue placeholder="Stage" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All stages</SelectItem>
-            {stages.map((s) => <SelectItem key={s} value={s}>{s.replaceAll('_', ' ')}</SelectItem>)}
-          </SelectContent>
-        </Select>
         <Select value={owner} onValueChange={(v) => { setOwner(v); setPage(1); }}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="Owner" /></SelectTrigger>
+          <SelectTrigger className="w-40 h-10"><SelectValue placeholder="Owner" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Any owner</SelectItem>
             <SelectItem value="me">My partners</SelectItem>
             <SelectItem value="none">Unowned</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={stage} onValueChange={(v) => { setStage(v); setPage(1); }}>
+          <SelectTrigger className="w-48 h-10"><SelectValue placeholder="Stage" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All stages</SelectItem>
+            {stages.map((s) => <SelectItem key={s} value={s}>{prettyEnum(s)}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
 
-      <Card>
-        <CardContent className="pt-4">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Business</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead>Last activity</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {partners.map((p) => (
-                  <TableRow
-                    key={p.id}
-                    className="cursor-pointer"
-                    onClick={() => navigate(`/redeem-ops/partners/${p.id}`)}
-                  >
-                    <TableCell className="font-medium">
-                      <span className="flex items-center gap-2">
-                        {p.tradingName || p.brandName || p.legalName}
-                        {(p.atRiskFlag || p.staleFlag) && (
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500" aria-label={p.atRiskFlag ? 'At risk — no first outreach' : 'Stale'} />
-                        )}
+      <div className="rounded-2xl border border-border bg-white overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="text-left" style={{ color: 'var(--ro-text-2)' }}>
+                <th className="font-semibold text-[12.5px] px-5 py-3">Business</th>
+                <th className="font-semibold text-[12.5px] px-3 py-3">Category</th>
+                <th className="font-semibold text-[12.5px] px-3 py-3">Stage</th>
+                <th className="font-semibold text-[12.5px] px-3 py-3">Owner</th>
+                <th className="font-semibold text-[12.5px] px-5 py-3 text-right">Last activity</th>
+              </tr>
+            </thead>
+            <tbody>
+              {partners.map((p) => (
+                <tr
+                  key={p.id}
+                  className="cursor-pointer border-t border-border hover:bg-[var(--ro-subtle)] transition-colors"
+                  onClick={() => navigate(`/redeem-ops/partners/${p.id}`)}
+                >
+                  <td className="px-5 py-2.5">
+                    <span className="flex items-center gap-3 min-w-0">
+                      <RoAvatar name={partnerName(p)} size={36} />
+                      <span className="min-w-0">
+                        <span className="font-semibold flex items-center gap-1.5 leading-tight">
+                          <span className="truncate">{partnerName(p)}</span>
+                          {(p.atRiskFlag || p.staleFlag) && (
+                            <AlertTriangle
+                              className="w-3.5 h-3.5 shrink-0"
+                              style={{ color: 'var(--ro-tag-yellow-fg)' }}
+                              aria-label={p.atRiskFlag ? 'At risk — no first outreach' : 'Stale'}
+                            />
+                          )}
+                        </span>
+                        <span className="block text-xs truncate" style={{ color: 'var(--ro-text-2)' }}>
+                          {partnerMeta(p) || '—'}
+                        </span>
                       </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{p.category || '—'}</TableCell>
-                    <TableCell>
-                      <Badge variant={STAGE_BADGE[p.pipelineStage] || 'secondary'}>
-                        {p.pipelineStage.replaceAll('_', ' ')}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{p.owner?.fullName || '—'}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {p.lastActivityAt ? new Date(p.lastActivityAt).toLocaleDateString() : 'Never'}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!listQuery.isLoading && partners.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground py-10">
-                      No businesses match. Add the first one.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          {pagination && pagination.totalPages > 1 && (
-            <div className="flex items-center justify-end gap-2 pt-3">
-              <span className="text-xs text-muted-foreground">
-                Page {pagination.page} of {pagination.totalPages} · {pagination.total} businesses
-              </span>
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5" style={{ color: 'var(--ro-text-2)' }}>{p.category || '—'}</td>
+                  <td className="px-3 py-2.5"><RoStageTag stage={p.pipelineStage} /></td>
+                  <td className="px-3 py-2.5"><RoOwner name={p.owner?.fullName} /></td>
+                  <td className="px-5 py-2.5 text-right text-[12.5px] tabular-nums" style={{ color: 'var(--ro-text-3)' }}>
+                    {p.lastActivityAt ? new Date(p.lastActivityAt).toLocaleDateString() : 'Never'}
+                  </td>
+                </tr>
+              ))}
+              {!listQuery.isLoading && partners.length === 0 && (
+                <tr className="border-t border-border">
+                  <td colSpan={5} className="text-center py-12" style={{ color: 'var(--ro-text-2)' }}>
+                    No businesses match. Add the first one.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {pagination && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-border">
+            <span className="text-[13px]" style={{ color: 'var(--ro-text-2)' }}>
+              Page {pagination.page} of {pagination.totalPages} · {pagination.total} businesses
+            </span>
+            <span className="flex gap-2">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</Button>
               <Button variant="outline" size="sm" disabled={page >= pagination.totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </span>
+          </div>
+        )}
+      </div>
 
       <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) { setDuplicates(null); setOverrideReason(''); } }}>
         <DialogContent className="max-w-lg">
@@ -260,9 +260,9 @@ export default function PartnersList() {
           </div>
 
           {duplicates && (duplicates.exact.length > 0 || duplicates.potential.length > 0) && (
-            <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2 text-sm">
-              <p className="font-medium flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-500" aria-hidden="true" />
+            <div className="rounded-xl p-3.5 space-y-2 text-sm" style={{ background: 'var(--ro-tag-yellow-bg)' }}>
+              <p className="font-semibold flex items-center gap-2 m-0" style={{ color: 'var(--ro-bunker)' }}>
+                <AlertTriangle className="w-4 h-4" style={{ color: 'var(--ro-tag-yellow-fg)' }} aria-hidden="true" />
                 {duplicates.exact.length > 0 ? 'This business may already exist' : 'Similar businesses found'}
               </p>
               {[...duplicates.exact, ...duplicates.potential].slice(0, 4).map((m) => (
@@ -270,13 +270,13 @@ export default function PartnersList() {
                   <span>
                     <Link
                       to={`/redeem-ops/partners/${m.partner.id}`}
-                      className="underline font-medium"
+                      className="ro-link"
                       onClick={() => setCreateOpen(false)}
                     >
                       {m.partner.tradingName || m.partner.legalName}
                     </Link>{' '}
-                    <span className="text-muted-foreground">
-                      — {m.reason} · {m.partner.pipelineStage.replaceAll('_', ' ')}
+                    <span style={{ color: 'var(--ro-text-2)' }}>
+                      — {m.reason} · {prettyEnum(m.partner.pipelineStage)}
                       {m.partner.owner ? ` · owned by ${m.partner.owner.fullName}` : ' · unowned'}
                     </span>
                   </span>

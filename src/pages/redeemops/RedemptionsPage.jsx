@@ -8,8 +8,8 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import ScanLine from 'lucide-react/icons/scan-line';
+import { RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
 
 export default function RedemptionsPage() {
   const queryClient = useQueryClient();
@@ -43,13 +43,11 @@ export default function RedemptionsPage() {
   const redemptions = historyQuery.data?.redemptions || [];
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Redemptions</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Verify a voucher, confirm identity, redeem — double redemption is impossible.
-        </p>
-      </div>
+    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-5">
+      <RoPageHeader
+        title="Redemptions"
+        sub="Verify a voucher, confirm identity, redeem — double redemption is impossible."
+      />
 
       <Card>
         <CardHeader>
@@ -72,12 +70,15 @@ export default function RedemptionsPage() {
           </div>
 
           {verified && (
-            <div className={`rounded-lg border p-4 space-y-2 ${verified.valid ? 'border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30' : 'border-destructive/40 bg-destructive/5'}`}>
+            <div
+              className="rounded-xl p-4 space-y-2"
+              style={{ background: verified.valid ? 'var(--ro-tag-green-bg)' : 'var(--ro-tag-red-bg)' }}
+            >
               <div className="flex items-center justify-between">
-                <p className="font-medium">{verified.reward?.title}</p>
-                <Badge variant={verified.valid ? 'default' : 'destructive'}>
-                  {verified.valid ? 'VALID' : verified.state.toUpperCase()}
-                </Badge>
+                <p className="font-semibold m-0">{verified.reward?.title}</p>
+                <RoTag tone={verified.valid ? 'redeemed' : 'void'}>
+                  {verified.valid ? 'Valid' : prettyEnum(verified.state)}
+                </RoTag>
               </div>
               {verified.holder && (
                 <p className="text-sm text-muted-foreground">
@@ -128,7 +129,7 @@ export default function RedemptionsPage() {
                     <TableCell className="text-muted-foreground">{new Date(r.redeemedAt).toLocaleString()}</TableCell>
                     <TableCell className="text-muted-foreground">{r.actor?.fullName || r.actorType}</TableCell>
                     <TableCell>
-                      <Badge variant={r.status === 'completed' ? 'default' : 'destructive'}>{r.status}</Badge>
+                      <RoTag tone={r.status === 'completed' ? 'completed' : 'void'} size="sm">{prettyEnum(r.status)}</RoTag>
                     </TableCell>
                   </TableRow>
                 ))}

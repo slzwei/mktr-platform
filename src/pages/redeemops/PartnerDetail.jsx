@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
 import { useAuthStore } from '@/stores/authStore';
 import { hasCapability } from '@/lib/redeemOpsPermissions';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -16,54 +15,81 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import Phone from 'lucide-react/icons/phone';
 import Globe from 'lucide-react/icons/globe';
 import Instagram from 'lucide-react/icons/instagram';
+import MessageCircle from 'lucide-react/icons/message-circle';
+import Mail from 'lucide-react/icons/mail';
+import Calendar from 'lucide-react/icons/calendar';
+import FileText from 'lucide-react/icons/file-text';
+import ArrowRight from 'lucide-react/icons/arrow-right';
+import Star from 'lucide-react/icons/star';
+import MapPin from 'lucide-react/icons/map-pin';
+import Plus from 'lucide-react/icons/plus';
+import ArrowLeft from 'lucide-react/icons/arrow-left';
+import { RoStageTag, RoAvatar, RoTag, prettyEnum } from '@/components/redeemops/ui';
+
+/* Activity type → pastel icon circle (timeline card in the design system). */
+function timelineIcon(entry) {
+  if (entry.kind === 'stage') {
+    return { Icon: ArrowRight, bg: 'var(--ro-tag-purple-bg)', fg: 'var(--ro-tag-purple-fg)' };
+  }
+  if (entry.kind !== 'activity') {
+    return { Icon: Plus, bg: 'var(--ro-tag-gray-bg)', fg: 'var(--ro-tag-gray-fg)' };
+  }
+  const t = String(entry.data.type || '');
+  if (t.includes('call')) return { Icon: Phone, bg: 'var(--ro-tag-blue-bg)', fg: 'var(--ro-tag-blue-fg)' };
+  if (t.includes('whatsapp') || t.includes('sms') || t.includes('dm')) {
+    return { Icon: MessageCircle, bg: 'var(--ro-tag-green-bg)', fg: 'var(--ro-tag-green-fg)' };
+  }
+  if (t.includes('email')) return { Icon: Mail, bg: 'var(--ro-tag-yellow-bg)', fg: 'var(--ro-tag-yellow-fg)' };
+  if (t.includes('meeting') || t.includes('visit')) {
+    return { Icon: Calendar, bg: 'var(--ro-tag-blue-bg)', fg: 'var(--ro-tag-blue-fg)' };
+  }
+  return { Icon: FileText, bg: 'var(--ro-tag-gray-bg)', fg: 'var(--ro-tag-gray-fg)' };
+}
 
 function TimelineEntry({ entry }) {
   const at = new Date(entry.at).toLocaleString();
+  const { Icon, bg, fg } = timelineIcon(entry);
+
+  let title;
+  let body = null;
+  let meta;
   if (entry.kind === 'activity') {
     const a = entry.data;
-    return (
-      <div className="border-l-2 border-border pl-3 pb-4">
-        <p className="text-sm font-medium">
-          {a.type.replaceAll('_', ' ')}
-          {a.contact?.name ? ` · with ${a.contact.name}` : ''}
-        </p>
-        <p className="text-sm text-muted-foreground">{a.summary}</p>
-        {a.outcome && <p className="text-xs text-muted-foreground">Outcome: {a.outcome}</p>}
-        <p className="text-xs text-muted-foreground mt-0.5">{a.actor?.fullName || 'System'} · {at}</p>
-      </div>
+    title = `${prettyEnum(a.type)}${a.contact?.name ? ` · with ${a.contact.name}` : ''}`;
+    body = (
+      <>
+        {a.summary && <p className="text-[13.5px] leading-relaxed m-0 mt-0.5" style={{ color: 'var(--ro-text-2)' }}>{a.summary}</p>}
+        {a.outcome && <p className="text-xs m-0 mt-0.5" style={{ color: 'var(--ro-text-3)' }}>Outcome: {a.outcome}</p>}
+      </>
     );
-  }
-  if (entry.kind === 'stage') {
+    meta = `${a.actor?.fullName || 'System'} · ${at}`;
+  } else if (entry.kind === 'stage') {
     const e = entry.data;
-    return (
-      <div className="border-l-2 border-primary/40 pl-3 pb-4">
-        <p className="text-sm">
-          Stage: <span className="font-medium">{(e.fromStage || '—').replaceAll('_', ' ')}</span>
-          {' → '}
-          <span className="font-medium">{e.toStage.replaceAll('_', ' ')}</span>
-        </p>
-        <p className="text-xs text-muted-foreground mt-0.5">{e.actor?.fullName || 'System'} · {at}{e.reason ? ` · ${e.reason}` : ''}</p>
-      </div>
-    );
+    title = `Stage moved: ${prettyEnum(e.fromStage || '—')} → ${prettyEnum(e.toStage)}`;
+    meta = `${e.actor?.fullName || 'System'} · ${at}${e.reason ? ` · ${e.reason}` : ''}`;
+  } else {
+    const e = entry.data;
+    title = `Ownership: ${prettyEnum(e.kind)}${e.toUser ? ` → ${e.toUser.fullName}` : ''}`;
+    meta = `${e.actor?.fullName || 'System'} · ${at}${e.reason ? ` · ${e.reason}` : ''}`;
   }
-  const e = entry.data;
+
   return (
-    <div className="border-l-2 border-border pl-3 pb-4">
-      <p className="text-sm">
-        Ownership: <span className="font-medium">{e.kind}</span>
-        {e.toUser ? ` → ${e.toUser.fullName}` : ''}
-      </p>
-      <p className="text-xs text-muted-foreground mt-0.5">{e.actor?.fullName || 'System'} · {at}{e.reason ? ` · ${e.reason}` : ''}</p>
+    <div className="grid grid-cols-[40px_1fr] gap-3.5 py-3.5 border-t border-border first:border-t-0 first:pt-0">
+      <span className="ro-icon-circle" style={{ background: bg, color: fg }} aria-hidden="true">
+        <Icon className="w-4 h-4" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm font-bold m-0">{title}</p>
+        {body}
+        <p className="text-xs m-0 mt-1" style={{ color: 'var(--ro-text-3)' }}>{meta}</p>
+      </div>
     </div>
   );
 }
-
-const ONBOARDING_STATUS_BADGE = { done: 'default', in_progress: 'secondary', pending: 'outline', na: 'outline' };
 
 function OnboardingChecklist({ partnerId }) {
   const queryClient = useQueryClient();
@@ -79,36 +105,40 @@ function OnboardingChecklist({ partnerId }) {
 
   const items = itemsQuery.data || [];
   const doneCount = items.filter((i) => i.status === 'done' || i.status === 'na').length;
+  const pct = items.length ? Math.round((doneCount / items.length) * 100) : 0;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Onboarding checklist</CardTitle>
-        <p className="text-sm text-muted-foreground">{doneCount} of {items.length} complete</p>
-      </CardHeader>
-      <CardContent className="space-y-2">
+    <div className="rounded-2xl border border-border bg-white p-5">
+      <div className="flex items-baseline justify-between">
+        <p className="text-[15px] font-bold m-0">Onboarding · {doneCount} of {items.length}</p>
+        <span className="text-xs tabular-nums" style={{ color: 'var(--ro-text-3)' }}>{pct}%</span>
+      </div>
+      <div className="ro-progress my-3"><i style={{ width: `${pct}%` }} /></div>
+      <div>
         {items.map((item) => (
-          <div key={item.id} className="flex items-center justify-between gap-2 border-b border-border pb-2 last:border-0">
-            <span className="text-sm">{item.label}</span>
+          <div key={item.id} className="flex items-center justify-between gap-2 py-2 border-t border-border first:border-t-0">
+            <span className={`text-sm ${item.status === 'done' || item.status === 'na' ? 'line-through' : ''}`}
+              style={item.status === 'done' || item.status === 'na' ? { color: 'var(--ro-text-3)' } : undefined}
+            >
+              {item.label}
+            </span>
             <Select
               value={item.status}
               onValueChange={(status) => updateMutation.mutate({ itemId: item.id, status })}
             >
-              <SelectTrigger className="w-36 h-8">
-                <Badge variant={ONBOARDING_STATUS_BADGE[item.status] || 'outline'}>
-                  {item.status.replaceAll('_', ' ')}
-                </Badge>
+              <SelectTrigger className="w-36 h-8 border-none shadow-none justify-end gap-1 px-1">
+                <RoTag tone={item.status} size="sm">{prettyEnum(item.status)}</RoTag>
               </SelectTrigger>
               <SelectContent>
                 {['pending', 'in_progress', 'done', 'na'].map((s) => (
-                  <SelectItem key={s} value={s}>{s.replaceAll('_', ' ')}</SelectItem>
+                  <SelectItem key={s} value={s}>{prettyEnum(s)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -198,10 +228,10 @@ export default function PartnerDetail() {
 
   const partner = partnerQuery.data;
   if (partnerQuery.isLoading) {
-    return <div className="p-6 text-muted-foreground">Loading…</div>;
+    return <div className="p-8" style={{ color: 'var(--ro-text-2)' }}>Loading…</div>;
   }
   if (!partner) {
-    return <div className="p-6 text-muted-foreground">Business not found.</div>;
+    return <div className="p-8" style={{ color: 'var(--ro-text-2)' }}>Business not found.</div>;
   }
 
   const name = partner.tradingName || partner.brandName || partner.legalName;
@@ -213,168 +243,197 @@ export default function PartnerDetail() {
   const activityTypes = constants.data?.activityTypes || [];
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-4">
-      <Card>
-        <CardContent className="pt-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-1 min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight">{name}</h1>
-              <p className="text-sm text-muted-foreground">
-                {partner.category || 'Uncategorised'}
-                {partner.legalName && partner.legalName !== name ? ` · ${partner.legalName}` : ''}
-                {partner.uen ? ` · UEN ${partner.uen}` : ''}
-              </p>
-              <div className="flex flex-wrap gap-3 text-sm text-muted-foreground pt-1">
-                {partner.primaryPhone && <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5" aria-hidden="true" />{partner.primaryPhone}</span>}
-                {partner.websiteDomain && <span className="flex items-center gap-1"><Globe className="w-3.5 h-3.5" aria-hidden="true" />{partner.websiteDomain}</span>}
-                {partner.instagramHandle && <span className="flex items-center gap-1"><Instagram className="w-3.5 h-3.5" aria-hidden="true" />@{partner.instagramHandle}</span>}
-              </div>
-            </div>
+    <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-5">
+      <Link to="/redeem-ops/partners" className="ro-link inline-flex items-center gap-1 text-[13.5px]">
+        <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Partners
+      </Link>
 
-            <div className="flex flex-col items-end gap-2">
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary">{partner.pipelineStage.replaceAll('_', ' ')}</Badge>
-                {partner.owner
-                  ? <Badge variant="outline">Owner: {partner.owner.fullName}</Badge>
-                  : <Badge variant="outline">Unowned</Badge>}
-              </div>
-              <div className="flex items-center gap-2">
-                {isUnowned && hasCapability(user, 'partners.claim') && (
-                  <Button size="sm" onClick={() => claimMutation.mutate()} disabled={claimMutation.isPending}>
-                    {claimMutation.isPending ? 'Claiming…' : 'Claim business'}
-                  </Button>
-                )}
-                {isOwner && (
-                  <Button size="sm" variant="outline" onClick={() => releaseMutation.mutate()}>
-                    Release
-                  </Button>
-                )}
-                {canReassign && (
-                  <Select onValueChange={(toUserId) => assignMutation.mutate({ toUserId })}>
-                    <SelectTrigger className="w-44 h-9"><SelectValue placeholder="Assign to…" /></SelectTrigger>
-                    <SelectContent>
-                      {(teamQuery.data || []).filter((m) => m.isActive).map((m) => (
-                        <SelectItem key={m.id} value={m.id}>{m.fullName || m.email}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                {(isOwner || canReassign) && allowedNext.length > 0 && (
-                  <Select onValueChange={(toStage) => stageMutation.mutate({ toStage })}>
-                    <SelectTrigger className="w-48 h-9"><SelectValue placeholder="Move stage…" /></SelectTrigger>
-                    <SelectContent>
-                      {allowedNext.map((s) => (
-                        <SelectItem key={s} value={s}>{s.replaceAll('_', ' ')}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-center gap-4 min-w-0">
+          <RoAvatar name={name} size={56} />
+          <div className="min-w-0">
+            <h1 className="ro-title text-[26px]">{name}</h1>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[13.5px]" style={{ color: 'var(--ro-text-2)' }}>
+              <span>{partner.category || 'Uncategorised'}</span>
+              {partner.uen && <span>UEN {partner.uen}</span>}
+              {partner.primaryPhone && (
+                <span className="inline-flex items-center gap-1"><Phone className="w-3.5 h-3.5" aria-hidden="true" />{partner.primaryPhone}</span>
+              )}
+              {partner.websiteDomain && (
+                <span className="inline-flex items-center gap-1"><Globe className="w-3.5 h-3.5" aria-hidden="true" />{partner.websiteDomain}</span>
+              )}
+              {partner.instagramHandle && (
+                <span className="inline-flex items-center gap-1"><Instagram className="w-3.5 h-3.5" aria-hidden="true" />@{partner.instagramHandle}</span>
+              )}
+              <RoStageTag stage={partner.pipelineStage} />
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      <Tabs defaultValue="timeline">
-        <TabsList>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="contacts">Contacts ({partner.contacts?.length || 0})</TabsTrigger>
-          <TabsTrigger value="locations">Locations ({partner.locations?.length || 0})</TabsTrigger>
-          {partner.pipelineStage === 'PARTNERED' && canOnboard && (
-            <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
+        <div className="flex flex-wrap items-center gap-2">
+          {canReassign && (
+            <Select onValueChange={(toUserId) => assignMutation.mutate({ toUserId })}>
+              <SelectTrigger className="w-40 h-10"><SelectValue placeholder="Assign to…" /></SelectTrigger>
+              <SelectContent>
+                {(teamQuery.data || []).filter((m) => m.isActive).map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.fullName || m.email}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
-        </TabsList>
+          {(isOwner || canReassign) && allowedNext.length > 0 && (
+            <Select onValueChange={(toStage) => stageMutation.mutate({ toStage })}>
+              <SelectTrigger className="w-44 h-10"><SelectValue placeholder="Move stage…" /></SelectTrigger>
+              <SelectContent>
+                {allowedNext.map((s) => (
+                  <SelectItem key={s} value={s}>{prettyEnum(s)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {isOwner && (
+            <Button variant="outline" onClick={() => releaseMutation.mutate()}>Release</Button>
+          )}
+          {(isOwner || canReassign) && (
+            <Button variant="outline" onClick={() => setActivityOpen(true)}>Log activity</Button>
+          )}
+          {isUnowned && hasCapability(user, 'partners.claim') && (
+            <Button onClick={() => claimMutation.mutate()} disabled={claimMutation.isPending}>
+              {claimMutation.isPending ? 'Claiming…' : 'Claim business'}
+            </Button>
+          )}
+        </div>
+      </div>
 
-        <TabsContent value="timeline">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">Activity timeline</CardTitle>
-              {(isOwner || canReassign) && (
-                <Button size="sm" onClick={() => setActivityOpen(true)}>Log activity</Button>
-              )}
-            </CardHeader>
-            <CardContent>
+      <div className="grid gap-5 lg:grid-cols-[1fr_320px] items-start">
+        <Tabs defaultValue="timeline">
+          <TabsList>
+            <TabsTrigger value="timeline">Timeline</TabsTrigger>
+            <TabsTrigger value="contacts">Contacts ({partner.contacts?.length || 0})</TabsTrigger>
+            <TabsTrigger value="locations">Locations ({partner.locations?.length || 0})</TabsTrigger>
+            {partner.pipelineStage === 'PARTNERED' && canOnboard && (
+              <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
+            )}
+          </TabsList>
+
+          <TabsContent value="timeline">
+            <div className="rounded-2xl border border-border bg-white p-5">
               {(timelineQuery.data || []).length === 0 && (
-                <p className="text-sm text-muted-foreground">No activity yet — claim it and make the first touch.</p>
+                <p className="text-sm m-0" style={{ color: 'var(--ro-text-2)' }}>
+                  No activity yet — claim it and make the first touch.
+                </p>
               )}
               {(timelineQuery.data || []).map((entry, i) => (
                 <TimelineEntry key={`${entry.kind}-${entry.data.id || i}`} entry={entry} />
               ))}
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          </TabsContent>
 
-        <TabsContent value="contacts">
-          <Card>
-            <CardContent className="pt-5 space-y-4">
+          <TabsContent value="contacts">
+            <div className="rounded-2xl border border-border bg-white p-5 space-y-4">
               {(partner.contacts || []).map((c) => (
-                <div key={c.id} className="flex items-start justify-between border-b border-border pb-3 last:border-0">
-                  <div>
-                    <p className="text-sm font-medium">
-                      {c.name} {c.isPrimary && <Badge variant="secondary" className="ml-1">Primary</Badge>}
+                <div key={c.id} className="flex items-center gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
+                  <RoAvatar name={c.name} size={32} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold m-0 flex items-center gap-1.5">
+                      {c.name}
+                      {c.isPrimary && <Star className="w-3.5 h-3.5" style={{ color: 'var(--ro-tag-yellow-fg)' }} aria-label="Primary contact" />}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs m-0" style={{ color: 'var(--ro-text-2)' }}>
                       {[c.roleTitle, c.mobile, c.email].filter(Boolean).join(' · ') || '—'}
                     </p>
                   </div>
                 </div>
               ))}
               {(isOwner || canReassign) && (
-                <div className="grid grid-cols-2 gap-2 pt-2">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <Input placeholder="Name *" value={contactForm.name} onChange={(e) => setContactForm((f) => ({ ...f, name: e.target.value }))} />
                   <Input placeholder="Role (e.g. Owner)" value={contactForm.roleTitle} onChange={(e) => setContactForm((f) => ({ ...f, roleTitle: e.target.value }))} />
                   <Input placeholder="Mobile" value={contactForm.mobile} onChange={(e) => setContactForm((f) => ({ ...f, mobile: e.target.value }))} />
                   <Input placeholder="Email" value={contactForm.email} onChange={(e) => setContactForm((f) => ({ ...f, email: e.target.value }))} />
                   <Button
-                    size="sm"
+                    variant="outline"
                     className="col-span-2 justify-self-start"
                     disabled={!contactForm.name.trim() || contactMutation.isPending}
                     onClick={() => contactMutation.mutate()}
                   >
-                    Add contact
+                    <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> Add contact
                   </Button>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          </TabsContent>
 
-        <TabsContent value="locations">
-          <Card>
-            <CardContent className="pt-5 space-y-4">
+          <TabsContent value="locations">
+            <div className="rounded-2xl border border-border bg-white p-5 space-y-4">
               {(partner.locations || []).map((l) => (
-                <div key={l.id} className="border-b border-border pb-3 last:border-0">
-                  <p className="text-sm font-medium">{l.name || 'Outlet'}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {[l.addressLine, l.postalCode && `S${l.postalCode}`, l.phone].filter(Boolean).join(' · ') || '—'}
-                  </p>
+                <div key={l.id} className="flex items-center gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
+                  <span className="ro-icon-circle" style={{ width: 32, height: 32, background: 'var(--ro-tag-gray-bg)', color: 'var(--ro-tag-gray-fg)' }} aria-hidden="true">
+                    <MapPin className="w-3.5 h-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold m-0">{l.name || 'Outlet'}</p>
+                    <p className="text-xs m-0" style={{ color: 'var(--ro-text-2)' }}>
+                      {[l.addressLine, l.postalCode && `S${l.postalCode}`, l.phone].filter(Boolean).join(' · ') || '—'}
+                    </p>
+                  </div>
                 </div>
               ))}
               {(isOwner || canReassign) && (
-                <div className="grid grid-cols-2 gap-2 pt-2">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <Input placeholder="Outlet name" value={locationForm.name} onChange={(e) => setLocationForm((f) => ({ ...f, name: e.target.value }))} />
                   <Input placeholder="Postal code" value={locationForm.postalCode} onChange={(e) => setLocationForm((f) => ({ ...f, postalCode: e.target.value }))} />
                   <Input placeholder="Address" className="col-span-2" value={locationForm.addressLine} onChange={(e) => setLocationForm((f) => ({ ...f, addressLine: e.target.value }))} />
                   <Button
-                    size="sm"
+                    variant="outline"
                     className="col-span-2 justify-self-start"
                     disabled={locationMutation.isPending}
                     onClick={() => locationMutation.mutate()}
                   >
-                    Add location
+                    <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> Add location
                   </Button>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {partner.pipelineStage === 'PARTNERED' && canOnboard && (
-          <TabsContent value="onboarding">
-            <OnboardingChecklist partnerId={id} />
+            </div>
           </TabsContent>
-        )}
-      </Tabs>
+
+          {partner.pipelineStage === 'PARTNERED' && canOnboard && (
+            <TabsContent value="onboarding">
+              <OnboardingChecklist partnerId={id} />
+            </TabsContent>
+          )}
+        </Tabs>
+
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-border bg-white p-5">
+            <p className="text-[15px] font-bold m-0 mb-3">Owner</p>
+            {partner.owner ? (
+              <div className="flex items-center gap-3">
+                <RoAvatar name={partner.owner.fullName} size={32} />
+                <div>
+                  <p className="text-sm font-semibold m-0">{partner.owner.fullName}</p>
+                  {partner.claimedAt && (
+                    <p className="text-xs m-0" style={{ color: 'var(--ro-text-2)' }}>
+                      Claimed {new Date(partner.claimedAt).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm m-0" style={{ color: 'var(--ro-text-2)' }}>
+                Unowned — claim it to start outreach.
+              </p>
+            )}
+          </div>
+
+          {partner.notes && (
+            <div className="rounded-2xl border border-border bg-white p-5">
+              <p className="text-[15px] font-bold m-0 mb-2">Notes</p>
+              <p className="text-[13.5px] leading-relaxed m-0 whitespace-pre-wrap" style={{ color: 'var(--ro-text-2)' }}>{partner.notes}</p>
+            </div>
+          )}
+        </div>
+      </div>
 
       <Dialog open={activityOpen} onOpenChange={setActivityOpen}>
         <DialogContent>
@@ -388,7 +447,7 @@ export default function PartnerDetail() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {activityTypes.map((t) => (
-                    <SelectItem key={t} value={t}>{t.replaceAll('_', ' ')}</SelectItem>
+                    <SelectItem key={t} value={t}>{prettyEnum(t)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

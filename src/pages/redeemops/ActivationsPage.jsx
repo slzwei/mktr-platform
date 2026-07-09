@@ -18,10 +18,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import Plus from 'lucide-react/icons/plus';
+import { RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
 
-const STATUS_BADGE = { active: 'default', draft: 'secondary', preparing: 'secondary', paused: 'outline', completed: 'outline', cancelled: 'destructive' };
+const ACTIVATION_TONE = { preparing: 'pending', completed: 'done' };
 
 export default function ActivationsPage() {
   const user = useAuthStore((s) => s.user);
@@ -57,20 +57,16 @@ export default function ActivationsPage() {
   const rewards = (rewardsQuery.data || []).filter((r) => r.status !== 'ended');
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Activations</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            A reward allocated to one MKTR campaign — the campaign itself stays managed on mktr.sg.
-          </p>
-        </div>
-        {canManage && (
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" aria-hidden="true" /> New activation
+    <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-5">
+      <RoPageHeader
+        title="Activations"
+        sub="A reward allocated to one MKTR campaign — the campaign itself stays managed on mktr.sg."
+        actions={canManage && (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> New activation
           </Button>
         )}
-      </div>
+      />
 
       <Card>
         <CardContent className="pt-4">
@@ -95,7 +91,7 @@ export default function ActivationsPage() {
                     <TableCell className="text-muted-foreground">
                       {a.campaignNameSnapshot || (a.campaignId ? a.campaignId.slice(0, 8) : 'Not linked')}
                     </TableCell>
-                    <TableCell><Badge variant={STATUS_BADGE[a.status] || 'secondary'}>{a.status}</Badge></TableCell>
+                    <TableCell><RoTag tone={ACTIVATION_TONE[a.status] || a.status} size="sm">{prettyEnum(a.status)}</RoTag></TableCell>
                     <TableCell className="text-right">{a.allocatedQuantity}</TableCell>
                     <TableCell className="text-right">{a.issuedCount}</TableCell>
                     <TableCell className="text-right">{a.redeemedCount}</TableCell>

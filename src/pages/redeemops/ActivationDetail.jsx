@@ -12,8 +12,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import ExternalLink from 'lucide-react/icons/external-link';
+import { RoTag, RoStatTile, prettyEnum } from '@/components/redeemops/ui';
+
+const ACTIVATION_TONE = { preparing: 'pending', completed: 'done' };
 
 const NEXT_STATUS = {
   draft: ['preparing', 'cancelled'],
@@ -82,38 +84,35 @@ export default function ActivationDetail() {
   const acquisition = metricsQuery.data?.acquisition;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-4">
-      <Card>
-        <CardContent className="pt-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight">
-                {a.rewardOffer?.title} <span className="text-muted-foreground font-normal">×</span> {a.campaignNameSnapshot || 'No campaign yet'}
-              </h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {a.partner?.tradingName || a.partner?.legalName}
-                {' · unlock: '}{a.unlockPolicy === 'agent_unlock' ? 'at consultant meeting' : 'instant on signup'}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant={a.status === 'active' ? 'default' : 'secondary'}>{a.status}</Badge>
-              {canManage && (NEXT_STATUS[a.status] || []).length > 0 && (
-                <Select onValueChange={(s) => statusMutation.mutate(s)}>
-                  <SelectTrigger className="w-36 h-9"><SelectValue placeholder="Move to…" /></SelectTrigger>
-                  <SelectContent>
-                    {NEXT_STATUS[a.status].map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3 mt-5 text-center">
-            <div><p className="text-2xl font-semibold tabular-nums">{a.allocatedQuantity}</p><p className="text-xs text-muted-foreground">Allocated</p></div>
-            <div><p className="text-2xl font-semibold tabular-nums">{a.issuedCount}</p><p className="text-xs text-muted-foreground">Issued</p></div>
-            <div><p className="text-2xl font-semibold tabular-nums">{a.redeemedCount}</p><p className="text-xs text-muted-foreground">Redeemed</p></div>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="ro-title text-[26px]">
+            {a.rewardOffer?.title} <span className="font-normal" style={{ color: 'var(--ro-text-3)' }}>×</span> {a.campaignNameSnapshot || 'No campaign yet'}
+          </h1>
+          <p className="ro-sub">
+            {a.partner?.tradingName || a.partner?.legalName}
+            {' · unlock: '}{a.unlockPolicy === 'agent_unlock' ? 'at consultant meeting' : 'instant on signup'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <RoTag tone={ACTIVATION_TONE[a.status] || a.status}>{prettyEnum(a.status)}</RoTag>
+          {canManage && (NEXT_STATUS[a.status] || []).length > 0 && (
+            <Select onValueChange={(s) => statusMutation.mutate(s)}>
+              <SelectTrigger className="w-36 h-10"><SelectValue placeholder="Move to…" /></SelectTrigger>
+              <SelectContent>
+                {NEXT_STATUS[a.status].map((s) => <SelectItem key={s} value={s}>{prettyEnum(s)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      </div>
+
+      <div className="ro-tiles">
+        <RoStatTile label="Allocated" value={a.allocatedQuantity} />
+        <RoStatTile label="Issued" value={a.issuedCount} />
+        <RoStatTile label="Redeemed" value={a.redeemedCount} />
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
