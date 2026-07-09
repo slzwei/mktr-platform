@@ -22,6 +22,7 @@ const router = express.Router();
 router.get('/team', requireRedeemOps('analytics.view_team'), ctrl.listTeam);
 router.post('/team/invite', requireRedeemOps('team.manage_access'), ctrl.inviteTeamMember);
 router.patch('/team/:userId/role', requireRedeemOps('team.manage_access'), ctrl.setTeamRole);
+router.patch('/team/:userId', requireRedeemOps('team.manage_access'), ctrl.updateTeamMember);
 
 // Audit trail
 router.get('/audit', requireRedeemOps('audit.view'), ctrl.listAudit);
