@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { hasCapability } from '@/lib/redeemOpsPermissions';
-import { RoAvatar } from '@/components/redeemops/ui';
+import { RoAvatar, roRoleLabel } from '@/components/redeemops/ui';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +22,7 @@ import QrCode from 'lucide-react/icons/qr-code';
 import ChartColumn from 'lucide-react/icons/chart-column';
 import UserCog from 'lucide-react/icons/user-cog';
 import Shield from 'lucide-react/icons/shield';
+import Settings from 'lucide-react/icons/settings';
 import LogOut from 'lucide-react/icons/log-out';
 import '@/styles/redeem-ops-theme.css';
 
@@ -97,12 +98,17 @@ export default function RedeemOpsLayout({ children }) {
             >
               <RoAvatar name={displayName} size={34} title={displayName} />
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="right" align="end" className="w-56">
+            <DropdownMenuContent side="right" align="end" className="w-60">
               <DropdownMenuLabel className="font-normal">
                 <p className="text-sm font-semibold m-0">{displayName}</p>
+                <p className="text-xs m-0" style={{ color: 'var(--ro-azure)' }}>{roRoleLabel(user)}</p>
                 <p className="text-xs text-muted-foreground m-0 truncate">{user?.email}</p>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate('/redeem-ops/profile')}>
+                <Settings className="w-4 h-4 mr-2" aria-hidden="true" />
+                Edit profile
+              </DropdownMenuItem>
               {user?.role === 'admin' && (
                 <DropdownMenuItem onClick={() => navigate('/AdminDashboard')}>
                   <Shield className="w-4 h-4 mr-2" aria-hidden="true" />
