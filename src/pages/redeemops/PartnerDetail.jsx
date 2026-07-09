@@ -27,6 +27,7 @@ import ArrowRight from 'lucide-react/icons/arrow-right';
 import Star from 'lucide-react/icons/star';
 import MapPin from 'lucide-react/icons/map-pin';
 import Plus from 'lucide-react/icons/plus';
+import Pencil from 'lucide-react/icons/pencil';
 import ArrowLeft from 'lucide-react/icons/arrow-left';
 import { RoStageTag, RoAvatar, RoTag, prettyEnum } from '@/components/redeemops/ui';
 
@@ -232,6 +233,35 @@ export default function PartnerDetail() {
     onError: (err) => toast.error('Could not create task', { description: err.message }),
   });
 
+  const [editForm, setEditForm] = useState(null); // null = closed; object = open
+  const editMutation = useMutation({
+    mutationFn: () => redeemOpsApi.updatePartner(id, {
+      tradingName: editForm.tradingName.trim(),
+      category: editForm.category,
+      primaryPhone: editForm.primaryPhone,
+      instagramHandle: editForm.instagramHandle,
+      website: editForm.website,
+      uen: editForm.uen,
+      primaryEmail: editForm.primaryEmail,
+    }),
+    onSuccess: () => {
+      toast.success('Details updated');
+      setEditForm(null);
+      invalidate();
+    },
+    onError: (err) => toast.error('Could not update details', { description: err.message }),
+  });
+  const openEdit = (p) => setEditForm({
+    tradingName: p.tradingName || p.brandName || p.legalName || '',
+    category: p.category || '',
+    primaryPhone: p.primaryPhone || '',
+    instagramHandle: p.instagramHandle ? `@${p.instagramHandle}` : '',
+    website: p.website || p.websiteDomain || '',
+    uen: p.uen || '',
+    primaryEmail: p.primaryEmail || '',
+  });
+  const setEdit = (k) => (e) => setEditForm((f) => ({ ...f, [k]: e.target.value }));
+
   const deleteMutation = useMutation({
     mutationFn: () => redeemOpsApi.deletePartner(id),
     onSuccess: () => {
@@ -282,7 +312,21 @@ export default function PartnerDetail() {
         <div className="flex items-center gap-4 min-w-0">
           <RoAvatar name={name} size={56} />
           <div className="min-w-0">
-            <h1 className="ro-title text-[26px]">{name}</h1>
+            <h1 className="ro-title text-[26px] inline-flex items-center gap-2">
+              {name}
+              {hasCapability(user, 'partners.edit') && (isOwner || canReassign) && (
+                <button
+                  type="button"
+                  className="ro-icon-circle shrink-0"
+                  style={{ width: 30, height: 30, background: 'var(--ro-subtle)', color: 'var(--ro-text-2)', border: 'none', cursor: 'pointer' }}
+                  aria-label="Edit business details"
+                  title="Edit business details"
+                  onClick={() => openEdit(partner)}
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </h1>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[13.5px]" style={{ color: 'var(--ro-text-2)' }}>
               <span>{partner.category || 'Uncategorised'}</span>
               {partner.uen && <span>UEN {partner.uen}</span>}
@@ -528,6 +572,54 @@ export default function PartnerDetail() {
               disabled={!task.title.trim() || !task.dueDate || taskMutation.isPending}
             >
               {taskMutation.isPending ? 'Saving…' : 'Create task'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editForm} onOpenChange={(open) => { if (!open) setEditForm(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit business details</DialogTitle>
+          </DialogHeader>
+          {editForm && (
+            <div className="grid grid-cols-2 gap-3 py-2">
+              <div className="col-span-2 space-y-1.5">
+                <Label>Business name *</Label>
+                <Input value={editForm.tradingName} onChange={setEdit('tradingName')} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Category</Label>
+                <Input value={editForm.category} onChange={setEdit('category')} placeholder="Nail Salon" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Phone (+65…)</Label>
+                <Input value={editForm.primaryPhone} onChange={setEdit('primaryPhone')} placeholder="+6591234567" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Instagram</Label>
+                <Input value={editForm.instagramHandle} onChange={setEdit('instagramHandle')} placeholder="@nailbliss.sg" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Website</Label>
+                <Input value={editForm.website} onChange={setEdit('website')} placeholder="nailbliss.sg" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>UEN</Label>
+                <Input value={editForm.uen} onChange={setEdit('uen')} placeholder="202507548M" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Email</Label>
+                <Input value={editForm.primaryEmail} onChange={setEdit('primaryEmail')} placeholder="hello@nailbliss.sg" />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              disabled={!editForm?.tradingName?.trim() || editMutation.isPending}
+              onClick={() => editMutation.mutate()}
+            >
+              {editMutation.isPending ? 'Saving…' : 'Save changes'}
             </Button>
           </DialogFooter>
         </DialogContent>
