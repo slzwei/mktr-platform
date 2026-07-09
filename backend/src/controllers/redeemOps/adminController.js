@@ -125,6 +125,67 @@ export const setTeamRole = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { user: target.toJSON() } });
 });
 
+const updateMemberSchema = Joi.object({
+  fullName: Joi.string().min(1).max(100),
+  phone: Joi.string().min(8).max(20).allow('', null),
+  isActive: Joi.boolean(),
+}).min(1);
+
+/**
+ * PATCH /api/redeem-ops/team/:userId — admin edit of a member's details and
+ * active state. Deactivation is a hard lock-out (authenticateToken rejects
+ * inactive users on every request). You cannot deactivate yourself.
+ */
+export const updateTeamMember = asyncHandler(async (req, res) => {
+  const { error, value } = updateMemberSchema.validate(req.body, { abortEarly: false });
+  if (error) {
+    throw new AppError(error.details.map((d) => d.message).join(', '), 400);
+  }
+  const target = await User.findByPk(req.params.userId);
+  if (!target) throw new AppError('User not found', 404);
+  if (!['redeem_ops', 'admin'].includes(target.role)) {
+    throw new AppError('Not a Redeem Ops team member', 400);
+  }
+  if (value.isActive === false && target.id === req.user.id) {
+    throw new AppError('You cannot deactivate your own account', 400);
+  }
+
+  const updates = {};
+  if (value.fullName !== undefined) {
+    const parts = String(value.fullName).trim().split(/\s+/);
+    updates.firstName = parts[0] || target.firstName;
+    updates.lastName = parts.slice(1).join(' ') || '';
+  }
+  if (value.phone !== undefined) updates.phone = value.phone || null;
+  if (value.isActive !== undefined) updates.isActive = value.isActive;
+
+  const before = {
+    firstName: target.firstName,
+    lastName: target.lastName,
+    phone: target.phone,
+    isActive: target.isActive,
+  };
+  await sequelize.transaction(async (t) => {
+    await target.update(updates, { transaction: t });
+    await recordAuditEvent({
+      actorUser: req.user,
+      action: value.isActive === false
+        ? 'access.deactivated'
+        : value.isActive === true && before.isActive === false
+          ? 'access.reactivated'
+          : 'access.member_updated',
+      entityType: 'user',
+      entityId: target.id,
+      before,
+      after: updates,
+      requestId: req.id || null,
+      transaction: t,
+    });
+  });
+
+  res.json({ success: true, data: { user: target.toJSON() } });
+});
+
 /** GET /api/redeem-ops/audit — filterable, paginated audit trail (newest first). */
 export const listAudit = asyncHandler(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);

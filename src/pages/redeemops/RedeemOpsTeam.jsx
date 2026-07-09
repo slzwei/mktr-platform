@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import UserPlus from 'lucide-react/icons/user-plus';
+import Pencil from 'lucide-react/icons/pencil';
 import { RoTag, RoAvatar } from '@/components/redeemops/ui';
 
 const TEAM_KEY = ['redeem-ops', 'team'];
@@ -58,6 +59,23 @@ export default function RedeemOpsTeam() {
       queryClient.invalidateQueries({ queryKey: TEAM_KEY });
     },
     onError: (err) => toast.error('Role change failed', { description: err.message }),
+  });
+
+  const [editTarget, setEditTarget] = useState(null); // { id, fullName, phone }
+  const memberMutation = useMutation({
+    mutationFn: ({ userId, body }) => redeemOpsApi.updateTeamMember(userId, body),
+    onSuccess: (_data, vars) => {
+      toast.success(
+        vars.body.isActive === false
+          ? 'Account deactivated — they can no longer sign in'
+          : vars.body.isActive === true
+            ? 'Account reactivated'
+            : 'Member updated'
+      );
+      setEditTarget(null);
+      queryClient.invalidateQueries({ queryKey: TEAM_KEY });
+    },
+    onError: (err) => toast.error('Update failed', { description: err.message }),
   });
 
   const team = teamQuery.data || [];
@@ -155,6 +173,7 @@ export default function RedeemOpsTeam() {
                   <TableHead>Email</TableHead>
                   <TableHead>Sub-role</TableHead>
                   <TableHead>Status</TableHead>
+                  {canManage && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -192,14 +211,47 @@ export default function RedeemOpsTeam() {
                     </TableCell>
                     <TableCell>
                       <RoTag tone={member.isActive ? 'active' : 'inactive'} size="sm">
-                        {member.isActive ? 'Active' : 'Inactive'}
+                        {member.isActive ? 'Active' : 'Deactivated'}
                       </RoTag>
                     </TableCell>
+                    {canManage && (
+                      <TableCell className="text-right whitespace-nowrap">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label="Edit member"
+                          onClick={() => setEditTarget({
+                            id: member.id,
+                            fullName: member.fullName || [member.firstName, member.lastName].filter(Boolean).join(' '),
+                            phone: member.phone || '',
+                          })}
+                        >
+                          <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                        </Button>
+                        {member.id !== currentUser?.id && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className={member.isActive ? 'text-destructive hover:text-destructive' : undefined}
+                            disabled={memberMutation.isPending}
+                            onClick={() => {
+                              const name = member.fullName || member.email;
+                              const ok = member.isActive
+                                ? window.confirm(`Deactivate ${name}? They will be signed out and unable to log in until reactivated.`)
+                                : true;
+                              if (ok) memberMutation.mutate({ userId: member.id, body: { isActive: !member.isActive } });
+                            }}
+                          >
+                            {member.isActive ? 'Deactivate' : 'Reactivate'}
+                          </Button>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
                 {!teamQuery.isLoading && team.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={canManage ? 5 : 4} className="text-center text-muted-foreground py-8">
                       No Redeem Ops staff yet{canManage ? ' — send the first invite.' : '.'}
                     </TableCell>
                   </TableRow>
@@ -209,6 +261,48 @@ export default function RedeemOpsTeam() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={!!editTarget} onOpenChange={(open) => { if (!open) setEditTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit member</DialogTitle>
+            <DialogDescription>
+              Name and phone. Members can also edit these themselves via Edit profile.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label>Full name</Label>
+              <Input
+                value={editTarget?.fullName || ''}
+                onChange={(e) => setEditTarget((t) => ({ ...t, fullName: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Phone</Label>
+              <Input
+                value={editTarget?.phone || ''}
+                onChange={(e) => setEditTarget((t) => ({ ...t, phone: e.target.value }))}
+                placeholder="+65 9123 4567"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={!editTarget?.fullName?.trim() || memberMutation.isPending}
+              onClick={() => memberMutation.mutate({
+                userId: editTarget.id,
+                body: {
+                  fullName: editTarget.fullName.trim(),
+                  phone: editTarget.phone?.trim() || null,
+                },
+              })}
+            >
+              {memberMutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

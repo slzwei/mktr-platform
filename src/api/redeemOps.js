@@ -20,6 +20,10 @@ export const redeemOpsApi = {
     return res.data;
   },
 
+  async updateTeamMember(userId, body) {
+    const res = await apiClient.patch(`/redeem-ops/team/${userId}`, body);
+    return res.data?.user;
+  },
   async setTeamRole(userId, redeemOpsRole) {
     const res = await apiClient.patch(`/redeem-ops/team/${userId}/role`, { redeemOpsRole });
     return res.data;
