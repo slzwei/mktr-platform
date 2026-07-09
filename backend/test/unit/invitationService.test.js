@@ -67,6 +67,8 @@ describe('invitationService (unit)', () => {
         role: 'agent',
         isActive: true,
         emailVerified: false,
+        // Invited accounts are pre-approved — the invite is the approval.
+        approvalStatus: 'approved',
       })
     );
     expect(result.user).toBeDefined();
