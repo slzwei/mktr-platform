@@ -152,9 +152,12 @@ export const updateTeamMember = asyncHandler(async (req, res) => {
 
   const updates = {};
   if (value.fullName !== undefined) {
-    const parts = String(value.fullName).trim().split(/\s+/);
+    const trimmed = String(value.fullName).trim();
+    const parts = trimmed.split(/\s+/);
     updates.firstName = parts[0] || target.firstName;
     updates.lastName = parts.slice(1).join(' ') || '';
+    // fullName is a stored column that would otherwise shadow the new name
+    updates.fullName = trimmed;
   }
   if (value.phone !== undefined) updates.phone = value.phone || null;
   if (value.isActive !== undefined) updates.isActive = value.isActive;

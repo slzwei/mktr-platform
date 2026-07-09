@@ -185,6 +185,18 @@ const User = sequelize.define('User', {
         if (composed) user.fullName = composed;
       }
 
+      // If first/last CHANGED on an existing row and fullName wasn't explicitly
+      // set in the same update, recompose it — otherwise the stored fullName
+      // keeps shadowing the new name everywhere it's displayed.
+      if (
+        !user.isNewRecord &&
+        (user.changed('firstName') || user.changed('lastName')) &&
+        !user.changed('fullName')
+      ) {
+        const composed = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
+        if (composed) user.fullName = composed;
+      }
+
       // If fullName provided but first/last missing, split it
       const hasFull = !!user.fullName && String(user.fullName).trim().length > 0;
       if (hasFull && !hasFirst && !hasLast) {
