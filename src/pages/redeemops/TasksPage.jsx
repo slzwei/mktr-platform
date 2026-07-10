@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Plus from 'lucide-react/icons/plus';
 import Pencil from 'lucide-react/icons/pencil';
-import { RoPageHeader, RoTag, RoAvatar, prettyEnum } from '@/components/redeemops/ui';
+import { RoMobileCard, RoPageHeader, RoTag, RoAvatar, prettyEnum } from '@/components/redeemops/ui';
 
 const VIEWS = [
   { key: 'today', label: 'Due today', params: { due: 'today' } },
@@ -186,15 +186,79 @@ export default function TasksPage() {
       />
 
       <Tabs value={view} onValueChange={setView}>
-        <TabsList>
+        <div className="max-w-full overflow-x-auto">
+        <TabsList className="w-max">
           {VIEWS.filter((v) => !v.managerOnly || isManager).map((v) => (
             <TabsTrigger key={v.key} value={v.key}>{v.label}</TabsTrigger>
           ))}
         </TabsList>
+        </div>
       </Tabs>
 
       <div className="rounded-2xl border border-border bg-white overflow-hidden">
-        <div className="px-2 py-1">
+        <div className="md:hidden">
+          {tasks.map((t) => {
+            const due = dueLabel(t);
+            const open = t.status === 'open' || t.status === 'in_progress';
+            return (
+              <RoMobileCard key={t.id}>
+                <p className="text-[14px] font-semibold m-0 leading-tight">{t.title}</p>
+                <p className="text-xs m-0 mt-0.5 truncate">
+                  <Link to={`/redeem-ops/partners/${t.partner?.id}`} className="ro-link">
+                    {t.partner?.tradingName || t.partner?.brandName || t.partner?.legalName || '—'}
+                  </Link>
+                  {view === 'team' && t.assignee?.fullName ? (
+                    <span style={{ color: 'var(--ro-text-3)' }}> · {t.assignee.fullName}</span>
+                  ) : null}
+                </p>
+                <span className="flex items-center gap-2 mt-2 flex-wrap">
+                  <span className="text-[12.5px] font-semibold" style={{ color: due.color }}>{due.text}</span>
+                  <RoTag tone={t.priority} size="sm">{t.priority}</RoTag>
+                  {showStatus && <RoTag tone={t.status} size="sm">{prettyEnum(t.status)}</RoTag>}
+                  <span className="ml-auto inline-flex gap-1">
+                    {open && (
+                      <>
+                        <Button
+                          size="sm" variant="outline"
+                          disabled={updateMutation.isPending}
+                          onClick={() => updateMutation.mutate({ taskId: t.id, body: { status: 'completed' } })}
+                        >
+                          Complete
+                        </Button>
+                        <Button
+                          size="sm" variant="ghost"
+                          aria-label="Edit task"
+                          onClick={() => setEditTask({
+                            id: t.id,
+                            title: t.title,
+                            dueDate: new Date(t.dueAt).toISOString().slice(0, 10),
+                            priority: t.priority,
+                            assigneeUserId: t.assigneeUserId || '',
+                          })}
+                        >
+                          <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                        </Button>
+                      </>
+                    )}
+                    {t.status === 'completed' && (
+                      <Button
+                        size="sm" variant="ghost"
+                        disabled={updateMutation.isPending}
+                        onClick={() => updateMutation.mutate({ taskId: t.id, body: { status: 'open' } })}
+                      >
+                        Reopen
+                      </Button>
+                    )}
+                  </span>
+                </span>
+              </RoMobileCard>
+            );
+          })}
+          {!tasksQuery.isLoading && tasks.length === 0 && (
+            <p className="text-sm text-center py-10 m-0" style={{ color: 'var(--ro-text-2)' }}>Nothing here.</p>
+          )}
+        </div>
+        <div className="hidden md:block px-2 py-1">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>

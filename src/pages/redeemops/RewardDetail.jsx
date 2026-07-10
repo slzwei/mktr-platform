@@ -99,11 +99,13 @@ export default function RewardDetail() {
       </div>
 
       <Tabs defaultValue="ledger">
-        <TabsList>
+        <div className="max-w-full overflow-x-auto">
+        <TabsList className="w-max">
           <TabsTrigger value="ledger">Inventory ledger</TabsTrigger>
           <TabsTrigger value="terms">Terms</TabsTrigger>
           {canAdjust && <TabsTrigger value="adjust">Adjust supply</TabsTrigger>}
         </TabsList>
+        </div>
 
         <TabsContent value="ledger">
           <Card>

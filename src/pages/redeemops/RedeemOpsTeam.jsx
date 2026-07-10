@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import UserPlus from 'lucide-react/icons/user-plus';
 import Pencil from 'lucide-react/icons/pencil';
-import { RoTag, RoAvatar } from '@/components/redeemops/ui';
+import { RoMobileCard, RoTag, RoAvatar } from '@/components/redeemops/ui';
 
 const TEAM_KEY = ['redeem-ops', 'team'];
 
@@ -165,7 +165,75 @@ export default function RedeemOpsTeam() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
+          <div className="md:hidden -mx-6">
+            {team.map((member) => (
+              <RoMobileCard key={member.id} className="px-6">
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <RoAvatar name={member.fullName || member.email} size={34} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold text-[14px] truncate">
+                      {member.fullName || [member.firstName, member.lastName].filter(Boolean).join(' ') || '—'}
+                    </span>
+                    <span className="block text-xs truncate" style={{ color: 'var(--ro-text-2)' }}>{member.email}</span>
+                  </span>
+                  <RoTag tone={member.isActive ? 'active' : 'inactive'} size="sm">
+                    {member.isActive ? 'Active' : 'Deactivated'}
+                  </RoTag>
+                </span>
+                {canManage && member.id !== currentUser?.id ? (
+                  <span className="flex items-center gap-2 mt-2.5">
+                    <Select
+                      value={member.redeemOpsRole || ''}
+                      onValueChange={(redeemOpsRole) => roleMutation.mutate({ userId: member.id, redeemOpsRole })}
+                    >
+                      <SelectTrigger className="flex-1 h-9"><SelectValue placeholder="No sub-role" /></SelectTrigger>
+                      <SelectContent>
+                        {subRoles.map((r) => (
+                          <SelectItem key={r} value={r}>{subRoleLabels[r] || r}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm" variant="ghost" aria-label="Edit member"
+                      onClick={() => setEditTarget({
+                        id: member.id,
+                        fullName: member.fullName || [member.firstName, member.lastName].filter(Boolean).join(' '),
+                        phone: member.phone || '',
+                      })}
+                    >
+                      <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      size="sm" variant="ghost"
+                      className={member.isActive ? 'text-destructive hover:text-destructive' : undefined}
+                      disabled={memberMutation.isPending}
+                      onClick={() => {
+                        const name = member.fullName || member.email;
+                        const ok = member.isActive
+                          ? window.confirm(`Deactivate ${name}? They will be signed out and unable to log in until reactivated.`)
+                          : true;
+                        if (ok) memberMutation.mutate({ userId: member.id, body: { isActive: !member.isActive } });
+                      }}
+                    >
+                      {member.isActive ? 'Deactivate' : 'Reactivate'}
+                    </Button>
+                  </span>
+                ) : (
+                  <span className="block mt-2">
+                    <RoTag tone="primary" size="sm">
+                      {subRoleLabels[member.redeemOpsRole] || member.redeemOpsRole || '—'}
+                    </RoTag>
+                  </span>
+                )}
+              </RoMobileCard>
+            ))}
+            {!teamQuery.isLoading && team.length === 0 && (
+              <p className="text-sm text-center py-8 m-0" style={{ color: 'var(--ro-text-2)' }}>
+                No Redeem Ops staff yet{canManage ? ' — send the first invite.' : '.'}
+              </p>
+            )}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>

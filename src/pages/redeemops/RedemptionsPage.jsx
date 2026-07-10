@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import ScanLine from 'lucide-react/icons/scan-line';
-import { RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
+import { RoMobileCard, RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
 
 export default function RedemptionsPage() {
   const queryClient = useQueryClient();
@@ -180,7 +180,32 @@ export default function RedemptionsPage() {
           <CardTitle className="text-base">Recent redemptions</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
+          <div className="md:hidden -mx-6">
+            {redemptions.map((r) => (
+              <RoMobileCard key={r.id} className="px-6">
+                <span className="flex items-start gap-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold text-[14px] leading-tight">{r.rewardOffer?.title || '—'}</span>
+                    <span className="block text-xs truncate mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
+                      {r.partner?.tradingName || r.partner?.legalName || '—'}
+                    </span>
+                    <span className="block text-[11px] truncate mt-0.5" style={{ color: 'var(--ro-text-3)' }}>
+                      {new Date(r.redeemedAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}
+                      {', '}
+                      {new Date(r.redeemedAt).toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' })}
+                      {' · '}
+                      {r.actor?.fullName || r.actorType}
+                    </span>
+                  </span>
+                  <RoTag tone={r.status === 'completed' ? 'completed' : 'void'} size="sm">{prettyEnum(r.status)}</RoTag>
+                </span>
+              </RoMobileCard>
+            ))}
+            {!historyQuery.isLoading && redemptions.length === 0 && (
+              <p className="text-sm text-center py-8 m-0" style={{ color: 'var(--ro-text-2)' }}>No redemptions yet.</p>
+            )}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>

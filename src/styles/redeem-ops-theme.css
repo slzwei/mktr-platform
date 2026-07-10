@@ -313,6 +313,7 @@
   .ro-main {
     height: 100dvh;
     padding-bottom: calc(70px + env(safe-area-inset-bottom));
+    overflow-x: hidden; /* wide widgets scroll in their own strips, never the page */
   }
 }
 
