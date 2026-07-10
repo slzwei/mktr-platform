@@ -155,7 +155,7 @@ export default function PoolsPage() {
   const pools = poolsQuery.data || [];
 
   return (
-    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-5">
+    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-5">
       <RoPageHeader
         title="Prospecting pools"
         sub="Curated prospect lists — hit “Claim next” to pull your next business, no cherry-picking, no collisions."

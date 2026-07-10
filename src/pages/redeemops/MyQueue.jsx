@@ -97,7 +97,7 @@ export default function MyQueue() {
   );
 
   return (
-    <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="ro-title">{greeting()}, {firstName}</h1>

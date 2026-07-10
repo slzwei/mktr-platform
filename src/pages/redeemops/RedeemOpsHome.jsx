@@ -33,7 +33,7 @@ export default function RedeemOpsHome() {
   const canSeeRewards = hasCapability(user, 'rewards.view');
 
   return (
-    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
       <RoPageHeader
         title="Redeem Ops"
         sub="Partner prospecting, rewards, and redemption operations."
