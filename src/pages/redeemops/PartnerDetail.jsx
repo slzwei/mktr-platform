@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { hasCapability } from '@/lib/redeemOpsPermissions';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -141,7 +141,18 @@ function TimelineEntry({ entry }) {
     }
   } else if (entry.kind === 'audit') {
     const e = entry.data;
-    if (e.action === 'partner.created') {
+    if (e.action === 'partner.snoozed') {
+      title = 'Snoozed';
+      body = e.after?.snoozedUntil ? (
+        <p className="text-[13.5px] m-0 mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
+          Until {new Date(e.after.snoozedUntil).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })}
+        </p>
+      ) : null;
+      meta = `${e.actor?.fullName || 'System'} · ${at}`;
+    } else if (e.action === 'partner.unsnoozed') {
+      title = 'Woken from snooze';
+      meta = `${e.actor?.fullName || 'System'} · ${at}`;
+    } else if (e.action === 'partner.created') {
       title = 'Business added';
       body = e.after?.name ? (
         <p className="text-[13.5px] m-0 mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
@@ -289,10 +300,20 @@ export default function PartnerDetail() {
   const claimMutation = useSimpleMutation(() => redeemOpsApi.claimPartner(id), 'Business claimed — it’s yours');
   const releaseMutation = useSimpleMutation(() => redeemOpsApi.releasePartner(id), 'Released back to the pool');
   const stageMutation = useMutation({
-    mutationFn: ({ toStage, reason }) => redeemOpsApi.changeStage(id, toStage, reason),
-    onSuccess: () => { toast.success('Stage updated'); invalidate(); },
+    mutationFn: ({ toStage, reason, lostReason }) => redeemOpsApi.changeStage(id, toStage, reason, lostReason),
+    onSuccess: () => { toast.success('Stage updated'); setLostOpen(false); invalidate(); },
     onError: (err) => toast.error('Stage change rejected', { description: err.message }),
   });
+  const [lostOpen, setLostOpen] = useState(false);
+  const [lostReason, setLostReason] = useState(null);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [snoozeDays, setSnoozeDays] = useState(30);
+  const snoozeMutation = useMutation({
+    mutationFn: () => redeemOpsApi.snoozePartner(id, new Date(Date.now() + snoozeDays * 24 * 3600 * 1000).toISOString()),
+    onSuccess: () => { toast.success(`Snoozed for ${snoozeDays} days`); setSnoozeOpen(false); invalidate(); },
+    onError: (err) => toast.error('Could not snooze', { description: err.message }),
+  });
+  const unsnoozeMutation = useSimpleMutation(() => redeemOpsApi.unsnoozePartner(id), 'Back on the active list');
   const assignMutation = useMutation({
     mutationFn: ({ toUserId }) => redeemOpsApi.assignPartner(id, toUserId),
     onSuccess: () => { toast.success('Reassigned'); invalidate(); },
@@ -484,6 +505,16 @@ export default function PartnerDetail() {
                 <span className="inline-flex items-center gap-1"><Instagram className="w-3.5 h-3.5" aria-hidden="true" />@{partner.instagramHandle}</span>
               )}
               <RoStageTag stage={partner.pipelineStage} />
+              {partner.pipelineStage === 'LOST' && partner.lostReason && (
+                <span style={{ color: 'var(--ro-tag-red-fg)' }} className="font-semibold">
+                  {prettyEnum(partner.lostReason)}
+                </span>
+              )}
+              {partner.availability === 'follow_up_later' && partner.snoozedUntil && (
+                <span className="font-semibold">
+                  Snoozed until {new Date(partner.snoozedUntil).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -500,7 +531,13 @@ export default function PartnerDetail() {
             </Select>
           )}
           {(isOwner || canReassign) && allowedNext.length > 0 && (
-            <Select onValueChange={(toStage) => stageMutation.mutate({ toStage })}>
+            <Select
+              value=""
+              onValueChange={(toStage) => {
+                if (toStage === 'LOST') { setLostReason(null); setLostOpen(true); return; }
+                stageMutation.mutate({ toStage });
+              }}
+            >
               <SelectTrigger className="w-44 h-10"><SelectValue placeholder="Move stage…" /></SelectTrigger>
               <SelectContent>
                 {allowedNext.map((s) => (
@@ -508,6 +545,13 @@ export default function PartnerDetail() {
                 ))}
               </SelectContent>
             </Select>
+          )}
+          {(isOwner || canReassign) && !['PARTNERED', 'LOST'].includes(partner.pipelineStage) && (
+            partner.availability === 'follow_up_later' ? (
+              <Button variant="outline" onClick={() => unsnoozeMutation.mutate()}>Wake up</Button>
+            ) : (
+              <Button variant="outline" onClick={() => { setSnoozeDays(30); setSnoozeOpen(true); }}>Snooze</Button>
+            )
           )}
           {isOwner && (
             <Button variant="outline" onClick={() => releaseMutation.mutate()}>Release</Button>
@@ -947,6 +991,76 @@ export default function PartnerDetail() {
               disabled={!activity.summary.trim() || activityMutation.isPending}
             >
               {activityMutation.isPending ? 'Saving…' : 'Log it'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={lostOpen} onOpenChange={setLostOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Mark {name} as Lost</DialogTitle>
+            <DialogDescription>Why didn’t this one work out? Kept on record — you can re-engage later.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            {(constants.data?.lostReasons || []).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setLostReason(r)}
+                className="h-[42px] px-4 rounded-xl text-[13px] font-semibold border text-left cursor-pointer"
+                style={r === lostReason
+                  ? { background: 'var(--ro-bunker)', borderColor: 'var(--ro-bunker)', color: '#fff' }
+                  : { background: '#fff', borderColor: 'var(--ro-border-strong)', color: 'var(--ro-bunker)' }}
+              >
+                {prettyEnum(r)}
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLostOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={!lostReason || stageMutation.isPending}
+              onClick={() => stageMutation.mutate({ toStage: 'LOST', lostReason })}
+            >
+              {stageMutation.isPending ? 'Saving…' : 'Mark as Lost'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={snoozeOpen} onOpenChange={setSnoozeOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Snooze {name}</DialogTitle>
+            <DialogDescription>
+              Hides it from your queue until the wake date — it keeps its pipeline stage
+              and comes back automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            {[7, 14, 30, 90].map((days) => (
+              <button
+                key={days}
+                type="button"
+                onClick={() => setSnoozeDays(days)}
+                className="h-[42px] px-4 rounded-xl text-[13px] font-semibold border text-left cursor-pointer"
+                style={days === snoozeDays
+                  ? { background: 'var(--ro-bunker)', borderColor: 'var(--ro-bunker)', color: '#fff' }
+                  : { background: '#fff', borderColor: 'var(--ro-border-strong)', color: 'var(--ro-bunker)' }}
+              >
+                {days === 7 ? '1 week' : days === 14 ? '2 weeks' : days === 30 ? '1 month' : '3 months'}
+                <span className="font-normal" style={{ color: days === snoozeDays ? 'rgba(255,255,255,0.7)' : 'var(--ro-text-3)' }}>
+                  {' '}— wakes {new Date(Date.now() + days * 24 * 3600 * 1000).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}
+                </span>
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSnoozeOpen(false)}>Cancel</Button>
+            <Button disabled={snoozeMutation.isPending} onClick={() => snoozeMutation.mutate()}>
+              {snoozeMutation.isPending ? 'Saving…' : 'Snooze'}
             </Button>
           </DialogFooter>
         </DialogContent>

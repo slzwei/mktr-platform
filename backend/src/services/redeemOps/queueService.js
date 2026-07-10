@@ -93,7 +93,7 @@ export function makeQueueService(overrides = {}) {
     );
     const partners = await d.PartnerOrganisation.findAll({
       where: { mergedIntoId: null, archivedAt: null },
-      attributes: [...PARTNER_LITE, 'ownerUserId', 'atRiskFlag', 'staleFlag', 'createdAt'],
+      attributes: [...PARTNER_LITE, 'ownerUserId', 'atRiskFlag', 'staleFlag', 'createdAt', 'availability', 'snoozedUntil', 'lostReason'],
       include: [{ model: d.User, as: 'owner', attributes: ['id', 'fullName'] }],
       order: [['lastActivityAt', 'DESC']],
       limit: 500,

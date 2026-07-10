@@ -84,8 +84,16 @@ export const redeemOpsApi = {
     const res = await apiClient.post(`/redeem-ops/partners/${id}/assign`, { toUserId, reason });
     return res.data;
   },
-  async changeStage(id, toStage, reason) {
-    const res = await apiClient.patch(`/redeem-ops/partners/${id}/stage`, { toStage, reason });
+  async changeStage(id, toStage, reason, lostReason) {
+    const res = await apiClient.patch(`/redeem-ops/partners/${id}/stage`, { toStage, reason, lostReason });
+    return res.data;
+  },
+  async snoozePartner(id, until) {
+    const res = await apiClient.post(`/redeem-ops/partners/${id}/snooze`, { until });
+    return res.data;
+  },
+  async unsnoozePartner(id) {
+    const res = await apiClient.post(`/redeem-ops/partners/${id}/unsnooze`);
     return res.data;
   },
   async undoStage(id) {

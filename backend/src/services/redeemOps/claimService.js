@@ -43,7 +43,6 @@ export function makeClaimService(overrides = {}) {
           SET "ownerUserId" = :userId,
               "claimedAt" = NOW(),
               availability = 'owned',
-              "pipelineStage" = CASE WHEN "pipelineStage" = 'UNCLAIMED' THEN 'CLAIMED' ELSE "pipelineStage" END,
               "updatedAt" = NOW()
         WHERE id = :partnerId
           AND "ownerUserId" IS NULL
@@ -59,10 +58,8 @@ export function makeClaimService(overrides = {}) {
       { partnerOrganisationId: partnerId, kind: 'claim', toUserId: user.id, actorUserId: user.id, reason: via === 'claim' ? null : via },
       { transaction: t }
     );
-    await d.PartnerStageEvent.create(
-      { partnerOrganisationId: partnerId, fromStage: 'UNCLAIMED', toStage: rows[0].pipelineStage, actorUserId: user.id, reason: via },
-      { transaction: t }
-    );
+    // Ownership is not pipeline progress (5-stage model): claiming records an
+    // assignment event + audit only; the stage stays where the deal is.
     await d.audit.recordAuditEvent({
       actorUser: user, action: 'partner.claimed', entityType: 'partner_organisation',
       entityId: partnerId, reason: via === 'claim' ? null : via, transaction: t,
@@ -139,7 +136,6 @@ export function makeClaimService(overrides = {}) {
           availability: 'owned',
           claimedAt: partner.claimedAt || new Date(),
           atRiskFlag: false,
-          pipelineStage: partner.pipelineStage === 'UNCLAIMED' ? 'CLAIMED' : partner.pipelineStage,
         },
         { transaction: t }
       );
