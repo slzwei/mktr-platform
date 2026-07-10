@@ -64,7 +64,7 @@ export default function RewardsPage() {
   const rewardTypes = constants.data?.rewardTypes || [];
 
   return (
-    <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-5">
+    <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-4 md:space-y-5">
       <RoPageHeader
         title="Rewards"
         sub="Partner-funded reward supply — every quantity movement is ledgered."
@@ -89,11 +89,11 @@ export default function RewardsPage() {
                   </span>
                   <RoTag tone={o.status} size="sm">{prettyEnum(o.status)}</RoTag>
                 </span>
-                <span className="grid grid-cols-4 gap-2 mt-2.5">
-                  <RoStat label="Committed">{o.committedQuantity}</RoStat>
-                  <RoStat label="Allocated">{o.allocatedQuantity}</RoStat>
-                  <RoStat label="Issued">{o.issuedQuantity}</RoStat>
-                  <RoStat label="Redeemed">{o.redeemedQuantity}</RoStat>
+                <span className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                  <RoStat label="committed">{o.committedQuantity}</RoStat>
+                  <RoStat label="allocated">{o.allocatedQuantity}</RoStat>
+                  <RoStat label="issued">{o.issuedQuantity}</RoStat>
+                  <RoStat label="redeemed">{o.redeemedQuantity}</RoStat>
                 </span>
               </RoMobileCard>
             ))}

@@ -46,7 +46,7 @@ export default function ProfilePage() {
   const pwMismatch = pw.next.length > 0 && pw.confirm.length > 0 && pw.next !== pw.confirm;
 
   return (
-    <div className="p-6 md:p-8 max-w-2xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-2xl mx-auto space-y-6">
       <RoPageHeader title="Your profile" sub="How your name appears to the team, and your sign-in password." />
 
       <div className="rounded-2xl border border-border bg-white p-6">

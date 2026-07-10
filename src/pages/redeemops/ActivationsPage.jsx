@@ -57,7 +57,7 @@ export default function ActivationsPage() {
   const rewards = (rewardsQuery.data || []).filter((r) => r.status !== 'ended');
 
   return (
-    <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-5">
+    <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-4 md:space-y-5">
       <RoPageHeader
         title="Activations"
         sub="A reward allocated to one MKTR campaign — the campaign itself stays managed on mktr.sg."
@@ -84,10 +84,10 @@ export default function ActivationsPage() {
                   </span>
                   <RoTag tone={ACTIVATION_TONE[a.status] || a.status} size="sm">{prettyEnum(a.status)}</RoTag>
                 </span>
-                <span className="grid grid-cols-3 gap-2 mt-2.5">
-                  <RoStat label="Allocated">{a.allocatedQuantity}</RoStat>
-                  <RoStat label="Issued">{a.issuedCount}</RoStat>
-                  <RoStat label="Redeemed">{a.redeemedCount}</RoStat>
+                <span className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                  <RoStat label="allocated">{a.allocatedQuantity}</RoStat>
+                  <RoStat label="issued">{a.issuedCount}</RoStat>
+                  <RoStat label="redeemed">{a.redeemedCount}</RoStat>
                 </span>
               </RoMobileCard>
             ))}

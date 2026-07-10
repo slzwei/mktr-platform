@@ -203,7 +203,7 @@ export default function PartnersList() {
     .filter(Boolean).slice(0, 2).join(' · ');
 
   return (
-    <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-5">
+    <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-5">
       <RoPageHeader
         title="Partners"
         sub={pagination ? `${pagination.total} business${pagination.total === 1 ? '' : 'es'} on the books — search before you add, claim before you contact.` : 'The shared business database — search before you add, claim before you contact.'}

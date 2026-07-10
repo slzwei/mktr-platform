@@ -211,12 +211,27 @@ export function RoMobileCard({ onClick, children, className }) {
   );
 }
 
-/** Tiny label→value pair for compact stat grids on mobile cards. */
+/**
+ * Inline value+label stat pair (design: screens/mobile-analytics.html).
+ * Pairs live in a `flex flex-wrap gap-x-4 gap-y-1` row so they FLOW at any
+ * width — never fixed stat columns on mobile (uppercase labels in a 4-col
+ * grid collide at 337px).
+ */
 export function RoStat({ label, children }) {
   return (
-    <span className="min-w-0">
-      <span className="block text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--ro-text-3)' }}>{label}</span>
-      <span className="block text-[13px] font-bold tabular-nums truncate">{children}</span>
+    <span className="inline-flex items-baseline gap-[5px]">
+      <span className="text-[13.5px] font-bold tabular-nums">{children}</span>
+      <span className="text-[11.5px] font-medium" style={{ color: 'var(--ro-text-3)' }}>{label}</span>
     </span>
+  );
+}
+
+/** Empty state for a mobile list — a section should say it's empty, not render hollow. */
+export function RoMobileEmpty({ title = 'Nothing to show yet', hint }) {
+  return (
+    <div className="px-6 py-7 text-center border-t border-border">
+      <p className="text-[13px] font-semibold m-0">{title}</p>
+      {hint && <p className="text-xs m-0 mt-0.5" style={{ color: 'var(--ro-text-2)' }}>{hint}</p>}
+    </div>
   );
 }

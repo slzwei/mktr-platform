@@ -65,7 +65,7 @@ export default function RewardDetail() {
   const remaining = offer.committedQuantity - offer.allocatedQuantity;
 
   return (
-    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-5">
+    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="ro-title text-[26px]">{offer.title}</h1>
