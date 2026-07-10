@@ -1,8 +1,8 @@
 import { Op } from 'sequelize';
 import {
   PartnerOrganisation, PartnerLocation, PartnerContact, PartnerAssignmentEvent,
-  PartnerStageEvent, OutreachActivity, RewardOffer, Activation, RedeemOpsAuditEvent,
-  User, sequelize,
+  PartnerStageEvent, OutreachActivity, OutreachTask, RewardOffer, Activation,
+  RedeemOpsAuditEvent, User, sequelize,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
@@ -24,8 +24,8 @@ import { makeOnboardingService } from './onboardingService.js';
 export function makePartnerService(overrides = {}) {
   const d = {
     PartnerOrganisation, PartnerLocation, PartnerContact, PartnerAssignmentEvent,
-    PartnerStageEvent, OutreachActivity, RewardOffer, Activation, RedeemOpsAuditEvent,
-    User, sequelize, logger,
+    PartnerStageEvent, OutreachActivity, OutreachTask, RewardOffer, Activation,
+    RedeemOpsAuditEvent, User, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     dedupe: makeDedupeService(),
     // PARTNERED → seed the onboarding checklist (brief §22); injectable for tests.
@@ -323,7 +323,7 @@ export function makePartnerService(overrides = {}) {
   async function getTimeline(id, query = {}) {
     await getLivePartner(id, { attributes: ['id', 'mergedIntoId'] });
     const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 50));
-    const [activities, stageEvents, assignmentEvents, auditEvents] = await Promise.all([
+    const [activities, stageEvents, assignmentEvents, auditEvents, tasks] = await Promise.all([
       d.OutreachActivity.findAll({
         where: { partnerOrganisationId: id, voidedAt: null },
         include: [
@@ -361,13 +361,37 @@ export function makePartnerService(overrides = {}) {
         order: [['createdAt', 'DESC']],
         limit,
       }),
+      // Tasks belong in the activity history like any CRM: creation, and the
+      // completion/cancellation as its own dated entry.
+      d.OutreachTask.findAll({
+        where: { partnerOrganisationId: id },
+        include: [
+          { model: d.User, as: 'creator', attributes: ['id', 'fullName'] },
+          { model: d.User, as: 'assignee', attributes: ['id', 'fullName'] },
+        ],
+        order: [['createdAt', 'DESC']],
+        limit,
+      }),
     ]);
+
+    const taskEntries = [];
+    for (const task of tasks) {
+      const j = task.toJSON();
+      taskEntries.push({ kind: 'task', at: j.createdAt, data: { event: 'created', task: j } });
+      if (j.status === 'completed' && j.completedAt) {
+        taskEntries.push({ kind: 'task', at: j.completedAt, data: { event: 'completed', task: j } });
+      }
+      if (j.status === 'cancelled') {
+        taskEntries.push({ kind: 'task', at: j.updatedAt, data: { event: 'cancelled', task: j } });
+      }
+    }
 
     const entries = [
       ...activities.map((a) => ({ kind: 'activity', at: a.occurredAt, data: a })),
       ...stageEvents.map((e) => ({ kind: 'stage', at: e.createdAt, data: e })),
       ...assignmentEvents.map((e) => ({ kind: 'assignment', at: e.createdAt, data: e })),
       ...auditEvents.map((e) => ({ kind: 'audit', at: e.createdAt, data: e })),
+      ...taskEntries,
     ].sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, limit);
 
     return { entries };
