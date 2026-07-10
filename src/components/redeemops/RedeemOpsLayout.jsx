@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { NavLink, Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { hasCapability } from '@/lib/redeemOpsPermissions';
 import { RoAvatar, roRoleLabel } from '@/components/redeemops/ui';
@@ -24,6 +24,8 @@ import UserCog from 'lucide-react/icons/user-cog';
 import Shield from 'lucide-react/icons/shield';
 import Settings from 'lucide-react/icons/settings';
 import LogOut from 'lucide-react/icons/log-out';
+import Ellipsis from 'lucide-react/icons/ellipsis';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import '@/styles/redeem-ops-theme.css';
 
 /**
@@ -51,6 +53,8 @@ export default function RedeemOpsLayout({ children }) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
+  const location = useLocation();
+  const [moreOpen, setMoreOpen] = useState(false);
 
   // Figtree loads only when a Redeem Ops screen mounts — the mktr admin and
   // both public brands never pay for it. The link persists once added (fonts
@@ -65,6 +69,11 @@ export default function RedeemOpsLayout({ children }) {
   }, []);
 
   const items = NAV.filter((item) => !item.capability || hasCapability(user, item.capability));
+  // Mobile bottom bar (design: screens/mobile-shell.html): first four sections
+  // get a slot, the rest live behind "More" with the account block.
+  const barItems = items.slice(0, 4);
+  const moreItems = items.slice(4);
+  const moreActive = moreItems.some((i) => location.pathname.startsWith(i.url));
   const displayName = user?.fullName || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'Me';
 
   const handleLogout = () => {
@@ -124,6 +133,67 @@ export default function RedeemOpsLayout({ children }) {
         </div>
       </aside>
       <main className="ro-main">{children}</main>
+
+      <nav className="ro-tabbar" aria-label="Redeem Ops navigation">
+        {barItems.map((item) => (
+          <NavLink
+            key={item.url}
+            to={item.url}
+            className={({ isActive }) => `ro-tabbar-item${isActive ? ' active' : ''}`}
+          >
+            <item.icon aria-hidden="true" />
+            {item.title}
+          </NavLink>
+        ))}
+        <button
+          type="button"
+          className={`ro-tabbar-item${moreActive || moreOpen ? ' active' : ''}`}
+          onClick={() => setMoreOpen(true)}
+        >
+          <Ellipsis aria-hidden="true" />
+          More
+        </button>
+      </nav>
+
+      <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+        <SheetContent side="bottom" className="rounded-t-[20px] px-4 pb-6 max-h-[80dvh] overflow-y-auto">
+          <SheetTitle className="sr-only">More</SheetTitle>
+          <div className="w-9 h-1 rounded-full mx-auto mb-2" style={{ background: 'var(--ro-border-strong)' }} />
+          {moreItems.map((item) => (
+            <button
+              key={item.url}
+              type="button"
+              className="ro-sheet-row"
+              onClick={() => { setMoreOpen(false); navigate(item.url); }}
+            >
+              <span className="ro-sheet-icon"><item.icon aria-hidden="true" /></span>
+              {item.title}
+            </button>
+          ))}
+          <div className="h-px my-2" style={{ background: 'var(--ro-divider, #EEF1F3)' }} />
+          <div className="flex items-center gap-3 px-1 py-2">
+            <RoAvatar name={displayName} size={40} />
+            <span className="min-w-0">
+              <span className="block text-[14px] font-bold truncate">{displayName}</span>
+              <span className="block text-[12px] font-semibold" style={{ color: 'var(--ro-azure)' }}>{roRoleLabel(user)}</span>
+            </span>
+          </div>
+          <button type="button" className="ro-sheet-row" onClick={() => { setMoreOpen(false); navigate('/redeem-ops/profile'); }}>
+            <span className="ro-sheet-icon"><Settings aria-hidden="true" /></span>
+            Edit profile
+          </button>
+          {user?.role === 'admin' && (
+            <button type="button" className="ro-sheet-row" onClick={() => { setMoreOpen(false); navigate('/AdminDashboard'); }}>
+              <span className="ro-sheet-icon"><Shield aria-hidden="true" /></span>
+              MKTR admin console
+            </button>
+          )}
+          <button type="button" className="ro-sheet-row" style={{ color: 'var(--ro-tag-red-fg)' }} onClick={handleLogout}>
+            <span className="ro-sheet-icon"><LogOut aria-hidden="true" /></span>
+            Log out
+          </button>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

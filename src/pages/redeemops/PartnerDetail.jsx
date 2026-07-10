@@ -7,6 +7,9 @@ import { useAuthStore } from '@/stores/authStore';
 import { hasCapability } from '@/lib/redeemOpsPermissions';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import {
@@ -104,7 +107,11 @@ function fieldDiffs(before = {}, after = {}) {
 }
 
 function TimelineEntry({ entry }) {
-  const at = new Date(entry.at).toLocaleString();
+  const d = new Date(entry.at);
+  const at = `${d.toLocaleDateString('en-SG', {
+    day: 'numeric', month: 'short',
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+  })}, ${d.toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' })}`;
   const { Icon, bg, fg } = timelineIcon(entry);
 
   let title;
@@ -307,6 +314,8 @@ export default function PartnerDetail() {
   const [lostOpen, setLostOpen] = useState(false);
   const [lostReason, setLostReason] = useState(null);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
   const [snoozeDays, setSnoozeDays] = useState(30);
   const snoozeMutation = useMutation({
     mutationFn: () => redeemOpsApi.snoozePartner(id, new Date(Date.now() + snoozeDays * 24 * 3600 * 1000).toISOString()),
@@ -468,17 +477,18 @@ export default function PartnerDetail() {
   const activityTypes = constants.data?.activityTypes || [];
 
   return (
-    <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-5">
+    <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-4 md:space-y-5 overflow-x-hidden">
       <Link to="/redeem-ops/partners" className="ro-link inline-flex items-center gap-1 text-[13.5px]">
         <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Partners
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-4 min-w-0">
-          <RoAvatar name={name} size={56} />
+        <div className="flex items-center gap-3 md:gap-4 min-w-0">
+          <span className="md:hidden shrink-0"><RoAvatar name={name} size={44} /></span>
+          <span className="hidden md:block shrink-0"><RoAvatar name={name} size={56} /></span>
           <div className="min-w-0">
-            <h1 className="ro-title text-[26px] inline-flex items-center gap-2">
-              {name}
+            <h1 className="ro-title text-[21px] md:text-[26px] inline-flex items-center gap-2 min-w-0">
+              <span className="break-words min-w-0">{name}</span>
               {hasCapability(user, 'partners.edit') && (isOwner || canReassign) && (
                 <button
                   type="button"
@@ -519,7 +529,49 @@ export default function PartnerDetail() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex md:hidden items-center gap-2 w-full">
+          {isUnowned && hasCapability(user, 'partners.claim') ? (
+            <Button className="flex-1 h-[42px]" onClick={() => claimMutation.mutate()} disabled={claimMutation.isPending}>
+              {claimMutation.isPending ? 'Claiming…' : 'Claim business'}
+            </Button>
+          ) : (isOwner || canReassign) && (
+            <Button className="flex-1 h-[42px]" onClick={() => setActivityOpen(true)}>Log activity</Button>
+          )}
+          {hasCapability(user, 'tasks.manage') && (
+            <Button variant="outline" className="flex-1 h-[42px]" onClick={() => setTaskOpen(true)}>Add task</Button>
+          )}
+          {(isOwner || canReassign) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className="w-[42px] h-[42px] shrink-0 rounded-full border grid place-items-center outline-none"
+                style={{ borderColor: 'var(--ro-border-strong)', background: '#fff' }}
+                aria-label="More actions"
+              >
+                <span className="font-bold tracking-wider text-[15px]" style={{ color: 'var(--ro-bunker)' }}>⋯</span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {canReassign && (
+                  <DropdownMenuItem onClick={() => setAssignOpen(true)}>Assign to…</DropdownMenuItem>
+                )}
+                {allowedNext.length > 0 && (
+                  <DropdownMenuItem onClick={() => setMoveOpen(true)}>Move stage…</DropdownMenuItem>
+                )}
+                {!['PARTNERED', 'LOST'].includes(partner.pipelineStage) && (
+                  partner.availability === 'follow_up_later' ? (
+                    <DropdownMenuItem onClick={() => unsnoozeMutation.mutate()}>Wake up</DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem onClick={() => { setSnoozeDays(30); setSnoozeOpen(true); }}>Snooze</DropdownMenuItem>
+                  )
+                )}
+                {isOwner && (
+                  <DropdownMenuItem onClick={() => releaseMutation.mutate()}>Release claim</DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+
+        <div className="hidden md:flex flex-wrap items-center gap-2">
           {canReassign && (
             <Select onValueChange={(toUserId) => assignMutation.mutate({ toUserId })}>
               <SelectTrigger className="w-40 h-10"><SelectValue placeholder="Assign to…" /></SelectTrigger>
@@ -572,7 +624,8 @@ export default function PartnerDetail() {
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px] items-start">
         <Tabs defaultValue="timeline">
-          <TabsList>
+          <div className="max-w-full overflow-x-auto">
+          <TabsList className="w-max">
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
             <TabsTrigger value="contacts">Contacts ({partner.contacts?.length || 0})</TabsTrigger>
             <TabsTrigger value="locations">Locations ({partner.locations?.length || 0})</TabsTrigger>
@@ -580,6 +633,7 @@ export default function PartnerDetail() {
               <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
             )}
           </TabsList>
+          </div>
 
           <TabsContent value="timeline">
             <div className="rounded-2xl border border-border bg-white p-5">
@@ -993,6 +1047,57 @@ export default function PartnerDetail() {
               {activityMutation.isPending ? 'Saving…' : 'Log it'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Assign {name}</DialogTitle>
+            <DialogDescription>Hands ownership to a team member.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5 max-h-[50dvh] overflow-y-auto">
+            {(teamQuery.data || []).filter((m) => m.isActive).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                className="h-[44px] px-4 rounded-xl text-[13.5px] font-semibold border text-left cursor-pointer flex items-center gap-2.5"
+                style={{ background: '#fff', borderColor: 'var(--ro-border-strong)', color: 'var(--ro-bunker)' }}
+                onClick={() => { setAssignOpen(false); assignMutation.mutate({ toUserId: m.id }); }}
+              >
+                <RoAvatar name={m.fullName || m.email} size={26} />
+                <span className="truncate">{m.fullName || m.email}</span>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Move {name}</DialogTitle>
+            <DialogDescription>Currently {prettyEnum(partner.pipelineStage)}. Pick the next stage.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            {allowedNext.map((st) => (
+              <button
+                key={st}
+                type="button"
+                className="h-[44px] px-4 rounded-xl text-[13.5px] font-semibold border text-left cursor-pointer"
+                style={st === 'LOST'
+                  ? { background: '#fff', borderColor: 'var(--ro-tag-red-fg)', color: 'var(--ro-tag-red-fg)' }
+                  : { background: '#fff', borderColor: 'var(--ro-border-strong)', color: 'var(--ro-bunker)' }}
+                onClick={() => {
+                  setMoveOpen(false);
+                  if (st === 'LOST') { setLostReason(null); setLostOpen(true); return; }
+                  stageMutation.mutate({ toStage: st });
+                }}
+              >
+                {prettyEnum(st)}
+              </button>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
 

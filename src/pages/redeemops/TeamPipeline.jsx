@@ -159,7 +159,7 @@ function LostDropBar({ activeCard, legalTargets }) {
   return (
     <div
       ref={setNodeRef}
-      className="fixed bottom-4 left-4 right-4 z-50 shadow-lg md:static md:z-auto md:shadow-none md:mt-2.5 rounded-2xl grid place-items-center h-[52px] text-[12.5px] font-bold transition-colors"
+      className="fixed bottom-[78px] left-4 right-4 z-50 shadow-lg md:static md:z-auto md:shadow-none md:mt-2.5 rounded-2xl grid place-items-center h-[52px] text-[12.5px] font-bold transition-colors"
       style={{
         background: isOver && isLegal ? '#FEF2F2' : 'var(--ro-subtle)',
         color: isLegal ? 'var(--ro-tag-red-fg)' : 'var(--ro-text-3)',
