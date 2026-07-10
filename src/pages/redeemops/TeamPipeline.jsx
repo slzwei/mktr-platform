@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
+  DndContext, DragOverlay, MouseSensor, TouchSensor, useSensor, useSensors,
   useDraggable, useDroppable,
 } from '@dnd-kit/core';
 import { toast } from 'sonner';
@@ -110,7 +110,7 @@ function BoardCard({ p, draggable, onOpen }) {
       {...attributes}
       onClick={() => onOpen(p.id)}
       className={draggable ? 'cursor-grab' : 'cursor-pointer'}
-      style={{ opacity: isDragging ? 0.35 : 1, touchAction: 'none' }}
+      style={{ opacity: isDragging ? 0.35 : 1, touchAction: 'manipulation' }}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter') onOpen(p.id); }}
@@ -129,7 +129,7 @@ function Lane({ stage, items, activeCard, legalTargets, children }) {
   return (
     <div
       ref={setNodeRef}
-      className="flex-1 min-w-[210px] rounded-2xl flex flex-col min-h-0 transition-opacity"
+      className="w-full md:w-auto md:flex-1 md:min-w-[210px] rounded-2xl flex flex-col md:min-h-0 transition-opacity"
       style={{
         background: isOver && isLegal ? '#EFF6FF' : 'var(--ro-subtle)',
         opacity: dimmed ? 0.45 : 1,
@@ -144,7 +144,7 @@ function Lane({ stage, items, activeCard, legalTargets, children }) {
           {items.length}
         </span>
       </div>
-      <div className="px-2 pb-2.5 flex flex-col gap-2 overflow-y-auto min-h-[56px] flex-1">
+      <div className="px-2 pb-2.5 flex flex-col gap-2 md:overflow-y-auto min-h-[56px] md:flex-1">
         {children}
       </div>
     </div>
@@ -159,7 +159,7 @@ function LostDropBar({ activeCard, legalTargets }) {
   return (
     <div
       ref={setNodeRef}
-      className="mt-2.5 rounded-2xl grid place-items-center h-[52px] text-[12.5px] font-bold transition-colors"
+      className="fixed bottom-4 left-4 right-4 z-50 shadow-lg md:static md:z-auto md:shadow-none md:mt-2.5 rounded-2xl grid place-items-center h-[52px] text-[12.5px] font-bold transition-colors"
       style={{
         background: isOver && isLegal ? '#FEF2F2' : 'var(--ro-subtle)',
         color: isLegal ? 'var(--ro-tag-red-fg)' : 'var(--ro-text-3)',
@@ -218,8 +218,13 @@ export default function TeamPipeline() {
     },
   });
 
-  // 6px of movement before a drag starts, so plain clicks still open the record.
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  // Mouse: 6px of movement before a drag starts, so plain clicks still open the
+  // record. Touch: press-and-hold 250ms — quick swipes scroll the vertical
+  // mobile board instead of lifting a card.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } })
+  );
 
   const transitions = constants.data?.stageTransitions || {};
   const lostReasons = constants.data?.lostReasons || [];
@@ -272,11 +277,15 @@ export default function TeamPipeline() {
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 p-6 md:p-8 md:pb-4 gap-0">
+    <div className="flex flex-col md:h-full md:min-h-0 p-6 md:p-8 md:pb-4 gap-0">
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <h1 className="ro-title">Team pipeline</h1>
-          <p className="ro-sub">Drag a business forward — or onto the red bar to mark it Lost. Click to open.</p>
+          <p className="ro-sub">
+          Drag a business forward — or onto the red bar to mark it Lost.
+          <span className="md:hidden"> Press and hold a card to drag; tap to open.</span>
+          <span className="hidden md:inline"> Click to open.</span>
+        </p>
         </div>
         <button
           type="button"
@@ -296,7 +305,7 @@ export default function TeamPipeline() {
         onDragEnd={handleDragEnd}
         onDragCancel={() => setActiveCard(null)}
       >
-        <div className="flex gap-2.5 overflow-x-auto pb-1 items-stretch flex-1 min-h-0 mt-4">
+        <div className="flex flex-col md:flex-row gap-2.5 md:overflow-x-auto pb-1 items-stretch md:flex-1 md:min-h-0 mt-4">
           {STAGES.map((stage) => {
             const items = byStage[stage] || [];
             return (
