@@ -155,6 +155,7 @@ export default function PartnersList() {
     const dataRows = rows.slice(1).slice(0, 500);
     const state = { running: true, done: 0, total: dataRows.length, created: 0, skipped: 0, failed: 0, errors: [] };
     setImportState({ ...state });
+    const bodies = [];
     for (const row of dataRows) {
       const cell = (k) => (idx[k] >= 0 ? String(row[idx[k]] || '').trim() : '');
       const body = {
@@ -166,17 +167,25 @@ export default function PartnersList() {
         uen: cell('uen'),
         primaryEmail: cell('email'),
       };
-      if (!body.tradingName) { state.failed += 1; state.errors.push('Row with empty name skipped'); }
-      else {
-        try {
-          await redeemOpsApi.createPartner(body);
-          state.created += 1;
-        } catch (err) {
-          if (err.status === 409) state.skipped += 1;
-          else { state.failed += 1; if (state.errors.length < 5) state.errors.push(`${body.tradingName}: ${err.message}`); }
-        }
+      if (!body.tradingName) {
+        state.failed += 1; state.done += 1;
+        if (state.errors.length < 5) state.errors.push('Row with empty name skipped');
+      } else bodies.push(body);
+    }
+    // Chunked bulk endpoint (100 rows/request) — a 500-row file is 5 requests,
+    // far under the production rate limit, and each row is still dedupe-gated
+    // and audited server-side.
+    for (let i = 0; i < bodies.length; i += 100) {
+      const chunk = bodies.slice(i, i + 100);
+      try {
+        const r = await redeemOpsApi.importPartners(chunk);
+        state.created += r.created; state.skipped += r.skipped; state.failed += r.failed;
+        for (const er of r.errors || []) if (state.errors.length < 5) state.errors.push(er);
+      } catch (err) {
+        state.failed += chunk.length;
+        if (state.errors.length < 5) state.errors.push(`Chunk failed: ${err.message}`);
       }
-      state.done += 1;
+      state.done += chunk.length;
       setImportState({ ...state });
     }
     state.running = false;

@@ -20,6 +20,7 @@ const router = express.Router();
 router.get('/partners', requireRedeemOps('partners.view'), ctrl.listPartners);
 router.get('/partners/check-duplicates', requireRedeemOps('partners.create'), ctrl.checkDuplicates);
 router.post('/partners', requireRedeemOps('partners.create'), ctrl.createPartner);
+router.post('/partners/import', requireRedeemOps('partners.import'), ctrl.importPartners);
 router.get('/partners/:id', requireRedeemOps('partners.view'), ctrl.getPartner);
 router.put('/partners/:id', requireRedeemOps('partners.edit'), ctrl.updatePartner);
 

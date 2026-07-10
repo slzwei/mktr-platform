@@ -275,6 +275,9 @@ export default function PartnerDetail() {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partner', id] });
     queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partners'] });
+    // Edits, tasks, contacts and stage moves all create timeline entries now —
+    // keep the open timeline honest (review finding: stale after edit).
+    queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partner', id, 'timeline'] });
   };
 
   const useSimpleMutation = (fn, okMsg) => useMutation({
@@ -329,6 +332,7 @@ export default function PartnerDetail() {
       setTask({ title: '', dueDate: '', priority: 'medium' });
       queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'tasks'] });
       queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'queue'] });
+      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partner', id, 'timeline'] });
     },
     onError: (err) => toast.error('Could not create task', { description: err.message }),
   });
