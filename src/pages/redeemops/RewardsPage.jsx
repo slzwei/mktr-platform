@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Plus from 'lucide-react/icons/plus';
-import { RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
+import { RoMobileCard, RoStat, RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
 
 const EMPTY = { partnerOrganisationId: '', title: '', rewardType: 'free_service', retailValue: '', committedQuantity: '' };
 
@@ -77,7 +77,33 @@ export default function RewardsPage() {
 
       <Card>
         <CardContent className="pt-4">
-          <div className="overflow-x-auto">
+          <div className="md:hidden -mx-6 -mt-2">
+            {offers.map((o) => (
+              <RoMobileCard key={o.id} className="px-6" onClick={() => navigate(`/redeem-ops/rewards/${o.id}`)}>
+                <span className="flex items-start gap-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold text-[14px] leading-tight">{o.title}</span>
+                    <span className="block text-xs truncate mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
+                      {o.partner?.tradingName || o.partner?.legalName || '—'}
+                    </span>
+                  </span>
+                  <RoTag tone={o.status} size="sm">{prettyEnum(o.status)}</RoTag>
+                </span>
+                <span className="grid grid-cols-4 gap-2 mt-2.5">
+                  <RoStat label="Committed">{o.committedQuantity}</RoStat>
+                  <RoStat label="Allocated">{o.allocatedQuantity}</RoStat>
+                  <RoStat label="Issued">{o.issuedQuantity}</RoStat>
+                  <RoStat label="Redeemed">{o.redeemedQuantity}</RoStat>
+                </span>
+              </RoMobileCard>
+            ))}
+            {!offersQuery.isLoading && offers.length === 0 && (
+              <p className="text-sm text-center py-8 m-0" style={{ color: 'var(--ro-text-2)' }}>
+                No rewards yet{canManage ? ' — create the first one from a PARTNERED business.' : '.'}
+              </p>
+            )}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>

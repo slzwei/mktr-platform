@@ -6,9 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import { RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
+import { RoMobileCard, RoStat, RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
 
-function Section({ title, description, children }) {
+function Section({ title, description, mobile, children }) {
   return (
     <Card>
       <CardHeader>
@@ -16,7 +16,8 @@ function Section({ title, description, children }) {
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">{children}</div>
+        {mobile && <div className="md:hidden -mx-6 -mt-2">{mobile}</div>}
+        <div className={mobile ? 'hidden md:block overflow-x-auto' : 'overflow-x-auto'}>{children}</div>
       </CardContent>
     </Card>
   );
@@ -53,7 +54,30 @@ export default function AnalyticsPage() {
         sub="Acquisition numbers come from MKTR's own metrics — nothing is re-counted here."
       />
 
-      <Section title={teamWide ? 'Outreach — by team member' : 'Outreach — your performance'}>
+      <Section
+        title={teamWide ? 'Outreach — by team member' : 'Outreach — your performance'}
+        mobile={(outreach.data?.members || []).map((m) => (
+          <RoMobileCard key={m.userId} className="px-6">
+            <span className="flex items-center gap-2">
+              <span className="font-semibold text-[14px] flex-1 min-w-0 truncate">{m.name}</span>
+              <RoTag tone="primary" size="sm">{m.partneredRate}% conv.</RoTag>
+            </span>
+            <span className="grid grid-cols-4 gap-2 mt-2.5">
+              <RoStat label="Owned">{m.owned}</RoStat>
+              <RoStat label="Contacted">{m.contacted}</RoStat>
+              <RoStat label="Touches">{m.outboundTouches}</RoStat>
+              <RoStat label="Replies">{m.replies}</RoStat>
+              <RoStat label="Meetings">{m.meetingsBooked}</RoStat>
+              <RoStat label="Proposals">{m.proposalsSent}</RoStat>
+              <RoStat label="Partnered">{m.partnered}</RoStat>
+              <RoStat label="Stale">{m.stale}</RoStat>
+            </span>
+            <span className="block text-[11px] mt-2" style={{ color: 'var(--ro-text-3)' }}>
+              Avg {m.avgHoursToFirstOutreach ?? '—'}h to first touch
+            </span>
+          </RoMobileCard>
+        ))}
+      >
         <Table>
           <TableHeader>
             <TableRow>
@@ -92,7 +116,24 @@ export default function AnalyticsPage() {
 
       {teamWide && (
         <>
-          <Section title="Category conversion" description="Where outreach converts — and where it doesn't.">
+          <Section
+            title="Category conversion"
+            description="Where outreach converts — and where it doesn't."
+            mobile={(categories.data?.categories || []).map((c) => (
+              <RoMobileCard key={c.category} className="px-6">
+                <span className="flex items-center gap-2">
+                  <span className="font-semibold text-[14px] flex-1 min-w-0 truncate">{c.category}</span>
+                  <RoTag tone="primary" size="sm">{c.partnered} partnered</RoTag>
+                </span>
+                <span className="grid grid-cols-4 gap-2 mt-2.5">
+                  <RoStat label="Total">{c.total}</RoStat>
+                  <RoStat label="Contacted">{c.contacted}</RoStat>
+                  <RoStat label="Replied">{c.replied}</RoStat>
+                  <RoStat label="Meetings">{c.meetings}</RoStat>
+                </span>
+              </RoMobileCard>
+            ))}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -119,7 +160,27 @@ export default function AnalyticsPage() {
             </Table>
           </Section>
 
-          <Section title="Reward supply" description="Committed → allocated → issued → redeemed (ledger-audited counters).">
+          <Section
+            title="Reward supply"
+            description="Committed → allocated → issued → redeemed (ledger-audited counters)."
+            mobile={(rewards.data?.rewards || []).map((r) => (
+              <RoMobileCard key={r.id} className="px-6">
+                <span className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold text-[14px] leading-tight truncate">{r.title}</span>
+                    <span className="block text-xs truncate" style={{ color: 'var(--ro-text-2)' }}>{r.partnerName || '—'}</span>
+                  </span>
+                  <RoTag tone="primary" size="sm">{r.redemptionRate}% redeemed</RoTag>
+                </span>
+                <span className="grid grid-cols-4 gap-2 mt-2.5">
+                  <RoStat label="Committed">{r.committed}</RoStat>
+                  <RoStat label="Allocated">{r.allocated}</RoStat>
+                  <RoStat label="Issued">{r.issued}</RoStat>
+                  <RoStat label="Redeemed">{r.redeemed}</RoStat>
+                </span>
+              </RoMobileCard>
+            ))}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -148,7 +209,31 @@ export default function AnalyticsPage() {
             </Table>
           </Section>
 
-          <Section title="Activation funnels" description="MKTR acquisition + Redeem fulfilment, per activation.">
+          <Section
+            title="Activation funnels"
+            description="MKTR acquisition + Redeem fulfilment, per activation."
+            mobile={(funnels.data?.funnels || []).map((f) => (
+              <RoMobileCard key={f.id} className="px-6">
+                <span className="flex items-start gap-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold text-[14px] leading-tight">{f.rewardTitle}</span>
+                    <span className="block text-xs truncate mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
+                      {f.partnerName}{f.campaignName ? ` · ${f.campaignName}` : ' · Not linked'}
+                    </span>
+                  </span>
+                  <RoTag tone={f.status} size="sm">{prettyEnum(f.status)}</RoTag>
+                </span>
+                <span className="grid grid-cols-3 gap-2 mt-2.5">
+                  <RoStat label="Leads (MKTR)">{f.acquisition?.totalLeads ?? f.acquisition?.leads ?? '—'}</RoStat>
+                  <RoStat label="Issued">{f.reward.issued}</RoStat>
+                  <RoStat label="Redeemed">{f.reward.redeemed}</RoStat>
+                </span>
+                <span className="block text-[11px] mt-2" style={{ color: 'var(--ro-text-3)' }}>
+                  Renewal: {f.renewalOutcome || 'pending'}
+                </span>
+              </RoMobileCard>
+            ))}
+          >
             <Table>
               <TableHeader>
                 <TableRow>

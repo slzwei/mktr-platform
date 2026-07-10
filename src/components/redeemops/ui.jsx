@@ -192,3 +192,31 @@ export function RoEmpty({ title, body, children, className }) {
     </div>
   );
 }
+
+/** Tap-card for mobile lists (tables collapse to these under md). */
+export function RoMobileCard({ onClick, children, className }) {
+  const Tag = onClick ? 'button' : 'div';
+  return (
+    <Tag
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={cn(
+        'w-full text-left bg-white px-4 py-3 border-t border-border first:border-t-0 block',
+        onClick && 'cursor-pointer hover:bg-[var(--ro-subtle)] transition-colors',
+        className
+      )}
+    >
+      {children}
+    </Tag>
+  );
+}
+
+/** Tiny label→value pair for compact stat grids on mobile cards. */
+export function RoStat({ label, children }) {
+  return (
+    <span className="min-w-0">
+      <span className="block text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--ro-text-3)' }}>{label}</span>
+      <span className="block text-[13px] font-bold tabular-nums truncate">{children}</span>
+    </span>
+  );
+}

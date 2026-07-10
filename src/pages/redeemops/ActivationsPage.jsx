@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Plus from 'lucide-react/icons/plus';
-import { RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
+import { RoMobileCard, RoStat, RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
 
 const ACTIVATION_TONE = { preparing: 'pending', completed: 'done' };
 
@@ -70,7 +70,34 @@ export default function ActivationsPage() {
 
       <Card>
         <CardContent className="pt-4">
-          <div className="overflow-x-auto">
+          <div className="md:hidden -mx-6 -mt-2">
+            {activations.map((a) => (
+              <RoMobileCard key={a.id} className="px-6" onClick={() => navigate(`/redeem-ops/activations/${a.id}`)}>
+                <span className="flex items-start gap-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold text-[14px] leading-tight">{a.rewardOffer?.title || '—'}</span>
+                    <span className="block text-xs truncate mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
+                      {a.partner?.tradingName || a.partner?.legalName || '—'}
+                      {' · '}
+                      {a.campaignNameSnapshot || (a.campaignId ? a.campaignId.slice(0, 8) : 'Not linked')}
+                    </span>
+                  </span>
+                  <RoTag tone={ACTIVATION_TONE[a.status] || a.status} size="sm">{prettyEnum(a.status)}</RoTag>
+                </span>
+                <span className="grid grid-cols-3 gap-2 mt-2.5">
+                  <RoStat label="Allocated">{a.allocatedQuantity}</RoStat>
+                  <RoStat label="Issued">{a.issuedCount}</RoStat>
+                  <RoStat label="Redeemed">{a.redeemedCount}</RoStat>
+                </span>
+              </RoMobileCard>
+            ))}
+            {!listQuery.isLoading && activations.length === 0 && (
+              <p className="text-sm text-center py-8 m-0" style={{ color: 'var(--ro-text-2)' }}>
+                No activations yet{canManage ? ' — create one from an active reward.' : '.'}
+              </p>
+            )}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>

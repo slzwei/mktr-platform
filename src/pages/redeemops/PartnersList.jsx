@@ -17,7 +17,7 @@ import { Label } from '@/components/ui/label';
 import Plus from 'lucide-react/icons/plus';
 import Upload from 'lucide-react/icons/upload';
 import AlertTriangle from 'lucide-react/icons/alert-triangle';
-import { RoStageTag, RoAvatar, RoOwner, RoPageHeader, prettyEnum } from '@/components/redeemops/ui';
+import { RoMobileCard, RoStageTag, RoAvatar, RoOwner, RoPageHeader, prettyEnum } from '@/components/redeemops/ui';
 
 function useDebounced(value, ms = 300) {
   const [debounced, setDebounced] = useState(value);
@@ -246,7 +246,36 @@ export default function PartnersList() {
       </div>
 
       <div className="rounded-2xl border border-border bg-white overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="md:hidden">
+          {partners.map((p) => (
+            <RoMobileCard key={p.id} onClick={() => navigate(`/redeem-ops/partners/${p.id}`)}>
+              <span className="flex items-center gap-3 min-w-0">
+                <RoAvatar name={partnerName(p)} size={38} />
+                <span className="min-w-0 flex-1">
+                  <span className="font-semibold text-[14px] flex items-center gap-1.5 leading-tight">
+                    <span className="truncate">{partnerName(p)}</span>
+                    {(p.atRiskFlag || p.staleFlag) && (
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--ro-tag-yellow-fg)' }} aria-hidden="true" />
+                    )}
+                  </span>
+                  <span className="block text-xs truncate" style={{ color: 'var(--ro-text-2)' }}>
+                    {partnerMeta(p) || '—'}
+                  </span>
+                  <span className="block text-[11px] truncate mt-0.5" style={{ color: 'var(--ro-text-3)' }}>
+                    {p.owner?.fullName || 'Unowned'} · {p.lastActivityAt ? new Date(p.lastActivityAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }) : 'no activity'}
+                  </span>
+                </span>
+                <RoStageTag stage={p.pipelineStage} size="sm" className="shrink-0" />
+              </span>
+            </RoMobileCard>
+          ))}
+          {!listQuery.isLoading && partners.length === 0 && (
+            <p className="text-sm text-center py-10 m-0" style={{ color: 'var(--ro-text-2)' }}>
+              No businesses match. Add the first one.
+            </p>
+          )}
+        </div>
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="text-left" style={{ color: 'var(--ro-text-2)' }}>
