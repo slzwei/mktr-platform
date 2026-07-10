@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
+import { useAuthStore } from '@/stores/authStore';
+import { hasCapability } from '@/lib/redeemOpsPermissions';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -13,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Plus from 'lucide-react/icons/plus';
+import Upload from 'lucide-react/icons/upload';
 import AlertTriangle from 'lucide-react/icons/alert-triangle';
 import { RoStageTag, RoAvatar, RoOwner, RoPageHeader, prettyEnum } from '@/components/redeemops/ui';
 
@@ -24,6 +27,35 @@ function useDebounced(value, ms = 300) {
   }, [value, ms]);
   return debounced;
 }
+
+/* Minimal CSV parsing for the strict import template (handles quoted fields). */
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i += 1; }
+      else if (ch === '"') inQuotes = false;
+      else cell += ch;
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === ',') { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i += 1;
+      row.push(cell); cell = '';
+      if (row.some((c) => c.trim() !== '')) rows.push(row);
+      row = [];
+    } else cell += ch;
+  }
+  row.push(cell);
+  if (row.some((c) => c.trim() !== '')) rows.push(row);
+  return rows;
+}
+
+const IMPORT_TEMPLATE = 'name,category,phone,instagram,website,uen,email\n"Nail Bliss","Nail Salon","+6591234567","@nailbliss.sg","nailbliss.sg","202512345K","hello@nailbliss.sg"\n';
+const IMPORT_COLUMNS = ['name', 'category', 'phone', 'instagram', 'website', 'uen', 'email'];
 
 const EMPTY_FORM = {
   tradingName: '', legalName: '', category: '', primaryPhone: '', primaryEmail: '',
@@ -104,6 +136,54 @@ export default function PartnersList() {
     });
   };
 
+  // ── CSV import: strict template, row-by-row through the same dedupe-gated
+  // create endpoint (exact duplicates are skipped and counted, every created
+  // row is audited like a manual add). Client-side on purpose — no new
+  // backend surface, works for the list sizes a 3-person team imports.
+  const user = useAuthStore((st) => st.user);
+  const canImport = hasCapability(user, 'partners.import');
+  const [importOpen, setImportOpen] = useState(false);
+  const [importState, setImportState] = useState(null); // null | {running, done, total, created, skipped, failed, errors[]}
+
+  const runImport = async (file) => {
+    const text = await file.text();
+    const rows = parseCsv(text);
+    if (rows.length < 2) { toast.error('CSV has no data rows'); return; }
+    const header = rows[0].map((h) => h.trim().toLowerCase());
+    const idx = Object.fromEntries(IMPORT_COLUMNS.map((c) => [c, header.indexOf(c)]));
+    if (idx.name === -1) { toast.error('CSV must have a "name" column — download the template'); return; }
+    const dataRows = rows.slice(1).slice(0, 500);
+    const state = { running: true, done: 0, total: dataRows.length, created: 0, skipped: 0, failed: 0, errors: [] };
+    setImportState({ ...state });
+    for (const row of dataRows) {
+      const cell = (k) => (idx[k] >= 0 ? String(row[idx[k]] || '').trim() : '');
+      const body = {
+        tradingName: cell('name'),
+        category: cell('category'),
+        primaryPhone: cell('phone'),
+        instagramHandle: cell('instagram'),
+        website: cell('website'),
+        uen: cell('uen'),
+        primaryEmail: cell('email'),
+      };
+      if (!body.tradingName) { state.failed += 1; state.errors.push('Row with empty name skipped'); }
+      else {
+        try {
+          await redeemOpsApi.createPartner(body);
+          state.created += 1;
+        } catch (err) {
+          if (err.status === 409) state.skipped += 1;
+          else { state.failed += 1; if (state.errors.length < 5) state.errors.push(`${body.tradingName}: ${err.message}`); }
+        }
+      }
+      state.done += 1;
+      setImportState({ ...state });
+    }
+    state.running = false;
+    setImportState({ ...state });
+    queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partners'] });
+  };
+
   const partners = listQuery.data?.partners || [];
   const pagination = listQuery.data?.pagination;
   const stages = constants.data?.pipelineStages || [];
@@ -119,9 +199,16 @@ export default function PartnersList() {
         title="Partners"
         sub={pagination ? `${pagination.total} business${pagination.total === 1 ? '' : 'es'} on the books — search before you add, claim before you contact.` : 'The shared business database — search before you add, claim before you contact.'}
         actions={(
-          <Button onClick={() => { setCreateOpen(true); setDuplicates(null); }}>
-            <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> Add business
-          </Button>
+          <>
+            {canImport && (
+              <Button variant="outline" onClick={() => { setImportOpen(true); setImportState(null); }}>
+                <Upload className="w-4 h-4 mr-1.5" aria-hidden="true" /> Import CSV
+              </Button>
+            )}
+            <Button onClick={() => { setCreateOpen(true); setDuplicates(null); }}>
+              <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> Add business
+            </Button>
+          </>
         )}
       />
 
@@ -218,6 +305,49 @@ export default function PartnersList() {
           </div>
         )}
       </div>
+
+      <Dialog open={importOpen} onOpenChange={(open) => { if (!open && !importState?.running) { setImportOpen(false); setImportState(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Import businesses from CSV</DialogTitle>
+            <DialogDescription>
+              Columns: name (required), category, phone (+65…), instagram, website, uen, email.
+              Exact duplicates are skipped automatically; every created row is audited.{' '}
+              <a
+                className="ro-link"
+                href={`data:text/csv;charset=utf-8,${encodeURIComponent(IMPORT_TEMPLATE)}`}
+                download="redeem-ops-import-template.csv"
+              >
+                Download template
+              </a>
+            </DialogDescription>
+          </DialogHeader>
+          {!importState && (
+            <div className="py-2">
+              <Input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) runImport(f); }}
+              />
+              <p className="text-xs mt-2 m-0" style={{ color: 'var(--ro-text-3)' }}>Up to 500 rows per file.</p>
+            </div>
+          )}
+          {importState && (
+            <div className="py-2 space-y-2">
+              <div className="ro-progress"><i style={{ width: `${importState.total ? Math.round((importState.done / importState.total) * 100) : 0}%` }} /></div>
+              <p className="text-sm m-0">
+                {importState.running ? `Importing ${importState.done} of ${importState.total}…` : 'Done.'}{' '}
+                <b>{importState.created}</b> created · <b>{importState.skipped}</b> duplicates skipped · <b>{importState.failed}</b> failed
+              </p>
+              {importState.errors.length > 0 && (
+                <ul className="text-xs m-0 pl-4" style={{ color: 'var(--ro-tag-red-fg)' }}>
+                  {importState.errors.map((er) => <li key={er}>{er}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) { setDuplicates(null); setOverrideReason(''); } }}>
         <DialogContent className="max-w-lg">

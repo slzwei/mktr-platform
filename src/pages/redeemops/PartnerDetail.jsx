@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -27,10 +27,20 @@ import ArrowRight from 'lucide-react/icons/arrow-right';
 import Star from 'lucide-react/icons/star';
 import MapPin from 'lucide-react/icons/map-pin';
 import ListChecks from 'lucide-react/icons/list-checks';
+import X from 'lucide-react/icons/x';
 import Plus from 'lucide-react/icons/plus';
 import Pencil from 'lucide-react/icons/pencil';
 import ArrowLeft from 'lucide-react/icons/arrow-left';
 import { RoStageTag, RoAvatar, RoTag, prettyEnum } from '@/components/redeemops/ui';
+
+function useDebounced(value, ms = 300) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
+}
 
 /* Activity type → pastel icon circle (timeline card in the design system). */
 function timelineIcon(entry) {
@@ -333,6 +343,7 @@ export default function PartnerDetail() {
       website: editForm.website,
       uen: editForm.uen,
       primaryEmail: editForm.primaryEmail,
+      notes: editForm.notes,
     }),
     onSuccess: () => {
       toast.success('Details updated');
@@ -349,6 +360,7 @@ export default function PartnerDetail() {
     website: p.website || p.websiteDomain || '',
     uen: p.uen || '',
     primaryEmail: p.primaryEmail || '',
+    notes: p.notes || '',
   });
   const setEdit = (k) => (e) => setEditForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -367,6 +379,44 @@ export default function PartnerDetail() {
     mutationFn: () => redeemOpsApi.addContact(id, contactForm),
     onSuccess: () => { toast.success('Contact added'); setContactForm(EMPTY_CONTACT); invalidate(); },
     onError: (err) => toast.error('Could not add contact', { description: err.message }),
+  });
+
+  const [contactEdit, setContactEdit] = useState(null); // { id, name, roleTitle, mobile, email }
+  const contactUpdateMutation = useMutation({
+    mutationFn: () => redeemOpsApi.updateContact(contactEdit.id, {
+      name: contactEdit.name.trim(),
+      roleTitle: contactEdit.roleTitle || null,
+      mobile: contactEdit.mobile || null,
+      email: contactEdit.email || null,
+    }),
+    onSuccess: () => { toast.success('Contact updated'); setContactEdit(null); invalidate(); },
+    onError: (err) => toast.error('Could not update contact', { description: err.message }),
+  });
+  const contactArchiveMutation = useMutation({
+    mutationFn: (contactId) => redeemOpsApi.archiveContact(contactId),
+    onSuccess: () => { toast.success('Contact removed'); invalidate(); },
+    onError: (err) => toast.error('Could not remove contact', { description: err.message }),
+  });
+
+  // ── Merge a duplicate record into this one ──
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeSearch, setMergeSearch] = useState('');
+  const [mergeTarget, setMergeTarget] = useState(null);
+  const debouncedMergeSearch = useDebounced(mergeSearch);
+  const mergeCandidates = useQuery({
+    queryKey: ['redeem-ops', 'merge-search', id, debouncedMergeSearch],
+    queryFn: () => redeemOpsApi.listPartners({ limit: 6, ...(debouncedMergeSearch ? { search: debouncedMergeSearch } : {}) }),
+    enabled: mergeOpen,
+  });
+  const mergeMutation = useMutation({
+    mutationFn: () => redeemOpsApi.mergePartners(id, mergeTarget.id),
+    onSuccess: () => {
+      toast.success('Merged — the duplicate’s history now lives here');
+      setMergeOpen(false); setMergeTarget(null); setMergeSearch('');
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partner', id, 'timeline'] });
+    },
+    onError: (err) => toast.error('Merge failed', { description: err.message }),
   });
 
   const [locationForm, setLocationForm] = useState(EMPTY_LOCATION);
@@ -501,7 +551,7 @@ export default function PartnerDetail() {
               {(partner.contacts || []).map((c) => (
                 <div key={c.id} className="flex items-center gap-3 border-b border-border pb-3 last:border-0 last:pb-0">
                   <RoAvatar name={c.name} size={32} />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold m-0 flex items-center gap-1.5">
                       {c.name}
                       {c.isPrimary && <Star className="w-3.5 h-3.5" style={{ color: 'var(--ro-tag-yellow-fg)' }} aria-label="Primary contact" />}
@@ -510,6 +560,29 @@ export default function PartnerDetail() {
                       {[c.roleTitle, c.mobile, c.email].filter(Boolean).join(' · ') || '—'}
                     </p>
                   </div>
+                  {(isOwner || canReassign) && (
+                    <span className="flex gap-1 shrink-0">
+                      <Button
+                        size="sm" variant="ghost" aria-label={`Edit ${c.name}`}
+                        onClick={() => setContactEdit({
+                          id: c.id, name: c.name, roleTitle: c.roleTitle || '', mobile: c.mobile || '', email: c.email || '',
+                        })}
+                      >
+                        <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                      </Button>
+                      <Button
+                        size="sm" variant="ghost" aria-label={`Remove ${c.name}`}
+                        disabled={contactArchiveMutation.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Remove ${c.name} from this business? Past activities keep their record.`)) {
+                            contactArchiveMutation.mutate(c.id);
+                          }
+                        }}
+                      >
+                        <X className="w-3.5 h-3.5" aria-hidden="true" />
+                      </Button>
+                    </span>
+                  )}
                 </div>
               ))}
               {(isOwner || canReassign) && (
@@ -600,6 +673,17 @@ export default function PartnerDetail() {
             </div>
           )}
 
+          {hasCapability(user, 'partners.merge') && (
+            <div className="pt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setMergeOpen(true); setMergeTarget(null); setMergeSearch(''); }}
+              >
+                Merge duplicate into this…
+              </Button>
+            </div>
+          )}
           {hasCapability(user, 'partners.delete') && partner.pipelineStage !== 'PARTNERED' && (
             <div className="pt-1">
               <Button
@@ -667,6 +751,103 @@ export default function PartnerDetail() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!contactEdit} onOpenChange={(open) => { if (!open) setContactEdit(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit contact</DialogTitle>
+          </DialogHeader>
+          {contactEdit && (
+            <div className="space-y-3 py-1">
+              <div className="space-y-1.5">
+                <Label>Name *</Label>
+                <Input value={contactEdit.name} onChange={(e) => setContactEdit((c) => ({ ...c, name: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Role</Label>
+                <Input value={contactEdit.roleTitle} onChange={(e) => setContactEdit((c) => ({ ...c, roleTitle: e.target.value }))} placeholder="Owner" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Mobile</Label>
+                  <Input value={contactEdit.mobile} onChange={(e) => setContactEdit((c) => ({ ...c, mobile: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Email</Label>
+                  <Input value={contactEdit.email} onChange={(e) => setContactEdit((c) => ({ ...c, email: e.target.value }))} />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              disabled={!contactEdit?.name?.trim() || contactUpdateMutation.isPending}
+              onClick={() => contactUpdateMutation.mutate()}
+            >
+              {contactUpdateMutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={mergeOpen} onOpenChange={(open) => { if (!open) { setMergeOpen(false); setMergeTarget(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Merge a duplicate into “{name}”</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            <p className="text-[13px] m-0" style={{ color: 'var(--ro-text-2)' }}>
+              The duplicate's contacts, activities and history move onto this record, and the duplicate is archived. This keeps every touchpoint — use Delete only for records created by mistake.
+            </p>
+            <input
+              className="ro-search w-full"
+              placeholder="Search the duplicate by name, phone or UEN"
+              value={mergeSearch}
+              onChange={(e) => { setMergeSearch(e.target.value); setMergeTarget(null); }}
+            />
+            <div className="max-h-48 overflow-y-auto rounded-xl border border-border">
+              {(mergeCandidates.data?.partners || []).filter((p2) => p2.id !== id).map((p2) => {
+                const n2 = p2.tradingName || p2.brandName || p2.legalName;
+                const selected = mergeTarget?.id === p2.id;
+                return (
+                  <button
+                    key={p2.id}
+                    type="button"
+                    onClick={() => setMergeTarget(p2)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 border-t border-border first:border-t-0 cursor-pointer text-left"
+                    style={{ background: selected ? 'var(--ro-tag-blue-bg)' : '#fff' }}
+                  >
+                    <RoAvatar name={n2} size={26} />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold truncate">{n2}</span>
+                      <span className="block text-xs truncate" style={{ color: 'var(--ro-text-2)' }}>
+                        {[p2.category, p2.primaryPhone].filter(Boolean).join(' · ') || '—'}
+                      </span>
+                    </span>
+                    <RoStageTag stage={p2.pipelineStage} size="sm" className="ml-auto shrink-0" />
+                  </button>
+                );
+              })}
+              {mergeOpen && !mergeCandidates.isLoading && (mergeCandidates.data?.partners || []).filter((p2) => p2.id !== id).length === 0 && (
+                <p className="text-sm text-center py-4 m-0" style={{ color: 'var(--ro-text-2)' }}>No businesses match.</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={!mergeTarget || mergeMutation.isPending}
+              onClick={() => {
+                const n2 = mergeTarget.tradingName || mergeTarget.brandName || mergeTarget.legalName;
+                if (window.confirm(`Merge "${n2}" into "${name}"? "${n2}" will be archived.`)) {
+                  mergeMutation.mutate();
+                }
+              }}
+            >
+              {mergeMutation.isPending ? 'Merging…' : 'Merge'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!editForm} onOpenChange={(open) => { if (!open) setEditForm(null); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -701,6 +882,10 @@ export default function PartnerDetail() {
               <div className="space-y-1.5">
                 <Label>Email</Label>
                 <Input value={editForm.primaryEmail} onChange={setEdit('primaryEmail')} placeholder="hello@nailbliss.sg" />
+              </div>
+              <div className="col-span-2 space-y-1.5">
+                <Label>Notes</Label>
+                <Textarea rows={3} value={editForm.notes} onChange={setEdit('notes')} placeholder="Anything the team should know about this business" />
               </div>
             </div>
           )}
