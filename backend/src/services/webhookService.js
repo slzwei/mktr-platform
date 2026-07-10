@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Op } from 'sequelize';
 import { WebhookSubscriber, WebhookDelivery, sequelize } from '../models/index.js';
 import { logger } from '../utils/logger.js';
+import { signWebhookAttempt, signatureVersionForSubscriber } from './webhookSigning.js';
 
 const AUTO_DISABLE_THRESHOLD = 50;
 
@@ -171,21 +172,30 @@ export function makeWebhookService(overrides = {}) {
   async function attemptDelivery(delivery, subscriber) {
     const rawBody = JSON.stringify(delivery.payload);
     const timestamp = new Date().toISOString();
-    const hmac = crypto.createHmac('sha256', subscriber.secret).update(rawBody).digest('hex');
+    const signatureVersion = signatureVersionForSubscriber(subscriber);
+    const signature = signWebhookAttempt({
+      secret: subscriber.secret,
+      rawBody,
+      timestamp,
+      signatureVersion,
+    });
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
     try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Webhook-Event': delivery.eventType,
+        'X-Webhook-Delivery-Id': delivery.deliveryId,
+        'X-Webhook-Signature': signature,
+        'X-Webhook-Timestamp': timestamp
+      };
+      if (signatureVersion === 'v2') headers['X-Webhook-Signature-Version'] = 'v2';
+
       const response = await d.fetch(subscriber.url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Webhook-Event': delivery.eventType,
-          'X-Webhook-Delivery-Id': delivery.deliveryId,
-          'X-Webhook-Signature': `sha256=${hmac}`,
-          'X-Webhook-Timestamp': timestamp
-        },
+        headers,
         body: rawBody,
         signal: controller.signal
       });

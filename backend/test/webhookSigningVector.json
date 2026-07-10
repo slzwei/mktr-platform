@@ -1,0 +1,7 @@
+{
+  "secret": "mktr-webhook-test-secret-v2",
+  "timestamp": "2026-07-10T08:30:00.000Z",
+  "rawBody": "{\"event\":\"lead.created\",\"deliveryId\":\"00000000-0000-4000-8000-000000000123\",\"data\":{\"lead\":{\"externalId\":\"lead-vector-1\"}}}",
+  "v1Signature": "sha256=33676a030236d50a294feb6fdef9e4ec260e4b5c24904a6b740f3713197acff4",
+  "v2Signature": "sha256=92b56af9010cf7308d1184c245ec63298ea64db7e79feb4d9b980b6b597574ec"
+}
