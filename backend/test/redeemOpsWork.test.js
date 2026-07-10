@@ -5,7 +5,7 @@ process.env.REDEEM_OPS_ENABLED = 'true';
 
 import request from 'supertest';
 import { getApp, closeDb, createTestUser } from './helpers.js';
-import { PartnerOrganisation, OutreachTask, ProspectingPoolMember, sequelize } from '../src/models/index.js';
+import { PartnerOrganisation, OutreachTask, ProspectingPoolMember } from '../src/models/index.js';
 import { makePoolService } from '../src/services/redeemOps/poolService.js';
 import { runRedeemOpsStaleSweep } from '../src/services/redeemOps/staleSweep.js';
 import { sgtDayWindow } from '../src/services/redeemOps/taskService.js';
@@ -174,7 +174,7 @@ describe('pools + claim-next concurrency', () => {
 });
 
 describe('stale sweep', () => {
-  test('flags at-risk + stale, but spares FOLLOW_UP_LATER with a future task', async () => {
+  test('flags at-risk + stale, but spares snoozed/parked partners', async () => {
     const old = new Date(Date.now() - 20 * 24 * 3600 * 1000);
 
     const atRisk = await makePartner('AtRisk Barber');
@@ -191,7 +191,7 @@ describe('stale sweep', () => {
 
     const parked = await makePartner('Parked Gym');
     await PartnerOrganisation.update(
-      { ownerUserId: execA.user.id, availability: 'follow_up_later', claimedAt: old, firstOutreachAt: old, lastActivityAt: old, pipelineStage: 'FOLLOW_UP_LATER' },
+      { ownerUserId: execA.user.id, availability: 'follow_up_later', claimedAt: old, firstOutreachAt: old, lastActivityAt: old, pipelineStage: 'CONTACTED' },
       { where: { id: parked.id } }
     );
     await OutreachTask.create({
@@ -200,11 +200,29 @@ describe('stale sweep', () => {
       dueAt: new Date(Date.now() + 30 * 24 * 3600 * 1000),
     });
 
+    const snoozed = await makePartner('Snoozed Florist');
+    await PartnerOrganisation.update(
+      { ownerUserId: execA.user.id, availability: 'follow_up_later', claimedAt: old, firstOutreachAt: old, lastActivityAt: old, pipelineStage: 'CONTACTED', snoozedUntil: new Date(Date.now() + 10 * 24 * 3600 * 1000) },
+      { where: { id: snoozed.id } }
+    );
+
+    const expired = await makePartner('Overslept Tailor');
+    await PartnerOrganisation.update(
+      { ownerUserId: execA.user.id, availability: 'follow_up_later', claimedAt: old, snoozedUntil: new Date(Date.now() - 24 * 3600 * 1000) },
+      { where: { id: expired.id } }
+    );
+
     await runRedeemOpsStaleSweep();
 
     expect((await PartnerOrganisation.findByPk(atRisk.id)).atRiskFlag).toBe(true);
     expect((await PartnerOrganisation.findByPk(stale.id)).staleFlag).toBe(true);
     expect((await PartnerOrganisation.findByPk(parked.id)).staleFlag).toBe(false);
+    expect((await PartnerOrganisation.findByPk(snoozed.id)).staleFlag).toBe(false);
+
+    // Expired snooze wakes back into the owner's working list.
+    const awake = await PartnerOrganisation.findByPk(expired.id);
+    expect(awake.availability).toBe('owned');
+    expect(awake.snoozedUntil).toBeNull();
   });
 });
 

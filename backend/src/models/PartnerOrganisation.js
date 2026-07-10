@@ -45,7 +45,9 @@ const PartnerOrganisation = sequelize.define('PartnerOrganisation', {
   notes: { type: DataTypes.TEXT, allowNull: true },
 
   // Pipeline + ownership (constants: services/redeemOps/constants.js — STRING not ENUM, house style)
-  pipelineStage: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'UNCLAIMED' },
+  pipelineStage: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'NEW' },
+  lostReason: { type: DataTypes.STRING(32), allowNull: true },
+  snoozedUntil: { type: DataTypes.DATE, allowNull: true },
   availability: {
     type: DataTypes.STRING(24),
     allowNull: false,

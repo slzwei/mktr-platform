@@ -3,6 +3,7 @@ import { asyncHandler, AppError } from '../../middleware/errorHandler.js';
 import partnerService from '../../services/redeemOps/partnerService.js';
 import { makeClaimService } from '../../services/redeemOps/claimService.js';
 import { makeDedupeService } from '../../services/redeemOps/dedupeService.js';
+import { LOST_REASONS } from '../../services/redeemOps/constants.js';
 
 const claimService = makeClaimService();
 const dedupeService = makeDedupeService();
@@ -92,9 +93,24 @@ export const changeStage = asyncHandler(async (req, res) => {
   const schema = Joi.object({
     toStage: Joi.string().max(32).required(),
     reason: Joi.string().max(255).allow('', null),
+    lostReason: Joi.string().valid(...LOST_REASONS).allow(null),
   });
   const body = validateBody(schema, req.body);
-  const partner = await partnerService.changeStage(req.params.id, body.toStage, req.user, body.reason || null, req.id);
+  const partner = await partnerService.changeStage(
+    req.params.id, body.toStage, req.user, body.reason || null, req.id, body.lostReason || null
+  );
+  res.json({ success: true, data: { partner } });
+});
+
+export const snoozePartner = asyncHandler(async (req, res) => {
+  const schema = Joi.object({ until: Joi.date().iso().required() });
+  const body = validateBody(schema, req.body);
+  const partner = await partnerService.snoozePartner(req.params.id, req.user, body.until, req.id);
+  res.json({ success: true, data: { partner } });
+});
+
+export const unsnoozePartner = asyncHandler(async (req, res) => {
+  const partner = await partnerService.unsnoozePartner(req.params.id, req.user, req.id);
   res.json({ success: true, data: { partner } });
 });
 

@@ -9,7 +9,7 @@ process.env.REDEEM_OPS_ENABLED = 'true';
 import request from 'supertest';
 import { getApp, closeDb, createTestUser } from './helpers.js';
 import {
-  PartnerOrganisation, PartnerContact, OutreachActivity, sequelize,
+  PartnerOrganisation, PartnerContact, OutreachActivity,
 } from '../src/models/index.js';
 import { makeClaimService } from '../src/services/redeemOps/claimService.js';
 
@@ -113,7 +113,7 @@ describe('claiming (concurrency-safe)', () => {
     }
     const row = await PartnerOrganisation.findByPk(partnerId);
     expect(row.availability).toBe('owned');
-    expect(row.pipelineStage).toBe('CLAIMED');
+    expect(row.pipelineStage).toBe('NEW'); // ownership is not pipeline progress
   });
 
   test('claiming an owned business over HTTP → 409', async () => {
@@ -171,7 +171,7 @@ describe('stage machine + activities + row-level ownership', () => {
     const bad = await request(app)
       .patch(`/api/redeem-ops/partners/${partnerId}/stage`)
       .set(auth(execA.token))
-      .send({ toStage: 'PARTNERED' }); // CLAIMED → PARTNERED is not allowed
+      .send({ toStage: 'PARTNERED' }); // NEW → PARTNERED is not allowed
     expect(bad.status).toBe(400);
 
     const forcedNoReason = await request(app)
@@ -180,6 +180,18 @@ describe('stage machine + activities + row-level ownership', () => {
       .send({ toStage: 'PARTNERED' });
     expect(forcedNoReason.status).toBe(400);
 
+    // Entry requirement: no contact on record yet → 422 even for a forcing admin.
+    const noContact = await request(app)
+      .patch(`/api/redeem-ops/partners/${partnerId}/stage`)
+      .set(auth(admin.token))
+      .send({ toStage: 'PARTNERED', reason: 'signed at event' });
+    expect(noContact.status).toBe(422);
+
+    await request(app)
+      .post(`/api/redeem-ops/partners/${partnerId}/contacts`)
+      .set(auth(execA.token))
+      .send({ name: 'Deal Maker', mobile: '+6591239999' });
+
     const forced = await request(app)
       .patch(`/api/redeem-ops/partners/${partnerId}/stage`)
       .set(auth(admin.token))
@@ -187,11 +199,63 @@ describe('stage machine + activities + row-level ownership', () => {
     expect(forced.status).toBe(200);
   });
 
+  test('LOST requires a reason from the fixed list', async () => {
+    const res = await createPartner(admin.token, { tradingName: 'Lost Cause Cafe' });
+    const lostId = res.body.data.partner.id;
+    await request(app).post(`/api/redeem-ops/partners/${lostId}/claim`).set(auth(execA.token));
+
+    const noReason = await request(app)
+      .patch(`/api/redeem-ops/partners/${lostId}/stage`)
+      .set(auth(execA.token))
+      .send({ toStage: 'LOST' });
+    expect(noReason.status).toBe(400);
+
+    const ok = await request(app)
+      .patch(`/api/redeem-ops/partners/${lostId}/stage`)
+      .set(auth(execA.token))
+      .send({ toStage: 'LOST', lostReason: 'not_interested' });
+    expect(ok.status).toBe(200);
+    const row = await PartnerOrganisation.findByPk(lostId);
+    expect(row.pipelineStage).toBe('LOST');
+    expect(row.lostReason).toBe('not_interested');
+    expect(row.availability).toBe('disqualified'); // out of the working pool
+  });
+
+  test('snooze parks with a wake date; unsnooze restores availability', async () => {
+    const res = await createPartner(admin.token, { tradingName: 'Sleepy Spa' });
+    const snoozeId = res.body.data.partner.id;
+    await request(app).post(`/api/redeem-ops/partners/${snoozeId}/claim`).set(auth(execA.token));
+
+    const past = await request(app)
+      .post(`/api/redeem-ops/partners/${snoozeId}/snooze`)
+      .set(auth(execA.token))
+      .send({ until: new Date(Date.now() - 3600 * 1000).toISOString() });
+    expect(past.status).toBe(400);
+
+    const wake = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString();
+    const ok = await request(app)
+      .post(`/api/redeem-ops/partners/${snoozeId}/snooze`)
+      .set(auth(execA.token))
+      .send({ until: wake });
+    expect(ok.status).toBe(200);
+    let row = await PartnerOrganisation.findByPk(snoozeId);
+    expect(row.availability).toBe('follow_up_later');
+    expect(row.snoozedUntil).not.toBeNull();
+
+    const un = await request(app)
+      .post(`/api/redeem-ops/partners/${snoozeId}/unsnooze`)
+      .set(auth(execA.token));
+    expect(un.status).toBe(200);
+    row = await PartnerOrganisation.findByPk(snoozeId);
+    expect(row.availability).toBe('owned');
+    expect(row.snoozedUntil).toBeNull();
+  });
+
   test('non-owner exec cannot move stage or log activity on someone else’s partner', async () => {
     const move = await request(app)
       .patch(`/api/redeem-ops/partners/${partnerId}/stage`)
       .set(auth(execB.token))
-      .send({ toStage: 'FOLLOW_UP_LATER' });
+      .send({ toStage: 'CONTACTED' });
     expect(move.status).toBe(403);
 
     const log = await request(app)

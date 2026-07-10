@@ -5,22 +5,29 @@
  */
 import { REDEEM_OPS_SUB_ROLES, CAPABILITIES, ROLE_CAPABILITIES } from './permissions.js';
 
+/**
+ * Five working stages + one terminal outcome (2026-07-10 redesign, migration
+ * 051). Industry-standard shape (Pipedrive 5 / HubSpot 5-7): each stage is a
+ * verifiable commitment milestone. Everything the old 14-stage model encoded
+ * elsewhere now lives where it belongs:
+ *   ownership   → ownerUserId (claiming never touches the stage)
+ *   researching → a task
+ *   replied     → the activity log (inbound activities)
+ *   no response → staleFlag / atRiskFlag
+ *   snooze      → availability='follow_up_later' + snoozedUntil (wake sweep)
+ *   two dead stages → LOST + lostReason
+ * Historical stage events keep the old names; the UI still renders them.
+ */
 export const PIPELINE_STAGES = [
-  'UNCLAIMED',
-  'CLAIMED',
-  'RESEARCHING',
+  'NEW',
   'CONTACTED',
-  'REPLIED',
-  'MEETING_BOOKED',
-  'MEETING_COMPLETED',
-  'PROPOSAL_SENT',
-  'NEGOTIATING',
+  'MEETING',
+  'PROPOSAL',
   'PARTNERED',
-  'FOLLOW_UP_LATER',
-  'NO_RESPONSE',
-  'NOT_INTERESTED',
-  'DISQUALIFIED',
+  'LOST',
 ];
+
+export const LOST_REASONS = ['not_interested', 'disqualified', 'no_response', 'other'];
 
 export const PARTNER_AVAILABILITY = ['available', 'owned', 'follow_up_later', 'restricted', 'disqualified'];
 
@@ -30,20 +37,13 @@ export const PARTNER_AVAILABILITY = ['available', 'owned', 'follow_up_later', 'r
  * ops_admin may force any transition (audited with a required reason).
  */
 export const STAGE_TRANSITIONS = {
-  UNCLAIMED: ['CLAIMED'],
-  CLAIMED: ['RESEARCHING', 'CONTACTED', 'FOLLOW_UP_LATER', 'NO_RESPONSE', 'NOT_INTERESTED', 'DISQUALIFIED'],
-  RESEARCHING: ['CONTACTED', 'FOLLOW_UP_LATER', 'NOT_INTERESTED', 'DISQUALIFIED'],
-  CONTACTED: ['REPLIED', 'NO_RESPONSE', 'FOLLOW_UP_LATER', 'NOT_INTERESTED', 'DISQUALIFIED'],
-  REPLIED: ['MEETING_BOOKED', 'PROPOSAL_SENT', 'FOLLOW_UP_LATER', 'NOT_INTERESTED', 'DISQUALIFIED'],
-  MEETING_BOOKED: ['MEETING_COMPLETED', 'NO_RESPONSE', 'FOLLOW_UP_LATER', 'NOT_INTERESTED'],
-  MEETING_COMPLETED: ['PROPOSAL_SENT', 'NEGOTIATING', 'PARTNERED', 'FOLLOW_UP_LATER', 'NOT_INTERESTED'],
-  PROPOSAL_SENT: ['NEGOTIATING', 'PARTNERED', 'NO_RESPONSE', 'FOLLOW_UP_LATER', 'NOT_INTERESTED'],
-  NEGOTIATING: ['PARTNERED', 'PROPOSAL_SENT', 'FOLLOW_UP_LATER', 'NOT_INTERESTED'],
-  PARTNERED: ['FOLLOW_UP_LATER'],
-  FOLLOW_UP_LATER: ['CONTACTED', 'REPLIED', 'MEETING_BOOKED', 'PROPOSAL_SENT', 'NEGOTIATING', 'NOT_INTERESTED', 'DISQUALIFIED'],
-  NO_RESPONSE: ['CONTACTED', 'FOLLOW_UP_LATER', 'NOT_INTERESTED', 'DISQUALIFIED'],
-  NOT_INTERESTED: ['FOLLOW_UP_LATER', 'CONTACTED'],
-  DISQUALIFIED: [],
+  NEW: ['CONTACTED', 'LOST'],
+  CONTACTED: ['MEETING', 'PROPOSAL', 'LOST'],
+  MEETING: ['PROPOSAL', 'PARTNERED', 'LOST'],
+  PROPOSAL: ['PARTNERED', 'MEETING', 'LOST'],
+  PARTNERED: [],
+  // Revival: a lost business can re-enter the conversation.
+  LOST: ['CONTACTED'],
 };
 
 /** Activity types that count as real outreach (bump lastActivityAt / clear flags). */
@@ -99,6 +99,7 @@ export function publicConstants() {
   return {
     pipelineStages: PIPELINE_STAGES,
     stageTransitions: STAGE_TRANSITIONS,
+    lostReasons: LOST_REASONS,
     partnerAvailability: PARTNER_AVAILABILITY,
     activityTypes: ACTIVITY_TYPES,
     rewardTypes: REWARD_TYPES,

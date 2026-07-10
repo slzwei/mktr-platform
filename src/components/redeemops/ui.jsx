@@ -34,6 +34,12 @@ export function prettyEnum(value) {
 
 /* 14 pipeline stages → six pastel families (stage-tags card). */
 const STAGE_TAG = {
+  // Five-stage pipeline (current)
+  NEW: 'ro-tag--outline',
+  MEETING: 'ro-tag--blue',
+  PROPOSAL: 'ro-tag--purple',
+  LOST: 'ro-tag--red',
+  // Legacy stage names — keep so historical timeline events still render
   UNCLAIMED: 'ro-tag--outline',
   CLAIMED: 'ro-tag--gray',
   RESEARCHING: 'ro-tag--gray',

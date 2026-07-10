@@ -61,8 +61,12 @@ export function makeAnalyticsService(overrides = {}) {
       `SELECT COALESCE(p.category, 'Uncategorised') AS category,
               COUNT(*)::int AS total,
               COUNT(*) FILTER (WHERE p."firstOutreachAt" IS NOT NULL)::int AS contacted,
-              COUNT(*) FILTER (WHERE p."pipelineStage" IN ('REPLIED','MEETING_BOOKED','MEETING_COMPLETED','PROPOSAL_SENT','NEGOTIATING','PARTNERED'))::int AS replied,
-              COUNT(*) FILTER (WHERE p."pipelineStage" IN ('MEETING_BOOKED','MEETING_COMPLETED','PROPOSAL_SENT','NEGOTIATING','PARTNERED'))::int AS meetings,
+              COUNT(*) FILTER (WHERE EXISTS (
+                SELECT 1 FROM outreach_activities a
+                 WHERE a."partnerOrganisationId" = p.id
+                   AND a.direction = 'inbound' AND a."voidedAt" IS NULL
+              ) OR p."pipelineStage" IN ('MEETING','PROPOSAL','PARTNERED'))::int AS replied,
+              COUNT(*) FILTER (WHERE p."pipelineStage" IN ('MEETING','PROPOSAL','PARTNERED'))::int AS meetings,
               COUNT(*) FILTER (WHERE p."pipelineStage" = 'PARTNERED')::int AS partnered
          FROM partner_organisations p
         WHERE p."mergedIntoId" IS NULL AND p."archivedAt" IS NULL

@@ -32,6 +32,8 @@ router.post('/partners/:id/assign', requireRedeemOps('partners.reassign'), ctrl.
 // Pipeline
 router.patch('/partners/:id/stage', requireRedeemOps('pipeline.move'), ctrl.changeStage);
 router.post('/partners/:id/stage/undo', requireRedeemOps('pipeline.move'), ctrl.undoStage);
+router.post('/partners/:id/snooze', requireRedeemOps('pipeline.move'), ctrl.snoozePartner);
+router.post('/partners/:id/unsnooze', requireRedeemOps('pipeline.move'), ctrl.unsnoozePartner);
 
 // Merge (destructive-adjacent — ops_admin+)
 router.post('/partners/:id/merge', requireRedeemOps('partners.merge'), ctrl.mergePartners);

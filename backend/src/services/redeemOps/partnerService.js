@@ -13,7 +13,7 @@ import { hasCapability } from './permissions.js';
 import { deriveMatchingKeys, postalDistrictOf } from './normalizers.js';
 import {
   PIPELINE_STAGES, STAGE_TRANSITIONS, PARTNER_AVAILABILITY,
-  ACTIVITY_TYPES, MEANINGFUL_ACTIVITY_TYPES,
+  ACTIVITY_TYPES, MEANINGFUL_ACTIVITY_TYPES, LOST_REASONS,
 } from './constants.js';
 import { makeOnboardingService } from './onboardingService.js';
 
@@ -230,8 +230,11 @@ export function makePartnerService(overrides = {}) {
     }
   }
 
-  async function changeStage(id, toStage, user, reason = null, requestId = null) {
+  async function changeStage(id, toStage, user, reason = null, requestId = null, lostReason = null) {
     if (!PIPELINE_STAGES.includes(toStage)) throw new AppError('Unknown stage', 400);
+    if (toStage === 'LOST' && !LOST_REASONS.includes(lostReason)) {
+      throw new AppError('A reason is required when marking a business as Lost', 400);
+    }
     const partner = await getLivePartner(id);
     if (!canActOnRow(user, partner)) {
       throw new AppError('You can only move businesses you own', 403);
@@ -254,13 +257,19 @@ export function makePartnerService(overrides = {}) {
       await assertPartneredEntryRequirements(id, partner);
     }
 
+    // LOST leaves the working pool (reuses the 'disqualified' availability so
+    // pools/queue exclusions keep working); any other move wakes a snooze.
     const availability =
-      toStage === 'FOLLOW_UP_LATER' ? 'follow_up_later'
-      : toStage === 'DISQUALIFIED' ? 'disqualified'
+      toStage === 'LOST' ? 'disqualified'
       : partner.ownerUserId ? 'owned' : 'available';
 
     await d.sequelize.transaction(async (t) => {
-      await partner.update({ pipelineStage: toStage, availability, staleFlag: false }, { transaction: t });
+      await partner.update({
+        pipelineStage: toStage, availability, staleFlag: false, snoozedUntil: null,
+        // lostReason persists after LOST → re-engage so an undo/relapse keeps
+        // context; the UI only shows it while the stage is LOST.
+        ...(toStage === 'LOST' ? { lostReason } : {}),
+      }, { transaction: t });
       await d.PartnerStageEvent.create(
         { partnerOrganisationId: id, fromStage, toStage, actorUserId: user.id, reason },
         { transaction: t }
@@ -317,15 +326,14 @@ export function makePartnerService(overrides = {}) {
       await assertPartneredEntryRequirements(id, partner);
     }
     const availability =
-      toStage === 'FOLLOW_UP_LATER' ? 'follow_up_later'
-      : toStage === 'DISQUALIFIED' ? 'disqualified'
+      toStage === 'LOST' ? 'disqualified'
       : partner.ownerUserId ? 'owned' : 'available';
 
     await d.sequelize.transaction(async (t) => {
       // Conditional transition — a concurrent move loses cleanly instead of
       // silently overwriting it.
       const [moved] = await d.PartnerOrganisation.update(
-        { pipelineStage: toStage, availability },
+        { pipelineStage: toStage, availability, snoozedUntil: null },
         { where: { id, pipelineStage: fromStage }, transaction: t }
       );
       if (moved === 0) {
@@ -339,6 +347,58 @@ export function makePartnerService(overrides = {}) {
         actorUser: user, action: 'stage.undone', entityType: 'partner_organisation',
         entityId: id, before: { stage: fromStage }, after: { stage: toStage },
         reason: 'undo', requestId, transaction: t,
+      });
+    });
+    return partner;
+  }
+
+  /**
+   * Snooze — "not now, wake me later". A flag, not a stage: the deal keeps its
+   * pipeline position; availability='follow_up_later' hides it from the queue
+   * until the stale sweep wakes it at snoozedUntil.
+   */
+  async function snoozePartner(id, user, until, requestId = null) {
+    const partner = await getLivePartner(id);
+    if (!canActOnRow(user, partner)) {
+      throw new AppError('You can only snooze businesses you own', 403);
+    }
+    if (partner.pipelineStage === 'PARTNERED' || partner.pipelineStage === 'LOST') {
+      throw new AppError('Partnered and Lost businesses cannot be snoozed', 400);
+    }
+    const wake = new Date(until);
+    if (!until || Number.isNaN(wake.getTime()) || wake.getTime() <= Date.now()) {
+      throw new AppError('Pick a wake date in the future', 400);
+    }
+    if (wake.getTime() > Date.now() + 366 * 24 * 60 * 60 * 1000) {
+      throw new AppError('Snooze at most one year ahead', 400);
+    }
+    await d.sequelize.transaction(async (t) => {
+      await partner.update(
+        { availability: 'follow_up_later', snoozedUntil: wake, staleFlag: false },
+        { transaction: t }
+      );
+      await d.audit.recordAuditEvent({
+        actorUser: user, action: 'partner.snoozed', entityType: 'partner_organisation',
+        entityId: id, after: { snoozedUntil: wake.toISOString() }, requestId, transaction: t,
+      });
+    });
+    return partner;
+  }
+
+  async function unsnoozePartner(id, user, requestId = null) {
+    const partner = await getLivePartner(id);
+    if (!canActOnRow(user, partner)) {
+      throw new AppError('You can only snooze businesses you own', 403);
+    }
+    if (partner.availability !== 'follow_up_later' && !partner.snoozedUntil) return partner;
+    await d.sequelize.transaction(async (t) => {
+      await partner.update(
+        { availability: partner.ownerUserId ? 'owned' : 'available', snoozedUntil: null },
+        { transaction: t }
+      );
+      await d.audit.recordAuditEvent({
+        actorUser: user, action: 'partner.unsnoozed', entityType: 'partner_organisation',
+        entityId: id, requestId, transaction: t,
       });
     });
     return partner;
@@ -379,7 +439,7 @@ export function makePartnerService(overrides = {}) {
         where: {
           entityType: 'partner_organisation',
           entityId: String(id),
-          action: { [Op.in]: ['partner.created', 'partner.edited'] },
+          action: { [Op.in]: ['partner.created', 'partner.edited', 'partner.snoozed', 'partner.unsnoozed'] },
         },
         include: [{ model: d.User, as: 'actor', attributes: ['id', 'fullName'] }],
         order: [['createdAt', 'DESC']],
@@ -736,6 +796,7 @@ export function makePartnerService(overrides = {}) {
 
   return {
     listPartners, getPartner, createPartner, updatePartner, changeStage, undoStageChange,
+    snoozePartner, unsnoozePartner,
     importPartners, getTimeline, logActivity, editActivity, voidActivity,
     addContact, updateContact, archiveContact, addLocation, updateLocation,
     mergePartners, deletePartner, canActOnRow,
