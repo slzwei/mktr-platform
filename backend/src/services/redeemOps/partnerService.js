@@ -1,7 +1,8 @@
 import { Op } from 'sequelize';
 import {
   PartnerOrganisation, PartnerLocation, PartnerContact, PartnerAssignmentEvent,
-  PartnerStageEvent, OutreachActivity, OutreachTask, RewardOffer, Activation,
+  PartnerStageEvent, OutreachActivity, OutreachTask, ProspectingPoolMember,
+  PartnerOnboardingItem, RewardOffer, Activation,
   RedeemOpsAuditEvent, User, sequelize,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
@@ -24,7 +25,8 @@ import { makeOnboardingService } from './onboardingService.js';
 export function makePartnerService(overrides = {}) {
   const d = {
     PartnerOrganisation, PartnerLocation, PartnerContact, PartnerAssignmentEvent,
-    PartnerStageEvent, OutreachActivity, OutreachTask, RewardOffer, Activation,
+    PartnerStageEvent, OutreachActivity, OutreachTask, ProspectingPoolMember,
+    PartnerOnboardingItem, RewardOffer, Activation,
     RedeemOpsAuditEvent, User, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     dedupe: makeDedupeService(),
@@ -202,6 +204,32 @@ export function makePartnerService(overrides = {}) {
 
   // ── Stage machine ────────────────────────────────────────────────────────
 
+  /**
+   * A close must record who agreed and how to reach them — at least one active
+   * contact, plus a phone or email somewhere on the record. Everything else
+   * (terms, outlets, launch) belongs to the onboarding checklist.
+   */
+  async function assertPartneredEntryRequirements(id, partner) {
+    const contacts = await d.PartnerContact.findAll({
+      where: { partnerOrganisationId: id, archivedAt: null },
+      attributes: ['id', 'mobile', 'email'],
+    });
+    if (contacts.length === 0) {
+      throw new AppError(
+        'To mark as Partnered, add the person who agreed as a contact first (Contacts tab).',
+        422
+      );
+    }
+    const reachable = partner.primaryPhone || partner.primaryEmail
+      || contacts.some((c) => c.mobile || c.email);
+    if (!reachable) {
+      throw new AppError(
+        'To mark as Partnered, add a phone or email for the business or its contact.',
+        422
+      );
+    }
+  }
+
   async function changeStage(id, toStage, user, reason = null, requestId = null) {
     if (!PIPELINE_STAGES.includes(toStage)) throw new AppError('Unknown stage', 400);
     const partner = await getLivePartner(id);
@@ -221,29 +249,9 @@ export function makePartnerService(overrides = {}) {
     }
 
     // Entry requirement for PARTNERED (Salesforce-style stage validation, applies
-    // to EVERYONE incl. admins): a close must record who agreed and how to reach
-    // them — at least one active contact, plus a phone or email somewhere on the
-    // record. Everything else (terms, outlets, launch) belongs to the onboarding
-    // checklist that seeding kicks off below.
+    // to EVERYONE incl. admins) — also enforced when an undo restores PARTNERED.
     if (toStage === 'PARTNERED') {
-      const contacts = await d.PartnerContact.findAll({
-        where: { partnerOrganisationId: id, archivedAt: null },
-        attributes: ['id', 'mobile', 'email'],
-      });
-      if (contacts.length === 0) {
-        throw new AppError(
-          'To mark as Partnered, add the person who agreed as a contact first (Contacts tab).',
-          422
-        );
-      }
-      const reachable = partner.primaryPhone || partner.primaryEmail
-        || contacts.some((c) => c.mobile || c.email);
-      if (!reachable) {
-        throw new AppError(
-          'To mark as Partnered, add a phone or email for the business or its contact.',
-          422
-        );
-      }
+      await assertPartneredEntryRequirements(id, partner);
     }
 
     const availability =
@@ -291,6 +299,10 @@ export function makePartnerService(overrides = {}) {
     if (!last || !last.fromStage || last.toStage !== partner.pipelineStage) {
       throw new AppError('Nothing to undo', 400);
     }
+    // Undo is terminal — no undo-of-undo ping-pong.
+    if (last.reason === 'undo') {
+      throw new AppError('That move was already an undo', 400);
+    }
     if (last.actorUserId !== user.id) {
       throw new AppError('Only the person who made the move can undo it', 403);
     }
@@ -300,13 +312,25 @@ export function makePartnerService(overrides = {}) {
 
     const fromStage = partner.pipelineStage;
     const toStage = last.fromStage;
+    // Restoring PARTNERED must meet the same entry bar as reaching it.
+    if (toStage === 'PARTNERED') {
+      await assertPartneredEntryRequirements(id, partner);
+    }
     const availability =
       toStage === 'FOLLOW_UP_LATER' ? 'follow_up_later'
       : toStage === 'DISQUALIFIED' ? 'disqualified'
       : partner.ownerUserId ? 'owned' : 'available';
 
     await d.sequelize.transaction(async (t) => {
-      await partner.update({ pipelineStage: toStage, availability }, { transaction: t });
+      // Conditional transition — a concurrent move loses cleanly instead of
+      // silently overwriting it.
+      const [moved] = await d.PartnerOrganisation.update(
+        { pipelineStage: toStage, availability },
+        { where: { id, pipelineStage: fromStage }, transaction: t }
+      );
+      if (moved === 0) {
+        throw new AppError('The stage changed in the meantime — refresh and try again', 409);
+      }
       await d.PartnerStageEvent.create(
         { partnerOrganisationId: id, fromStage, toStage, actorUserId: user.id, reason: 'undo' },
         { transaction: t }
@@ -369,7 +393,9 @@ export function makePartnerService(overrides = {}) {
           { model: d.User, as: 'creator', attributes: ['id', 'fullName'] },
           { model: d.User, as: 'assignee', attributes: ['id', 'fullName'] },
         ],
-        order: [['createdAt', 'DESC']],
+        // updatedAt so an old task completed TODAY still makes the window
+        // (completion/cancellation bump updatedAt; creation starts equal to it)
+        order: [['updatedAt', 'DESC']],
         limit,
       }),
     ]);
@@ -585,6 +611,7 @@ export function makePartnerService(overrides = {}) {
     [d.OutreachActivity, 'partnerOrganisationId'],
     [d.PartnerAssignmentEvent, 'partnerOrganisationId'],
     [d.PartnerStageEvent, 'partnerOrganisationId'],
+    [d.OutreachTask, 'partnerOrganisationId'],
   ];
 
   async function mergePartners(survivorId, duplicateId, user, reason = null, requestId = null) {
@@ -593,9 +620,41 @@ export function makePartnerService(overrides = {}) {
       const survivor = await getLivePartner(survivorId, { transaction: t, lock: t.LOCK.UPDATE });
       const duplicate = await getLivePartner(duplicateId, { transaction: t, lock: t.LOCK.UPDATE });
 
+      // Reward supply is financial state tied to the partnered record — merging
+      // it silently would break the offers-only-on-PARTNERED invariant. Rare;
+      // resolve by hand first.
+      const [dupOffers, dupActivations] = await Promise.all([
+        d.RewardOffer.count({ where: { partnerOrganisationId: duplicateId }, transaction: t }),
+        d.Activation.count({ where: { partnerOrganisationId: duplicateId }, transaction: t }),
+      ]);
+      if (dupOffers > 0 || dupActivations > 0) {
+        throw new AppError('The duplicate has rewards or activations attached — move or end those first, then merge', 409);
+      }
+
       for (const [Model, fk] of REPOINT_TARGETS()) {
         await Model.update({ [fk]: survivorId }, { where: { [fk]: duplicateId }, transaction: t });
       }
+
+      // Pool memberships are unique per (pool, partner): repoint the ones the
+      // survivor doesn't already hold, drop the collisions.
+      const survivorPools = (await d.ProspectingPoolMember.findAll({
+        where: { partnerOrganisationId: survivorId }, attributes: ['poolId'], transaction: t, raw: true,
+      })).map((r) => r.poolId);
+      await d.ProspectingPoolMember.update(
+        { partnerOrganisationId: survivorId },
+        {
+          where: {
+            partnerOrganisationId: duplicateId,
+            ...(survivorPools.length ? { poolId: { [Op.notIn]: survivorPools } } : {}),
+          },
+          transaction: t,
+        }
+      );
+      await d.ProspectingPoolMember.destroy({ where: { partnerOrganisationId: duplicateId }, transaction: t });
+
+      // Onboarding items are keyed per partner — the survivor's own checklist
+      // governs; the duplicate's rows go with it.
+      await d.PartnerOnboardingItem.destroy({ where: { partnerOrganisationId: duplicateId }, transaction: t });
 
       const duplicateSnapshot = duplicate.toJSON();
       await duplicate.update(
@@ -616,6 +675,32 @@ export function makePartnerService(overrides = {}) {
       });
       return survivor;
     });
+  }
+
+  /**
+   * Bulk import (CSV rows from the UI): each row goes through the same
+   * dedupe-gated createPartner as a manual add — exact duplicates are skipped
+   * and counted, failures reported, every created row audited. One request per
+   * chunk keeps the public rate limiter out of the picture (review finding:
+   * row-per-request importing tripped the 200/15min production cap).
+   */
+  async function importPartners(rows, user, requestId = null) {
+    const results = { created: 0, skipped: 0, failed: 0, errors: [] };
+    for (const row of rows) {
+      try {
+        await createPartner(row, user, requestId);
+        results.created += 1;
+      } catch (err) {
+        if (err.statusCode === 409 || err.status === 409) results.skipped += 1;
+        else {
+          results.failed += 1;
+          if (results.errors.length < 5) {
+            results.errors.push(`${row.tradingName || 'Row'}: ${err.message}`);
+          }
+        }
+      }
+    }
+    return results;
   }
 
   /**
@@ -651,7 +736,7 @@ export function makePartnerService(overrides = {}) {
 
   return {
     listPartners, getPartner, createPartner, updatePartner, changeStage, undoStageChange,
-    getTimeline, logActivity, editActivity, voidActivity,
+    importPartners, getTimeline, logActivity, editActivity, voidActivity,
     addContact, updateContact, archiveContact, addLocation, updateLocation,
     mergePartners, deletePartner, canActOnRow,
   };

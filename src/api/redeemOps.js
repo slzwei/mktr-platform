@@ -60,6 +60,10 @@ export const redeemOpsApi = {
     const res = await apiClient.put(`/redeem-ops/partners/${id}`, body);
     return res.data?.partner;
   },
+  async importPartners(rows) {
+    const res = await apiClient.post('/redeem-ops/partners/import', { rows });
+    return res.data;
+  },
   async mergePartners(survivorId, duplicateId, reason) {
     const res = await apiClient.post(`/redeem-ops/partners/${survivorId}/merge`, { duplicateId, reason });
     return res.data?.partner;

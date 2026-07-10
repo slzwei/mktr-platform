@@ -113,6 +113,24 @@ export const undoStage = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { partner } });
 });
 
+const importSchema = Joi.object({
+  rows: Joi.array().items(Joi.object({
+    tradingName: Joi.string().max(160).required(),
+    category: Joi.string().max(64).allow('', null),
+    primaryPhone: Joi.string().max(20).allow('', null),
+    instagramHandle: Joi.string().max(120).allow('', null),
+    website: Joi.string().max(255).allow('', null),
+    uen: Joi.string().max(16).allow('', null),
+    primaryEmail: Joi.string().max(160).allow('', null),
+  })).min(1).max(100).required(),
+});
+
+export const importPartners = asyncHandler(async (req, res) => {
+  const { rows } = validateBody(importSchema, req.body);
+  const results = await partnerService.importPartners(rows.map(blanksToNull), req.user, req.id);
+  res.json({ success: true, data: results });
+});
+
 export const deletePartner = asyncHandler(async (req, res) => {
   await partnerService.deletePartner(req.params.id, req.user, req.id);
   res.json({ success: true, message: 'Business deleted' });
