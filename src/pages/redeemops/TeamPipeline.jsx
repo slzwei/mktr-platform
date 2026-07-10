@@ -8,6 +8,10 @@ import {
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
 import { useAuthStore } from '@/stores/authStore';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import AlertTriangle from 'lucide-react/icons/alert-triangle';
 import { RoAvatar, prettyEnum } from '@/components/redeemops/ui';
 
@@ -185,6 +189,7 @@ export default function TeamPipeline() {
   const [phase, setPhase] = useState('active');
   const [expanded, setExpanded] = useState({});
   const [activeCard, setActiveCard] = useState(null);
+  const [confirmMove, setConfirmMove] = useState(null); // { card, toStage } — Partnered is a milestone, confirm it
 
   const constants = useQuery({
     queryKey: ['redeem-ops', 'constants'],
@@ -219,6 +224,15 @@ export default function TeamPipeline() {
   const stages = PHASES[phase].stages;
   const legalTargets = activeCard ? (transitions[activeCard.pipelineStage] || []) : [];
 
+  const executeMove = (card, toStage) => {
+    // Optimistic: move the card locally, server confirms (and audits) the change.
+    queryClient.setQueryData(PIPELINE_KEY, (prev) => prev && ({
+      ...prev,
+      partners: prev.partners.map((p) => (p.id === card.id ? { ...p, pipelineStage: toStage, stageSince: new Date().toISOString() } : p)),
+    }));
+    stageMutation.mutate({ partnerId: card.id, toStage });
+  };
+
   const handleDragEnd = ({ over }) => {
     const card = activeCard;
     setActiveCard(null);
@@ -229,12 +243,13 @@ export default function TeamPipeline() {
       toast.error(`Can't move ${prettyEnum(card.pipelineStage)} → ${prettyEnum(toStage)} directly`);
       return;
     }
-    // Optimistic: move the card locally, server confirms (and audits) the change.
-    queryClient.setQueryData(PIPELINE_KEY, (prev) => prev && ({
-      ...prev,
-      partners: prev.partners.map((p) => (p.id === card.id ? { ...p, pipelineStage: toStage, stageSince: new Date().toISOString() } : p)),
-    }));
-    stageMutation.mutate({ partnerId: card.id, toStage });
+    if (toStage === 'PARTNERED') {
+      // Milestone move: seeds onboarding, unlocks rewards, and the server
+      // requires a contact + phone/email on file — confirm before committing.
+      setConfirmMove({ card, toStage });
+      return;
+    }
+    executeMove(card, toStage);
   };
 
   return (
@@ -307,6 +322,31 @@ export default function TeamPipeline() {
           {activeCard ? <div className="w-[234px]"><CardInner p={activeCard} dragging /></div> : null}
         </DragOverlay>
       </DndContext>
+
+      <Dialog open={!!confirmMove} onOpenChange={(open) => { if (!open) setConfirmMove(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Mark {confirmMove ? partnerName(confirmMove.card) : ''} as Partnered?</DialogTitle>
+            <DialogDescription>
+              This starts the onboarding checklist and unlocks rewards for this business.
+              The person who agreed must be on its Contacts tab with a phone or email —
+              the move is refused otherwise.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmMove(null)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                const m = confirmMove;
+                setConfirmMove(null);
+                if (m) executeMove(m.card, m.toStage);
+              }}
+            >
+              Mark as Partnered
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

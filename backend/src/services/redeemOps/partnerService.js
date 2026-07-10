@@ -220,6 +220,32 @@ export function makePartnerService(overrides = {}) {
       if (!reason) throw new AppError('A reason is required to force a non-standard stage change', 400);
     }
 
+    // Entry requirement for PARTNERED (Salesforce-style stage validation, applies
+    // to EVERYONE incl. admins): a close must record who agreed and how to reach
+    // them — at least one active contact, plus a phone or email somewhere on the
+    // record. Everything else (terms, outlets, launch) belongs to the onboarding
+    // checklist that seeding kicks off below.
+    if (toStage === 'PARTNERED') {
+      const contacts = await d.PartnerContact.findAll({
+        where: { partnerOrganisationId: id, archivedAt: null },
+        attributes: ['id', 'mobile', 'email'],
+      });
+      if (contacts.length === 0) {
+        throw new AppError(
+          'To mark as Partnered, add the person who agreed as a contact first (Contacts tab).',
+          422
+        );
+      }
+      const reachable = partner.primaryPhone || partner.primaryEmail
+        || contacts.some((c) => c.mobile || c.email);
+      if (!reachable) {
+        throw new AppError(
+          'To mark as Partnered, add a phone or email for the business or its contact.',
+          422
+        );
+      }
+    }
+
     const availability =
       toStage === 'FOLLOW_UP_LATER' ? 'follow_up_later'
       : toStage === 'DISQUALIFIED' ? 'disqualified'
