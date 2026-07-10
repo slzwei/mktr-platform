@@ -23,9 +23,10 @@ export default function RedemptionsPage() {
     queryKey: ['redeem-ops', 'redemptions'],
     queryFn: () => redeemOpsApi.listRedemptions(),
   });
+  const [resSearch, setResSearch] = useState('');
   const entitlementsQuery = useQuery({
-    queryKey: ['redeem-ops', 'entitlements'],
-    queryFn: () => redeemOpsApi.listEntitlements({ limit: 15 }),
+    queryKey: ['redeem-ops', 'entitlements', resSearch],
+    queryFn: () => redeemOpsApi.listEntitlements({ limit: 15, ...(resSearch.trim() ? { search: resSearch.trim() } : {}) }),
   });
 
   const unlockMutation = useMutation({
@@ -130,6 +131,12 @@ export default function RedemptionsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <input
+            className="ro-search w-full max-w-xs mb-3"
+            placeholder="Search holder name or phone"
+            value={resSearch}
+            onChange={(e) => setResSearch(e.target.value)}
+          />
           <div className="space-y-0">
             {(entitlementsQuery.data?.entitlements || []).map((e) => (
               <div key={e.id} className="flex items-center gap-3 py-2.5 border-t border-border first:border-t-0">

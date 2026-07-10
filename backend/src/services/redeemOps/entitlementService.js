@@ -352,10 +352,27 @@ export function makeEntitlementService(overrides = {}) {
     if (query.status) where.status = String(query.status);
     const page = Math.max(1, parseInt(query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 25));
+    // Console search: holder name or phone (the verify console legitimately
+    // handles identity, so the search itself may use the raw phone).
+    const prospectWhere = {};
+    if (query.search) {
+      const term = String(query.search).trim();
+      const like = `%${term}%`;
+      prospectWhere[Op.or] = [
+        { firstName: { [Op.iLike]: like } },
+        { lastName: { [Op.iLike]: like } },
+        { phone: { [Op.like]: like.replace(/\s+/g, '') } },
+      ];
+    }
     const { rows, count } = await d.RewardEntitlement.findAndCountAll({
       where,
       include: [
-        { model: d.Prospect, as: 'prospect', attributes: ['id', 'firstName', 'lastName', 'phone'] },
+        {
+          model: d.Prospect,
+          as: 'prospect',
+          attributes: ['id', 'firstName', 'lastName', 'phone'],
+          ...(query.search ? { where: prospectWhere, required: true } : {}),
+        },
         { model: d.RewardOffer, as: 'rewardOffer', attributes: ['id', 'title'] },
         { model: d.Activation, as: 'activation', attributes: ['id', 'campaignNameSnapshot'] },
       ],
