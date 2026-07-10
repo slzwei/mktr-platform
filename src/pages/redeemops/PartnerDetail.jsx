@@ -26,6 +26,7 @@ import FileText from 'lucide-react/icons/file-text';
 import ArrowRight from 'lucide-react/icons/arrow-right';
 import Star from 'lucide-react/icons/star';
 import MapPin from 'lucide-react/icons/map-pin';
+import ListChecks from 'lucide-react/icons/list-checks';
 import Plus from 'lucide-react/icons/plus';
 import Pencil from 'lucide-react/icons/pencil';
 import ArrowLeft from 'lucide-react/icons/arrow-left';
@@ -40,6 +41,11 @@ function timelineIcon(entry) {
     return entry.data.action === 'partner.created'
       ? { Icon: Plus, bg: 'var(--ro-tag-green-bg)', fg: 'var(--ro-tag-green-fg)' }
       : { Icon: Pencil, bg: 'var(--ro-tag-yellow-bg)', fg: 'var(--ro-tag-yellow-fg)' };
+  }
+  if (entry.kind === 'task') {
+    return entry.data.event === 'completed'
+      ? { Icon: ListChecks, bg: 'var(--ro-tag-green-bg)', fg: 'var(--ro-tag-green-fg)' }
+      : { Icon: ListChecks, bg: 'var(--ro-tag-gray-bg)', fg: 'var(--ro-tag-gray-fg)' };
   }
   if (entry.kind !== 'activity') {
     return { Icon: Plus, bg: 'var(--ro-tag-gray-bg)', fg: 'var(--ro-tag-gray-fg)' };
@@ -108,6 +114,21 @@ function TimelineEntry({ entry }) {
     const e = entry.data;
     title = `Stage moved: ${prettyEnum(e.fromStage || '—')} → ${prettyEnum(e.toStage)}`;
     meta = `${e.actor?.fullName || 'System'} · ${at}${e.reason ? ` · ${e.reason}` : ''}`;
+  } else if (entry.kind === 'task') {
+    const { event, task } = entry.data;
+    const completerName = task.completedBy === task.assigneeUserId
+      ? task.assignee?.fullName
+      : task.completedBy === task.createdBy ? task.creator?.fullName : null;
+    if (event === 'completed') {
+      title = `Task completed — ${task.title}`;
+      meta = `${completerName || task.assignee?.fullName || 'Team member'} · ${at}`;
+    } else if (event === 'cancelled') {
+      title = `Task cancelled — ${task.title}`;
+      meta = `${task.assignee?.fullName || task.creator?.fullName || 'Team member'} · ${at}`;
+    } else {
+      title = `Task created — ${task.title}`;
+      meta = `${task.creator?.fullName || 'Team member'} · ${at} · due ${new Date(task.dueAt).toLocaleDateString()}${task.assignee && task.assignee.id !== task.createdBy ? ` · for ${task.assignee.fullName}` : ''}`;
+    }
   } else if (entry.kind === 'audit') {
     const e = entry.data;
     if (e.action === 'partner.created') {
