@@ -93,12 +93,25 @@ export function makeQueueService(overrides = {}) {
     );
     const partners = await d.PartnerOrganisation.findAll({
       where: { mergedIntoId: null, archivedAt: null },
-      attributes: [...PARTNER_LITE, 'ownerUserId', 'atRiskFlag', 'staleFlag'],
+      attributes: [...PARTNER_LITE, 'ownerUserId', 'atRiskFlag', 'staleFlag', 'createdAt'],
       include: [{ model: d.User, as: 'owner', attributes: ['id', 'fullName'] }],
       order: [['lastActivityAt', 'DESC']],
       limit: 500,
     });
-    return { counts: rows, partners };
+    // When each business entered its current stage — latest stage event per
+    // partner (falls back to createdAt for rows that never moved). Powers the
+    // board's "time in stage" chip.
+    const stageTimes = await d.sequelize.query(
+      `SELECT "partnerOrganisationId" AS pid, MAX("createdAt") AS at
+         FROM partner_stage_events GROUP BY "partnerOrganisationId"`,
+      { type: QueryTypes.SELECT }
+    );
+    const stageSinceByPartner = Object.fromEntries(stageTimes.map((r) => [r.pid, r.at]));
+    const withStageSince = partners.map((partner) => ({
+      ...partner.toJSON(),
+      stageSince: stageSinceByPartner[partner.id] || partner.createdAt,
+    }));
+    return { counts: rows, partners: withStageSince };
   }
 
   return { getMyQueue, getTeamPipeline };
