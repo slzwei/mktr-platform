@@ -272,6 +272,54 @@ export function makePartnerService(overrides = {}) {
 
   // ── Timeline & activities ────────────────────────────────────────────────
 
+  /**
+   * Undo the latest stage move — the board's safety net for mis-drops.
+   * Server-enforced window: same actor, within 5 minutes, and only while the
+   * partner is still in the stage that move produced. Reverts WITHOUT the
+   * transition-legality check (it restores a state that already existed) but
+   * with a stage event + audit row like any other move.
+   */
+  async function undoStageChange(id, user, requestId = null) {
+    const partner = await getLivePartner(id);
+    if (!canActOnRow(user, partner)) {
+      throw new AppError('You can only move businesses you own', 403);
+    }
+    const last = await d.PartnerStageEvent.findOne({
+      where: { partnerOrganisationId: id },
+      order: [['createdAt', 'DESC']],
+    });
+    if (!last || !last.fromStage || last.toStage !== partner.pipelineStage) {
+      throw new AppError('Nothing to undo', 400);
+    }
+    if (last.actorUserId !== user.id) {
+      throw new AppError('Only the person who made the move can undo it', 403);
+    }
+    if (Date.now() - new Date(last.createdAt).getTime() > 5 * 60 * 1000) {
+      throw new AppError('The undo window (5 minutes) has passed', 400);
+    }
+
+    const fromStage = partner.pipelineStage;
+    const toStage = last.fromStage;
+    const availability =
+      toStage === 'FOLLOW_UP_LATER' ? 'follow_up_later'
+      : toStage === 'DISQUALIFIED' ? 'disqualified'
+      : partner.ownerUserId ? 'owned' : 'available';
+
+    await d.sequelize.transaction(async (t) => {
+      await partner.update({ pipelineStage: toStage, availability }, { transaction: t });
+      await d.PartnerStageEvent.create(
+        { partnerOrganisationId: id, fromStage, toStage, actorUserId: user.id, reason: 'undo' },
+        { transaction: t }
+      );
+      await d.audit.recordAuditEvent({
+        actorUser: user, action: 'stage.undone', entityType: 'partner_organisation',
+        entityId: id, before: { stage: fromStage }, after: { stage: toStage },
+        reason: 'undo', requestId, transaction: t,
+      });
+    });
+    return partner;
+  }
+
   async function getTimeline(id, query = {}) {
     await getLivePartner(id, { attributes: ['id', 'mergedIntoId'] });
     const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 50));
@@ -578,7 +626,7 @@ export function makePartnerService(overrides = {}) {
   }
 
   return {
-    listPartners, getPartner, createPartner, updatePartner, changeStage,
+    listPartners, getPartner, createPartner, updatePartner, changeStage, undoStageChange,
     getTimeline, logActivity, editActivity, voidActivity,
     addContact, updateContact, archiveContact, addLocation, updateLocation,
     mergePartners, deletePartner, canActOnRow,

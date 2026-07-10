@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import AlertTriangle from 'lucide-react/icons/alert-triangle';
+import Minus from 'lucide-react/icons/minus';
 import { RoAvatar, prettyEnum } from '@/components/redeemops/ui';
 
 const PIPELINE_KEY = ['redeem-ops', 'team-pipeline'];
@@ -122,40 +123,38 @@ function BoardCard({ p, draggable, onOpen }) {
   );
 }
 
-function Lane({ stage, items, activeCard, legalTargets, collapsed, onExpand, children }) {
+/* Horizontal, readable stand-in for an empty stage: droppable, click to open. */
+function DockPill({ stage, activeCard, legalTargets, onExpand }) {
+  const { setNodeRef, isOver } = useDroppable({ id: stage });
+  const isLegal = !!activeCard && legalTargets.includes(stage);
+  const dimmed = !!activeCard && !isLegal;
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      onClick={onExpand}
+      className="inline-flex items-center gap-2 h-[30px] px-3.5 rounded-full text-[12px] font-semibold cursor-pointer border transition-opacity"
+      style={{
+        background: isOver && isLegal ? '#EFF6FF' : 'var(--ro-subtle)',
+        borderColor: 'var(--ro-border)',
+        color: isLegal ? 'var(--ro-bunker)' : 'var(--ro-text-2)',
+        opacity: dimmed ? 0.45 : 1,
+        outline: isLegal ? '2px dashed var(--ro-azure)' : 'none',
+        outlineOffset: '-2px',
+      }}
+      title={`${prettyEnum(stage)} — open as a lane, or drop a card here`}
+    >
+      <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: STAGE_DOT[stage] }} />
+      {prettyEnum(stage)}
+    </button>
+  );
+}
+
+function Lane({ stage, items, activeCard, legalTargets, onCollapse, children }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage });
   const isSource = activeCard?.pipelineStage === stage;
   const isLegal = !!activeCard && legalTargets.includes(stage);
   const dimmed = !!activeCard && !isLegal && !isSource;
-
-  if (collapsed && !isOver) {
-    return (
-      <button
-        ref={setNodeRef}
-        type="button"
-        onClick={onExpand}
-        className="w-11 flex-none rounded-2xl flex flex-col items-center gap-2 py-3 border-0 cursor-pointer transition-opacity"
-        style={{
-          background: isLegal ? 'var(--ro-azure-tint, #EFF6FF)' : 'var(--ro-subtle)',
-          opacity: dimmed ? 0.45 : 1,
-          outline: isLegal ? '2px dashed var(--ro-azure)' : 'none',
-          outlineOffset: '-2px',
-        }}
-        title={`${prettyEnum(stage)} — expand`}
-      >
-        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: STAGE_DOT[stage] }} />
-        <span
-          className="text-[11.5px] font-bold"
-          style={{ writingMode: 'vertical-rl', color: 'var(--ro-text-2)' }}
-        >
-          {prettyEnum(stage)}
-        </span>
-        <span className="text-[10.5px] font-bold bg-white border border-border rounded-full px-1.5" style={{ color: 'var(--ro-text-2)' }}>
-          {items.length}
-        </span>
-      </button>
-    );
-  }
 
   return (
     <div
@@ -174,6 +173,18 @@ function Lane({ stage, items, activeCard, legalTargets, collapsed, onExpand, chi
         <span className="ml-auto text-[11px] font-bold bg-white border border-border rounded-full px-2 py-px" style={{ color: 'var(--ro-text-2)' }}>
           {items.length}
         </span>
+        {items.length === 0 && onCollapse && (
+          <button
+            type="button"
+            onClick={onCollapse}
+            className="w-5 h-5 rounded-full bg-white border border-border grid place-items-center cursor-pointer p-0"
+            style={{ color: 'var(--ro-text-2)' }}
+            aria-label={`Collapse ${prettyEnum(stage)}`}
+            title="Collapse"
+          >
+            <Minus className="w-3 h-3" />
+          </button>
+        )}
       </div>
       <div className="px-2 pb-2.5 flex flex-col gap-2 overflow-y-auto min-h-[56px]">
         {children}
@@ -198,13 +209,32 @@ export default function TeamPipeline() {
   });
   const boardQuery = useQuery({ queryKey: PIPELINE_KEY, queryFn: redeemOpsApi.getTeamPipeline });
 
+  const undoMutation = useMutation({
+    mutationFn: (partnerId) => redeemOpsApi.undoStage(partnerId),
+    onSuccess: () => {
+      toast.success('Move undone');
+      queryClient.invalidateQueries({ queryKey: PIPELINE_KEY });
+    },
+    onError: (err) => {
+      toast.error('Could not undo', { description: err.message });
+      queryClient.invalidateQueries({ queryKey: PIPELINE_KEY });
+    },
+  });
+
   const stageMutation = useMutation({
     mutationFn: ({ partnerId, toStage }) => redeemOpsApi.changeStage(partnerId, toStage),
     onError: (err) => {
       toast.error('Move rejected', { description: err.message });
       queryClient.invalidateQueries({ queryKey: PIPELINE_KEY });
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: PIPELINE_KEY }),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: PIPELINE_KEY });
+      // Mis-drop safety net: 5-minute server-enforced undo, offered right here.
+      toast.success(`Moved ${vars.name} to ${prettyEnum(vars.toStage)}`, {
+        duration: 8000,
+        action: { label: 'Undo', onClick: () => undoMutation.mutate(vars.partnerId) },
+      });
+    },
   });
 
   // 6px of movement before a drag starts, so plain clicks still open the record.
@@ -230,7 +260,7 @@ export default function TeamPipeline() {
       ...prev,
       partners: prev.partners.map((p) => (p.id === card.id ? { ...p, pipelineStage: toStage, stageSince: new Date().toISOString() } : p)),
     }));
-    stageMutation.mutate({ partnerId: card.id, toStage });
+    stageMutation.mutate({ partnerId: card.id, toStage, name: partnerName(card) });
   };
 
   const handleDragEnd = ({ over }) => {
@@ -284,10 +314,23 @@ export default function TeamPipeline() {
         onDragEnd={handleDragEnd}
         onDragCancel={() => setActiveCard(null)}
       >
+        {stages.some((st) => (byStage[st] || []).length === 0 && !expanded[st]) && (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span className="text-[11.5px] font-bold" style={{ color: 'var(--ro-text-3)' }}>Empty stages</span>
+            {stages.filter((st) => (byStage[st] || []).length === 0 && !expanded[st]).map((st) => (
+              <DockPill
+                key={st}
+                stage={st}
+                activeCard={activeCard}
+                legalTargets={legalTargets}
+                onExpand={() => setExpanded((e) => ({ ...e, [st]: true }))}
+              />
+            ))}
+          </div>
+        )}
         <div className="flex gap-2.5 overflow-x-auto pb-4 items-stretch flex-1 min-h-0">
-          {stages.map((stage) => {
+          {stages.filter((st) => (byStage[st] || []).length > 0 || expanded[st]).map((stage) => {
             const items = byStage[stage] || [];
-            const collapsed = items.length === 0 && !expanded[stage];
             return (
               <Lane
                 key={stage}
@@ -295,8 +338,7 @@ export default function TeamPipeline() {
                 items={items}
                 activeCard={activeCard}
                 legalTargets={legalTargets}
-                collapsed={collapsed}
-                onExpand={() => setExpanded((e) => ({ ...e, [stage]: true }))}
+                onCollapse={items.length === 0 ? () => setExpanded((e) => ({ ...e, [stage]: false })) : null}
               >
                 {items.slice(0, 30).map((p) => (
                   <BoardCard

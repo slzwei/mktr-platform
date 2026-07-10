@@ -108,6 +108,11 @@ export const mergePartners = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Merged', data: { partner: survivor } });
 });
 
+export const undoStage = asyncHandler(async (req, res) => {
+  const partner = await partnerService.undoStageChange(req.params.id, req.user, req.id);
+  res.json({ success: true, data: { partner } });
+});
+
 export const deletePartner = asyncHandler(async (req, res) => {
   await partnerService.deletePartner(req.params.id, req.user, req.id);
   res.json({ success: true, message: 'Business deleted' });
