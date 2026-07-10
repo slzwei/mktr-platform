@@ -80,6 +80,10 @@ export const redeemOpsApi = {
     const res = await apiClient.patch(`/redeem-ops/partners/${id}/stage`, { toStage, reason });
     return res.data;
   },
+  async undoStage(id) {
+    const res = await apiClient.post(`/redeem-ops/partners/${id}/stage/undo`, {});
+    return res.data;
+  },
   async getTimeline(id, params = {}) {
     const res = await apiClient.get(`/redeem-ops/partners/${id}/timeline`, params);
     return res.data?.entries || [];
