@@ -35,6 +35,7 @@ import Plus from 'lucide-react/icons/plus';
 import Pencil from 'lucide-react/icons/pencil';
 import ArrowLeft from 'lucide-react/icons/arrow-left';
 import { RoStageTag, RoAvatar, RoTag, prettyEnum } from '@/components/redeemops/ui';
+import CategorySelect from '@/components/redeemops/CategorySelect';
 
 function useDebounced(value, ms = 300) {
   const [debounced, setDebounced] = useState(value);
@@ -963,7 +964,10 @@ export default function PartnerDetail() {
               </div>
               <div className="space-y-1.5">
                 <Label>Category</Label>
-                <Input value={editForm.category} onChange={setEdit('category')} placeholder="Nail Salon" />
+                <CategorySelect
+                  value={editForm.category}
+                  onChange={(v) => setEditForm((f) => ({ ...f, category: v }))}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Phone (+65…)</Label>

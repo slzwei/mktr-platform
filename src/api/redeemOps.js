@@ -39,6 +39,28 @@ export const redeemOpsApi = {
     return res.data;
   },
 
+  // ── Category taxonomy (admin-managed; feeds pickers everywhere) ────────
+  async listCategories(params = {}) {
+    const res = await apiClient.get('/redeem-ops/categories', params);
+    return res.data?.categories || [];
+  },
+  async createCategory(body) {
+    const res = await apiClient.post('/redeem-ops/categories', body);
+    return res.data?.category;
+  },
+  async updateCategory(id, body) {
+    const res = await apiClient.patch(`/redeem-ops/categories/${id}`, body);
+    return res.data?.category;
+  },
+  async mergeCategory(id, targetId) {
+    const res = await apiClient.post(`/redeem-ops/categories/${id}/merge`, { targetId });
+    return res.data;
+  },
+  async deleteCategory(id) {
+    const res = await apiClient.delete(`/redeem-ops/categories/${id}`);
+    return res.data;
+  },
+
   // ── Partner CRM (Phase 2) ──────────────────────────────────────────────
   async listPartners(params = {}) {
     const res = await apiClient.get('/redeem-ops/partners', params);

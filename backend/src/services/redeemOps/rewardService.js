@@ -7,6 +7,7 @@ import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makeInventoryService } from './inventoryService.js';
+import { makeCategoryService } from './categoryService.js';
 import { REWARD_TYPES } from './constants.js';
 
 const OFFER_STATUSES = ['draft', 'active', 'paused', 'ended'];
@@ -19,6 +20,7 @@ export function makeRewardService(overrides = {}) {
     PartnerOrganisation, PartnerLocation, User, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     inventory: makeInventoryService(),
+    categories: makeCategoryService(),
     ...overrides,
   };
 
@@ -72,6 +74,11 @@ export function makeRewardService(overrides = {}) {
     const committed = Number.isInteger(body.committedQuantity) && body.committedQuantity > 0
       ? body.committedQuantity : 0;
 
+    // Explicit category is validated; the partner.category fallback is copied
+    // as-is even if retired — a known name that must never block offer creation.
+    const category = (await d.categories.resolveCategoryName(body.category))
+      ?? partner.category ?? null;
+
     return d.sequelize.transaction(async (t) => {
       const offer = await d.RewardOffer.create(
         {
@@ -80,7 +87,7 @@ export function makeRewardService(overrides = {}) {
           publicTitle: body.publicTitle || null,
           internalRef: body.internalRef || null,
           description: body.description || null,
-          category: body.category || partner.category || null,
+          category,
           rewardType: body.rewardType || 'free_service',
           retailValue: body.retailValue ?? null,
           fulfilmentCost: body.fulfilmentCost ?? null,
@@ -124,6 +131,11 @@ export function makeRewardService(overrides = {}) {
     validateEnumFields(body);
     const updates = {};
     for (const f of EDITABLE) if (body[f] !== undefined) updates[f] = body[f];
+    if (updates.category !== undefined) {
+      updates.category = await d.categories.resolveCategoryName(updates.category, {
+        currentValue: offer.category,
+      });
+    }
     const before = {};
     for (const k of Object.keys(updates)) before[k] = offer.get(k);
 

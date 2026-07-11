@@ -30,4 +30,12 @@ router.get('/audit', requireRedeemOps('audit.view'), ctrl.listAudit);
 // Domain constants (any authenticated Redeem Ops principal)
 router.get('/meta/constants', requireRedeemOps(), ctrl.getConstants);
 
+// Category taxonomy — read for every principal (feeds pickers; all sub-roles
+// already see category on partner rows via partners.view), writes admin-only.
+router.get('/categories', requireRedeemOps(), ctrl.listCategories);
+router.post('/categories', requireRedeemOps('settings.manage'), ctrl.createCategory);
+router.patch('/categories/:id', requireRedeemOps('settings.manage'), ctrl.updateCategory);
+router.post('/categories/:id/merge', requireRedeemOps('settings.manage'), ctrl.mergeCategory);
+router.delete('/categories/:id', requireRedeemOps('settings.manage'), ctrl.deleteCategory);
+
 export default router;

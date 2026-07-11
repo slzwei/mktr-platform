@@ -291,7 +291,24 @@ id; actorUserId NULL FK SET NULL; actorType STRING(16) default 'staff'; action S
 after JSONB NULL; reason STRING(255) NULL; requestId STRING(64) NULL (from `requestId` middleware).
 Indexes: `(entityType, entityId, createdAt)`, `(actorUserId, createdAt)`, `(action, createdAt)`.
 
-### 3.20 Future (designed, not in V1 migrations)
+### 3.20 `redeem_ops_categories` (`RedeemOpsCategory`) — admin-managed taxonomy (migration 052)
+
+id UUID PK (DB-default `gen_random_uuid()` — the seed INSERT omits id; PG15 built-in);
+name STRING(64) NOT NULL; isActive BOOLEAN NOT NULL default true; timestamps.
+Unique functional index `uq_redeem_ops_categories_name_ci` on `LOWER(name)` (case-insensitive).
+
+The single business-vertical taxonomy shared by `partner_organisations.category`,
+`prospecting_pools.category`, and `reward_offers.category` — those stay plain STRING columns
+(house style: STRING + app-level lists, not FKs/enums), but `categoryService.resolveCategoryName`
+validates every write against the **active** rows here (unknown → 422; a row's unchanged current
+value always passes so an admin rename/retire never breaks an unrelated edit; blank → NULL, shown
+as "Uncategorised"). Curated only by `settings.manage` (super_admin/ops_admin): rename cascades the
+string onto all three tables; merge cascades then deletes the source (the sole way to consolidate
+seeded variants — rename-into-existing is refused 409); delete is allowed only while unreferenced.
+Migration 052 TRIM-normalizes the three columns then seeds one row per distinct value (`mode()`
+picks the most-frequent casing). `'Uncategorised'` is a reserved name.
+
+### 3.21 Future (designed, not in V1 migrations)
 
 `partner_import_batches` + `partner_import_rows` (CSV import, brief §32);
 `partner_users` (portal principals — see `RECOMMENDED_ARCHITECTURE.md` §7).

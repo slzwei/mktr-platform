@@ -16,6 +16,7 @@ import {
   ACTIVITY_TYPES, MEANINGFUL_ACTIVITY_TYPES, LOST_REASONS,
 } from './constants.js';
 import { makeOnboardingService } from './onboardingService.js';
+import { makeCategoryService } from './categoryService.js';
 
 /**
  * Partner CRM core (docs/redeem-ops/ERD.md §3.1–3.6, brief §13–§18).
@@ -30,6 +31,7 @@ export function makePartnerService(overrides = {}) {
     RedeemOpsAuditEvent, User, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     dedupe: makeDedupeService(),
+    categories: makeCategoryService(),
     // PARTNERED → seed the onboarding checklist (brief §22); injectable for tests.
     onPartnered: (partner, _user, t) => makeOnboardingService().seedChecklist(partner.id, t),
     ...overrides,
@@ -126,6 +128,7 @@ export function makePartnerService(overrides = {}) {
     }
     const keys = deriveMatchingKeys(body);
     if (!keys.normalizedName) throw new AppError('Business name is required', 400);
+    const category = (await d.categories.resolveCategoryName(body.category)) ?? null;
 
     const { exact, potential } = await d.dedupe.findDuplicates(body);
     const overrideReason = body.overrideReason && String(body.overrideReason).trim();
@@ -150,7 +153,7 @@ export function makePartnerService(overrides = {}) {
           primaryEmail: body.primaryEmail ? String(body.primaryEmail).toLowerCase() : null,
           facebookUrl: body.facebookUrl || null,
           linkedinUrl: body.linkedinUrl || null,
-          category: body.category || null,
+          category,
           subcategory: body.subcategory || null,
           source: body.source || 'manual',
           tags: Array.isArray(body.tags) ? body.tags : [],
@@ -162,7 +165,7 @@ export function makePartnerService(overrides = {}) {
       await d.audit.recordAuditEvent({
         actorUser: user, action: 'partner.created', entityType: 'partner_organisation',
         entityId: created.id,
-        after: { name: displayNameOf(body), category: body.category || null },
+        after: { name: displayNameOf(body), category },
         reason: overrideReason || null, requestId, transaction: t,
       });
       return created;
@@ -184,6 +187,13 @@ export function makePartnerService(overrides = {}) {
     }
     const updates = {};
     for (const f of EDITABLE_FIELDS) if (body[f] !== undefined) updates[f] = body[f];
+    if (updates.category !== undefined) {
+      // currentValue pass-through: an admin rename/retire must never 422 an
+      // unrelated edit (the SPA sends category on every save).
+      updates.category = await d.categories.resolveCategoryName(updates.category, {
+        currentValue: partner.category,
+      });
+    }
     // Re-derive matching keys from the merged view so they never drift
     const merged = { ...partner.toJSON(), ...updates };
     Object.assign(updates, deriveMatchingKeys(merged));

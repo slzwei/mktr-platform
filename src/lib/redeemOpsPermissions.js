@@ -56,6 +56,7 @@ export const CAPABILITIES = [
   'exports.run',
   'audit.view',
   'team.manage_access',
+  'settings.manage',
 ];
 
 const ALL = [...CAPABILITIES];

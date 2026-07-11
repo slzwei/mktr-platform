@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Plus from 'lucide-react/icons/plus';
 import { RoPageHeader, RoTag, RoAvatar, RoStageTag } from '@/components/redeemops/ui';
+import CategorySelect from '@/components/redeemops/CategorySelect';
 
 function useDebounced(value, ms = 300) {
   const [debounced, setDebounced] = useState(value);
@@ -225,7 +226,10 @@ export default function PoolsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Category</Label>
-                <Input value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} placeholder="Pet Grooming" />
+                <CategorySelect
+                  value={form.category}
+                  onChange={(v) => setForm((f) => ({ ...f, category: v }))}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>Area</Label>

@@ -18,6 +18,7 @@ import Plus from 'lucide-react/icons/plus';
 import Upload from 'lucide-react/icons/upload';
 import AlertTriangle from 'lucide-react/icons/alert-triangle';
 import { RoMobileCard, RoStageTag, RoAvatar, RoOwner, RoPageHeader, prettyEnum } from '@/components/redeemops/ui';
+import CategorySelect from '@/components/redeemops/CategorySelect';
 
 function useDebounced(value, ms = 300) {
   const [debounced, setDebounced] = useState(value);
@@ -69,6 +70,7 @@ export default function PartnersList() {
   const [search, setSearch] = useState('');
   const [stage, setStage] = useState('all');
   const [owner, setOwner] = useState('all');
+  const [category, setCategory] = useState('all');
   const [page, setPage] = useState(1);
   const debouncedSearch = useDebounced(search);
 
@@ -77,12 +79,19 @@ export default function PartnersList() {
     queryFn: redeemOpsApi.getConstants,
     staleTime: Infinity,
   });
+  const categoriesQuery = useQuery({
+    queryKey: ['redeem-ops', 'categories'],
+    queryFn: () => redeemOpsApi.listCategories(),
+    staleTime: 60_000,
+  });
+  const categoryNames = (categoriesQuery.data || []).map((c) => c.name);
 
   const params = {
     page, limit: 25,
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(stage !== 'all' ? { stage } : {}),
     ...(owner !== 'all' ? { owner } : {}),
+    ...(category !== 'all' ? { category } : {}),
   };
   const listQuery = useQuery({
     queryKey: ['redeem-ops', 'partners', params],
@@ -243,6 +252,13 @@ export default function PartnersList() {
             {stages.map((s) => <SelectItem key={s} value={s}>{prettyEnum(s)}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Select value={category} onValueChange={(v) => { setCategory(v); setPage(1); }}>
+          <SelectTrigger className="w-44 h-10"><SelectValue placeholder="Category" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            {categoryNames.map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="rounded-2xl border border-border bg-white overflow-hidden">
@@ -350,6 +366,7 @@ export default function PartnersList() {
             <DialogTitle>Import businesses from CSV</DialogTitle>
             <DialogDescription>
               Columns: name (required), category, phone (+65…), instagram, website, uen, email.
+              Category must match one of the admin-managed categories (Settings page).
               Exact duplicates are skipped automatically; every created row is audited.{' '}
               <a
                 className="ro-link"
@@ -403,7 +420,10 @@ export default function PartnersList() {
             </div>
             <div className="space-y-1.5">
               <Label>Category</Label>
-              <Input value={form.category} onChange={set('category')} placeholder="Nail Salon" />
+              <CategorySelect
+                value={form.category}
+                onChange={(v) => setForm((f) => ({ ...f, category: v }))}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Phone (+65…)</Label>
