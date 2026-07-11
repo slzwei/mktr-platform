@@ -416,14 +416,36 @@ export default function DiscoverPage() {
                     </span>
                   </span>
                   <span className="text-[13px] font-semibold tabular-nums hidden sm:flex items-center gap-1.5">
-                    {c.rating != null ? (<><Star className="w-3.5 h-3.5" style={{ fill: '#F5A623', stroke: 'none' }} aria-hidden="true" />{c.rating}<span style={{ color: 'var(--ro-text-3)', fontWeight: 500 }}>{c.reviewsCount ? `(${c.reviewsCount})` : ''}</span></>) : <span style={{ color: 'var(--ro-text-3)' }}>—</span>}
+                    {c.rating != null ? (
+                      c.sourceUrl ? (
+                        <a href={c.sourceUrl} target="_blank" rel="noreferrer" title="Open on Google Maps"
+                          className="flex items-center gap-1.5 hover:underline" style={{ color: 'inherit' }}>
+                          <Star className="w-3.5 h-3.5" style={{ fill: '#F5A623', stroke: 'none' }} aria-hidden="true" />
+                          {c.rating}
+                          <span style={{ color: 'var(--ro-text-3)', fontWeight: 500 }}>{c.reviewsCount ? `(${c.reviewsCount})` : ''}</span>
+                        </a>
+                      ) : (
+                        <>
+                          <Star className="w-3.5 h-3.5" style={{ fill: '#F5A623', stroke: 'none' }} aria-hidden="true" />
+                          {c.rating}
+                          <span style={{ color: 'var(--ro-text-3)', fontWeight: 500 }}>{c.reviewsCount ? `(${c.reviewsCount})` : ''}</span>
+                        </>
+                      )
+                    ) : <span style={{ color: 'var(--ro-text-3)' }}>—</span>}
                   </span>
                   <span className="hidden md:flex items-center gap-2 text-[13px] min-w-0">
                     {c.instagramHandle ? (
                       <>
-                        <span className="ro-ig-badge w-[26px] h-[26px] rounded-lg grid place-items-center shrink-0"><Instagram className="w-[15px] h-[15px]" style={{ color: '#fff' }} aria-hidden="true" /></span>
+                        <a href={`https://instagram.com/${c.instagramHandle}`} target="_blank" rel="noreferrer"
+                          title="Open Instagram profile"
+                          className="ro-ig-badge w-[26px] h-[26px] rounded-lg grid place-items-center shrink-0">
+                          <Instagram className="w-[15px] h-[15px]" style={{ color: '#fff' }} aria-hidden="true" />
+                        </a>
                         <span className="truncate" style={{ color: 'var(--ro-text-2)' }}>
-                          @{c.instagramHandle}
+                          <a href={`https://instagram.com/${c.instagramHandle}`} target="_blank" rel="noreferrer"
+                            title="Open Instagram profile" className="hover:underline" style={{ color: 'inherit' }}>
+                            @{c.instagramHandle}
+                          </a>
                           {c.isVerified && <span title="Verified on Instagram" style={{ color: 'var(--ro-azure)' }}> ✓</span>}
                           {c.followersCount != null ? ' ·' : ''}
                         </span>

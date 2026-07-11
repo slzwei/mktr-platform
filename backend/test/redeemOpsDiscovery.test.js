@@ -307,6 +307,18 @@ describe('geo-anchored search input', () => {
     await svc.startDiscovery({ category: 'Nail Salon', area: 'Bedok, Singapore', limit: 5 }, solo.user);
     expect(apify.startRun.mock.calls[0][1].locationQuery).toBe('Bedok, Singapore');
   });
+
+  test('foreign-labelled items never materialize; unknown country is kept', async () => {
+    const svc = makeDiscoveryService({ apify: makeApifyStub() });
+    const run = await DiscoveryRun.create({ createdBy: admin.user.id, provider: 'apify_google_maps', status: 'running', requestedLimit: 10 });
+    await svc.materializeCandidates(run, [
+      { placeId: 'sg1', title: 'Local Lashes', countryCode: 'SG', city: 'Tampines' },
+      { placeId: 'us1', title: 'Sephora Times Square', countryCode: 'US', city: 'New York' },
+      { placeId: 'x1', title: 'No Country Nails' },
+    ]);
+    const cands = await DiscoveryCandidate.findAll({ where: { discoveryRunId: run.id } });
+    expect(cands.map((c) => c.name).sort()).toEqual(['Local Lashes', 'No Country Nails']);
+  });
 });
 
 describe('fuzzy classification (pg_trgm)', () => {

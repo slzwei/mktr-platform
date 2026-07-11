@@ -21,6 +21,17 @@ function extractInstagram(raw) {
   return null;
 }
 
+/**
+ * Belt-and-braces geo guard: locationQuery anchors the crawl, but Maps can still
+ * surface stray global brand matches (live: Sephora New York/Oshawa/Edmonton,
+ * 2026-07-12). Drop anything the actor labels as another country; an item with
+ * NO countryCode is kept — absence ≠ foreign, and false negatives cost paid rows.
+ */
+export function isSingaporeMapsItem(raw) {
+  const cc = raw?.countryCode;
+  return !cc || String(cc).toUpperCase() === 'SG';
+}
+
 /** Apify Google Maps place → discovery_candidates fields. */
 export function normalizeMapsItem(raw) {
   if (!raw || typeof raw !== 'object') return null;

@@ -8,7 +8,7 @@ import { makePartnerService } from './partnerService.js';
 import { makeCategoryService } from './categoryService.js';
 import { makeDedupeService } from './dedupeService.js';
 import { makeApifyClient } from './discovery/apifyClient.js';
-import { normalizeMapsItem, normalizeInstagramItem } from './discovery/normalizers.js';
+import { normalizeMapsItem, normalizeInstagramItem, isSingaporeMapsItem } from './discovery/normalizers.js';
 import { normalizeBusinessName, normalizeDomain, normalizeHandle } from './normalizers.js';
 import { normalizePhone } from '../prospectHelpers.js';
 
@@ -199,7 +199,8 @@ export function makeDiscoveryService(overrides = {}) {
   }
 
   async function materializeCandidates(run, items) {
-    const rows = items.map(normalizeMapsItem).filter((r) => r && r.name);
+    // Singapore-only: foreign-labelled items never become candidates (geo guard).
+    const rows = items.filter(isSingaporeMapsItem).map(normalizeMapsItem).filter((r) => r && r.name);
     if (rows.length === 0) return;
     // Idempotent insert — the (discoveryRunId, externalPlaceId) unique index makes
     // a duplicate webhook / reconcile a no-op.
