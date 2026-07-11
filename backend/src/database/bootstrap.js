@@ -125,20 +125,38 @@ export async function bootstrapDatabase() {
     }, 2 * 60 * 1000); // every 2 min
 
     // Discover tool: reconcile Apify runs whose completion webhook never landed
-    // (missed delivery, FAILED/TIMED_OUT with no hook, or an instance restart
-    // mid-run). In-process every 5 min; each stuck run is re-fetched from Apify
-    // and driven terminal idempotently. Gated by DISCOVERY_ENABLED.
+    // (missed delivery, FAILED/TIMED_OUT with no hook, an instance restart
+    // mid-run, or a start that crashed before the provider id was recorded).
+    // Once ~45s after boot (spec §2.2 "plus on boot" — an instance restart is
+    // exactly when webhooks were missed), then in-process every 5 min; each stuck
+    // run is re-fetched from Apify and driven terminal idempotently. A daily
+    // purge expires scraped candidate PII (DISCOVERY_CANDIDATE_TTL_DAYS). Gated
+    // by DISCOVERY_ENABLED.
     if (String(process.env.DISCOVERY_ENABLED || 'false').toLowerCase() === 'true') {
-      setInterval(async () => {
+      const runDiscoveryReconcile = async () => {
         try {
           const { default: discoveryService } = await import('../services/redeemOps/discoveryService.js');
-          const { checked } = await discoveryService.reconcileStuckRuns();
-          if (checked > 0) logger.info(`[Discovery] reconciled ${checked} stuck run(s)`);
+          const { checked, stranded } = await discoveryService.reconcileStuckRuns();
+          if (checked > 0 || stranded > 0) {
+            logger.info(`[Discovery] reconciled ${checked} stuck + ${stranded} stranded run(s)`);
+          }
         } catch (err) {
           logger.warn('[Discovery] periodic reconcile failed', { error: err?.message });
         }
-      }, 5 * 60 * 1000); // every 5 min
-      logger.info('[Discovery] periodic run reconciliation scheduled (5 min interval)');
+      };
+      setTimeout(runDiscoveryReconcile, 45 * 1000);
+      setInterval(runDiscoveryReconcile, 5 * 60 * 1000); // every 5 min
+      const runDiscoveryPurge = async () => {
+        try {
+          const { default: discoveryService } = await import('../services/redeemOps/discoveryService.js');
+          await discoveryService.purgeExpiredCandidates();
+        } catch (err) {
+          logger.warn('[Discovery] retention purge failed (non-fatal)', { error: err?.message });
+        }
+      };
+      setTimeout(runDiscoveryPurge, 2 * 60 * 1000);
+      setInterval(runDiscoveryPurge, 24 * 60 * 60 * 1000); // daily
+      logger.info('[Discovery] reconcile (5 min) + retention purge (daily) scheduled');
     }
 
     // Redeemed-audience exclusion sync (Meta customer list). Pushes hashed

@@ -3,7 +3,10 @@ import { sequelize } from '../database/connection.js';
 
 /**
  * One Apify prospecting search (migration 053). Lifecycle:
- * pending → running → processing → completed | failed | aborted | timed_out.
+ * pending → running → completed | failed | aborted | timed_out.
+ * Concurrency posture: there is deliberately NO row lock — a duplicate
+ * webhook/reconcile double-process is benign because materialization dedupes on
+ * the (discoveryRunId, externalPlaceId) unique index and enrichment fills blanks.
  * Owns discovery_candidates. See ~/.claude/plans/redeem-ops-discover-tool.md.
  */
 const DiscoveryRun = sequelize.define('DiscoveryRun', {

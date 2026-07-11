@@ -80,10 +80,14 @@ export const redeemOpsApi = {
   },
   async addDiscoveryCandidates(runId, candidateIds) {
     const res = await apiClient.post(`/redeem-ops/discovery/runs/${runId}/add`, { candidateIds });
-    return res.data; // { added, skipped, failed, errors }
+    return res.data; // { added, skipped, failed, notFound, errors }
   },
   async dismissDiscoveryCandidate(id) {
     const res = await apiClient.patch(`/redeem-ops/discovery/candidates/${id}`, {});
+    return res.data;
+  },
+  async restoreDiscoveryCandidate(id) {
+    const res = await apiClient.patch(`/redeem-ops/discovery/candidates/${id}`, { action: 'restore' });
     return res.data;
   },
 

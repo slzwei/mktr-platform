@@ -80,7 +80,15 @@ export default function DiscoverPage() {
     queryKey: ['redeem-ops', 'discovery', 'run', runId],
     queryFn: () => redeemOpsApi.getDiscoveryRun(runId),
     enabled: !!runId,
-    refetchInterval: (q) => (TERMINAL.includes(q.state.data?.run?.status) ? false : 2500),
+    // 2.5s while the search runs; 4s while any enrichment is still pending
+    // (enrichment is its own async Apify run that lands ~30s–2min later — without
+    // this the results would only ever appear on a manual refresh); off otherwise.
+    refetchInterval: (q) => {
+      const data = q.state.data;
+      if (!data?.run) return 2500;
+      if (!TERMINAL.includes(data.run.status)) return 2500;
+      return (data.candidates || []).some((c) => c.enrichmentStatus === 'pending') ? 4000 : false;
+    },
   });
   const run = runQuery.data?.run;
   const candidates = useMemo(() => runQuery.data?.candidates || [], [runQuery.data]);
@@ -139,7 +147,11 @@ export default function DiscoverPage() {
     mutationFn: (ids) => redeemOpsApi.addDiscoveryCandidates(runId, ids),
     onSuccess: (res) => {
       toast.success(`Added ${res.added} to pipeline`, {
-        description: [res.skipped && `${res.skipped} already partners`, res.failed && `${res.failed} failed`].filter(Boolean).join(' · ') || undefined,
+        description: [
+          res.skipped && `${res.skipped} already partners`,
+          res.failed && `${res.failed} failed`,
+          res.notFound && `${res.notFound} no longer in this search`,
+        ].filter(Boolean).join(' · ') || undefined,
       });
       setSelected(new Set());
       runQuery.refetch();
@@ -151,13 +163,20 @@ export default function DiscoverPage() {
     mutationFn: (ids) => redeemOpsApi.enrichDiscoveryCandidates(ids),
     onSuccess: () => {
       toast.success('Enriching from Instagram — followers & bio fill in shortly');
-      setTimeout(() => runQuery.refetch(), 4000);
+      runQuery.refetch(); // shows the new pending states → the poll takes over
     },
     onError: (err) => toast.error('Could not enrich', { description: err.message }),
   });
+  const restoreMutation = useMutation({
+    mutationFn: (id) => redeemOpsApi.restoreDiscoveryCandidate(id),
+    onSuccess: () => runQuery.refetch(),
+  });
   const dismissMutation = useMutation({
     mutationFn: (id) => redeemOpsApi.dismissDiscoveryCandidate(id),
-    onSuccess: () => runQuery.refetch(),
+    onSuccess: (_res, id) => {
+      runQuery.refetch();
+      toast('Dismissed', { action: { label: 'Undo', onClick: () => restoreMutation.mutate(id) } });
+    },
   });
 
   const runSearch = (category, area, limit = 30) => {
@@ -170,7 +189,9 @@ export default function DiscoverPage() {
   });
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(selectableIds));
   const enrichAll = () => {
-    const ids = candidates.filter((c) => c.instagramHandle && c.enrichmentStatus !== 'enriched' && c.status !== 'dismissed').map((c) => c.id);
+    const ids = candidates
+      .filter((c) => c.instagramHandle && !['enriched', 'pending'].includes(c.enrichmentStatus) && c.status !== 'dismissed')
+      .map((c) => c.id);
     if (ids.length === 0) { toast.info('Nothing to enrich — no un-enriched Instagram handles'); return; }
     enrichMutation.mutate(ids);
   };
@@ -223,6 +244,11 @@ export default function DiscoverPage() {
                   className="h-7 px-3 rounded-full text-[12.5px] font-semibold"
                   style={{ background: 'var(--ro-subtle)', border: '1px solid var(--ro-border)', color: 'var(--ro-text-2)' }}>{a}</button>
               ))}
+              {quota?.costPerResultUsd > 0 && (
+                <span className="ml-auto text-[12px]" style={{ color: 'var(--ro-text-3)' }}>
+                  ≈ ${(Number(form.limit) * quota.costPerResultUsd).toFixed(2)} per search
+                </span>
+              )}
             </div>
           </div>
 
@@ -231,7 +257,10 @@ export default function DiscoverPage() {
               <h2 className="text-[13px] font-bold mb-3" style={{ color: 'var(--ro-text-2)' }}>Suggested searches</h2>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {suggestions.map((s) => (
-                  <button key={`${s.category}-${s.area}`} type="button" onClick={() => runSearch(s.category, s.area, 60)}
+                  // Prefill only — Search (with its cost hint) is the single spend
+                  // affordance; a one-tap card must never fire a paid run.
+                  <button key={`${s.category}-${s.area}`} type="button"
+                    onClick={() => setForm({ category: s.category, area: s.area, limit: '60' })}
                     className="flex items-center gap-3 rounded-2xl border border-border bg-white p-4 text-left hover:bg-[var(--ro-subtle)]">
                     <span className="w-10 h-10 rounded-xl grid place-items-center text-lg shrink-0" style={{ background: 'var(--ro-subtle)' }}>{s.emoji}</span>
                     <span className="min-w-0">
@@ -259,6 +288,7 @@ export default function DiscoverPage() {
                       <b className="text-[14px] block truncate">{r.category} · {r.area}</b>
                       <span className="text-[12.5px]" style={{ color: 'var(--ro-text-3)' }}>
                         {timeAgo(r.createdAt)} · {r.resultCount || 0} result{r.resultCount === 1 ? '' : 's'}
+                        {r.actualCostUsd != null && ` · $${Number(r.actualCostUsd).toFixed(2)}`}
                         {!TERMINAL.includes(r.status) && ' · running…'}
                       </span>
                     </span>
@@ -274,7 +304,10 @@ export default function DiscoverPage() {
       {/* ── Active run: query bar ─────────────────────────────────────────── */}
       {runId && (
         <div className="flex items-center gap-2 flex-wrap rounded-2xl border border-border bg-white px-4 py-3">
-          {[['Category', run?.category], ['Area', run?.area], ['Results', run?.requestedLimit]].map(([k, v]) => (
+          {[
+            ['Category', run?.category], ['Area', run?.area], ['Results', run?.requestedLimit],
+            ...(run?.actualCostUsd != null ? [['Cost', `$${Number(run.actualCostUsd).toFixed(2)}`]] : []),
+          ].map(([k, v]) => (
             <span key={k} className="inline-flex items-center gap-2 h-9 px-3.5 rounded-full text-[13.5px] font-semibold" style={{ border: '1px solid var(--ro-border-strong)' }}>
               <span style={{ color: 'var(--ro-text-3)', fontWeight: 500 }}>{k}</span> {v ?? '—'}
             </span>
@@ -373,10 +406,12 @@ export default function DiscoverPage() {
                     <span className="min-w-0">
                       <b className="text-[14px] font-semibold block leading-tight flex items-center gap-2">
                         <span className="truncate">{c.name}</span>
-                        {c.status === 'added' && <RoTag tone="completed" size="sm">Added</RoTag>}
+                        {c.status === 'added' && (c.addedPartnerId
+                          ? <Link to={`/redeem-ops/partners/${c.addedPartnerId}`}><RoTag tone="completed" size="sm">Added ›</RoTag></Link>
+                          : <RoTag tone="completed" size="sm">Added</RoTag>)}
                       </b>
                       <span className="text-[12.5px] block truncate" style={{ color: 'var(--ro-text-2)' }}>
-                        {[c.category, c.area].filter(Boolean).join(' · ') || c.primaryPhone || '—'}
+                        {[c.area, c.primaryPhone].filter(Boolean).join(' · ') || '—'}
                       </span>
                     </span>
                   </span>
@@ -387,15 +422,33 @@ export default function DiscoverPage() {
                     {c.instagramHandle ? (
                       <>
                         <span className="ro-ig-badge w-[26px] h-[26px] rounded-lg grid place-items-center shrink-0"><Instagram className="w-[15px] h-[15px]" style={{ color: '#fff' }} aria-hidden="true" /></span>
-                        <span className="truncate" style={{ color: 'var(--ro-text-2)' }}>@{c.instagramHandle}{c.followersCount != null ? ' ·' : ''}</span>
+                        <span className="truncate" style={{ color: 'var(--ro-text-2)' }}>
+                          @{c.instagramHandle}
+                          {c.isVerified && <span title="Verified on Instagram" style={{ color: 'var(--ro-azure)' }}> ✓</span>}
+                          {c.followersCount != null ? ' ·' : ''}
+                        </span>
                         {c.followersCount != null
                           ? <b className="tabular-nums" style={{ color: c.followersCount >= 10000 ? 'var(--ro-tag-purple-fg)' : 'var(--ro-bunker)' }}>{fmtFollowers(c.followersCount)}</b>
-                          : selectable && <button type="button" onClick={() => enrichMutation.mutate([c.id])} className="ro-link text-[12px] font-semibold">followers?</button>}
+                          : c.enrichmentStatus === 'pending'
+                            ? (
+                              <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold shrink-0" style={{ color: 'var(--ro-text-3)' }}>
+                                <span className="w-3 h-3 rounded-full animate-spin shrink-0" style={{ border: '2px solid var(--ro-azure-tint)', borderTopColor: 'var(--ro-azure)' }} />
+                                Enriching…
+                              </span>
+                            )
+                            : c.enrichmentStatus === 'failed'
+                              ? selectable && (
+                                <button type="button" onClick={() => enrichMutation.mutate([c.id])}
+                                  className="ro-link text-[12px] font-semibold" style={{ color: 'var(--ro-tag-red-fg)' }}>
+                                  Enrich failed · retry
+                                </button>
+                              )
+                              : selectable && <button type="button" onClick={() => enrichMutation.mutate([c.id])} className="ro-link text-[12px] font-semibold">followers?</button>}
                       </>
                     ) : <span className="text-[12.5px]" style={{ color: 'var(--ro-text-3)' }}>No Instagram</span>}
                   </span>
                   <span className="justify-self-end flex items-center gap-2">
-                    {isPartner && c.matchedPartnerId
+                    {c.matchedPartnerId && c.dedupeStatus !== 'new'
                       ? <Link to={`/redeem-ops/partners/${c.matchedPartnerId}`}><RoTag tone={badge.tone} size="sm">{badge.label} ›</RoTag></Link>
                       : <RoTag tone={badge.tone} size="sm">{badge.label}</RoTag>}
                     {selectable && (
@@ -407,6 +460,9 @@ export default function DiscoverPage() {
               );
             })}
           </div>
+          <p className="text-[11.5px] mt-2 mb-0" style={{ color: 'var(--ro-text-3)' }}>
+            Phone numbers are reference data — keep outreach IG-first; calls/SMS must respect the DNC registry.
+          </p>
         </div>
       )}
 

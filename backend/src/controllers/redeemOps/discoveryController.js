@@ -6,10 +6,16 @@ import { logger } from '../../utils/logger.js';
 const startSchema = Joi.object({
   category: Joi.string().min(1).max(64).required(),
   area: Joi.string().min(1).max(120).required(),
-  limit: Joi.number().integer().min(1).max(500),
+  limit: Joi.number().integer().min(1).max(500), // sanity bound; service clamps to DISCOVERY_MAX_RESULTS_PER_RUN
 });
 const idsSchema = Joi.object({
-  candidateIds: Joi.array().items(Joi.string().uuid()).min(1).required(),
+  // .max(200): each id can become a PAID scrape — bound the per-call blast radius
+  // (a run yields ≤120 candidates; 200 leaves headroom for a hand-picked selection).
+  candidateIds: Joi.array().items(Joi.string().uuid()).min(1).max(200).required(),
+});
+const candidatePatchSchema = Joi.object({
+  // Empty body = dismiss, preserving the pre-restore client contract.
+  action: Joi.string().valid('dismiss', 'restore').default('dismiss'),
 });
 
 /** POST /discovery/runs — start an Apify search. */
@@ -43,17 +49,23 @@ export const enrichCandidates = asyncHandler(async (req, res) => {
   res.status(202).json({ success: true, data: { run } });
 });
 
-/** POST /discovery/runs/:id/add — bulk-add selected candidates as partners. */
+/** POST /discovery/runs/:id/add — bulk-add selected candidates as partners (scoped to the run). */
 export const addToPartners = asyncHandler(async (req, res) => {
   const { error, value } = idsSchema.validate(req.body, { abortEarly: false });
   if (error) throw new AppError(error.details.map((x) => x.message).join(', '), 400);
-  const results = await discoveryService.addToPartners(value.candidateIds, req.user, req.id);
+  const results = await discoveryService.addToPartners(req.params.id, value.candidateIds, req.user, req.id);
   res.json({ success: true, data: results });
 });
 
-/** PATCH /discovery/candidates/:id — dismiss. */
+/** PATCH /discovery/candidates/:id — dismiss (default, matches the old empty-body call) or restore. */
 export const dismissCandidate = asyncHandler(async (req, res) => {
-  await discoveryService.dismissCandidate(req.params.id, req.user);
+  const { error, value } = candidatePatchSchema.validate(req.body || {}, { abortEarly: false });
+  if (error) throw new AppError(error.details.map((x) => x.message).join(', '), 400);
+  if (value.action === 'restore') {
+    await discoveryService.restoreCandidate(req.params.id, req.user);
+  } else {
+    await discoveryService.dismissCandidate(req.params.id, req.user);
+  }
   res.json({ success: true });
 });
 

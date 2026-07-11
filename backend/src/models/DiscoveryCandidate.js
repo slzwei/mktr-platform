@@ -25,6 +25,7 @@ const DiscoveryCandidate = sequelize.define('DiscoveryCandidate', {
   status: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'pending' },
   addedPartnerId: { type: DataTypes.UUID, allowNull: true, references: { model: 'partner_organisations', key: 'id' } },
   enrichmentStatus: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'none' },
+  isVerified: { type: DataTypes.BOOLEAN, allowNull: true },
   followersCount: { type: DataTypes.INTEGER, allowNull: true },
   email: { type: DataTypes.STRING(160), allowNull: true },
   bio: { type: DataTypes.TEXT, allowNull: true },

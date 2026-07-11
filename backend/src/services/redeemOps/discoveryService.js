@@ -1,10 +1,12 @@
-import { Op } from 'sequelize';
+import { Op, QueryTypes } from 'sequelize';
 import crypto from 'crypto';
 import { DiscoveryRun, DiscoveryCandidate, PartnerOrganisation, sequelize } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makePartnerService } from './partnerService.js';
+import { makeCategoryService } from './categoryService.js';
+import { makeDedupeService } from './dedupeService.js';
 import { makeApifyClient } from './discovery/apifyClient.js';
 import { normalizeMapsItem, normalizeInstagramItem } from './discovery/normalizers.js';
 import { normalizeBusinessName, normalizeDomain, normalizeHandle } from './normalizers.js';
@@ -22,17 +24,29 @@ function cfg() {
     maxResultsPerRun: Number(process.env.DISCOVERY_MAX_RESULTS_PER_RUN || 120),
     maxRunsPerDay: Number(process.env.DISCOVERY_MAX_RUNS_PER_DAY || 25),
     maxRunsPerUserDay: Number(process.env.DISCOVERY_MAX_RUNS_PER_USER_DAY || 5),
-    enrichMaxPerDay: Number(process.env.DISCOVERY_ENRICH_MAX_PER_DAY || 50),
+    // Enrichment caps count PROFILES (each IG handle scraped is one paid unit),
+    // not runs — a run-count cap left per-call size unbounded.
+    enrichMaxPerDay: Number(process.env.DISCOVERY_ENRICH_MAX_PER_DAY || 500),
+    enrichMaxPerUserDay: Number(process.env.DISCOVERY_ENRICH_MAX_PER_USER_DAY || 200),
     costPerResultUsd: Number(process.env.DISCOVERY_COST_PER_RESULT_USD || 0.007),
     reconcileStuckMinutes: Number(process.env.DISCOVERY_RECONCILE_STUCK_MINUTES || 10),
+    candidateTtlDays: Number(process.env.DISCOVERY_CANDIDATE_TTL_DAYS ?? 90),
   };
 }
+
+/** Runs that never reached Apify (start failed / crashed pre-providerRunId) cost
+ *  nothing — they don't burn anyone's daily budget. */
+const COUNTS_TOWARD_QUOTA = {
+  [Op.not]: { [Op.and]: [{ status: 'failed' }, { providerRunId: null }] },
+};
 
 export function makeDiscoveryService(overrides = {}) {
   const d = {
     DiscoveryRun, DiscoveryCandidate, PartnerOrganisation, sequelize, logger,
     apify: makeApifyClient(),
     partners: makePartnerService(),
+    categories: makeCategoryService(),
+    dedupe: makeDedupeService(),
     audit: makeRedeemOpsAuditService(),
     ...overrides,
   };
@@ -50,10 +64,12 @@ export function makeDiscoveryService(overrides = {}) {
     return a.length === b.length && crypto.timingSafeEqual(a, b);
   }
 
+  // NOTE: check-then-create quotas are advisory (TOCTOU under concurrency) —
+  // accepted residual: single backend instance, tiny ops team, small overshoot.
   async function assertQuota(user) {
     const c = cfg();
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const base = { provider: 'apify_google_maps', createdAt: { [Op.gte]: since } };
+    const base = { provider: 'apify_google_maps', createdAt: { [Op.gte]: since }, ...COUNTS_TOWARD_QUOTA };
     const [mine, all] = await Promise.all([
       d.DiscoveryRun.count({ where: { ...base, createdBy: user.id } }),
       d.DiscoveryRun.count({ where: base }),
@@ -71,9 +87,16 @@ export function makeDiscoveryService(overrides = {}) {
     const c = cfg();
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const used = await d.DiscoveryRun.count({
-      where: { provider: 'apify_google_maps', createdBy: user.id, createdAt: { [Op.gte]: since } },
+      where: {
+        provider: 'apify_google_maps', createdBy: user.id,
+        createdAt: { [Op.gte]: since }, ...COUNTS_TOWARD_QUOTA,
+      },
     });
-    return { used, limit: c.maxRunsPerUserDay, remaining: Math.max(0, c.maxRunsPerUserDay - used) };
+    return {
+      used, limit: c.maxRunsPerUserDay,
+      remaining: Math.max(0, c.maxRunsPerUserDay - used),
+      costPerResultUsd: c.costPerResultUsd, // lets the UI show "≈ $x.xx" pre-search
+    };
   }
 
   function webhookUrl() {
@@ -87,20 +110,25 @@ export function makeDiscoveryService(overrides = {}) {
     assertEnabled();
     if (!category || !String(category).trim()) throw new AppError('Category is required', 400);
     if (!area || !String(area).trim()) throw new AppError('Area is required', 400);
+    // Fail fast on an unknown/inactive category (422) BEFORE any run row or Apify
+    // spend — otherwise every add-to-pipeline would fail after the money was paid.
+    // Stores the taxonomy's canonical casing so add-time createPartner re-validation
+    // can only fail on the (rare) delete-category-mid-run race.
+    const canonicalCategory = await d.categories.resolveCategoryName(String(category).trim());
     await assertQuota(user);
     const c = cfg();
     const requestedLimit = Math.min(Math.max(Number(limit) || 60, 1), c.maxResultsPerRun);
 
     const run = await d.DiscoveryRun.create({
       createdBy: user.id, provider: 'apify_google_maps',
-      category: String(category).trim(), area: String(area).trim(),
+      category: canonicalCategory, area: String(area).trim(),
       requestedLimit, status: 'pending',
       estimatedCostUsd: Number((requestedLimit * c.costPerResultUsd).toFixed(4)),
     });
 
     try {
       const input = {
-        searchStringsArray: [`${category} ${area}`],
+        searchStringsArray: [`${canonicalCategory} ${area}`],
         maxCrawledPlacesPerSearch: requestedLimit,
         language: 'en',
         scrapeContacts: true, // enables the instagrams/social arrays
@@ -129,6 +157,19 @@ export function makeDiscoveryService(overrides = {}) {
     if (!info.terminalStatus) return; // not done yet — a later webhook/sweep handles it
 
     if (info.terminalStatus !== 'completed') {
+      // Candidates FIRST, run-terminal LAST (same ordering as the success path):
+      // if the reset crashes, the run stays non-terminal and reconcile retries the
+      // repair — marking the run terminal first would strand candidates at
+      // 'pending' forever (processRun early-returns on terminal runs).
+      if (run.provider === 'apify_instagram') {
+        const targetIds = run.rawPayload?.targetCandidateIds || [];
+        if (targetIds.length > 0) {
+          await d.DiscoveryCandidate.update(
+            { enrichmentStatus: 'failed' },
+            { where: { id: { [Op.in]: targetIds }, enrichmentStatus: 'pending' } },
+          );
+        }
+      }
       await run.update({
         status: info.terminalStatus, completedAt: new Date(),
         actualCostUsd: info.usageTotalUsd, error: `Apify run ${info.status}`,
@@ -162,10 +203,12 @@ export function makeDiscoveryService(overrides = {}) {
   }
 
   /**
-   * Batched dedupe: one set-based query against live partners (NOT 120×findDuplicates).
-   * Marks exact hits existing_partner + matchedPartnerId; everything else stays 'new'.
-   * (createPartner runs the full fuzzy dedupe again at add-time, so a missed fuzzy
-   * match here is still caught before a partner is created.)
+   * Batched dedupe: one set-based exact query against live partners (NOT
+   * 120×findDuplicates) → existing_partner, then ONE batched pg_trgm fuzzy-name
+   * pass over the still-unmatched → possible_duplicate (spec §2.4). NOTE:
+   * createPartner only BLOCKS exact duplicates at add-time (potential matches are
+   * advisory there), so this fuzzy pass is the only near-match warning the
+   * operator gets — it must run whether or not the exact pass hit anything.
    */
   async function classifyAgainstPartners(candidates) {
     const keyed = candidates.map((cand) => ({
@@ -181,6 +224,7 @@ export function makeDiscoveryService(overrides = {}) {
     const names = [...new Set(keyed.map((k) => k.name).filter(Boolean))];
     if (!phones.length && !domains.length && !handles.length && !names.length) return;
 
+    // ── Exact pass ──
     const or = [];
     if (phones.length) or.push({ primaryPhone: { [Op.in]: phones } });
     if (domains.length) or.push({ websiteDomain: { [Op.in]: domains } });
@@ -191,20 +235,53 @@ export function makeDiscoveryService(overrides = {}) {
       where: { mergedIntoId: null, archivedAt: null, [Op.or]: or },
       attributes: ['id', 'primaryPhone', 'websiteDomain', 'instagramHandle', 'normalizedName'],
     });
-    if (partners.length === 0) return;
 
-    const byPhone = new Map(), byDomain = new Map(), byHandle = new Map(), byName = new Map();
-    for (const p of partners) {
-      if (p.primaryPhone) byPhone.set(p.primaryPhone, p.id);
-      if (p.websiteDomain) byDomain.set(p.websiteDomain, p.id);
-      if (p.instagramHandle) byHandle.set(p.instagramHandle, p.id);
-      if (p.normalizedName) byName.set(p.normalizedName, p.id);
+    const exactMatched = new Set();
+    if (partners.length > 0) {
+      const byPhone = new Map(), byDomain = new Map(), byHandle = new Map(), byName = new Map();
+      for (const p of partners) {
+        if (p.primaryPhone) byPhone.set(p.primaryPhone, p.id);
+        if (p.websiteDomain) byDomain.set(p.websiteDomain, p.id);
+        if (p.instagramHandle) byHandle.set(p.instagramHandle, p.id);
+        if (p.normalizedName) byName.set(p.normalizedName, p.id);
+      }
+      for (const k of keyed) {
+        const match = (k.phone && byPhone.get(k.phone)) || (k.domain && byDomain.get(k.domain))
+          || (k.handle && byHandle.get(k.handle)) || (k.name && byName.get(k.name));
+        if (match) {
+          await k.cand.update({ dedupeStatus: 'existing_partner', matchedPartnerId: match });
+          exactMatched.add(k.cand.id);
+        }
+      }
     }
+
+    // ── Fuzzy pass (ALWAYS runs — no-exact-hits is its main case) ──
+    await fuzzyClassify(keyed.filter((k) => !exactMatched.has(k.cand.id) && k.name));
+  }
+
+  /** Batched pg_trgm near-name pass → possible_duplicate. Skips silently when the
+   *  extension is unavailable (same non-fatal posture as dedupeService/migration 046
+   *  — this is a triage hint, not a gate). */
+  async function fuzzyClassify(keyed) {
+    if (keyed.length === 0) return;
+    if (!(await d.dedupe.trgmAvailable())) return;
+    const names = [...new Set(keyed.map((k) => k.name))];
+    const rows = await d.sequelize.query(
+      `SELECT DISTINCT ON (k.name) k.name AS probe_name, p.id AS partner_id
+         FROM unnest(ARRAY[:names]::text[]) AS k(name)
+         JOIN partner_organisations p
+           ON p."mergedIntoId" IS NULL AND p."archivedAt" IS NULL
+          AND p."normalizedName" IS NOT NULL AND p."normalizedName" <> k.name
+          AND similarity(p."normalizedName", k.name) >= 0.55
+        ORDER BY k.name, similarity(p."normalizedName", k.name) DESC`,
+      { replacements: { names }, type: QueryTypes.SELECT },
+    );
+    if (rows.length === 0) return;
+    const byName = new Map(rows.map((r) => [r.probe_name, r.partner_id]));
     for (const k of keyed) {
-      const match = (k.phone && byPhone.get(k.phone)) || (k.domain && byDomain.get(k.domain))
-        || (k.handle && byHandle.get(k.handle)) || (k.name && byName.get(k.name));
-      if (match) {
-        await k.cand.update({ dedupeStatus: 'existing_partner', matchedPartnerId: match });
+      const partnerId = byName.get(k.name);
+      if (partnerId) {
+        await k.cand.update({ dedupeStatus: 'possible_duplicate', matchedPartnerId: partnerId });
       }
     }
   }
@@ -216,15 +293,41 @@ export function makeDiscoveryService(overrides = {}) {
       throw new AppError('candidateIds is required', 400);
     }
     const c = cfg();
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const enrichedToday = await d.DiscoveryRun.count({ where: { provider: 'apify_instagram', createdAt: { [Op.gte]: since } } });
-    if (enrichedToday >= c.enrichMaxPerDay) throw new AppError('Daily enrichment limit reached', 429);
 
+    // Server-side eligibility — never trust the UI's filtering for a paid action:
+    // only never-enriched or previously-failed candidates are billable again.
+    // 'pending' (a run is already in flight) and 'enriched' are excluded, which
+    // makes double-submits and re-enrichment no-ops by construction.
     const candidates = await d.DiscoveryCandidate.findAll({
-      where: { id: { [Op.in]: candidateIds }, instagramHandle: { [Op.ne]: null } },
+      where: {
+        id: { [Op.in]: candidateIds },
+        instagramHandle: { [Op.ne]: null },
+        enrichmentStatus: { [Op.in]: ['none', 'failed'] },
+      },
     });
     const handles = [...new Set(candidates.map((x) => x.instagramHandle).filter(Boolean))];
-    if (handles.length === 0) throw new AppError('None of the selected candidates have an Instagram handle', 400);
+    if (handles.length === 0) {
+      throw new AppError('Nothing to enrich — no un-enriched Instagram handles in the selection', 400);
+    }
+
+    // Quotas count PROFILES (requestedLimit = handle count per run), excluding
+    // runs that never reached Apify. SUM(int) can surface as a bigint string.
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const igBase = { provider: 'apify_instagram', createdAt: { [Op.gte]: since }, ...COUNTS_TOWARD_QUOTA };
+    const [globalUsedRaw, userUsedRaw] = await Promise.all([
+      d.DiscoveryRun.sum('requestedLimit', { where: igBase }),
+      d.DiscoveryRun.sum('requestedLimit', { where: { ...igBase, createdBy: user.id } }),
+    ]);
+    const globalUsed = Number(globalUsedRaw) || 0;
+    const userUsed = Number(userUsedRaw) || 0;
+    if (userUsed + handles.length > c.enrichMaxPerUserDay) {
+      const left = Math.max(0, c.enrichMaxPerUserDay - userUsed);
+      throw new AppError(`Daily enrichment limit reached — ${left} profile${left === 1 ? '' : 's'} left today for you`, 429);
+    }
+    if (globalUsed + handles.length > c.enrichMaxPerDay) {
+      const left = Math.max(0, c.enrichMaxPerDay - globalUsed);
+      throw new AppError(`Team enrichment limit reached — ${left} profile${left === 1 ? '' : 's'} left today`, 429);
+    }
 
     const run = await d.DiscoveryRun.create({
       createdBy: user.id, provider: 'apify_instagram', status: 'pending',
@@ -261,23 +364,30 @@ export function makeDiscoveryService(overrides = {}) {
       const patch = { enrichmentStatus: 'enriched', enrichedAt: new Date(), enrichmentSource: 'apify_instagram' };
       // Fill-blanks / upgrade only — never blindly overwrite a confident value.
       if (p.followersCount != null) patch.followersCount = p.followersCount;
+      if (p.isVerified != null) patch.isVerified = p.isVerified;
       if (p.bio && !cand.bio) patch.bio = p.bio;
       if (p.email && !cand.email) patch.email = p.email;
       await cand.update(patch);
     }
   }
 
-  // ── Convert candidates → partners (bulk) ───────────────────────────────
-  async function addToPartners(candidateIds, user, requestId = null) {
+  // ── Convert candidates → partners (bulk, scoped to one run) ────────────
+  async function addToPartners(runId, candidateIds, user, requestId = null) {
     assertEnabled();
     if (!Array.isArray(candidateIds) || candidateIds.length === 0) {
       throw new AppError('candidateIds is required', 400);
     }
     const candidates = await d.DiscoveryCandidate.findAll({
-      where: { id: { [Op.in]: candidateIds }, status: 'pending' },
+      where: { id: { [Op.in]: candidateIds }, discoveryRunId: runId, status: 'pending' },
       include: [{ model: d.DiscoveryRun, as: 'run', attributes: ['category'] }],
     });
-    const results = { added: 0, skipped: 0, failed: 0, errors: [] };
+    // Soft-report ids that didn't come back (other run / already added or
+    // dismissed / nonexistent) — NOT a 400: a candidate legitimately changes
+    // status between the UI render and the click.
+    const results = {
+      added: 0, skipped: 0, failed: 0, errors: [],
+      notFound: candidateIds.length - candidates.length,
+    };
     for (const cand of candidates) {
       if (cand.dedupeStatus === 'existing_partner') { results.skipped += 1; continue; }
       try {
@@ -294,8 +404,12 @@ export function makeDiscoveryService(overrides = {}) {
         results.added += 1;
       } catch (err) {
         if (err.statusCode === 409 || err.status === 409) {
-          // Exact duplicate surfaced at add-time — mark it as such, don't create.
-          await cand.update({ dedupeStatus: 'existing_partner' });
+          // Exact duplicate surfaced at add-time — mark it AND keep the link so
+          // the UI badge can still open the existing partner.
+          await cand.update({
+            dedupeStatus: 'existing_partner',
+            matchedPartnerId: err.data?.duplicates?.exact?.[0]?.partner?.id ?? cand.matchedPartnerId,
+          });
           results.skipped += 1;
         } else {
           results.failed += 1;
@@ -313,10 +427,19 @@ export function makeDiscoveryService(overrides = {}) {
     if (run) await processRun(run.id);
   }
 
+  /** Symmetric + idempotent status flips (double-click/undo safe): dismiss only
+   *  moves pending→dismissed, restore only dismissed→pending; anything else no-ops. */
   async function dismissCandidate(candidateId, _user) {
     const cand = await d.DiscoveryCandidate.findByPk(candidateId);
     if (!cand) throw new AppError('Candidate not found', 404);
     if (cand.status === 'pending') await cand.update({ status: 'dismissed' });
+    return cand;
+  }
+
+  async function restoreCandidate(candidateId, _user) {
+    const cand = await d.DiscoveryCandidate.findByPk(candidateId);
+    if (!cand) throw new AppError('Candidate not found', 404);
+    if (cand.status === 'dismissed') await cand.update({ status: 'pending' });
     return cand;
   }
 
@@ -343,7 +466,7 @@ export function makeDiscoveryService(overrides = {}) {
 
   // ── Reconciliation: re-drive runs whose webhook never landed ───────────
   async function reconcileStuckRuns() {
-    if (!cfg().enabled) return { checked: 0 };
+    if (!cfg().enabled) return { checked: 0, stranded: 0 };
     const cutoff = new Date(Date.now() - cfg().reconcileStuckMinutes * 60 * 1000);
     const stuck = await d.DiscoveryRun.findAll({
       where: {
@@ -357,12 +480,86 @@ export function makeDiscoveryService(overrides = {}) {
       try { await processRun(run.id); }
       catch (err) { d.logger.error('discovery.reconcile.failed', { runId: run.id, error: err.message }); }
     }
-    return { checked: stuck.length };
+
+    // Stranded starts: crashed between DiscoveryRun.create and the post-startRun
+    // update, so there's no providerRunId to reconcile against — without this
+    // sweep they sit 'pending' forever (and, once failed, stop counting toward
+    // quota via COUNTS_TOWARD_QUOTA). Candidates first, run last (same crash-safe
+    // ordering as processRun).
+    const stranded = await d.DiscoveryRun.findAll({
+      where: { status: 'pending', providerRunId: null, createdAt: { [Op.lt]: cutoff } },
+      limit: 25,
+    });
+    for (const run of stranded) {
+      try {
+        if (run.provider === 'apify_instagram') {
+          const targetIds = run.rawPayload?.targetCandidateIds || [];
+          if (targetIds.length > 0) {
+            await d.DiscoveryCandidate.update(
+              { enrichmentStatus: 'failed' },
+              { where: { id: { [Op.in]: targetIds }, enrichmentStatus: 'pending' } },
+            );
+          }
+        }
+        await run.update({
+          status: 'failed', completedAt: new Date(),
+          error: 'never started — no provider run id recorded',
+        });
+      } catch (err) {
+        d.logger.error('discovery.reconcile.stranded_failed', { runId: run.id, error: err.message });
+      }
+    }
+    return { checked: stuck.length, stranded: stranded.length };
+  }
+
+  // ── Retention purge (PDPA posture, spec §6) ────────────────────────────
+  /**
+   * Scraped candidate data expires after DISCOVERY_CANDIDATE_TTL_DAYS (0 = off).
+   * pending/dismissed rows are deleted outright. 'added' rows are the provenance
+   * chain (run → candidate → addedPartnerId), so the row survives but the
+   * contact-ish PII is stripped (rawPayload, bio, email, primaryPhone, address);
+   * the partner record owns the live contact data. name/website/handle/sourceUrl/
+   * rating stay — public business facts that keep the provenance row legible.
+   * Two-step by run ids (Sequelize can't join-scope bulk destroy/update).
+   */
+  async function purgeExpiredCandidates() {
+    const c = cfg();
+    if (!c.candidateTtlDays || c.candidateTtlDays <= 0) return { deleted: 0, stripped: 0 };
+    const cutoff = new Date(Date.now() - c.candidateTtlDays * 24 * 60 * 60 * 1000);
+    const expiredRuns = await d.DiscoveryRun.findAll({
+      where: { completedAt: { [Op.lt]: cutoff } },
+      attributes: ['id'], limit: 200,
+    });
+    if (expiredRuns.length === 0) return { deleted: 0, stripped: 0 };
+    const runIds = expiredRuns.map((r) => r.id);
+
+    const deleted = await d.DiscoveryCandidate.destroy({
+      where: { discoveryRunId: { [Op.in]: runIds }, status: { [Op.in]: ['pending', 'dismissed'] } },
+    });
+    const [stripped] = await d.DiscoveryCandidate.update(
+      { rawPayload: null, bio: null, email: null, primaryPhone: null, address: null },
+      {
+        where: {
+          discoveryRunId: { [Op.in]: runIds }, status: 'added',
+          // Skip rows already stripped so repeat sweeps stay cheap + idempotent.
+          [Op.or]: [
+            { rawPayload: { [Op.ne]: null } }, { bio: { [Op.ne]: null } },
+            { email: { [Op.ne]: null } }, { primaryPhone: { [Op.ne]: null } },
+            { address: { [Op.ne]: null } },
+          ],
+        },
+      },
+    );
+    if (deleted > 0 || stripped > 0) {
+      d.logger.info('discovery.purge', { deleted, stripped, ttlDays: c.candidateTtlDays });
+    }
+    return { deleted, stripped };
   }
 
   return {
     startDiscovery, processRun, processByProviderRunId, enrichCandidates, addToPartners,
-    dismissCandidate, listRuns, getRunWithCandidates, getQuota, reconcileStuckRuns,
+    dismissCandidate, restoreCandidate, listRuns, getRunWithCandidates, getQuota,
+    reconcileStuckRuns, purgeExpiredCandidates,
     verifyWebhookSecret, classifyAgainstPartners, materializeCandidates, applyEnrichment,
   };
 }
