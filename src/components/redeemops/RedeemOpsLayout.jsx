@@ -45,6 +45,7 @@ const NAV = [
   { title: 'Redemptions', url: '/redeem-ops/redemptions', icon: QrCode, capability: 'redemptions.verify' },
   { title: 'Analytics', url: '/redeem-ops/analytics', icon: ChartColumn, capability: 'analytics.view_own' },
   { title: 'Team', url: '/redeem-ops/team', icon: UserCog, capability: 'analytics.view_team' },
+  { title: 'Settings', url: '/redeem-ops/settings', icon: Settings, capability: 'settings.manage' },
 ];
 
 const FIGTREE_LINK_ID = 'ro-figtree-font';

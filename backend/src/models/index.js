@@ -282,7 +282,7 @@ export const {
   OutreachTask, ProspectingPool, ProspectingPoolMember, RewardOffer,
   RewardTermsVersion, RewardOfferLocation, RewardInventoryEvent,
   PartnerOnboardingItem, Activation, RewardEntitlement, Redemption,
-  RedemptionEvent
+  RedemptionEvent, RedeemOpsCategory
 } = models;
 
 export { sequelize };

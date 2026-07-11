@@ -11,6 +11,7 @@ import {
 import { REDEEM_OPS_SUB_ROLES } from '../../services/redeemOps/permissions.js';
 import { SUB_ROLE_LABELS, publicConstants } from '../../services/redeemOps/constants.js';
 import { recordAuditEvent } from '../../services/redeemOps/auditService.js';
+import categoryService from '../../services/redeemOps/categoryService.js';
 
 const TEAM_ATTRIBUTES = [
   'id', 'email', 'firstName', 'lastName', 'fullName',
@@ -220,4 +221,57 @@ export const listAudit = asyncHandler(async (req, res) => {
 /** GET /api/redeem-ops/meta/constants — stages/types/roles/capabilities for the SPA. */
 export const getConstants = asyncHandler(async (req, res) => {
   res.json({ success: true, data: publicConstants() });
+});
+
+// ---- Category taxonomy (migration 052; categoryService owns all writes) ----
+
+const categoryCreateSchema = Joi.object({
+  name: Joi.string().min(1).max(64).required(),
+});
+
+const categoryUpdateSchema = Joi.object({
+  name: Joi.string().min(1).max(64),
+  isActive: Joi.boolean(),
+}).min(1);
+
+const categoryMergeSchema = Joi.object({
+  targetId: Joi.string().uuid().required(),
+});
+
+/** GET /api/redeem-ops/categories — active list for pickers; ?includeInactive=true for Settings. */
+export const listCategories = asyncHandler(async (req, res) => {
+  const categories = await categoryService.listCategories({
+    includeInactive: req.query.includeInactive === 'true',
+  });
+  res.json({ success: true, data: { categories } });
+});
+
+/** POST /api/redeem-ops/categories */
+export const createCategory = asyncHandler(async (req, res) => {
+  const { error, value } = categoryCreateSchema.validate(req.body, { abortEarly: false });
+  if (error) throw new AppError(error.details.map((d) => d.message).join(', '), 400);
+  const category = await categoryService.createCategory(value, req.user, req.id);
+  res.status(201).json({ success: true, data: { category } });
+});
+
+/** PATCH /api/redeem-ops/categories/:id — rename (cascades) and/or retire. */
+export const updateCategory = asyncHandler(async (req, res) => {
+  const { error, value } = categoryUpdateSchema.validate(req.body, { abortEarly: false });
+  if (error) throw new AppError(error.details.map((d) => d.message).join(', '), 400);
+  const category = await categoryService.updateCategory(req.params.id, value, req.user, req.id);
+  res.json({ success: true, data: { category } });
+});
+
+/** POST /api/redeem-ops/categories/:id/merge — consolidate :id into targetId. */
+export const mergeCategory = asyncHandler(async (req, res) => {
+  const { error, value } = categoryMergeSchema.validate(req.body, { abortEarly: false });
+  if (error) throw new AppError(error.details.map((d) => d.message).join(', '), 400);
+  const result = await categoryService.mergeCategory(req.params.id, value, req.user, req.id);
+  res.json({ success: true, data: result });
+});
+
+/** DELETE /api/redeem-ops/categories/:id — unreferenced rows only. */
+export const deleteCategory = asyncHandler(async (req, res) => {
+  const result = await categoryService.deleteCategory(req.params.id, req.user, req.id);
+  res.json({ success: true, data: result });
 });

@@ -5,6 +5,7 @@ import {
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeClaimService } from './claimService.js';
+import { makeCategoryService } from './categoryService.js';
 
 /**
  * Prospecting pools + Claim Next (docs/redeem-ops/ERD.md §3.8–3.9, brief §21).
@@ -17,7 +18,7 @@ import { makeClaimService } from './claimService.js';
 export function makePoolService(overrides = {}) {
   const d = {
     ProspectingPool, ProspectingPoolMember, PartnerOrganisation, sequelize, logger,
-    claims: makeClaimService(), ...overrides,
+    claims: makeClaimService(), categories: makeCategoryService(), ...overrides,
   };
 
   async function createPool(body, user) {
@@ -25,7 +26,7 @@ export function makePoolService(overrides = {}) {
     return d.ProspectingPool.create({
       name: String(body.name).trim(),
       description: body.description || null,
-      category: body.category || null,
+      category: (await d.categories.resolveCategoryName(body.category)) ?? null,
       area: body.area || null,
       createdBy: user.id,
     });
@@ -52,6 +53,11 @@ export function makePoolService(overrides = {}) {
     const updates = {};
     for (const f of ['name', 'description', 'category', 'area', 'isActive']) {
       if (body[f] !== undefined) updates[f] = body[f];
+    }
+    if (updates.category !== undefined) {
+      updates.category = await d.categories.resolveCategoryName(updates.category, {
+        currentValue: pool.category,
+      });
     }
     await pool.update(updates);
     return pool;

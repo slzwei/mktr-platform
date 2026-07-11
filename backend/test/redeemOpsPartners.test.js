@@ -7,7 +7,7 @@
 process.env.REDEEM_OPS_ENABLED = 'true';
 
 import request from 'supertest';
-import { getApp, closeDb, createTestUser } from './helpers.js';
+import { getApp, closeDb, createTestUser, seedRedeemOpsCategory } from './helpers.js';
 import {
   PartnerOrganisation, PartnerContact, OutreachActivity,
 } from '../src/models/index.js';
@@ -22,6 +22,9 @@ beforeAll(async () => {
   execA = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'outreach_exec' });
   execB = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'outreach_exec' });
   bdm = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'bdm' });
+  // Category writes validate against the taxonomy (migration 052); seed the one
+  // this suite uses so partner creation isn't rejected as an unknown category.
+  await seedRedeemOpsCategory('Nail Salon');
 });
 
 afterAll(async () => {

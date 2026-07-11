@@ -99,6 +99,9 @@ contradict the guard). Also future: `/api/partner-portal/*` namespace (separate 
 | POST `/team/invite` · PATCH `/team/:userId/role` | team.manage_access |
 | GET `/audit` (filter by entity/actor/action/date) | audit.view |
 | GET `/meta/constants` (stages, activity types, reward types — the constants module, so SPA and API can't drift) | any authenticated redeem-ops user |
+| GET `/categories` (`?includeInactive=true` for Settings) — admin-managed taxonomy; feeds partner/pool/reward pickers | any authenticated redeem-ops user |
+| POST `/categories` · PATCH `/categories/:id` (rename cascades onto rows; retire via `isActive`) | settings.manage |
+| POST `/categories/:id/merge` (consolidate a variant into another; cascade + delete source) · DELETE `/categories/:id` (unreferenced only) | settings.manage |
 
 ## 2. SPA pages (`src/pages/redeemops/`, routes in `src/pages/index.jsx`)
 
@@ -122,7 +125,7 @@ build as the whole app; never in the consumer `redeem` build. All wrapped in
 | `/redeem-ops/analytics` | Analytics (outreach/category/reward/activation) | 7 | Insights |
 | `/redeem-ops/team` | Team & access | 1 | Admin |
 | `/redeem-ops/audit` | Audit log | 1 (write) / 2 (UI) | Admin |
-| `/redeem-ops/settings` | Settings (stale thresholds display; config later) | later | Admin |
+| `/redeem-ops/settings` | Settings (category taxonomy: add/rename/merge/retire; more config later) | 8 | Admin |
 
 Not-yet-built modules stay **out of the nav** (brief §30) rather than shipping as placeholders.
 

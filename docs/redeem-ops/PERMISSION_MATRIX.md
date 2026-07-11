@@ -60,6 +60,7 @@ Legend: ✓ full · O = own/owned-records only · — = no.
 | `exports.run` | ✓ | ✓ | ✓ | — | — | — | ✓ |
 | `audit.view` | ✓ | ✓ | — | — | — | — | — |
 | `team.manage_access` (grant sub-roles, invite staff) | ✓ | — | — | — | — | — | — |
+| `settings.manage` (category taxonomy: create/rename/merge/retire) | ✓ | ✓ | — | — | — | — | — |
 
 "O (own)" is a **row-level** check: `partner_organisations.ownerUserId === req.user.id`
 (or task `assigneeUserId`). Implemented in services, not just middleware.

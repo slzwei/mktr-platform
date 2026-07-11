@@ -2,7 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { init } from '../src/server_internal.js';
 import { sequelize } from '../src/database/connection.js';
-import { User, Campaign, Commission, Prospect, FleetOwner, Car, QrTag, AgentGroup, AgentGroupMember, Attribution, QrScan, LeadPackage, LeadPackageAssignment } from '../src/models/index.js';
+import { User, Campaign, Commission, Prospect, FleetOwner, Car, QrTag, AgentGroup, AgentGroupMember, Attribution, QrScan, LeadPackage, LeadPackageAssignment, RedeemOpsCategory } from '../src/models/index.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 let _app = null;
@@ -248,4 +248,17 @@ export async function createTestLeadPackageAssignment(agentId, packageId, overri
     purchaseDate: overrides.purchaseDate || new Date(),
     ...overrides
   });
+}
+
+/**
+ * Seed a Redeem Ops category (migration 052 taxonomy). Category writes are now
+ * validated against this table, so any test that creates a partner/pool/reward
+ * with a category must seed it first. Idempotent (case-insensitive).
+ */
+export async function seedRedeemOpsCategory(name, overrides = {}) {
+  const [category] = await RedeemOpsCategory.findOrCreate({
+    where: { name },
+    defaults: { name, isActive: true, ...overrides },
+  });
+  return category;
 }
