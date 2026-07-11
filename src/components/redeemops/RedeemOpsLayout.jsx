@@ -38,7 +38,11 @@ import '@/styles/redeem-ops-theme.css';
 const NAV = [
   { title: 'Queue', url: '/redeem-ops/queue', icon: House },
   { title: 'Partners', url: '/redeem-ops/partners', icon: Users, capability: 'partners.view' },
-  { title: 'Discover', url: '/redeem-ops/discover', icon: Compass },
+  // Discover has no capability gate (all principals), so its own build flag is what
+  // keeps it hidden until go-live (backend DISCOVERY_ENABLED + Apify token).
+  ...(import.meta.env.VITE_DISCOVERY_ENABLED === 'true'
+    ? [{ title: 'Discover', url: '/redeem-ops/discover', icon: Compass }]
+    : []),
   { title: 'Pipeline', url: '/redeem-ops/pipeline', icon: Kanban, capability: 'pipeline.view_team' },
   { title: 'Tasks', url: '/redeem-ops/tasks', icon: ListChecks, capability: 'tasks.manage' },
   { title: 'Pools', url: '/redeem-ops/pools', icon: Layers, capability: 'pools.claim_next' },
