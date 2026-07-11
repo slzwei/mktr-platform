@@ -78,6 +78,7 @@ const AgentProfile = lazy(() => import('./AgentProfile'));
 // Redeem Ops — flag-gated internal staff surface (docs/redeem-ops/ROUTE_MAP.md §2).
 // Dark until VITE_REDEEM_OPS_ENABLED=true is baked into the build.
 const REDEEM_OPS_ENABLED = import.meta.env.VITE_REDEEM_OPS_ENABLED === 'true';
+const DISCOVERY_ENABLED = import.meta.env.VITE_DISCOVERY_ENABLED === 'true';
 const RedeemOpsHome = lazy(() => import('./redeemops/RedeemOpsHome'));
 const RedeemOpsTeam = lazy(() => import('./redeemops/RedeemOpsTeam'));
 const RedeemOpsPartnersList = lazy(() => import('./redeemops/PartnersList'));
@@ -114,7 +115,9 @@ function redeemOpsRouteElements() {
     { path: '/redeem-ops/team', capability: 'analytics.view_team', Page: RedeemOpsTeam },
     { path: '/redeem-ops/partners', capability: 'partners.view', Page: RedeemOpsPartnersList },
     { path: '/redeem-ops/partners/:id', capability: 'partners.view', Page: RedeemOpsPartnerDetail },
-    { path: '/redeem-ops/discover', capability: null, Page: RedeemOpsDiscover },
+    // Discover is dark until its own build flag AND the backend token are set —
+    // it has no capability gate (all principals), so this flag is what hides it.
+    ...(DISCOVERY_ENABLED ? [{ path: '/redeem-ops/discover', capability: null, Page: RedeemOpsDiscover }] : []),
     { path: '/redeem-ops/queue', capability: null, Page: RedeemOpsMyQueue },
     { path: '/redeem-ops/tasks', capability: 'tasks.manage', Page: RedeemOpsTasks },
     { path: '/redeem-ops/pools', capability: 'pools.claim_next', Page: RedeemOpsPools },
