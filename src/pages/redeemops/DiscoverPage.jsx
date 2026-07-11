@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -103,10 +103,16 @@ export default function DiscoverPage() {
   const failed = run && ['failed', 'aborted', 'timed_out'].includes(run.status);
 
   const counts = useMemo(() => {
-    const c = { total: candidates.length, new: 0, partners: 0, possible: 0, ig: 0 };
+    // total = visible (non-dismissed); hidden = dismissed (memory auto-hides +
+    // manual); materialized = everything the run produced (drives the sparse
+    // hint so memory-hiding can't fake a sparse area).
+    const c = { total: 0, hidden: 0, new: 0, partners: 0, possible: 0, seen: 0, ig: 0, materialized: candidates.length };
     for (const x of candidates) {
+      if (x.status === 'dismissed') { c.hidden += 1; continue; }
+      c.total += 1;
       if (x.dedupeStatus === 'existing_partner') c.partners += 1;
       else if (x.dedupeStatus === 'possible_duplicate') c.possible += 1;
+      else if (x.previouslySeenAt) c.seen += 1;
       else c.new += 1;
       if (x.instagramHandle) c.ig += 1;
     }
@@ -116,7 +122,10 @@ export default function DiscoverPage() {
 
   const visible = useMemo(() => {
     let list = candidates;
-    if (filter === 'new') list = list.filter((c) => c.dedupeStatus === 'new');
+    if (filter === 'hidden') list = list.filter((c) => c.status === 'dismissed');
+    else list = list.filter((c) => c.status !== 'dismissed');
+    if (filter === 'new') list = list.filter((c) => c.dedupeStatus === 'new' && !c.previouslySeenAt);
+    else if (filter === 'seen') list = list.filter((c) => c.dedupeStatus === 'new' && c.previouslySeenAt);
     else if (filter === 'partners') list = list.filter((c) => c.dedupeStatus === 'existing_partner');
     else if (filter === 'possible') list = list.filter((c) => c.dedupeStatus === 'possible_duplicate');
     else if (filter === 'ig') list = list.filter((c) => c.instagramHandle);
@@ -131,6 +140,15 @@ export default function DiscoverPage() {
     () => visible.filter((c) => c.status === 'pending' && c.dedupeStatus !== 'existing_partner').map((c) => c.id),
     [visible],
   );
+  // Prune stale selections (a row dismissed/added since the last render must
+  // never ride into a paid bulk action).
+  useEffect(() => {
+    setSelected((prev) => {
+      const valid = new Set(candidates.filter((c) => c.status === 'pending' && c.dedupeStatus !== 'existing_partner').map((c) => c.id));
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [candidates]);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
   const suggestions = useMemo(() => {
@@ -197,7 +215,7 @@ export default function DiscoverPage() {
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(selectableIds));
   const enrichAll = () => {
     const ids = candidates
-      .filter((c) => c.instagramHandle && !['enriched', 'pending'].includes(c.enrichmentStatus) && c.status !== 'dismissed')
+      .filter((c) => c.instagramHandle && !['enriched', 'pending', 'cached'].includes(c.enrichmentStatus) && c.status !== 'dismissed')
       .map((c) => c.id);
     if (ids.length === 0) { toast.info('Nothing to enrich — no un-enriched Instagram handles'); return; }
     enrichMutation.mutate(ids);
@@ -370,12 +388,19 @@ export default function DiscoverPage() {
                 {allSelected && <Check className="w-3 h-3" style={{ color: '#fff' }} strokeWidth={3} aria-hidden="true" />}
               </button>
             )}
-            <span className="text-[15px] font-bold mr-1">{selected.size > 0 ? `${selected.size} selected` : `${counts.total} found`}</span>
+            <span className="text-[15px] font-bold mr-1">
+              {selected.size > 0 ? `${selected.size} selected` : `${counts.total} found`}
+              {selected.size === 0 && counts.hidden > 0 && (
+                <span className="font-medium text-[12.5px]" style={{ color: 'var(--ro-text-3)' }}> · {counts.hidden} hidden</span>
+              )}
+            </span>
             <Seg on={filter === 'all'} onClick={() => setFilter('all')}>All <b className="tabular-nums">{counts.total}</b></Seg>
             <Seg on={filter === 'new'} onClick={() => setFilter('new')} dot="var(--ro-tag-blue-fg)">New <b className="tabular-nums">{counts.new}</b></Seg>
+            {counts.seen > 0 && <Seg on={filter === 'seen'} onClick={() => setFilter('seen')} dot="var(--ro-tag-gray-fg)">Seen before <b className="tabular-nums">{counts.seen}</b></Seg>}
             <Seg on={filter === 'partners'} onClick={() => setFilter('partners')} dot="var(--ro-tag-gray-fg)">Partners <b className="tabular-nums">{counts.partners}</b></Seg>
             {counts.possible > 0 && <Seg on={filter === 'possible'} onClick={() => setFilter('possible')} dot="var(--ro-tag-yellow-fg)">Possible dup <b className="tabular-nums">{counts.possible}</b></Seg>}
             <Seg on={filter === 'ig'} onClick={() => setFilter('ig')}>Has Instagram <b className="tabular-nums">{counts.ig}</b></Seg>
+            {counts.hidden > 0 && <Seg on={filter === 'hidden'} onClick={() => setFilter('hidden')}>Hidden <b className="tabular-nums">{counts.hidden}</b></Seg>}
             <span className="flex-1" />
             <button type="button" onClick={enrichAll} disabled={enrichMutation.isPending}
               className="inline-flex items-center gap-2 h-8 px-3.5 rounded-full text-[13px] font-semibold"
@@ -395,7 +420,9 @@ export default function DiscoverPage() {
               </p>
             )}
             {visible.map((c) => {
-              const badge = DEDUPE[c.dedupeStatus] || DEDUPE.new;
+              const badge = c.dedupeStatus !== 'new'
+                ? (DEDUPE[c.dedupeStatus] || DEDUPE.new)
+                : (c.previouslySeenAt ? { tone: 'archived', label: 'Seen previously' } : DEDUPE.new);
               const selectable = c.status === 'pending' && c.dedupeStatus !== 'existing_partner';
               const isSel = selected.has(c.id);
               const isPartner = c.dedupeStatus === 'existing_partner';
@@ -462,7 +489,10 @@ export default function DiscoverPage() {
                           {c.followersCount != null ? ' ·' : ''}
                         </span>
                         {c.followersCount != null
-                          ? <b className="tabular-nums" style={{ color: c.followersCount >= 10000 ? 'var(--ro-tag-purple-fg)' : 'var(--ro-bunker)' }}>{fmtFollowers(c.followersCount)}</b>
+                          ? (
+                            <b className="tabular-nums" title={c.enrichmentStatus === 'cached' ? 'From an earlier search (cached)' : undefined}
+                              style={{ color: c.followersCount >= 10000 ? 'var(--ro-tag-purple-fg)' : 'var(--ro-bunker)' }}>{fmtFollowers(c.followersCount)}</b>
+                          )
                           : c.enrichmentStatus === 'pending'
                             ? (
                               <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold shrink-0" style={{ color: 'var(--ro-text-3)' }}>
@@ -489,14 +519,18 @@ export default function DiscoverPage() {
                       <button type="button" aria-label={`Dismiss ${c.name}`} onClick={() => dismissMutation.mutate(c.id)}
                         className="shrink-0" style={{ color: 'var(--ro-text-3)' }}><X className="w-4 h-4" aria-hidden="true" /></button>
                     )}
+                    {c.status === 'dismissed' && (
+                      <button type="button" aria-label={`Restore ${c.name}`} onClick={() => restoreMutation.mutate(c.id)}
+                        className="shrink-0 text-[12.5px] font-semibold ro-link">Restore</button>
+                    )}
                   </span>
                 </div>
               );
             })}
           </div>
-          {counts.total > 0 && run?.requestedLimit >= 30 && counts.total < Math.ceil(run.requestedLimit * 0.25) && (
+          {counts.materialized > 0 && run?.requestedLimit >= 30 && counts.materialized < Math.ceil(run.requestedLimit * 0.25) && (
             <p className="text-[12px] mt-2 mb-0" style={{ color: 'var(--ro-text-2)' }}>
-              Google found only {counts.total} match{counts.total === 1 ? '' : 'es'} in this area — small central
+              Google found only {counts.materialized} match{counts.materialized === 1 ? '' : 'es'} in this area — small central
               districts (like Orchard) genuinely have few of some business types. Try a broader or neighbouring
               area, and check each row&apos;s category label for weak matches.
             </p>

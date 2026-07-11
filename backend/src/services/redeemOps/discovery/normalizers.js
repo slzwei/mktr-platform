@@ -82,6 +82,8 @@ export function normalizeInstagramItem(raw) {
       : (Number.isInteger(raw.followers) ? raw.followers : null),
     bio: bio || null,
     email: trunc(raw.publicEmail || parseEmailFromBio(bio), 160),
-    isVerified: !!raw.verified,
+    // Preserve "unknown": the actor omitting `verified` must not read as an
+    // authoritative false (it would poison the cross-run enrichment cache).
+    isVerified: raw.verified == null ? null : !!raw.verified,
   };
 }

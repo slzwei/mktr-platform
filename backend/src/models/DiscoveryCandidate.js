@@ -24,7 +24,12 @@ const DiscoveryCandidate = sequelize.define('DiscoveryCandidate', {
   matchedPartnerId: { type: DataTypes.UUID, allowNull: true, references: { model: 'partner_organisations', key: 'id' } },
   status: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'pending' },
   addedPartnerId: { type: DataTypes.UUID, allowNull: true, references: { model: 'partner_organisations', key: 'id' } },
+  // none | pending | enriched | failed | cached (cached = carried from place
+  // memory, NOT billable again — see discoveryService enrich eligibility)
   enrichmentStatus: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'none' },
+  // Set at materialization when the place was seen by an EARLIER run (= memory
+  // firstSeenAt). Renders the "Seen previously" badge/filter.
+  previouslySeenAt: { type: DataTypes.DATE, allowNull: true },
   isVerified: { type: DataTypes.BOOLEAN, allowNull: true },
   followersCount: { type: DataTypes.INTEGER, allowNull: true },
   email: { type: DataTypes.STRING(160), allowNull: true },

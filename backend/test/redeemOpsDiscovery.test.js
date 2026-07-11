@@ -18,7 +18,7 @@ import { getApp, closeDb, createTestUser, seedRedeemOpsCategory } from './helper
 import { makeDiscoveryService } from '../src/services/redeemOps/discoveryService.js';
 import { makePartnerService } from '../src/services/redeemOps/partnerService.js';
 import { makeDedupeService } from '../src/services/redeemOps/dedupeService.js';
-import { DiscoveryRun, DiscoveryCandidate, PartnerOrganisation, sequelize } from '../src/models/index.js';
+import { DiscoveryRun, DiscoveryCandidate, DiscoveryPlaceMemory, PartnerOrganisation, sequelize } from '../src/models/index.js';
 
 let app;
 let admin;
@@ -58,6 +58,11 @@ let runIdSeq = 0;
 // mockImplementation (not mockResolvedValue) so each call yields a UNIQUE runId —
 // the providerRunId unique index would otherwise 409 the 2nd call on a fresh DB.
 const uniqueRunId = () => ({ runId: `run_${Date.now()}_${++runIdSeq}`, datasetId: 'ds1', status: 'RUNNING' });
+
+// Place memory is GLOBAL (one row per Google place id, shared DB) — every
+// memory test uses fresh place ids or its assertions become order-dependent.
+let placeSeq = 0;
+const uniquePlaceId = () => `place_${Date.now()}_${++placeSeq}`;
 
 // Default user = the shared admin; new tests that call startDiscovery pass a
 // FRESH user instead — the shared admin's 24h search quota fills up across the
@@ -522,5 +527,207 @@ describe('PATCH /discovery/candidates/:id over HTTP (back-compat)', () => {
       .set(auth(admin.token)).send({ action: 'restore' }).expect(200);
     await cand.reload();
     expect(cand.status).toBe('added');
+  });
+});
+
+
+describe('cross-run place memory', () => {
+  const mkRun = (over = {}) => DiscoveryRun.create({
+    createdBy: admin.user.id, provider: 'apify_google_maps', status: 'running', requestedLimit: 10, ...over,
+  });
+
+  test('second sighting in a NEW run marks seen-before; the first is unmarked', async () => {
+    const svc = makeDiscoveryService({ apify: makeApifyStub() });
+    const place = uniquePlaceId();
+    const runA = await mkRun();
+    await svc.materializeCandidates(runA, [{ placeId: place, title: 'Memory One Nails', countryCode: 'SG' }]);
+    const a = await DiscoveryCandidate.findOne({ where: { discoveryRunId: runA.id } });
+    expect(a.previouslySeenAt).toBeNull();
+    const runB = await mkRun();
+    await svc.materializeCandidates(runB, [{ placeId: place, title: 'Memory One Nails', countryCode: 'SG' }]);
+    const b = await DiscoveryCandidate.findOne({ where: { discoveryRunId: runB.id } });
+    expect(b.previouslySeenAt).not.toBeNull();
+    expect((await DiscoveryPlaceMemory.findByPk(place)).timesSeen).toBe(2);
+  });
+
+  test('re-materializing the SAME run does not inflate timesSeen or mark seen', async () => {
+    const svc = makeDiscoveryService({ apify: makeApifyStub() });
+    const place = uniquePlaceId();
+    const run = await mkRun();
+    const items = [{ placeId: place, title: 'Dup Webhook Nails', countryCode: 'SG' }];
+    await svc.materializeCandidates(run, items);
+    await svc.materializeCandidates(run, items); // duplicate webhook/reconcile
+    expect((await DiscoveryPlaceMemory.findByPk(place)).timesSeen).toBe(1);
+    const cand = await DiscoveryCandidate.findOne({ where: { discoveryRunId: run.id } });
+    expect(cand.previouslySeenAt).toBeNull();
+  });
+
+  test('duplicate place ids within one dataset do not error and count once', async () => {
+    const svc = makeDiscoveryService({ apify: makeApifyStub() });
+    const place = uniquePlaceId();
+    const run = await mkRun();
+    await svc.materializeCandidates(run, [
+      { placeId: place, title: 'Batch Dup A', countryCode: 'SG' },
+      { placeId: place, title: 'Batch Dup B', countryCode: 'SG' },
+    ]);
+    expect((await DiscoveryPlaceMemory.findByPk(place)).timesSeen).toBe(1);
+  });
+
+  test('dismiss carries forward to future births; restore clears the memory', async () => {
+    const svc = makeDiscoveryService({ apify: makeApifyStub() });
+    const place = uniquePlaceId();
+    const item = { placeId: place, title: 'Dismiss Carry Nails', countryCode: 'SG' };
+    const runA = await mkRun();
+    await svc.materializeCandidates(runA, [item]);
+    const a = await DiscoveryCandidate.findOne({ where: { discoveryRunId: runA.id } });
+    await svc.dismissCandidate(a.id, admin.user);
+
+    const runB = await mkRun();
+    await svc.materializeCandidates(runB, [item]);
+    const b = await DiscoveryCandidate.findOne({ where: { discoveryRunId: runB.id } });
+    expect(b.status).toBe('dismissed'); // born hidden
+    // …but reachable: the read API returns dismissed rows (Hidden segment).
+    const { candidates: withHidden } = await svc.getRunWithCandidates(runB.id);
+    expect(withHidden.some((x) => x.id === b.id)).toBe(true);
+
+    await svc.restoreCandidate(b.id, admin.user);
+    const runC = await mkRun();
+    await svc.materializeCandidates(runC, [item]);
+    const c = await DiscoveryCandidate.findOne({ where: { discoveryRunId: runC.id } });
+    expect(c.status).toBe('pending');
+    expect(c.previouslySeenAt).not.toBeNull();
+  });
+
+  test('added beats dismissed and follows a merge to the survivor', async () => {
+    const svc = makeDiscoveryService({ apify: makeApifyStub() });
+    const place = uniquePlaceId();
+    const tag = place.slice(-5);
+    const { partner: loser } = await partners.createPartner({ tradingName: `Mem Loser ${tag}`, category: 'Nail Salon' }, admin.user);
+    const { partner: winner } = await partners.createPartner({ tradingName: `Mem Winner ${tag}`, category: 'Nail Salon' }, admin.user);
+    await DiscoveryPlaceMemory.create({
+      externalPlaceId: place, timesSeen: 1, firstSeenAt: new Date(), lastSeenAt: new Date(),
+      dismissedAt: new Date(), addedPartnerId: loser.id,
+    });
+    await loser.update({ mergedIntoId: winner.id, archivedAt: new Date() });
+    const run = await mkRun();
+    await svc.materializeCandidates(run, [{ placeId: place, title: `Merged Away Nails ${tag}`, countryCode: 'SG' }]);
+    const cand = await DiscoveryCandidate.findOne({ where: { discoveryRunId: run.id } });
+    expect(cand.dedupeStatus).toBe('existing_partner'); // added wins over dismissed
+    expect(cand.matchedPartnerId).toBe(winner.id); // merge survivor, not the loser
+    expect(cand.status).toBe('pending');
+  });
+
+  test('a dead remembered partner falls through to plain seen-before', async () => {
+    const svc = makeDiscoveryService({ apify: makeApifyStub() });
+    const place = uniquePlaceId();
+    await DiscoveryPlaceMemory.create({
+      externalPlaceId: place, timesSeen: 3,
+      firstSeenAt: new Date(Date.now() - 86400000), lastSeenAt: new Date(), addedPartnerId: null,
+    });
+    const run = await mkRun();
+    await svc.materializeCandidates(run, [{ placeId: place, title: 'Fallthrough Nails', countryCode: 'SG' }]);
+    const cand = await DiscoveryCandidate.findOne({ where: { discoveryRunId: run.id } });
+    expect(cand.dedupeStatus).toBe('new');
+    expect(cand.previouslySeenAt).not.toBeNull();
+  });
+
+  test('enrichment metrics carry forward handle-keyed as non-billable cached', async () => {
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const place = uniquePlaceId();
+    const handle = `cache${++placeSeq}`;
+    const runA = await mkRun();
+    await svc.materializeCandidates(runA, [{ placeId: place, title: 'Cache Nails', countryCode: 'SG', instagrams: [`https://instagram.com/${handle}`] }]);
+    const a = await DiscoveryCandidate.findOne({ where: { discoveryRunId: runA.id } });
+    const igRun = await DiscoveryRun.create({
+      createdBy: admin.user.id, provider: 'apify_instagram', status: 'running',
+      requestedLimit: 1, rawPayload: { targetCandidateIds: [a.id] },
+    });
+    await svc.applyEnrichment(igRun, [{ username: handle, followersCount: 777, verified: true }]);
+
+    const runB = await mkRun();
+    await svc.materializeCandidates(runB, [{ placeId: place, title: 'Cache Nails', countryCode: 'SG', instagrams: [`https://instagram.com/${handle}`] }]);
+    const b = await DiscoveryCandidate.findOne({ where: { discoveryRunId: runB.id } });
+    expect(b.followersCount).toBe(777);
+    expect(b.isVerified).toBe(true);
+    expect(b.enrichmentStatus).toBe('cached');
+    // cached is NOT billable again
+    await expect(svc.enrichCandidates([b.id], admin.user)).rejects.toMatchObject({ statusCode: 400 });
+
+    // the place switched IG identity → cache must NOT apply
+    const runC = await mkRun();
+    await svc.materializeCandidates(runC, [{ placeId: place, title: 'Cache Nails', countryCode: 'SG', instagrams: ['https://instagram.com/totallynewhandle'] }]);
+    const c = await DiscoveryCandidate.findOne({ where: { discoveryRunId: runC.id } });
+    expect(c.followersCount).toBeNull();
+    expect(c.enrichmentStatus).toBe('none');
+  });
+
+  test('atomic claim ignores dismissed ids and a double submit cannot double-pay', async () => {
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const run = await mkRun({ status: 'completed' });
+    const okHandle = `claimok${++placeSeq}`;
+    const ok = await DiscoveryCandidate.create({ discoveryRunId: run.id, name: 'Claim OK Nails', instagramHandle: okHandle, enrichmentStatus: 'none', status: 'pending' });
+    const gone = await DiscoveryCandidate.create({ discoveryRunId: run.id, name: 'Claim Gone Nails', instagramHandle: `claimgone${placeSeq}`, enrichmentStatus: 'none', status: 'dismissed' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+    await svc.enrichCandidates([ok.id, gone.id], admin.user);
+    expect(apify.startRun.mock.calls[0][1].usernames).toEqual([okHandle]);
+    await gone.reload();
+    expect(gone.enrichmentStatus).toBe('none'); // dismissed row never claimed
+    await expect(svc.enrichCandidates([ok.id, gone.id], admin.user)).rejects.toMatchObject({ statusCode: 400 });
+    expect(apify.startRun).toHaveBeenCalledTimes(1); // no second paid run
+  });
+
+  test('adding to pipeline records memory and overrides an old dismissal', async () => {
+    const svc = makeDiscoveryService({ apify: makeApifyStub() });
+    const place = uniquePlaceId();
+    const run = await mkRun({ status: 'completed', category: 'Nail Salon' });
+    const cand = await DiscoveryCandidate.create({
+      discoveryRunId: run.id, externalPlaceId: place, name: `Mem Add Nails ${place.slice(-5)}`,
+      primaryPhone: '+6591000701', dedupeStatus: 'new', status: 'pending',
+    });
+    await DiscoveryPlaceMemory.create({ externalPlaceId: place, timesSeen: 1, firstSeenAt: new Date(), lastSeenAt: new Date(), dismissedAt: new Date() });
+    const res = await svc.addToPartners(run.id, [cand.id], admin.user);
+    expect(res.added).toBe(1);
+    await cand.reload();
+    const mem = await DiscoveryPlaceMemory.findByPk(place);
+    expect(mem.addedPartnerId).toBe(cand.addedPartnerId);
+    expect(mem.dismissedAt).toBeNull();
+  });
+
+  test('purge covers every expired run in one sweep and memory survives', async () => {
+    const svc = makeDiscoveryService({ apify: makeApifyStub() });
+    const place = uniquePlaceId();
+    const old = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000);
+    const base = { createdBy: admin.user.id, provider: 'apify_google_maps', status: 'completed', requestedLimit: 5, completedAt: old };
+    await DiscoveryRun.create(base); // already-processed empty run must not block others
+    const r1 = await DiscoveryRun.create(base);
+    const r2 = await DiscoveryRun.create(base);
+    await DiscoveryCandidate.create({ discoveryRunId: r1.id, externalPlaceId: place, name: 'Purge Sweep A', status: 'pending' });
+    await DiscoveryCandidate.create({ discoveryRunId: r2.id, name: 'Purge Sweep B', status: 'dismissed' });
+    await DiscoveryPlaceMemory.create({ externalPlaceId: place, timesSeen: 1, firstSeenAt: old, lastSeenAt: old });
+    const res = await svc.purgeExpiredCandidates();
+    expect(res.deleted).toBeGreaterThanOrEqual(2);
+    expect(await DiscoveryCandidate.count({ where: { discoveryRunId: [r1.id, r2.id] } })).toBe(0);
+    expect(await DiscoveryPlaceMemory.findByPk(place)).not.toBeNull(); // memory outlives retention
+  });
+
+  test('a remembered partner is not downgraded by the fuzzy pass', async () => {
+    if (!(await makeDedupeService().trgmAvailable())) {
+      console.warn('[test] pg_trgm unavailable — skipping fuzzy shield assertions');
+      return;
+    }
+    const svc = makeDiscoveryService({ apify: makeApifyStub() });
+    const place = uniquePlaceId();
+    const tag = place.slice(-5);
+    const { partner } = await partners.createPartner({ tradingName: `Mem Shield Beauty ${tag}`, category: 'Nail Salon' }, admin.user);
+    await DiscoveryPlaceMemory.create({ externalPlaceId: place, timesSeen: 1, firstSeenAt: new Date(), lastSeenAt: new Date(), addedPartnerId: partner.id });
+    const run = await mkRun();
+    // Fuzzy-similar (not exact) name — without the classification skip the fuzzy
+    // pass would overwrite the memory link with possible_duplicate.
+    await svc.materializeCandidates(run, [{ placeId: place, title: `Mem Shield Beauty ${tag} Tampines`, countryCode: 'SG' }]);
+    const cand = await DiscoveryCandidate.findOne({ where: { discoveryRunId: run.id } });
+    expect(cand.dedupeStatus).toBe('existing_partner');
+    expect(cand.matchedPartnerId).toBe(partner.id);
   });
 });

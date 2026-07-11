@@ -96,6 +96,35 @@ describe('DiscoverPage', () => {
     expect(screen.getByText(/Discount store/)).toBeInTheDocument();
   });
 
+  it('hidden rows sit behind the Hidden segment with a Restore action', async () => {
+    api.listDiscoveryRuns.mockResolvedValue({ runs: [completedRun], quota });
+    api.getDiscoveryRun.mockResolvedValue({
+      run: completedRun,
+      candidates: [baseCandidate, { ...baseCandidate, id: 'c2', name: 'Hidden Nails', status: 'dismissed' }],
+    });
+    api.restoreDiscoveryCandidate.mockResolvedValue({});
+    renderPage();
+    await openResults();
+    // hidden by default, surfaced in the count line
+    expect(await screen.findByText(/1 hidden/)).toBeInTheDocument();
+    expect(screen.queryByText('Hidden Nails')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Hidden 1/ }));
+    expect(await screen.findByText('Hidden Nails')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Restore Hidden Nails' }));
+    await waitFor(() => expect(api.restoreDiscoveryCandidate).toHaveBeenCalledWith('c2'));
+  });
+
+  it('seen-before rows carry the Seen previously badge', async () => {
+    api.listDiscoveryRuns.mockResolvedValue({ runs: [completedRun], quota });
+    api.getDiscoveryRun.mockResolvedValue({
+      run: completedRun,
+      candidates: [{ ...baseCandidate, previouslySeenAt: new Date().toISOString() }],
+    });
+    renderPage();
+    await openResults();
+    expect(await screen.findByText('Seen previously')).toBeInTheDocument();
+  });
+
   it('dismiss calls the API and the undo toast action restores', async () => {
     api.listDiscoveryRuns.mockResolvedValue({ runs: [completedRun], quota });
     api.getDiscoveryRun.mockResolvedValue({ run: completedRun, candidates: [baseCandidate] });

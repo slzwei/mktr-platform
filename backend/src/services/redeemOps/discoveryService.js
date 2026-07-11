@@ -1,6 +1,6 @@
 import { Op, QueryTypes } from 'sequelize';
 import crypto from 'crypto';
-import { DiscoveryRun, DiscoveryCandidate, PartnerOrganisation, sequelize } from '../../models/index.js';
+import { DiscoveryRun, DiscoveryCandidate, DiscoveryPlaceMemory, PartnerOrganisation, sequelize } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
@@ -47,7 +47,7 @@ const COUNTS_TOWARD_QUOTA = {
 
 export function makeDiscoveryService(overrides = {}) {
   const d = {
-    DiscoveryRun, DiscoveryCandidate, PartnerOrganisation, sequelize, logger,
+    DiscoveryRun, DiscoveryCandidate, DiscoveryPlaceMemory, PartnerOrganisation, sequelize, logger,
     apify: makeApifyClient(),
     partners: makePartnerService(),
     categories: makeCategoryService(),
@@ -211,7 +211,120 @@ export function makeDiscoveryService(overrides = {}) {
       { ignoreDuplicates: true }
     );
     const candidates = await d.DiscoveryCandidate.findAll({ where: { discoveryRunId: run.id } });
-    await classifyAgainstPartners(candidates);
+    const memoryResolved = await applyPlaceMemory(run, candidates);
+    // Memory-resolved rows (remembered partner / remembered dismissal) must NOT
+    // be reclassified — the fuzzy pass would downgrade a remembered
+    // existing_partner to possible_duplicate (Codex F3).
+    await classifyAgainstPartners(candidates.filter((c) => !memoryResolved.has(c.id) && c.dedupeStatus === 'new'));
+  }
+
+  // ── Cross-run place memory (migration 056; plan: discover-cross-run-memory v2) ──
+  /** The ONLY producer of memory.lastEnrichment — a strict whitelist keyed to the
+   *  IG identity the metrics belong to. Scraped contact data (phone/email/bio)
+   *  stays OUT of the memory table by construction. */
+  function buildMemoryEnrichment(cand) {
+    const handle = normalizeHandle(cand.instagramHandle);
+    if (!handle) return null;
+    const out = { handle };
+    if (cand.followersCount != null) out.followersCount = cand.followersCount;
+    if (cand.isVerified != null) out.isVerified = cand.isVerified;
+    if (cand.enrichedAt) out.enrichedAt = cand.enrichedAt;
+    return out.followersCount == null && out.isVerified == null ? null : out;
+  }
+
+  /**
+   * Exactly-once sighting upsert + birth rules (precedence: added > dismissed >
+   * seen). ONE INSERT..ON CONFLICT over the batch's DEDUPLICATED place ids
+   * (dupes in one VALUES list would raise "cannot affect row a second time");
+   * birth state derives from the SAME statement's RETURNING — timesSeen > 1 is
+   * the seen-before signal, and the lastSeenRunId CASE keeps a duplicate
+   * webhook/reconcile re-materialization of the SAME run from inflating counts
+   * or falsely marking rows (Codex F1/F2). Returns resolved candidate ids
+   * (excluded from classification).
+   */
+  async function applyPlaceMemory(run, candidates) {
+    const withPlace = candidates.filter((c) => c.externalPlaceId);
+    if (withPlace.length === 0) return new Set();
+    const placeIds = [...new Set(withPlace.map((c) => c.externalPlaceId))];
+
+    const memRows = await d.sequelize.query(
+      `INSERT INTO discovery_place_memory
+         ("externalPlaceId", "timesSeen", "firstSeenAt", "lastSeenAt", "lastSeenRunId", "createdAt", "updatedAt")
+       SELECT unnest(ARRAY[:placeIds]::varchar[]), 1, NOW(), NOW(), :runId, NOW(), NOW()
+       ON CONFLICT ("externalPlaceId") DO UPDATE SET
+         "timesSeen"     = CASE WHEN discovery_place_memory."lastSeenRunId" = EXCLUDED."lastSeenRunId"
+                                THEN discovery_place_memory."timesSeen"
+                                ELSE discovery_place_memory."timesSeen" + 1 END,
+         "lastSeenAt"    = NOW(),
+         "lastSeenRunId" = EXCLUDED."lastSeenRunId",
+         "updatedAt"     = NOW()
+       RETURNING "externalPlaceId", "timesSeen", "firstSeenAt", "dismissedAt", "addedPartnerId", "lastEnrichment"`,
+      { replacements: { placeIds, runId: run.id }, type: QueryTypes.SELECT },
+    );
+    const memByPlace = new Map(memRows.map((m) => [m.externalPlaceId, m]));
+
+    // Resolve remembered partners to their LIVE survivor: merge keeps the loser
+    // row with mergedIntoId set (FK SET NULL fires only on hard delete — Codex
+    // F9), so follow the chain; archived/dead ends fall through to seen-before.
+    const rememberedIds = [...new Set(memRows.map((m) => m.addedPartnerId).filter(Boolean))];
+    const liveByRemembered = new Map();
+    if (rememberedIds.length > 0) {
+      const partners = await d.PartnerOrganisation.findAll({
+        where: { id: { [Op.in]: rememberedIds } },
+        attributes: ['id', 'mergedIntoId', 'archivedAt'],
+      });
+      for (const p of partners) {
+        let cur = p;
+        let hops = 0;
+        while (cur?.mergedIntoId && hops < 5) {
+           
+          cur = await d.PartnerOrganisation.findByPk(cur.mergedIntoId, { attributes: ['id', 'mergedIntoId', 'archivedAt'] });
+          hops += 1;
+        }
+        if (cur && !cur.mergedIntoId && !cur.archivedAt) liveByRemembered.set(p.id, cur.id);
+      }
+    }
+
+    const resolved = new Set();
+    for (const cand of withPlace) {
+      const mem = memByPlace.get(cand.externalPlaceId);
+      if (!mem) continue;
+      const patch = {};
+      const liveAdded = mem.addedPartnerId ? liveByRemembered.get(mem.addedPartnerId) : null;
+      if (liveAdded) {
+        patch.dedupeStatus = 'existing_partner';
+        patch.matchedPartnerId = liveAdded;
+        resolved.add(cand.id);
+      } else if (mem.dismissedAt) {
+        patch.status = 'dismissed';
+        resolved.add(cand.id);
+      }
+      if (mem.timesSeen > 1) patch.previouslySeenAt = mem.firstSeenAt;
+      // Enrichment cache — applied only when the cached metrics belong to the
+      // SAME IG identity the new sighting carries (Codex F4), and marked
+      // 'cached' so it is never re-billable by default (Codex F11).
+      const cache = mem.lastEnrichment;
+      if (cache?.handle && cache.handle === normalizeHandle(cand.instagramHandle)
+          && cand.enrichmentStatus === 'none' && cand.followersCount == null) {
+        if (cache.followersCount != null) patch.followersCount = cache.followersCount;
+        if (cache.isVerified != null) patch.isVerified = cache.isVerified;
+        patch.enrichmentStatus = 'cached';
+      }
+      // Per-row instance updates (≤500, background path) — consistent with the
+      // classifier; bucketed VALUES updates are the known lever if this ever
+      // needs to be faster.
+       
+      if (Object.keys(patch).length > 0) await cand.update(patch);
+    }
+    return resolved;
+  }
+
+  /** Latest-intent memory write for a place (no-op when placeId is null or the
+   *  memory row was erased). NOT an upsert on purpose: memory rows are born at
+   *  materialization; an erased row staying erased is the erasure contract. */
+  async function writePlaceMemory(externalPlaceId, patch, transaction) {
+    if (!externalPlaceId) return;
+    await d.DiscoveryPlaceMemory.update(patch, { where: { externalPlaceId }, transaction });
   }
 
   /**
@@ -306,18 +419,21 @@ export function makeDiscoveryService(overrides = {}) {
     }
     const c = cfg();
 
-    // Server-side eligibility — never trust the UI's filtering for a paid action:
-    // only never-enriched or previously-failed candidates are billable again.
-    // 'pending' (a run is already in flight) and 'enriched' are excluded, which
-    // makes double-submits and re-enrichment no-ops by construction.
-    const candidates = await d.DiscoveryCandidate.findAll({
-      where: {
-        id: { [Op.in]: candidateIds },
-        instagramHandle: { [Op.ne]: null },
-        enrichmentStatus: { [Op.in]: ['none', 'failed'] },
-      },
-    });
-    const handles = [...new Set(candidates.map((x) => x.instagramHandle).filter(Boolean))];
+    // Server-side eligibility — never trust the UI's filtering for a paid
+    // action: only PENDING candidates with a handle that were never enriched or
+    // previously failed are billable. 'pending'-enrichment (in flight),
+    // 'enriched' and 'cached' (carried from place memory) are excluded, and so
+    // are dismissed/added rows lingering in a stale UI selection (Codex F12).
+    const ELIGIBLE = {
+      id: { [Op.in]: candidateIds },
+      status: 'pending',
+      instagramHandle: { [Op.ne]: null },
+      enrichmentStatus: { [Op.in]: ['none', 'failed'] },
+    };
+    // Advisory quota pre-check against the requested ids; the atomic claim
+    // below decides what actually gets billed (TOCTOU accepted, as elsewhere).
+    const prospective = await d.DiscoveryCandidate.findAll({ where: ELIGIBLE, attributes: ['id', 'instagramHandle'] });
+    const handles = [...new Set(prospective.map((x) => x.instagramHandle).filter(Boolean))];
     if (handles.length === 0) {
       throw new AppError('Nothing to enrich — no un-enriched Instagram handles in the selection', 400);
     }
@@ -341,27 +457,46 @@ export function makeDiscoveryService(overrides = {}) {
       throw new AppError(`Team enrichment limit reached — ${left} profile${left === 1 ? '' : 's'} left today`, 429);
     }
 
+    // Run row FIRST, then the atomic claim: a crash between claim and Apify
+    // start leaves a pending run with NULL providerRunId — exactly the shape the
+    // stranded-run sweep repairs (targets reset to 'failed').
     const run = await d.DiscoveryRun.create({
-      createdBy: user.id, provider: 'apify_instagram', status: 'pending',
-      requestedLimit: handles.length, rawPayload: { targetCandidateIds: candidates.map((x) => x.id) },
+      createdBy: user.id, provider: 'apify_instagram', status: 'pending', requestedLimit: 0,
     });
-    await d.DiscoveryCandidate.update({ enrichmentStatus: 'pending' }, { where: { id: { [Op.in]: candidates.map((x) => x.id) } } });
+    // Atomic claim — the ONLY transition into enrichment-'pending'. A concurrent
+    // duplicate submit claims zero rows and 400s: no double-paid run (Codex F12).
+    const [claimed] = await d.sequelize.query(
+      `UPDATE discovery_candidates
+          SET "enrichmentStatus" = 'pending', "updatedAt" = NOW()
+        WHERE id IN (:ids) AND status = 'pending'
+          AND "instagramHandle" IS NOT NULL
+          AND "enrichmentStatus" IN ('none', 'failed')
+        RETURNING id, "instagramHandle"`,
+      { replacements: { ids: candidateIds } },
+    );
+    if (claimed.length === 0) {
+      await run.update({ status: 'failed', error: 'nothing eligible to enrich (raced or already handled)' });
+      throw new AppError('Nothing to enrich — no un-enriched Instagram handles in the selection', 400);
+    }
+    const claimedIds = claimed.map((x) => x.id);
+    const claimedHandles = [...new Set(claimed.map((x) => x.instagramHandle))];
+    await run.update({ requestedLimit: claimedHandles.length, rawPayload: { targetCandidateIds: claimedIds } });
 
     try {
       // instagram-profile-scraper contract: `usernames` only (one dataset item per
       // profile — username/followersCount/biography/verified, matching the
       // normalizer). resultsType/resultsLimit belong to the OTHER actor.
-      const input = { usernames: handles };
+      const input = { usernames: claimedHandles };
       const started = await d.apify.startRun(c.igActor, input, { webhookUrl: webhookUrl() });
       await run.update({ providerRunId: started.runId, status: 'running', startedAt: new Date() });
     } catch (err) {
       await run.update({ status: 'failed', error: String(err.message).slice(0, 500) });
-      await d.DiscoveryCandidate.update({ enrichmentStatus: 'failed' }, { where: { id: { [Op.in]: candidates.map((x) => x.id) } } });
+      await d.DiscoveryCandidate.update({ enrichmentStatus: 'failed' }, { where: { id: { [Op.in]: claimedIds } } });
       throw new AppError(`Could not start enrichment: ${err.message}`, 502);
     }
     await d.audit.recordAuditEvent({
       actorUser: user, action: 'discovery.enrich_started', entityType: 'discovery_run',
-      entityId: run.id, after: { count: handles.length }, requestId,
+      entityId: run.id, after: { count: claimedHandles.length }, requestId,
     });
     return run;
   }
@@ -382,7 +517,12 @@ export function makeDiscoveryService(overrides = {}) {
       if (p.isVerified != null) patch.isVerified = p.isVerified;
       if (p.bio && !cand.bio) patch.bio = p.bio;
       if (p.email && !cand.email) patch.email = p.email;
-      await cand.update(patch);
+      // Candidate + memory move together (Codex F10); the cache is built from the
+      // post-update effective values (Codex F5).
+      await d.sequelize.transaction(async (t) => {
+        await cand.update(patch, { transaction: t });
+        await writePlaceMemory(cand.externalPlaceId, { lastEnrichment: buildMemoryEnrichment(cand) }, t);
+      });
     }
   }
 
@@ -415,15 +555,21 @@ export function makeDiscoveryService(overrides = {}) {
           category: cand.run?.category || null,
           source: 'discovery',
         }, user, requestId);
-        await cand.update({ status: 'added', addedPartnerId: partner.id });
+        await d.sequelize.transaction(async (t) => {
+          await cand.update({ status: 'added', addedPartnerId: partner.id }, { transaction: t });
+          // Adding expresses intent — it also overrides any old dismissal.
+          await writePlaceMemory(cand.externalPlaceId, { addedPartnerId: partner.id, dismissedAt: null }, t);
+        });
         results.added += 1;
       } catch (err) {
         if (err.statusCode === 409 || err.status === 409) {
           // Exact duplicate surfaced at add-time — mark it AND keep the link so
           // the UI badge can still open the existing partner.
-          await cand.update({
-            dedupeStatus: 'existing_partner',
-            matchedPartnerId: err.data?.duplicates?.exact?.[0]?.partner?.id ?? cand.matchedPartnerId,
+          const matchedId = err.data?.duplicates?.exact?.[0]?.partner?.id ?? cand.matchedPartnerId;
+          await d.sequelize.transaction(async (t) => {
+            await cand.update({ dedupeStatus: 'existing_partner', matchedPartnerId: matchedId }, { transaction: t });
+            // The partner exists — repair memory so future births link instantly.
+            if (matchedId) await writePlaceMemory(cand.externalPlaceId, { addedPartnerId: matchedId, dismissedAt: null }, t);
           });
           results.skipped += 1;
         } else {
@@ -443,18 +589,31 @@ export function makeDiscoveryService(overrides = {}) {
   }
 
   /** Symmetric + idempotent status flips (double-click/undo safe): dismiss only
-   *  moves pending→dismissed, restore only dismissed→pending; anything else no-ops. */
+   *  moves pending→dismissed, restore only dismissed→pending; anything else
+   *  no-ops. Memory records the LATEST human action on the place, whichever
+   *  run's copy was touched; other runs' copies keep their local row status —
+   *  only FUTURE births consult memory (plan §5, Codex F6/F10). */
   async function dismissCandidate(candidateId, _user) {
     const cand = await d.DiscoveryCandidate.findByPk(candidateId);
     if (!cand) throw new AppError('Candidate not found', 404);
-    if (cand.status === 'pending') await cand.update({ status: 'dismissed' });
+    if (cand.status === 'pending') {
+      await d.sequelize.transaction(async (t) => {
+        await cand.update({ status: 'dismissed' }, { transaction: t });
+        await writePlaceMemory(cand.externalPlaceId, { dismissedAt: new Date() }, t);
+      });
+    }
     return cand;
   }
 
   async function restoreCandidate(candidateId, _user) {
     const cand = await d.DiscoveryCandidate.findByPk(candidateId);
     if (!cand) throw new AppError('Candidate not found', 404);
-    if (cand.status === 'dismissed') await cand.update({ status: 'pending' });
+    if (cand.status === 'dismissed') {
+      await d.sequelize.transaction(async (t) => {
+        await cand.update({ status: 'pending' }, { transaction: t });
+        await writePlaceMemory(cand.externalPlaceId, { dismissedAt: null }, t);
+      });
+    }
     return cand;
   }
 
@@ -469,8 +628,11 @@ export function makeDiscoveryService(overrides = {}) {
   async function getRunWithCandidates(runId) {
     const run = await d.DiscoveryRun.findByPk(runId);
     if (!run) throw new AppError('Run not found', 404);
+    // Dismissed rows are INCLUDED — the client hides them behind a Hidden(N)
+    // segment with per-row Restore, so a memory auto-dismissal is always
+    // reachable/undoable (Codex F7).
     const candidates = await d.DiscoveryCandidate.findAll({
-      where: { discoveryRunId: runId, status: { [Op.ne]: 'dismissed' } },
+      where: { discoveryRunId: runId },
       order: [
         d.sequelize.literal('"followersCount" DESC NULLS LAST'),
         d.sequelize.literal('"reviewsCount" DESC NULLS LAST'),
@@ -535,38 +697,45 @@ export function makeDiscoveryService(overrides = {}) {
    * contact-ish PII is stripped (rawPayload, bio, email, primaryPhone, address);
    * the partner record owns the live contact data. name/website/handle/sourceUrl/
    * rating stay — public business facts that keep the provenance row legible.
-   * Two-step by run ids (Sequelize can't join-scope bulk destroy/update).
+   *
+   * Direct set-based statements over candidates joined to expired runs — the old
+   * expired-run batch (LIMIT 200, no order, no processed marker) could starve:
+   * already-purged runs stayed eligible and re-occupied every batch (Codex F13).
+   *
+   * discovery_place_memory rows are NOT purged: they hold no scraped contact
+   * data by construction (buildMemoryEnrichment whitelist); erasure requests
+   * are honored by deleting the memory row for a place id.
    */
   async function purgeExpiredCandidates() {
     const c = cfg();
     if (!c.candidateTtlDays || c.candidateTtlDays <= 0) return { deleted: 0, stripped: 0 };
     const cutoff = new Date(Date.now() - c.candidateTtlDays * 24 * 60 * 60 * 1000);
-    const expiredRuns = await d.DiscoveryRun.findAll({
-      where: { completedAt: { [Op.lt]: cutoff } },
-      attributes: ['id'], limit: 200,
-    });
-    if (expiredRuns.length === 0) return { deleted: 0, stripped: 0 };
-    const runIds = expiredRuns.map((r) => r.id);
 
-    const deleted = await d.DiscoveryCandidate.destroy({
-      where: { discoveryRunId: { [Op.in]: runIds }, status: { [Op.in]: ['pending', 'dismissed'] } },
-    });
-    const [stripped] = await d.DiscoveryCandidate.update(
-      { rawPayload: null, bio: null, email: null, primaryPhone: null, address: null },
-      {
-        where: {
-          discoveryRunId: { [Op.in]: runIds }, status: 'added',
-          // Skip rows already stripped so repeat sweeps stay cheap + idempotent.
-          [Op.or]: [
-            { rawPayload: { [Op.ne]: null } }, { bio: { [Op.ne]: null } },
-            { email: { [Op.ne]: null } }, { primaryPhone: { [Op.ne]: null } },
-            { address: { [Op.ne]: null } },
-          ],
-        },
-      },
+    const [, delMeta] = await d.sequelize.query(
+      `DELETE FROM discovery_candidates c
+        USING discovery_runs r
+        WHERE c."discoveryRunId" = r.id
+          AND r."completedAt" < :cutoff
+          AND c.status IN ('pending', 'dismissed')`,
+      { replacements: { cutoff } },
     );
+    const [, stripMeta] = await d.sequelize.query(
+      `UPDATE discovery_candidates c
+          SET "rawPayload" = NULL, bio = NULL, email = NULL,
+              "primaryPhone" = NULL, address = NULL, "updatedAt" = NOW()
+         FROM discovery_runs r
+        WHERE c."discoveryRunId" = r.id
+          AND r."completedAt" < :cutoff
+          AND c.status = 'added'
+          AND (c."rawPayload" IS NOT NULL OR c.bio IS NOT NULL OR c.email IS NOT NULL
+               OR c."primaryPhone" IS NOT NULL OR c.address IS NOT NULL)`,
+      { replacements: { cutoff } },
+    );
+    const deleted = Number(delMeta?.rowCount ?? 0);
+    const stripped = Number(stripMeta?.rowCount ?? 0);
     if (deleted > 0 || stripped > 0) {
-      d.logger.info('discovery.purge', { deleted, stripped, ttlDays: c.candidateTtlDays });
+      const memoryRows = await d.DiscoveryPlaceMemory.count();
+      d.logger.info('discovery.purge', { deleted, stripped, memoryRows, ttlDays: c.candidateTtlDays });
     }
     return { deleted, stripped };
   }
@@ -576,6 +745,7 @@ export function makeDiscoveryService(overrides = {}) {
     dismissCandidate, restoreCandidate, listRuns, getRunWithCandidates, getQuota,
     reconcileStuckRuns, purgeExpiredCandidates,
     verifyWebhookSecret, classifyAgainstPartners, materializeCandidates, applyEnrichment,
+    applyPlaceMemory, buildMemoryEnrichment,
   };
 }
 
