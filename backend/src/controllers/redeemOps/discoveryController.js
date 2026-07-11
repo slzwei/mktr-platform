@@ -20,10 +20,13 @@ export const startDiscovery = asyncHandler(async (req, res) => {
   res.status(202).json({ success: true, data: { run } });
 });
 
-/** GET /discovery/runs — recent searches. */
+/** GET /discovery/runs — recent searches + the caller's remaining daily budget. */
 export const listRuns = asyncHandler(async (req, res) => {
-  const runs = await discoveryService.listRuns({ limit: Math.min(Number(req.query.limit) || 20, 50) });
-  res.json({ success: true, data: { runs } });
+  const [runs, quota] = await Promise.all([
+    discoveryService.listRuns({ limit: Math.min(Number(req.query.limit) || 20, 50) }),
+    discoveryService.getQuota(req.user),
+  ]);
+  res.json({ success: true, data: { runs, quota } });
 });
 
 /** GET /discovery/runs/:id — status + candidates (frontend polls this). */

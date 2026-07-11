@@ -66,6 +66,16 @@ export function makeDiscoveryService(overrides = {}) {
     }
   }
 
+  /** Per-user search budget for the day (drives the UI's usage chip). */
+  async function getQuota(user) {
+    const c = cfg();
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const used = await d.DiscoveryRun.count({
+      where: { provider: 'apify_google_maps', createdBy: user.id, createdAt: { [Op.gte]: since } },
+    });
+    return { used, limit: c.maxRunsPerUserDay, remaining: Math.max(0, c.maxRunsPerUserDay - used) };
+  }
+
   function webhookUrl() {
     const c = cfg();
     if (!c.webhookSecret) return undefined;
@@ -352,8 +362,8 @@ export function makeDiscoveryService(overrides = {}) {
 
   return {
     startDiscovery, processRun, processByProviderRunId, enrichCandidates, addToPartners,
-    dismissCandidate, listRuns, getRunWithCandidates, reconcileStuckRuns, verifyWebhookSecret,
-    classifyAgainstPartners, materializeCandidates, applyEnrichment,
+    dismissCandidate, listRuns, getRunWithCandidates, getQuota, reconcileStuckRuns,
+    verifyWebhookSecret, classifyAgainstPartners, materializeCandidates, applyEnrichment,
   };
 }
 
