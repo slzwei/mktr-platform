@@ -61,6 +61,32 @@ export const redeemOpsApi = {
     return res.data;
   },
 
+  // ── Discover tool (Apify prospecting) ──────────────────────────────────
+  async startDiscovery(body) {
+    const res = await apiClient.post('/redeem-ops/discovery/runs', body);
+    return res.data?.run;
+  },
+  async listDiscoveryRuns(params = {}) {
+    const res = await apiClient.get('/redeem-ops/discovery/runs', params);
+    return res.data?.runs || [];
+  },
+  async getDiscoveryRun(id) {
+    const res = await apiClient.get(`/redeem-ops/discovery/runs/${id}`);
+    return res.data; // { run, candidates }
+  },
+  async enrichDiscoveryCandidates(candidateIds) {
+    const res = await apiClient.post('/redeem-ops/discovery/candidates/enrich', { candidateIds });
+    return res.data?.run;
+  },
+  async addDiscoveryCandidates(runId, candidateIds) {
+    const res = await apiClient.post(`/redeem-ops/discovery/runs/${runId}/add`, { candidateIds });
+    return res.data; // { added, skipped, failed, errors }
+  },
+  async dismissDiscoveryCandidate(id) {
+    const res = await apiClient.patch(`/redeem-ops/discovery/candidates/${id}`, {});
+    return res.data;
+  },
+
   // ── Partner CRM (Phase 2) ──────────────────────────────────────────────
   async listPartners(params = {}) {
     const res = await apiClient.get('/redeem-ops/partners', params);

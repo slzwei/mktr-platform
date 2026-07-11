@@ -308,7 +308,25 @@ seeded variants — rename-into-existing is refused 409); delete is allowed only
 Migration 052 TRIM-normalizes the three columns then seeds one row per distinct value (`mode()`
 picks the most-frequent casing). `'Uncategorised'` is a reserved name.
 
-### 3.21 Future (designed, not in V1 migrations)
+### 3.21 `discovery_runs` + `discovery_candidates` (`DiscoveryRun` / `DiscoveryCandidate`) — Discover tool (migration 053)
+
+`discovery_runs` = one Apify prospecting job: createdBy FK; provider (`apify_google_maps` | `apify_instagram`);
+category; area; requestedLimit; status (pending→running→completed | failed | aborted | timed_out);
+**providerRunId (unique)**; providerDatasetId; resultCount; estimated/actualCostUsd; rawPayload JSONB;
+started/completedAt. `discovery_candidates` = a business found by a run: run FK CASCADE; externalPlaceId;
+name/phone/website/domain/instagram/address/area/rating/reviews/sourceUrl; **dedupeStatus** (new |
+possible_duplicate | existing_partner) + matchedPartnerId; **status** (pending | added | dismissed) +
+addedPartnerId; enrichment fields (enrichmentStatus, followersCount, email, bio, enrichedAt, source);
+**unique (discoveryRunId, externalPlaceId)** for idempotent materialization.
+
+Flow: Apify runs async → terminal webhook (URL-secret auth; state re-fetched from Apify, never trusted
+from the payload) → candidates materialized + **batched** dedupe-classified against live partners →
+bulk-add routes through `createPartner` (`source='discovery'`, category from the run). A periodic
+in-process reconcile sweep drives stuck runs terminal (missed webhook / restart). All-principal access
+(`requireRedeemOps()`); paid-job cost bounded by per-user + global daily quotas, not a capability.
+Provenance = the `addedPartnerId` link (no `sourceMetadata` column on partner_organisations).
+
+### 3.22 Future (designed, not in V1 migrations)
 
 `partner_import_batches` + `partner_import_rows` (CSV import, brief §32);
 `partner_users` (portal principals — see `RECOMMENDED_ARCHITECTURE.md` §7).

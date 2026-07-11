@@ -124,6 +124,23 @@ export async function bootstrapDatabase() {
       }
     }, 2 * 60 * 1000); // every 2 min
 
+    // Discover tool: reconcile Apify runs whose completion webhook never landed
+    // (missed delivery, FAILED/TIMED_OUT with no hook, or an instance restart
+    // mid-run). In-process every 5 min; each stuck run is re-fetched from Apify
+    // and driven terminal idempotently. Gated by DISCOVERY_ENABLED.
+    if (String(process.env.DISCOVERY_ENABLED || 'false').toLowerCase() === 'true') {
+      setInterval(async () => {
+        try {
+          const { default: discoveryService } = await import('../services/redeemOps/discoveryService.js');
+          const { checked } = await discoveryService.reconcileStuckRuns();
+          if (checked > 0) logger.info(`[Discovery] reconciled ${checked} stuck run(s)`);
+        } catch (err) {
+          logger.warn('[Discovery] periodic reconcile failed', { error: err?.message });
+        }
+      }, 5 * 60 * 1000); // every 5 min
+      logger.info('[Discovery] periodic run reconciliation scheduled (5 min interval)');
+    }
+
     // Redeemed-audience exclusion sync (Meta customer list). Pushes hashed
     // redeemers into the exclusion audience so people who already redeemed stop
     // seeing ads. Runs IN-PROCESS (the backend is single-instance — no

@@ -29,6 +29,17 @@
 | GET/POST `/partners/:id/locations`, PATCH `/locations/:id` | locations.manage | |
 | GET/PATCH `/partners/:id/onboarding` | onboarding.manage | Checklist read/update (Phase 4). |
 
+### Discover — `routes/redeemOpsDiscovery.js` (Phase 8, Apify prospecting)
+
+| Method & path | Guard | Purpose |
+|---|---|---|
+| POST `/discovery/runs` | requireRedeemOps() | Start an Apify Google-Maps search `{category, area, limit}`; async, returns `202 {run}`. Per-user + global daily quotas. |
+| GET `/discovery/runs` · GET `/discovery/runs/:id` | requireRedeemOps() | Recent runs; run status + candidates (frontend polls the latter). |
+| POST `/discovery/candidates/enrich` | requireRedeemOps() | On-demand Instagram enrichment (Apify IG scraper) of selected candidate ids; async, separately capped. |
+| POST `/discovery/runs/:id/add` | partners.create | Bulk-convert selected candidates → `NEW` partners (via createPartner; `source='discovery'`; skips `existing_partner`). |
+| PATCH `/discovery/candidates/:id` | requireRedeemOps() | Dismiss a candidate. |
+| POST `/discovery/webhook/:secret` | URL secret (Apify doesn't sign) | Terminal-event callback; ack-fast then re-fetch the run from Apify and process idempotently. |
+
 ### Work queue, tasks, pools — `routes/redeemOpsWork.js` (Phase 3)
 
 | Method & path | Capability | Purpose |
@@ -115,6 +126,7 @@ build as the whole app; never in the consumer `redeem` build. All wrapped in
 | `/redeem-ops` | OpsOverview (my queue summary + team snapshot for managers) | 3 | Overview |
 | `/redeem-ops/partners` | PartnersList (table, filters, saved views; duplicate-aware create dialog) | 2 | Partners |
 | `/redeem-ops/partners/:id` | PartnerDetail (header w/ owner+stage+claim button; tabs: Timeline, Contacts, Locations, Tasks, Onboarding, Rewards) | 2 | Partners |
+| `/redeem-ops/discover` | Discover (category+area Apify search → deduped candidates → bulk-add to pipeline; IG enrich) | 8 | Partners |
 | `/redeem-ops/pipeline` | TeamPipeline (table + Kanban; dnd via existing `@dnd-kit`, server-validated) | 3 | Outreach |
 | `/redeem-ops/queue` | MyQueue (start-of-day worklist) | 3 | Outreach |
 | `/redeem-ops/tasks` | Tasks (My/Due Today/Overdue/Upcoming/Team) | 3 | Outreach |
