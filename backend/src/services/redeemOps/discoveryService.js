@@ -127,8 +127,14 @@ export function makeDiscoveryService(overrides = {}) {
     });
 
     try {
+      // Geo-anchored search: the area goes in locationQuery (the actor geocodes
+      // it and crawls that polygon), NOT concatenated into the search string —
+      // "Beauty Tampines" as free text let the crawler pad the result budget
+      // with global brand matches (Sephora New York/Oshawa/Edmonton, 2026-07-12).
+      const locationQuery = /\bsingapore\b/i.test(run.area) ? run.area : `${run.area}, Singapore`;
       const input = {
-        searchStringsArray: [`${canonicalCategory} ${area}`],
+        searchStringsArray: [canonicalCategory],
+        locationQuery,
         maxCrawledPlacesPerSearch: requestedLimit,
         language: 'en',
         scrapeContacts: true, // enables the instagrams/social arrays

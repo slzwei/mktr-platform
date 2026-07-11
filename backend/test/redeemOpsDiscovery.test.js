@@ -287,6 +287,28 @@ describe('category validation', () => {
   });
 });
 
+describe('geo-anchored search input', () => {
+  test('area is sent as locationQuery (Singapore-anchored), never in the search string', async () => {
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const solo = await createTestUser({ role: 'admin' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+    await svc.startDiscovery({ category: 'Nail Salon', area: 'Tampines', limit: 5 }, solo.user);
+    const input = apify.startRun.mock.calls[0][1];
+    expect(input.searchStringsArray).toEqual(['Nail Salon']);
+    expect(input.locationQuery).toBe('Tampines, Singapore');
+  });
+
+  test('an area already naming Singapore is not double-suffixed', async () => {
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const solo = await createTestUser({ role: 'admin' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+    await svc.startDiscovery({ category: 'Nail Salon', area: 'Bedok, Singapore', limit: 5 }, solo.user);
+    expect(apify.startRun.mock.calls[0][1].locationQuery).toBe('Bedok, Singapore');
+  });
+});
+
 describe('fuzzy classification (pg_trgm)', () => {
   test('near-name candidate → possible_duplicate even with ZERO exact hits in the batch', async () => {
     if (!(await makeDedupeService().trgmAvailable())) {
