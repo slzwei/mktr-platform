@@ -81,6 +81,7 @@ const REDEEM_OPS_ENABLED = import.meta.env.VITE_REDEEM_OPS_ENABLED === 'true';
 const RedeemOpsHome = lazy(() => import('./redeemops/RedeemOpsHome'));
 const RedeemOpsTeam = lazy(() => import('./redeemops/RedeemOpsTeam'));
 const RedeemOpsPartnersList = lazy(() => import('./redeemops/PartnersList'));
+const RedeemOpsDiscover = lazy(() => import('./redeemops/DiscoverPage'));
 const RedeemOpsPartnerDetail = lazy(() => import('./redeemops/PartnerDetail'));
 const RedeemOpsMyQueue = lazy(() => import('./redeemops/MyQueue'));
 const RedeemOpsTasks = lazy(() => import('./redeemops/TasksPage'));
@@ -113,6 +114,7 @@ function redeemOpsRouteElements() {
     { path: '/redeem-ops/team', capability: 'analytics.view_team', Page: RedeemOpsTeam },
     { path: '/redeem-ops/partners', capability: 'partners.view', Page: RedeemOpsPartnersList },
     { path: '/redeem-ops/partners/:id', capability: 'partners.view', Page: RedeemOpsPartnerDetail },
+    { path: '/redeem-ops/discover', capability: null, Page: RedeemOpsDiscover },
     { path: '/redeem-ops/queue', capability: null, Page: RedeemOpsMyQueue },
     { path: '/redeem-ops/tasks', capability: 'tasks.manage', Page: RedeemOpsTasks },
     { path: '/redeem-ops/pools', capability: 'pools.claim_next', Page: RedeemOpsPools },

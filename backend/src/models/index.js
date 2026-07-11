@@ -244,6 +244,14 @@ function defineAssociations() {
   ProspectingPool.hasMany(ProspectingPoolMember, { foreignKey: 'poolId', as: 'members', onDelete: 'CASCADE' });
   ProspectingPoolMember.belongsTo(ProspectingPool, { foreignKey: 'poolId', as: 'pool' });
   ProspectingPoolMember.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner', onDelete: 'CASCADE' });
+
+  // Discover tool (migration 053)
+  const { DiscoveryRun, DiscoveryCandidate } = models;
+  DiscoveryRun.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'CASCADE' });
+  DiscoveryRun.hasMany(DiscoveryCandidate, { foreignKey: 'discoveryRunId', as: 'candidates', onDelete: 'CASCADE' });
+  DiscoveryCandidate.belongsTo(DiscoveryRun, { foreignKey: 'discoveryRunId', as: 'run' });
+  DiscoveryCandidate.belongsTo(PartnerOrganisation, { foreignKey: 'matchedPartnerId', as: 'matchedPartner', onDelete: 'SET NULL' });
+  DiscoveryCandidate.belongsTo(PartnerOrganisation, { foreignKey: 'addedPartnerId', as: 'addedPartner', onDelete: 'SET NULL' });
 }
 
 defineAssociations();
@@ -282,7 +290,7 @@ export const {
   OutreachTask, ProspectingPool, ProspectingPoolMember, RewardOffer,
   RewardTermsVersion, RewardOfferLocation, RewardInventoryEvent,
   PartnerOnboardingItem, Activation, RewardEntitlement, Redemption,
-  RedemptionEvent, RedeemOpsCategory
+  RedemptionEvent, RedeemOpsCategory, DiscoveryRun, DiscoveryCandidate
 } = models;
 
 export { sequelize };
