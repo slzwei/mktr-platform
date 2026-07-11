@@ -24,7 +24,9 @@ function cfg() {
     igActor: process.env.APIFY_INSTAGRAM_ACTOR_ID || 'apify~instagram-profile-scraper',
     webhookSecret: process.env.DISCOVERY_WEBHOOK_SECRET || '',
     webhookBase: process.env.DISCOVERY_WEBHOOK_BASE_URL || 'https://api.mktr.sg',
-    maxResultsPerRun: Number(process.env.DISCOVERY_MAX_RESULTS_PER_RUN || 120),
+    // 500 ≈ one whole-Singapore sweep of a dense category (nail/hair/café) in a
+    // single search (~$3.50) — town-by-town splitting isn't needed at SG scale.
+    maxResultsPerRun: Number(process.env.DISCOVERY_MAX_RESULTS_PER_RUN || 500),
     maxRunsPerDay: Number(process.env.DISCOVERY_MAX_RUNS_PER_DAY || 25),
     maxRunsPerUserDay: Number(process.env.DISCOVERY_MAX_RUNS_PER_USER_DAY || 5),
     // Enrichment caps count PROFILES (each IG handle scraped is one paid unit),

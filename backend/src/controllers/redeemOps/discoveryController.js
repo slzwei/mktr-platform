@@ -9,9 +9,10 @@ const startSchema = Joi.object({
   limit: Joi.number().integer().min(1).max(500), // sanity bound; service clamps to DISCOVERY_MAX_RESULTS_PER_RUN
 });
 const idsSchema = Joi.object({
-  // .max(200): each id can become a PAID scrape — bound the per-call blast radius
-  // (a run yields ≤120 candidates; 200 leaves headroom for a hand-picked selection).
-  candidateIds: Joi.array().items(Joi.string().uuid()).min(1).max(200).required(),
+  // .max(500): each id can become a PAID scrape — sanity-bound to one full run's
+  // worth; the real spend limiter is the profile quota (per-user + team per day),
+  // which rejects over-budget calls with the remaining count in the message.
+  candidateIds: Joi.array().items(Joi.string().uuid()).min(1).max(500).required(),
 });
 const candidatePatchSchema = Joi.object({
   // Empty body = dismiss, preserving the pre-restore client contract.

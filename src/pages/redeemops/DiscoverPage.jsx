@@ -237,7 +237,7 @@ export default function DiscoverPage() {
                 <Label>Results</Label>
                 <Select value={form.limit} onValueChange={(v) => setForm((f) => ({ ...f, limit: v }))}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>{['30', '60', '120'].map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
+                  <SelectContent>{['30', '60', '120', '300', '500'].map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <Button disabled={!canSearch} onClick={() => runSearch(form.category, form.area, form.limit)}>
@@ -330,7 +330,9 @@ export default function DiscoverPage() {
           <div className="flex items-center gap-3 mb-3">
             <span className="w-[18px] h-[18px] rounded-full animate-spin" style={{ border: '2.4px solid var(--ro-azure-tint)', borderTopColor: 'var(--ro-azure)' }} />
             <b className="text-[15px]">Searching Google Maps…</b>
-            <span className="hidden sm:inline text-[13px]" style={{ color: 'var(--ro-text-2)' }}>usually 30–60 seconds · you can keep working other tabs</span>
+            <span className="hidden sm:inline text-[13px]" style={{ color: 'var(--ro-text-2)' }}>
+              {run?.requestedLimit > 120 ? 'large search — usually 2–6 minutes' : 'usually 30–60 seconds'} · you can keep working other tabs
+            </span>
           </div>
           <div className="rounded-2xl border border-border bg-white overflow-hidden">
             {Array.from({ length: 6 }).map((_, i) => (
