@@ -108,7 +108,7 @@ export default function SettingsPage() {
   const mergeTargets = categories.filter((c) => c.isActive && c.id !== mergeSource?.id);
 
   return (
-    <div className="space-y-6">
+    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
       <RoPageHeader
         title="Settings"
         sub="Categories are managed here and picked everywhere else — partner forms, pools, imports, and the partners filter."
@@ -116,7 +116,7 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Categories</CardTitle>
+          <CardTitle className="text-base">Categories</CardTitle>
           <CardDescription>
             Rename updates every business, pool, and reward carrying the old name. Retire to stop
             new use without touching history; merge to consolidate duplicates like “Nails” into
