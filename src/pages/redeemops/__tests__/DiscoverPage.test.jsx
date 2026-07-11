@@ -49,6 +49,7 @@ const completedRun = {
 const baseCandidate = {
   id: 'c1', name: 'Pending Nails', status: 'pending', dedupeStatus: 'new',
   instagramHandle: 'pend', followersCount: null, enrichmentStatus: 'none',
+  rawPayload: { categoryName: 'Discount store' },
 };
 
 function renderPage() {
@@ -91,6 +92,8 @@ describe('DiscoverPage', () => {
     await openResults();
     expect(await screen.findByText('Enriching…')).toBeInTheDocument();
     expect(screen.queryByText('followers?')).not.toBeInTheDocument();
+    // Google's own category label is surfaced so weak matches are self-evident.
+    expect(screen.getByText(/Discount store/)).toBeInTheDocument();
   });
 
   it('dismiss calls the API and the undo toast action restores', async () => {

@@ -411,7 +411,10 @@ export default function DiscoverPage() {
                           : <RoTag tone="completed" size="sm">Added</RoTag>)}
                       </b>
                       <span className="text-[12.5px] block truncate" style={{ color: 'var(--ro-text-2)' }}>
-                        {[c.area, c.primaryPhone].filter(Boolean).join(' · ') || '—'}
+                        {/* Google's own category label first — makes weak matches
+                            (e.g. "Discount store" for a Pet Grooming search)
+                            self-evident without leaving the list. */}
+                        {[c.rawPayload?.categoryName, c.area, c.primaryPhone].filter(Boolean).join(' · ') || '—'}
                       </span>
                     </span>
                   </span>
@@ -482,6 +485,13 @@ export default function DiscoverPage() {
               );
             })}
           </div>
+          {counts.total > 0 && run?.requestedLimit >= 30 && counts.total < Math.ceil(run.requestedLimit * 0.25) && (
+            <p className="text-[12px] mt-2 mb-0" style={{ color: 'var(--ro-text-2)' }}>
+              Google found only {counts.total} match{counts.total === 1 ? '' : 'es'} in this area — small central
+              districts (like Orchard) genuinely have few of some business types. Try a broader or neighbouring
+              area, and check each row&apos;s category label for weak matches.
+            </p>
+          )}
           <p className="text-[11.5px] mt-2 mb-0" style={{ color: 'var(--ro-text-3)' }}>
             Phone numbers are reference data — keep outreach IG-first; calls/SMS must respect the DNC registry.
           </p>
