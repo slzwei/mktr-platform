@@ -33,9 +33,17 @@ beforeAll(async () => {
 });
 
 afterAll(async () => { await closeDb(); });
+// Never let a per-test env override leak into the next test (providerRunId is
+// UNIQUE, so a fresh CI DB enforces it — a leaked limit cascades otherwise).
+afterEach(() => { delete process.env.DISCOVERY_MAX_RUNS_PER_USER_DAY; });
+
+let runIdSeq = 0;
+// mockImplementation (not mockResolvedValue) so each call yields a UNIQUE runId —
+// the providerRunId unique index would otherwise 409 the 2nd call on a fresh DB.
+const uniqueRunId = () => ({ runId: `run_${Date.now()}_${++runIdSeq}`, datasetId: 'ds1', status: 'RUNNING' });
 
 async function startedRun(svc, apify) {
-  apify.startRun.mockResolvedValue({ runId: `run_${Date.now()}_${Math.random()}`, datasetId: 'ds1', status: 'RUNNING' });
+  apify.startRun.mockImplementation(async () => uniqueRunId());
   return svc.startDiscovery({ category: 'Nail Salon', area: 'Tampines', limit: 60 }, admin.user);
 }
 
@@ -55,12 +63,12 @@ describe('start + quota', () => {
     const apify = makeApifyStub();
     const svc = makeDiscoveryService({ apify });
     const solo = await createTestUser({ role: 'admin' });
-    apify.startRun.mockResolvedValue({ runId: `r_${Math.random()}`, datasetId: 'ds', status: 'RUNNING' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
     await svc.startDiscovery({ category: 'Nail Salon', area: 'A', limit: 30 }, solo.user);
     await svc.startDiscovery({ category: 'Nail Salon', area: 'B', limit: 30 }, solo.user);
     await expect(svc.startDiscovery({ category: 'Nail Salon', area: 'C', limit: 30 }, solo.user))
       .rejects.toMatchObject({ statusCode: 429 });
-    delete process.env.DISCOVERY_MAX_RUNS_PER_USER_DAY;
+    // env cleanup handled by afterEach (leak-proof even if an assertion throws)
   });
 });
 

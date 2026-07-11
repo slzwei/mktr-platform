@@ -292,6 +292,41 @@
   transition: width 300ms ease;
 }
 
+/* ── Skeleton shimmer (Discover searching state) ─────────────────────── */
+.ro-sk {
+  background: linear-gradient(90deg, #eef1f3 25%, #f6f8f9 37%, #eef1f3 63%);
+  background-size: 400% 100%;
+  animation: ro-sk-shimmer 1.4s ease infinite;
+  border-radius: 7px;
+}
+@keyframes ro-sk-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* Instagram gradient chip (Discover reach signal) */
+.ro-ig-badge {
+  background: linear-gradient(135deg, #f58529, #dd2a7b 55%, #8134af);
+}
+
+/* Sticky bulk-action dock (Discover) — clears the rail on desktop, the tab bar on mobile */
+.ro-dock {
+  position: fixed;
+  left: 78px;
+  right: 0;
+  bottom: 0;
+  z-index: 35;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--ro-border);
+}
+@media (max-width: 767px) {
+  .ro-dock {
+    left: 0;
+    bottom: calc(62px + env(safe-area-inset-bottom));
+  }
+}
+
 /* ── Docket group labels ─────────────────────────────────────────────── */
 .ro-group-label {
   font-size: 12.5px;

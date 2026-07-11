@@ -68,7 +68,7 @@ export const redeemOpsApi = {
   },
   async listDiscoveryRuns(params = {}) {
     const res = await apiClient.get('/redeem-ops/discovery/runs', params);
-    return res.data?.runs || [];
+    return { runs: res.data?.runs || [], quota: res.data?.quota || null };
   },
   async getDiscoveryRun(id) {
     const res = await apiClient.get(`/redeem-ops/discovery/runs/${id}`);
