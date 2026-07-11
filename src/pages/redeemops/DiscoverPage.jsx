@@ -67,7 +67,14 @@ export default function DiscoverPage() {
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('followers');
 
-  const listQuery = useQuery({ queryKey: RUNS_KEY, queryFn: () => redeemOpsApi.listDiscoveryRuns() });
+  const listQuery = useQuery({
+    queryKey: RUNS_KEY,
+    queryFn: () => redeemOpsApi.listDiscoveryRuns(),
+    // Recent rows render a live "running…" suffix — poll while any listed run
+    // is still in flight so it flips to "N results · $x" without a manual
+    // refresh (mirrors runQuery's poll-while-active pattern).
+    refetchInterval: (q) => ((q.state.data?.runs || []).some((r) => !TERMINAL.includes(r.status)) ? 5000 : false),
+  });
   const recentRuns = listQuery.data?.runs || [];
   const quota = listQuery.data?.quota;
   const categoriesQuery = useQuery({
