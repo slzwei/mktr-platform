@@ -18,7 +18,10 @@ function cfg() {
   return {
     enabled: process.env.DISCOVERY_ENABLED === 'true',
     mapsActor: process.env.APIFY_MAPS_ACTOR_ID || 'compass~crawler-google-places',
-    igActor: process.env.APIFY_INSTAGRAM_ACTOR_ID || 'apify~instagram-scraper',
+    // MUST be the PROFILE scraper — apify~instagram-scraper (its sibling) has no
+    // `usernames` input (wants directUrls), so every enrichment run came back
+    // empty and all targets were marked failed (live incident, 2026-07-12).
+    igActor: process.env.APIFY_INSTAGRAM_ACTOR_ID || 'apify~instagram-profile-scraper',
     webhookSecret: process.env.DISCOVERY_WEBHOOK_SECRET || '',
     webhookBase: process.env.DISCOVERY_WEBHOOK_BASE_URL || 'https://api.mktr.sg',
     maxResultsPerRun: Number(process.env.DISCOVERY_MAX_RESULTS_PER_RUN || 120),
@@ -342,7 +345,10 @@ export function makeDiscoveryService(overrides = {}) {
     await d.DiscoveryCandidate.update({ enrichmentStatus: 'pending' }, { where: { id: { [Op.in]: candidates.map((x) => x.id) } } });
 
     try {
-      const input = { usernames: handles, resultsType: 'details', resultsLimit: 1 };
+      // instagram-profile-scraper contract: `usernames` only (one dataset item per
+      // profile — username/followersCount/biography/verified, matching the
+      // normalizer). resultsType/resultsLimit belong to the OTHER actor.
+      const input = { usernames: handles };
       const started = await d.apify.startRun(c.igActor, input, { webhookUrl: webhookUrl() });
       await run.update({ providerRunId: started.runId, status: 'running', startedAt: new Date() });
     } catch (err) {

@@ -352,7 +352,10 @@ describe('enrichment eligibility + profile quotas', () => {
     const inflight = await DiscoveryCandidate.create({ discoveryRunId: run.id, name: 'Inflight Nails', instagramHandle: 'inflight1', enrichmentStatus: 'pending' });
     apify.startRun.mockImplementation(async () => uniqueRunId());
     await svc.enrichCandidates([fresh.id, already.id, inflight.id], admin.user);
-    expect(apify.startRun.mock.calls[0][1].usernames).toEqual(['eligible1']);
+    // Contract-locked: the PROFILE scraper (takes `usernames`) — plain
+    // instagram-scraper silently no-ops this input (2026-07-12 incident).
+    expect(apify.startRun.mock.calls[0][0]).toBe('apify~instagram-profile-scraper');
+    expect(apify.startRun.mock.calls[0][1]).toEqual({ usernames: ['eligible1'] });
     await expect(svc.enrichCandidates([already.id, inflight.id], admin.user))
       .rejects.toMatchObject({ statusCode: 400 });
   });
