@@ -51,8 +51,13 @@ export const MARQUEE_ITEMS = [
 //   { name: 'Kopi & Co', src: '/partners/kopi-co.png' }    → logo image chip
 //   { name: 'Kopi & Co', src: '...', href: 'https://…' }   → clickable chip
 // Drop logo files into public/partners/ (PNG/SVG, ideally dark-on-transparent;
-// they render grayscale for coherence with the page).
-export const PARTNERS = [];
+// logos render in full colour).
+export const PARTNERS = [
+  { name: 'Prudential', src: '/partners/prudential.png' },
+  { name: 'Income', src: '/partners/income.png' },
+  { name: 'Great Eastern', src: '/partners/greateastern.svg' },
+  { name: 'PIAS' },
+];
 
 export const FAQ = [
   {

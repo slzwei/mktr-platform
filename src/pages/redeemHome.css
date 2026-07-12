@@ -296,8 +296,7 @@
 .rh-partner:nth-child(odd) { transform: rotate(-1.1deg); }
 .rh-partner:nth-child(even) { transform: rotate(0.9deg); }
 a.rh-partner:hover { transform: translate(2px, 2px) rotate(0deg); box-shadow: 2px 2px 0 var(--rh-ink); }
-.rh-partner img { max-height: 34px; max-width: 160px; display: block; filter: grayscale(1) contrast(1.05); }
-a.rh-partner:hover img { filter: none; }
+.rh-partner img { max-height: 34px; max-width: 160px; display: block; }
 .rh-partner span {
   font-size: 15px; font-weight: 700; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--rh-ink); white-space: nowrap;
