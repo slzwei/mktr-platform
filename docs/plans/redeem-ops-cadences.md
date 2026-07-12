@@ -1,8 +1,12 @@
 # Redeem Ops — Outreach Cadences (sequencing engine)
 
-**Status:** v2 DRAFT — revised after Codex review (gpt-5.6-sol xhigh, 2026-07-12, verdict RETHINK
-on v1; all 4 blockers verified against code and addressed below). Not yet built.
-**Depends on:** Redeem Ops Phases 1–7 (live), Discover (live). Migrations through 056 applied.
+**Status:** v2 — revised after Codex review (gpt-5.6-sol xhigh, 2026-07-12, verdict RETHINK on v1;
+all 4 blockers verified against code and addressed below). **P0 merged** (PR #135 — tx primitives +
+hook registry). **P1 built** (migration 057, engine, disposition endpoint, seeds, queue/tasks/
+partner UI — dark behind `REDEEM_OPS_CADENCES_ENABLED` + `VITE_REDEEM_OPS_CADENCES_ENABLED`).
+Implementation note: the effective GLOBAL lock order is **partner → enrollment → task** (not
+§5.2's enrollment-first) because hooks fire inside transactions that already hold the partner lock.
+**Depends on:** Redeem Ops Phases 1–7 (live), Discover (live).
 
 ## 1. Problem
 

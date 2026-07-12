@@ -35,6 +35,7 @@ import Plus from 'lucide-react/icons/plus';
 import Pencil from 'lucide-react/icons/pencil';
 import ArrowLeft from 'lucide-react/icons/arrow-left';
 import { RoStageTag, RoAvatar, RoTag, prettyEnum } from '@/components/redeemops/ui';
+import { CadencePanel } from '@/components/redeemops/cadence';
 import CategorySelect from '@/components/redeemops/CategorySelect';
 
 function useDebounced(value, ms = 300) {
@@ -623,6 +624,11 @@ export default function PartnerDetail() {
         </div>
       </div>
 
+      {/* Mobile: the cadence state sits right under the header — the 320px rail
+          lands below all tab content on small screens (cadence.jsx renders
+          nothing while the feature flag is off). */}
+      <CadencePanel partner={partner} canManage={hasCapability(user, 'tasks.manage')} variant="summary" />
+
       <div className="grid gap-5 lg:grid-cols-[1fr_320px] items-start">
         <Tabs defaultValue="timeline">
           <div className="max-w-full overflow-x-auto">
@@ -748,6 +754,9 @@ export default function PartnerDetail() {
         </Tabs>
 
         <div className="space-y-4">
+          <div className="hidden lg:block">
+            <CadencePanel partner={partner} canManage={hasCapability(user, 'tasks.manage')} />
+          </div>
           <div className="rounded-2xl border border-border bg-white p-5">
             <p className="text-[15px] font-bold m-0 mb-3">Owner</p>
             {partner.owner ? (

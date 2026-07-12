@@ -1,6 +1,7 @@
 import { Op } from 'sequelize';
 import {
   OutreachTask, PartnerOrganisation, PartnerContact, User, sequelize,
+  OutreachCadenceStep, OutreachCadence,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
@@ -30,7 +31,10 @@ export function sgtDayWindow(now = new Date()) {
  * one-transaction wrappers.
  */
 export function makeTaskService(overrides = {}) {
-  const d = { OutreachTask, PartnerOrganisation, PartnerContact, User, sequelize, logger, ...overrides };
+  const d = {
+    OutreachTask, PartnerOrganisation, PartnerContact, User, sequelize, logger,
+    OutreachCadenceStep, OutreachCadence, ...overrides,
+  };
 
   const isManager = (user) =>
     user.role === 'admin' || ['super_admin', 'ops_admin', 'bdm'].includes(user.redeemOpsRole);
@@ -116,6 +120,11 @@ export function makeTaskService(overrides = {}) {
         { model: d.PartnerOrganisation, as: 'partner', attributes: ['id', 'tradingName', 'legalName', 'brandName'] },
         { model: d.User, as: 'assignee', attributes: ['id', 'fullName'] },
         { model: d.PartnerContact, as: 'contact', attributes: ['id', 'name'] },
+        {
+          model: d.OutreachCadenceStep, as: 'cadenceStep', required: false,
+          attributes: ['id', 'stepOrder', 'channel', 'title'],
+          include: [{ model: d.OutreachCadence, as: 'cadence', attributes: ['id', 'key', 'name', 'version'] }],
+        },
       ],
       order: [['dueAt', 'ASC']],
       limit,
@@ -139,6 +148,20 @@ export function makeTaskService(overrides = {}) {
     if (!task) throw new AppError('Task not found', 404);
     if (!isManager(user) && task.assigneeUserId !== user.id && task.createdBy !== user.id) {
       throw new AppError('You can only update your own tasks', 403);
+    }
+
+    // Cadence tasks bypass-guard (docs/plans/redeem-ops-cadences.md §5.5):
+    // status/schedule/assignee changes must go through the cadence engine —
+    // the generic PATCH may only touch cosmetic fields.
+    if (task.cadenceEnrollmentId) {
+      const CADENCE_EDITABLE = ['description', 'priority'];
+      const blocked = Object.keys(body).filter((k) => body[k] !== undefined && !CADENCE_EDITABLE.includes(k));
+      if (blocked.length > 0) {
+        throw new AppError(
+          'This task is driven by a cadence — record an outcome to complete it, or stop the cadence on the business. Only description and priority can be edited here.',
+          409
+        );
+      }
     }
 
     const updates = {};

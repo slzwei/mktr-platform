@@ -1,6 +1,7 @@
 import { Op, QueryTypes } from 'sequelize';
 import {
   OutreachTask, OutreachActivity, PartnerOrganisation, PartnerContact, User, sequelize,
+  OutreachCadenceStep, OutreachCadence,
 } from '../../models/index.js';
 import { sgtDayWindow } from './taskService.js';
 
@@ -12,16 +13,37 @@ const BUCKET_LIMIT = 10;
  * read; each bucket capped at 10 with a total count so the page renders fast.
  */
 export function makeQueueService(overrides = {}) {
-  const d = { OutreachTask, OutreachActivity, PartnerOrganisation, PartnerContact, User, sequelize, ...overrides };
+  const d = {
+    OutreachTask, OutreachActivity, PartnerOrganisation, PartnerContact, User, sequelize,
+    OutreachCadenceStep, OutreachCadence, ...overrides,
+  };
 
   async function getMyQueue(user) {
     const { start, end } = sgtDayWindow();
     const taskInclude = [
       { model: d.PartnerOrganisation, as: 'partner', attributes: PARTNER_LITE },
       { model: d.PartnerContact, as: 'contact', attributes: ['id', 'name'] },
+      {
+        model: d.OutreachCadenceStep, as: 'cadenceStep', required: false,
+        attributes: ['id', 'stepOrder', 'channel', 'title'],
+        include: [{ model: d.OutreachCadence, as: 'cadence', attributes: ['id', 'key', 'name', 'version'] }],
+      },
     ];
     const openTasks = { assigneeUserId: user.id, status: { [Op.in]: ['open', 'in_progress'] } };
     const myLivePartners = { ownerUserId: user.id, mergedIntoId: null, archivedAt: null };
+    // A partner whose cadence already scheduled the first touch is being worked —
+    // counting it under "awaiting first outreach" would double-count the same
+    // to-do (docs/plans/redeem-ops-cadences.md §8.3). Overdue cadence tasks stay
+    // counted: those DO need attention.
+    const noScheduledCadenceTouch = {
+      id: {
+        [Op.notIn]: d.sequelize.literal(`(
+          SELECT ot."partnerOrganisationId" FROM outreach_tasks ot
+           WHERE ot."cadenceEnrollmentId" IS NOT NULL
+             AND ot.status IN ('open', 'in_progress')
+             AND ot."dueAt" >= '${start.toISOString()}')`),
+      },
+    };
 
     const [
       overdueTasks, overdueCount,
@@ -40,11 +62,11 @@ export function makeQueueService(overrides = {}) {
         include: taskInclude, order: [['dueAt', 'ASC']], limit: BUCKET_LIMIT,
       }),
       d.PartnerOrganisation.findAll({
-        where: { ...myLivePartners, firstOutreachAt: null, availability: 'owned' },
+        where: { ...myLivePartners, firstOutreachAt: null, availability: 'owned', ...noScheduledCadenceTouch },
         attributes: [...PARTNER_LITE, 'atRiskFlag'],
         order: [['claimedAt', 'ASC']], limit: BUCKET_LIMIT,
       }),
-      d.PartnerOrganisation.count({ where: { ...myLivePartners, firstOutreachAt: null, availability: 'owned' } }),
+      d.PartnerOrganisation.count({ where: { ...myLivePartners, firstOutreachAt: null, availability: 'owned', ...noScheduledCadenceTouch } }),
       d.PartnerOrganisation.findAll({
         where: { ...myLivePartners, staleFlag: true },
         attributes: [...PARTNER_LITE, 'staleFlag'],
