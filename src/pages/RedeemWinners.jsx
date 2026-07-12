@@ -121,7 +121,7 @@ export default function RedeemWinners() {
       )}
 
       {past.length > 0 && (
-        <section className="rh-section" style={{ paddingTop: 72 }}>
+        <section className="rh-section" style={{ paddingTop: 0 }}>
           <div className="rh-wrap">
             <span className="rh-kicker">Past draws</span>
             <h3 className="rh-h2" style={{ fontSize: 34 }}>Every draw. Every winner.</h3>
