@@ -344,4 +344,34 @@ export const redeemOpsApi = {
     const res = await apiClient.patch(`/redeem-ops/activations/${id}/renewal`, { renewalOutcome });
     return res.data?.activation;
   },
+
+  // ── Cadences (docs/plans/redeem-ops-cadences.md; flag REDEEM_OPS_CADENCES_ENABLED) ──
+  async listCadences() {
+    const res = await apiClient.get('/redeem-ops/cadences');
+    return res.data?.cadences || [];
+  },
+  async getPartnerCadence(partnerId) {
+    const res = await apiClient.get(`/redeem-ops/partners/${partnerId}/cadence`);
+    return res.data;
+  },
+  async enrollCadence(partnerId, body) {
+    const res = await apiClient.post(`/redeem-ops/partners/${partnerId}/cadence/enroll`, body);
+    return res.data;
+  },
+  async completeCadenceTask(taskId, body) {
+    const res = await apiClient.post(`/redeem-ops/cadence-tasks/${taskId}/complete`, body);
+    return res.data;
+  },
+  async pauseCadence(partnerId) {
+    const res = await apiClient.post(`/redeem-ops/partners/${partnerId}/cadence/pause`);
+    return res.data?.enrollment;
+  },
+  async resumeCadence(partnerId) {
+    const res = await apiClient.post(`/redeem-ops/partners/${partnerId}/cadence/resume`);
+    return res.data?.enrollment;
+  },
+  async stopCadence(partnerId) {
+    const res = await apiClient.post(`/redeem-ops/partners/${partnerId}/cadence/stop`);
+    return res.data?.enrollment;
+  },
 };

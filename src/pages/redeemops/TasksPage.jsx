@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import Plus from 'lucide-react/icons/plus';
 import Pencil from 'lucide-react/icons/pencil';
 import { RoMobileCard, RoPageHeader, RoTag, RoAvatar, prettyEnum } from '@/components/redeemops/ui';
+import { CadenceChip, CadenceOutcomeButton } from '@/components/redeemops/cadence';
 
 const VIEWS = [
   { key: 'today', label: 'Due today', params: { due: 'today' } },
@@ -215,8 +216,11 @@ export default function TasksPage() {
                   <span className="text-[12.5px] font-semibold" style={{ color: due.color }}>{due.text}</span>
                   <RoTag tone={t.priority} size="sm">{t.priority}</RoTag>
                   {showStatus && <RoTag tone={t.status} size="sm">{prettyEnum(t.status)}</RoTag>}
+                  {t.cadenceStep && <CadenceChip task={t} />}
                   <span className="ml-auto inline-flex gap-1">
-                    {open && (
+                    {open && (t.cadenceStep ? (
+                      <CadenceOutcomeButton task={t} />
+                    ) : (
                       <>
                         <Button
                           size="sm" variant="outline"
@@ -239,8 +243,8 @@ export default function TasksPage() {
                           <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
                         </Button>
                       </>
-                    )}
-                    {t.status === 'completed' && (
+                    ))}
+                    {t.status === 'completed' && !t.cadenceStep && (
                       <Button
                         size="sm" variant="ghost"
                         disabled={updateMutation.isPending}
@@ -299,7 +303,9 @@ export default function TasksPage() {
                         <TableCell className="text-muted-foreground text-sm">{t.assignee?.fullName || '—'}</TableCell>
                       )}
                       <TableCell className="text-right space-x-1 whitespace-nowrap">
-                        {open && (
+                        {open && (t.cadenceStep ? (
+                          <CadenceOutcomeButton task={t} />
+                        ) : (
                           <>
                             <Button
                               size="sm" variant="outline"
@@ -329,8 +335,8 @@ export default function TasksPage() {
                               Cancel
                             </Button>
                           </>
-                        )}
-                        {t.status === 'completed' && (
+                        ))}
+                        {t.status === 'completed' && !t.cadenceStep && (
                           <Button
                             size="sm" variant="ghost"
                             disabled={updateMutation.isPending}

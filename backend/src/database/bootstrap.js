@@ -201,6 +201,31 @@ export async function bootstrapDatabase() {
       setInterval(runRedeemOpsSweepSafe, 30 * 60 * 1000); // every 30 min
       logger.info('[RedeemOps] stale sweep scheduled (30m interval)');
 
+      // Cadence engine (docs/plans/redeem-ops-cadences.md §5.4) — COMPOSITION
+      // ROOT for the P0 hook registry: the CRM services never import the
+      // engine; we register its handlers here. Removing this block (or leaving
+      // the flag off) returns every choke point to no-op hook fires.
+      if (String(process.env.REDEEM_OPS_CADENCES_ENABLED || 'false').toLowerCase() === 'true') {
+        await safeRun('Redeem Ops cadence engine', async () => {
+          const { registerCadenceHooks } = await import('../services/redeemOps/cadenceHooks.js');
+          const { makeCadenceService } = await import('../services/redeemOps/cadenceService.js');
+          const { ensureCadences } = await import('../services/redeemOps/cadenceSeeds.js');
+          const cadences = makeCadenceService();
+          registerCadenceHooks(cadences.hookHandlers());
+          await ensureCadences();
+          const runCadenceReconcileSafe = async () => {
+            try {
+              await cadences.reconcile();
+            } catch (err) {
+              logger.warn('[RedeemOps] cadence reconcile failed (non-fatal)', { error: err?.message });
+            }
+          };
+          setTimeout(runCadenceReconcileSafe, 240_000);
+          setInterval(runCadenceReconcileSafe, 30 * 60 * 1000); // every 30 min
+          logger.info('[RedeemOps] cadence hooks registered + reconcile scheduled (30m interval)');
+        });
+      }
+
       // Phase 6 fulfilment (docs/redeem-ops/MKTR_INTEGRATION.md §2). This is the
       // COMPOSITION ROOT for the dependency-inverted capture hook: prospectService
       // never imports Redeem Ops — we register the callback here, so removing this

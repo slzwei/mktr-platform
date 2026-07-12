@@ -253,6 +253,26 @@ function defineAssociations() {
   DiscoveryCandidate.belongsTo(PartnerOrganisation, { foreignKey: 'matchedPartnerId', as: 'matchedPartner', onDelete: 'SET NULL' });
   DiscoveryCandidate.belongsTo(PartnerOrganisation, { foreignKey: 'addedPartnerId', as: 'addedPartner', onDelete: 'SET NULL' });
   DiscoveryPlaceMemory.belongsTo(PartnerOrganisation, { foreignKey: 'addedPartnerId', as: 'addedPartner', onDelete: 'SET NULL' });
+
+  // Cadences (migration 057, docs/plans/redeem-ops-cadences.md §4). Definition
+  // rows are never deleted (retired instead), so history references RESTRICT.
+  const {
+    OutreachCadence, OutreachCadenceStep, OutreachCadenceTransition, OutreachCadenceEnrollment,
+  } = models;
+  OutreachCadence.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'RESTRICT' });
+  OutreachCadence.hasMany(OutreachCadenceStep, { foreignKey: 'cadenceId', as: 'steps', onDelete: 'RESTRICT' });
+  OutreachCadenceStep.belongsTo(OutreachCadence, { foreignKey: 'cadenceId', as: 'cadence' });
+  OutreachCadence.hasMany(OutreachCadenceTransition, { foreignKey: 'cadenceId', as: 'transitions', onDelete: 'RESTRICT' });
+  OutreachCadenceTransition.belongsTo(OutreachCadence, { foreignKey: 'cadenceId', as: 'cadence' });
+  OutreachCadenceTransition.belongsTo(OutreachCadenceStep, { foreignKey: 'fromStepId', as: 'fromStep', onDelete: 'RESTRICT' });
+  OutreachCadenceTransition.belongsTo(OutreachCadenceStep, { foreignKey: 'toStepId', as: 'toStep', onDelete: 'RESTRICT' });
+  OutreachCadenceEnrollment.belongsTo(OutreachCadence, { foreignKey: 'cadenceId', as: 'cadence', onDelete: 'RESTRICT' });
+  OutreachCadenceEnrollment.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner', onDelete: 'CASCADE' });
+  PartnerOrganisation.hasMany(OutreachCadenceEnrollment, { foreignKey: 'partnerOrganisationId', as: 'cadenceEnrollments', onDelete: 'CASCADE' });
+  OutreachCadenceEnrollment.belongsTo(OutreachCadenceStep, { foreignKey: 'currentStepId', as: 'currentStep', onDelete: 'RESTRICT' });
+  OutreachCadenceEnrollment.belongsTo(User, { foreignKey: 'enrolledBy', as: 'enrolledByUser', onDelete: 'RESTRICT' });
+  OutreachTask.belongsTo(OutreachCadenceEnrollment, { foreignKey: 'cadenceEnrollmentId', as: 'cadenceEnrollment' });
+  OutreachTask.belongsTo(OutreachCadenceStep, { foreignKey: 'cadenceStepId', as: 'cadenceStep' });
 }
 
 defineAssociations();
@@ -292,7 +312,8 @@ export const {
   RewardTermsVersion, RewardOfferLocation, RewardInventoryEvent,
   PartnerOnboardingItem, Activation, RewardEntitlement, Redemption,
   RedemptionEvent, RedeemOpsCategory, DiscoveryRun, DiscoveryCandidate,
-  DiscoveryPlaceMemory
+  DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,
+  OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression
 } = models;
 
 export { sequelize };

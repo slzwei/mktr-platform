@@ -50,7 +50,7 @@ export const STAGE_TRANSITIONS = {
 export const MEANINGFUL_ACTIVITY_TYPES = [
   'call_attempt', 'call_connected', 'whatsapp_sent', 'whatsapp_reply', 'email_sent',
   'email_reply', 'instagram_dm', 'facebook_message', 'meeting_booked',
-  'meeting_completed', 'proposal_sent', 'follow_up',
+  'meeting_completed', 'proposal_sent', 'follow_up', 'visit',
 ];
 
 export const ACTIVITY_TYPES = [
@@ -66,6 +66,7 @@ export const ACTIVITY_TYPES = [
   'meeting_completed',
   'proposal_sent',
   'follow_up',
+  'visit',
   'internal_note',
   'other',
 ];
@@ -83,6 +84,36 @@ export const REWARD_TYPES = [
 
 export const TASK_STATUSES = ['open', 'in_progress', 'completed', 'cancelled'];
 export const TASK_PRIORITIES = ['low', 'medium', 'high'];
+
+// ── Cadences (docs/plans/redeem-ops-cadences.md §4.7) ───────────────────────
+
+export const CADENCE_CHANNELS = ['call', 'whatsapp', 'email', 'instagram_dm', 'visit', 'custom'];
+export const CADENCE_STEP_MODES = ['manual', 'auto']; // 'auto' reserved for P3 email
+export const CADENCE_TIME_WINDOWS = ['any', 'morning', 'afternoon', 'off_peak'];
+export const CADENCE_ENROLLMENT_STATES = ['active', 'paused', 'completed', 'exited'];
+export const CADENCE_EXIT_REASONS = [
+  'replied', 'stage_advanced', 'lost', 'not_interested', 'released',
+  'archived', 'merged', 'manual_stop', 'finished',
+];
+/** Transitions may match a step's disposition exactly or fall back to this. */
+export const CADENCE_WILDCARD_DISPOSITION = '*';
+
+/**
+ * Per-channel disposition matrix — there is deliberately NO global disposition
+ * list (call+'sent' is nonsense). The completion endpoint validates against
+ * the step's channel; the UI renders exactly these buttons.
+ */
+export const CHANNEL_DISPOSITIONS = {
+  call: ['connected', 'no_answer', 'not_interested', 'replied'],
+  whatsapp: ['sent', 'replied', 'not_interested'],
+  email: ['sent', 'replied', 'not_interested'],
+  instagram_dm: ['sent', 'replied', 'not_interested'],
+  visit: ['met', 'closed', 'not_interested'],
+  custom: ['done', 'not_interested'],
+};
+
+/** Dispositions that end the enrollment regardless of transition edges. */
+export const CADENCE_TERMINAL_DISPOSITIONS = ['replied', 'not_interested'];
 
 export const SUB_ROLE_LABELS = {
   super_admin: 'Super Admin',
@@ -109,5 +140,10 @@ export function publicConstants() {
     subRoleLabels: SUB_ROLE_LABELS,
     capabilities: CAPABILITIES,
     roleCapabilities: ROLE_CAPABILITIES,
+    cadenceChannels: CADENCE_CHANNELS,
+    cadenceTimeWindows: CADENCE_TIME_WINDOWS,
+    cadenceEnrollmentStates: CADENCE_ENROLLMENT_STATES,
+    cadenceExitReasons: CADENCE_EXIT_REASONS,
+    channelDispositions: CHANNEL_DISPOSITIONS,
   };
 }
