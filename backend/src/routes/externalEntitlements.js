@@ -10,7 +10,9 @@ import { makeEntitlementService } from '../services/redeemOps/entitlementService
  * EXTERNAL_APP_SECRET + signed timestamp (requireExternalHmac), rawBody capture
  * and rate-limiter exemption already wired for the prefix.
  *
- * Body: { timestamp, agentMktrUserId, presentationToken?, prospectId?, via? }
+ * Body: { timestamp, agentMktrUserId, presentationToken?, prospectId? }
+ * unlockedVia is server-derived: presentationToken ⇒ agent_scan,
+ * prospectId ⇒ agent_button (a client-sent `via` is ignored).
  * The resolved mirror user must be the lead's assigned consultant.
  */
 export const meta = {
@@ -22,7 +24,7 @@ export const meta = {
 const router = express.Router();
 
 router.post('/unlock', requireExternalHmac, asyncHandler(async (req, res) => {
-  const { agentMktrUserId, presentationToken, prospectId, via } = req.body || {};
+  const { agentMktrUserId, presentationToken, prospectId } = req.body || {};
   if (!agentMktrUserId || (!presentationToken && !prospectId)) {
     return res.status(400).json({ success: false, error: 'agentMktrUserId and presentationToken or prospectId are required' });
   }
@@ -35,10 +37,14 @@ router.post('/unlock', requireExternalHmac, asyncHandler(async (req, res) => {
   }
 
   try {
+    // `via` is SERVER-derived from the identifier, never trusted from the body:
+    // only a presentation token (the customer's QR pass, presented live) counts
+    // as scan evidence; a bare prospectId is always the button path. Draw
+    // weighting treats the two differently (docs/plans/lucky-draw-10x.md §4.4).
     const result = await makeEntitlementService().unlockEntitlement(
       presentationToken ? { presentationToken } : { prospectId },
       agent,
-      via === 'button' ? 'agent_button' : 'agent_scan'
+      presentationToken ? 'agent_scan' : 'agent_button'
     );
     return res.json({
       success: true,

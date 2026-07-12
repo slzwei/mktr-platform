@@ -80,6 +80,13 @@ const pushSendEvent = jest.fn();
 jest.unstable_mockModule('../../src/models/index.js', () => ({
   Campaign, QrTag, Prospect, Commission, Device,
   CampaignMediaItem, CampaignAgentAssignment, sequelize,
+  // Draw-terms versioning dep (lucky draw) — inert stub; drawTermsVersioning.test.js
+  // covers the real logic through the DI seam.
+  DrawTermsVersion: {
+    findOne: async () => null,
+    max: async () => null,
+    create: async (fields) => ({ id: 'dtv-mock', ...fields }),
+  },
   Op,
 }));
 

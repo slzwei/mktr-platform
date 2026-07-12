@@ -1,16 +1,20 @@
+import crypto from 'crypto';
 import { Op } from 'sequelize';
-import { Campaign, QrTag, Prospect, Commission, Device, CampaignMediaItem, CampaignAgentAssignment, sequelize } from '../models/index.js';
+import { Campaign, QrTag, Prospect, Commission, Device, CampaignMediaItem, CampaignAgentAssignment, DrawTermsVersion, sequelize } from '../models/index.js';
 import { getTenantId } from '../middleware/tenant.js';
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
+import { applyLuckyDrawPolicy } from '../utils/luckyDraw.js';
 
 /**
  * Clamp the security-sensitive keys of a design_config before persisting.
  * customerHost: enum clamp (never trust a raw host from client JSON).
  * featuredDrop: publication to the public redeem.sg homepage — admin-only to
  * change; non-admins keep whatever is already stored (see utils/featuredDrop.js).
+ * luckyDraw: draw-campaign enforcement settings — admin-only, same policy
+ * (see utils/luckyDraw.js and docs/plans/lucky-draw-10x.md §4.1).
  */
 function clampDesignConfig(incoming, storedConfig, role) {
   if (!incoming || typeof incoming !== 'object') return incoming;
@@ -22,7 +26,61 @@ function clampDesignConfig(incoming, storedConfig, role) {
   });
   if (featuredDrop === undefined) delete clamped.featuredDrop;
   else clamped.featuredDrop = featuredDrop;
+  const luckyDraw = applyLuckyDrawPolicy({
+    incoming: incoming.luckyDraw,
+    stored: storedConfig?.luckyDraw,
+    role,
+  });
+  if (luckyDraw === undefined) delete clamped.luckyDraw;
+  else clamped.luckyDraw = luckyDraw;
   return clamped;
+}
+
+/**
+ * Draw-terms versioning (docs/plans/lucky-draw-10x.md §4.6). For an enabled
+ * lucky draw, pin the CURRENT designer T&C content as an append-only
+ * draw_terms_versions row and stamp its id + hash into luckyDraw, so each
+ * entrant's acceptance (consentMetadata.drawTerms) references immutable
+ * content — editing termsContent later mints a NEW version instead of
+ * rewriting what earlier entrants agreed to.
+ *
+ * Canonical bytes = the TRIMMED raw designer HTML (design_config.termsContent).
+ * Idempotent: unchanged content re-resolves to the existing version row.
+ * Exported for tests; `d` is a DI seam (defaults to the real model).
+ */
+export async function ensureDrawTermsVersion(designConfig, campaignId, userId, d = { DrawTermsVersion }) {
+  const ld = designConfig?.luckyDraw;
+  if (!ld || ld.enabled !== true) return designConfig;
+  const content = typeof designConfig.termsContent === 'string' ? designConfig.termsContent.trim() : '';
+  if (!content) {
+    throw new AppError(
+      'Lucky-draw campaigns need Terms & Conditions content (designer → Terms & Conditions) before they can be enabled.',
+      422
+    );
+  }
+  const contentSha256 = crypto.createHash('sha256').update(content).digest('hex');
+  let row = await d.DrawTermsVersion.findOne({
+    where: { campaignId, contentSha256 },
+    order: [['version', 'DESC']],
+  });
+  if (!row) {
+    const latest = await d.DrawTermsVersion.max('version', { where: { campaignId } });
+    try {
+      row = await d.DrawTermsVersion.create({
+        campaignId,
+        version: (Number.isInteger(latest) ? latest : 0) + 1,
+        content,
+        contentSha256,
+        createdBy: userId,
+      });
+    } catch (err) {
+      // Concurrent save minted the same version number — the content row we
+      // need either exists now (same hash) or the retry below surfaces the error.
+      row = await d.DrawTermsVersion.findOne({ where: { campaignId, contentSha256 } });
+      if (!row) throw err;
+    }
+  }
+  return { ...designConfig, luckyDraw: { ...ld, termsVersionId: row.id, termsHash: contentSha256 } };
 }
 
 /**
@@ -219,7 +277,25 @@ export async function createCampaign(body, user) {
     campaignData.design_config = clampDesignConfig(body.design_config, undefined, user?.role);
   }
 
+  // Draw terms need the campaign id for the version row, but the content
+  // requirement must fail BEFORE the row exists — no half-created draw campaign.
+  if (campaignData.design_config?.luckyDraw?.enabled === true) {
+    const terms = typeof campaignData.design_config.termsContent === 'string'
+      ? campaignData.design_config.termsContent.trim() : '';
+    if (!terms) {
+      throw new AppError(
+        'Lucky-draw campaigns need Terms & Conditions content (designer → Terms & Conditions) before they can be enabled.',
+        422
+      );
+    }
+  }
+
   const campaign = await Campaign.create(campaignData);
+
+  if (campaignData.design_config?.luckyDraw?.enabled === true) {
+    const withTerms = await ensureDrawTermsVersion(campaignData.design_config, campaign.id, user.id);
+    await campaign.update({ design_config: withTerms });
+  }
 
   // Write agent assignments to join table
   if (assigned_agents && Array.isArray(assigned_agents) && assigned_agents.length > 0) {
@@ -270,9 +346,13 @@ export async function updateCampaign(id, body, req) {
   }
   if (design_config !== undefined) {
     // Clamp the per-campaign customer host to the enum (never trust a raw host
-    // from client JSON) and gate featuredDrop changes to admins; preserve all
-    // other design keys untouched.
+    // from client JSON) and gate featuredDrop/luckyDraw changes to admins;
+    // preserve all other design keys untouched.
     updateData.design_config = clampDesignConfig(design_config, campaign.design_config, req.user?.role);
+    // Enabled draws pin their T&C content as an immutable version (also catches
+    // termsContent edits on saves that didn't touch luckyDraw itself — the
+    // clamp preserved the stored luckyDraw, and unchanged content is a no-op).
+    updateData.design_config = await ensureDrawTermsVersion(updateData.design_config, campaign.id, req.user?.id);
   }
   if (commission_amount_driver !== undefined) updateData.commission_amount_driver = commission_amount_driver;
   if (commission_amount_fleet !== undefined) updateData.commission_amount_fleet = commission_amount_fleet;
@@ -411,16 +491,20 @@ export async function duplicateCampaign(id, body, req) {
 
   const { metrics: _discardedMetrics, ...rest } = original.toJSON();
   // Never clone homepage publication: a duplicate of a featured campaign must
-  // not silently appear on redeem.sg when it is later activated.
-  const dupDesign =
-    rest.design_config && typeof rest.design_config === 'object'
-      ? {
-          ...rest.design_config,
-          ...(rest.design_config.featuredDrop && typeof rest.design_config.featuredDrop === 'object'
-            ? { featuredDrop: { ...rest.design_config.featuredDrop, enabled: false } }
-            : {}),
-        }
-      : rest.design_config;
+  // not silently appear on redeem.sg when it is later activated. Never clone
+  // luckyDraw either — its dates, activation, and terms version are all
+  // campaign-specific (docs/plans/lucky-draw-10x.md §4.1); a duplicate must be
+  // deliberately re-enabled as its own draw.
+  const dupDesign = (() => {
+    if (!rest.design_config || typeof rest.design_config !== 'object') return rest.design_config;
+    const { luckyDraw: _neverCloneDraw, ...base } = rest.design_config;
+    return {
+      ...base,
+      ...(rest.design_config.featuredDrop && typeof rest.design_config.featuredDrop === 'object'
+        ? { featuredDrop: { ...rest.design_config.featuredDrop, enabled: false } }
+        : {}),
+    };
+  })();
   const copy = await Campaign.create({
     ...rest,
     design_config: dupDesign,

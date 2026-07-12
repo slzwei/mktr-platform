@@ -14,9 +14,11 @@ import { logger } from '../utils/logger.js';
  * one Lyfe→MKTR channel, one key). rawBody capture for this prefix is already
  * wired in server_internal.js; the prefix is rate-limiter-exempt.
  *
- * Body: { agentLyfeId, presentationToken? , prospectId?, via? }
+ * Body: { agentLyfeId, presentationToken? , prospectId? }
  *  - scan path: presentationToken (proves the client was present)
  *  - button path: prospectId (consultant unlocks from the lead record)
+ * unlockedVia is server-derived from which identifier was sent (a client
+ * `via` field is ignored) — only a live token counts as scan evidence.
  * The resolved agent must be the lead's assigned consultant.
  */
 export const meta = {
@@ -61,7 +63,7 @@ router.post('/entitlement-unlock', asyncHandler(async (req, res) => {
   if (!verifyLyfeHmac(req)) {
     return res.status(401).json({ success: false, message: 'Invalid signature' });
   }
-  const { agentLyfeId, presentationToken, prospectId, via } = req.body || {};
+  const { agentLyfeId, presentationToken, prospectId } = req.body || {};
   if (!agentLyfeId || (!presentationToken && !prospectId)) {
     return res.status(400).json({ success: false, message: 'agentLyfeId and presentationToken or prospectId are required' });
   }
@@ -72,10 +74,14 @@ router.post('/entitlement-unlock', asyncHandler(async (req, res) => {
   }
 
   try {
+    // `via` is SERVER-derived from the identifier, never trusted from the body:
+    // only a presentation token (the customer's QR pass, presented live) counts
+    // as scan evidence; a bare prospectId is always the button path
+    // (docs/plans/lucky-draw-10x.md §4.4).
     const result = await makeEntitlementService().unlockEntitlement(
       presentationToken ? { presentationToken } : { prospectId },
       agent,
-      via === 'button' ? 'agent_button' : 'agent_scan'
+      presentationToken ? 'agent_scan' : 'agent_button'
     );
     return res.json({
       success: true,

@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { Op, Transaction } from 'sequelize';
 import {
   Prospect,
@@ -35,6 +35,7 @@ import {
 import { getOrCreateProspectShareLink } from './shortlinkService.js';
 import { isPhoneRecentlyVerified } from './verifiedPhoneStore.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
+import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 
 // Redeem Ops capture hook (docs/redeem-ops/MKTR_INTEGRATION.md §2): a
 // dependency-INVERTED callback — this module never imports Redeem Ops code.
@@ -221,16 +222,9 @@ export function makeProspectService(overrides = {}) {
       incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), ...capiSourceMetadata };
     }
 
-    // Server-side phone-verification stamp (docs/redeem-ops/MKTR_INTEGRATION.md §2.0):
-    // written iff the OTP marker is live at create time. Durable evidence that
-    // Redeem Ops reward issuance REQUIRES — a raw unverified POST still captures
-    // as a lead but can never mint reward value (anti-farming precondition).
-    if (incoming.phone && d.isPhoneRecentlyVerified?.(incoming.phone)) {
-      incoming.sourceMetadata = {
-        ...(incoming.sourceMetadata || {}),
-        phoneVerifiedAt: new Date().toISOString(),
-      };
-    }
+    // (Phone-verification stamping happens AFTER normalization below — the OTP
+    // marker is keyed by the full E.164 phone, so the check must run on the
+    // normalized value; see docs/plans/lucky-draw-10x.md §4.4.)
 
     // Third-party-disclosure consent evidence. Written ONLY when the person ticked
     // the box (=> consentMetadata.external), which — together with the campaign's
@@ -360,6 +354,30 @@ export function makeProspectService(overrides = {}) {
       throw new d.AppError('This campaign is no longer active.', 410);
     }
 
+    // Lucky-draw entry gate (docs/plans/lucky-draw-10x.md §4.4) — draw campaigns
+    // ONLY; the general funnel's capture-everything posture is untouched. Runs
+    // before any routing side effect (the round-robin cursor below advances on
+    // resolution), and normalizes the phone itself because the shared
+    // normalization happens later in this function. The browser flow always
+    // satisfies all four checks; only direct-API callers are affected.
+    const luckyDraw = sourceCampaign?.design_config?.luckyDraw;
+    if (luckyDraw?.enabled === true) {
+      const drawPhone = incoming.phone ? normalizePhone(incoming.phone) : null;
+      if (!drawPhone) {
+        throw new d.AppError('A mobile number is required to enter this draw.', 422);
+      }
+      if (consentTerms !== true) {
+        throw new d.AppError('You must accept the terms and conditions to enter this draw.', 422);
+      }
+      if (!d.isPhoneRecentlyVerified?.(drawPhone)) {
+        throw new d.AppError('Please verify your mobile number before entering this draw.', 403);
+      }
+      const closesAtEnd = luckyDraw.closesAt ? sgtDayEndExclusiveMs(luckyDraw.closesAt) : null;
+      if (closesAtEnd !== null && Date.now() >= closesAtEnd) {
+        throw new d.AppError('Entries for this draw have closed.', 410);
+      }
+    }
+
     // External (MKTR Leads) eligibility. INERT until per-source consent capture writes
     // consentMetadata.external — hasValidExternalConsent returns false for all current
     // data, so allowExternal is false and routing takes the internal-only path below,
@@ -412,6 +430,36 @@ export function makeProspectService(overrides = {}) {
     // Normalize phone to E.164 format
     if (incoming.phone) {
       incoming.phone = normalizePhone(incoming.phone);
+    }
+
+    // Server-side phone-verification stamp (docs/redeem-ops/MKTR_INTEGRATION.md
+    // §2.0): written iff the OTP marker is live at create time. Durable evidence
+    // that Redeem Ops reward issuance REQUIRES — a raw unverified POST still
+    // captures as a lead but can never mint reward value (anti-farming
+    // precondition). Checked on the NORMALIZED phone (the marker is keyed by
+    // full E.164). phoneVerifiedFor binds the stamp to the number it was earned
+    // for: a later staff phone edit breaks the match instead of silently
+    // inheriting verified status (docs/plans/lucky-draw-10x.md §4.4).
+    if (incoming.phone && d.isPhoneRecentlyVerified?.(incoming.phone)) {
+      incoming.sourceMetadata = {
+        ...(incoming.sourceMetadata || {}),
+        phoneVerifiedAt: new Date().toISOString(),
+        phoneVerifiedFor: createHash('sha256').update(incoming.phone).digest('hex'),
+      };
+    }
+
+    // Draw-terms acceptance evidence (docs/plans/lucky-draw-10x.md §4.6):
+    // server-built pin of the exact terms version live at entry time. The draw
+    // gate above already guaranteed consent_terms === true for draw campaigns.
+    if (luckyDraw?.enabled === true && luckyDraw.termsVersionId) {
+      incoming.consentMetadata = {
+        ...(incoming.consentMetadata || {}),
+        drawTerms: {
+          termsVersionId: luckyDraw.termsVersionId,
+          termsHash: luckyDraw.termsHash || null,
+          acceptedAt: new Date().toISOString(),
+        },
+      };
     }
 
     // DNC (Do Not Call) scrubbing mode for this lead. 'off' unless scrubbing is configured
