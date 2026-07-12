@@ -80,6 +80,7 @@ const AgentProfile = lazy(() => import('./AgentProfile'));
 // Dark until VITE_REDEEM_OPS_ENABLED=true is baked into the build.
 const REDEEM_OPS_ENABLED = import.meta.env.VITE_REDEEM_OPS_ENABLED === 'true';
 const DISCOVERY_ENABLED = import.meta.env.VITE_DISCOVERY_ENABLED === 'true';
+const CADENCES_ENABLED = import.meta.env.VITE_REDEEM_OPS_CADENCES_ENABLED === 'true';
 const RedeemOpsHome = lazy(() => import('./redeemops/RedeemOpsHome'));
 const RedeemOpsTeam = lazy(() => import('./redeemops/RedeemOpsTeam'));
 const RedeemOpsPartnersList = lazy(() => import('./redeemops/PartnersList'));
@@ -97,6 +98,7 @@ const RedeemOpsRedemptions = lazy(() => import('./redeemops/RedemptionsPage'));
 const RedeemOpsAnalytics = lazy(() => import('./redeemops/AnalyticsPage'));
 const RedeemOpsProfile = lazy(() => import('./redeemops/ProfilePage'));
 const RedeemOpsSettings = lazy(() => import('./redeemops/SettingsPage'));
+const RedeemOpsCadenceEditor = lazy(() => import('./redeemops/CadenceEditorPage'));
 
 // ops.redeem.sg — dedicated staff surface (docs/redeem-ops/
 // USER_SURFACES_AND_DEPLOYMENT_BOUNDARIES.md). Mirrors the VITE_BRAND pattern:
@@ -131,6 +133,11 @@ function redeemOpsRouteElements() {
     { path: '/redeem-ops/analytics', capability: 'analytics.view_own', Page: RedeemOpsAnalytics },
     { path: '/redeem-ops/profile', capability: null, Page: RedeemOpsProfile },
     { path: '/redeem-ops/settings', capability: 'settings.manage', Page: RedeemOpsSettings },
+    // Full-page cadence editor (a dialog was too cramped for a step editor).
+    ...(CADENCES_ENABLED ? [
+      { path: '/redeem-ops/cadences/new', capability: 'settings.manage', Page: RedeemOpsCadenceEditor },
+      { path: '/redeem-ops/cadences/:cadenceId/edit', capability: 'settings.manage', Page: RedeemOpsCadenceEditor },
+    ] : []),
   ];
   return routes.map(({ path, capability, Page }) => (
     <Route

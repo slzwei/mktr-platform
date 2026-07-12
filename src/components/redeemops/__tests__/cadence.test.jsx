@@ -9,7 +9,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 vi.hoisted(() => {
   vi.stubEnv('VITE_REDEEM_OPS_CADENCES_ENABLED', 'true');
@@ -23,6 +23,9 @@ const api = vi.hoisted(() => ({
   pauseCadence: vi.fn(),
   resumeCadence: vi.fn(),
   stopCadence: vi.fn(),
+  createCadence: vi.fn(),
+  createCadenceVersion: vi.fn(),
+  retireCadence: vi.fn(),
 }));
 vi.mock('@/api/redeemOps', () => ({ redeemOpsApi: api }));
 
@@ -35,7 +38,8 @@ const toastMock = vi.hoisted(() => {
 vi.mock('sonner', () => ({ toast: toastMock }));
 
 import { CadenceOutcomeButton, CadenceChip, CadencePanel } from '../cadence';
-import { toBuilderSteps } from '../CadenceStudio';
+import { toBuilderSteps } from '../cadenceBuilder';
+import CadenceEditorPage from '@/pages/redeemops/CadenceEditorPage';
 
 function wrap(ui) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -116,6 +120,50 @@ describe('toBuilderSteps (edit prefill)', () => {
       { channel: 'call', title: 'Intro call', script: 'hi', priority: 'high', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer' },
       { channel: 'whatsapp', title: 'WA intro', script: '', priority: 'medium', delayDays: 2, timeWindow: 'off_peak', continueOn: '*' },
     ]);
+  });
+});
+
+describe('CadenceEditorPage (full-page builder)', () => {
+  function renderNew() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/redeem-ops/cadences/new']}>
+          <Routes>
+            <Route path="/redeem-ops/cadences/new" element={<CadenceEditorPage />} />
+            <Route path="/redeem-ops/settings" element={<p>settings page</p>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+  }
+
+  it('creates a cadence from the mapped builder state', async () => {
+    api.createCadence.mockResolvedValue({ id: 'c-new', version: 1 });
+    const user = userEvent.setup();
+    renderNew();
+
+    await user.type(screen.getByPlaceholderText(/beauty salons/i), 'Fitness studios chase');
+    await user.type(screen.getByPlaceholderText(/what the rep sees/i), 'Intro call');
+    await user.click(screen.getByRole('button', { name: /add step/i }));
+    const titles = screen.getAllByPlaceholderText(/what the rep sees/i);
+    await user.type(titles[1], 'WhatsApp follow-up');
+
+    await user.click(screen.getByRole('button', { name: /create cadence/i }));
+    await waitFor(() => expect(api.createCadence).toHaveBeenCalledTimes(1));
+    const payload = api.createCadence.mock.calls[0][0];
+    expect(payload.name).toBe('Fitness studios chase');
+    expect(payload.steps).toHaveLength(2);
+    expect(payload.steps[0]).toMatchObject({ channel: 'call', title: 'Intro call', continueOn: 'no_answer' });
+    expect(payload.steps[1]).toMatchObject({ channel: 'whatsapp', title: 'WhatsApp follow-up' });
+  });
+
+  it('refuses to save without a name', async () => {
+    const user = userEvent.setup();
+    renderNew();
+    await user.click(screen.getByRole('button', { name: /create cadence/i }));
+    expect(api.createCadence).not.toHaveBeenCalled();
+    expect(toastMock.error).toHaveBeenCalled();
   });
 });
 
