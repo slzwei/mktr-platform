@@ -26,9 +26,17 @@
   line-height: 1.5;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
-  scroll-behavior: smooth;
 }
 .rh-page * { box-sizing: border-box; }
+
+/* Smooth anchor scrolling must live on the document scroller (html), not the
+   .rh-page div (which never scrolls itself) — scoped to when the homepage is
+   mounted so the admin app is untouched. */
+@media (prefers-reduced-motion: no-preference) {
+  html:has(.rh-page) { scroll-behavior: smooth; }
+}
+/* Anchored sections stop clear of the 76px sticky nav. */
+.rh-page [id] { scroll-margin-top: 92px; }
 .rh-page a { color: inherit; text-decoration: none; }
 
 .rh-wrap { max-width: 1200px; margin: 0 auto; padding: 0 40px; }
