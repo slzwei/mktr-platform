@@ -21,6 +21,13 @@ export function sgtDayWindow(now = new Date()) {
  * managers (admin/super_admin/ops_admin/bdm) act on any task; everyone else only
  * on tasks they are assigned to or created. Task changes recompute the partner's
  * denormalized nextTaskAt.
+ *
+ * P0 tx primitives (docs/plans/redeem-ops-cadences.md §3): the write paths are
+ * `*Tx` functions that run inside a CALLER-owned transaction with the partner
+ * row locked before any task write — lock order is partner → task everywhere,
+ * matching the cadence engine's enrollment → partner → task. The public
+ * `createTask`/`updateTask` keep their exact signatures and behavior as thin
+ * one-transaction wrappers.
  */
 export function makeTaskService(overrides = {}) {
   const d = { OutreachTask, PartnerOrganisation, PartnerContact, User, sequelize, logger, ...overrides };
@@ -39,44 +46,48 @@ export function makeTaskService(overrides = {}) {
     );
   }
 
-  async function createTask(body, user) {
+  async function createTaskTx(body, user, t) {
     if (!body.title || !String(body.title).trim()) throw new AppError('Title is required', 400);
     if (!body.partnerOrganisationId) throw new AppError('partnerOrganisationId is required', 400);
     if (!body.dueAt || Number.isNaN(new Date(body.dueAt).getTime())) throw new AppError('A valid dueAt is required', 400);
     if (body.priority && !TASK_PRIORITIES.includes(body.priority)) throw new AppError('Unknown priority', 400);
     if (body.type && !TASK_TYPES.includes(body.type)) throw new AppError('Unknown task type', 400);
 
-    const partner = await d.PartnerOrganisation.findByPk(body.partnerOrganisationId);
+    const partner = await d.PartnerOrganisation.findByPk(body.partnerOrganisationId, {
+      transaction: t, lock: t.LOCK.UPDATE,
+    });
     if (!partner || partner.mergedIntoId) throw new AppError('Partner not found', 404);
 
     const assigneeUserId = body.assigneeUserId || user.id;
     if (assigneeUserId !== user.id && !isManager(user)) {
       throw new AppError('Only managers can assign tasks to others', 403);
     }
-    const assignee = await d.User.findByPk(assigneeUserId);
+    const assignee = await d.User.findByPk(assigneeUserId, { transaction: t });
     if (!assignee || !assignee.isActive || !(assignee.role === 'redeem_ops' || assignee.role === 'admin' || assignee.redeemOpsRole)) {
       throw new AppError('Assignee must be an active Redeem Ops staff member', 400);
     }
 
-    return d.sequelize.transaction(async (t) => {
-      const task = await d.OutreachTask.create(
-        {
-          title: String(body.title).trim(),
-          partnerOrganisationId: body.partnerOrganisationId,
-          contactId: body.contactId || null,
-          assigneeUserId,
-          createdBy: user.id,
-          dueAt: new Date(body.dueAt),
-          hasTime: !!body.hasTime,
-          priority: body.priority || 'medium',
-          type: body.type || 'follow_up',
-          description: body.description || null,
-        },
-        { transaction: t }
-      );
-      await recomputeNextTaskAt(body.partnerOrganisationId, t);
-      return task;
-    });
+    const task = await d.OutreachTask.create(
+      {
+        title: String(body.title).trim(),
+        partnerOrganisationId: body.partnerOrganisationId,
+        contactId: body.contactId || null,
+        assigneeUserId,
+        createdBy: user.id,
+        dueAt: new Date(body.dueAt),
+        hasTime: !!body.hasTime,
+        priority: body.priority || 'medium',
+        type: body.type || 'follow_up',
+        description: body.description || null,
+      },
+      { transaction: t }
+    );
+    await recomputeNextTaskAt(body.partnerOrganisationId, t);
+    return task;
+  }
+
+  async function createTask(body, user) {
+    return d.sequelize.transaction(async (t) => createTaskTx(body, user, t));
   }
 
   async function listTasks(query, user) {
@@ -113,8 +124,18 @@ export function makeTaskService(overrides = {}) {
     return { tasks: rows, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
   }
 
-  async function updateTask(taskId, body, user) {
-    const task = await d.OutreachTask.findByPk(taskId);
+  async function updateTaskTx(taskId, body, user, t) {
+    // Non-locking probe first: the partner must be locked BEFORE the task row
+    // (lock order partner → task; partnerOrganisationId is immutable on tasks,
+    // so the probe cannot go stale between the two reads).
+    const probe = await d.OutreachTask.findByPk(taskId, {
+      attributes: ['id', 'partnerOrganisationId'], transaction: t,
+    });
+    if (!probe) throw new AppError('Task not found', 404);
+    await d.PartnerOrganisation.findByPk(probe.partnerOrganisationId, {
+      transaction: t, lock: t.LOCK.UPDATE,
+    });
+    const task = await d.OutreachTask.findByPk(taskId, { transaction: t, lock: t.LOCK.UPDATE });
     if (!task) throw new AppError('Task not found', 404);
     if (!isManager(user) && task.assigneeUserId !== user.id && task.createdBy !== user.id) {
       throw new AppError('You can only update your own tasks', 403);
@@ -142,14 +163,19 @@ export function makeTaskService(overrides = {}) {
     }
     if (updates.priority && !TASK_PRIORITIES.includes(updates.priority)) throw new AppError('Unknown priority', 400);
 
-    return d.sequelize.transaction(async (t) => {
-      await task.update(updates, { transaction: t });
-      await recomputeNextTaskAt(task.partnerOrganisationId, t);
-      return task;
-    });
+    await task.update(updates, { transaction: t });
+    await recomputeNextTaskAt(task.partnerOrganisationId, t);
+    return task;
   }
 
-  return { createTask, listTasks, updateTask, recomputeNextTaskAt, isManager };
+  async function updateTask(taskId, body, user) {
+    return d.sequelize.transaction(async (t) => updateTaskTx(taskId, body, user, t));
+  }
+
+  return {
+    createTask, createTaskTx, listTasks, updateTask, updateTaskTx,
+    recomputeNextTaskAt, isManager,
+  };
 }
 
 const _default = makeTaskService();

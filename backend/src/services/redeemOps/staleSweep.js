@@ -1,5 +1,6 @@
 import { sequelize } from '../../models/index.js';
 import { logger } from '../../utils/logger.js';
+import { fireCadenceHook } from './cadenceHooks.js';
 
 /**
  * Claim-inactivity sweep (brief §16, docs/redeem-ops/ERD.md §6). Flags only —
@@ -47,17 +48,29 @@ export async function runRedeemOpsStaleSweep() {
         )`
   );
 
-  // Wake expired snoozes: back to the working pool/queue.
-  const [, woken] = await sequelize.query(
+  // Wake expired snoozes: back to the working pool/queue. RETURNING feeds the
+  // cadence wake hook (docs/plans/redeem-ops-cadences.md §5.4) — without it a
+  // cadence paused by snooze would never resume, because this raw UPDATE
+  // bypasses unsnoozePartner entirely. Fired outside any transaction; each
+  // failure is contained per partner (the P1 reconciler is the backstop).
+  const [wokenRows] = await sequelize.query(
     `UPDATE partner_organisations
         SET availability = CASE WHEN "ownerUserId" IS NULL THEN 'available' ELSE 'owned' END,
             "snoozedUntil" = NULL, "updatedAt" = NOW()
       WHERE availability = 'follow_up_later'
         AND "snoozedUntil" IS NOT NULL AND "snoozedUntil" < NOW()
-        AND "archivedAt" IS NULL AND "mergedIntoId" IS NULL`
+        AND "archivedAt" IS NULL AND "mergedIntoId" IS NULL
+      RETURNING id`
   );
-  const wokenCount = woken?.rowCount ?? 0;
+  const wokenCount = Array.isArray(wokenRows) ? wokenRows.length : 0;
   if (wokenCount > 0) logger.info('redeem_ops.stale_sweep.woken', { woken: wokenCount });
+  for (const row of wokenRows || []) {
+    try {
+      await fireCadenceHook('onUnsnooze', { partnerId: row.id, source: 'sweep' });
+    } catch (err) {
+      logger.warn('redeem_ops.stale_sweep.wake_hook_failed', { partnerId: row.id, error: err?.message });
+    }
+  }
 
   const atRiskCount = atRisk?.rowCount ?? 0;
   const staleCount = stale?.rowCount ?? 0;
