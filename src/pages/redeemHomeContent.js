@@ -40,7 +40,8 @@ export const MARQUEE_ITEMS = [
   { text: 'S$20 vouchers' },
   { text: 'SMS-verified claims', accent: true },
   { text: 'No app. No points.' },
-  { text: 'New drop every week', accent: true },
+  { text: 'Lucky draws', accent: true },
+  { text: 'Partner offers' },
   { text: 'redeem.sg only' },
 ];
 
@@ -62,11 +63,11 @@ export const PARTNERS = [
 export const FAQ = [
   {
     q: 'Why do you need my number?',
-    a: 'The one-time code proves you’re a real person — one reward per human, not per bot — and it’s where the voucher lands. Some drops are sponsored by partners who’d like to say hello: we name them on the form, before you submit.',
+    a: 'The one-time code proves you’re a real person — one reward per human, not per bot. Some drops are sponsored by partners who’d like to say hello: we name them on the form, before you submit.',
   },
   {
     q: 'Do I need an app?',
-    a: 'No. Everything runs in your browser on redeem.sg. Scan the QR or tap the link, fill in the short form, and your voucher arrives by SMS. Nothing to download, nothing to sign in to.',
+    a: 'No. Everything runs in your browser on redeem.sg. Scan the QR or tap the link, fill in the short form — done. Nothing to download, nothing to sign in to.',
   },
   {
     q: 'Will I get spam calls?',
@@ -77,7 +78,7 @@ export const FAQ = [
     a: 'One rule: real Redeem links live on redeem.sg — nothing else, no lookalike domains. We verify you with an SMS code before any reward, and we will never ask for your NRIC, bank details, or any payment.',
   },
   {
-    q: 'My voucher didn’t arrive.',
-    a: 'Check the mobile number you entered and give the SMS a minute. Still nothing? Email hello@redeem.sg with the drop name and your number — a human will sort it out.',
+    q: 'My reward didn’t arrive.',
+    a: 'Email hello@redeem.sg with the drop name and the mobile number you used — a human will sort it out.',
   },
 ];

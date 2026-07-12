@@ -17,7 +17,7 @@ import './redeemHome.css';
 
 const PAGE_TITLE = 'Redeem — Free stuff from real Singapore brands';
 const PAGE_DESCRIPTION =
-  'Real vouchers from real Singapore brands, dropped every week. Claim in 30 seconds — no app, no points, no credit card. A service of MKTR PTE. LTD.';
+  'Vouchers, lucky draws and partner offers from real Singapore brands. Claim in 30 seconds — no app, no points, no credit card. A service of MKTR PTE. LTD.';
 
 /** "Ends Sunday"-style chip from the API's YYYY-MM-DD (SGT end-of-day). */
 function endsLabel(endsAt) {
@@ -190,16 +190,16 @@ export default function RedeemHome() {
                 <span className="rh-sticker__dot" />
                 {liveDrop ? 'Drop live now' : 'Next drop loading'}
               </span>
-              <span className="rh-sticker rh-sticker--plain">New drop every week</span>
+              <span className="rh-sticker rh-sticker--plain">Drops · lucky draws · partner offers</span>
             </div>
             <h1 className="rh-h1">
-              Free<br />
-              <span className="rh-h1__hollow">stuff</span><br />
-              <span className="rh-h1__tilt">weekly.</span>
+              Real<br />
+              <span className="rh-h1__hollow">free</span><br />
+              <span className="rh-h1__tilt">stuff.</span>
             </h1>
             <p className="rh-hero__sub">
-              Real vouchers from real Singapore brands, dropped every week.{' '}
-              <span className="rh-hl">30 seconds</span> to claim, straight to your SMS.
+              Vouchers, lucky draws and partner offers from real Singapore brands.{' '}
+              <span className="rh-hl">30 seconds</span> to claim.
               No app. No points. No credit card. Ever.
             </p>
             <div className="rh-hero__ctas">
@@ -260,10 +260,10 @@ export default function RedeemHome() {
                 </div>
               </div>
             )}
-            <div className="rh-star">New<br />drop<br />weekly</div>
+            <div className="rh-star">Lucky<br />draws<br />too</div>
             <div className="rh-toast rh-toast--t1">
               <span className="rh-toast__ico">🎟</span>
-              <div>Straight to your SMS<small>Show it at the counter</small></div>
+              <div>Draws &amp; partner offers<small>From brands across SG</small></div>
             </div>
             <div className="rh-toast rh-toast--t2">
               <span className="rh-toast__ico">✓</span>
@@ -303,7 +303,7 @@ export default function RedeemHome() {
             <div className="rh-step">
               <span className="rh-step__n">03</span>
               <h3>Use it</h3>
-              <p>Your voucher hits your SMS instantly. Show it at the counter. <span className="rh-hl">Done.</span></p>
+              <p>Voucher, draw entry or partner deal — show it at the counter or use it online. <span className="rh-hl">Done.</span></p>
             </div>
           </div>
           <div className="rh-rule">🔒 Not on redeem.sg? Not us. Close the tab.</div>
@@ -317,7 +317,7 @@ export default function RedeemHome() {
             <div>
               <span className="rh-kicker">This week</span>
               <h2 className="rh-h2" style={{ marginBottom: 0 }}>
-                {liveDrop ? <>Live <span className="rh-h2__hl">this week.</span></> : <>Next <span className="rh-h2__hl">drop.</span></>}
+                {liveDrop ? <>Live <span className="rh-h2__hl">right now.</span></> : <>Next <span className="rh-h2__hl">drop.</span></>}
               </h2>
             </div>
           </div>
@@ -329,7 +329,7 @@ export default function RedeemHome() {
             <div className="rh-drops__empty">
               <h3>The next drop is loading.</h3>
               <p>
-                New rewards land regularly — in taxis, at roadshows, and right here.
+                Drops, lucky draws and partner offers land as and when — in taxis, at roadshows, and right here.
                 Spotted one of our QR codes out in the wild? That’s your way in.
               </p>
             </div>
@@ -471,7 +471,7 @@ export default function RedeemHome() {
           <div className="rh-footer__grid">
             <div>
               <div className="rh-footer__logo">✷ REDEEM</div>
-              <p className="rh-footer__tag">Free stuff from real Singapore brands. New drop every week.</p>
+              <p className="rh-footer__tag">Free stuff from real Singapore brands — drops, lucky draws and partner offers.</p>
             </div>
             <div className="rh-footer__col">
               <h4>Explore</h4>
