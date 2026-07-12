@@ -12,7 +12,7 @@ import { makePartnerService } from './partnerService.js';
 import { normalizePhone } from '../prospectHelpers.js';
 import {
   CHANNEL_DISPOSITIONS, CADENCE_TERMINAL_DISPOSITIONS, CADENCE_WILDCARD_DISPOSITION,
-  LOST_REASONS,
+  CADENCE_CHANNELS, CADENCE_TIME_WINDOWS, TASK_PRIORITIES, LOST_REASONS,
 } from './constants.js';
 
 /**
@@ -116,14 +116,147 @@ export function makeCadenceService(overrides = {}) {
 
   // ── Definition lookup ──────────────────────────────────────────────────────
 
-  async function listCadences() {
+  async function listCadences({ includeRetired = false } = {}) {
     return d.OutreachCadence.findAll({
-      where: { isActive: true },
+      where: includeRetired ? {} : { isActive: true },
       include: [
         { model: d.OutreachCadenceStep, as: 'steps' },
         { model: d.OutreachCadenceTransition, as: 'transitions' },
       ],
       order: [['key', 'ASC'], ['version', 'DESC'], [{ model: d.OutreachCadenceStep, as: 'steps' }, 'stepOrder', 'ASC']],
+    });
+  }
+
+  // ── Definition authoring (builder — docs/plans/redeem-ops-cadences.md §8.5) ──
+  //
+  // The builder speaks a LINEAR dialect: an ordered step list where each step
+  // carries its own delay/window and a single `continueOn` disposition that
+  // advances to the next step; everything else finishes (terminal dispositions
+  // are engine-level). That compiles losslessly onto the edge model — and both
+  // seeded cadences are expressible in it, so the editor can round-trip them.
+
+  function validateBuilderDefinition(def) {
+    const name = String(def.name || '').trim();
+    if (!name || name.length > 120) throw new AppError('A cadence name (max 120 chars) is required', 400);
+    const rawSteps = Array.isArray(def.steps) ? def.steps : [];
+    if (rawSteps.length < 1 || rawSteps.length > 20) {
+      throw new AppError('A cadence needs between 1 and 20 steps', 400);
+    }
+    const steps = rawSteps.map((s, i) => {
+      const channel = String(s.channel || '');
+      if (!CADENCE_CHANNELS.includes(channel)) throw new AppError(`Step ${i + 1}: unknown channel`, 400);
+      const title = String(s.title || '').trim();
+      if (!title || title.length > 160) throw new AppError(`Step ${i + 1}: a title (max 160 chars) is required`, 400);
+      const delayDays = Number.parseInt(s.delayDays, 10);
+      if (!Number.isInteger(delayDays) || delayDays < 0 || delayDays > 60) {
+        throw new AppError(`Step ${i + 1}: delay must be 0–60 days`, 400);
+      }
+      const timeWindow = s.timeWindow || 'any';
+      if (!CADENCE_TIME_WINDOWS.includes(timeWindow)) throw new AppError(`Step ${i + 1}: unknown time window`, 400);
+      const priority = s.priority || 'medium';
+      if (!TASK_PRIORITIES.includes(priority)) throw new AppError(`Step ${i + 1}: unknown priority`, 400);
+      const isLast = i === rawSteps.length - 1;
+      let continueOn = null;
+      if (!isLast) {
+        continueOn = s.continueOn || (channel === 'call' ? 'no_answer' : CADENCE_WILDCARD_DISPOSITION);
+        const allowed = [...(CHANNEL_DISPOSITIONS[channel] || []), CADENCE_WILDCARD_DISPOSITION]
+          .filter((x) => !CADENCE_TERMINAL_DISPOSITIONS.includes(x));
+        if (!allowed.includes(continueOn)) {
+          throw new AppError(`Step ${i + 1}: '${continueOn}' cannot advance a ${channel} step`, 400);
+        }
+      }
+      return {
+        channel, title, continueOn, delayDays, timeWindow, priority,
+        script: s.script ? String(s.script).slice(0, 5000) : null,
+      };
+    });
+    return { name, description: def.description ? String(def.description).slice(0, 2000) : null, steps };
+  }
+
+  async function insertDefinitionTx({ key, version, name, description, steps }, user, t) {
+    const cadence = await d.OutreachCadence.create({
+      key, version, name, description, createdBy: user.id,
+    }, { transaction: t });
+    const created = [];
+    for (let i = 0; i < steps.length; i += 1) {
+      created.push(await d.OutreachCadenceStep.create({
+        cadenceId: cadence.id, stepOrder: i + 1, channel: steps[i].channel,
+        title: steps[i].title, scriptTemplate: steps[i].script, priority: steps[i].priority,
+      }, { transaction: t }));
+    }
+    await d.OutreachCadenceTransition.create({
+      cadenceId: cadence.id, fromStepId: null, disposition: CADENCE_WILDCARD_DISPOSITION,
+      toStepId: created[0].id, delayDays: steps[0].delayDays, timeWindow: steps[0].timeWindow,
+    }, { transaction: t });
+    for (let i = 0; i < steps.length - 1; i += 1) {
+      await d.OutreachCadenceTransition.create({
+        cadenceId: cadence.id, fromStepId: created[i].id, disposition: steps[i].continueOn,
+        toStepId: created[i + 1].id, delayDays: steps[i + 1].delayDays, timeWindow: steps[i + 1].timeWindow,
+      }, { transaction: t });
+    }
+    return cadence;
+  }
+
+  function slugifyKey(name) {
+    return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 56) || 'cadence';
+  }
+
+  async function createCadence(def, user, requestId = null) {
+    const norm = validateBuilderDefinition(def);
+    return d.sequelize.transaction(async (t) => {
+      await d.sequelize.query('SELECT pg_advisory_xact_lock(9157002)', { transaction: t });
+      let key = slugifyKey(norm.name);
+      const clashes = await d.OutreachCadence.count({ where: { key }, transaction: t });
+      if (clashes > 0) key = `${key}_${Date.now().toString(36)}`.slice(0, 64);
+      const cadence = await insertDefinitionTx({ ...norm, key, version: 1 }, user, t);
+      await d.audit.recordAuditEvent({
+        actorUser: user, action: 'cadence.created', entityType: 'outreach_cadence',
+        entityId: cadence.id, after: { key, name: norm.name, steps: norm.steps.length },
+        requestId, transaction: t,
+      });
+      return cadence;
+    });
+  }
+
+  /**
+   * Editing = a NEW version of the same key; every active row of the key is
+   * retired in the same transaction. Live enrollments keep the version they
+   * started on (they FK the old row); the picker only offers active versions.
+   */
+  async function createCadenceVersion(cadenceId, def, user, requestId = null) {
+    const norm = validateBuilderDefinition(def);
+    return d.sequelize.transaction(async (t) => {
+      await d.sequelize.query('SELECT pg_advisory_xact_lock(9157002)', { transaction: t });
+      const base = await d.OutreachCadence.findByPk(cadenceId, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!base) throw new AppError('Cadence not found', 404);
+      const latest = await d.OutreachCadence.max('version', { where: { key: base.key }, transaction: t });
+      await d.OutreachCadence.update(
+        { isActive: false },
+        { where: { key: base.key, isActive: true }, transaction: t }
+      );
+      const cadence = await insertDefinitionTx({ ...norm, key: base.key, version: latest + 1 }, user, t);
+      await d.audit.recordAuditEvent({
+        actorUser: user, action: 'cadence.version_created', entityType: 'outreach_cadence',
+        entityId: cadence.id,
+        before: { version: base.version }, after: { version: latest + 1, name: norm.name, steps: norm.steps.length },
+        requestId, transaction: t,
+      });
+      return cadence;
+    });
+  }
+
+  async function retireCadence(cadenceId, user, requestId = null) {
+    return d.sequelize.transaction(async (t) => {
+      const cadence = await d.OutreachCadence.findByPk(cadenceId, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!cadence) throw new AppError('Cadence not found', 404);
+      if (!cadence.isActive) return cadence;
+      await cadence.update({ isActive: false }, { transaction: t });
+      await d.audit.recordAuditEvent({
+        actorUser: user, action: 'cadence.retired', entityType: 'outreach_cadence',
+        entityId: cadence.id, after: { key: cadence.key, version: cadence.version },
+        requestId, transaction: t,
+      });
+      return cadence;
     });
   }
 
@@ -699,11 +832,12 @@ export function makeCadenceService(overrides = {}) {
   }
 
   return {
-    listCadences, enrollPartner, completeCadenceTask,
+    listCadences, createCadence, createCadenceVersion, retireCadence,
+    enrollPartner, completeCadenceTask,
     pauseEnrollment, resumeEnrollment, stopEnrollment,
     getPartnerCadence, hookHandlers, reconcile,
     // exported for tests
-    sgtWindowClamp, activityForDisposition,
+    sgtWindowClamp, activityForDisposition, validateBuilderDefinition,
   };
 }
 

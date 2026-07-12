@@ -342,6 +342,96 @@ describe('queue accounting', () => {
   });
 });
 
+describe('authoring (builder)', () => {
+  const builderDef = {
+    name: 'Grooming chase',
+    description: 'Pet services variant',
+    steps: [
+      { channel: 'call', title: 'Groomer intro call', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer', script: 'Hi {{contact_name}}!' },
+      { channel: 'whatsapp', title: 'Groomer WhatsApp', delayDays: 1, timeWindow: 'off_peak' },
+      { channel: 'visit', title: 'Drop by the salon', delayDays: 3, timeWindow: 'afternoon' },
+    ],
+  };
+
+  test('create via route → compiled edges run end-to-end', async () => {
+    const res = await request(app)
+      .post('/api/redeem-ops/cadences')
+      .set(auth(admin.token))
+      .send(builderDef);
+    expect(res.status).toBe(201);
+    const created = res.body.data.cadence;
+    expect(created.key).toBe('grooming_chase');
+    expect(created.version).toBe(1);
+
+    // it actually runs: enroll → no_answer branches to the WhatsApp step
+    const p = await ownedPartner('Builder Run Cafe');
+    await partnerSvc.addLocation(p.id, { name: 'Main salon', addressLine: '1 Grooming Way' }, admin.user);
+    const { firstTask } = await svc.enrollPartner(p.id, { cadenceKey: 'grooming_chase' }, execA.user);
+    expect(firstTask.title).toBe('Groomer intro call');
+    const r = await svc.completeCadenceTask(firstTask.id, { disposition: 'no_answer' }, execA.user);
+    expect(r.nextTask.title).toBe('Groomer WhatsApp');
+    // step 2's continueOn defaulted to '*', so 'sent' advances to the visit
+    const r2 = await svc.completeCadenceTask(r.nextTask.id, { disposition: 'sent' }, execA.user);
+    expect(r2.nextTask.title).toBe('Drop by the salon');
+  });
+
+  test('validation: terminal continueOn and channel mismatches are refused; execs are not allowed', async () => {
+    const bad = {
+      name: 'Bad def',
+      steps: [
+        { channel: 'call', title: 'x', delayDays: 0, continueOn: 'replied' },
+        { channel: 'email', title: 'y', delayDays: 1 },
+      ],
+    };
+    const res = await request(app).post('/api/redeem-ops/cadences').set(auth(admin.token)).send(bad);
+    expect(res.status).toBe(400);
+
+    const denied = await request(app).post('/api/redeem-ops/cadences').set(auth(execA.token)).send(builderDef);
+    expect(denied.status).toBe(403);
+  });
+
+  test('editing creates a new version, retires the old, and in-flight enrollments finish on their version', async () => {
+    const created = await svc.createCadence({
+      name: 'Version test', steps: [
+        { channel: 'call', title: 'v1 call', delayDays: 0, continueOn: 'no_answer' },
+        { channel: 'whatsapp', title: 'v1 whatsapp', delayDays: 1 },
+      ],
+    }, admin.user);
+
+    const p = await ownedPartner('Version Pin Cafe');
+    const { enrollment, firstTask } = await svc.enrollPartner(p.id, { cadenceId: created.id }, execA.user);
+
+    const v2 = await svc.createCadenceVersion(created.id, {
+      name: 'Version test (tighter)', steps: [
+        { channel: 'whatsapp', title: 'v2 whatsapp first', delayDays: 0 },
+      ],
+    }, admin.user);
+    expect(v2.version).toBe(2);
+    expect((await OutreachCadence.findByPk(created.id)).isActive).toBe(false);
+
+    // the picker offers only v2…
+    const active = await svc.listCadences();
+    const versions = active.filter((c) => c.key === created.key).map((c) => c.version);
+    expect(versions).toEqual([2]);
+
+    // …while the in-flight enrollment still advances on v1's edges
+    const r = await svc.completeCadenceTask(firstTask.id, { disposition: 'no_answer' }, execA.user);
+    expect(r.nextTask.title).toBe('v1 whatsapp');
+    expect((await OutreachCadenceEnrollment.findByPk(enrollment.id)).cadenceId).toBe(created.id);
+  });
+
+  test('retire hides from the default list but stays queryable with all=true', async () => {
+    const created = await svc.createCadence({
+      name: 'Retire me', steps: [{ channel: 'call', title: 'only step', delayDays: 0 }],
+    }, admin.user);
+    await svc.retireCadence(created.id, admin.user);
+    const active = await svc.listCadences();
+    expect(active.some((c) => c.id === created.id)).toBe(false);
+    const all = await svc.listCadences({ includeRetired: true });
+    expect(all.some((c) => c.id === created.id)).toBe(true);
+  });
+});
+
 describe('reconcile', () => {
   test('re-materializes the task for an orphaned active enrollment', async () => {
     const p = await ownedPartner('Reconcile Cafe');

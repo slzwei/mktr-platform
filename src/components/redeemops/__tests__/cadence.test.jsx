@@ -35,6 +35,7 @@ const toastMock = vi.hoisted(() => {
 vi.mock('sonner', () => ({ toast: toastMock }));
 
 import { CadenceOutcomeButton, CadenceChip, CadencePanel } from '../cadence';
+import { toBuilderSteps } from '../CadenceStudio';
 
 function wrap(ui) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -95,6 +96,26 @@ describe('CadenceOutcomeButton', () => {
     await waitFor(() => expect(api.completeCadenceTask).toHaveBeenCalledWith('task-1', {
       disposition: 'not_interested', alsoMarkLost: true, lostReason: 'not_interested',
     }));
+  });
+});
+
+describe('toBuilderSteps (edit prefill)', () => {
+  it('reverse-maps edges into the linear builder dialect', () => {
+    const cadence = {
+      steps: [
+        { id: 's1', stepOrder: 1, channel: 'call', title: 'Intro call', scriptTemplate: 'hi', priority: 'high' },
+        { id: 's2', stepOrder: 2, channel: 'whatsapp', title: 'WA intro', scriptTemplate: null, priority: 'medium' },
+      ],
+      transitions: [
+        { fromStepId: null, disposition: '*', toStepId: 's1', delayDays: 0, timeWindow: 'any' },
+        { fromStepId: 's1', disposition: 'no_answer', toStepId: 's2', delayDays: 2, timeWindow: 'off_peak' },
+      ],
+    };
+    const steps = toBuilderSteps(cadence);
+    expect(steps).toEqual([
+      { channel: 'call', title: 'Intro call', script: 'hi', priority: 'high', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer' },
+      { channel: 'whatsapp', title: 'WA intro', script: '', priority: 'medium', delayDays: 2, timeWindow: 'off_peak', continueOn: '*' },
+    ]);
   });
 });
 
