@@ -27,6 +27,7 @@ const SpecimenPreview = lazy(() => import('./preview/SpecimenPreview'));
 
 const Homepage = lazy(() => import('./Homepage'));
 const RedeemHome = lazy(() => import('./RedeemHome'));
+const RedeemWinners = lazy(() => import('./RedeemWinners'));
 const Features = lazy(() => import('./Features'));
 const Pricing = lazy(() => import('./Pricing'));
 const About = lazy(() => import('./About'));
@@ -192,6 +193,7 @@ function PagesContent() {
  {/* Public routes - no protection needed. Lead capture flow stays on both brands. */}
  <Route path="/" element={brand.showHomepage ? <Homepage /> : (IS_REDEEM_BUILD ? <RedeemHome /> : <LeadCapture />)} />
  <Route path="/LeadCapture" element={<LeadCapture />} />
+ <Route path="/winners" element={IS_REDEEM_BUILD ? <RedeemWinners /> : <NotFoundForBrand />} />
  <Route path="/LeadCapture/demo" element={<LeadCaptureDemo />} />
  <Route path="/p/:slug" element={<PublicPreview />} />
  <Route path="/t/:slug" element={<TrackRedirect />} />
