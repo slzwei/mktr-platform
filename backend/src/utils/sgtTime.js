@@ -17,6 +17,11 @@ export function sgtDayEndExclusiveMs(ymd) {
   if (typeof ymd !== 'string') return null;
   const s = ymd.trim();
   if (!YMD_RE.test(s)) return null;
+  // Strict calendar check — Date.parse rolls impossible dates (2026-02-31 →
+  // March 3) instead of rejecting them.
+  const [y, m, day] = s.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, day));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== day) return null;
   const start = Date.parse(`${s}T00:00:00+08:00`);
   return Number.isNaN(start) ? null : start + DAY_MS;
 }

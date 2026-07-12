@@ -354,22 +354,31 @@ export function makeProspectService(overrides = {}) {
       throw new d.AppError('This campaign is no longer active.', 410);
     }
 
+    // Normalize the phone to E.164 HERE — before the draw gate and before any
+    // routing side effect — and consult the in-memory OTP marker exactly ONCE.
+    // The marker self-expires (10-min TTL), so gate-then-restamp double reads
+    // could pass the gate yet miss the stamp near the boundary, producing an
+    // accepted entrant the freeze would later exclude; one read = one truth
+    // for both the gate and the stamp below.
+    if (incoming.phone) {
+      incoming.phone = normalizePhone(incoming.phone);
+    }
+    const otpMarkerLive = Boolean(incoming.phone && d.isPhoneRecentlyVerified?.(incoming.phone));
+
     // Lucky-draw entry gate (docs/plans/lucky-draw-10x.md §4.4) — draw campaigns
     // ONLY; the general funnel's capture-everything posture is untouched. Runs
     // before any routing side effect (the round-robin cursor below advances on
-    // resolution), and normalizes the phone itself because the shared
-    // normalization happens later in this function. The browser flow always
-    // satisfies all four checks; only direct-API callers are affected.
+    // resolution). The browser flow always satisfies all four checks; only
+    // direct-API callers are affected.
     const luckyDraw = sourceCampaign?.design_config?.luckyDraw;
     if (luckyDraw?.enabled === true) {
-      const drawPhone = incoming.phone ? normalizePhone(incoming.phone) : null;
-      if (!drawPhone) {
+      if (!incoming.phone) {
         throw new d.AppError('A mobile number is required to enter this draw.', 422);
       }
       if (consentTerms !== true) {
         throw new d.AppError('You must accept the terms and conditions to enter this draw.', 422);
       }
-      if (!d.isPhoneRecentlyVerified?.(drawPhone)) {
+      if (!otpMarkerLive) {
         throw new d.AppError('Please verify your mobile number before entering this draw.', 403);
       }
       const closesAtEnd = luckyDraw.closesAt ? sgtDayEndExclusiveMs(luckyDraw.closesAt) : null;
@@ -427,20 +436,16 @@ export function makeProspectService(overrides = {}) {
       routeVia = routing.via;
     }
 
-    // Normalize phone to E.164 format
-    if (incoming.phone) {
-      incoming.phone = normalizePhone(incoming.phone);
-    }
+    // (Phone already normalized + OTP marker read once, above the draw gate.)
 
     // Server-side phone-verification stamp (docs/redeem-ops/MKTR_INTEGRATION.md
-    // §2.0): written iff the OTP marker is live at create time. Durable evidence
-    // that Redeem Ops reward issuance REQUIRES — a raw unverified POST still
-    // captures as a lead but can never mint reward value (anti-farming
-    // precondition). Checked on the NORMALIZED phone (the marker is keyed by
-    // full E.164). phoneVerifiedFor binds the stamp to the number it was earned
-    // for: a later staff phone edit breaks the match instead of silently
-    // inheriting verified status (docs/plans/lucky-draw-10x.md §4.4).
-    if (incoming.phone && d.isPhoneRecentlyVerified?.(incoming.phone)) {
+    // §2.0): written iff the OTP marker was live at the single read above.
+    // Durable evidence that Redeem Ops reward issuance REQUIRES — a raw
+    // unverified POST still captures as a lead but can never mint reward value
+    // (anti-farming precondition). phoneVerifiedFor binds the stamp to the
+    // number it was earned for: a later staff phone edit breaks the match
+    // instead of silently inheriting verified status (plan §4.4).
+    if (otpMarkerLive) {
       incoming.sourceMetadata = {
         ...(incoming.sourceMetadata || {}),
         phoneVerifiedAt: new Date().toISOString(),

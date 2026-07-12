@@ -35,6 +35,12 @@ describe('normalizeLuckyDraw', () => {
     expect(out.drawOn).toBeUndefined();
   });
 
+  it('rejects impossible calendar dates that Date.parse would roll over', () => {
+    expect(normalizeLuckyDraw({ enabled: true, closesAt: '2026-02-31' }).closesAt).toBeUndefined();
+    expect(normalizeLuckyDraw({ enabled: true, closesAt: '2026-04-31' }).closesAt).toBeUndefined();
+    expect(normalizeLuckyDraw({ enabled: true, closesAt: '2028-02-29' }).closesAt).toBe('2028-02-29'); // leap year
+  });
+
   it('defaults multiplier to 10 and clamps out-of-range values back to 10', () => {
     expect(normalizeLuckyDraw({}).multiplier).toBe(10);
     expect(normalizeLuckyDraw({ multiplier: 50 }).multiplier).toBe(50);
@@ -94,7 +100,7 @@ describe('sgtDayEndExclusiveMs', () => {
   });
 
   it('returns null for invalid input', () => {
-    for (const v of [null, undefined, 42, '2026-13-99', '12/07/2026', '2026-07-12T00:00:00Z']) {
+    for (const v of [null, undefined, 42, '2026-13-99', '12/07/2026', '2026-07-12T00:00:00Z', '2026-02-31']) {
       expect(sgtDayEndExclusiveMs(v)).toBeNull();
     }
   });

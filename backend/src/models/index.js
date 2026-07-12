@@ -237,6 +237,22 @@ function defineAssociations() {
   RedemptionEvent.belongsTo(RewardEntitlement, { foreignKey: 'entitlementId', as: 'entitlement', onDelete: 'CASCADE' });
   RedemptionEvent.belongsTo(Redemption, { foreignKey: 'redemptionId', as: 'redemption', onDelete: 'CASCADE' });
 
+  // Lucky-draw ledger (docs/plans/lucky-draw-10x.md §4.3)
+  const { Draw, DrawEntry, DrawAttempt, DrawBoostReview } = models;
+  Campaign.hasMany(Draw, { foreignKey: 'campaignId', as: 'draws', onDelete: 'RESTRICT' });
+  Draw.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
+  Draw.belongsTo(Activation, { foreignKey: 'activationId', as: 'activation', onDelete: 'RESTRICT' });
+  Draw.belongsTo(DrawTermsVersion, { foreignKey: 'termsVersionId', as: 'termsVersion', onDelete: 'RESTRICT' });
+  Draw.hasMany(DrawEntry, { foreignKey: 'drawId', as: 'entries', onDelete: 'CASCADE' });
+  DrawEntry.belongsTo(Draw, { foreignKey: 'drawId', as: 'draw' });
+  DrawEntry.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect', onDelete: 'SET NULL' });
+  Draw.hasMany(DrawAttempt, { foreignKey: 'drawId', as: 'attempts', onDelete: 'CASCADE' });
+  DrawAttempt.belongsTo(Draw, { foreignKey: 'drawId', as: 'draw' });
+  DrawAttempt.belongsTo(DrawEntry, { foreignKey: 'pickedEntryId', as: 'pickedEntry', onDelete: 'RESTRICT' });
+  Draw.hasMany(DrawBoostReview, { foreignKey: 'drawId', as: 'boostReviews', onDelete: 'CASCADE' });
+  DrawBoostReview.belongsTo(Draw, { foreignKey: 'drawId', as: 'draw' });
+  DrawBoostReview.belongsTo(RewardEntitlement, { foreignKey: 'entitlementId', as: 'entitlement', onDelete: 'RESTRICT' });
+
   // Outreach work (Phase 3)
   const { OutreachTask, ProspectingPool, ProspectingPoolMember } = models;
   PartnerOrganisation.hasMany(OutreachTask, { foreignKey: 'partnerOrganisationId', as: 'tasks', onDelete: 'CASCADE' });
@@ -312,7 +328,8 @@ export const {
   WaitlistSignup, RedeemOpsAuditEvent, PartnerOrganisation, PartnerLocation,
   PartnerContact, PartnerAssignmentEvent, PartnerStageEvent, OutreachActivity,
   OutreachTask, ProspectingPool, ProspectingPoolMember, RewardOffer,
-  RewardTermsVersion, DrawTermsVersion, RewardOfferLocation, RewardInventoryEvent,
+  RewardTermsVersion, DrawTermsVersion, Draw, DrawEntry, DrawAttempt,
+  DrawBoostReview, RewardOfferLocation, RewardInventoryEvent,
   PartnerOnboardingItem, Activation, RewardEntitlement, Redemption,
   RedemptionEvent, RedeemOpsCategory, DiscoveryRun, DiscoveryCandidate,
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,

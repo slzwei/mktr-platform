@@ -1,7 +1,11 @@
 # Lucky Draw + 10× Session Multiplier — Design & Implementation Plan
 
 > Status: v2 (2026-07-12), Codex-reviewed (gpt-5.6-sol xhigh); disposition in §9.
-> **Phase 1 IMPLEMENTED** on `feat/lucky-draw-phase1` (commit ba9fc97) — see §5.
+> **Phase 1 IMPLEMENTED** — PR #139 (`feat/lucky-draw-phase1`, ba9fc97).
+> **Phase 2 IMPLEMENTED** on `feat/lucky-draw-phase2` (stacked on #139) — draws /
+> draw_entries / draw_attempts / draw_boost_reviews (migration 059, partial
+> uniques ALSO on the models — sync()-built schemas enforce them),
+> luckyDrawService lifecycle + `backend/scripts/run-lucky-draw.js` runner.
 > Migration numbering shifted 057→058 after #136 took 057.
 > Companion reading: `docs/redeem-ops/MKTR_INTEGRATION.md` §2 (entitlements),
 > `docs/plans/redeem-home-featured-drops.md` (homepage drops).
@@ -250,7 +254,7 @@ Backend contract (after the Phase 1 `via` fix):
 |---|---|---|
 | **0 — Ops setup + launch blockers (no code)** | Verify `prospects_campaign_id_phone` exists in prod (`SELECT indexname FROM pg_indexes WHERE tablename='prospects'`); flip `REDEEM_OPS_ENABLED` + `REDEEM_OPS_ENTITLEMENTS_ENABLED` (+ `VITE_REDEEM_OPS_ENABLED` if ops UI needed); create partner → offer → Activation; **size `offer.claimExpiryDays` to cover earliest-signup → `boostClosesAt`** (reservation expiry = `claimExpiryDays \|\| 30`; an expired reservation cannot be unlocked AND cannot be reissued — the unique index has no status filter); **size activation allocation ≥ expected signups** (exhaustion leaves later entrants with no pass; the reconcile sweep only backfills ~48h). | — |
 | **1 — Draw-campaign hardening** ✅ shipped (ba9fc97, tests green) | `luckyDraw` config block + admin clamp + duplicate-strip; create-gate (phone + normalized OTP marker + `consent_terms` + `closesAt`) placed post-normalization; `phoneVerifiedFor` hash binding; **server-derived `via` on both unlock routes**; draw confirmation template pair; `draw_terms_versions` + acceptance stamping; extract shared SGT-boundary util. Tests pin: direct-API POST without OTP → 403, after `closesAt` → 410, `via` forgery impossible, non-draw campaigns byte-identical. | **M–L** |
-| **2 — Draw model + runner** | Migrations 059+ (`draws`, `draw_attempts`, `draw_entries`, `draw_boost_reviews` — winner FK added after entries table to avoid the circular reference, or validated in-service); freeze/seal/draw/redraw service with idempotent transitions; canonical poolHash; commit/reveal seed; pinned seeded PRNG + unit tests; PII-masked snapshot + audit JSON; `run-lucky-draw.js` CLI with safeguards; concurrency tests. | **L** |
+| **2 — Draw model + runner** ✅ shipped | Migrations 059+ (`draws`, `draw_attempts`, `draw_entries`, `draw_boost_reviews` — winner FK added after entries table to avoid the circular reference, or validated in-service); freeze/seal/draw/redraw service with idempotent transitions; canonical poolHash; commit/reveal seed; pinned seeded PRNG + unit tests; PII-masked snapshot + audit JSON; `run-lucky-draw.js` CLI with safeguards; concurrency tests. | **L** |
 | **3 — Boost review UI** | Ops list of `agent_button` unlock events pending review → approve/reject writes `draw_boost_reviews` (schema exists from Phase 2, so no circularity); needs a reviewer capability added to **both** permission copies (`permissions.js` + SPA copy — drift test enforces equality). | **M** |
 | **4 — mktr-leads screens** | Scan screen + virtual-toggle button unlock per §4.7 (separate repo). | S |
 | **5 — Later** | Lyfe app mirror; admin draw panel; durable per-submission verification records; winners API instead of static file. | — |
@@ -335,3 +339,19 @@ in-memory OTP marker.
   `User`/`mktrLeadsId` (paid `ExternalAgent` rail out of scope).
 - Declined/kept-as-is: none material; DNC "transactional winner contact" kept as
   an explicit legal-sign-off item rather than a code decision (§4.6).
+- **2026-07-12 — Codex (gpt-5.6-sol, xhigh) implementation review (Phases 1–2
+  diff), 13 findings, 11 fixed:** via WHITELIST in boost evidence (manual/admin
+  and auto_on_capture unlocks no longer auto-boost as fake scans; manual is
+  review-gated like button); freeze reads moved inside the transaction after
+  the status claim; enabled draws REQUIRE a valid closesAt (create + update);
+  strict calendar validation (2026-02-31 no longer rolls into March);
+  'unclaimed' cannot be recorded before the 14-day claimDeadline (use
+  'declined'); outcome+draw updates transactional, claim refused on a voided
+  draw; poolHash excludes prospectId (erasure ≠ tampering; eligibleHash still
+  detects it per attempt); redraw reason must equal the prior attempt's
+  recorded outcome; CLI requires an explicit --witness and rejects
+  --approve+--reject; boundary queries use exclusive < ; attribute-level
+  onDelete parity for witness/boost-event FKs (sync-built schemas match
+  migration 059). Declined: raw-vs-DOMPurify terms bytes (documented canonical
+  = stored designer HTML, §4.6); create-path terms-pin atomicity (validated
+  pre-create; update path self-heals idempotently — commented in code).

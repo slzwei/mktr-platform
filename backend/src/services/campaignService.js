@@ -51,6 +51,15 @@ function clampDesignConfig(incoming, storedConfig, role) {
 export async function ensureDrawTermsVersion(designConfig, campaignId, userId, d = { DrawTermsVersion }) {
   const ld = designConfig?.luckyDraw;
   if (!ld || ld.enabled !== true) return designConfig;
+  // An enabled draw without a close date would accept public entries forever
+  // while createDraw refuses the config — never persistable (normalization
+  // already dropped any malformed date, so absence here means absence/invalid).
+  if (!ld.closesAt) {
+    throw new AppError(
+      'Lucky-draw campaigns need a valid luckyDraw.closesAt (YYYY-MM-DD) before they can be enabled.',
+      422
+    );
+  }
   const content = typeof designConfig.termsContent === 'string' ? designConfig.termsContent.trim() : '';
   if (!content) {
     throw new AppError(
@@ -277,9 +286,17 @@ export async function createCampaign(body, user) {
     campaignData.design_config = clampDesignConfig(body.design_config, undefined, user?.role);
   }
 
-  // Draw terms need the campaign id for the version row, but the content
-  // requirement must fail BEFORE the row exists — no half-created draw campaign.
+  // Draw terms need the campaign id for the version row, but the requirements
+  // must fail BEFORE the row exists — no half-created draw campaign. (A crash
+  // between Campaign.create and the terms pin below still self-heals: the next
+  // design_config save re-runs ensureDrawTermsVersion idempotently.)
   if (campaignData.design_config?.luckyDraw?.enabled === true) {
+    if (!campaignData.design_config.luckyDraw.closesAt) {
+      throw new AppError(
+        'Lucky-draw campaigns need a valid luckyDraw.closesAt (YYYY-MM-DD) before they can be enabled.',
+        422
+      );
+    }
     const terms = typeof campaignData.design_config.termsContent === 'string'
       ? campaignData.design_config.termsContent.trim() : '';
     if (!terms) {

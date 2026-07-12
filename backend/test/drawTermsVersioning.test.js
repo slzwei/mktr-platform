@@ -35,17 +35,24 @@ describe('ensureDrawTermsVersion', () => {
     expect(DrawTermsVersion.findOne).not.toHaveBeenCalled();
   });
 
+  it('422s when an enabled draw has no closesAt', async () => {
+    const DrawTermsVersion = fakeModel();
+    await expect(
+      ensureDrawTermsVersion({ luckyDraw: { enabled: true }, termsContent: '<p>Rules</p>' }, CAMPAIGN_ID, USER_ID, { DrawTermsVersion })
+    ).rejects.toMatchObject({ statusCode: 422 });
+  });
+
   it('422s when an enabled draw has no T&C content', async () => {
     const DrawTermsVersion = fakeModel();
     await expect(
-      ensureDrawTermsVersion({ luckyDraw: { enabled: true }, termsContent: '   ' }, CAMPAIGN_ID, USER_ID, { DrawTermsVersion })
+      ensureDrawTermsVersion({ luckyDraw: { enabled: true, closesAt: '2026-08-31' }, termsContent: '   ' }, CAMPAIGN_ID, USER_ID, { DrawTermsVersion })
     ).rejects.toMatchObject({ statusCode: 422 });
     expect(DrawTermsVersion.create).not.toHaveBeenCalled();
   });
 
   it('mints version N+1 for new content and stamps id + hash into luckyDraw', async () => {
     const DrawTermsVersion = fakeModel({ latestVersion: 3 });
-    const designConfig = { luckyDraw: { enabled: true, prize: 'Luggage' }, termsContent: '  <p>Draw rules v4</p> ' };
+    const designConfig = { luckyDraw: { enabled: true, closesAt: '2026-08-31', prize: 'Luggage' }, termsContent: '  <p>Draw rules v4</p> ' };
     const out = await ensureDrawTermsVersion(designConfig, CAMPAIGN_ID, USER_ID, { DrawTermsVersion });
 
     const expectedHash = crypto.createHash('sha256').update('<p>Draw rules v4</p>').digest('hex');
@@ -65,7 +72,7 @@ describe('ensureDrawTermsVersion', () => {
     const hash = crypto.createHash('sha256').update('<p>Rules</p>').digest('hex');
     const DrawTermsVersion = fakeModel({ existing: { id: 'dtv-existing', version: 2, contentSha256: hash } });
     const out = await ensureDrawTermsVersion(
-      { luckyDraw: { enabled: true }, termsContent: '<p>Rules</p>' },
+      { luckyDraw: { enabled: true, closesAt: '2026-08-31' }, termsContent: '<p>Rules</p>' },
       CAMPAIGN_ID, USER_ID, { DrawTermsVersion }
     );
     expect(DrawTermsVersion.create).not.toHaveBeenCalled();
@@ -83,7 +90,7 @@ describe('ensureDrawTermsVersion', () => {
     DrawTermsVersion.create.mockRejectedValueOnce(new Error('unique violation'));
 
     const out = await ensureDrawTermsVersion(
-      { luckyDraw: { enabled: true }, termsContent: '<p>Rules</p>' },
+      { luckyDraw: { enabled: true, closesAt: '2026-08-31' }, termsContent: '<p>Rules</p>' },
       CAMPAIGN_ID, USER_ID, { DrawTermsVersion }
     );
     expect(out.luckyDraw.termsVersionId).toBe('dtv-winner');
