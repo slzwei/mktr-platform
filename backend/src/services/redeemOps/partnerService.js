@@ -17,11 +17,18 @@ import {
 } from './constants.js';
 import { makeOnboardingService } from './onboardingService.js';
 import { makeCategoryService } from './categoryService.js';
+import { fireCadenceHook } from './cadenceHooks.js';
 
 /**
  * Partner CRM core (docs/redeem-ops/ERD.md §3.1–3.6, brief §13–§18).
  * Row-level "own" scoping lives HERE (not in middleware): outreach_execs act only
  * on partners they own; managers (bdm/ops_admin/super_admin/admin) act on any.
+ *
+ * P0 tx primitives (docs/plans/redeem-ops-cadences.md §3): the stage machine,
+ * snooze, and activity logging expose `*Tx` variants that run inside a
+ * CALLER-owned transaction with the partner row locked (`FOR UPDATE`) before
+ * any decision is made, and fire the cadence hook registry inside that same
+ * transaction. The public wrappers keep their exact signatures and behavior.
  */
 export function makePartnerService(overrides = {}) {
   const d = {
@@ -32,6 +39,7 @@ export function makePartnerService(overrides = {}) {
     audit: makeRedeemOpsAuditService(),
     dedupe: makeDedupeService(),
     categories: makeCategoryService(),
+    fireCadenceHook,
     // PARTNERED → seed the onboarding checklist (brief §22); injectable for tests.
     onPartnered: (partner, _user, t) => makeOnboardingService().seedChecklist(partner.id, t),
     ...overrides,
@@ -219,10 +227,11 @@ export function makePartnerService(overrides = {}) {
    * contact, plus a phone or email somewhere on the record. Everything else
    * (terms, outlets, launch) belongs to the onboarding checklist.
    */
-  async function assertPartneredEntryRequirements(id, partner) {
+  async function assertPartneredEntryRequirements(id, partner, transaction = null) {
     const contacts = await d.PartnerContact.findAll({
       where: { partnerOrganisationId: id, archivedAt: null },
       attributes: ['id', 'mobile', 'email'],
+      transaction,
     });
     if (contacts.length === 0) {
       throw new AppError(
@@ -240,12 +249,12 @@ export function makePartnerService(overrides = {}) {
     }
   }
 
-  async function changeStage(id, toStage, user, reason = null, requestId = null, lostReason = null) {
+  async function changeStageTx(id, toStage, user, t, { reason = null, requestId = null, lostReason = null } = {}) {
     if (!PIPELINE_STAGES.includes(toStage)) throw new AppError('Unknown stage', 400);
     if (toStage === 'LOST' && !LOST_REASONS.includes(lostReason)) {
       throw new AppError('A reason is required when marking a business as Lost', 400);
     }
-    const partner = await getLivePartner(id);
+    const partner = await getLivePartner(id, { transaction: t, lock: t.LOCK.UPDATE });
     if (!canActOnRow(user, partner)) {
       throw new AppError('You can only move businesses you own', 403);
     }
@@ -264,7 +273,7 @@ export function makePartnerService(overrides = {}) {
     // Entry requirement for PARTNERED (Salesforce-style stage validation, applies
     // to EVERYONE incl. admins) — also enforced when an undo restores PARTNERED.
     if (toStage === 'PARTNERED') {
-      await assertPartneredEntryRequirements(id, partner);
+      await assertPartneredEntryRequirements(id, partner, t);
     }
 
     // LOST leaves the working pool (reuses the 'disqualified' availability so
@@ -273,28 +282,32 @@ export function makePartnerService(overrides = {}) {
       toStage === 'LOST' ? 'disqualified'
       : partner.ownerUserId ? 'owned' : 'available';
 
-    await d.sequelize.transaction(async (t) => {
-      await partner.update({
-        pipelineStage: toStage, availability, staleFlag: false, snoozedUntil: null,
-        // lostReason persists after LOST → re-engage so an undo/relapse keeps
-        // context; the UI only shows it while the stage is LOST.
-        ...(toStage === 'LOST' ? { lostReason } : {}),
-      }, { transaction: t });
-      await d.PartnerStageEvent.create(
-        { partnerOrganisationId: id, fromStage, toStage, actorUserId: user.id, reason },
-        { transaction: t }
-      );
-      await d.audit.recordAuditEvent({
-        actorUser: user, action: 'stage.changed', entityType: 'partner_organisation',
-        entityId: id, before: { stage: fromStage }, after: { stage: toStage },
-        reason, requestId, transaction: t,
-      });
-      // PARTNERED → onboarding checklist seeding hooks in here (Phase 4).
-      if (toStage === 'PARTNERED' && typeof d.onPartnered === 'function') {
-        await d.onPartnered(partner, user, t);
-      }
+    await partner.update({
+      pipelineStage: toStage, availability, staleFlag: false, snoozedUntil: null,
+      // lostReason persists after LOST → re-engage so an undo/relapse keeps
+      // context; the UI only shows it while the stage is LOST.
+      ...(toStage === 'LOST' ? { lostReason } : {}),
+    }, { transaction: t });
+    await d.PartnerStageEvent.create(
+      { partnerOrganisationId: id, fromStage, toStage, actorUserId: user.id, reason },
+      { transaction: t }
+    );
+    await d.audit.recordAuditEvent({
+      actorUser: user, action: 'stage.changed', entityType: 'partner_organisation',
+      entityId: id, before: { stage: fromStage }, after: { stage: toStage },
+      reason, requestId, transaction: t,
     });
+    // PARTNERED → onboarding checklist seeding hooks in here (Phase 4).
+    if (toStage === 'PARTNERED' && typeof d.onPartnered === 'function') {
+      await d.onPartnered(partner, user, t);
+    }
+    await d.fireCadenceHook('onStageChange', { partner, fromStage, toStage, user, transaction: t });
     return partner;
+  }
+
+  async function changeStage(id, toStage, user, reason = null, requestId = null, lostReason = null) {
+    return d.sequelize.transaction(async (t) =>
+      changeStageTx(id, toStage, user, t, { reason, requestId, lostReason }));
   }
 
   // ── Timeline & activities ────────────────────────────────────────────────
@@ -307,39 +320,40 @@ export function makePartnerService(overrides = {}) {
    * with a stage event + audit row like any other move.
    */
   async function undoStageChange(id, user, requestId = null) {
-    const partner = await getLivePartner(id);
-    if (!canActOnRow(user, partner)) {
-      throw new AppError('You can only move businesses you own', 403);
-    }
-    const last = await d.PartnerStageEvent.findOne({
-      where: { partnerOrganisationId: id },
-      order: [['createdAt', 'DESC']],
-    });
-    if (!last || !last.fromStage || last.toStage !== partner.pipelineStage) {
-      throw new AppError('Nothing to undo', 400);
-    }
-    // Undo is terminal — no undo-of-undo ping-pong.
-    if (last.reason === 'undo') {
-      throw new AppError('That move was already an undo', 400);
-    }
-    if (last.actorUserId !== user.id) {
-      throw new AppError('Only the person who made the move can undo it', 403);
-    }
-    if (Date.now() - new Date(last.createdAt).getTime() > 5 * 60 * 1000) {
-      throw new AppError('The undo window (5 minutes) has passed', 400);
-    }
+    return d.sequelize.transaction(async (t) => {
+      const partner = await getLivePartner(id, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!canActOnRow(user, partner)) {
+        throw new AppError('You can only move businesses you own', 403);
+      }
+      const last = await d.PartnerStageEvent.findOne({
+        where: { partnerOrganisationId: id },
+        order: [['createdAt', 'DESC']],
+        transaction: t,
+      });
+      if (!last || !last.fromStage || last.toStage !== partner.pipelineStage) {
+        throw new AppError('Nothing to undo', 400);
+      }
+      // Undo is terminal — no undo-of-undo ping-pong.
+      if (last.reason === 'undo') {
+        throw new AppError('That move was already an undo', 400);
+      }
+      if (last.actorUserId !== user.id) {
+        throw new AppError('Only the person who made the move can undo it', 403);
+      }
+      if (Date.now() - new Date(last.createdAt).getTime() > 5 * 60 * 1000) {
+        throw new AppError('The undo window (5 minutes) has passed', 400);
+      }
 
-    const fromStage = partner.pipelineStage;
-    const toStage = last.fromStage;
-    // Restoring PARTNERED must meet the same entry bar as reaching it.
-    if (toStage === 'PARTNERED') {
-      await assertPartneredEntryRequirements(id, partner);
-    }
-    const availability =
-      toStage === 'LOST' ? 'disqualified'
-      : partner.ownerUserId ? 'owned' : 'available';
+      const fromStage = partner.pipelineStage;
+      const toStage = last.fromStage;
+      // Restoring PARTNERED must meet the same entry bar as reaching it.
+      if (toStage === 'PARTNERED') {
+        await assertPartneredEntryRequirements(id, partner, t);
+      }
+      const availability =
+        toStage === 'LOST' ? 'disqualified'
+        : partner.ownerUserId ? 'owned' : 'available';
 
-    await d.sequelize.transaction(async (t) => {
       // Conditional transition — a concurrent move loses cleanly instead of
       // silently overwriting it.
       const [moved] = await d.PartnerOrganisation.update(
@@ -358,8 +372,9 @@ export function makePartnerService(overrides = {}) {
         entityId: id, before: { stage: fromStage }, after: { stage: toStage },
         reason: 'undo', requestId, transaction: t,
       });
+      await d.fireCadenceHook('onStageChange', { partner, fromStage, toStage, user, transaction: t });
+      return partner;
     });
-    return partner;
   }
 
   /**
@@ -367,8 +382,8 @@ export function makePartnerService(overrides = {}) {
    * pipeline position; availability='follow_up_later' hides it from the queue
    * until the stale sweep wakes it at snoozedUntil.
    */
-  async function snoozePartner(id, user, until, requestId = null) {
-    const partner = await getLivePartner(id);
+  async function snoozePartnerTx(id, user, until, t, { requestId = null } = {}) {
+    const partner = await getLivePartner(id, { transaction: t, lock: t.LOCK.UPDATE });
     if (!canActOnRow(user, partner)) {
       throw new AppError('You can only snooze businesses you own', 403);
     }
@@ -382,36 +397,42 @@ export function makePartnerService(overrides = {}) {
     if (wake.getTime() > Date.now() + 366 * 24 * 60 * 60 * 1000) {
       throw new AppError('Snooze at most one year ahead', 400);
     }
-    await d.sequelize.transaction(async (t) => {
-      await partner.update(
-        { availability: 'follow_up_later', snoozedUntil: wake, staleFlag: false },
-        { transaction: t }
-      );
-      await d.audit.recordAuditEvent({
-        actorUser: user, action: 'partner.snoozed', entityType: 'partner_organisation',
-        entityId: id, after: { snoozedUntil: wake.toISOString() }, requestId, transaction: t,
-      });
+    await partner.update(
+      { availability: 'follow_up_later', snoozedUntil: wake, staleFlag: false },
+      { transaction: t }
+    );
+    await d.audit.recordAuditEvent({
+      actorUser: user, action: 'partner.snoozed', entityType: 'partner_organisation',
+      entityId: id, after: { snoozedUntil: wake.toISOString() }, requestId, transaction: t,
     });
+    await d.fireCadenceHook('onSnooze', { partner, until: wake, user, transaction: t });
     return partner;
   }
 
-  async function unsnoozePartner(id, user, requestId = null) {
-    const partner = await getLivePartner(id);
+  async function snoozePartner(id, user, until, requestId = null) {
+    return d.sequelize.transaction(async (t) => snoozePartnerTx(id, user, until, t, { requestId }));
+  }
+
+  async function unsnoozePartnerTx(id, user, t, { requestId = null } = {}) {
+    const partner = await getLivePartner(id, { transaction: t, lock: t.LOCK.UPDATE });
     if (!canActOnRow(user, partner)) {
       throw new AppError('You can only snooze businesses you own', 403);
     }
     if (partner.availability !== 'follow_up_later' && !partner.snoozedUntil) return partner;
-    await d.sequelize.transaction(async (t) => {
-      await partner.update(
-        { availability: partner.ownerUserId ? 'owned' : 'available', snoozedUntil: null },
-        { transaction: t }
-      );
-      await d.audit.recordAuditEvent({
-        actorUser: user, action: 'partner.unsnoozed', entityType: 'partner_organisation',
-        entityId: id, requestId, transaction: t,
-      });
+    await partner.update(
+      { availability: partner.ownerUserId ? 'owned' : 'available', snoozedUntil: null },
+      { transaction: t }
+    );
+    await d.audit.recordAuditEvent({
+      actorUser: user, action: 'partner.unsnoozed', entityType: 'partner_organisation',
+      entityId: id, requestId, transaction: t,
     });
+    await d.fireCadenceHook('onUnsnooze', { partner, user, source: 'manual', transaction: t });
     return partner;
+  }
+
+  async function unsnoozePartner(id, user, requestId = null) {
+    return d.sequelize.transaction(async (t) => unsnoozePartnerTx(id, user, t, { requestId }));
   }
 
   async function getTimeline(id, query = {}) {
@@ -493,10 +514,10 @@ export function makePartnerService(overrides = {}) {
     return { entries };
   }
 
-  async function logActivity(id, body, user, requestId = null) {
+  async function logActivityTx(id, body, user, t, { requestId = null, suppressCadenceHooks = false } = {}) {
     if (!ACTIVITY_TYPES.includes(body.type)) throw new AppError('Unknown activity type', 400);
     if (!body.summary || !String(body.summary).trim()) throw new AppError('Summary is required', 400);
-    const partner = await getLivePartner(id);
+    const partner = await getLivePartner(id, { transaction: t, lock: t.LOCK.UPDATE });
     if (!canActOnRow(user, partner) && !hasCapability(user, 'partners.reassign')) {
       // redemption_ops may log notes on any partner (fulfilment context)
       if (!(user.redeemOpsRole === 'redemption_ops' && hasCapability(user, 'activities.log'))) {
@@ -505,34 +526,42 @@ export function makePartnerService(overrides = {}) {
     }
 
     const meaningful = MEANINGFUL_ACTIVITY_TYPES.includes(body.type);
-    return d.sequelize.transaction(async (t) => {
-      const activity = await d.OutreachActivity.create(
+    const activity = await d.OutreachActivity.create(
+      {
+        partnerOrganisationId: id,
+        contactId: body.contactId || null,
+        type: body.type,
+        direction: ['outbound', 'inbound', 'internal'].includes(body.direction) ? body.direction : 'outbound',
+        summary: String(body.summary).trim(),
+        details: body.details || null,
+        outcome: body.outcome || null,
+        occurredAt: body.occurredAt ? new Date(body.occurredAt) : new Date(),
+        actorUserId: user.id,
+      },
+      { transaction: t }
+    );
+    if (meaningful) {
+      await partner.update(
         {
-          partnerOrganisationId: id,
-          contactId: body.contactId || null,
-          type: body.type,
-          direction: ['outbound', 'inbound', 'internal'].includes(body.direction) ? body.direction : 'outbound',
-          summary: String(body.summary).trim(),
-          details: body.details || null,
-          outcome: body.outcome || null,
-          occurredAt: body.occurredAt ? new Date(body.occurredAt) : new Date(),
-          actorUserId: user.id,
+          lastActivityAt: activity.occurredAt,
+          firstOutreachAt: partner.firstOutreachAt || activity.occurredAt,
+          atRiskFlag: false,
+          staleFlag: false,
         },
         { transaction: t }
       );
-      if (meaningful) {
-        await partner.update(
-          {
-            lastActivityAt: activity.occurredAt,
-            firstOutreachAt: partner.firstOutreachAt || activity.occurredAt,
-            atRiskFlag: false,
-            staleFlag: false,
-          },
-          { transaction: t }
-        );
-      }
-      return activity;
-    });
+    }
+    // A real inbound reply is a cadence exit signal. The suppress flag exists
+    // for the cadence engine itself (P1): the activity IT logs on completion
+    // must not re-enter the engine.
+    if (meaningful && activity.direction === 'inbound' && !suppressCadenceHooks) {
+      await d.fireCadenceHook('onInboundActivity', { partner, activity, user, transaction: t });
+    }
+    return activity;
+  }
+
+  async function logActivity(id, body, user, requestId = null) {
+    return d.sequelize.transaction(async (t) => logActivityTx(id, body, user, t, { requestId }));
   }
 
   async function editActivity(activityId, body, user, requestId = null) {
@@ -701,6 +730,12 @@ export function makePartnerService(overrides = {}) {
         throw new AppError('The duplicate has rewards or activations attached — move or end those first, then merge', 409);
       }
 
+      // Cadence hook BEFORE repointing (docs/plans/redeem-ops-cadences.md §5.4):
+      // the engine must exit the duplicate's enrollment while its tasks still
+      // point at the duplicate, or survivor tasks end up tied to a foreign
+      // enrollment.
+      await d.fireCadenceHook('onMergeDuplicate', { survivor, duplicate, user, transaction: t });
+
       for (const [Model, fk] of REPOINT_TARGETS()) {
         await Model.update({ [fk]: survivorId }, { where: { [fk]: duplicateId }, transaction: t });
       }
@@ -810,6 +845,8 @@ export function makePartnerService(overrides = {}) {
     importPartners, getTimeline, logActivity, editActivity, voidActivity,
     addContact, updateContact, archiveContact, addLocation, updateLocation,
     mergePartners, deletePartner, canActOnRow,
+    // P0 caller-transaction primitives (cadence engine + composed flows)
+    changeStageTx, snoozePartnerTx, unsnoozePartnerTx, logActivityTx,
   };
 }
 

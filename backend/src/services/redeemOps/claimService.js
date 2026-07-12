@@ -2,6 +2,7 @@ import { PartnerOrganisation, PartnerAssignmentEvent, PartnerStageEvent, User, s
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
+import { fireCadenceHook } from './cadenceHooks.js';
 
 /**
  * Business claiming / ownership (docs/redeem-ops/ERD.md §4.1, brief §15).
@@ -14,7 +15,7 @@ import { makeRedeemOpsAuditService } from './auditService.js';
 export function makeClaimService(overrides = {}) {
   const d = {
     PartnerOrganisation, PartnerAssignmentEvent, PartnerStageEvent, User, sequelize, logger,
-    audit: makeRedeemOpsAuditService(), ...overrides,
+    audit: makeRedeemOpsAuditService(), fireCadenceHook, ...overrides,
   };
 
   async function conflictPayload(partnerId) {
@@ -114,6 +115,7 @@ export function makeClaimService(overrides = {}) {
         actorUser: user, action: 'partner.released', entityType: 'partner_organisation',
         entityId: partnerId, reason, requestId, transaction: t,
       });
+      await d.fireCadenceHook('onRelease', { partnerId, user, transaction: t });
       return rows[0];
     });
   }
@@ -152,6 +154,7 @@ export function makeClaimService(overrides = {}) {
         entityId: partnerId, before: { ownerUserId: fromUserId }, after: { ownerUserId: toUserId },
         reason, requestId, transaction: t,
       });
+      await d.fireCadenceHook('onReassign', { partner, fromUserId, toUserId, actor, transaction: t });
       return partner;
     });
   }
