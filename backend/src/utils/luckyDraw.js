@@ -35,7 +35,12 @@ function cleanString(v, max) {
 function cleanYmd(v) {
   if (typeof v !== 'string') return undefined;
   const s = v.trim();
-  if (!YMD_RE.test(s) || Number.isNaN(Date.parse(`${s}T00:00:00Z`))) return undefined;
+  if (!YMD_RE.test(s)) return undefined;
+  // Strict calendar check — Date.parse would silently roll 2026-02-31 into
+  // March; a draw date must be a real day.
+  const [y, m, day] = s.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, day));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== day) return undefined;
   return s;
 }
 

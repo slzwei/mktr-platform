@@ -30,9 +30,13 @@ function parseArgs(argv) {
   const args = { command, flags: {} };
   for (let i = 0; i < rest.length; i += 1) {
     const a = rest[i];
-    if (a === '--approve') args.flags.decision = 'approved';
-    else if (a === '--reject') args.flags.decision = 'rejected';
-    else if (a.startsWith('--')) {
+    if (a === '--approve' || a === '--reject') {
+      const decision = a === '--approve' ? 'approved' : 'rejected';
+      if (args.flags.decision && args.flags.decision !== decision) {
+        throw new Error('Pass either --approve or --reject, not both');
+      }
+      args.flags.decision = decision;
+    } else if (a.startsWith('--')) {
       args.flags[a.slice(2)] = rest[i + 1];
       i += 1;
     }
@@ -92,7 +96,12 @@ async function main() {
     }
     case 'draw': {
       const user = await resolveUser(flags.as);
-      const witness = flags.witness ? await resolveUser(flags.witness) : user;
+      // The witness is the point of "witnessed by MKTR staff" — it must be a
+      // deliberate second identity, never an implicit self-witness default.
+      if (!flags.witness) {
+        throw new Error('--witness <email|userId> is required for draw (the public promise is a witnessed pick)');
+      }
+      const witness = await resolveUser(flags.witness);
       const result = await svc.runDrawAttempt(
         flags.draw,
         { witnessUserId: witness.id, reason: flags.reason || 'initial' },

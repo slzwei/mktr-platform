@@ -46,7 +46,7 @@ const Draw = sequelize.define('Draw', {
     allowNull: true,
     comment: 'sha256 over the canonical ordered entry tuples (id|prospectId|phoneHash|chances|boostVia) — committed at seal, BEFORE any seed exists'
   },
-  witnessedByUserId: { type: DataTypes.UUID, allowNull: true, references: { model: 'users', key: 'id' } },
+  witnessedByUserId: { type: DataTypes.UUID, allowNull: true, references: { model: 'users', key: 'id' }, onDelete: 'SET NULL' },
   notes: { type: DataTypes.TEXT, allowNull: true },
   createdBy: { type: DataTypes.UUID, allowNull: false, references: { model: 'users', key: 'id' } }
 }, {

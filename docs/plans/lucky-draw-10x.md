@@ -339,3 +339,19 @@ in-memory OTP marker.
   `User`/`mktrLeadsId` (paid `ExternalAgent` rail out of scope).
 - Declined/kept-as-is: none material; DNC "transactional winner contact" kept as
   an explicit legal-sign-off item rather than a code decision (§4.6).
+- **2026-07-12 — Codex (gpt-5.6-sol, xhigh) implementation review (Phases 1–2
+  diff), 13 findings, 11 fixed:** via WHITELIST in boost evidence (manual/admin
+  and auto_on_capture unlocks no longer auto-boost as fake scans; manual is
+  review-gated like button); freeze reads moved inside the transaction after
+  the status claim; enabled draws REQUIRE a valid closesAt (create + update);
+  strict calendar validation (2026-02-31 no longer rolls into March);
+  'unclaimed' cannot be recorded before the 14-day claimDeadline (use
+  'declined'); outcome+draw updates transactional, claim refused on a voided
+  draw; poolHash excludes prospectId (erasure ≠ tampering; eligibleHash still
+  detects it per attempt); redraw reason must equal the prior attempt's
+  recorded outcome; CLI requires an explicit --witness and rejects
+  --approve+--reject; boundary queries use exclusive < ; attribute-level
+  onDelete parity for witness/boost-event FKs (sync-built schemas match
+  migration 059). Declined: raw-vs-DOMPurify terms bytes (documented canonical
+  = stored designer HTML, §4.6); create-path terms-pin atomicity (validated
+  pre-create; update path self-heals idempotently — commented in code).

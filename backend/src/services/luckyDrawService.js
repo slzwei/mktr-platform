@@ -57,12 +57,16 @@ function maskPhoneLast4(phone) {
 /**
  * Canonical pool commitment: sha256 over the ordered entry tuples. Includes
  * every outcome-affecting field (weights, identity hash, boost evidence), so
- * the hash pins the WEIGHTED pool, not just membership.
+ * the hash pins the WEIGHTED pool, not just membership. prospectId is
+ * deliberately EXCLUDED — it is a live pointer that goes NULL on erasure, and
+ * an erasure must not read as pool tampering (Codex finding #5); identity is
+ * committed via phoneHash, and erasure-at-pick-time is separately visible
+ * through each attempt's eligibleHash.
  */
 export function computePoolHash(entries) {
   const lines = [...entries]
     .sort((a, b) => String(a.id).localeCompare(String(b.id)))
-    .map((e) => `${e.id}|${e.prospectId || ''}|${e.phoneHash}|${e.chances}|${e.boostVia || ''}`);
+    .map((e) => `${e.id}|${e.phoneHash}|${e.chances}|${e.boostVia || ''}`);
   return sha256Hex(lines.join('\n'));
 }
 
@@ -192,51 +196,80 @@ export function makeLuckyDrawService(overrides = {}) {
       throw new AppError(`Entries close at ${new Date(draw.closesAt).toISOString()} — freeze after that`, 409);
     }
 
-    const prospects = await d.Prospect.findAll({
-      where: {
-        campaignId: draw.campaignId,
-        phone: { [Op.ne]: null },
-        createdAt: { [Op.lte]: draw.closesAt },
-      },
-      attributes: ['id', 'firstName', 'lastName', 'phone', 'sourceMetadata', 'createdAt'],
-    });
-
-    const eligible = prospects.filter((p) => {
-      const sm = p.sourceMetadata || {};
-      return (
-        typeof sm.phoneVerifiedAt === 'string' &&
-        typeof sm.phoneVerifiedFor === 'string' &&
-        sm.phoneVerifiedFor === sha256Hex(p.phone)
-      );
-    });
-
-    const rows = eligible.map((p) => ({
-      drawId: draw.id,
-      prospectId: p.id,
-      phoneHash: sha256Hex(p.phone),
-      phoneLast4: maskPhoneLast4(p.phone),
-      displayName: maskName(p.firstName, p.lastName),
-      chances: 1,
-      verifiedAtFreeze: new Date(p.sourceMetadata.phoneVerifiedAt),
-    }));
-
+    // The snapshot read happens INSIDE the transaction, AFTER the transition
+    // claims the draw (Codex finding #2): any entrant commit that this read
+    // cannot see lands after the frozen boundary and is excluded by design,
+    // rather than being silently missable by a pre-transaction read.
+    // createdAt < closesAt — the boundary instant is exclusive (sgtTime.js).
+    let candidates = 0;
+    let rows = [];
     await d.sequelize.transaction(async (t) => {
       await transition(draw.id, 'open', 'frozen', {}, t);
+
+      const prospects = await d.Prospect.findAll({
+        where: {
+          campaignId: draw.campaignId,
+          phone: { [Op.ne]: null },
+          createdAt: { [Op.lt]: draw.closesAt },
+        },
+        attributes: ['id', 'firstName', 'lastName', 'phone', 'sourceMetadata', 'createdAt'],
+        transaction: t,
+      });
+      candidates = prospects.length;
+
+      const eligible = prospects.filter((p) => {
+        const sm = p.sourceMetadata || {};
+        return (
+          typeof sm.phoneVerifiedAt === 'string' &&
+          typeof sm.phoneVerifiedFor === 'string' &&
+          sm.phoneVerifiedFor === sha256Hex(p.phone)
+        );
+      });
+
+      rows = eligible.map((p) => ({
+        drawId: draw.id,
+        prospectId: p.id,
+        phoneHash: sha256Hex(p.phone),
+        phoneLast4: maskPhoneLast4(p.phone),
+        displayName: maskName(p.firstName, p.lastName),
+        chances: 1,
+        verifiedAtFreeze: new Date(p.sourceMetadata.phoneVerifiedAt),
+      }));
       if (rows.length > 0) await d.DrawEntry.bulkCreate(rows, { transaction: t });
     });
 
+    // Terms drift warning (Codex finding #7): the draw pinned a terms version
+    // at create; if the campaign's live version moved since, entrants accepted
+    // different terms — surface it, don't silently absorb it.
+    const campaign = await d.Campaign.findByPk(draw.campaignId, { attributes: ['design_config'] });
+    const liveTermsVersionId = campaign?.design_config?.luckyDraw?.termsVersionId || null;
+    const termsDrift = Boolean(
+      draw.termsVersionId && liveTermsVersionId && String(liveTermsVersionId) !== String(draw.termsVersionId)
+    );
+    if (termsDrift) {
+      d.logger.warn('lucky_draw.terms_drift', {
+        drawId: draw.id, pinned: draw.termsVersionId, live: liveTermsVersionId,
+      });
+    }
+
     d.logger.info('lucky_draw.frozen', {
       drawId: draw.id, campaignId: draw.campaignId,
-      candidates: prospects.length, entries: rows.length,
+      candidates, entries: rows.length,
     });
-    return { drawId: draw.id, candidates: prospects.length, entries: rows.length };
+    return { drawId: draw.id, candidates, entries: rows.length, termsDrift };
   }
 
   /**
    * The boost evidence for a draw: append-only 'unlocked' events on the
    * designated activation, non-manual issuance, inside boostClosesAt, for
    * prospects that hold a frozen entry. Two-step query (no association
-   * dependency). Returns { byProspect, buttonEventsNeedingReview }.
+   * dependency). Returns { byProspect, undecidedButtons }.
+   *
+   * via WHITELIST (Codex finding #1): ONLY `agent_scan` boosts automatically —
+   * it is the token-backed evidence the routes derive server-side.
+   * `agent_button` (consultant assertion) and `manual` (admin/support unlock,
+   * no meeting evidence at all) both require an explicit approved review.
+   * `auto_on_capture` (voucher issued without any meeting) NEVER boosts.
    */
   async function collectBoostEvidence(draw, entries) {
     if (!draw.activationId) return { byProspect: new Map(), undecidedButtons: [] };
@@ -254,12 +287,13 @@ export function makeLuckyDrawService(overrides = {}) {
     if (entitlements.length === 0) return { byProspect: new Map(), undecidedButtons: [] };
     const entitlementById = new Map(entitlements.map((e) => [String(e.id), e]));
 
+    // Exclusive boundary: an event AT the boundary instant is past the window.
     const cutoff = draw.boostClosesAt || d.now();
     const events = await d.RedemptionEvent.findAll({
       where: {
         entitlementId: { [Op.in]: entitlements.map((e) => e.id) },
         type: 'unlocked',
-        createdAt: { [Op.lte]: cutoff },
+        createdAt: { [Op.lt]: cutoff },
       },
       attributes: ['id', 'entitlementId', 'metadata', 'createdAt'],
       order: [['createdAt', 'ASC']],
@@ -276,20 +310,21 @@ export function makeLuckyDrawService(overrides = {}) {
     for (const ev of events) {
       const ent = entitlementById.get(String(ev.entitlementId));
       if (!ent) continue;
-      const via = ev.metadata?.via === 'agent_button' ? 'agent_button' : 'agent_scan';
+      const via = ev.metadata?.via;
       const key = String(ent.prospectId);
       if (via === 'agent_scan') {
-        // Scan is the strongest evidence — always wins for the prospect.
+        // Token-backed scan — the strongest evidence; always wins for the prospect.
         byProspect.set(key, { via, eventId: ev.id });
-      } else {
+      } else if (via === 'agent_button' || via === 'manual') {
         const decision = reviewByEntitlement.get(String(ev.entitlementId));
         if (decision === 'approved') {
-          if (!byProspect.has(key)) byProspect.set(key, { via, eventId: ev.id });
+          if (!byProspect.has(key)) byProspect.set(key, { via: 'agent_button', eventId: ev.id });
         } else if (decision !== 'rejected') {
-          undecidedButtons.push({ entitlementId: ent.id, prospectId: ent.prospectId, eventId: ev.id });
+          undecidedButtons.push({ entitlementId: ent.id, prospectId: ent.prospectId, eventId: ev.id, via });
         }
         // rejected → no boost, no block.
       }
+      // Any other via (auto_on_capture, unknown) → never session evidence.
     }
     return { byProspect, undecidedButtons };
   }
@@ -338,6 +373,10 @@ export function makeLuckyDrawService(overrides = {}) {
   async function sealDraw(drawId, user) {
     const draw = await getDrawOr404(drawId);
     if (draw.status !== 'frozen') throw new AppError(`Draw is ${draw.status}, expected frozen`, 409);
+    // Writer-race note: unlike freeze, seal's evidence reads can stay outside
+    // the transaction — seal only runs at/after boostClosesAt, so any unlock
+    // event still committing NOW is out-of-window (createdAt >= boostClosesAt)
+    // by construction; the conditional transition below serializes sealers.
     const now = d.now();
     if (draw.boostClosesAt && now.getTime() < new Date(draw.boostClosesAt).getTime()) {
       throw new AppError(`Boost window closes at ${new Date(draw.boostClosesAt).toISOString()} — seal after that`, 409);
@@ -412,8 +451,19 @@ export function makeLuckyDrawService(overrides = {}) {
     if (priorAttempts.some((a) => a.outcome === 'claimed')) {
       throw new AppError('This draw already has a claimed winner', 409);
     }
-    if (priorAttempts.length > 0 && reason === 'initial') {
-      throw new AppError("A redraw needs its reason (the prior attempt's outcome), not 'initial'", 422);
+    if (priorAttempts.length > 0) {
+      // The redraw reason IS the prior attempt's recorded outcome — the audit
+      // ledger must not be able to say "unclaimed" about a declined winner
+      // (Codex finding #10).
+      const prior = priorAttempts[priorAttempts.length - 1];
+      if (reason !== prior.outcome) {
+        throw new AppError(
+          `Redraw reason must match the prior attempt's outcome ('${prior.outcome}'), got '${reason}'`,
+          422
+        );
+      }
+    } else if (reason !== 'initial') {
+      throw new AppError("The first attempt's reason must be 'initial'", 422);
     }
 
     const pickedBefore = new Set(priorAttempts.map((a) => String(a.pickedEntryId)));
@@ -469,7 +519,14 @@ export function makeLuckyDrawService(overrides = {}) {
     };
   }
 
-  /** Close out an attempt: claimed | unclaimed | unreachable | ineligible | declined. */
+  /**
+   * Close out an attempt: claimed | unclaimed | unreachable | ineligible | declined.
+   * 'unclaimed' is the DEADLINE LAPSE outcome and cannot be recorded early —
+   * the public promise is 14 days, and an operator must not be able to lapse a
+   * winner before it (a winner who actively says no is 'declined'). A claimed
+   * outcome requires the draw to still be live (drawn/published) — not void —
+   * and both writes happen in one transaction (Codex finding #4).
+   */
   async function recordAttemptOutcome(attemptId, { outcome, contactedAt = null, claimedAt = null } = {}, user) {
     if (!OUTCOMES.has(outcome)) {
       throw new AppError(`outcome must be one of: ${[...OUTCOMES].join(', ')}`, 422);
@@ -477,22 +534,38 @@ export function makeLuckyDrawService(overrides = {}) {
     const attempt = await d.DrawAttempt.findByPk(attemptId);
     if (!attempt) throw new AppError('Attempt not found', 404);
 
-    const [count] = await d.DrawAttempt.update(
-      {
-        outcome,
-        ...(contactedAt ? { contactedAt } : {}),
-        ...(outcome === 'claimed' ? { claimedAt: claimedAt || d.now() } : {}),
-      },
-      { where: { id: attemptId, outcome: 'pending' } }
-    );
-    if (count === 0) throw new AppError(`Attempt already has outcome '${attempt.outcome}'`, 409);
-
-    if (outcome === 'claimed') {
-      await d.Draw.update(
-        { status: 'claimed' },
-        { where: { id: attempt.drawId, status: { [Op.in]: ['drawn', 'published'] } } }
+    if (
+      outcome === 'unclaimed' &&
+      attempt.claimDeadline &&
+      d.now().getTime() < new Date(attempt.claimDeadline).getTime()
+    ) {
+      throw new AppError(
+        `The claim window runs until ${new Date(attempt.claimDeadline).toISOString()} — a winner cannot lapse early (use 'declined' if they said no)`,
+        409
       );
     }
+
+    await d.sequelize.transaction(async (t) => {
+      const [count] = await d.DrawAttempt.update(
+        {
+          outcome,
+          ...(contactedAt ? { contactedAt } : {}),
+          ...(outcome === 'claimed' ? { claimedAt: claimedAt || d.now() } : {}),
+        },
+        { where: { id: attemptId, outcome: 'pending' }, transaction: t }
+      );
+      if (count === 0) throw new AppError(`Attempt already has outcome '${attempt.outcome}'`, 409);
+
+      if (outcome === 'claimed') {
+        const [drawCount] = await d.Draw.update(
+          { status: 'claimed' },
+          { where: { id: attempt.drawId, status: { [Op.in]: ['drawn', 'published'] } }, transaction: t }
+        );
+        if (drawCount === 0) {
+          throw new AppError('Draw is no longer live (voided or reset?) — cannot record a claim', 409);
+        }
+      }
+    });
     return d.DrawAttempt.findByPk(attemptId);
   }
 

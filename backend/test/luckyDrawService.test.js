@@ -256,11 +256,14 @@ function boostScenario({ reviews = [] } = {}) {
   const entitlements = [
     { id: 'ent-1', prospectId: 'p1', issuedVia: 'hook' },
     { id: 'ent-2', prospectId: 'p2', issuedVia: 'hook' },
+    { id: 'ent-3', prospectId: 'p3', issuedVia: 'hook' },
     // ent for p4 excluded by the issuedVia != manual query — emulate by not returning it.
   ];
   const events = [
     { id: 'ev-1', entitlementId: 'ent-1', metadata: { via: 'agent_scan' }, createdAt: new Date('2026-09-01T00:00:00Z') },
     { id: 'ev-2', entitlementId: 'ent-2', metadata: { via: 'agent_button' }, createdAt: new Date('2026-09-02T00:00:00Z') },
+    // p3's voucher was auto-unlocked at capture — NEVER session evidence.
+    { id: 'ev-3', entitlementId: 'ent-3', metadata: { via: 'auto_on_capture' }, createdAt: new Date('2026-09-02T00:00:00Z') },
   ];
   return buildDeps({ draw: { ...openDraw, status: 'frozen' }, entries, entitlements, events, reviews });
 }
@@ -309,6 +312,24 @@ describe('sealDraw', () => {
     const result2 = await svc2.sealDraw(DRAW_ID, ADMIN);
     expect(Object.fromEntries(rejected.state.entries.map((e) => [e.id, e.chances])).e2).toBe(1);
     expect(result2.totalChances).toBe(13);
+  });
+
+  it('never boosts auto_on_capture unlocks, and manual unlocks need a review like buttons', async () => {
+    // auto_on_capture (ev-3/p3) is present in every boostScenario — the
+    // approved run above already proved e3 stays 1×. Now: an admin/manual
+    // unlock must be review-gated, not treated as a scan.
+    const scenario = boostScenario({
+      reviews: [{ id: 'r1', drawId: DRAW_ID, entitlementId: 'ent-2', decision: 'rejected' }],
+    });
+    scenario.deps.RedemptionEvent.findAll = jest.fn().mockResolvedValue([
+      { id: 'ev-m', entitlementId: 'ent-1', metadata: { via: 'manual' }, createdAt: new Date('2026-09-01T00:00:00Z') },
+    ]);
+    const svc = makeLuckyDrawService(scenario.deps);
+    const err = await svc.sealDraw(DRAW_ID, ADMIN).catch((e) => e);
+    expect(err.statusCode).toBe(409);
+    expect(err.data.undecided).toEqual([
+      expect.objectContaining({ entitlementId: 'ent-1', via: 'manual' }),
+    ]);
   });
 });
 
@@ -364,6 +385,11 @@ describe('runDrawAttempt', () => {
     const { deps: deps2 } = sealedScenario({ entries, attempts: [lapsed] });
     const svc2 = makeLuckyDrawService(deps2);
     await expect(svc2.runDrawAttempt(DRAW_ID, { reason: 'initial' }, ADMIN)).rejects.toMatchObject({ statusCode: 422 });
+    // The reason must be the prior attempt's actual outcome, not any non-initial value.
+    const declined = { ...prior, outcome: 'declined' };
+    const { deps: deps3 } = sealedScenario({ entries, attempts: [declined] });
+    const svc3 = makeLuckyDrawService(deps3);
+    await expect(svc3.runDrawAttempt(DRAW_ID, { reason: 'unclaimed' }, ADMIN)).rejects.toMatchObject({ statusCode: 422 });
   });
 
   it('redraw excludes every previously picked entry AND erased entrants', async () => {
@@ -399,6 +425,21 @@ describe('recordAttemptOutcome', () => {
     await expect(svc.recordAttemptOutcome('attempt-1', { outcome: 'declined' }, ADMIN))
       .rejects.toMatchObject({ statusCode: 409 });
   });
+
+  it("refuses to lapse a winner before the 14-day claim deadline ('unclaimed' too early)", async () => {
+    const entries = [entryRow('e1', 'p1', '+6591111111', 1)];
+    const attempt = {
+      id: 'attempt-1', drawId: DRAW_ID, attemptNo: 1, pickedEntryId: 'e1',
+      outcome: 'pending', claimDeadline: new Date(NOW.getTime() + 7 * 24 * 3600 * 1000),
+    };
+    const { deps } = sealedScenario({ entries, attempts: [attempt] });
+    const svc = makeLuckyDrawService(deps);
+    await expect(svc.recordAttemptOutcome('attempt-1', { outcome: 'unclaimed' }, ADMIN))
+      .rejects.toMatchObject({ statusCode: 409 });
+    // An explicit "no" is fine at any time.
+    const updated = await svc.recordAttemptOutcome('attempt-1', { outcome: 'declined' }, ADMIN);
+    expect(updated.outcome).toBe('declined');
+  });
 });
 
 // ── verifyDraw ──────────────────────────────────────────────────────────────
@@ -429,5 +470,31 @@ describe('verifyDraw', () => {
     const report2 = await svc2.verifyDraw(DRAW_ID);
     expect(report2.ok).toBe(false);
     expect(report2.checks.some((c) => c.check === 'poolHash' && !c.ok)).toBe(true);
+  });
+
+  it('treats post-attempt erasure as an eligible-set change, NOT pool tampering', async () => {
+    const entries = [
+      entryRow('e1', 'p1', '+6591111111', 1),
+      entryRow('e2', 'p2', '+6592222222', 10, 'agent_scan'),
+    ];
+    const orderedEligible = [...entries].sort((a, b) => a.id.localeCompare(b.id));
+    const seed = 'a'.repeat(64);
+    const picked = pickWinner(seed, orderedEligible);
+    const attempt = {
+      id: 'attempt-1', drawId: DRAW_ID, attemptNo: 1, seed,
+      totalChances: 11, eligibleHash: computeEligibleHash(orderedEligible),
+      pickedEntryId: picked.id, outcome: 'pending',
+    };
+    const scenario = sealedScenario({ entries, attempts: [attempt] });
+    // Erase the non-picked entrant after the attempt.
+    const erased = scenario.state.entries.find((e) => e.id !== picked.id);
+    erased.prospectId = null;
+    const svc = makeLuckyDrawService(scenario.deps);
+    const report = await svc.verifyDraw(DRAW_ID);
+    // poolHash no longer includes prospectId — erasure must not read as tamper…
+    expect(report.checks.find((c) => c.check === 'poolHash').ok).toBe(true);
+    // …but the attempt's committed eligible set visibly changed.
+    expect(report.ok).toBe(false);
+    expect(report.checks.some((c) => c.check.includes('eligibleSet') && !c.ok)).toBe(true);
   });
 });

@@ -39,7 +39,7 @@ const DrawAttempt = sequelize.define('DrawAttempt', {
     comment: 'Why this attempt ran: initial|unclaimed|unreachable|ineligible|declined (= prior attempt outcome)'
   },
   drawnAt: { type: DataTypes.DATE, allowNull: false },
-  witnessedByUserId: { type: DataTypes.UUID, allowNull: true, references: { model: 'users', key: 'id' } },
+  witnessedByUserId: { type: DataTypes.UUID, allowNull: true, references: { model: 'users', key: 'id' }, onDelete: 'SET NULL' },
   contactedAt: { type: DataTypes.DATE, allowNull: true },
   claimDeadline: { type: DataTypes.DATE, allowNull: true, comment: 'drawnAt + 14 days (the public /winners promise)' },
   claimedAt: { type: DataTypes.DATE, allowNull: true },

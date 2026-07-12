@@ -35,6 +35,7 @@ const DrawEntry = sequelize.define('DrawEntry', {
     type: DataTypes.UUID,
     allowNull: true,
     references: { model: 'redemption_events', key: 'id' },
+    onDelete: 'SET NULL',
     comment: 'The append-only unlocked event backing the boost'
   }
 }, {
