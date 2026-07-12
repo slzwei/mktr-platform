@@ -201,7 +201,7 @@ export default function ContentPanel({ currentDesign, onDesignChange, campaignNa
  placeholder="e.g., goodies.sg" maxLength={40}
  />
  <p className="text-xs text-muted-foreground">
- Large display name at the top of the page. Leave blank to derive it from the campaign name.
+ Large display name at the top of the page. Leave blank to show the campaign's customer domain (redeem.sg or mktr.sg).
  </p>
  </div>
 

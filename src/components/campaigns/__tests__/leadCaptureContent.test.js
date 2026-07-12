@@ -2,21 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { brand } from '@/lib/brand';
 import {
   deriveLeadCaptureContent,
-  brandFromCampaignName,
   paragraphsFromText,
 } from '@/components/campaigns/leadCaptureContent';
-
-describe('brandFromCampaignName', () => {
-  it('takes the first significant word and appends .sg', () => {
-    expect(brandFromCampaignName('Goodies — Free Luggage')).toBe('goodies.sg');
-    expect(brandFromCampaignName('Acme Roadshow 2026')).toBe('acme.sg');
-  });
-
-  it('returns null for empty input', () => {
-    expect(brandFromCampaignName('')).toBeNull();
-    expect(brandFromCampaignName(null)).toBeNull();
-  });
-});
 
 describe('paragraphsFromText', () => {
   it('splits on blank lines and trims', () => {
@@ -38,9 +25,21 @@ describe('deriveLeadCaptureContent', () => {
     expect(wordmark).toBe('custom.sg');
   });
 
-  it('falls back to the campaign name when no wordmark is set', () => {
-    const { wordmark } = deriveLeadCaptureContent({ name: 'Acme Campaign', design_config: {} });
-    expect(wordmark).toBe('acme.sg');
+  it('falls back to the customer host when no wordmark is set', () => {
+    // Empty design_config → default customer host (redeem.sg), never a domain
+    // fabricated from the campaign name.
+    const redeemDefault = deriveLeadCaptureContent({
+      name: 'Tokyo Getaway Lucky Draw',
+      design_config: {},
+    });
+    expect(redeemDefault.wordmark).toBe('redeem.sg');
+
+    // An mktr-hosted campaign shows mktr.sg.
+    const mktrHosted = deriveLeadCaptureContent({
+      name: 'Tokyo Getaway Lucky Draw',
+      design_config: { customerHost: 'mktr' },
+    });
+    expect(mktrHosted.wordmark).toBe('mktr.sg');
   });
 
   it('derives the story from storyText ONLY (no formSubheadline fallback)', () => {
