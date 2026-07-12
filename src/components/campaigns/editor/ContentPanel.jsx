@@ -22,7 +22,7 @@ import { TC_TEMPLATES } from './constants';
 import { brand } from"@/lib/brand";
 import { HERO_FONTS, DEFAULT_HERO_FONT } from"@/lib/heroFonts";
 
-export default function ContentPanel({ currentDesign, onDesignChange }) {
+export default function ContentPanel({ currentDesign, onDesignChange, campaignName }) {
  const [uploading, setUploading] = useState(false);
  const [uploadingVideo, setUploadingVideo] = useState(false);
  const fileInputRef = useRef(null);
@@ -47,6 +47,11 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
  fileInputRef.current.value = '';
  }
  };
+
+ // Redeem homepage publication (design_config.featuredDrop). Server-side this
+ // is admin-only: non-admin saves preserve the stored value (utils/featuredDrop.js).
+ const featuredDrop = currentDesign.featuredDrop || {};
+ const setFeaturedDrop = (patch) => onDesignChange('featuredDrop', { ...featuredDrop, ...patch });
 
  const handleVideoUpload = async (event) => {
  const file = event.target.files[0];
@@ -97,6 +102,67 @@ export default function ContentPanel({ currentDesign, onDesignChange }) {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Redeem homepage — feature this campaign as a drop on redeem.sg */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm font-semibold text-foreground">Feature on redeem.sg homepage</Label>
+          <Switch
+            checked={featuredDrop.enabled === true}
+            onCheckedChange={(v) => setFeaturedDrop({ enabled: v === true })}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground -mt-1">
+          Shows in the Drops section on redeem.sg while this campaign is active. Admin-only —
+          saves from other roles keep the previous setting. Display cap and end date only
+          change the homepage; they don&apos;t stop sign-ups.
+        </p>
+        {featuredDrop.enabled === true && (
+          <div className="space-y-2">
+            <Input
+              value={featuredDrop.title || ''}
+              onChange={(e) => setFeaturedDrop({ title: e.target.value })}
+              placeholder={campaignName || 'Drop title (defaults to campaign name)'}
+              maxLength={40}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                value={featuredDrop.valueLabel || ''}
+                onChange={(e) => setFeaturedDrop({ valueLabel: e.target.value })}
+                placeholder="Value — FREE, S$20…"
+                maxLength={12}
+              />
+              <Input
+                value={featuredDrop.emoji || ''}
+                onChange={(e) => setFeaturedDrop({ emoji: e.target.value })}
+                placeholder="Emoji — 🧳"
+                maxLength={8}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                type="number"
+                min="1"
+                value={featuredDrop.cap ?? ''}
+                onChange={(e) => setFeaturedDrop({ cap: e.target.value === '' ? undefined : Number(e.target.value) })}
+                placeholder="Display cap (optional)"
+              />
+              <Input
+                type="date"
+                value={featuredDrop.endsAt || ''}
+                onChange={(e) => setFeaturedDrop({ endsAt: e.target.value || undefined })}
+                title="Homepage end date (SGT, optional)"
+              />
+            </div>
+            {(!featuredDrop.valueLabel || !featuredDrop.emoji) && (
+              <p className="text-xs text-amber-600 dark:text-amber-500 flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" />
+                Add a value label and emoji so the homepage card renders fully.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
  {/* Headline */}

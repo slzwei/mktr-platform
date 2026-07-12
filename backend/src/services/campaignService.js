@@ -4,6 +4,26 @@ import { getTenantId } from '../middleware/tenant.js';
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
+import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
+
+/**
+ * Clamp the security-sensitive keys of a design_config before persisting.
+ * customerHost: enum clamp (never trust a raw host from client JSON).
+ * featuredDrop: publication to the public redeem.sg homepage — admin-only to
+ * change; non-admins keep whatever is already stored (see utils/featuredDrop.js).
+ */
+function clampDesignConfig(incoming, storedConfig, role) {
+  if (!incoming || typeof incoming !== 'object') return incoming;
+  const clamped = { ...incoming, customerHost: normalizeCustomerHostChoice(incoming.customerHost) };
+  const featuredDrop = applyFeaturedDropPolicy({
+    incoming: incoming.featuredDrop,
+    stored: storedConfig?.featuredDrop,
+    role,
+  });
+  if (featuredDrop === undefined) delete clamped.featuredDrop;
+  else clamped.featuredDrop = featuredDrop;
+  return clamped;
+}
 
 /**
  * Compute campaign metrics from real data (no JSON blob).
@@ -196,10 +216,7 @@ export async function createCampaign(body, user) {
   // Allow design_config at creation time (mirrors updateCampaign) so a campaign
   // can be created with its designer config in one call, not create-then-update.
   if (body.design_config !== undefined) {
-    campaignData.design_config =
-      body.design_config && typeof body.design_config === 'object'
-        ? { ...body.design_config, customerHost: normalizeCustomerHostChoice(body.design_config.customerHost) }
-        : body.design_config;
+    campaignData.design_config = clampDesignConfig(body.design_config, undefined, user?.role);
   }
 
   const campaign = await Campaign.create(campaignData);
@@ -253,11 +270,9 @@ export async function updateCampaign(id, body, req) {
   }
   if (design_config !== undefined) {
     // Clamp the per-campaign customer host to the enum (never trust a raw host
-    // from client JSON); preserve all other design keys untouched.
-    updateData.design_config =
-      design_config && typeof design_config === 'object'
-        ? { ...design_config, customerHost: normalizeCustomerHostChoice(design_config.customerHost) }
-        : design_config;
+    // from client JSON) and gate featuredDrop changes to admins; preserve all
+    // other design keys untouched.
+    updateData.design_config = clampDesignConfig(design_config, campaign.design_config, req.user?.role);
   }
   if (commission_amount_driver !== undefined) updateData.commission_amount_driver = commission_amount_driver;
   if (commission_amount_fleet !== undefined) updateData.commission_amount_fleet = commission_amount_fleet;
@@ -395,8 +410,20 @@ export async function duplicateCampaign(id, body, req) {
   if (!original) throw new AppError('Campaign not found or access denied', 404);
 
   const { metrics: _discardedMetrics, ...rest } = original.toJSON();
+  // Never clone homepage publication: a duplicate of a featured campaign must
+  // not silently appear on redeem.sg when it is later activated.
+  const dupDesign =
+    rest.design_config && typeof rest.design_config === 'object'
+      ? {
+          ...rest.design_config,
+          ...(rest.design_config.featuredDrop && typeof rest.design_config.featuredDrop === 'object'
+            ? { featuredDrop: { ...rest.design_config.featuredDrop, enabled: false } }
+            : {}),
+        }
+      : rest.design_config;
   const copy = await Campaign.create({
     ...rest,
+    design_config: dupDesign,
     id: undefined,
     name: body.name || `${original.name} (Copy)`,
     status: 'draft',
