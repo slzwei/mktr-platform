@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { brand } from '@/lib/brand';
+import { apiClient } from '@/api/client';
 import { DROPS, MARQUEE_ITEMS, FAQ } from './redeemHomeContent';
 import './redeemHome.css';
 
@@ -17,6 +18,41 @@ import './redeemHome.css';
 const PAGE_TITLE = 'Redeem — Free stuff from real Singapore brands';
 const PAGE_DESCRIPTION =
   'Real vouchers from real Singapore brands, dropped every week. Claim in 30 seconds — no app, no points, no credit card. A service of MKTR PTE. LTD.';
+
+/** "Ends Sunday"-style chip from the API's YYYY-MM-DD (SGT end-of-day). */
+function endsLabel(endsAt) {
+  if (!endsAt) return null;
+  const end = new Date(`${endsAt}T23:59:59+08:00`);
+  if (Number.isNaN(end.getTime())) return null;
+  const msLeft = end.getTime() - Date.now();
+  if (msLeft <= 0) return 'Ended';
+  if (msLeft <= 24 * 3600 * 1000) return 'Ends today';
+  if (msLeft <= 48 * 3600 * 1000) return 'Ends tomorrow';
+  if (msLeft <= 7 * 24 * 3600 * 1000) {
+    return `Ends ${end.toLocaleDateString('en-SG', { weekday: 'long', timeZone: 'Asia/Singapore' })}`;
+  }
+  return `Ends ${end.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', timeZone: 'Asia/Singapore' })}`;
+}
+
+const REMOTE_PANELS = ['lime', 'pink', 'violet'];
+
+/** Map the featured-drops API DTO onto the card shape the page renders. */
+function mapRemoteDrop(dto, i) {
+  const ends = endsLabel(dto.endsAt);
+  return {
+    id: dto.id,
+    title: dto.title,
+    meta: dto.status === 'gone' ? 'That was fast' : ends || 'Live now',
+    value: dto.valueLabel || 'FREE',
+    emoji: dto.emoji || '🎁',
+    panel: REMOTE_PANELS[i % REMOTE_PANELS.length],
+    status: dto.status === 'gone' ? 'gone' : 'live',
+    claimUrl: dto.claimUrl,
+    claimedPct: typeof dto.claimedPct === 'number' ? dto.claimedPct : undefined,
+    left: typeof dto.left === 'number' ? dto.left : undefined,
+    ends: ends || undefined,
+  };
+}
 
 function MarqueeSet({ ariaHidden }) {
   return (
@@ -86,6 +122,10 @@ function DropCard({ drop }) {
 
 export default function RedeemHome() {
   const [openFaq, setOpenFaq] = useState(0);
+  // Featured drops from MKTR campaign data (admin-toggled per campaign).
+  // Static config renders first; the fetched list swaps in on success and the
+  // static list stays as the fallback on error/empty — never a blank section.
+  const [remoteDrops, setRemoteDrops] = useState(null);
 
   useEffect(() => {
     document.title = PAGE_TITLE;
@@ -93,11 +133,28 @@ export default function RedeemHome() {
     if (meta) meta.setAttribute('content', PAGE_DESCRIPTION);
   }, []);
 
-  const liveDrop = DROPS.find((d) => d.status === 'live' && d.claimUrl);
-  const heroDrop = liveDrop || DROPS[0] || null;
+  useEffect(() => {
+    let alive = true;
+    apiClient
+      .get('/campaigns/featured-drops')
+      .then((resp) => {
+        const list = resp?.data?.drops;
+        if (alive && Array.isArray(list) && list.length > 0) {
+          setRemoteDrops(list.map(mapRemoteDrop));
+        }
+      })
+      .catch(() => {}); // fallback to static config
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const drops = remoteDrops ?? DROPS;
+  const liveDrop = drops.find((d) => d.status === 'live' && d.claimUrl);
+  const heroDrop = liveDrop || drops[0] || null;
   const heroCtaHref = liveDrop ? liveDrop.claimUrl : '#drops';
   const heroCtaLabel = liveDrop ? 'Claim this week’s drop' : 'See what’s dropping';
-  const backDrops = DROPS.filter((d) => d !== heroDrop).slice(0, 2);
+  const backDrops = drops.filter((d) => d !== heroDrop).slice(0, 2);
   const backFillers = [
     { emoji: '☕', title: 'Coffee drops', meta: 'In the rotation' },
     { emoji: '🎬', title: 'Movie drops', meta: 'In the rotation' },
@@ -264,9 +321,9 @@ export default function RedeemHome() {
               </h2>
             </div>
           </div>
-          {DROPS.length > 0 ? (
+          {drops.length > 0 ? (
             <div className="rh-drops">
-              {DROPS.map((drop) => <DropCard key={drop.id} drop={drop} />)}
+              {drops.map((drop) => <DropCard key={drop.id} drop={drop} />)}
             </div>
           ) : (
             <div className="rh-drops__empty">

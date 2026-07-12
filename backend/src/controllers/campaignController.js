@@ -1,8 +1,17 @@
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import * as campaignService from '../services/campaignService.js';
+import * as featuredDropsService from '../services/featuredDropsService.js';
 import * as leadPackageService from '../services/leadPackageService.js';
 import { loadCampaignReadiness } from '../services/campaignReadinessService.js';
 import { loadQuizAnalytics } from '../services/quizAnalyticsService.js';
+
+// Public (no auth): drops for the redeem.sg homepage. Strict whitelist DTO,
+// 60s service cache + edge cache header. docs/plans/redeem-home-featured-drops.md
+export const getFeaturedDrops = asyncHandler(async (req, res) => {
+  const drops = await featuredDropsService.getFeaturedDrops();
+  res.set('Cache-Control', 'public, max-age=60');
+  res.json({ success: true, data: { drops } });
+});
 
 export const listCampaigns = asyncHandler(async (req, res) => {
   // TODO: extract tenantId instead of passing req

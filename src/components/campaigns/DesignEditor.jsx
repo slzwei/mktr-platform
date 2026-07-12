@@ -122,7 +122,7 @@ export default function DesignEditor({ campaign, onSave, heightClass = 'h-[calc(
  const renderActivePanel = () => {
  switch (activeTab) {
  case 'content':
- return <ContentPanel currentDesign={currentDesign} onDesignChange={handleDesignChange} />;
+ return <ContentPanel currentDesign={currentDesign} onDesignChange={handleDesignChange} campaignName={campaign?.name} />;
  case 'design':
  return <DesignPanel currentDesign={currentDesign} onDesignChange={handleDesignChange} />;
  case 'layout':

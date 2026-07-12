@@ -14,6 +14,22 @@ const router = express.Router();
 
 /**
  * @openapi
+ * /campaigns/featured-drops:
+ *   get:
+ *     tags: [Campaigns]
+ *     summary: Public list of campaigns featured on the redeem.sg homepage
+ *     responses:
+ *       200:
+ *         description: Featured drops (whitelisted display fields only)
+ */
+// PUBLIC — no auth. Declared before any /:id route so it can't be shadowed
+// into the authenticated getCampaign handler. Lives here (single mount)
+// rather than in campaignPreviews.js, whose router is mounted at multiple
+// paths and would create /api/previews/featured-drops aliases.
+router.get('/featured-drops', campaignController.getFeaturedDrops);
+
+/**
+ * @openapi
  * /campaigns:
  *   get:
  *     tags: [Campaigns]
