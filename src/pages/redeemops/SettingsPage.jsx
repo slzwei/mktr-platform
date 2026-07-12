@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
+import CadenceStudio from '@/components/redeemops/CadenceStudio';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -111,7 +112,7 @@ export default function SettingsPage() {
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
       <RoPageHeader
         title="Settings"
-        sub="Categories are managed here and picked everywhere else — partner forms, pools, imports, and the partners filter."
+        sub="Categories and cadences are managed here and picked everywhere else — partner forms, pools, imports, and the Start cadence menu."
       />
 
       <Card>
@@ -184,6 +185,8 @@ export default function SettingsPage() {
           </ul>
         </CardContent>
       </Card>
+
+      <CadenceStudio />
 
       <Dialog open={!!renameTarget} onOpenChange={(open) => { if (!open) setRenameTarget(null); }}>
         <DialogContent className="max-w-sm">

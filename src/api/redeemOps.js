@@ -346,9 +346,21 @@ export const redeemOpsApi = {
   },
 
   // ── Cadences (docs/plans/redeem-ops-cadences.md; flag REDEEM_OPS_CADENCES_ENABLED) ──
-  async listCadences() {
-    const res = await apiClient.get('/redeem-ops/cadences');
+  async listCadences(params = {}) {
+    const res = await apiClient.get('/redeem-ops/cadences', params);
     return res.data?.cadences || [];
+  },
+  async createCadence(body) {
+    const res = await apiClient.post('/redeem-ops/cadences', body);
+    return res.data?.cadence;
+  },
+  async createCadenceVersion(cadenceId, body) {
+    const res = await apiClient.post(`/redeem-ops/cadences/${cadenceId}/versions`, body);
+    return res.data?.cadence;
+  },
+  async retireCadence(cadenceId) {
+    const res = await apiClient.post(`/redeem-ops/cadences/${cadenceId}/retire`);
+    return res.data?.cadence;
   },
   async getPartnerCadence(partnerId) {
     const res = await apiClient.get(`/redeem-ops/partners/${partnerId}/cadence`);

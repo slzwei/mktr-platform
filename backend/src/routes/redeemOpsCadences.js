@@ -25,6 +25,12 @@ router.use((req, res, next) => {
 // Definitions — every ops principal reads them (queue chips resolve names).
 router.get('/cadences', requireRedeemOps(), ctrl.listCadences);
 
+// Authoring — curated like categories: settings.manage (super_admin/ops_admin).
+// Editing creates a NEW version; live enrollments keep the one they started on.
+router.post('/cadences', requireRedeemOps('settings.manage'), ctrl.createCadence);
+router.post('/cadences/:cadenceId/versions', requireRedeemOps('settings.manage'), ctrl.createCadenceVersion);
+router.post('/cadences/:cadenceId/retire', requireRedeemOps('settings.manage'), ctrl.retireCadence);
+
 // Partner-scoped enrollment lifecycle (owner/manager checks in the service).
 router.get('/partners/:partnerId/cadence', requireRedeemOps(), ctrl.getPartnerCadence);
 router.post('/partners/:partnerId/cadence/enroll', requireRedeemOps('tasks.manage'), ctrl.enroll);

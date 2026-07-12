@@ -10,8 +10,40 @@ function validateBody(schema, body) {
 }
 
 export const listCadences = asyncHandler(async (req, res) => {
-  const cadences = await cadenceService.listCadences();
+  const cadences = await cadenceService.listCadences({ includeRetired: req.query.all === 'true' });
   res.json({ success: true, data: { cadences } });
+});
+
+const stepSchema = Joi.object({
+  channel: Joi.string().valid('call', 'whatsapp', 'email', 'instagram_dm', 'visit', 'custom').required(),
+  title: Joi.string().max(160).required(),
+  script: Joi.string().max(5000).allow('', null),
+  priority: Joi.string().valid('low', 'medium', 'high'),
+  delayDays: Joi.number().integer().min(0).max(60).required(),
+  timeWindow: Joi.string().valid('any', 'morning', 'afternoon', 'off_peak'),
+  continueOn: Joi.string().max(24).allow(null),
+});
+const cadenceDefSchema = Joi.object({
+  name: Joi.string().max(120).required(),
+  description: Joi.string().max(2000).allow('', null),
+  steps: Joi.array().items(stepSchema).min(1).max(20).required(),
+});
+
+export const createCadence = asyncHandler(async (req, res) => {
+  const body = validateBody(cadenceDefSchema, req.body || {});
+  const cadence = await cadenceService.createCadence(body, req.user, req.id);
+  res.status(201).json({ success: true, data: { cadence } });
+});
+
+export const createCadenceVersion = asyncHandler(async (req, res) => {
+  const body = validateBody(cadenceDefSchema, req.body || {});
+  const cadence = await cadenceService.createCadenceVersion(req.params.cadenceId, body, req.user, req.id);
+  res.status(201).json({ success: true, data: { cadence } });
+});
+
+export const retireCadence = asyncHandler(async (req, res) => {
+  const cadence = await cadenceService.retireCadence(req.params.cadenceId, req.user, req.id);
+  res.json({ success: true, data: { cadence } });
 });
 
 export const getPartnerCadence = asyncHandler(async (req, res) => {
