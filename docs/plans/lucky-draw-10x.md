@@ -1,7 +1,8 @@
 # Lucky Draw + 10× Session Multiplier — Design & Implementation Plan
 
-> Status: DRAFT v2 (2026-07-12). Codex-reviewed (gpt-5.6-sol xhigh) and corrected
-> against the repo; review disposition in §9. Not yet implemented.
+> Status: v2 (2026-07-12), Codex-reviewed (gpt-5.6-sol xhigh); disposition in §9.
+> **Phase 1 IMPLEMENTED** on `feat/lucky-draw-phase1` (commit ba9fc97) — see §5.
+> Migration numbering shifted 057→058 after #136 took 057.
 > Companion reading: `docs/redeem-ops/MKTR_INTEGRATION.md` §2 (entitlements),
 > `docs/plans/redeem-home-featured-drops.md` (homepage drops).
 
@@ -124,8 +125,7 @@ WHERE ev.type = 'unlocked'
 
 ### 4.3 Draw model (new — Phase 2)
 
-Migrations from **057** (numbering verified; duplicate numbers fail
-`migrations.test.js`). Models need named exports + explicit associations in
+Migrations from **059** (058 = draw_terms_versions, shipped in Phase 1; duplicate numbers fail `migrations.test.js`). Models need named exports + explicit associations in
 `models/index.js` (repo pattern).
 
 ```
@@ -249,8 +249,8 @@ Backend contract (after the Phase 1 `via` fix):
 | Phase | Scope | Size |
 |---|---|---|
 | **0 — Ops setup + launch blockers (no code)** | Verify `prospects_campaign_id_phone` exists in prod (`SELECT indexname FROM pg_indexes WHERE tablename='prospects'`); flip `REDEEM_OPS_ENABLED` + `REDEEM_OPS_ENTITLEMENTS_ENABLED` (+ `VITE_REDEEM_OPS_ENABLED` if ops UI needed); create partner → offer → Activation; **size `offer.claimExpiryDays` to cover earliest-signup → `boostClosesAt`** (reservation expiry = `claimExpiryDays \|\| 30`; an expired reservation cannot be unlocked AND cannot be reissued — the unique index has no status filter); **size activation allocation ≥ expected signups** (exhaustion leaves later entrants with no pass; the reconcile sweep only backfills ~48h). | — |
-| **1 — Draw-campaign hardening** | `luckyDraw` config block + admin clamp + duplicate-strip; create-gate (phone + normalized OTP marker + `consent_terms` + `closesAt`) placed post-normalization; `phoneVerifiedFor` hash binding; **server-derived `via` on both unlock routes**; draw confirmation template pair; `draw_terms_versions` + acceptance stamping; extract shared SGT-boundary util. Tests pin: direct-API POST without OTP → 403, after `closesAt` → 410, `via` forgery impossible, non-draw campaigns byte-identical. | **M–L** |
-| **2 — Draw model + runner** | Migrations 057+ (`draws`, `draw_attempts`, `draw_entries`, `draw_boost_reviews` — winner FK added after entries table to avoid the circular reference, or validated in-service); freeze/seal/draw/redraw service with idempotent transitions; canonical poolHash; commit/reveal seed; pinned seeded PRNG + unit tests; PII-masked snapshot + audit JSON; `run-lucky-draw.js` CLI with safeguards; concurrency tests. | **L** |
+| **1 — Draw-campaign hardening** ✅ shipped (ba9fc97, tests green) | `luckyDraw` config block + admin clamp + duplicate-strip; create-gate (phone + normalized OTP marker + `consent_terms` + `closesAt`) placed post-normalization; `phoneVerifiedFor` hash binding; **server-derived `via` on both unlock routes**; draw confirmation template pair; `draw_terms_versions` + acceptance stamping; extract shared SGT-boundary util. Tests pin: direct-API POST without OTP → 403, after `closesAt` → 410, `via` forgery impossible, non-draw campaigns byte-identical. | **M–L** |
+| **2 — Draw model + runner** | Migrations 059+ (`draws`, `draw_attempts`, `draw_entries`, `draw_boost_reviews` — winner FK added after entries table to avoid the circular reference, or validated in-service); freeze/seal/draw/redraw service with idempotent transitions; canonical poolHash; commit/reveal seed; pinned seeded PRNG + unit tests; PII-masked snapshot + audit JSON; `run-lucky-draw.js` CLI with safeguards; concurrency tests. | **L** |
 | **3 — Boost review UI** | Ops list of `agent_button` unlock events pending review → approve/reject writes `draw_boost_reviews` (schema exists from Phase 2, so no circularity); needs a reviewer capability added to **both** permission copies (`permissions.js` + SPA copy — drift test enforces equality). | **M** |
 | **4 — mktr-leads screens** | Scan screen + virtual-toggle button unlock per §4.7 (separate repo). | S |
 | **5 — Later** | Lyfe app mirror; admin draw panel; durable per-submission verification records; winners API instead of static file. | — |
@@ -287,7 +287,9 @@ boost review (manual issues/unlocks are excluded from ×10 by default, §8.1).
 | `LYFE_LEAD_OUTCOME_SECRET` | already set (Lyfe HMAC channel) |
 | `DNC_VERIFIED_MARKER_TTL_MS` | optional: raise from 10 min if Phase 1 telemetry shows 403-retries on slow form fills |
 
-Unverifiable from the repo (must check in prod): the prospects unique index,
+Unverifiable from the repo (must check in prod): the prospects unique index
+(**observed genuinely missing in a fresh sync()-built test DB on 2026-07-12 —
+the swallow is not theoretical; run the §5 Phase 0 query against prod**),
 current Render flag values, single-instance deployment assumption behind the
 in-memory OTP marker.
 
