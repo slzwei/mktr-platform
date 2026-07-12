@@ -170,6 +170,7 @@ export default function RedeemHome() {
             <a href="#how">How it works</a>
             <a href="#drops">This week</a>
             <a href="#legit">Legit?</a>
+            <a href="/winners">Winners</a>
             <a href="#faq">FAQ</a>
           </div>
           <div className="rh-nav__right">
@@ -477,6 +478,7 @@ export default function RedeemHome() {
               <h4>Explore</h4>
               <a href="#how">How it works</a>
               <a href="#drops">This week’s drop</a>
+              <a href="/winners">Winners’ wall</a>
               <a href="#faq">FAQ</a>
             </div>
             <div className="rh-footer__col">

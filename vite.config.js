@@ -54,7 +54,8 @@ function brandSeoFiles() {
   // /features, /pricing, /about are hidden (show* flags false) pending a rewrite,
   // so they're intentionally excluded from the sitemap to avoid advertising 404s.
   const mktrOnlyRoutes = []
-  const routes = BRAND === 'redeem' ? sharedRoutes : [...sharedRoutes, ...mktrOnlyRoutes]
+  const redeemOnlyRoutes = ['/winners']
+  const routes = BRAND === 'redeem' ? [...sharedRoutes, ...redeemOnlyRoutes] : [...sharedRoutes, ...mktrOnlyRoutes]
 
   const robots = [
     'User-agent: *',
