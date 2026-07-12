@@ -13,6 +13,11 @@ import { getOrCreateProspectShareLink } from './shortlinkService.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIRMATION_EMAIL_HTML = readFileSync(join(__dirname, 'email-templates/confirmation-email.html'), 'utf8');
 const CONFIRMATION_EMAIL_TXT = readFileSync(join(__dirname, 'email-templates/confirmation-email.txt'), 'utf8');
+// Lucky-draw variant (docs/plans/lucky-draw-10x.md §4.5): draw campaigns must
+// not promise the generic "gift + call within 24 hours" — they confirm the
+// entry and pitch the ×N session multiplier instead.
+const CONFIRMATION_EMAIL_DRAW_HTML = readFileSync(join(__dirname, 'email-templates/confirmation-email-draw.html'), 'utf8');
+const CONFIRMATION_EMAIL_DRAW_TXT = readFileSync(join(__dirname, 'email-templates/confirmation-email-draw.txt'), 'utf8');
 
 // D12: per-origin from-address. Lead-capture confirmations sent from the
 // redeem.sg flow use noreply@redeem.sg; admin / agent emails keep the
@@ -271,7 +276,13 @@ export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOv
   }
 
   const firstName = prospect.firstName || 'there';
-  const subject = `We've received your interest in ${campaignName}`;
+  // Draw campaigns confirm a draw ENTRY (no gift/24h-call promise) — template
+  // pair + subject swap on design_config.luckyDraw (docs/plans/lucky-draw-10x.md §4.5).
+  const luckyDraw = prospect.campaign?.design_config?.luckyDraw;
+  const isDraw = luckyDraw?.enabled === true;
+  const subject = isDraw
+    ? `You're in the draw — ${campaignName}`
+    : `We've received your interest in ${campaignName}`;
 
   // Brand the confirmation email by the campaign's customer host: redeem.sg (default) shows
   // the Redeem brand; an mktr.sg campaign shows MKTR. Backend code is not bundled into the
@@ -322,12 +333,17 @@ export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOv
     footerEntity,
     year: new Date().getFullYear(),
     heroLogo,
+    ...(isDraw
+      ? { prize: luckyDraw.prize || campaignName, multiplier: luckyDraw.multiplier || 10 }
+      : {}),
   };
-  const escapeFields = new Set(['firstName', 'campaignName', 'shareUrl']);
-  const html = CONFIRMATION_EMAIL_HTML.replace(/\{\{(\w+)\}\}/g, (_, k) =>
+  const escapeFields = new Set(['firstName', 'campaignName', 'shareUrl', 'prize']);
+  const htmlTemplate = isDraw ? CONFIRMATION_EMAIL_DRAW_HTML : CONFIRMATION_EMAIL_HTML;
+  const textTemplate = isDraw ? CONFIRMATION_EMAIL_DRAW_TXT : CONFIRMATION_EMAIL_TXT;
+  const html = htmlTemplate.replace(/\{\{(\w+)\}\}/g, (_, k) =>
     k in fields ? (escapeFields.has(k) ? escapeHtml(fields[k]) : String(fields[k])) : `{{${k}}}`
   );
-  const text = CONFIRMATION_EMAIL_TXT.replace(/\{\{(\w+)\}\}/g, (_, k) =>
+  const text = textTemplate.replace(/\{\{(\w+)\}\}/g, (_, k) =>
     k in fields ? String(fields[k]) : `{{${k}}}`
   );
 

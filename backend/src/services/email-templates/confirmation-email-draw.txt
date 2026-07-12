@@ -1,0 +1,31 @@
+You're in the draw.
+
+Hello {{firstName}},
+
+Your entry for {{campaignName}} is in — you're in the running for {{prize}}.
+
+Want {{multiplier}}x the chances? Complete your complimentary financial review session — when your consultant records it, your entry is multiplied.
+
+We contact the winner directly after the draw, and we never ask for payment to release a prize.
+
+------------------------------------------------------------
+
+SHARE AND GET CREDITED
+
+Share your personal link with friends. When someone signs up through it, you are credited as their referrer.
+
+Your referral link:
+{{shareUrl}}
+
+------------------------------------------------------------
+
+Did not request this? No action is needed. You can safely ignore this email.
+
+The {{brandName}} team
+
+------------------------------------------------------------
+
+{{brandWordmark}}
+You are receiving this because you submitted a request to {{brandName}}.
+{{footerEntity}}
+(c) {{year}} {{brandName}}. All rights reserved.

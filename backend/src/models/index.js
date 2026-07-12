@@ -196,8 +196,11 @@ function defineAssociations() {
   // Rewards, onboarding, activations (Phases 4–5)
   const {
     RewardOffer, RewardTermsVersion, RewardOfferLocation, RewardInventoryEvent,
-    PartnerOnboardingItem, Activation,
+    PartnerOnboardingItem, Activation, DrawTermsVersion,
   } = models;
+  // Lucky-draw T&C versions (docs/plans/lucky-draw-10x.md §4.6)
+  Campaign.hasMany(DrawTermsVersion, { foreignKey: 'campaignId', as: 'drawTermsVersions', onDelete: 'CASCADE' });
+  DrawTermsVersion.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign' });
   PartnerOrganisation.hasMany(RewardOffer, { foreignKey: 'partnerOrganisationId', as: 'rewardOffers', onDelete: 'RESTRICT' });
   RewardOffer.belongsTo(PartnerOrganisation, { foreignKey: 'partnerOrganisationId', as: 'partner', onDelete: 'RESTRICT' });
   RewardOffer.hasMany(RewardTermsVersion, { foreignKey: 'rewardOfferId', as: 'termsVersions', onDelete: 'CASCADE' });
@@ -309,7 +312,7 @@ export const {
   WaitlistSignup, RedeemOpsAuditEvent, PartnerOrganisation, PartnerLocation,
   PartnerContact, PartnerAssignmentEvent, PartnerStageEvent, OutreachActivity,
   OutreachTask, ProspectingPool, ProspectingPoolMember, RewardOffer,
-  RewardTermsVersion, RewardOfferLocation, RewardInventoryEvent,
+  RewardTermsVersion, DrawTermsVersion, RewardOfferLocation, RewardInventoryEvent,
   PartnerOnboardingItem, Activation, RewardEntitlement, Redemption,
   RedemptionEvent, RedeemOpsCategory, DiscoveryRun, DiscoveryCandidate,
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,

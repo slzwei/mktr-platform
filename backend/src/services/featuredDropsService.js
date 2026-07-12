@@ -13,6 +13,7 @@ import { Op } from 'sequelize';
 import { Campaign, Prospect } from '../models/index.js';
 import { normalizeFeaturedDrop } from '../utils/featuredDrop.js';
 import { customerHostOrigin } from '../utils/customerHost.js';
+import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { logger } from '../utils/logger.js';
 
 const TTL_MS = 60_000;
@@ -22,11 +23,9 @@ const MAX_DROPS = 6;
 let cache = { data: null, ts: 0 };
 let inflight = null;
 
-/** endsAt is inclusive through 23:59:59 Asia/Singapore (not midnight UTC). */
-function sgtEndOfDayMs(ymd) {
-  const t = Date.parse(`${ymd}T23:59:59+08:00`);
-  return Number.isNaN(t) ? null : t;
-}
+// endsAt is inclusive through the whole SGT day: an instant is within the day
+// iff now < sgtDayEndExclusiveMs(endsAt) (shared util — the old private helper
+// stopped at 23:59:59.000 and dropped the day's final 999ms).
 
 async function fetchDrops(now) {
   const campaigns = await Campaign.findAll({
@@ -42,8 +41,8 @@ async function fetchDrops(now) {
     // campaignService (seeds, manual SQL, old code paths).
     const fd = normalizeFeaturedDrop(c.design_config?.featuredDrop);
     if (!fd || fd.enabled !== true) continue;
-    const endMs = fd.endsAt ? sgtEndOfDayMs(fd.endsAt) : null;
-    if (endMs !== null && now > endMs + GONE_RETENTION_MS) continue;
+    const endMs = fd.endsAt ? sgtDayEndExclusiveMs(fd.endsAt) : null;
+    if (endMs !== null && now >= endMs + GONE_RETENTION_MS) continue;
     flagged.push({ c, fd, endMs });
   }
   if (flagged.length === 0) return [];
@@ -62,7 +61,7 @@ async function fetchDrops(now) {
   const drops = flagged.map(({ c, fd, endMs }) => {
     const claimed = counts.get(String(c.id)) || 0;
     const capReached = typeof fd.cap === 'number' && claimed >= fd.cap;
-    const ended = endMs !== null && now > endMs;
+    const ended = endMs !== null && now >= endMs;
     const drop = {
       id: c.id,
       title: fd.title || c.name,
@@ -82,8 +81,8 @@ async function fetchDrops(now) {
   // Deterministic: live first, then soonest-ending (nulls last), then id.
   drops.sort((a, b) => {
     if (a.status !== b.status) return a.status === 'live' ? -1 : 1;
-    const ae = a.endsAt ? sgtEndOfDayMs(a.endsAt) : Infinity;
-    const be = b.endsAt ? sgtEndOfDayMs(b.endsAt) : Infinity;
+    const ae = a.endsAt ? sgtDayEndExclusiveMs(a.endsAt) : Infinity;
+    const be = b.endsAt ? sgtDayEndExclusiveMs(b.endsAt) : Infinity;
     if (ae !== be) return ae - be;
     return String(a.id).localeCompare(String(b.id));
   });

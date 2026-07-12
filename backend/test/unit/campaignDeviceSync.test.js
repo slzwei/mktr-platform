@@ -79,6 +79,12 @@ jest.unstable_mockModule('../../src/models/index.js', () => ({
   Commission,
   CampaignMediaItem,
   CampaignAgentAssignment,
+  // Draw-terms versioning dep (lucky draw) — inert stub, not exercised here.
+  DrawTermsVersion: {
+    findOne: async () => null,
+    max: async () => null,
+    create: async (fields) => ({ id: 'dtv-mock', ...fields }),
+  },
   sequelize,
 }));
 
