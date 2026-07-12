@@ -14,8 +14,8 @@ const brandConfigPath = path.resolve(__dirname, `./src/lib/brandConfigs/${BRAND}
 // placeholders if an env var is missing.
 const BRAND_HTML_DEFAULTS = BRAND === 'redeem'
   ? {
-      VITE_PAGE_TITLE: 'Redeem — Lead Capture',
-      VITE_META_DESCRIPTION: 'Redeem — a lead-capture service of MKTR PTE. LTD.',
+      VITE_PAGE_TITLE: 'Redeem — Free stuff from real Singapore brands',
+      VITE_META_DESCRIPTION: 'Real vouchers from real Singapore brands, dropped every week. Claim in 30 seconds — no app, no points, no credit card. A service of MKTR PTE. LTD.',
       VITE_FAVICON_SRC: '/redeem-favicon.svg',
       VITE_CANONICAL_BASE: 'https://redeem.sg/',
     }
