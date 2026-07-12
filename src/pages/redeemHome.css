@@ -284,6 +284,26 @@
   text-transform: uppercase; transform: rotate(10deg); box-shadow: 4px 4px 0 var(--rh-ink);
 }
 
+/* Partners & clients logo wall */
+.rh-partners { padding: 76px 0; }
+.rh-partners__wall { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 40px; align-items: stretch; }
+.rh-partner {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 66px; padding: 14px 28px; background: var(--rh-white);
+  border: var(--rh-bd); border-radius: 14px; box-shadow: 5px 5px 0 var(--rh-ink);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.rh-partner:nth-child(odd) { transform: rotate(-1.1deg); }
+.rh-partner:nth-child(even) { transform: rotate(0.9deg); }
+a.rh-partner:hover { transform: translate(2px, 2px) rotate(0deg); box-shadow: 2px 2px 0 var(--rh-ink); }
+.rh-partner img { max-height: 34px; max-width: 160px; display: block; }
+.rh-partner span {
+  font-size: 15px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--rh-ink); white-space: nowrap;
+}
+.rh-partner--cta { background: var(--rh-lime); }
+.rh-partner--cta span { font-size: 13px; }
+
 /* Partner band */
 .rh-band {
   background: var(--rh-violet); border: var(--rh-bd); border-radius: 20px;

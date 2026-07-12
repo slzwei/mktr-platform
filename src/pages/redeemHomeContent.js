@@ -44,6 +44,21 @@ export const MARQUEE_ITEMS = [
   { text: 'redeem.sg only' },
 ];
 
+// Partners & clients logo wall — the section renders ONLY when this list has
+// entries (never ship an empty "our partners" section, and never list a brand
+// we haven't actually worked with).
+//   { name: 'Kopi & Co' }                                  → styled text chip
+//   { name: 'Kopi & Co', src: '/partners/kopi-co.png' }    → logo image chip
+//   { name: 'Kopi & Co', src: '...', href: 'https://…' }   → clickable chip
+// Drop logo files into public/partners/ (PNG/SVG, ideally dark-on-transparent;
+// logos render in full colour).
+export const PARTNERS = [
+  { name: 'Prudential', src: '/partners/prudential.png' },
+  { name: 'Income', src: '/partners/income.png' },
+  { name: 'Great Eastern', src: '/partners/greateastern.svg' },
+  { name: 'PIAS' },
+];
+
 export const FAQ = [
   {
     q: 'Why do you need my number?',

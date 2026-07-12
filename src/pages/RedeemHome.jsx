@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { brand } from '@/lib/brand';
 import { apiClient } from '@/api/client';
-import { DROPS, MARQUEE_ITEMS, FAQ } from './redeemHomeContent';
+import { DROPS, MARQUEE_ITEMS, FAQ, PARTNERS } from './redeemHomeContent';
 import './redeemHome.css';
 
 /**
@@ -394,6 +394,30 @@ export default function RedeemHome() {
           </div>
         </div>
       </section>
+
+      {/* Partners & clients — renders only when redeemHomeContent.PARTNERS has entries */}
+      {PARTNERS.length > 0 && (
+        <section className="rh-section rh-partners" id="clients">
+          <div className="rh-wrap">
+            <span className="rh-kicker">Partners &amp; clients</span>
+            <h2 className="rh-h2">Dropped with <span className="rh-h2__hl">the good ones.</span></h2>
+            <p className="rh-sub">Brands and outlets that have run drops or honoured Redeem vouchers.</p>
+            <div className="rh-partners__wall">
+              {PARTNERS.map((p) => {
+                const inner = p.src
+                  ? <img src={p.src} alt={p.name} loading="lazy" />
+                  : <span>{p.name}</span>;
+                return p.href ? (
+                  <a className="rh-partner" href={p.href} target="_blank" rel="noreferrer" key={p.name}>{inner}</a>
+                ) : (
+                  <div className="rh-partner" key={p.name}>{inner}</div>
+                );
+              })}
+              <a className="rh-partner rh-partner--cta" href="#partners"><span>Your logo here →</span></a>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Partner band */}
       <section className="rh-section" id="partners">
