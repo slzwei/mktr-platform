@@ -11,6 +11,7 @@ import { makeApifyClient } from './discovery/apifyClient.js';
 import { normalizeMapsItem, normalizeInstagramItem, isSingaporeMapsItem } from './discovery/normalizers.js';
 import { normalizeBusinessName, normalizeDomain, normalizeHandle } from './normalizers.js';
 import { normalizePhone } from '../prospectHelpers.js';
+import { sgtDayWindow } from './taskService.js';
 
 const TERMINAL = ['completed', 'failed', 'aborted', 'timed_out'];
 
@@ -73,7 +74,7 @@ export function makeDiscoveryService(overrides = {}) {
   // accepted residual: single backend instance, tiny ops team, small overshoot.
   async function assertQuota(user) {
     const c = cfg();
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const { start: since } = sgtDayWindow();
     const base = { provider: 'apify_google_maps', createdAt: { [Op.gte]: since }, ...COUNTS_TOWARD_QUOTA };
     const [mine, all] = await Promise.all([
       d.DiscoveryRun.count({ where: { ...base, createdBy: user.id } }),
@@ -90,7 +91,7 @@ export function makeDiscoveryService(overrides = {}) {
   /** Per-user search budget for the day (drives the UI's usage chip). */
   async function getQuota(user) {
     const c = cfg();
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const { start: since } = sgtDayWindow();
     const used = await d.DiscoveryRun.count({
       where: {
         provider: 'apify_google_maps', createdBy: user.id,
@@ -440,7 +441,7 @@ export function makeDiscoveryService(overrides = {}) {
 
     // Quotas count PROFILES (requestedLimit = handle count per run), excluding
     // runs that never reached Apify. SUM(int) can surface as a bigint string.
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const { start: since } = sgtDayWindow();
     const igBase = { provider: 'apify_instagram', createdAt: { [Op.gte]: since }, ...COUNTS_TOWARD_QUOTA };
     const [globalUsedRaw, userUsedRaw] = await Promise.all([
       d.DiscoveryRun.sum('requestedLimit', { where: igBase }),
