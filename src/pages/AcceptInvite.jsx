@@ -22,6 +22,12 @@ import {
 } from"@/components/ui/input-otp";
 import { REGEXP_ONLY_DIGITS } from"input-otp";
 
+// Redeem Ops staff sign in on the dedicated ops.redeem.sg surface. VITE_OPS_ORIGIN
+// overrides the host for staging/dev; IS_OPS_SURFACE means THIS build already is
+// ops.redeem.sg, so a same-origin route suffices instead of a cross-origin hop.
+const IS_OPS_SURFACE = import.meta.env.VITE_SURFACE === 'ops';
+const OPS_LOGIN_URL = `${import.meta.env.VITE_OPS_ORIGIN || 'https://ops.redeem.sg'}/CustomerLogin`;
+
 export default function AcceptInvite() {
  const [searchParams] = useSearchParams();
  const navigate = useNavigate();
@@ -222,7 +228,14 @@ export default function AcceptInvite() {
  });
  if (resp.success) {
  const role = resp?.data?.user?.role;
- if (role === 'admin') navigate('/AdminDashboard');
+ if (role === 'redeem_ops') {
+ // Redeem Ops staff belong on the dedicated ops.redeem.sg console. The invite
+ // is accepted on whichever origin FRONTEND_BASE_URL points at (e.g. mktr.sg),
+ // so cross over to the ops login page — the password just set signs them into
+ // /redeem-ops there. Same-origin navigate when this already IS the ops build.
+ if (IS_OPS_SURFACE) navigate('/CustomerLogin');
+ else window.location.replace(OPS_LOGIN_URL);
+ } else if (role === 'admin') navigate('/AdminDashboard');
  else if (role === 'agent') navigate('/AgentDashboard');
  else navigate('/');
  }
