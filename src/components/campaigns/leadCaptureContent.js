@@ -1,4 +1,4 @@
-import { brand } from '@/lib/brand';
+import { brand, resolveCustomerHost } from '@/lib/brand';
 
 /**
  * Shared content-derivation for the public lead-capture page.
@@ -14,14 +14,6 @@ import { brand } from '@/lib/brand';
  * shared derivation.
  */
 
-// First significant word of the campaign name → "{word}.sg" wordmark fallback.
-export function brandFromCampaignName(name) {
-  if (!name) return null;
-  const first = name.trim().split(/[\s—–-]+/)[0]?.toLowerCase();
-  if (!first) return null;
-  return `${first}.sg`;
-}
-
 // Split free text into paragraphs on blank lines.
 export function paragraphsFromText(text) {
   if (!text) return [];
@@ -35,7 +27,7 @@ export function paragraphsFromText(text) {
  * Derive the lead-capture content slots from a campaign.
  *
  * @returns {{
- *   wordmark: string | null,
+ *   wordmark: string,
  *   story: { paragraphs: string[], emphasis?: string } | null,
  *   primaryCtaData: { label: string, color?: string, enabled: boolean } | null,
  *   regulatoryFooter: string,
@@ -45,7 +37,10 @@ export function paragraphsFromText(text) {
 export function deriveLeadCaptureContent(campaign) {
   const design = campaign?.design_config || {};
 
-  const wordmark = design.brandWordmark || brandFromCampaignName(campaign?.name);
+  // No explicit wordmark → show the campaign's actual customer host (redeem.sg or
+  // mktr.sg), never a domain fabricated from the campaign name (which produced
+  // misleading wordmarks like "tokyo.sg" from "Tokyo Getaway Lucky Draw").
+  const wordmark = design.brandWordmark || resolveCustomerHost(design.customerHost);
 
   // Story card sources from `storyText` ONLY. The old `storyText || formSubheadline`
   // fallback made the sub-headline render twice (once under the form headline and
