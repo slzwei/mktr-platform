@@ -333,7 +333,8 @@ export const {
   PartnerOnboardingItem, Activation, RewardEntitlement, Redemption,
   RedemptionEvent, RedeemOpsCategory, DiscoveryRun, DiscoveryCandidate,
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,
-  OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression
+  OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression,
+  AiSettings
 } = models;
 
 export { sequelize };

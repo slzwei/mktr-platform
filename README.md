@@ -385,6 +385,7 @@ The backend runs migrations automatically on boot (and, in `NODE_ENV=test`, sync
 | Core | `NODE_ENV`, `PORT`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `TRUST_PROXY` |
 | Database | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` (PostgreSQL; `DB_SSL`, `DB_CA_CERT` for managed providers) |
 | Auth | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
+| AI drafting | `AI_SETTINGS_ENCRYPTION_KEY` (required for admin-entered keys); optional server-managed `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` |
 | Hosts | `CORS_ORIGIN`, `PUBLIC_BASE_URL` (QR-encoded host), `MKTR_FRONTEND_URL`, `REDEEM_FRONTEND_URL` |
 | Rate limit | `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX_REQUESTS` |
 | Email | `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USER` / `EMAIL_PASSWORD`, `EMAIL_FROM_MKTR`, `EMAIL_FROM_REDEEM` |

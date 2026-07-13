@@ -151,6 +151,20 @@ describe('DesignEditor — Guided Review format', () => {
     expect(screen.getAllByRole('button', { name: /^Drag .* section$/ })).toHaveLength(9);
   });
 
+  it('opens an AI topic brief without calling a provider until generation', async () => {
+    const user = userEvent.setup();
+    render(
+      <DesignEditor
+        campaign={{ id: 'review-ai', name: 'AI Review', type: 'guided_review', design_config: {} }}
+        onSave={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /Generate with AI/i }));
+    expect(screen.getByText('Describe the campaign')).toBeInTheDocument();
+    expect(screen.getByText('Topic or content brief')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generate page draft' })).toBeInTheDocument();
+  });
+
   it('saves Guided Review content and derives a qualification quiz', async () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockResolvedValue(undefined);

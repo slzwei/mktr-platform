@@ -353,6 +353,41 @@ export function createGuidedReviewDefaults(campaignName = 'Financial Readiness R
   return createGuidedReviewTemplate('financial_readiness', campaignName);
 }
 
+export function applyGuidedReviewAiDraft(current, aiDraft, campaignName) {
+  const templateId = GUIDED_REVIEW_TEMPLATES.some((template) => template.id === aiDraft?.templateId)
+    ? aiDraft.templateId
+    : current?.templateId || 'financial_readiness';
+  const base = createGuidedReviewTemplate(templateId, campaignName);
+  const generated = mergeRecord(base, aiDraft?.content || {});
+  const preserveRewardOperations = (key) => {
+    const generatedReward = generated.rewards[key];
+    const currentReward = current?.rewards?.[key] || {};
+    const operationalKeys = ['title', 'value', 'conditionKey', 'condition', 'quantity', 'fulfilmentDays', 'fulfilment'];
+    return operationalKeys.reduce((reward, field) => (
+      currentReward[field] === undefined ? reward : { ...reward, [field]: currentReward[field] }
+    ), generatedReward);
+  };
+  return {
+    ...generated,
+    templateId,
+    sections: current?.sections || generated.sections,
+    customSections: current?.customSections || {},
+    trust: current?.trust || generated.trust,
+    rewards: {
+      ...generated.rewards,
+      grand: preserveRewardOperations('grand'),
+      attendance: preserveRewardOperations('attendance'),
+    },
+    questions: {
+      ...generated.questions,
+      items: (generated.questions.items || []).map((question, index) => ({
+        ...question,
+        id: question.id || slug(question.prompt, `ai-question-${index + 1}`),
+      })),
+    },
+  };
+}
+
 function mergeRecord(base, stored) {
   if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return base;
   const next = { ...base, ...stored };

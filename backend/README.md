@@ -98,6 +98,7 @@ The annotated source of truth is [`env.example`](./env.example) (and the fronten
 | Core | `NODE_ENV`, `PORT`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `TRUST_PROXY` |
 | Database | `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD`, `DB_SSL`, `DB_CA_CERT` |
 | Auth | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
+| AI drafting | `AI_SETTINGS_ENCRYPTION_KEY` (required for admin-entered keys); optional server-managed `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` |
 | Hosts | `CORS_ORIGIN`, `PUBLIC_BASE_URL`, `MKTR_FRONTEND_URL`, `REDEEM_FRONTEND_URL` |
 | Webhooks | **`WEBHOOK_ENABLED`** (must be `"true"` to deliver leads) |
 | Lyfe | `LYFE_WEBHOOK_URL`, `LYFE_WEBHOOK_SECRET`, `LYFE_SUPABASE_URL`, `LYFE_SUPABASE_SERVICE_ROLE_KEY`, `LYFE_USERS_WEBHOOK_SECRET`, `LYFE_LEAD_OUTCOME_SECRET` |

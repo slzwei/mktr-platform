@@ -30,7 +30,9 @@ import {
   Save,
   Smartphone,
   Trash2,
+  WandSparkles,
 } from 'lucide-react';
+import { apiClient } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -49,6 +51,7 @@ import {
   GUIDED_REVIEW_SECTION_LIBRARY,
   GUIDED_REVIEW_TEMPLATES,
   createGuidedReviewTemplate,
+  applyGuidedReviewAiDraft,
   guidedReviewToQuiz,
   normalizeGuidedReview,
   reorderGuidedReviewSections,
@@ -181,6 +184,9 @@ export default function GuidedReviewDesigner({ campaign, onSave, heightClass = '
   const [dirty, setDirty] = useState(() => !storedDesign.guidedReview);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [aiBrief, setAiBrief] = useState({ provider: '', topic: '', audience: '', objective: '', mustInclude: '' });
+  const [generating, setGenerating] = useState(false);
+  const [aiFeedback, setAiFeedback] = useState(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -213,7 +219,9 @@ export default function GuidedReviewDesigner({ campaign, onSave, heightClass = '
 
   const currentSection = draft.sections.find((section) => section.id === selected);
   const meta = SECTION_META[currentSection?.type || selected]
-    || (selected === 'styles'
+    || (selected === 'ai'
+      ? { label: 'Generate with AI', description: 'Turn a campaign brief into a complete editable first draft' }
+      : selected === 'styles'
       ? { label: 'Site styles', description: 'Global palette and typography' }
       : { label: 'Content section', description: 'A flexible editorial text section' });
   const pendingTemplateMeta = GUIDED_REVIEW_TEMPLATES.find((template) => template.id === pendingTemplate);
@@ -271,6 +279,29 @@ export default function GuidedReviewDesigner({ campaign, onSave, heightClass = '
     setSaved(false);
   };
 
+  const generateWithAi = async () => {
+    if (aiBrief.topic.trim().length < 3) {
+      setAiFeedback({ type: 'error', message: 'Describe the campaign topic first.' });
+      return;
+    }
+    setGenerating(true);
+    setAiFeedback(null);
+    try {
+      const response = await apiClient.post('/admin/ai/guided-review/draft', {
+        ...aiBrief,
+        provider: aiBrief.provider || undefined,
+      });
+      const aiDraft = response?.data?.draft;
+      change((current) => applyGuidedReviewAiDraft(current, aiDraft, campaign?.name));
+      setPendingTemplate(aiDraft.templateId);
+      setAiFeedback({ type: 'success', message: `Draft generated with ${aiDraft.provider === 'anthropic' ? 'Claude' : 'OpenAI'} · ${aiDraft.model}. Review all claims before publishing.` });
+    } catch (error) {
+      setAiFeedback({ type: 'error', message: error.message || 'AI draft generation failed.' });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -303,6 +334,22 @@ export default function GuidedReviewDesigner({ campaign, onSave, heightClass = '
   };
 
   const renderInspector = () => {
+    if (selected === 'ai') {
+      return (
+        <div className="space-y-5">
+          <InspectorIntro eyebrow="AI first draft" title="Describe the campaign" description="AI fills the editable page, questions and calls to action. Legal identity and reward operations stay unchanged." />
+          <div className="space-y-1.5"><Label className="text-xs font-semibold">Provider</Label><Select value={aiBrief.provider || 'default'} onValueChange={(value) => setAiBrief((current) => ({ ...current, provider: value === 'default' ? '' : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="default">Organisation default</SelectItem><SelectItem value="openai">OpenAI</SelectItem><SelectItem value="anthropic">Claude</SelectItem></SelectContent></Select></div>
+          <LongField label="Topic or content brief" value={aiBrief.topic} onChange={(topic) => setAiBrief((current) => ({ ...current, topic }))} rows={5} placeholder="Example: A financial review for parents preparing for their first child, covering first-year cash flow, protection and available support." hint="Do not include personal or confidential customer data." />
+          <LongField label="Intended audience" value={aiBrief.audience} onChange={(audience) => setAiBrief((current) => ({ ...current, audience }))} rows={3} placeholder="Who should recognise themselves in this page?" />
+          <LongField label="Campaign objective" value={aiBrief.objective} onChange={(objective) => setAiBrief((current) => ({ ...current, objective }))} rows={3} placeholder="What should a qualified visitor understand or do?" />
+          <LongField label="Must include" value={aiBrief.mustInclude} onChange={(mustInclude) => setAiBrief((current) => ({ ...current, mustInclude }))} rows={4} placeholder="Approved facts, themes, terminology or exclusions." />
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[11px] leading-5 text-amber-900">Generation replaces page copy and qualification questions. It preserves section order, operator disclosures, reward names, values, eligibility and allocations. Your brief and organisation guidance are sent to the selected AI provider under that provider account’s data terms.</div>
+          {aiFeedback && <p className={`rounded-lg p-3 text-xs leading-5 ${aiFeedback.type === 'error' ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{aiFeedback.message}</p>}
+          <Button type="button" className="w-full" onClick={generateWithAi} disabled={generating}>{generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <WandSparkles className="mr-2 h-4 w-4" />}{generating ? 'Writing the first draft…' : 'Generate page draft'}</Button>
+          <Button type="button" variant="link" className="h-auto w-full text-xs" onClick={() => window.open('/AdminAISettings', '_blank', 'noopener,noreferrer')}>Configure providers and global guidance</Button>
+        </div>
+      );
+    }
     if (selected === 'styles') {
       return (
         <div className="space-y-5">
@@ -372,6 +419,7 @@ export default function GuidedReviewDesigner({ campaign, onSave, heightClass = '
       <aside className="w-[230px] shrink-0 border-r border-[#dededb] bg-[#f8f8f6] flex flex-col">
         <div className="h-14 px-4 flex items-center gap-2 border-b border-[#dededb]"><LayoutPanelTop className="w-4 h-4" /><div><p className="text-xs font-semibold">Review page</p><p className="text-[10px] text-muted-foreground">{campaign?.name}</p></div></div>
         <div className="flex-1 overflow-y-auto p-3">
+          <button type="button" onClick={() => setSelected('ai')} className={`mb-3 w-full rounded-lg border p-3 text-left transition ${selected === 'ai' ? 'border-violet-300 bg-violet-50 shadow-sm' : 'border-[#dededb] bg-white hover:border-violet-200'}`}><span className="flex items-center gap-2 text-xs font-semibold"><WandSparkles className="h-4 w-4 text-violet-600" />Generate with AI</span><span className="mt-1 block text-[9px] leading-4 text-muted-foreground">Start from your topic, audience and objective</span></button>
           <div className="mb-3 rounded-lg border border-[#dededb] bg-white p-2.5 space-y-2">
             <Label className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Starting point</Label>
             <Select value={pendingTemplate} onValueChange={setPendingTemplate}>

@@ -14,6 +14,7 @@ import {
  Link2,
  Package,
  Search,
+ Bot,
 } from 'lucide-react';
 import { hasCapability as hasRedeemOpsCapability } from '@/lib/redeemOpsPermissions';
 import NotificationBell from './NotificationBell.jsx';
@@ -73,6 +74,7 @@ const getNavigationItems = (user) => {
  items: [
  { title: 'Users', url: '/AdminUsers', icon: Users },
  { title: 'App Versions', url: '/AdminApkManager', icon: Settings },
+ { title: 'AI Settings', url: '/AdminAISettings', icon: Bot },
  ],
  },
  ];

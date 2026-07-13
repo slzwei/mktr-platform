@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   GUIDED_REVIEW_TEMPLATES,
   createGuidedReviewTemplate,
+  applyGuidedReviewAiDraft,
   guidedReviewToQuiz,
   normalizeGuidedReview,
   reorderGuidedReviewSections,
@@ -49,5 +50,24 @@ describe('Guided Review templates', () => {
       'hero', 'rewards', 'audience', 'problem',
     ]);
     expect(sections[1].id).toBe('audience');
+  });
+
+  it('applies AI copy while preserving legal and reward operations', () => {
+    const current = createGuidedReviewTemplate('financial_readiness');
+    current.trust.partner = 'Approved Advisory Pte. Ltd.';
+    current.rewards.attendance.quantity = 42;
+    const next = applyGuidedReviewAiDraft(current, {
+      templateId: 'prenatal_money_review',
+      content: {
+        hero: { headline: 'A calmer plan for your growing family.' },
+        questions: { items: [{ prompt: 'What would help most?', options: ['Cash flow', 'Protection'] }] },
+      },
+    });
+    expect(next.templateId).toBe('prenatal_money_review');
+    expect(next.hero.headline).toContain('growing family');
+    expect(next.theme.accent).toBe('#c05f6f');
+    expect(next.trust.partner).toBe('Approved Advisory Pte. Ltd.');
+    expect(next.rewards.attendance.quantity).toBe(42);
+    expect(next.questions.items[0].id).toBe('what-would-help-most');
   });
 });

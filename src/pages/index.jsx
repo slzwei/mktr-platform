@@ -65,6 +65,7 @@ const AdminDeviceLogs = lazy(() => import('./AdminDeviceLogs'));
 const ProvisionDevice = lazy(() => import('./ProvisionDevice')); // Added
 const AdminApkManager = lazy(() => import('./AdminApkManager')); // Added
 const AdminAgentGroups = lazy(() => import('./AdminAgentGroups'));
+const AdminAISettings = lazy(() => import('./AdminAISettings'));
 const AgentDashboard = lazy(() => import('./AgentDashboard'));
 
 const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
@@ -541,6 +542,15 @@ function PagesContent() {
  <ProtectedRoute>
  <DashboardLayout>
  <AgentProfile />
+ </DashboardLayout>
+ </ProtectedRoute>
+ }
+ />
+ <Route
+ path="/AdminAISettings" element={
+ <ProtectedRoute requiredRole="admin">
+ <DashboardLayout>
+ <AdminAISettings />
  </DashboardLayout>
  </ProtectedRoute>
  }
