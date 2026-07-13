@@ -44,6 +44,11 @@ describe('prospectCreate validation — quiz funnel + UTM', () => {
     expect(schemas.campaignUpdate.validate({ type: 'quiz' }).error).toBeUndefined();
   });
 
+  it('campaignCreate + campaignUpdate accept type "guided_review"', () => {
+    expect(schemas.campaignCreate.validate({ name: 'Review', type: 'guided_review' }).error).toBeUndefined();
+    expect(schemas.campaignUpdate.validate({ type: 'guided_review' }).error).toBeUndefined();
+  });
+
   it('accepts referralRef up to 64 chars, rejects longer', () => {
     expect(
       schemas.prospectCreate.validate({ ...base, referralRef: '5f1e9c1a-2222-4444-8888-aaaaaaaaaaaa' }).error

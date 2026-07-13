@@ -16,6 +16,7 @@ import LayoutPanel from"./editor/LayoutPanel";
 import QuizPanel from"./editor/QuizPanel";
 import PreviewFrame from"./editor/PreviewFrame";
 import { genId } from"./editor/constants";
+import GuidedReviewDesigner from"./guided-review/GuidedReviewDesigner";
 
 // Normalize legacy flat fieldOrder arrays to row structure
 const normalizeFieldOrder = (order) => {
@@ -43,7 +44,7 @@ const TABS = [
  { id: 'quiz', label: 'Quiz', icon: ListChecks }
 ];
 
-export default function DesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8rem)]' }) {
+function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8rem)]' }) {
  const [activeTab, setActiveTab] = useState('content');
  const [panelOpen, setPanelOpen] = useState(true);
 
@@ -204,4 +205,11 @@ export default function DesignEditor({ campaign, onSave, heightClass = 'h-[calc(
  </div>
  </div>
  );
+}
+
+export default function DesignEditor(props) {
+ if (props.campaign?.type === 'guided_review') {
+ return <GuidedReviewDesigner {...props} />;
+ }
+ return <ClassicDesignEditor {...props} />;
 }

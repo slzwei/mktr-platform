@@ -11,6 +11,7 @@ import TypingLoader from '../components/ui/TypingLoader';
 import { apiClient } from '@/api/client';
 import LeadCaptureLayout, { TOKENS, RADIUS } from '../components/campaigns/LeadCaptureLayout';
 import { deriveLeadCaptureContent } from '../components/campaigns/leadCaptureContent';
+import GuidedReviewPage, { GuidedReviewSuccess } from '../components/campaigns/guided-review/GuidedReviewPage';
 import {
   shouldTrack,
   generateEventId,
@@ -441,6 +442,97 @@ export default function LeadCapture() {
     );
   }
 
+  const shareDialog = (
+    <ShareCampaignDialog
+      open={shareOpen}
+      onOpenChange={setShareOpen}
+      campaignName={campaign?.name}
+      campaignId={campaign?.id}
+      prospectId={submittedProspectId}
+      serverShareUrl={serverShareUrl}
+      longShareUrl={longShareUrl}
+      emailedLink={emailedLink}
+    />
+  );
+
+  const captureExperience = error ? (
+    <ErrorState
+      duplicateDetected={duplicateDetected}
+      duplicateCountdown={duplicateCountdown}
+      message={error}
+      onShare={() => setShareOpen(true)}
+    />
+  ) : (
+    <div ref={formRef}>
+      {referrerName && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            margin: '0 auto 16px',
+            padding: '8px 16px',
+            maxWidth: 'fit-content',
+            background: TOKENS.storyCard,
+            border: `1px solid ${TOKENS.hairline}`,
+            borderRadius: 999,
+            color: TOKENS.body,
+            fontSize: 13,
+            fontWeight: 600,
+          }}
+        >
+          <span aria-hidden="true">👋</span>
+          <span>Referred by {referrerName}</span>
+        </div>
+      )}
+      <QuizGate
+        quiz={design.quiz}
+        themeColor={design.themeColor}
+        onReveal={handleQuizReveal}
+        onComplete={setQuizResult}
+      >
+        <CampaignSignupForm
+          themeColor={design.themeColor}
+          formHeadline={design.formHeadline || 'Get Started'}
+          formSubheadline={design.formSubheadline}
+          campaignId={campaign?.id}
+          campaign={campaign}
+          onSubmit={handleSubmit}
+          termsContent={design.termsContent}
+          ctaLabel={design.ctaText || 'Submit Now'}
+        />
+      </QuizGate>
+    </div>
+  );
+
+  if (campaign?.type === 'guided_review') {
+    if (submitted) {
+      return (
+        <>
+          <GuidedReviewSuccess
+            config={design.guidedReview}
+            campaignName={campaign.name}
+            onShare={() => setShareOpen(true)}
+          />
+          {shareDialog}
+        </>
+      );
+    }
+    return (
+      <>
+        <GuidedReviewPage
+          config={design.guidedReview}
+          campaignName={campaign.name}
+          onCta={() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+        >
+          {captureExperience}
+        </GuidedReviewPage>
+        {shareDialog}
+      </>
+    );
+  }
+
   return (
     <LeadCaptureLayout
       design={design}
@@ -451,69 +543,8 @@ export default function LeadCapture() {
       regulatoryFooter={content.regulatoryFooter}
       brand={content.brand}
     >
-      {submitted ? (
-        <SuccessState onShare={() => setShareOpen(true)} />
-      ) : error ? (
-        <ErrorState
-          duplicateDetected={duplicateDetected}
-          duplicateCountdown={duplicateCountdown}
-          message={error}
-          onShare={() => setShareOpen(true)}
-        />
-      ) : (
-        <div ref={formRef}>
-          {referrerName && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                margin: '0 auto 16px',
-                padding: '8px 16px',
-                maxWidth: 'fit-content',
-                background: TOKENS.storyCard,
-                border: `1px solid ${TOKENS.hairline}`,
-                borderRadius: 999,
-                color: TOKENS.body,
-                fontSize: 13,
-                fontWeight: 600,
-              }}
-            >
-              <span aria-hidden="true">👋</span>
-              <span>Referred by {referrerName}</span>
-            </div>
-          )}
-          <QuizGate
-            quiz={design.quiz}
-            themeColor={design.themeColor}
-            onReveal={handleQuizReveal}
-            onComplete={setQuizResult}
-          >
-            <CampaignSignupForm
-              themeColor={design.themeColor}
-              formHeadline={design.formHeadline || 'Get Started'}
-              formSubheadline={design.formSubheadline}
-              campaignId={campaign.id}
-              campaign={campaign}
-              onSubmit={handleSubmit}
-              termsContent={design.termsContent}
-              ctaLabel={design.ctaText || 'Submit Now'}
-            />
-          </QuizGate>
-        </div>
-      )}
-
-      <ShareCampaignDialog
-        open={shareOpen}
-        onOpenChange={setShareOpen}
-        campaignName={campaign?.name}
-        campaignId={campaign?.id}
-        prospectId={submittedProspectId}
-        serverShareUrl={serverShareUrl}
-        longShareUrl={longShareUrl}
-        emailedLink={emailedLink}
-      />
+      {submitted ? <SuccessState onShare={() => setShareOpen(true)} /> : captureExperience}
+      {shareDialog}
     </LeadCaptureLayout>
   );
 }

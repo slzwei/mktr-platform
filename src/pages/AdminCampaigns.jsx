@@ -45,7 +45,9 @@ import {
  List as ListIcon,
  Search,
  Car,
- QrCode
+ QrCode,
+ Sparkles,
+ ClipboardCheck
 } from"lucide-react";
 
 import CampaignTypeSelectionDialog from"../components/campaigns/CampaignTypeSelectionDialog";
@@ -214,7 +216,16 @@ export default function AdminCampaigns() {
  // helper for type icon
  const getTypeIcon = (type) => {
  if (type === 'brand_awareness') return <Car className="w-4 h-4 text-primary"/>;
+ if (type === 'quiz') return <Sparkles className="w-4 h-4 text-warning"/>;
+ if (type === 'guided_review') return <ClipboardCheck className="w-4 h-4 text-primary"/>;
  return <QrCode className="w-4 h-4 text-success"/>;
+ };
+
+ const getTypeLabel = (type) => {
+ if (type === 'brand_awareness') return 'PHV';
+ if (type === 'quiz') return 'Quiz';
+ if (type === 'guided_review') return 'Guided Review';
+ return 'Regular';
  };
 
  const renderListTable = (list, archived = false) => (
@@ -259,10 +270,10 @@ export default function AdminCampaigns() {
  </TableCell>
  )}
  <TableCell>
- <div className="flex items-center gap-2" title={campaign.type === 'brand_awareness' ? 'PHV Campaign' : 'Regular Campaign'}>
+ <div className="flex items-center gap-2" title={`${getTypeLabel(campaign.type)} Campaign`}>
  {getTypeIcon(campaign.type)}
  <span className="text-sm text-muted-foreground capitalize">
- {campaign.type === 'brand_awareness' ? 'PHV' : 'Regular'}
+ {getTypeLabel(campaign.type)}
  </span>
  </div>
  </TableCell>
@@ -337,7 +348,7 @@ export default function AdminCampaigns() {
  </div>
  <div className="flex items-center gap-2 text-sm text-muted-foreground">
  {getTypeIcon(c.type)}
- <span>{c.type === 'brand_awareness' ? 'PHV Campaign' : 'Regular Campaign'}</span>
+ <span>{getTypeLabel(c.type)} Campaign</span>
  </div>
  <div className="flex items-center justify-between pt-1">
  {archived ? (

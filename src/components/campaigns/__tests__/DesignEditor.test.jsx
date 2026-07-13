@@ -134,3 +134,82 @@ describe('DesignEditor — exclude financial consultants toggle persistence', ()
     expect(onSave.mock.calls[0][0]).toMatchObject({ excludeAdvisors: true });
   });
 });
+
+describe('DesignEditor — Guided Review format', () => {
+  it('opens the Squarespace-style section canvas for guided review campaigns', () => {
+    render(
+      <DesignEditor
+        campaign={{ id: 'review-1', name: 'Retirement Review', type: 'guided_review', design_config: {} }}
+        onSave={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Page sections')).toBeInTheDocument();
+    expect(screen.getByText('Live page canvas')).toBeInTheDocument();
+    expect(screen.getByText('Site styles')).toBeInTheDocument();
+    expect(screen.getByText('What happens in the review.')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^Drag .* section$/ })).toHaveLength(9);
+  });
+
+  it('saves Guided Review content and derives a qualification quiz', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <DesignEditor
+        campaign={{ id: 'review-2', name: 'Retirement Review', type: 'guided_review', design_config: {} }}
+        onSave={onSave}
+      />
+    );
+
+    const headline = screen.getByDisplayValue('Know where your money stands.');
+    await user.clear(headline);
+    await user.type(headline, 'Plan the years ahead.');
+    await user.click(screen.getByRole('button', { name: /Save page/i }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      guidedReview: {
+        templateId: 'financial_readiness',
+        hero: { headline: 'Plan the years ahead.' },
+        rewards: { grand: { conditionKey: 'submission', quantity: 1 } },
+      },
+      quiz: { enabled: true, mode: 'qualification' },
+      sgPrOnly: true,
+    });
+  });
+
+  it('applies a selected template only after confirmation and preserves trust details', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    render(
+      <DesignEditor
+        campaign={{
+          id: 'review-3',
+          name: 'Family Review',
+          type: 'guided_review',
+          design_config: { guidedReview: { trust: { partner: 'Example Advisory Pte. Ltd.' } } },
+        }}
+        onSave={onSave}
+      />
+    );
+
+    screen.getByRole('combobox', { name: 'Guided Review template' }).focus();
+    await user.keyboard('[ArrowDown][ArrowDown][Enter]');
+    expect(screen.getByDisplayValue('Know where your money stands.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Apply template' }));
+    expect(screen.getByDisplayValue('Make room for baby—and the life around them.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Save page/i }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      guidedReview: {
+        templateId: 'prenatal_money_review',
+        theme: { accent: '#c05f6f', ink: '#3b3038', paper: '#fff3f0', sage: '#7e8f83' },
+        trust: { partner: 'Example Advisory Pte. Ltd.' },
+        questions: { items: [{ id: 'family-stage' }, expect.anything(), expect.anything()] },
+      },
+    });
+  });
+});

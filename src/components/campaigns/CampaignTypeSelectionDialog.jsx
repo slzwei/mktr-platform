@@ -6,12 +6,12 @@ import {
  DialogTitle,
 } from"@/components/ui/dialog";
 import { Button } from"@/components/ui/button";
-import { Car, QrCode, Sparkles } from"lucide-react";
+import { Car, ClipboardCheck, QrCode, Sparkles } from"lucide-react";
 
 export default function CampaignTypeSelectionDialog({ open, onOpenChange, onSelect }) {
  return (
  <Dialog open={open} onOpenChange={onOpenChange}>
- <DialogContent className="sm:max-w-md">
+ <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
  <DialogHeader>
  <DialogTitle>Create New Campaign</DialogTitle>
  <DialogDescription>
@@ -62,6 +62,22 @@ export default function CampaignTypeSelectionDialog({ open, onOpenChange, onSele
  <h3 className="font-semibold text-foreground">Quiz Campaign</h3>
  <p className="text-sm text-muted-foreground font-normal mt-1 text-wrap">
  Interactive personality quiz for paid social (IG/TikTok). Users get a result, then leave their details — round-robins to agents like a regular campaign.
+ </p>
+ </div>
+ </div>
+ </Button>
+
+ <Button
+ variant="outline" className="h-auto p-4 flex flex-col items-start gap-2 border-2 hover:border-primary hover:bg-primary/10 transition-colors text-left group" onClick={() => onSelect("guided_review")}
+ >
+ <div className="flex items-center w-full gap-3">
+ <div className="p-2 bg-primary/10 rounded-lg group-hover:bg-primary/15 text-primary transition-colors">
+ <ClipboardCheck className="w-6 h-6"/>
+ </div>
+ <div>
+ <h3 className="font-semibold text-foreground">Guided Review Campaign</h3>
+ <p className="text-sm text-muted-foreground font-normal mt-1 text-wrap">
+ Long-form, editorial campaigns that qualify intent, explain a consultation, and unlock rewards after submission or attendance.
  </p>
  </div>
  </div>

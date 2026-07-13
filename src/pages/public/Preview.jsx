@@ -8,6 +8,7 @@ import AlertTriangle from 'lucide-react/icons/alert-triangle';
 import ShareCampaignDialog from '@/components/campaigns/ShareCampaignDialog';
 import LeadCaptureLayout from '@/components/campaigns/LeadCaptureLayout';
 import { deriveLeadCaptureContent } from '@/components/campaigns/leadCaptureContent';
+import GuidedReviewPage from '@/components/campaigns/guided-review/GuidedReviewPage';
 
 export default function PublicPreview() {
  const { slug } = useParams();
@@ -82,17 +83,7 @@ export default function PublicPreview() {
  );
  }
 
- return (
- <LeadCaptureLayout
- design={design}
- maxWidth={design.formWidth}
- wordmark={content.wordmark}
- story={content.story}
- primaryCta={primaryCta}
- regulatoryFooter={content.regulatoryFooter}
- brand={content.brand}
- >
- <Title title={`Preview • ${snapshot?.name || 'Campaign'}`} />
+ const previewForm = (
  <div ref={formRef}>
  <QuizGate quiz={design.quiz} themeColor={design.themeColor || '#3B82F6'} previewMode>
  <CampaignSignupForm
@@ -108,6 +99,9 @@ export default function PublicPreview() {
  />
  </QuizGate>
  </div>
+ );
+
+ const shareDialog = (
  <ShareCampaignDialog
  open={shareOpen}
  onOpenChange={setShareOpen}
@@ -115,6 +109,37 @@ export default function PublicPreview() {
  campaignId={snapshot?.id}
  longShareUrl={longShareUrl}
  />
+ );
+
+ if (snapshot?.type === 'guided_review') {
+ return (
+ <>
+ <Title title={`Preview • ${snapshot?.name || 'Campaign'}`} />
+ <GuidedReviewPage
+ config={design.guidedReview}
+ campaignName={snapshot?.name}
+ onCta={() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+ >
+ {previewForm}
+ </GuidedReviewPage>
+ {shareDialog}
+ </>
+ );
+ }
+
+ return (
+ <LeadCaptureLayout
+ design={design}
+ maxWidth={design.formWidth}
+ wordmark={content.wordmark}
+ story={content.story}
+ primaryCta={primaryCta}
+ regulatoryFooter={content.regulatoryFooter}
+ brand={content.brand}
+ >
+ <Title title={`Preview • ${snapshot?.name || 'Campaign'}`} />
+ {previewForm}
+ {shareDialog}
  </LeadCaptureLayout>
  );
 }

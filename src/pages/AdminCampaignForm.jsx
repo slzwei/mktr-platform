@@ -179,7 +179,13 @@ export default function AdminCampaignForm() {
 
  // Helper to determine display text for type
  const isPHV = formData.type === 'brand_awareness';
- const typeLabel = isPHV ? 'PHV' : 'Regular';
+ const typeLabel = isPHV
+ ? 'PHV'
+ : formData.type === 'quiz'
+ ? 'Quiz'
+ : formData.type === 'guided_review'
+ ? 'Guided Review'
+ : 'Regular';
 
  return (
  <div className="p-6 lg:p-8 max-w-5xl mx-auto">

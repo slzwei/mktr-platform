@@ -25,6 +25,11 @@
  * @param {boolean} facts.isActive
  * @param {boolean} facts.isQuiz
  * @param {boolean} facts.quizEnabled     design_config.quiz.enabled
+ * @param {boolean} facts.isGuidedReview
+ * @param {boolean} facts.guidedReviewConfigured
+ * @param {number}  facts.guidedReviewQuestions
+ * @param {boolean} facts.guidedReviewQualificationEnabled
+ * @param {boolean} facts.guidedReviewRewardConfigured
  * @param {number}  facts.assignableAgents      active agents with credits for this campaign
  * @param {number}  facts.agentsMissingPhone    of those, how many lack a phone
  * @param {boolean} facts.webhookEnabled         WEBHOOK_ENABLED === 'true'
@@ -36,6 +41,11 @@ export function computeReadiness(facts) {
     isActive = false,
     isQuiz = false,
     quizEnabled = false,
+    isGuidedReview = false,
+    guidedReviewConfigured = false,
+    guidedReviewQuestions = 0,
+    guidedReviewQualificationEnabled = false,
+    guidedReviewRewardConfigured = false,
     assignableAgents = 0,
     agentsMissingPhone = 0,
     webhookEnabled = false,
@@ -86,6 +96,32 @@ export function computeReadiness(facts) {
       code: 'quiz_not_enabled',
       message:
         'This is a quiz campaign but the quiz is not enabled (Designer → Quiz tab). The page will show the lead form without the quiz.',
+    });
+  }
+
+  // Guided Review is an intent-led funnel, not simply a longer landing page.
+  // Its qualification step and reward contract are mandatory launch inputs.
+  if (isGuidedReview && !guidedReviewConfigured) {
+    issues.push({
+      level: 'critical',
+      code: 'guided_review_not_configured',
+      message: 'The Guided Review page has not been saved yet. Open the Designer, choose a template, confirm the page details and save before launching.',
+    });
+  }
+
+  if (isGuidedReview && guidedReviewConfigured && (guidedReviewQuestions < 1 || !guidedReviewQualificationEnabled)) {
+    issues.push({
+      level: 'critical',
+      code: 'guided_review_qualification_missing',
+      message: 'Guided Review needs at least one valid qualification question and its generated qualification flow before it can launch.',
+    });
+  }
+
+  if (isGuidedReview && guidedReviewConfigured && !guidedReviewRewardConfigured) {
+    issues.push({
+      level: 'critical',
+      code: 'guided_review_reward_missing',
+      message: 'Guided Review needs at least one reward with a name, eligibility event and positive allocation before it can launch.',
     });
   }
 
@@ -144,6 +180,22 @@ export async function loadCampaignReadiness(campaignId) {
   }
 
   const design = campaign.design_config || {};
+  const guidedReview = design.guidedReview;
+  const guidedReviewQuestions = Array.isArray(guidedReview?.questions?.items)
+    ? guidedReview.questions.items.filter((question) => (
+      question?.prompt
+      && Array.isArray(question.options)
+      && question.options.filter(Boolean).length > 0
+    )).length
+    : 0;
+  const guidedReviewRewardConfigured = ['grand', 'attendance'].some((key) => {
+    const reward = guidedReview?.rewards?.[key];
+    return !!(
+      reward?.title
+      && (reward.conditionKey || reward.condition)
+      && Number(reward.quantity) > 0
+    );
+  });
   const webhookEnabled = process.env.WEBHOOK_ENABLED === 'true';
   const isActive = campaign.is_active !== false;
 
@@ -152,6 +204,14 @@ export async function loadCampaignReadiness(campaignId) {
     isActive,
     isQuiz: campaign.type === 'quiz',
     quizEnabled: !!(design.quiz && design.quiz.enabled),
+    isGuidedReview: campaign.type === 'guided_review',
+    guidedReviewConfigured: !!(guidedReview && typeof guidedReview === 'object'),
+    guidedReviewQuestions,
+    guidedReviewQualificationEnabled: !!(
+      design.quiz?.enabled
+      && design.quiz?.mode === 'qualification'
+    ),
+    guidedReviewRewardConfigured,
     assignableAgents,
     agentsMissingPhone,
     webhookEnabled,

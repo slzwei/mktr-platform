@@ -27,6 +27,7 @@ export async function createOrRefreshPreview(campaignId, user) {
   const snapshot = {
     id: campaign.id,
     name: campaign.name,
+    type: campaign.type,
     min_age: campaign.min_age,
     max_age: campaign.max_age,
     is_active: true,
@@ -67,6 +68,7 @@ export async function resolveSlug(slug) {
       ...snapshot,
       design_config: campaign.design_config || {},
       name: campaign.name,
+      type: campaign.type,
       min_age: campaign.min_age,
       max_age: campaign.max_age,
       is_active: true
@@ -86,7 +88,7 @@ export async function getPublicCampaign(id) {
   // out-of-range birthdates client-side. The backend also re-checks on
   // submit in prospectService to prevent bypass.
   const campaign = await Campaign.findByPk(id, {
-    attributes: ['id', 'name', 'design_config', 'is_active', 'metaPixelId', 'tiktokPixelId', 'min_age', 'max_age']
+    attributes: ['id', 'name', 'type', 'design_config', 'is_active', 'metaPixelId', 'tiktokPixelId', 'min_age', 'max_age']
   });
 
   if (!campaign) {

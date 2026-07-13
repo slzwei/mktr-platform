@@ -36,6 +36,32 @@ const QUIZ = {
 };
 
 describe('CampaignQuiz', () => {
+  it('qualification mode skips the persona reveal and continues with raw answers', async () => {
+    const onComplete = vi.fn();
+    const qualification = {
+      ...QUIZ,
+      mode: 'qualification',
+      resultProfiles: [],
+      scoring: { method: 'profile-sum', profileOrder: [] },
+    };
+    render(<CampaignQuiz quiz={qualification} onComplete={onComplete} />);
+
+    fireEvent.click(screen.getByText('Begin'));
+    fireEvent.click(await screen.findByText('Option Ay'));
+    fireEvent.click(await screen.findByText('Ay two'));
+
+    await vi.waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('The Ayyy')).not.toBeInTheDocument();
+    expect(onComplete.mock.calls[0][0]).toMatchObject({
+      quizId: 'test-quiz',
+      result: null,
+      answers: [
+        { qid: 'q1', value: 'a1' },
+        { qid: 'q2', value: 'a2' },
+      ],
+    });
+  });
+
   it('runs intro → questions → reveal and calls onComplete with answers + scored result', async () => {
     const onComplete = vi.fn();
     render(<CampaignQuiz quiz={QUIZ} themeColor="#0F9D58" onComplete={onComplete} />);

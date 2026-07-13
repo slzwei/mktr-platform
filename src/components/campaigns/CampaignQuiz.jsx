@@ -57,6 +57,14 @@ export default function CampaignQuiz({ quiz, themeColor, previewMode = false, on
       if (stepIdx + 1 < questions.length) {
         setStepIdx(stepIdx + 1);
       } else {
+        // Guided Review campaigns use the quiz renderer as a lightweight,
+        // one-question-per-screen qualification check. They do not manufacture
+        // a personality result: after the final answer, continue straight to
+        // the verified contact form and persist the raw answers on submission.
+        if (quiz?.mode === 'qualification') {
+          onComplete?.({ quizId: quiz?.quizId, version: quiz?.version, answers: next, result: null });
+          return;
+        }
         const scored = scoreQuiz(quiz, next);
         setResult(scored);
         setPhase('result');

@@ -73,4 +73,49 @@ describe('campaignReadinessService.computeReadiness', () => {
     expect(r.ready).toBe(true);
     expect(r.issues).toHaveLength(0);
   });
+
+  it('blocks an unsaved Guided Review page', () => {
+    const r = computeReadiness({
+      ...healthy,
+      type: 'guided_review',
+      isQuiz: false,
+      isGuidedReview: true,
+    });
+    expect(r.ready).toBe(false);
+    expect(codes(r)).toContain('guided_review_not_configured');
+  });
+
+  it('blocks Guided Review when qualification is missing', () => {
+    const r = computeReadiness({
+      ...healthy,
+      type: 'guided_review',
+      isQuiz: false,
+      isGuidedReview: true,
+      guidedReviewConfigured: true,
+      guidedReviewQuestions: 0,
+      guidedReviewQualificationEnabled: false,
+      guidedReviewRewardConfigured: true,
+    });
+    expect(r.ready).toBe(false);
+    expect(codes(r)).toContain('guided_review_qualification_missing');
+  });
+
+  it('requires a configured reward and accepts a complete Guided Review', () => {
+    const base = {
+      ...healthy,
+      type: 'guided_review',
+      isQuiz: false,
+      isGuidedReview: true,
+      guidedReviewConfigured: true,
+      guidedReviewQuestions: 3,
+      guidedReviewQualificationEnabled: true,
+    };
+    const incomplete = computeReadiness({ ...base, guidedReviewRewardConfigured: false });
+    expect(incomplete.ready).toBe(false);
+    expect(codes(incomplete)).toContain('guided_review_reward_missing');
+
+    const complete = computeReadiness({ ...base, guidedReviewRewardConfigured: true });
+    expect(complete.ready).toBe(true);
+    expect(complete.issues).toHaveLength(0);
+  });
 });

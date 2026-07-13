@@ -92,7 +92,7 @@ export const schemas = {
   // service layer; we accept them as opaque arrays here.
   campaignCreate: Joi.object({
     name: Joi.string().min(1).max(100).required(),
-    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing', 'quiz').optional(),
+    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing', 'quiz', 'guided_review').optional(),
     min_age: Joi.number().integer().min(0).max(120).optional(),
     max_age: Joi.number().integer().min(0).max(120).optional(),
     start_date: Joi.date().optional(),
@@ -111,7 +111,7 @@ export const schemas = {
 
   campaignUpdate: Joi.object({
     name: Joi.string().min(1).max(100).optional(),
-    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing', 'quiz').optional(),
+    type: Joi.string().valid('lead_generation', 'brand_awareness', 'product_promotion', 'event_marketing', 'quiz', 'guided_review').optional(),
     min_age: Joi.number().integer().min(0).max(120).optional(),
     max_age: Joi.number().integer().min(0).max(120).optional(),
     start_date: Joi.date().optional(),
