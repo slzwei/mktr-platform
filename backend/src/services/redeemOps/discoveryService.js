@@ -18,6 +18,7 @@ const TERMINAL = ['completed', 'failed', 'aborted', 'timed_out'];
 function cfg() {
   return {
     enabled: process.env.DISCOVERY_ENABLED === 'true',
+    searchTermsEnabled: process.env.DISCOVERY_SEARCH_TERMS_ENABLED === 'true',
     mapsActor: process.env.APIFY_MAPS_ACTOR_ID || 'compass~crawler-google-places',
     // MUST be the PROFILE scraper — apify~instagram-scraper (its sibling) has no
     // `usernames` input (wants directUrls), so every enrichment run came back
@@ -120,10 +121,18 @@ export function makeDiscoveryService(overrides = {}) {
     // spend — otherwise every add-to-pipeline would fail after the money was paid.
     // Stores the taxonomy's canonical casing so add-time createPartner re-validation
     // can only fail on the (rare) delete-category-mid-run race.
-    const canonicalCategory = await d.categories.resolveCategoryName(String(category).trim());
+    const { name: canonicalCategory, searchTerms } = await d.categories.resolveCategoryForSearch(
+      String(category).trim()
+    );
     await assertQuota(user);
     const c = cfg();
     const requestedLimit = Math.min(Math.max(Number(limit) || 60, 1), c.maxResultsPerRun);
+    const searchTermsUsed = c.searchTermsEnabled ? searchTerms : [canonicalCategory];
+    // The Maps actor applies this cap to EACH search string, so divide the
+    // requested total across aliases to avoid multiplying crawl cost by N.
+    const perSearchLimit = c.searchTermsEnabled
+      ? Math.max(1, Math.floor(requestedLimit / searchTermsUsed.length))
+      : requestedLimit;
 
     const run = await d.DiscoveryRun.create({
       createdBy: user.id, provider: 'apify_google_maps',
@@ -139,9 +148,9 @@ export function makeDiscoveryService(overrides = {}) {
       // with global brand matches (Sephora New York/Oshawa/Edmonton, 2026-07-12).
       const locationQuery = /\bsingapore\b/i.test(run.area) ? run.area : `${run.area}, Singapore`;
       const input = {
-        searchStringsArray: [canonicalCategory],
+        searchStringsArray: searchTermsUsed,
         locationQuery,
-        maxCrawledPlacesPerSearch: requestedLimit,
+        maxCrawledPlacesPerSearch: perSearchLimit,
         language: 'en',
         scrapeContacts: true, // enables the instagrams/social arrays
       };
@@ -154,7 +163,12 @@ export function makeDiscoveryService(overrides = {}) {
 
     await d.audit.recordAuditEvent({
       actorUser: user, action: 'discovery.run_started', entityType: 'discovery_run',
-      entityId: run.id, after: { category: run.category, area: run.area, requestedLimit }, requestId,
+      entityId: run.id,
+      after: {
+        category: run.category, area: run.area, requestedLimit,
+        searchTerms: searchTermsUsed,
+      },
+      requestId,
     });
     return run;
   }

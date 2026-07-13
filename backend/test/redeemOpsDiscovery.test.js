@@ -19,7 +19,10 @@ import { makeDiscoveryService } from '../src/services/redeemOps/discoveryService
 import { makePartnerService } from '../src/services/redeemOps/partnerService.js';
 import { makeDedupeService } from '../src/services/redeemOps/dedupeService.js';
 import { sgtDayWindow } from '../src/services/redeemOps/taskService.js';
-import { DiscoveryRun, DiscoveryCandidate, DiscoveryPlaceMemory, PartnerOrganisation, sequelize } from '../src/models/index.js';
+import {
+  DiscoveryRun, DiscoveryCandidate, DiscoveryPlaceMemory, PartnerOrganisation,
+  RedeemOpsAuditEvent, sequelize,
+} from '../src/models/index.js';
 
 let app;
 let admin;
@@ -294,15 +297,49 @@ describe('category validation', () => {
 });
 
 describe('geo-anchored search input', () => {
-  test('area is sent as locationQuery (Singapore-anchored), never in the search string', async () => {
+  test('flag OFF keeps the legacy Apify input and full requested limit', async () => {
+    delete process.env.DISCOVERY_SEARCH_TERMS_ENABLED;
+    const category = `Legacy Input Category ${Date.now()}`;
+    await seedRedeemOpsCategory(category, { providerSearchTerms: ['provider alias'] });
     const apify = makeApifyStub();
     const svc = makeDiscoveryService({ apify });
     const solo = await createTestUser({ role: 'admin' });
     apify.startRun.mockImplementation(async () => uniqueRunId());
-    await svc.startDiscovery({ category: 'Nail Salon', area: 'Tampines', limit: 5 }, solo.user);
+    await svc.startDiscovery({ category, area: 'Tampines', limit: 5 }, solo.user);
     const input = apify.startRun.mock.calls[0][1];
-    expect(input.searchStringsArray).toEqual(['Nail Salon']);
-    expect(input.locationQuery).toBe('Tampines, Singapore');
+    expect(input).toEqual({
+      searchStringsArray: [category],
+      locationQuery: 'Tampines, Singapore',
+      maxCrawledPlacesPerSearch: 5,
+      language: 'en',
+      scrapeContacts: true,
+    });
+  });
+
+  test('flag ON sends provider terms, divides the limit, and snapshots the category name', async () => {
+    process.env.DISCOVERY_SEARCH_TERMS_ENABLED = 'true';
+    const category = `Local Coffeeshop ${Date.now()}`;
+    const providerSearchTerms = ['kopitiam', 'zi char', 'coffeeshop'];
+    await seedRedeemOpsCategory(category, { providerSearchTerms });
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const solo = await createTestUser({ role: 'admin' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+
+    const run = await svc.startDiscovery({ category, area: 'Tampines', limit: 10 }, solo.user);
+
+    expect(apify.startRun.mock.calls[0][1]).toEqual({
+      searchStringsArray: providerSearchTerms,
+      locationQuery: 'Tampines, Singapore',
+      maxCrawledPlacesPerSearch: 3,
+      language: 'en',
+      scrapeContacts: true,
+    });
+    expect(run.category).toBe(category);
+    const audit = await RedeemOpsAuditEvent.findOne({
+      where: { action: 'discovery.run_started', entityId: run.id },
+    });
+    expect(audit.after.searchTerms).toEqual(providerSearchTerms);
   });
 
   test('an area already naming Singapore is not double-suffixed', async () => {
