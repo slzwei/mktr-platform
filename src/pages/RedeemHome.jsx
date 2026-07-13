@@ -287,7 +287,7 @@ export default function RedeemHome() {
           <span className="rh-kicker">How it works</span>
           <h2 className="rh-h2">A real reward.<br />Claim in <span className="rh-h2__hl">30 seconds.</span></h2>
           <p className="rh-sub">
-            No account. No app. No points to hoard — just your name and a number. The reward is real: a voucher, lucky draw or partner offer.
+            No account. No app. No points to hoard — just your name and a number. That’s all a real reward should cost.
           </p>
           <div className="rh-steps">
             <div className="rh-step">
@@ -329,7 +329,7 @@ export default function RedeemHome() {
             <div className="rh-drops__empty">
               <h3>The next drop is loading.</h3>
               <p>
-                Drops, lucky draws and partner offers land as and when — in taxis, at roadshows, and right here.
+                New drops land as and when — in taxis, at roadshows, and right here.
                 Spotted one of our QR codes out in the wild? That’s your way in.
               </p>
             </div>
@@ -400,8 +400,8 @@ export default function RedeemHome() {
         <section className="rh-section rh-partners" id="clients">
           <div className="rh-wrap">
             <span className="rh-kicker">Partners &amp; clients</span>
-            <h2 className="rh-h2">Dropped with <span className="rh-h2__hl">the good ones.</span></h2>
-            <p className="rh-sub">Brands and outlets that have run drops or honoured Redeem vouchers.</p>
+            <h2 className="rh-h2">Built for <span className="rh-h2__hl">the good ones.</span></h2>
+            <p className="rh-sub">The kind of Singapore brands Redeem is built for.</p>
             <div className="rh-partners__wall">
               {PARTNERS.map((p) => {
                 const inner = p.src
