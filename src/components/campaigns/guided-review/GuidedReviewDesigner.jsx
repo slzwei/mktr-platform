@@ -415,7 +415,7 @@ export default function GuidedReviewDesigner({ campaign, onSave, heightClass = '
   };
 
   return (
-    <div className={`${heightClass} flex min-h-[620px] overflow-hidden bg-[#f3f3f1] text-foreground`}>
+    <div className={`gr-designer-chrome ${heightClass} flex min-h-[620px] overflow-hidden bg-[#f3f3f1] text-foreground`}>
       <aside className="w-[230px] shrink-0 border-r border-[#dededb] bg-[#f8f8f6] flex flex-col">
         <div className="h-14 px-4 flex items-center gap-2 border-b border-[#dededb]"><LayoutPanelTop className="w-4 h-4" /><div><p className="text-xs font-semibold">Review page</p><p className="text-[10px] text-muted-foreground">{campaign?.name}</p></div></div>
         <div className="flex-1 overflow-y-auto p-3">

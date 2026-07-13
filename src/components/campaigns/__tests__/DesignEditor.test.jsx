@@ -137,7 +137,7 @@ describe('DesignEditor — exclude financial consultants toggle persistence', ()
 
 describe('DesignEditor — Guided Review format', () => {
   it('opens the Squarespace-style section canvas for guided review campaigns', () => {
-    render(
+    const { container } = render(
       <DesignEditor
         campaign={{ id: 'review-1', name: 'Retirement Review', type: 'guided_review', design_config: {} }}
         onSave={vi.fn()}
@@ -149,6 +149,7 @@ describe('DesignEditor — Guided Review format', () => {
     expect(screen.getByText('Site styles')).toBeInTheDocument();
     expect(screen.getByText('What happens in the review.')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /^Drag .* section$/ })).toHaveLength(9);
+    expect(container.querySelector('.gr-designer-chrome')).toBeInTheDocument();
   });
 
   it('opens an AI topic brief without calling a provider until generation', async () => {
