@@ -11,6 +11,7 @@ process.env.REDEEM_OPS_ENABLED = 'true'; // must be set before getApp() mounts r
 import request from 'supertest';
 import { getApp, closeDb, createTestUser } from './helpers.js';
 import { RedeemOpsCategory, PartnerOrganisation } from '../src/models/index.js';
+import { makeCategoryService } from '../src/services/redeemOps/categoryService.js';
 
 let app;
 let admin, bdm, exec;
@@ -30,8 +31,11 @@ const auth = (t) => ({ Authorization: `Bearer ${t}` });
 let nameSeq = 0;
 const uniq = (base) => `${base} ${Date.now()}-${++nameSeq}`;
 
-const createCategory = (token, name) =>
-  request(app).post('/api/redeem-ops/categories').set(auth(token)).send({ name });
+const createCategory = (token, name, searchTerms = undefined) =>
+  request(app).post('/api/redeem-ops/categories').set(auth(token)).send({
+    name,
+    ...(searchTerms === undefined ? {} : { searchTerms }),
+  });
 const createPartner = (token, body) =>
   request(app).post('/api/redeem-ops/partners').set(auth(token)).send(body);
 const updatePartner = (token, id, body) =>
@@ -53,6 +57,18 @@ describe('create + capability gate', () => {
     const ok = await createCategory(admin.token, name);
     expect(ok.status).toBe(201);
     expect(ok.body.data.category.name).toBe(name);
+    expect(ok.body.data.category.providerSearchTerms).toEqual([name]);
+  });
+
+  test('provider search terms are trimmed and deduped case-insensitively', async () => {
+    const name = uniq('Local Coffeeshop');
+    const ok = await createCategory(admin.token, name, [
+      ' kopitiam ', 'KOPITIAM', 'zi char', 'coffeeshop',
+    ]);
+    expect(ok.status).toBe(201);
+    expect(ok.body.data.category.providerSearchTerms).toEqual([
+      'kopitiam', 'zi char', 'coffeeshop',
+    ]);
   });
 
   test('case-insensitive duplicate → 409', async () => {
@@ -128,6 +144,40 @@ describe('rename cascade', () => {
       .send({ name: b });
     expect(res.status).toBe(409);
   });
+
+  test('search-term edits persist and a later rename leaves them intact', async () => {
+    const from = uniq('Local Cafe');
+    const created = await createCategory(admin.token, from);
+    const categoryId = created.body.data.category.id;
+    const partnerRes = await createPartner(exec.token, {
+      tradingName: uniq('Kopi House'), category: from,
+    });
+
+    const termsUpdate = await request(app)
+      .patch(`/api/redeem-ops/categories/${categoryId}`)
+      .set(auth(admin.token))
+      .send({ searchTerms: [' kopitiam ', 'KOPITIAM', 'zi char'] });
+    expect(termsUpdate.status).toBe(200);
+    expect(termsUpdate.body.data.category.providerSearchTerms).toEqual(['kopitiam', 'zi char']);
+
+    const to = uniq('Neighbourhood Coffeeshop');
+    const rename = await request(app)
+      .patch(`/api/redeem-ops/categories/${categoryId}`)
+      .set(auth(admin.token))
+      .send({ name: to });
+    expect(rename.status).toBe(200);
+    expect(rename.body.data.category.providerSearchTerms).toEqual(['kopitiam', 'zi char']);
+
+    const partner = await PartnerOrganisation.findByPk(partnerRes.body.data.partner.id);
+    expect(partner.category).toBe(to);
+
+    const reset = await request(app)
+      .patch(`/api/redeem-ops/categories/${categoryId}`)
+      .set(auth(admin.token))
+      .send({ searchTerms: [] });
+    expect(reset.status).toBe(200);
+    expect(reset.body.data.category.providerSearchTerms).toEqual([to]);
+  });
 });
 
 describe('currentValue pass-through', () => {
@@ -165,8 +215,8 @@ describe('merge', () => {
   test('merge moves consuming rows to the target and deletes the source', async () => {
     const source = uniq('Nails');
     const target = uniq('Nail Bar');
-    const createdSource = await createCategory(admin.token, source);
-    const createdTarget = await createCategory(admin.token, target);
+    const createdSource = await createCategory(admin.token, source, ['common alias', 'manicure']);
+    const createdTarget = await createCategory(admin.token, target, ['Common Alias', 'nail studio']);
 
     const partnerRes = await createPartner(exec.token, { tradingName: uniq('Tips Co'), category: source });
     const partnerId = partnerRes.body.data.partner.id;
@@ -181,6 +231,10 @@ describe('merge', () => {
     const partner = await PartnerOrganisation.findByPk(partnerId);
     expect(partner.category).toBe(target);
     expect(await RedeemOpsCategory.findByPk(createdSource.body.data.category.id)).toBeNull();
+    const mergedTarget = await RedeemOpsCategory.findByPk(createdTarget.body.data.category.id);
+    expect(mergedTarget.providerSearchTerms).toEqual([
+      'Common Alias', 'nail studio', 'manicure', source,
+    ]);
   });
 
   test('merging a category into itself → 400', async () => {
@@ -191,6 +245,33 @@ describe('merge', () => {
       .set(auth(admin.token))
       .send({ targetId: id });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('resolveCategoryForSearch', () => {
+  const categoryService = makeCategoryService();
+
+  test('known category returns canonical name and provider terms', async () => {
+    const name = uniq('Searchable Cafe');
+    await createCategory(admin.token, name, ['kopitiam', 'zi char']);
+    await expect(categoryService.resolveCategoryForSearch(name.toLowerCase())).resolves.toEqual({
+      name,
+      searchTerms: ['kopitiam', 'zi char'],
+    });
+  });
+
+  test('unknown category returns the same 422 used by category writes', async () => {
+    await expect(categoryService.resolveCategoryForSearch(uniq('Unknown Search Category')))
+      .rejects.toMatchObject({ statusCode: 422 });
+  });
+
+  test('legacy null terms fall back to the canonical name', async () => {
+    const name = uniq('Legacy Search Category');
+    await RedeemOpsCategory.create({ name, providerSearchTerms: null });
+    await expect(categoryService.resolveCategoryForSearch(name)).resolves.toEqual({
+      name,
+      searchTerms: [name],
+    });
   });
 });
 

@@ -36,8 +36,34 @@ export function makeCategoryService(overrides = {}) {
     return name;
   }
 
+  function cleanSearchTerms(raw, fallbackName) {
+    if (raw === undefined) return undefined;
+    const values = Array.isArray(raw) ? raw : [raw];
+    const seen = new Set();
+    const cleaned = [];
+    for (const value of values) {
+      const term = String(value ?? '').trim().slice(0, 64);
+      const key = term.toLowerCase();
+      if (!term || seen.has(key)) continue;
+      seen.add(key);
+      cleaned.push(term);
+      if (cleaned.length === 20) break;
+    }
+    return cleaned.length > 0 ? cleaned : [fallbackName];
+  }
+
   function whereNameCi(name) {
     return d.sequelize.where(d.sequelize.fn('LOWER', d.sequelize.col('name')), name.toLowerCase());
+  }
+
+  async function findActiveCategory(name) {
+    const match = await d.RedeemOpsCategory.findOne({
+      where: { [Op.and]: [whereNameCi(name), { isActive: true }] },
+    });
+    if (!match) {
+      throw new AppError(`Unknown category '${name}' — ask an admin to add it in Settings`, 422);
+    }
+    return match;
   }
 
   async function listCategories({ includeInactive = false } = {}) {
@@ -49,14 +75,15 @@ export function makeCategoryService(overrides = {}) {
 
   async function createCategory(body, user, requestId = null) {
     const name = cleanName(body?.name);
+    const providerSearchTerms = cleanSearchTerms(body?.searchTerms, name) ?? [name];
     const existing = await d.RedeemOpsCategory.findOne({ where: whereNameCi(name) });
     if (existing) throw new AppError(`Category '${existing.name}' already exists`, 409);
     try {
-      const category = await d.RedeemOpsCategory.create({ name });
+      const category = await d.RedeemOpsCategory.create({ name, providerSearchTerms });
       await d.audit.recordAuditEvent({
         actorUser: user, action: 'settings.category_created',
         entityType: 'redeem_ops_category', entityId: category.id,
-        after: { name }, requestId,
+        after: { name, searchTerms: providerSearchTerms }, requestId,
       });
       return category;
     } catch (err) {
@@ -94,9 +121,17 @@ export function makeCategoryService(overrides = {}) {
       }
     }
     if (body?.isActive !== undefined) updates.isActive = !!body.isActive;
+    if (body?.searchTerms !== undefined) {
+      const effectiveName = updates.name || category.name;
+      updates.providerSearchTerms = cleanSearchTerms(body.searchTerms, effectiveName);
+    }
     if (Object.keys(updates).length === 0) return category;
 
-    const before = { name: category.name, isActive: category.isActive };
+    const before = {
+      name: category.name,
+      isActive: category.isActive,
+      searchTerms: category.providerSearchTerms,
+    };
     await d.sequelize.transaction(async (t) => {
       await category.update(updates, { transaction: t });
       if (cascade) {
@@ -110,7 +145,13 @@ export function makeCategoryService(overrides = {}) {
       await d.audit.recordAuditEvent({
         actorUser: user, action: 'settings.category_updated',
         entityType: 'redeem_ops_category', entityId: category.id,
-        before, after: { ...before, ...updates }, requestId, transaction: t,
+        before,
+        after: {
+          name: updates.name ?? before.name,
+          isActive: updates.isActive ?? before.isActive,
+          searchTerms: updates.providerSearchTerms ?? before.searchTerms,
+        },
+        requestId, transaction: t,
       });
     });
     return category;
@@ -142,12 +183,24 @@ export function makeCategoryService(overrides = {}) {
         );
         rowsMoved += meta?.rowCount ?? 0;
       }
+      const targetTerms = target.providerSearchTerms?.length
+        ? target.providerSearchTerms
+        : [target.name];
+      const mergedSearchTerms = cleanSearchTerms([
+        ...targetTerms,
+        ...(source.providerSearchTerms || []),
+        source.name,
+      ], target.name);
+      await target.update({ providerSearchTerms: mergedSearchTerms }, { transaction: t });
       await source.destroy({ transaction: t });
       await d.audit.recordAuditEvent({
         actorUser: user, action: 'settings.category_merged',
         entityType: 'redeem_ops_category', entityId: source.id,
         before: { name: source.name },
-        after: { mergedInto: target.name, targetId: target.id, rowsMoved },
+        after: {
+          mergedInto: target.name, targetId: target.id, rowsMoved,
+          searchTerms: mergedSearchTerms,
+        },
         requestId, transaction: t,
       });
     });
@@ -199,18 +252,24 @@ export function makeCategoryService(overrides = {}) {
     if (currentValue && name.toLowerCase() === String(currentValue).trim().toLowerCase()) {
       return currentValue;
     }
-    const match = await d.RedeemOpsCategory.findOne({
-      where: { [Op.and]: [whereNameCi(name), { isActive: true }] },
-    });
-    if (!match) {
-      throw new AppError(`Unknown category '${name}' — ask an admin to add it in Settings`, 422);
-    }
+    const match = await findActiveCategory(name);
     return match.name;
+  }
+
+  async function resolveCategoryForSearch(input) {
+    const name = String(input ?? '').trim();
+    const match = await findActiveCategory(name);
+    return {
+      name: match.name,
+      searchTerms: match.providerSearchTerms?.length
+        ? match.providerSearchTerms
+        : [match.name],
+    };
   }
 
   return {
     listCategories, createCategory, updateCategory, mergeCategory, deleteCategory,
-    resolveCategoryName,
+    resolveCategoryName, resolveCategoryForSearch,
   };
 }
 

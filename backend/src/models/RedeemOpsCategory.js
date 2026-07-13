@@ -10,6 +10,7 @@ import { sequelize } from '../database/connection.js';
 const RedeemOpsCategory = sequelize.define('RedeemOpsCategory', {
   id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
   name: { type: DataTypes.STRING(64), allowNull: false },
+  providerSearchTerms: { type: DataTypes.ARRAY(DataTypes.TEXT), allowNull: true },
   isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
 }, {
   tableName: 'redeem_ops_categories',
