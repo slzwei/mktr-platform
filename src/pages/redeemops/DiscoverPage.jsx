@@ -22,6 +22,7 @@ import CategorySelect from '@/components/redeemops/CategorySelect';
 
 const TERMINAL = ['completed', 'failed', 'aborted', 'timed_out'];
 const RUNS_KEY = ['redeem-ops', 'discovery', 'runs'];
+const ALL_SINGAPORE = 'All Singapore';
 
 const DEDUPE = {
   new: { tone: 'open', label: 'New' },
@@ -82,6 +83,18 @@ export default function DiscoverPage() {
     queryFn: () => redeemOpsApi.listCategories(),
     staleTime: 60_000,
   });
+  const territoriesQuery = useQuery({
+    queryKey: ['redeem-ops', 'territories'],
+    queryFn: () => redeemOpsApi.listTerritories(),
+    staleTime: 60_000,
+  });
+  const territoriesEnabled = territoriesQuery.isSuccess && territoriesQuery.data.enabled;
+  const territoryNames = (territoriesQuery.data?.territories || []).map((territory) => territory.name);
+  const customArea = form.area
+    && form.area !== ALL_SINGAPORE
+    && !territoryNames.includes(form.area)
+    ? form.area
+    : null;
 
   const runQuery = useQuery({
     queryKey: ['redeem-ops', 'discovery', 'run', runId],
@@ -247,9 +260,24 @@ export default function DiscoverPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="disc-area">Area</Label>
-                <Input id="disc-area" value={form.area} placeholder="Neighbourhood or district…"
-                  onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(form.category, form.area, form.limit); }} />
+                {territoriesEnabled ? (
+                  <Select value={form.area} onValueChange={(area) => setForm((f) => ({ ...f, area }))}>
+                    <SelectTrigger id="disc-area" className="w-full">
+                      <SelectValue placeholder="Select a territory…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_SINGAPORE}>{ALL_SINGAPORE}</SelectItem>
+                      {territoryNames.map((name) => (
+                        <SelectItem key={name} value={name}>{name}</SelectItem>
+                      ))}
+                      {customArea && <SelectItem value={customArea}>{customArea}</SelectItem>}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input id="disc-area" value={form.area} placeholder="Neighbourhood or district…"
+                    onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(form.category, form.area, form.limit); }} />
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label>Results</Label>
@@ -263,12 +291,16 @@ export default function DiscoverPage() {
               </Button>
             </div>
             <div className="flex flex-wrap items-center gap-2 mt-3">
-              <span className="text-xs font-semibold" style={{ color: 'var(--ro-text-3)' }}>Popular areas</span>
-              {POPULAR_AREAS.map((a) => (
-                <button key={a} type="button" onClick={() => setForm((f) => ({ ...f, area: a }))}
-                  className="h-7 px-3 rounded-full text-[12.5px] font-semibold"
-                  style={{ background: 'var(--ro-subtle)', border: '1px solid var(--ro-border)', color: 'var(--ro-text-2)' }}>{a}</button>
-              ))}
+              {!territoriesEnabled && (
+                <>
+                  <span className="text-xs font-semibold" style={{ color: 'var(--ro-text-3)' }}>Popular areas</span>
+                  {POPULAR_AREAS.map((a) => (
+                    <button key={a} type="button" onClick={() => setForm((f) => ({ ...f, area: a }))}
+                      className="h-7 px-3 rounded-full text-[12.5px] font-semibold"
+                      style={{ background: 'var(--ro-subtle)', border: '1px solid var(--ro-border)', color: 'var(--ro-text-2)' }}>{a}</button>
+                  ))}
+                </>
+              )}
               {quota?.costPerResultUsd > 0 && (
                 <span className="ml-auto text-[12px]" style={{ color: 'var(--ro-text-3)' }}>
                   ≈ ${(Number(form.limit) * quota.costPerResultUsd).toFixed(2)} per search

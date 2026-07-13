@@ -15,10 +15,11 @@ import { sgtDayWindow } from './taskService.js';
 
 const TERMINAL = ['completed', 'failed', 'aborted', 'timed_out'];
 
-function cfg() {
+export function cfg() {
   return {
     enabled: process.env.DISCOVERY_ENABLED === 'true',
     searchTermsEnabled: process.env.DISCOVERY_SEARCH_TERMS_ENABLED === 'true',
+    territoriesEnabled: process.env.DISCOVERY_TERRITORIES_ENABLED === 'true',
     mapsActor: process.env.APIFY_MAPS_ACTOR_ID || 'compass~crawler-google-places',
     // MUST be the PROFILE scraper — apify~instagram-scraper (its sibling) has no
     // `usernames` input (wants directUrls), so every enrichment run came back
@@ -146,7 +147,9 @@ export function makeDiscoveryService(overrides = {}) {
       // it and crawls that polygon), NOT concatenated into the search string —
       // "Beauty Tampines" as free text let the crawler pad the result budget
       // with global brand matches (Sephora New York/Oshawa/Edmonton, 2026-07-12).
-      const locationQuery = /\bsingapore\b/i.test(run.area) ? run.area : `${run.area}, Singapore`;
+      const isAllSg = /^all\s+singapore$/i.test(String(run.area).trim());
+      const locationQuery = isAllSg ? 'Singapore'
+        : (/\bsingapore\b/i.test(run.area) ? run.area : `${run.area}, Singapore`);
       const input = {
         searchStringsArray: searchTermsUsed,
         locationQuery,

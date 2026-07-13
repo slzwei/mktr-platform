@@ -351,6 +351,38 @@ describe('geo-anchored search input', () => {
     expect(apify.startRun.mock.calls[0][1].locationQuery).toBe('Bedok, Singapore');
   });
 
+  test("'All Singapore' searches the country while preserving the run snapshot", async () => {
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const solo = await createTestUser({ role: 'admin' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+    const run = await svc.startDiscovery({
+      category: 'Nail Salon', area: 'All Singapore', limit: 5,
+    }, solo.user);
+    expect(apify.startRun.mock.calls[0][1].locationQuery).toBe('Singapore');
+    expect(run.area).toBe('All Singapore');
+  });
+
+  test('a normal territory keeps the existing Singapore suffix behavior', async () => {
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const solo = await createTestUser({ role: 'admin' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+    await svc.startDiscovery({ category: 'Nail Salon', area: 'Woodlands', limit: 5 }, solo.user);
+    expect(apify.startRun.mock.calls[0][1].locationQuery).toBe('Woodlands, Singapore');
+  });
+
+  test('a legacy free-text area keeps the existing Singapore suffix behavior', async () => {
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const solo = await createTestUser({ role: 'admin' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+    await svc.startDiscovery({
+      category: 'Nail Salon', area: 'Upper Thomson Road', limit: 5,
+    }, solo.user);
+    expect(apify.startRun.mock.calls[0][1].locationQuery).toBe('Upper Thomson Road, Singapore');
+  });
+
   test('foreign-labelled items never materialize; unknown country is kept', async () => {
     const svc = makeDiscoveryService({ apify: makeApifyStub() });
     const run = await DiscoveryRun.create({ createdBy: admin.user.id, provider: 'apify_google_maps', status: 'running', requestedLimit: 10 });

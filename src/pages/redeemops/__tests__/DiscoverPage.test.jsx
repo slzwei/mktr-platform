@@ -14,6 +14,7 @@ import { MemoryRouter } from 'react-router-dom';
 const api = vi.hoisted(() => ({
   listDiscoveryRuns: vi.fn(),
   listCategories: vi.fn(),
+  listTerritories: vi.fn(),
   getDiscoveryRun: vi.fn(),
   startDiscovery: vi.fn(),
   enrichDiscoveryCandidates: vi.fn(),
@@ -70,6 +71,7 @@ async function openResults() {
 beforeEach(() => {
   vi.clearAllMocks();
   api.listCategories.mockResolvedValue([{ name: 'Nail Salon' }]);
+  api.listTerritories.mockResolvedValue({ enabled: false, territories: [] });
   api.listDiscoveryRuns.mockResolvedValue({ runs: [], quota });
 });
 
@@ -80,6 +82,30 @@ describe('DiscoverPage', () => {
     await userEvent.click(card);
     expect(api.startDiscovery).not.toHaveBeenCalled();
     expect(screen.getByPlaceholderText('Neighbourhood or district…')).toHaveValue('Tampines');
+  });
+
+  it('uses the territory picker with All Singapore only when the runtime flag is enabled', async () => {
+    api.listTerritories.mockResolvedValue({
+      enabled: true,
+      territories: [{ name: 'Bedok' }, { name: 'Tampines' }],
+    });
+    renderPage();
+    const areaPicker = await screen.findByRole('combobox', { name: 'Area' });
+    expect(screen.queryByPlaceholderText('Neighbourhood or district…')).not.toBeInTheDocument();
+    expect(screen.queryByText('Popular areas')).not.toBeInTheDocument();
+    areaPicker.hasPointerCapture = vi.fn(() => false);
+    areaPicker.releasePointerCapture = vi.fn();
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    await userEvent.click(areaPicker);
+    expect(await screen.findByRole('option', { name: 'All Singapore' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Bedok' })).toBeInTheDocument();
+  });
+
+  it('keeps the existing free-text Area controls when the territories request fails', async () => {
+    api.listTerritories.mockRejectedValue(new Error('territories unavailable'));
+    renderPage();
+    expect(await screen.findByPlaceholderText('Neighbourhood or district…')).toBeInTheDocument();
+    expect(screen.getByText('Popular areas')).toBeInTheDocument();
   });
 
   it('shows Enriching… while enrichment is pending instead of another paid action', async () => {
