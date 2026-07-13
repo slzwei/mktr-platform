@@ -15,9 +15,9 @@ import './redeemHome.css';
  * a drop only renders as claimable when the config gives it a real claimUrl.
  */
 
-const PAGE_TITLE = 'Redeem — Free stuff from real Singapore brands';
+const PAGE_TITLE = 'Redeem — Real rewards from real Singapore brands';
 const PAGE_DESCRIPTION =
-  'Vouchers, lucky draws and partner offers from real Singapore brands. Claim in 30 seconds — no app, no points, no credit card. A service of MKTR PTE. LTD.';
+  'Redeem is where real Singapore brands drop rewards — no app, no points, no credit card, ever. New drops loading. A service of MKTR PTE. LTD.';
 
 /** "Ends Sunday"-style chip from the API's YYYY-MM-DD (SGT end-of-day). */
 function endsLabel(endsAt) {
@@ -156,8 +156,8 @@ export default function RedeemHome() {
   const heroCtaLabel = liveDrop ? 'Claim this week’s drop' : 'See what’s dropping';
   const backDrops = drops.filter((d) => d !== heroDrop).slice(0, 2);
   const backFillers = [
-    { emoji: '☕', title: 'Coffee drops', meta: 'In the rotation' },
-    { emoji: '🎬', title: 'Movie drops', meta: 'In the rotation' },
+    { emoji: '🎉', title: 'New drop', meta: 'In the rotation' },
+    { emoji: '⚡', title: 'Surprise drop', meta: 'Loading' },
   ];
   const backCards = [...backDrops, ...backFillers].slice(0, 2);
 
@@ -191,17 +191,16 @@ export default function RedeemHome() {
                 <span className="rh-sticker__dot" />
                 {liveDrop ? 'Drop live now' : 'Next drop loading'}
               </span>
-              <span className="rh-sticker rh-sticker--plain">Drops · lucky draws · partner offers</span>
+              <span className="rh-sticker rh-sticker--plain">No app · no points · no catch</span>
             </div>
             <h1 className="rh-h1">
-              Real<br />
-              <span className="rh-h1__hollow">free</span><br />
-              <span className="rh-h1__tilt">stuff.</span>
+              First<br />
+              <span className="rh-h1__hollow">drops</span><br />
+              <span className="rh-h1__tilt">loading.</span>
             </h1>
             <p className="rh-hero__sub">
-              Vouchers, lucky draws and partner offers from real Singapore brands.{' '}
-              <span className="rh-hl">30 seconds</span> to claim.
-              No app. No points. No credit card. Ever.
+              Redeem is where real Singapore brands drop rewards — no app, no points, no credit card, ever.
+              The first drops are <span className="rh-hl">loading</span> — get in before they go.
             </p>
             <div className="rh-hero__ctas">
               <a className="rh-btn rh-btn--lime" href={heroCtaHref}>{heroCtaLabel}</a>
@@ -261,10 +260,10 @@ export default function RedeemHome() {
                 </div>
               </div>
             )}
-            <div className="rh-star">Lucky<br />draws<br />too</div>
+            <div className="rh-star">Watch<br />this<br />space</div>
             <div className="rh-toast rh-toast--t1">
-              <span className="rh-toast__ico">🎟</span>
-              <div>Draws &amp; partner offers<small>From brands across SG</small></div>
+              <span className="rh-toast__ico">🎁</span>
+              <div>New drops loading<small>From real SG brands</small></div>
             </div>
             <div className="rh-toast rh-toast--t2">
               <span className="rh-toast__ico">✓</span>
@@ -472,7 +471,7 @@ export default function RedeemHome() {
           <div className="rh-footer__grid">
             <div>
               <div className="rh-footer__logo">✷ REDEEM</div>
-              <p className="rh-footer__tag">Free stuff from real Singapore brands — drops, lucky draws and partner offers.</p>
+              <p className="rh-footer__tag">Real rewards from real Singapore brands. No app, no points, no catch.</p>
             </div>
             <div className="rh-footer__col">
               <h4>Explore</h4>

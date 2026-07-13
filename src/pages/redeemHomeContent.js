@@ -11,24 +11,28 @@
 //         'soon'  → outlined panel, "Dropping soon" (no button)
 //         'gone'  → grayscale panel, "Too slow — gone" + Notify hint
 
+// Placeholder "mystery drop" teasers — deliberately gift-free until real
+// campaigns are flagged as featured drops (which then swap in via the
+// /campaigns/featured-drops fetch and override this static fallback). Do NOT
+// name a specific reward here unless it actually exists as a live campaign.
 export const DROPS = [
   {
-    id: 'cabin-luggage',
-    title: 'Cabin luggage',
-    meta: 'Hardshell spinner · first 300 only',
-    value: 'FREE',
-    emoji: '🧳',
+    id: 'mystery-drop',
+    title: 'Mystery drop',
+    meta: 'Dropping soon — watch this space',
+    value: '???',
+    emoji: '🎁',
     panel: 'lime',
     status: 'soon',
     // To go live: status: 'live', claimUrl: 'https://redeem.sg/LeadCapture?campaign_id=<uuid>',
-    // plus optional claimedPct: 72, left: 66, ends: 'Ends Sunday'.
+    // plus a real title/value/emoji and optional claimedPct: 72, left: 66, ends: 'Ends Sunday'.
   },
   {
-    id: 'grocery-20',
-    title: 'S$20 grocery voucher',
-    meta: 'Everyday essentials, on us',
-    value: 'S$20',
-    emoji: '🛒',
+    id: 'next-drop',
+    title: 'Next drop',
+    meta: 'Loading…',
+    value: 'SOON',
+    emoji: '✷',
     panel: 'pink',
     status: 'soon',
   },
@@ -36,12 +40,12 @@ export const DROPS = [
 
 // One evergreen line per item — keep these truthful; no invented counts.
 export const MARQUEE_ITEMS = [
-  { text: 'Free cabin luggage', accent: true },
-  { text: 'S$20 vouchers' },
-  { text: 'SMS-verified claims', accent: true },
+  { text: 'New drops loading', accent: true },
   { text: 'No app. No points.' },
-  { text: 'Lucky draws', accent: true },
-  { text: 'Partner offers' },
+  { text: 'SMS-verified', accent: true },
+  { text: 'Real SG brands' },
+  { text: 'One reward per human', accent: true },
+  { text: 'No credit card, ever' },
   { text: 'redeem.sg only' },
 ];
 
