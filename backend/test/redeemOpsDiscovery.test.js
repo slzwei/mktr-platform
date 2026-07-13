@@ -18,6 +18,7 @@ import { getApp, closeDb, createTestUser, seedRedeemOpsCategory } from './helper
 import { makeDiscoveryService } from '../src/services/redeemOps/discoveryService.js';
 import { makePartnerService } from '../src/services/redeemOps/partnerService.js';
 import { makeDedupeService } from '../src/services/redeemOps/dedupeService.js';
+import { sgtDayWindow } from '../src/services/redeemOps/taskService.js';
 import { DiscoveryRun, DiscoveryCandidate, DiscoveryPlaceMemory, PartnerOrganisation, sequelize } from '../src/models/index.js';
 
 let app;
@@ -65,7 +66,7 @@ let placeSeq = 0;
 const uniquePlaceId = () => `place_${Date.now()}_${++placeSeq}`;
 
 // Default user = the shared admin; new tests that call startDiscovery pass a
-// FRESH user instead — the shared admin's 24h search quota fills up across the
+// FRESH user instead — the shared admin's current-SGT-day quota fills up across the
 // suite (direct DiscoveryRun.create rows count too).
 async function startedRun(svc, apify, user = null) {
   apify.startRun.mockImplementation(async () => uniqueRunId());
@@ -398,8 +399,8 @@ describe('enrichment eligibility + profile quotas', () => {
       createdBy: solo.user.id, provider: 'apify_instagram', status: 'failed',
       providerRunId: null, requestedLimit: 500,
     });
-    // Baseline: profiles counted by the quota rule in the last 24h (shared DB).
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // Baseline: profiles counted by the quota rule in the current SGT day (shared DB).
+    const { start: since } = sgtDayWindow();
     const igRuns = await DiscoveryRun.findAll({ where: { provider: 'apify_instagram' } });
     const used = igRuns
       .filter((r) => r.createdAt >= since && !(r.status === 'failed' && !r.providerRunId))

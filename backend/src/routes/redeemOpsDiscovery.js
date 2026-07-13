@@ -4,10 +4,10 @@ import * as ctrl from '../controllers/redeemOps/discoveryController.js';
 
 /**
  * Redeem Ops — Discover tool (spec: ~/.claude/plans/redeem-ops-discover-tool.md).
- * Flag + host-guard posture as siblings. Search/read/enrich/dismiss are open to any
- * ops principal (paid-job cost is bounded by quotas in discoveryService, not a
- * capability); adding to the pipeline needs partners.create; the Apify webhook is
- * authenticated by a URL secret only (server-to-server, no JWT).
+ * Flag + host-guard posture as siblings. Paid search/enrichment require their
+ * discovery capabilities; read/dismiss remain open to any ops principal. Adding
+ * to the pipeline needs partners.create; the Apify webhook is authenticated by a
+ * URL secret only (server-to-server, no JWT).
  */
 export const meta = {
   path: '/api/redeem-ops',
@@ -20,13 +20,13 @@ const router = express.Router();
 // Apify terminal-event callback — secret in the URL, no JWT (must precede param routes).
 router.post('/discovery/webhook/:secret', ctrl.webhook);
 
-// Search + read (any authenticated ops principal)
-router.post('/discovery/runs', requireRedeemOps(), ctrl.startDiscovery);
+// Paid search + read
+router.post('/discovery/runs', requireRedeemOps('discovery.search'), ctrl.startDiscovery);
 router.get('/discovery/runs', requireRedeemOps(), ctrl.listRuns);
 router.get('/discovery/runs/:id', requireRedeemOps(), ctrl.getRun);
 
-// Enrich + dismiss
-router.post('/discovery/candidates/enrich', requireRedeemOps(), ctrl.enrichCandidates);
+// Paid enrichment + dismiss
+router.post('/discovery/candidates/enrich', requireRedeemOps('discovery.enrich'), ctrl.enrichCandidates);
 router.patch('/discovery/candidates/:id', requireRedeemOps(), ctrl.dismissCandidate);
 
 // Convert candidates → partners (only create-capable roles push to the pipeline)

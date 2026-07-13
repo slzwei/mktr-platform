@@ -58,6 +58,18 @@ describe('redeemOps permissions map', () => {
     }
   });
 
+  test('paid discovery is limited to admins, BDMs, and outreach executives', () => {
+    for (const role of ['super_admin', 'ops_admin', 'bdm', 'outreach_exec']) {
+      expect(ROLE_CAPABILITIES[role]).toEqual(
+        expect.arrayContaining(['discovery.search', 'discovery.enrich'])
+      );
+    }
+    for (const role of ['campaign_ops', 'redemption_ops', 'analyst']) {
+      expect(ROLE_CAPABILITIES[role]).not.toContain('discovery.search');
+      expect(ROLE_CAPABILITIES[role]).not.toContain('discovery.enrich');
+    }
+  });
+
   test('hasCapability: admin is implicit super_admin; sub-roles resolve; null-sub-role users hold nothing', () => {
     expect(hasCapability({ role: 'admin' }, 'team.manage_access')).toBe(true);
     expect(hasCapability({ role: 'redeem_ops', redeemOpsRole: 'outreach_exec' }, 'partners.claim')).toBe(true);
