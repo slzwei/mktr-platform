@@ -212,7 +212,7 @@
 .rh-step__n {
   font-family: var(--rh-display); font-size: 15px; display: inline-flex; align-items: center;
   justify-content: center; width: 52px; height: 52px; border: var(--rh-bd); border-radius: 50%;
-  background: var(--rh-lime); box-shadow: 4px 4px 0 var(--rh-ink);
+  background: var(--rh-lime);
 }
 .rh-step:nth-child(2) .rh-step__n { background: var(--rh-pink); }
 .rh-step:nth-child(3) .rh-step__n { background: var(--rh-violet); }
@@ -224,6 +224,16 @@
   box-shadow: 5px 5px 0 var(--rh-ink); padding: 12px 18px;
   font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
 }
+/* How-it-works header is centered over the card row so the section reads
+   balanced (no empty top-right void), and the trust pill centers under the
+   row instead of floating under the first card. Scoped to #how so the drops/
+   legit/clients/partners sections keep their left-aligned headers. Cards stay
+   left-aligned; the slightly looser line-height gives the boxed "30 seconds."
+   room so it doesn't crowd the line above. */
+#how .rh-wrap { text-align: center; }
+#how .rh-sub { margin-left: auto; margin-right: auto; }
+#how .rh-h2 { line-height: 1.05; }
+#how .rh-steps { text-align: left; }
 
 /* Drops */
 .rh-drops__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 44px; flex-wrap: wrap; }

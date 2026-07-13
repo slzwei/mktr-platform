@@ -286,9 +286,9 @@ export default function RedeemHome() {
       <section className="rh-section" id="how">
         <div className="rh-wrap">
           <span className="rh-kicker">How it works</span>
-          <h2 className="rh-h2">Zero to voucher<br />in <span className="rh-h2__hl">30 seconds.</span></h2>
+          <h2 className="rh-h2">A real reward.<br />Claim in <span className="rh-h2__hl">30 seconds.</span></h2>
           <p className="rh-sub">
-            No account. No app. No points to hoard. A short form, a real reward — that’s the whole thing.
+            No account. No app. No points to hoard — just your name and a number. The reward is real: a voucher, lucky draw or partner offer.
           </p>
           <div className="rh-steps">
             <div className="rh-step">
@@ -303,8 +303,8 @@ export default function RedeemHome() {
             </div>
             <div className="rh-step">
               <span className="rh-step__n">03</span>
-              <h3>Use it</h3>
-              <p>Voucher, draw entry or partner deal — show it at the counter or use it online. <span className="rh-hl">Done.</span></p>
+              <h3>Unlock it</h3>
+              <p>Some rewards are instant. Others unlock after a quick step with the sponsor — a short chat or review. Then it’s <span className="rh-hl">yours.</span></p>
             </div>
           </div>
           <div className="rh-rule">🔒 Not on redeem.sg? Not us. Close the tab.</div>
