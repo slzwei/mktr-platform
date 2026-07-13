@@ -12,6 +12,8 @@ import { REDEEM_OPS_SUB_ROLES } from '../../services/redeemOps/permissions.js';
 import { SUB_ROLE_LABELS, publicConstants } from '../../services/redeemOps/constants.js';
 import { recordAuditEvent } from '../../services/redeemOps/auditService.js';
 import categoryService from '../../services/redeemOps/categoryService.js';
+import territoryService from '../../services/redeemOps/territoryService.js';
+import { cfg as discoveryConfig } from '../../services/redeemOps/discoveryService.js';
 
 const TEAM_ATTRIBUTES = [
   'id', 'email', 'firstName', 'lastName', 'fullName',
@@ -275,5 +277,49 @@ export const mergeCategory = asyncHandler(async (req, res) => {
 /** DELETE /api/redeem-ops/categories/:id — unreferenced rows only. */
 export const deleteCategory = asyncHandler(async (req, res) => {
   const result = await categoryService.deleteCategory(req.params.id, req.user, req.id);
+  res.json({ success: true, data: result });
+});
+
+// ---- Discover territories (migration 063; search filters only) ----
+
+const territoryCreateSchema = Joi.object({
+  name: Joi.string().min(1).max(64).required(),
+});
+
+const territoryUpdateSchema = Joi.object({
+  name: Joi.string().min(1).max(64),
+  isActive: Joi.boolean(),
+}).min(1);
+
+/** GET /api/redeem-ops/territories — active picker list; all rows for Settings. */
+export const listTerritories = asyncHandler(async (req, res) => {
+  const territories = await territoryService.listTerritories({
+    includeInactive: req.query.includeInactive === 'true',
+  });
+  res.json({
+    success: true,
+    data: { enabled: discoveryConfig().territoriesEnabled, territories },
+  });
+});
+
+/** POST /api/redeem-ops/territories */
+export const createTerritory = asyncHandler(async (req, res) => {
+  const { error, value } = territoryCreateSchema.validate(req.body, { abortEarly: false });
+  if (error) throw new AppError(error.details.map((d) => d.message).join(', '), 400);
+  const territory = await territoryService.createTerritory(value, req.user, req.id);
+  res.status(201).json({ success: true, data: { territory } });
+});
+
+/** PATCH /api/redeem-ops/territories/:id — rename and/or retire; no cascades. */
+export const updateTerritory = asyncHandler(async (req, res) => {
+  const { error, value } = territoryUpdateSchema.validate(req.body, { abortEarly: false });
+  if (error) throw new AppError(error.details.map((d) => d.message).join(', '), 400);
+  const territory = await territoryService.updateTerritory(req.params.id, value, req.user, req.id);
+  res.json({ success: true, data: { territory } });
+});
+
+/** DELETE /api/redeem-ops/territories/:id — names are not referenced by other tables. */
+export const deleteTerritory = asyncHandler(async (req, res) => {
+  const result = await territoryService.deleteTerritory(req.params.id, req.user, req.id);
   res.json({ success: true, data: result });
 });

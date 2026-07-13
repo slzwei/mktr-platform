@@ -61,6 +61,27 @@ export const redeemOpsApi = {
     return res.data;
   },
 
+  // ── Discover territories (admin-curated search filters) ───────────────
+  async listTerritories(params = {}) {
+    const res = await apiClient.get('/redeem-ops/territories', params);
+    return {
+      enabled: res.data?.enabled === true,
+      territories: res.data?.territories || [],
+    };
+  },
+  async createTerritory(body) {
+    const res = await apiClient.post('/redeem-ops/territories', body);
+    return res.data?.territory;
+  },
+  async updateTerritory(id, body) {
+    const res = await apiClient.patch(`/redeem-ops/territories/${id}`, body);
+    return res.data?.territory;
+  },
+  async deleteTerritory(id) {
+    const res = await apiClient.delete(`/redeem-ops/territories/${id}`);
+    return res.data;
+  },
+
   // ── Discover tool (Apify prospecting) ──────────────────────────────────
   async startDiscovery(body) {
     const res = await apiClient.post('/redeem-ops/discovery/runs', body);

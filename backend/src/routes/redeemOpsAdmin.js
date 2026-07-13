@@ -38,4 +38,10 @@ router.patch('/categories/:id', requireRedeemOps('settings.manage'), ctrl.update
 router.post('/categories/:id/merge', requireRedeemOps('settings.manage'), ctrl.mergeCategory);
 router.delete('/categories/:id', requireRedeemOps('settings.manage'), ctrl.deleteCategory);
 
+// Discover territories — search filters only; writes admin-only.
+router.get('/territories', requireRedeemOps(), ctrl.listTerritories);
+router.post('/territories', requireRedeemOps('settings.manage'), ctrl.createTerritory);
+router.patch('/territories/:id', requireRedeemOps('settings.manage'), ctrl.updateTerritory);
+router.delete('/territories/:id', requireRedeemOps('settings.manage'), ctrl.deleteTerritory);
+
 export default router;
