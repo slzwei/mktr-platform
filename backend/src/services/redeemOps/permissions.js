@@ -61,6 +61,8 @@ export const CAPABILITIES = [
   'audit.view',
   'team.manage_access',
   'settings.manage',
+  'discovery.search',
+  'discovery.enrich',
 ];
 
 const ALL = [...CAPABILITIES];
@@ -93,6 +95,8 @@ export const ROLE_CAPABILITIES = {
     'analytics.view_own',
     'analytics.view_team',
     'exports.run',
+    'discovery.search',
+    'discovery.enrich',
   ],
   outreach_exec: [
     'partners.view',
@@ -110,6 +114,8 @@ export const ROLE_CAPABILITIES = {
     'onboarding.manage',
     'rewards.view',
     'analytics.view_own',
+    'discovery.search',
+    'discovery.enrich',
   ],
   campaign_ops: [
     'partners.view',

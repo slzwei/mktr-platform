@@ -38,10 +38,10 @@ import '@/styles/redeem-ops-theme.css';
 const NAV = [
   { title: 'Queue', url: '/redeem-ops/queue', icon: House },
   { title: 'Partners', url: '/redeem-ops/partners', icon: Users, capability: 'partners.view' },
-  // Discover has no capability gate (all principals), so its own build flag is what
-  // keeps it hidden until go-live (backend DISCOVERY_ENABLED + Apify token).
+  // Discover also has its own build flag for go-live (backend DISCOVERY_ENABLED +
+  // Apify token); the capability gate hides paid search from non-spending roles.
   ...(import.meta.env.VITE_DISCOVERY_ENABLED === 'true'
-    ? [{ title: 'Discover', url: '/redeem-ops/discover', icon: Compass }]
+    ? [{ title: 'Discover', url: '/redeem-ops/discover', icon: Compass, capability: 'discovery.search' }]
     : []),
   { title: 'Pipeline', url: '/redeem-ops/pipeline', icon: Kanban, capability: 'pipeline.view_team' },
   { title: 'Tasks', url: '/redeem-ops/tasks', icon: ListChecks, capability: 'tasks.manage' },
