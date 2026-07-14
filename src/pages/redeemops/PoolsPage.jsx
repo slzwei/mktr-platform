@@ -14,7 +14,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Plus from 'lucide-react/icons/plus';
 import { RoPageHeader, RoTag, RoAvatar, RoStageTag } from '@/components/redeemops/ui';
-import CategorySelect from '@/components/redeemops/CategorySelect';
 
 function useDebounced(value, ms = 300) {
   const [debounced, setDebounced] = useState(value);
@@ -130,12 +129,12 @@ export default function PoolsPage() {
   const createMutation = useMutation({
     mutationFn: () => redeemOpsApi.createPool(form),
     onSuccess: () => {
-      toast.success('Pool created');
+      toast.success('Queue created');
       setCreateOpen(false);
       setForm({ name: '', description: '', category: '', area: '' });
       queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'pools'] });
     },
-    onError: (err) => toast.error('Could not create pool', { description: err.message }),
+    onError: (err) => toast.error('Could not create queue', { description: err.message }),
   });
 
   const claimMutation = useMutation({
@@ -147,7 +146,7 @@ export default function PoolsPage() {
         toast.success('Prospect claimed — it’s yours');
         navigate(`/redeem-ops/partners/${data.partnerId}`);
       } else {
-        toast.info('Pool exhausted', { description: 'No eligible prospects left in this pool.' });
+        toast.info('Queue exhausted', { description: 'No eligible prospects left in this queue.' });
       }
     },
     onError: (err) => toast.error('Claim failed', { description: err.message }),
@@ -158,11 +157,11 @@ export default function PoolsPage() {
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-5">
       <RoPageHeader
-        title="Prospecting pools"
+        title="Assignment queues"
         sub="Curated prospect lists — hit “Claim next” to pull your next business, no cherry-picking, no collisions."
         actions={canManage && (
           <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> New pool
+            <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" /> New queue
           </Button>
         )}
       />
@@ -174,7 +173,12 @@ export default function PoolsPage() {
           return (
             <Card key={pool.id}>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">{pool.name}</CardTitle>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <span className="min-w-0 truncate">{pool.name}</span>
+                  <RoTag tone={pool.status === 'exhausted' ? 'ended' : pool.status} size="sm">
+                    {pool.status}
+                  </RoTag>
+                </CardTitle>
                 <CardDescription>
                   {[pool.category, pool.area].filter(Boolean).join(' · ') || pool.description || '—'}
                 </CardDescription>
@@ -186,13 +190,16 @@ export default function PoolsPage() {
                 </div>
                 <div className="flex gap-2">
                   {canManage && (
-                    <Button size="sm" variant="outline" onClick={() => setAddTarget(pool)}>
+                    <Button
+                      size="sm" variant="outline" disabled={pool.status === 'archived'}
+                      onClick={() => setAddTarget(pool)}
+                    >
                       Add businesses
                     </Button>
                   )}
                   <Button
                     size="sm"
-                    disabled={claimMutation.isPending || available === 0}
+                    disabled={claimMutation.isPending || pool.status !== 'active'}
                     onClick={() => claimMutation.mutate(pool.id)}
                   >
                     {claimMutation.isPending ? 'Claiming…' : 'Claim next'}
@@ -205,7 +212,7 @@ export default function PoolsPage() {
         {!poolsQuery.isLoading && pools.length === 0 && (
           <Card className="sm:col-span-2">
             <CardContent className="py-10 text-center text-muted-foreground">
-              No pools yet{canManage ? ' — create one and add businesses from the Partners list.' : '.'}
+              No assignment queues yet{canManage ? ' — create one and add businesses from the Partners list.' : '.'}
             </CardContent>
           </Card>
         )}
@@ -216,7 +223,7 @@ export default function PoolsPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New prospecting pool</DialogTitle>
+            <DialogTitle>New assignment queue</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
@@ -226,9 +233,10 @@ export default function PoolsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Category</Label>
-                <CategorySelect
+                <Input
                   value={form.category}
-                  onChange={(v) => setForm((f) => ({ ...f, category: v }))}
+                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                  placeholder="Any label, e.g. Pet Grooming"
                 />
               </div>
               <div className="space-y-1.5">
@@ -239,7 +247,7 @@ export default function PoolsPage() {
           </div>
           <DialogFooter>
             <Button disabled={!form.name.trim() || createMutation.isPending} onClick={() => createMutation.mutate()}>
-              {createMutation.isPending ? 'Creating…' : 'Create pool'}
+              {createMutation.isPending ? 'Creating…' : 'Create queue'}
             </Button>
           </DialogFooter>
         </DialogContent>
