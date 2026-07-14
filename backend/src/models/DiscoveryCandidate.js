@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { sequelize } from '../database/connection.js';
 
 /**
@@ -39,6 +39,17 @@ const DiscoveryCandidate = sequelize.define('DiscoveryCandidate', {
   rawPayload: { type: DataTypes.JSONB, allowNull: true },
 }, {
   tableName: 'discovery_candidates',
+  indexes: [
+    // Partial (some sources carry no place id) — defined here AND in migration
+    // 053 so sync()-built schemas enforce it too (DrawEntry/059 pattern). The
+    // idempotent bulkCreate({ ignoreDuplicates }) in materialization depends on it.
+    {
+      unique: true,
+      fields: ['discoveryRunId', 'externalPlaceId'],
+      name: 'uq_discovery_candidates_run_place',
+      where: { externalPlaceId: { [Op.ne]: null } },
+    },
+  ],
 });
 
 export default DiscoveryCandidate;

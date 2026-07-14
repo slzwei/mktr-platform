@@ -9,7 +9,10 @@ import { makeCategoryService } from './categoryService.js';
 import { makeDiscoveryUsageService } from './discoveryUsageService.js';
 import { makeDedupeService } from './dedupeService.js';
 import { makeApifyClient } from './discovery/apifyClient.js';
-import { normalizeMapsItem, normalizeInstagramItem, isSingaporeMapsItem } from './discovery/normalizers.js';
+import {
+  normalizeMapsItem, normalizeInstagramItem, isSingaporeMapsItem,
+  normalizeInstagramHashtagPost, pruneInstagramHashtagRaw,
+} from './discovery/normalizers.js';
 import { normalizeBusinessName, normalizeDomain, normalizeHandle } from './normalizers.js';
 import { normalizePhone } from '../prospectHelpers.js';
 import { sgDateKey, sgtDayWindow } from './taskService.js';
@@ -19,6 +22,9 @@ const TERMINAL = ['completed', 'failed', 'aborted', 'timed_out'];
 export function cfg() {
   return {
     enabled: process.env.DISCOVERY_ENABLED === 'true',
+    // Pilot kill switch for the Instagram hashtag provider (spike doc: unofficial,
+    // revocable dependency) — Maps stays the primary/fallback source when off.
+    igEnabled: process.env.DISCOVERY_IG_ENABLED === 'true',
     searchTermsEnabled: process.env.DISCOVERY_SEARCH_TERMS_ENABLED === 'true',
     territoriesEnabled: process.env.DISCOVERY_TERRITORIES_ENABLED === 'true',
     resultQuotaEnabled: process.env.DISCOVERY_RESULT_QUOTA_ENABLED === 'true',
@@ -27,6 +33,9 @@ export function cfg() {
     // `usernames` input (wants directUrls), so every enrichment run came back
     // empty and all targets were marked failed (live incident, 2026-07-12).
     igActor: process.env.APIFY_INSTAGRAM_ACTOR_ID || 'apify~instagram-profile-scraper',
+    // Hashtag DISCOVERY actor (posts by hashtag) — a third actor, distinct from
+    // both the Maps crawler and the profile-enrichment scraper above.
+    igHashtagActor: process.env.APIFY_INSTAGRAM_HASHTAG_ACTOR_ID || 'apify~instagram-hashtag-scraper',
     webhookSecret: process.env.DISCOVERY_WEBHOOK_SECRET || '',
     webhookBase: process.env.DISCOVERY_WEBHOOK_BASE_URL || 'https://api.mktr.sg',
     // 500 ≈ one whole-Singapore sweep of a dense category (nail/hair/café) in a
@@ -53,6 +62,12 @@ export function cfg() {
 const COUNTS_TOWARD_QUOTA = {
   [Op.not]: { [Op.and]: [{ status: 'failed' }, { providerRunId: null }] },
 };
+
+/** Both DISCOVERY providers spend from the SAME daily search budget (run counts
+ *  here; the Phase-3 result counters are provider-agnostic by construction).
+ *  apify_instagram (profile ENRICHMENT) stays outside — it is metered in
+ *  profiles, not searches. */
+const DISCOVERY_PROVIDERS = ['apify_google_maps', 'apify_instagram_hashtag'];
 
 export function makeDiscoveryService(overrides = {}) {
   const d = {
@@ -84,7 +99,7 @@ export function makeDiscoveryService(overrides = {}) {
   async function assertQuota(user) {
     const c = cfg();
     const { start: since } = sgtDayWindow();
-    const base = { provider: 'apify_google_maps', createdAt: { [Op.gte]: since }, ...COUNTS_TOWARD_QUOTA };
+    const base = { provider: { [Op.in]: DISCOVERY_PROVIDERS }, createdAt: { [Op.gte]: since }, ...COUNTS_TOWARD_QUOTA };
     const [mine, all] = await Promise.all([
       d.DiscoveryRun.count({ where: { ...base, createdBy: user.id } }),
       d.DiscoveryRun.count({ where: base }),
@@ -117,7 +132,7 @@ export function makeDiscoveryService(overrides = {}) {
     const { start: since } = sgtDayWindow();
     const used = await d.DiscoveryRun.count({
       where: {
-        provider: 'apify_google_maps', createdBy: user.id,
+        provider: { [Op.in]: DISCOVERY_PROVIDERS }, createdBy: user.id,
         createdAt: { [Op.gte]: since }, ...COUNTS_TOWARD_QUOTA,
       },
     });
@@ -172,33 +187,50 @@ export function makeDiscoveryService(overrides = {}) {
   }
 
   // ── Start a discovery search ───────────────────────────────────────────
-  async function startDiscovery({ category, area, limit }, user, requestId = null) {
+  /** `provider` selects the mechanism ('google_maps' default | 'instagram_hashtag'
+   *  pilot); Category + Territory stay the operator picks either way. */
+  async function startDiscovery({ category, area, limit, provider = 'google_maps' }, user, requestId = null) {
     assertEnabled();
+    const isInstagram = provider === 'instagram_hashtag';
+    if (!isInstagram && provider !== 'google_maps') {
+      throw new AppError(`Unknown provider '${provider}'`, 400);
+    }
+    if (isInstagram && !cfg().igEnabled) {
+      throw new AppError('Instagram discovery is not enabled', 503);
+    }
     if (!category || !String(category).trim()) throw new AppError('Category is required', 400);
     if (!area || !String(area).trim()) throw new AppError('Area is required', 400);
     // Fail fast on an unknown/inactive category (422) BEFORE any run row or Apify
     // spend — otherwise every add-to-pipeline would fail after the money was paid.
     // Stores the taxonomy's canonical casing so add-time createPartner re-validation
-    // can only fail on the (rare) delete-category-mid-run race.
-    const { name: canonicalCategory, searchTerms } = await d.categories.resolveCategoryForSearch(
-      String(category).trim()
-    );
+    // can only fail on the (rare) delete-category-mid-run race. The IG resolver
+    // additionally 422s when the category has no curated hashtags.
+    const resolved = isInstagram
+      ? await d.categories.resolveCategoryForInstagram(String(category).trim())
+      : await d.categories.resolveCategoryForSearch(String(category).trim());
+    const canonicalCategory = resolved.name;
     const c = cfg();
     if (!c.resultQuotaEnabled) await assertQuota(user);
     const requestedLimit = Math.min(Math.max(Number(limit) || 60, 1), c.maxResultsPerRun);
-    const searchTermsUsed = c.searchTermsEnabled ? searchTerms : [canonicalCategory];
+    const searchTermsUsed = isInstagram ? null
+      : (c.searchTermsEnabled ? resolved.searchTerms : [canonicalCategory]);
     // The Maps actor applies this cap to EACH search string, so divide the
     // requested total across aliases to avoid multiplying crawl cost by N.
-    const perSearchLimit = c.searchTermsEnabled
+    const perSearchLimit = isInstagram ? null : (c.searchTermsEnabled
       ? Math.max(1, Math.floor(requestedLimit / searchTermsUsed.length))
-      : requestedLimit;
+      : requestedLimit);
 
     const runValues = {
-      createdBy: user.id, provider: 'apify_google_maps',
+      createdBy: user.id, provider: isInstagram ? 'apify_instagram_hashtag' : 'apify_google_maps',
       category: canonicalCategory, area: String(area).trim(),
       requestedLimit, status: 'pending',
       estimatedCostUsd: Number((requestedLimit * c.costPerResultUsd).toFixed(4)),
     };
+    // IG runs snapshot the fired hashtags + territory so materialization's soft
+    // filter and the UI never re-resolve the category (it may be edited mid-run).
+    const igPayload = isInstagram
+      ? { hashtags: resolved.hashtags, territory: runValues.area }
+      : null;
     let run;
     if (c.resultQuotaEnabled) {
       const sgDate = sgDateKey();
@@ -210,31 +242,42 @@ export function makeDiscoveryService(overrides = {}) {
           transaction,
         });
         return d.DiscoveryRun.create(
-          { ...runValues, rawPayload: { dailyUsageReservation: reservation } },
+          { ...runValues, rawPayload: { ...(igPayload || {}), dailyUsageReservation: reservation } },
           { transaction },
         );
       });
     } else {
-      run = await d.DiscoveryRun.create(runValues);
+      run = await d.DiscoveryRun.create(igPayload ? { ...runValues, rawPayload: igPayload } : runValues);
     }
 
     let providerStarted = false;
     try {
-      // Geo-anchored search: the area goes in locationQuery (the actor geocodes
-      // it and crawls that polygon), NOT concatenated into the search string —
-      // "Beauty Tampines" as free text let the crawler pad the result budget
-      // with global brand matches (Sephora New York/Oshawa/Edmonton, 2026-07-12).
-      const isAllSg = /^all\s+singapore$/i.test(String(run.area).trim());
-      const locationQuery = isAllSg ? 'Singapore'
-        : (/\bsingapore\b/i.test(run.area) ? run.area : `${run.area}, Singapore`);
-      const input = {
-        searchStringsArray: searchTermsUsed,
-        locationQuery,
-        maxCrawledPlacesPerSearch: perSearchLimit,
-        language: 'en',
-        scrapeContacts: true, // enables the instagrams/social arrays
-      };
-      const started = await d.apify.startRun(c.mapsActor, input, { webhookUrl: webhookUrl() });
+      let actorId;
+      let input;
+      if (isInstagram) {
+        // The hashtag scraper's whole contract is hashtags + a post budget; every
+        // richer filter is applied by US post-scrape (spike doc: "rich parameters"
+        // = a good filter UI over a simple scrape, not actor config).
+        actorId = c.igHashtagActor;
+        input = { hashtags: resolved.hashtags, resultsLimit: requestedLimit };
+      } else {
+        // Geo-anchored search: the area goes in locationQuery (the actor geocodes
+        // it and crawls that polygon), NOT concatenated into the search string —
+        // "Beauty Tampines" as free text let the crawler pad the result budget
+        // with global brand matches (Sephora New York/Oshawa/Edmonton, 2026-07-12).
+        const isAllSg = /^all\s+singapore$/i.test(String(run.area).trim());
+        const locationQuery = isAllSg ? 'Singapore'
+          : (/\bsingapore\b/i.test(run.area) ? run.area : `${run.area}, Singapore`);
+        actorId = c.mapsActor;
+        input = {
+          searchStringsArray: searchTermsUsed,
+          locationQuery,
+          maxCrawledPlacesPerSearch: perSearchLimit,
+          language: 'en',
+          scrapeContacts: true, // enables the instagrams/social arrays
+        };
+      }
+      const started = await d.apify.startRun(actorId, input, { webhookUrl: webhookUrl() });
       providerStarted = true;
       await run.update({ providerRunId: started.runId, providerDatasetId: started.datasetId || null, status: 'running', startedAt: new Date() });
     } catch (err) {
@@ -262,7 +305,9 @@ export function makeDiscoveryService(overrides = {}) {
       entityId: run.id,
       after: {
         category: run.category, area: run.area, requestedLimit,
-        searchTerms: searchTermsUsed,
+        ...(isInstagram
+          ? { provider: 'apify_instagram_hashtag', hashtags: resolved.hashtags }
+          : { searchTerms: searchTermsUsed }),
       },
       requestId,
     });
@@ -302,6 +347,8 @@ export function makeDiscoveryService(overrides = {}) {
     const items = await d.apify.getDatasetItems(info.datasetId, { limit: run.requestedLimit });
     if (run.provider === 'apify_instagram') {
       await applyEnrichment(run, items);
+    } else if (run.provider === 'apify_instagram_hashtag') {
+      await materializeInstagramHashtagCandidates(run, items);
     } else {
       await materializeCandidates(run, items);
     }
@@ -314,6 +361,58 @@ export function makeDiscoveryService(overrides = {}) {
   async function materializeCandidates(run, items) {
     // Singapore-only: foreign-labelled items never become candidates (geo guard).
     const rows = items.filter(isSingaporeMapsItem).map(normalizeMapsItem).filter((r) => r && r.name);
+    await insertAndClassifyCandidates(run, rows);
+  }
+
+  /**
+   * Instagram hashtag posts → DISTINCT authoring accounts (a business posts many
+   * times; each account becomes ONE candidate). Pilot identity shortcut: the
+   * account is keyed into the existing externalPlaceId column as
+   * 'ig:<numericUserId>', so the (run, place) unique index, place memory and
+   * partner dedupe reuse the Maps machinery unchanged — the (source, kind,
+   * externalId) generalisation is deferred to productionisation (spike doc §
+   * Engineering shape). Territory is a SOFT filter (IG has no coordinates): a
+   * specific territory keeps only accounts whose profile-name/caption/location-tag
+   * text mentions it; All-Singapore keeps everything — the SG signal comes from
+   * the SG-flavoured hashtags themselves.
+   */
+  async function materializeInstagramHashtagCandidates(run, items) {
+    const accounts = new Map(); // handle → { row, matchText }
+    for (const raw of items) {
+      const post = normalizeInstagramHashtagPost(raw);
+      if (!post) continue; // no username or no owner id → not materializable
+      let acc = accounts.get(post.ownerUsername);
+      if (!acc) {
+        acc = {
+          row: {
+            externalPlaceId: `ig:${post.ownerId}`.slice(0, 128),
+            name: (post.ownerFullName || post.ownerUsername).slice(0, 200),
+            instagramHandle: post.ownerUsername,
+            sourceUrl: `https://instagram.com/${post.ownerUsername}`,
+            enrichmentStatus: 'none',
+            // Contact = handle + bio only on this path; enrichment fills the rest.
+            rawPayload: pruneInstagramHashtagRaw(raw),
+          },
+          matchText: '',
+        };
+        accounts.set(post.ownerUsername, acc);
+      }
+      // Aggregate across ALL of the account's posts — any one mentioning the
+      // territory keeps the account.
+      acc.matchText += ` ${post.ownerFullName || ''} ${post.caption || ''} ${post.locationName || ''}`.toLowerCase();
+    }
+    const territory = String(run.area || '').trim();
+    const applyTerritory = territory && !/^all\s+singapore$/i.test(territory);
+    const needle = territory.toLowerCase();
+    const rows = [...accounts.values()]
+      .filter((a) => !applyTerritory || a.matchText.includes(needle))
+      .map((a) => a.row);
+    await insertAndClassifyCandidates(run, rows);
+  }
+
+  /** Shared materialization tail — both providers land here so dedupe stays in
+   *  exactly one place. */
+  async function insertAndClassifyCandidates(run, rows) {
     if (rows.length === 0) return;
     // Idempotent insert — the (discoveryRunId, externalPlaceId) unique index makes
     // a duplicate webhook / reconcile a no-op.
@@ -786,8 +885,9 @@ export function makeDiscoveryService(overrides = {}) {
 
   // ── Reads for the UI ───────────────────────────────────────────────────
   async function listRuns({ limit = 20 } = {}) {
+    // Both discovery providers list; apify_instagram ENRICHMENT runs stay hidden.
     return d.DiscoveryRun.findAll({
-      where: { provider: 'apify_google_maps' },
+      where: { provider: { [Op.in]: DISCOVERY_PROVIDERS } },
       order: [['createdAt', 'DESC']], limit,
     });
   }
@@ -938,7 +1038,8 @@ export function makeDiscoveryService(overrides = {}) {
     startDiscovery, processRun, processByProviderRunId, enrichCandidates, addToPartners,
     dismissCandidate, restoreCandidate, listRuns, getRunWithCandidates, getQuota,
     reconcileStuckRuns, purgeExpiredCandidates,
-    verifyWebhookSecret, classifyAgainstPartners, materializeCandidates, applyEnrichment,
+    verifyWebhookSecret, classifyAgainstPartners, materializeCandidates,
+    materializeInstagramHashtagCandidates, applyEnrichment,
     applyPlaceMemory, buildMemoryEnrichment,
   };
 }
