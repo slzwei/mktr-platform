@@ -37,13 +37,16 @@ const cadenceAiLimiter = rateLimit({
   message: { success: false, message: 'Too many AI requests. Try again in a minute.' },
 });
 
-// Authoring — curated like categories: settings.manage (super_admin/ops_admin).
+// Authoring — any rep who works tasks can build cadences (tasks.manage), saved
+// as a private draft (creator + admins) or published team-wide. Row rules live
+// in the service: only the creator or an admin edits/retires/publishes a row.
 // Editing creates a NEW version; live enrollments keep the one they started on.
-router.post('/cadences', requireRedeemOps('settings.manage'), ctrl.createCadence);
+router.post('/cadences', requireRedeemOps('tasks.manage'), ctrl.createCadence);
 // AI draft — same authoring gate; limiter AFTER auth so req.user keys the window.
-router.post('/cadences/suggest', requireRedeemOps('settings.manage'), cadenceAiLimiter, ctrl.suggestCadence);
-router.post('/cadences/:cadenceId/versions', requireRedeemOps('settings.manage'), ctrl.createCadenceVersion);
-router.post('/cadences/:cadenceId/retire', requireRedeemOps('settings.manage'), ctrl.retireCadence);
+router.post('/cadences/suggest', requireRedeemOps('tasks.manage'), cadenceAiLimiter, ctrl.suggestCadence);
+router.post('/cadences/:cadenceId/versions', requireRedeemOps('tasks.manage'), ctrl.createCadenceVersion);
+router.post('/cadences/:cadenceId/retire', requireRedeemOps('tasks.manage'), ctrl.retireCadence);
+router.post('/cadences/:cadenceId/publish', requireRedeemOps('tasks.manage'), ctrl.publishCadence);
 
 // Partner-scoped enrollment lifecycle (owner/manager checks in the service).
 router.get('/partners/:partnerId/cadence', requireRedeemOps(), ctrl.getPartnerCadence);

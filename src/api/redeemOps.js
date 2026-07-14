@@ -399,6 +399,10 @@ export const redeemOpsApi = {
     const res = await apiClient.post(`/redeem-ops/cadences/${cadenceId}/retire`);
     return res.data?.cadence;
   },
+  async publishCadence(cadenceId) {
+    const res = await apiClient.post(`/redeem-ops/cadences/${cadenceId}/publish`);
+    return res.data?.cadence;
+  },
   async getPartnerCadence(partnerId) {
     const res = await apiClient.get(`/redeem-ops/partners/${partnerId}/cadence`);
     return res.data;

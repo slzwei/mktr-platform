@@ -6,6 +6,7 @@ import {
 } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
+import { hasCapability } from './permissions.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makeTaskService } from './taskService.js';
 import { makePartnerService } from './partnerService.js';
@@ -114,11 +115,23 @@ export function makeCadenceService(overrides = {}) {
 
   const canActOnPartner = (user, partner) => isManager(user) || partner.ownerUserId === user.id;
 
+  // Drafts (publishedAt NULL) are private to their creator + admins. "Admins"
+  // = the settings.manage tier — the set that could author everything before
+  // drafts existed. bdm manages partners, not other people's unfinished work.
+  const isCadenceAdmin = (user) => hasCapability(user, 'settings.manage');
+  const canSeeCadence = (user, cadence) =>
+    !!cadence.publishedAt || (!!user && (isCadenceAdmin(user) || cadence.createdBy === user.id));
+  const canAuthorRow = (user, cadence) => isCadenceAdmin(user) || cadence.createdBy === user.id;
+
   // ── Definition lookup ──────────────────────────────────────────────────────
 
-  async function listCadences({ includeRetired = false } = {}) {
+  async function listCadences({ includeRetired = false, forUser = null } = {}) {
+    // No forUser (internal callers) = the safe view: published only.
+    const draftScope = forUser && isCadenceAdmin(forUser)
+      ? {}
+      : { [Op.or]: [{ publishedAt: { [Op.ne]: null } }, ...(forUser ? [{ createdBy: forUser.id }] : [])] };
     return d.OutreachCadence.findAll({
-      where: includeRetired ? {} : { isActive: true },
+      where: { ...(includeRetired ? {} : { isActive: true }), ...draftScope },
       include: [
         { model: d.OutreachCadenceStep, as: 'steps' },
         { model: d.OutreachCadenceTransition, as: 'transitions' },
@@ -173,9 +186,9 @@ export function makeCadenceService(overrides = {}) {
     return { name, description: def.description ? String(def.description).slice(0, 2000) : null, steps };
   }
 
-  async function insertDefinitionTx({ key, version, name, description, steps }, user, t) {
+  async function insertDefinitionTx({ key, version, name, description, steps, publishedAt = null }, user, t) {
     const cadence = await d.OutreachCadence.create({
-      key, version, name, description, createdBy: user.id,
+      key, version, name, description, publishedAt, createdBy: user.id,
     }, { transaction: t });
     const created = [];
     for (let i = 0; i < steps.length; i += 1) {
@@ -203,15 +216,17 @@ export function makeCadenceService(overrides = {}) {
 
   async function createCadence(def, user, requestId = null) {
     const norm = validateBuilderDefinition(def);
+    // publish defaults TRUE (pre-draft behavior); a draft is the explicit opt-in.
+    const publishedAt = def.publish === false ? null : d.now();
     return d.sequelize.transaction(async (t) => {
       await d.sequelize.query('SELECT pg_advisory_xact_lock(9157002)', { transaction: t });
       let key = slugifyKey(norm.name);
       const clashes = await d.OutreachCadence.count({ where: { key }, transaction: t });
       if (clashes > 0) key = `${key}_${Date.now().toString(36)}`.slice(0, 64);
-      const cadence = await insertDefinitionTx({ ...norm, key, version: 1 }, user, t);
+      const cadence = await insertDefinitionTx({ ...norm, key, version: 1, publishedAt }, user, t);
       await d.audit.recordAuditEvent({
         actorUser: user, action: 'cadence.created', entityType: 'outreach_cadence',
-        entityId: cadence.id, after: { key, name: norm.name, steps: norm.steps.length },
+        entityId: cadence.id, after: { key, name: norm.name, steps: norm.steps.length, draft: !publishedAt },
         requestId, transaction: t,
       });
       return cadence;
@@ -228,13 +243,20 @@ export function makeCadenceService(overrides = {}) {
     return d.sequelize.transaction(async (t) => {
       await d.sequelize.query('SELECT pg_advisory_xact_lock(9157002)', { transaction: t });
       const base = await d.OutreachCadence.findByPk(cadenceId, { transaction: t, lock: t.LOCK.UPDATE });
-      if (!base) throw new AppError('Cadence not found', 404);
+      // Invisible draft = same 404 as missing, so its existence never leaks.
+      if (!base || !canSeeCadence(user, base)) throw new AppError('Cadence not found', 404);
+      if (!canAuthorRow(user, base)) {
+        throw new AppError('Only the creator or an admin can edit this cadence', 403);
+      }
+      // Draft-ness carries over; publish:true flips a draft live at save time.
+      // Once published there is no unpublish — the team may already rely on it.
+      const publishedAt = base.publishedAt || (def.publish === true ? d.now() : null);
       const latest = await d.OutreachCadence.max('version', { where: { key: base.key }, transaction: t });
       await d.OutreachCadence.update(
         { isActive: false },
         { where: { key: base.key, isActive: true }, transaction: t }
       );
-      const cadence = await insertDefinitionTx({ ...norm, key: base.key, version: latest + 1 }, user, t);
+      const cadence = await insertDefinitionTx({ ...norm, key: base.key, version: latest + 1, publishedAt }, user, t);
       await d.audit.recordAuditEvent({
         actorUser: user, action: 'cadence.version_created', entityType: 'outreach_cadence',
         entityId: cadence.id,
@@ -248,7 +270,10 @@ export function makeCadenceService(overrides = {}) {
   async function retireCadence(cadenceId, user, requestId = null) {
     return d.sequelize.transaction(async (t) => {
       const cadence = await d.OutreachCadence.findByPk(cadenceId, { transaction: t, lock: t.LOCK.UPDATE });
-      if (!cadence) throw new AppError('Cadence not found', 404);
+      if (!cadence || !canSeeCadence(user, cadence)) throw new AppError('Cadence not found', 404);
+      if (!canAuthorRow(user, cadence)) {
+        throw new AppError('Only the creator or an admin can retire this cadence', 403);
+      }
       if (!cadence.isActive) return cadence;
       await cadence.update({ isActive: false }, { transaction: t });
       await d.audit.recordAuditEvent({
@@ -260,10 +285,33 @@ export function makeCadenceService(overrides = {}) {
     });
   }
 
-  async function resolveCadenceTx({ cadenceId, cadenceKey }, t) {
+  /** Publish a draft team-wide. Creator or admin; idempotent; no unpublish. */
+  async function publishCadence(cadenceId, user, requestId = null) {
+    return d.sequelize.transaction(async (t) => {
+      const cadence = await d.OutreachCadence.findByPk(cadenceId, { transaction: t, lock: t.LOCK.UPDATE });
+      if (!cadence || !canSeeCadence(user, cadence)) throw new AppError('Cadence not found', 404);
+      if (!canAuthorRow(user, cadence)) {
+        throw new AppError('Only the creator or an admin can publish this cadence', 403);
+      }
+      if (!cadence.isActive) throw new AppError('A retired version cannot be published', 409);
+      if (cadence.publishedAt) return cadence;
+      await cadence.update({ publishedAt: d.now() }, { transaction: t });
+      await d.audit.recordAuditEvent({
+        actorUser: user, action: 'cadence.published', entityType: 'outreach_cadence',
+        entityId: cadence.id, after: { key: cadence.key, version: cadence.version },
+        requestId, transaction: t,
+      });
+      return cadence;
+    });
+  }
+
+  async function resolveCadenceTx({ cadenceId, cadenceKey }, user, t) {
+    // Drafts resolve only for their creator + admins — same 404 as a missing
+    // cadence so their existence never leaks to peers.
+    const visible = (c) => c && c.isActive && canSeeCadence(user, c);
     if (cadenceId) {
       const cadence = await d.OutreachCadence.findByPk(cadenceId, { transaction: t });
-      if (!cadence || !cadence.isActive) throw new AppError('Cadence not found or retired', 404);
+      if (!visible(cadence)) throw new AppError('Cadence not found or retired', 404);
       return cadence;
     }
     if (cadenceKey) {
@@ -272,7 +320,7 @@ export function makeCadenceService(overrides = {}) {
         order: [['version', 'DESC']],
         transaction: t,
       });
-      if (!cadence) throw new AppError('Cadence not found or retired', 404);
+      if (!visible(cadence)) throw new AppError('Cadence not found or retired', 404);
       return cadence;
     }
     throw new AppError('cadenceId or cadenceKey is required', 400);
@@ -469,7 +517,7 @@ export function makeCadenceService(overrides = {}) {
         throw new AppError(`A ${partner.pipelineStage === 'LOST' ? 'Lost' : 'Partnered'} business cannot be enrolled — revive it first`, 409);
       }
 
-      const cadence = await resolveCadenceTx({ cadenceId, cadenceKey }, t);
+      const cadence = await resolveCadenceTx({ cadenceId, cadenceKey }, user, t);
 
       const existing = await liveEnrollmentForPartnerTx(partnerId, t);
       if (existing) throw new AppError('This business is already in a cadence', 409);
@@ -832,7 +880,7 @@ export function makeCadenceService(overrides = {}) {
   }
 
   return {
-    listCadences, createCadence, createCadenceVersion, retireCadence,
+    listCadences, createCadence, createCadenceVersion, retireCadence, publishCadence,
     enrollPartner, completeCadenceTask,
     pauseEnrollment, resumeEnrollment, stopEnrollment,
     getPartnerCadence, hookHandlers, reconcile,

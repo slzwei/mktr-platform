@@ -21,7 +21,7 @@ import { makeTaskService } from '../src/services/redeemOps/taskService.js';
 import { runRedeemOpsStaleSweep } from '../src/services/redeemOps/staleSweep.js';
 
 let app;
-let admin, execA, execB;
+let admin, execA, execB, analyst;
 const svc = makeCadenceService();
 const partnerSvc = makePartnerService();
 const claimSvc = makeClaimService();
@@ -35,6 +35,7 @@ beforeAll(async () => {
   admin = await createTestUser({ role: 'admin' });
   execA = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'outreach_exec' });
   execB = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'outreach_exec' });
+  analyst = await createTestUser({ role: 'redeem_ops', redeemOpsRole: 'analyst' }); // no tasks.manage
   // the app boot may have created the system agent already — don't collide
   await User.findOrCreate({
     where: { email: 'system@mktr.local' },
@@ -75,6 +76,7 @@ describe('seeds', () => {
     expect(again.seeded).toBe(0);
     const fnb = await OutreachCadence.findOne({ where: { key: 'fnb_call_first', version: 1 } });
     expect(fnb).toBeTruthy();
+    expect(fnb.publishedAt).toBeTruthy(); // seeds are team-wide, never drafts
     const cadences = await svc.listCadences();
     const keys = cadences.map((c) => c.key).sort();
     expect(keys).toEqual(['fnb_call_first', 'revival_60d']);
@@ -375,7 +377,7 @@ describe('authoring (builder)', () => {
     expect(r2.nextTask.title).toBe('Drop by the salon');
   });
 
-  test('validation: terminal continueOn and channel mismatches are refused; execs are not allowed', async () => {
+  test('validation: terminal continueOn and channel mismatches are refused; non-authoring roles are not allowed', async () => {
     const bad = {
       name: 'Bad def',
       steps: [
@@ -386,7 +388,8 @@ describe('authoring (builder)', () => {
     const res = await request(app).post('/api/redeem-ops/cadences').set(auth(admin.token)).send(bad);
     expect(res.status).toBe(400);
 
-    const denied = await request(app).post('/api/redeem-ops/cadences').set(auth(execA.token)).send(builderDef);
+    // authoring is tasks.manage — an analyst has no business creating cadences
+    const denied = await request(app).post('/api/redeem-ops/cadences').set(auth(analyst.token)).send(builderDef);
     expect(denied.status).toBe(403);
   });
 
@@ -397,8 +400,8 @@ describe('authoring (builder)', () => {
     const anthropicBefore = process.env.ANTHROPIC_API_KEY;
     try {
       process.env.REDEEM_OPS_CADENCES_AI_ENABLED = 'true';
-      // settings.manage gate — same as create/version/retire
-      const denied = await request(app).post(url).set(auth(execA.token)).send({ prompt: 'cafés chase' });
+      // tasks.manage gate — same as create/version/retire/publish
+      const denied = await request(app).post(url).set(auth(analyst.token)).send({ prompt: 'cafés chase' });
       expect(denied.status).toBe(403);
 
       // Joi: prompt too short / stepCount out of the UI's 2-12 range
@@ -479,6 +482,101 @@ describe('authoring (builder)', () => {
     expect(active.some((c) => c.id === created.id)).toBe(false);
     const all = await svc.listCadences({ includeRetired: true });
     expect(all.some((c) => c.id === created.id)).toBe(true);
+  });
+});
+
+describe('drafts (private until published)', () => {
+  const draftDef = (name) => ({
+    name,
+    publish: false,
+    steps: [
+      { channel: 'call', title: 'Draft intro call', delayDays: 0, continueOn: 'no_answer' },
+      { channel: 'whatsapp', title: 'Draft WhatsApp', delayDays: 1 },
+    ],
+  });
+  const createDraft = async (name, who = execA) => {
+    const res = await request(app).post('/api/redeem-ops/cadences').set(auth(who.token)).send(draftDef(name));
+    expect(res.status).toBe(201);
+    expect(res.body.data.cadence.publishedAt).toBeNull();
+    return res.body.data.cadence;
+  };
+  const listedIds = async (who) => {
+    const res = await request(app).get('/api/redeem-ops/cadences').set(auth(who.token));
+    return res.body.data.cadences.map((c) => c.id);
+  };
+
+  test('publish omitted = published immediately (pre-draft behavior preserved)', async () => {
+    const res = await request(app).post('/api/redeem-ops/cadences').set(auth(execA.token))
+      .send({ name: 'Exec public chase', steps: draftDef('x').steps });
+    expect(res.status).toBe(201);
+    expect(res.body.data.cadence.publishedAt).toBeTruthy();
+    expect(await listedIds(execB)).toContain(res.body.data.cadence.id);
+  });
+
+  test('a draft is listed for its creator and admins, never for peers', async () => {
+    const cadence = await createDraft('Exec private chase');
+    expect(await listedIds(execA)).toContain(cadence.id);
+    expect(await listedIds(admin)).toContain(cadence.id);
+    expect(await listedIds(execB)).not.toContain(cadence.id);
+  });
+
+  test('peers cannot enroll into (or even probe) a draft; the creator can', async () => {
+    const cadence = await createDraft('Draft enroll gate');
+
+    const peerPartner = await ownedPartner('Peer Draft Cafe', execB);
+    const denied = await request(app)
+      .post(`/api/redeem-ops/partners/${peerPartner.id}/cadence/enroll`)
+      .set(auth(execB.token)).send({ cadenceId: cadence.id });
+    expect(denied.status).toBe(404); // existence never leaks
+
+    const ownPartner = await ownedPartner('Creator Draft Cafe', execA);
+    const ok = await request(app)
+      .post(`/api/redeem-ops/partners/${ownPartner.id}/cadence/enroll`)
+      .set(auth(execA.token)).send({ cadenceId: cadence.id });
+    expect(ok.status).toBe(201);
+    expect(ok.body.data.firstTask.title).toBe('Draft intro call');
+  });
+
+  test('row rules: peers get 404 on drafts and 403 on published rows; publish opens it team-wide', async () => {
+    const cadence = await createDraft('Draft to publish');
+
+    // invisible draft — every authoring verb answers "not found"
+    expect((await request(app).post(`/api/redeem-ops/cadences/${cadence.id}/publish`)
+      .set(auth(execB.token))).status).toBe(404);
+    expect((await request(app).post(`/api/redeem-ops/cadences/${cadence.id}/versions`)
+      .set(auth(execB.token)).send(draftDef('x'))).status).toBe(404);
+    expect((await request(app).post(`/api/redeem-ops/cadences/${cadence.id}/retire`)
+      .set(auth(execB.token))).status).toBe(404);
+
+    // creator edits their draft → the new version is still a draft
+    const v2 = await request(app).post(`/api/redeem-ops/cadences/${cadence.id}/versions`)
+      .set(auth(execA.token)).send(draftDef('Draft to publish'));
+    expect(v2.status).toBe(201);
+    expect(v2.body.data.cadence.publishedAt).toBeNull();
+    const v2id = v2.body.data.cadence.id;
+
+    // creator publishes → peers now list it and can enroll
+    const pub = await request(app).post(`/api/redeem-ops/cadences/${v2id}/publish`).set(auth(execA.token));
+    expect(pub.status).toBe(200);
+    expect(pub.body.data.cadence.publishedAt).toBeTruthy();
+    expect(await listedIds(execB)).toContain(v2id);
+
+    // visible but not theirs: peer edits of a published row are a plain 403
+    expect((await request(app).post(`/api/redeem-ops/cadences/${v2id}/versions`)
+      .set(auth(execB.token)).send(draftDef('nope'))).status).toBe(403);
+
+    // once published there is no way back — a later save stays published
+    const v3 = await request(app).post(`/api/redeem-ops/cadences/${v2id}/versions`)
+      .set(auth(execA.token)).send(draftDef('Draft to publish'));
+    expect(v3.body.data.cadence.publishedAt).toBeTruthy();
+  });
+
+  test('save & publish in one step: a version save with publish:true flips a draft live', async () => {
+    const cadence = await createDraft('Draft flip on save');
+    const v2 = await request(app).post(`/api/redeem-ops/cadences/${cadence.id}/versions`)
+      .set(auth(execA.token)).send({ ...draftDef('Draft flip on save'), publish: true });
+    expect(v2.status).toBe(201);
+    expect(v2.body.data.cadence.publishedAt).toBeTruthy();
   });
 });
 

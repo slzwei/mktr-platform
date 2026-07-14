@@ -9,6 +9,8 @@ import ArrowDown from 'lucide-react/icons/arrow-down';
 import Zap from 'lucide-react/icons/zap';
 import Sparkles from 'lucide-react/icons/sparkles';
 import { redeemOpsApi } from '@/api/redeemOps';
+import { useAuthStore } from '@/stores/authStore';
+import { hasCapability } from '@/lib/redeemOpsPermissions';
 import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -160,6 +162,10 @@ export default function CadenceEditorPage() {
   });
   const base = isNew ? null : (listQuery.data?.cadences || []).find((c) => c.id === cadenceId);
   const aiEnabled = listQuery.data?.aiEnabled === true;
+  const baseIsDraft = !!base && !base.publishedAt;
+  // Non-admins can't open Settings — send them back to their queue instead.
+  const user = useAuthStore((s) => s.user);
+  const backTo = hasCapability(user, 'settings.manage') ? '/redeem-ops/settings' : '/redeem-ops/queue';
 
   useEffect(() => {
     if (base && loadedFrom !== base.id) {
@@ -173,9 +179,9 @@ export default function CadenceEditorPage() {
   useEffect(() => {
     if (!isNew && listQuery.isSuccess && !base) {
       toast.error('Cadence not found');
-      navigate('/redeem-ops/settings', { replace: true });
+      navigate(backTo, { replace: true });
     }
-  }, [isNew, listQuery.isSuccess, base, navigate]);
+  }, [isNew, listQuery.isSuccess, base, navigate, backTo]);
 
   const saveMutation = useMutation({
     mutationFn: (payload) => (isNew
@@ -183,18 +189,23 @@ export default function CadenceEditorPage() {
       : redeemOpsApi.createCadenceVersion(cadenceId, payload)),
     onSuccess: (cadence) => {
       queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'cadences'] });
+      const stillDraft = !cadence?.publishedAt;
       toast.success(isNew
-        ? 'Cadence created — it’s in every Start cadence picker now'
-        : `Saved as v${cadence?.version} — businesses already enrolled finish on their current version`);
-      navigate('/redeem-ops/settings');
+        ? (stillDraft
+          ? 'Draft saved — only you and admins can see it until you publish'
+          : 'Cadence created — it’s in every Start cadence picker now')
+        : `Saved as v${cadence?.version}${stillDraft ? ' (still a draft)' : ''} — businesses already enrolled finish on their current version`);
+      navigate(backTo);
     },
     onError: (err) => toast.error('Could not save the cadence', { description: err.message }),
   });
 
-  const save = () => {
+  // publish=false keeps it a private draft; on a published base the flag is
+  // moot (the server never unpublishes).
+  const save = (publish) => {
     if (!name.trim()) return toast.error('Give the cadence a name');
     if (steps.some((s) => !s.title.trim())) return toast.error('Every step needs a title');
-    return saveMutation.mutate(toPayload({ name, description, steps }));
+    return saveMutation.mutate({ ...toPayload({ name, description, steps }), publish });
   };
 
   // The AI draft only POPULATES the builder — creating still goes through the
@@ -237,17 +248,26 @@ export default function CadenceEditorPage() {
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-5">
       <RoPageHeader
-        title={isNew ? 'New cadence' : `Edit — ${base?.name || ''}`}
+        title={isNew ? 'New cadence' : `Edit — ${base?.name || ''}${baseIsDraft ? ' (draft)' : ''}`}
         sub={isNew
           ? 'Each step becomes a task in the owner’s queue at the right time. Replies and “not interested” always end the cadence early.'
-          : `Saving creates v${(base?.version || 1) + 1}. Businesses already enrolled keep following v${base?.version}.`}
+          : `Saving creates v${(base?.version || 1) + 1}. Businesses already enrolled keep following v${base?.version}.${
+            baseIsDraft ? ' This cadence is an unpublished draft — only you and admins can see it.' : ''}`}
         actions={(
           <span className="inline-flex gap-2">
             <Button variant="outline" asChild>
-              <Link to="/redeem-ops/settings">Cancel</Link>
+              <Link to={backTo}>Cancel</Link>
             </Button>
-            <Button disabled={saveMutation.isPending} onClick={save}>
-              {saveMutation.isPending ? 'Saving…' : isNew ? 'Create cadence' : `Save as v${(base?.version || 1) + 1}`}
+            {(isNew || baseIsDraft) && (
+              <Button variant="outline" disabled={saveMutation.isPending} onClick={() => save(false)}>
+                {isNew ? 'Save as draft' : 'Save draft'}
+              </Button>
+            )}
+            <Button disabled={saveMutation.isPending} onClick={() => save(true)}>
+              {saveMutation.isPending ? 'Saving…'
+                : isNew ? 'Create & publish'
+                  : baseIsDraft ? 'Save & publish'
+                    : `Save as v${(base?.version || 1) + 1}`}
             </Button>
           </span>
         )}

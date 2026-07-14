@@ -82,6 +82,7 @@ export async function ensureCadences() {
       const cadence = await OutreachCadence.create({
         key: seed.key, version: seed.version, name: seed.name,
         description: seed.description, createdBy: creator.id,
+        publishedAt: new Date(), // seeds are team-wide, never drafts
       }, { transaction: t });
 
       const idByOrder = {};

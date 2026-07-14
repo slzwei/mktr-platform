@@ -141,8 +141,8 @@ describe('CadenceEditorPage (full-page builder)', () => {
     );
   }
 
-  it('creates a cadence from the mapped builder state', async () => {
-    api.createCadence.mockResolvedValue({ id: 'c-new', version: 1 });
+  it('creates & publishes a cadence from the mapped builder state', async () => {
+    api.createCadence.mockResolvedValue({ id: 'c-new', version: 1, publishedAt: new Date().toISOString() });
     const user = userEvent.setup();
     renderNew();
 
@@ -152,19 +152,36 @@ describe('CadenceEditorPage (full-page builder)', () => {
     const titles = screen.getAllByPlaceholderText(/what the rep sees/i);
     await user.type(titles[1], 'WhatsApp follow-up');
 
-    await user.click(screen.getByRole('button', { name: /create cadence/i }));
+    await user.click(screen.getByRole('button', { name: /create & publish/i }));
     await waitFor(() => expect(api.createCadence).toHaveBeenCalledTimes(1));
     const payload = api.createCadence.mock.calls[0][0];
     expect(payload.name).toBe('Fitness studios chase');
+    expect(payload.publish).toBe(true);
     expect(payload.steps).toHaveLength(2);
     expect(payload.steps[0]).toMatchObject({ channel: 'call', title: 'Intro call', continueOn: 'no_answer' });
     expect(payload.steps[1]).toMatchObject({ channel: 'whatsapp', title: 'WhatsApp follow-up' });
   });
 
+  it('"Save as draft" sends publish:false and says who can see it', async () => {
+    api.createCadence.mockResolvedValue({ id: 'c-draft', version: 1, publishedAt: null });
+    const user = userEvent.setup();
+    renderNew();
+
+    await user.type(screen.getByPlaceholderText(/beauty salons/i), 'My private chase');
+    await user.type(screen.getByPlaceholderText(/what the rep sees/i), 'Intro call');
+    await user.click(screen.getByRole('button', { name: /save as draft/i }));
+
+    await waitFor(() => expect(api.createCadence).toHaveBeenCalledTimes(1));
+    expect(api.createCadence.mock.calls[0][0].publish).toBe(false);
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith(
+      expect.stringMatching(/only you and admins/i)
+    ));
+  });
+
   it('refuses to save without a name', async () => {
     const user = userEvent.setup();
     renderNew();
-    await user.click(screen.getByRole('button', { name: /create cadence/i }));
+    await user.click(screen.getByRole('button', { name: /create & publish/i }));
     expect(api.createCadence).not.toHaveBeenCalled();
     expect(toastMock.error).toHaveBeenCalled();
   });
