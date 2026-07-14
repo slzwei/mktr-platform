@@ -81,7 +81,7 @@ export default function MarketplaceOffer() {
   if (campaign === undefined) {
     return (
       <MarketplaceLayout>
-        <div className="rm-shell" style={{ padding: 'clamp(24px,3.5vw,40px) 0' }}>
+        <div className="rm-shell" style={{ paddingTop: 'clamp(24px,3.5vw,40px)', paddingBottom: 'clamp(24px,3.5vw,40px)' }}>
           <div className="rm-shimmer" style={{ height: 420, borderRadius: 22 }} />
         </div>
       </MarketplaceLayout>
@@ -191,7 +191,7 @@ export default function MarketplaceOffer() {
             {isDraw && (
               <div style={{ background: '#FDF3EA', border: '1.5px solid var(--rm-apr)', borderRadius: 18, padding: '22px 24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
-                  <span className="rm-ticket rm-ticket--plain" style={{ width: 11, height: 14, background: 'var(--rm-apr)' }} />
+                  <span className="rm-ticket rm-ticket--sm rm-ticket--apr" style={{ width: 11, height: 14 }} />
                   <span className="rm-mono-label" style={{ color: 'var(--rm-apr2)', fontSize: 11 }}>How this draw works</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 13.5, lineHeight: 1.6 }}>
@@ -228,9 +228,13 @@ export default function MarketplaceOffer() {
                   <div key={f.q} className="rm-faq-row" style={i === 0 ? { borderTop: 'none' } : undefined}>
                     <button className="rm-faq-q" aria-expanded={faqOpen === i} onClick={() => setFaqOpen(faqOpen === i ? -1 : i)}>
                       <span>{f.q}</span>
-                      <span className="rm-faq-sym">{faqOpen === i ? '−' : '+'}</span>
+                      <span className={`rm-faq-sym${faqOpen === i ? ' is-open' : ''}`} aria-hidden="true">+</span>
                     </button>
-                    {faqOpen === i && <div className="rm-faq-a">{f.a}</div>}
+                    <div className={`rm-faq-reveal${faqOpen === i ? ' is-open' : ''}`}>
+                      <div className="rm-faq-clip">
+                        <div className="rm-faq-a">{f.a}</div>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -253,7 +257,7 @@ export default function MarketplaceOffer() {
 
             <div style={{ background: '#F2F6EF', border: '1.5px solid var(--rm-pine)', borderRadius: 18, padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 13 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <span className="rm-ticket rm-ticket--plain" style={{ width: 11, height: 14 }} />
+                <span className="rm-ticket rm-ticket--sm" style={{ width: 11, height: 14 }} />
                 <span className="rm-mono-label" style={{ color: 'var(--rm-pine)', fontSize: 11 }}>Before you redeem</span>
               </div>
               {act.detail && <div style={{ fontSize: 13.5, lineHeight: 1.65 }}>{act.detail}</div>}

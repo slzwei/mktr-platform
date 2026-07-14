@@ -36,7 +36,7 @@ function HowItWorksPage() {
         </div>
         <div style={{ background: '#F2F6EF', border: '1.5px solid var(--rm-pine)', borderRadius: 18, padding: '24px 26px', marginTop: 28 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
-            <span className="rm-ticket rm-ticket--plain" style={{ width: 11, height: 14 }} />
+            <span className="rm-ticket rm-ticket--sm" style={{ width: 11, height: 14 }} />
             <span className="rm-mono-label" style={{ color: 'var(--rm-pine)', fontSize: 11 }}>What's an activation requirement?</span>
           </div>
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.7, maxWidth: '70ch' }}>
@@ -56,7 +56,7 @@ function BusinessesPage() {
   return (
     <MarketplaceLayout>
       <section style={{ background: 'var(--rm-pine)' }}>
-        <div className="rm-shell" style={{ padding: 'clamp(40px,6vw,72px) 0' }}>
+        <div className="rm-shell" style={{ paddingTop: 'clamp(40px,6vw,72px)', paddingBottom: 'clamp(40px,6vw,72px)' }}>
           <div className="rm-mono-label" style={{ color: '#A8C3B4' }}>For businesses</div>
           <h1 className="rm-serif" style={{ margin: '12px 0 0', fontSize: 'clamp(30px,4vw,48px)', lineHeight: 1.1, color: '#F6F2E6', maxWidth: '20ch' }}>
             Reach families already looking for you.
@@ -73,7 +73,7 @@ function BusinessesPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 18 }}>
           {BIZ_PROPS.map((bp) => (
             <div key={bp.t} className="rm-card" style={{ padding: '20px 22px', borderRadius: 16 }}>
-              <span className="rm-ticket rm-ticket--plain" style={{ width: 11, height: 14 }} />
+              <span className="rm-ticket rm-ticket--sm" style={{ width: 11, height: 14 }} />
               <div style={{ fontSize: 15, fontWeight: 700, marginTop: 10 }}>{bp.t}</div>
               <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--rm-sub)', marginTop: 5 }}>{bp.d}</div>
             </div>

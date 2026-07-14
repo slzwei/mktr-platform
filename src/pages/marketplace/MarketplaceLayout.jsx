@@ -25,6 +25,13 @@ export default function MarketplaceLayout({ children, minimalChrome = false, chr
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => {
+    document.body.style.overflow = drawer ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [drawer]);
+
   const eduCats = CATEGORIES.filter((c) => c.group === 'education');
   const lifeCats = CATEGORIES.filter((c) => c.group === 'lifestyle');
 
@@ -35,7 +42,7 @@ export default function MarketplaceLayout({ children, minimalChrome = false, chr
           <div className="rm-shell rm-nav-inner" style={{ maxWidth: 720, justifyContent: 'space-between' }}>
             <span className="rm-mono-label" style={{ color: 'var(--rm-sub)' }}>{chromeLabel || 'Campaign'}</span>
             <span className="rm-mono-note" style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-              <span className="rm-ticket rm-ticket--plain" style={{ width: 11, height: 14 }} />
+              <span className="rm-ticket rm-ticket--sm" style={{ width: 11, height: 14 }} />
               Secured by Redeem
             </span>
           </div>
@@ -78,10 +85,8 @@ export default function MarketplaceLayout({ children, minimalChrome = false, chr
         </div>
       </header>
 
-      {drawer && (
-        <>
-          <div className="rm-drawer-scrim" onClick={() => setDrawer(false)} />
-          <div role="dialog" aria-label="Menu" className="rm-drawer">
+      <div className={`rm-drawer-scrim${drawer ? ' is-open' : ''}`} onClick={() => setDrawer(false)} aria-hidden="true" />
+      <div role="dialog" aria-label="Menu" inert={!drawer} className={`rm-drawer${drawer ? ' is-open' : ''}`}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <span className="rm-serif" style={{ fontSize: 20 }}>redeem</span>
               <button onClick={() => setDrawer(false)} aria-label="Close menu" style={{ fontSize: 22, color: 'var(--rm-mut)', minWidth: 44, minHeight: 44 }}>✕</button>
@@ -101,10 +106,8 @@ export default function MarketplaceLayout({ children, minimalChrome = false, chr
             <Link to="/businesses">For businesses</Link>
             <Link to="/about">About</Link>
             <Link to="/winners">Lucky-draw winners</Link>
-            <Link className="rm-btn" to="/explore" style={{ marginTop: 16, width: '100%' }}>Explore offers</Link>
-          </div>
-        </>
-      )}
+        <Link className="rm-btn" to="/explore" style={{ marginTop: 16, width: '100%' }}>Explore offers</Link>
+      </div>
 
       <main id="rm-main" style={{ flex: 1, paddingTop: 66 }}>{children}</main>
 

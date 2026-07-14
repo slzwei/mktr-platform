@@ -76,9 +76,12 @@
 /* Knob position is proportional so inline-resized doors keep it mid-door
    (prototype: 54% down, ~18.5% in from the right). */
 .rm-ticket::after { content: ''; position: absolute; right: 18.5%; top: 54%; width: 2.5px; height: 2.5px; border-radius: 50%; background: #f6f2e6; }
-/* Small doors are plain per the prototype: no knob, tighter arch. */
-.rm-ticket--plain { border-radius: 6px 6px 1px 1px; }
-.rm-ticket--plain::after { content: none; }
+/* Small doors: tighter arch, smaller knob (every door keeps its knob). */
+.rm-ticket--sm { border-radius: 6px 6px 1px 1px; }
+.rm-ticket--sm::after { width: 2px; height: 2px; }
+/* Apricot doors carry an ink knob (footer wordmark convention). */
+.rm-ticket--apr { background: var(--rm-apr); }
+.rm-ticket--apr::after { background: var(--rm-ink); }
 .rm-nav-links { display: flex; align-items: center; gap: 2px; flex: 1; }
 .rm-nav-link { color: var(--rm-sub); font-size: 14px; font-weight: 500; padding: 8px 12px; border-radius: 8px; white-space: nowrap; }
 .rm-nav-link:hover { background: var(--rm-tint); color: var(--rm-ink); }
@@ -90,8 +93,10 @@
   .rm-nav-links { display: none; }
   .rm-burger { display: flex; }
 }
-.rm-drawer-scrim { position: fixed; inset: 0; z-index: 70; background: rgba(23, 37, 31, 0.35); }
-.rm-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(320px, 85vw); z-index: 71; background: var(--rm-card); box-shadow: -12px 0 40px rgba(23, 37, 31, 0.18); padding: 20px 22px 32px; overflow-y: auto; animation: rmFadeUp 0.25s ease both; }
+.rm-drawer-scrim { position: fixed; inset: 0; z-index: 70; background: rgba(23, 37, 31, 0.35); opacity: 0; pointer-events: none; transition: opacity 0.28s ease; }
+.rm-drawer-scrim.is-open { opacity: 1; pointer-events: auto; }
+.rm-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(320px, 85vw); z-index: 71; background: var(--rm-card); box-shadow: -12px 0 40px rgba(23, 37, 31, 0.18); padding: 20px 22px 32px; overflow-y: auto; transform: translateX(105%); visibility: hidden; transition: transform 0.34s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s 0.34s; }
+.rm-drawer.is-open { transform: translateX(0); visibility: visible; transition: transform 0.34s cubic-bezier(0.32, 0.72, 0, 1); }
 .rm-drawer a { display: block; padding: 10px 0; font-size: 15px; color: var(--rm-ink); font-weight: 500; }
 
 /* ---------- Buttons / chips ---------- */
@@ -164,19 +169,58 @@
 /* ---------- FAQ rows ---------- */
 .rm-faq-row { border-top: 1px solid var(--rm-line); }
 .rm-faq-q { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 15px 2px; min-height: 44px; font-size: 14.5px; font-weight: 600; color: var(--rm-ink); }
-.rm-faq-sym { font-family: var(--rm-mono); font-size: 16px; color: var(--rm-pine); flex-shrink: 0; }
-.rm-faq-a { padding: 0 2px 16px; font-size: 13.5px; line-height: 1.65; color: var(--rm-sub); max-width: 70ch; animation: rmFadeUp 0.25s ease both; }
+.rm-faq-sym { font-family: var(--rm-mono); font-size: 16px; color: var(--rm-pine); flex-shrink: 0; display: inline-block; transition: transform 0.3s ease; }
+.rm-faq-sym.is-open { transform: rotate(45deg); }
+.rm-faq-reveal { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.32s ease; }
+.rm-faq-reveal.is-open { grid-template-rows: 1fr; }
+.rm-faq-clip { overflow: hidden; min-height: 0; }
+.rm-faq-a { padding: 0 2px 16px; font-size: 13.5px; line-height: 1.65; color: var(--rm-sub); max-width: 70ch; opacity: 0; transform: translateY(-4px); transition: opacity 0.3s ease, transform 0.3s ease; }
+.rm-faq-reveal.is-open .rm-faq-a { opacity: 1; transform: none; }
 
 /* ---------- Verified badge ---------- */
 .rm-verified { display: inline-flex; align-items: center; gap: 4px; font-family: var(--rm-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--rm-pine); }
-.rm-verified::before { content: ''; display: inline-block; width: 8px; height: 10px; border-radius: 4px 4px 1px 1px; background: var(--rm-pine); }
+.rm-verified::before { content: '✓'; display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; border-radius: 50%; background: var(--rm-pine); color: #f6f2e6; font-size: 8px; line-height: 1; font-family: var(--rm-sans); }
 
-/* ---------- Home how-steps connector ---------- */
+/* ---------- Home how-steps (vertical dotted connector on mobile, horizontal on desktop) ---------- */
 .rm-howline { display: none; }
+.rm-howsteps { display: flex; flex-direction: column; gap: 22px; }
+.rm-howstep { position: relative; display: grid; grid-template-columns: 32px 1fr; gap: 14px; text-align: left; }
+.rm-howstep:not(:last-child)::after { content: ''; position: absolute; left: 15px; top: 36px; bottom: -22px; border-left: 2px dotted var(--rm-line2); }
+.rm-hownum { width: 32px; height: 32px; border-radius: 50%; background: var(--rm-pine); color: #f6f2e6; display: flex; align-items: center; justify-content: center; font-family: var(--rm-mono); font-size: 12px; }
+.rm-howbody { display: flex; flex-direction: column; gap: 4px; padding-top: 5px; min-width: 0; }
 @media (min-width: 720px) {
   .rm-howline { display: block; position: absolute; left: calc(100% / 6); right: calc(100% / 6); top: 23px; border-top: 2px dotted var(--rm-line2); }
+  .rm-howsteps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .rm-howstep { display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; }
+  .rm-howstep:not(:last-child)::after { content: none; }
+  .rm-hownum { width: 46px; height: 46px; font-size: 14px; }
+  .rm-howbody { display: contents; }
 }
 
 /* ---------- Mobile sticky CTA ---------- */
 .rm-sticky-cta { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: var(--rm-card); border-top: 1px solid var(--rm-line); box-shadow: 0 -8px 24px rgba(23, 37, 31, 0.08); padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); display: none; align-items: center; gap: 14px; }
 @media (max-width: 940px) { .rm-sticky-cta { display: flex; } }
+
+/* ---------- Responsive home + explore (mobile ≤719px, per the mobile mock) ---------- */
+.rm-cta-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.rm-hero-annot { position: absolute; left: 0; bottom: 44px; }
+.rm-cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+.rm-biz-cta { display: flex; flex-direction: column; gap: 12px; justify-self: end; align-items: flex-end; }
+.rm-carousel { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; margin: 0 calc(-1 * clamp(16px, 4vw, 44px)); padding: 4px clamp(16px, 4vw, 44px) 10px; }
+.rm-carousel-item { width: 272px; flex-shrink: 0; scroll-snap-align: start; }
+.rm-carousel-item > * { height: 100%; }
+.rm-carousel-more { width: 200px; flex-shrink: 0; scroll-snap-align: start; border: 1.5px dashed var(--rm-line2); border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 20px; box-sizing: border-box; }
+.rm-filter-row { display: flex; gap: 7px; align-items: center; }
+.rm-filter-chips { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; min-width: 0; }
+@media (max-width: 719px) {
+  .rm-cta-row { flex-direction: column; }
+  .rm-cta-row .rm-btn { width: 100%; }
+  .rm-hero-annot { position: static; margin-top: 14px; }
+  .rm-cat-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .rm-biz-cta { justify-self: stretch; align-items: stretch; text-align: center; }
+  .rm-filter-row { display: block; }
+  .rm-filter-row > .rm-mono-label { display: block; width: auto; margin-bottom: 7px; }
+  .rm-filter-chips { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+  .rm-footer-cols { grid-template-columns: 1fr 1fr; }
+  .rm-footer-cols > div:first-child, .rm-footer-cols > div:last-child { grid-column: 1 / -1; }
+}

@@ -106,9 +106,9 @@ function ExplorePage() {
   };
 
   const filterRow = (label, chips) => (
-    <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
+    <div className="rm-filter-row">
       <span className="rm-mono-label" style={{ fontSize: 10, width: 74, flexShrink: 0 }}>{label}</span>
-      {chips}
+      <div className="rm-filter-chips">{chips}</div>
     </div>
   );
 
@@ -197,7 +197,7 @@ function CategoryPage() {
   if (!info) {
     return (
       <MarketplaceLayout>
-        <div className="rm-shell" style={{ padding: '48px 0' }}>
+        <div className="rm-shell" style={{ paddingTop: 48, paddingBottom: 48 }}>
           <div className="rm-card" style={{ padding: '44px 28px', textAlign: 'center' }}>
             <div className="rm-serif" style={{ fontSize: 24 }}>That category doesn't exist</div>
             <Link className="rm-btn" to="/explore" style={{ marginTop: 18 }}>Explore everything</Link>
@@ -210,7 +210,7 @@ function CategoryPage() {
   return (
     <MarketplaceLayout>
       <section style={{ background: 'var(--rm-sage)', borderBottom: '1px solid var(--rm-line)' }}>
-        <div className="rm-shell" style={{ padding: 'clamp(36px,5vw,60px) 0' }}>
+        <div className="rm-shell" style={{ paddingTop: 'clamp(36px,5vw,60px)', paddingBottom: 'clamp(36px,5vw,60px)' }}>
           <div className="rm-mono-label" style={{ color: 'var(--rm-pine)' }}>Category</div>
           <h1 className="rm-serif" style={{ margin: '10px 0 0', fontSize: 'clamp(30px,3.8vw,44px)' }}>{info.label}</h1>
           <p style={{ margin: '12px 0 0', fontSize: 15, lineHeight: 1.6, color: 'var(--rm-sub)', maxWidth: '56ch' }}>{info.blurb}</p>
@@ -245,7 +245,7 @@ function DsaPage() {
   return (
     <MarketplaceLayout>
       <section style={{ background: 'var(--rm-sage)', borderBottom: '1px solid var(--rm-line)' }}>
-        <div className="rm-shell" style={{ padding: 'clamp(36px,5vw,64px) 0' }}>
+        <div className="rm-shell" style={{ paddingTop: 'clamp(36px,5vw,64px)', paddingBottom: 'clamp(36px,5vw,64px)' }}>
           <div className="rm-mono-label" style={{ color: 'var(--rm-pine)' }}>DSA discovery</div>
           <h1 className="rm-serif" style={{ margin: '12px 0 0', fontSize: 'clamp(28px,3.6vw,42px)', lineHeight: 1.12, maxWidth: '24ch' }}>
             Explore programmes that may support your child's talent-development journey.
@@ -257,7 +257,7 @@ function DsaPage() {
       </section>
       <div className="rm-shell" style={{ paddingTop: 'clamp(28px,4vw,44px)', paddingBottom: 'clamp(48px,6vw,72px)', display: 'flex', flexDirection: 'column', gap: 30 }}>
         <div className="rm-warn-box">
-          <span className="rm-ticket rm-ticket--plain" style={{ width: 11, height: 14, background: 'var(--rm-warn)', marginTop: 3, flexShrink: 0 }} />
+          <span className="rm-ticket rm-ticket--sm" style={{ width: 11, height: 14, background: 'var(--rm-warn)', marginTop: 3, flexShrink: 0 }} />
           <div style={{ fontSize: 13.5, lineHeight: 1.6, color: '#5C4A18' }}>
             <strong>Admission is determined entirely by schools.</strong> No provider can guarantee DSA outcomes — treat success-rate claims and admission promises as a red flag. Redeem lists discovery and preparation programmes only.
           </div>

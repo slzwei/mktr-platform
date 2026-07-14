@@ -402,7 +402,7 @@ export default function MarketplaceFlow() {
   if (campaign === undefined) {
     return (
       <MarketplaceLayout>
-        <div className="rm-shell rm-shell--flow" style={{ padding: 'clamp(24px,3.5vw,40px) 0' }}>
+        <div className="rm-shell rm-shell--flow" style={{ paddingTop: 'clamp(24px,3.5vw,40px)', paddingBottom: 'clamp(24px,3.5vw,40px)' }}>
           <div className="rm-shimmer" style={{ height: 380, borderRadius: 22 }} />
         </div>
       </MarketplaceLayout>
@@ -412,7 +412,7 @@ export default function MarketplaceFlow() {
   if (campaign === null) {
     return (
       <MarketplaceLayout>
-        <div className="rm-shell rm-shell--flow" style={{ padding: 'clamp(24px,3.5vw,40px) 0 clamp(56px,7vw,88px)' }}>
+        <div className="rm-shell rm-shell--flow" style={{ paddingTop: 'clamp(24px,3.5vw,40px)', paddingBottom: 'clamp(56px,7vw,88px)' }}>
           <div className="rm-card" style={{ padding: '48px 28px', textAlign: 'center' }}>
             <div className="rm-serif" style={{ fontSize: 26 }}>This campaign isn't available</div>
             <Link className="rm-btn" to="/explore" style={{ marginTop: 18 }}>Explore live offers</Link>
@@ -430,7 +430,7 @@ export default function MarketplaceFlow() {
     const copy = UNAVAILABLE_COPY[unavailable];
     return (
       <MarketplaceLayout>
-        <div className="rm-shell rm-shell--flow" style={{ padding: 'clamp(24px,3.5vw,40px) 0 clamp(56px,7vw,88px)' }}>
+        <div className="rm-shell rm-shell--flow" style={{ paddingTop: 'clamp(24px,3.5vw,40px)', paddingBottom: 'clamp(56px,7vw,88px)' }}>
           <div className="rm-card rm-fadeup" style={{ padding: '48px 28px', textAlign: 'center' }}>
             <div className="rm-serif" style={{ fontSize: 26 }}>{copy.title}</div>
             <p style={{ margin: '10px auto 20px', fontSize: 14, lineHeight: 1.65, color: 'var(--rm-sub)', maxWidth: '46ch' }}>{copy.body}</p>
@@ -792,7 +792,7 @@ export default function MarketplaceFlow() {
               {needAck && (
                 <div style={{ background: '#F2F6EF', border: '1.5px solid var(--rm-pine)', borderRadius: 14, padding: '16px 18px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span className="rm-ticket rm-ticket--plain" style={{ width: 10, height: 13, borderRadius: '5px 5px 1px 1px' }} />
+                    <span className="rm-ticket rm-ticket--sm" style={{ width: 10, height: 13, borderRadius: '5px 5px 1px 1px' }} />
                     <span className="rm-mono-label" style={{ color: 'var(--rm-pine)', fontSize: 10 }}>Activation requirement</span>
                   </div>
                   <div style={{ fontSize: 13, lineHeight: 1.6 }}>{act.detail}</div>
@@ -922,7 +922,7 @@ function Confirmation({ campaign, isDraw, boost, needAck, actSummary, consentCon
 
       {needAck && !isDraw && (
         <div style={{ background: '#F2F6EF', border: '1px solid #CFDDD2', borderRadius: 14, padding: '14px 18px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <span className="rm-ticket rm-ticket--plain" style={{ width: 10, height: 13, borderRadius: '5px 5px 1px 1px', marginTop: 3, flexShrink: 0 }} />
+          <span className="rm-ticket rm-ticket--sm" style={{ width: 10, height: 13, borderRadius: '5px 5px 1px 1px', marginTop: 3, flexShrink: 0 }} />
           <span style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--rm-pine2)' }}>
             <strong>Reminder:</strong> {actSummary} — your experience is confirmed after this step.
           </span>
