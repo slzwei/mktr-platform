@@ -36,14 +36,14 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* :where() keeps this default at zero specificity — component classes below
-   (.rm-btn, .rm-nav-link, .rm-chip, …) must win or their labels render
-   pine-on-pine. Don't "simplify" back to `.rm-page a`. */
+/* :where() keeps these element defaults at zero specificity — component
+   classes below (.rm-btn, .rm-chip, .rm-faq-q, …) must win or their colors,
+   borders and padding get stripped. Don't "simplify" the :where() away. */
 .rm-page :where(a) { color: var(--rm-pine); text-decoration: none; }
 .rm-page a.rm-underline { border-bottom: 1px solid rgba(30, 87, 72, 0.3); }
 .rm-page a.rm-underline:hover { color: var(--rm-pine2); border-bottom-color: var(--rm-pine2); }
-.rm-page button { font: inherit; cursor: pointer; border: none; background: none; padding: 0; color: inherit; text-align: inherit; }
-.rm-page input, .rm-page select, .rm-page textarea { font: inherit; color: inherit; }
+.rm-page :where(button) { font: inherit; cursor: pointer; border: none; background: none; padding: 0; color: inherit; text-align: inherit; }
+.rm-page :where(input, select, textarea) { font: inherit; color: inherit; }
 .rm-page input:focus, .rm-page select:focus, .rm-page textarea:focus,
 .rm-page button:focus-visible, .rm-page a:focus-visible { outline: 2px solid var(--rm-pine); outline-offset: 2px; }
 .rm-page ::selection { background: #e5dbc0; }

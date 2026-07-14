@@ -73,8 +73,8 @@ export default function MarketplaceHome() {
               className="rm-card"
               style={{ background: TINTS[i % 4], padding: 18, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 108 }}
             >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="rm-ticket" style={{ width: 13, height: 17, borderRadius: '7px 7px 1px 1px', opacity: 0.85, flexShrink: 0 }} />
+              <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <span className="rm-ticket" style={{ width: 13, height: 17, borderRadius: '7px 7px 1px 1px', opacity: 0.85, flexShrink: 0, marginTop: 1 }} />
                 <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--rm-ink)', lineHeight: 1.25 }}>{cat.label}</span>
               </span>
               <span style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--rm-sub)' }}>{cat.blurb}</span>
