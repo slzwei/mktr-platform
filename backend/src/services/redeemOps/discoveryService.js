@@ -189,7 +189,10 @@ export function makeDiscoveryService(overrides = {}) {
   // ── Start a discovery search ───────────────────────────────────────────
   /** `provider` selects the mechanism ('google_maps' default | 'instagram_hashtag'
    *  pilot); Category + Territory stay the operator picks either way. */
-  async function startDiscovery({ category, area, limit, provider = 'google_maps' }, user, requestId = null) {
+  async function startDiscovery({
+    category, area, limit, provider = 'google_maps',
+    searchTerms: adHocTerms, hashtags: adHocTags, minStars, skipClosed,
+  }, user, requestId = null) {
     assertEnabled();
     const isInstagram = provider === 'instagram_hashtag';
     if (!isInstagram && provider !== 'google_maps') {
@@ -200,25 +203,37 @@ export function makeDiscoveryService(overrides = {}) {
     }
     if (!category || !String(category).trim()) throw new AppError('Category is required', 400);
     if (!area || !String(area).trim()) throw new AppError('Area is required', 400);
+    // Ad-hoc, type-and-go overrides: when the operator supplies their own terms/
+    // hashtags the category becomes just the CRM bucket — its saved terms aren't
+    // needed, so an IG search with ad-hoc tags skips the no-hashtags 422.
+    const cleanList = (a) => (Array.isArray(a)
+      ? [...new Set(a.map((x) => String(x).trim().replace(/^#+/, '')).filter(Boolean))].slice(0, 20)
+      : []);
+    const overrideTerms = cleanList(adHocTerms);
+    const overrideTags = cleanList(adHocTags);
     // Fail fast on an unknown/inactive category (422) BEFORE any run row or Apify
     // spend — otherwise every add-to-pipeline would fail after the money was paid.
     // Stores the taxonomy's canonical casing so add-time createPartner re-validation
     // can only fail on the (rare) delete-category-mid-run race. The IG resolver
-    // additionally 422s when the category has no curated hashtags.
-    const resolved = isInstagram
+    // additionally 422s when the category has no curated hashtags — unless ad-hoc
+    // hashtags were supplied, where name-only resolution suffices.
+    const resolved = (isInstagram && overrideTags.length === 0)
       ? await d.categories.resolveCategoryForInstagram(String(category).trim())
       : await d.categories.resolveCategoryForSearch(String(category).trim());
     const canonicalCategory = resolved.name;
     const c = cfg();
     if (!c.resultQuotaEnabled) await assertQuota(user);
     const requestedLimit = Math.min(Math.max(Number(limit) || 60, 1), c.maxResultsPerRun);
+    const igHashtagsUsed = isInstagram
+      ? (overrideTags.length ? overrideTags : resolved.hashtags)
+      : null;
     const searchTermsUsed = isInstagram ? null
-      : (c.searchTermsEnabled ? resolved.searchTerms : [canonicalCategory]);
-    // The Maps actor applies this cap to EACH search string, so divide the
-    // requested total across aliases to avoid multiplying crawl cost by N.
-    const perSearchLimit = isInstagram ? null : (c.searchTermsEnabled
-      ? Math.max(1, Math.floor(requestedLimit / searchTermsUsed.length))
-      : requestedLimit);
+      : (overrideTerms.length ? overrideTerms
+        : (c.searchTermsEnabled ? resolved.searchTerms : [canonicalCategory]));
+    // The Maps actor applies this cap to EACH search string, so divide the requested
+    // total across terms to avoid multiplying crawl cost by N (a single term = full limit).
+    const perSearchLimit = isInstagram ? null
+      : Math.max(1, Math.floor(requestedLimit / searchTermsUsed.length));
 
     const runValues = {
       createdBy: user.id, provider: isInstagram ? 'apify_instagram_hashtag' : 'apify_google_maps',
@@ -229,7 +244,7 @@ export function makeDiscoveryService(overrides = {}) {
     // IG runs snapshot the fired hashtags + territory so materialization's soft
     // filter and the UI never re-resolve the category (it may be edited mid-run).
     const igPayload = isInstagram
-      ? { hashtags: resolved.hashtags, territory: runValues.area }
+      ? { hashtags: igHashtagsUsed, territory: runValues.area }
       : null;
     let run;
     if (c.resultQuotaEnabled) {
@@ -259,7 +274,7 @@ export function makeDiscoveryService(overrides = {}) {
         // richer filter is applied by US post-scrape (spike doc: "rich parameters"
         // = a good filter UI over a simple scrape, not actor config).
         actorId = c.igHashtagActor;
-        input = { hashtags: resolved.hashtags, resultsLimit: requestedLimit };
+        input = { hashtags: igHashtagsUsed, resultsLimit: requestedLimit };
       } else {
         // Geo-anchored search: the area goes in locationQuery (the actor geocodes
         // it and crawls that polygon), NOT concatenated into the search string —
@@ -275,6 +290,10 @@ export function makeDiscoveryService(overrides = {}) {
           maxCrawledPlacesPerSearch: perSearchLimit,
           language: 'en',
           scrapeContacts: true, // enables the instagrams/social arrays
+          // Actor-native quality filters — added only when set, so the default
+          // (no-filter) input stays byte-identical to before.
+          ...(minStars ? { placeMinimumStars: minStars } : {}),
+          ...(skipClosed ? { skipClosedPlaces: true } : {}),
         };
       }
       const started = await d.apify.startRun(actorId, input, { webhookUrl: webhookUrl() });

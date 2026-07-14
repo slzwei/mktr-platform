@@ -69,7 +69,10 @@ const timeAgo = (iso) => {
 
 export default function DiscoverPage() {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState({ category: '', area: '', limit: '30', provider: 'google_maps' });
+  const [form, setForm] = useState({
+    category: '', area: '', limit: '30', provider: 'google_maps',
+    adhoc: '', minStars: 'any', skipClosed: false,
+  });
   const [runId, setRunId] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [filter, setFilter] = useState('all');
@@ -230,10 +233,22 @@ export default function DiscoverPage() {
     },
   });
 
-  const runSearch = (category, area, limit = 30, provider = form.provider) => {
-    if (!category || !String(area).trim()) return;
-    setForm((f) => ({ ...f, category, area, limit: String(limit) }));
-    startMutation.mutate({ category, area: String(area).trim(), limit: Number(limit), provider });
+  const parseCsv = (v) => (v || '').split(',').map((s) => s.trim().replace(/^#+/, '')).filter(Boolean);
+  const runSearch = () => {
+    if (!form.category || !form.area.trim() || startMutation.isPending) return;
+    const body = {
+      category: form.category, area: form.area.trim(),
+      limit: Number(form.limit), provider: form.provider,
+    };
+    const adhoc = parseCsv(form.adhoc); // ad-hoc override of the category's saved terms/hashtags
+    if (isIg) {
+      if (adhoc.length) body.hashtags = adhoc;
+    } else {
+      if (adhoc.length) body.searchTerms = adhoc;
+      if (form.minStars && form.minStars !== 'any') body.minStars = form.minStars;
+      if (form.skipClosed) body.skipClosed = true;
+    }
+    startMutation.mutate(body);
   };
   const toggle = (id) => setSelected((prev) => {
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
@@ -302,7 +317,7 @@ export default function DiscoverPage() {
                 ) : (
                   <Input id="disc-area" value={form.area} placeholder="Neighbourhood or district…"
                     onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(form.category, form.area, form.limit); }} />
+                    onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(); }} />
                 )}
               </div>
               <div className="space-y-1.5">
@@ -312,9 +327,41 @@ export default function DiscoverPage() {
                   <SelectContent>{['30', '60', '120', '300', '500'].map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <Button disabled={!canSearch} onClick={() => runSearch(form.category, form.area, form.limit)}>
+              <Button disabled={!canSearch} onClick={() => runSearch()}>
                 <Search className="w-4 h-4 mr-1.5" aria-hidden="true" />{startMutation.isPending ? 'Starting…' : 'Search'}
               </Button>
+            </div>
+            <div className="grid gap-2 mt-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+              <div className="space-y-1">
+                <Label htmlFor="disc-adhoc">
+                  {isIg ? 'Hashtags' : 'Search terms'} <span style={{ color: 'var(--ro-text-3)', fontWeight: 400 }}>(optional — overrides the category)</span>
+                </Label>
+                <Input id="disc-adhoc" value={form.adhoc}
+                  placeholder={isIg ? 'sgnails, biabsg, homebasednailssg' : 'kopitiam, zi char'}
+                  onChange={(e) => setForm((f) => ({ ...f, adhoc: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(); }} />
+              </div>
+              {!isIg && (
+                <div className="space-y-1">
+                  <Label>Min rating</Label>
+                  <Select value={form.minStars} onValueChange={(v) => setForm((f) => ({ ...f, minStars: v }))}>
+                    <SelectTrigger className="w-full min-w-[104px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="any">Any</SelectItem>
+                      <SelectItem value="three">3.0★+</SelectItem>
+                      <SelectItem value="threeAndHalf">3.5★+</SelectItem>
+                      <SelectItem value="four">4.0★+</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {!isIg && (
+                <label className="flex items-center gap-2 h-9 px-1 text-[13px] font-semibold cursor-pointer whitespace-nowrap" style={{ color: 'var(--ro-text-2)' }}>
+                  <input type="checkbox" className="w-4 h-4 accent-[var(--ro-bunker)]"
+                    checked={form.skipClosed} onChange={(e) => setForm((f) => ({ ...f, skipClosed: e.target.checked }))} />
+                  Skip closed
+                </label>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2 mt-3">
               {!territoriesEnabled && !isIg && (
