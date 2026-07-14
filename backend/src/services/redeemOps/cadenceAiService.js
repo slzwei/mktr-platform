@@ -37,7 +37,7 @@ const CONTINUE_ALLOWED = Object.fromEntries(CHANNELS.map((ch) => [
 ]));
 /** The ONLY merge fields renderTemplate resolves — any other {{token}} blocks
  *  the live task (unresolved_template). Keep in lock-step with cadenceService. */
-const MERGE_FIELDS = new Set(['partner_name', 'contact_name', 'category', 'recipient']);
+const MERGE_FIELDS = new Set(['partner_name', 'contact_name', 'category', 'recipient', 'rep_name']);
 
 // Enums are supported by both providers' structured outputs (guided review uses
 // them in prod). continueOn stays a free string — its valid values depend on
@@ -82,7 +82,7 @@ Rules for a valid cadence:
 - delayDays: step 1 = days after enrolling (usually 0); later steps = days to wait after the previous step (1-4 is typical, max 60).
 - timeWindow (SGT): any, morning (9:30), afternoon (15:00), off_peak (15:00-17:00). Calls land best morning or off_peak; messages any.
 - title: short and imperative — what the rep sees in their queue (e.g. "Intro call — gauge interest").
-- script: the note or ready-to-send message shown on the task. 1-3 sentences, natural Singapore English, friendly and non-pushy. You may ONLY use these merge fields: {{partner_name}}, {{contact_name}}, {{category}}, {{recipient}} — any other {{placeholder}} breaks the task. Plain text otherwise.
+- script: the note or ready-to-send message shown on the task. 1-3 sentences, natural Singapore English, friendly and non-pushy. You may ONLY use these merge fields: {{partner_name}}, {{contact_name}}, {{category}}, {{recipient}}, {{rep_name}} — any other {{placeholder}} breaks the task. {{rep_name}} is the sales rep's own name, auto-filled per task: use it whenever the rep introduces themselves (e.g. "Hi, this is {{rep_name}} from Redeem"). NEVER write bracketed fill-ins like [Your Name] or [Business] — use a merge field or plain text.
 - priority: low, medium or high.
 - name (max 120 chars) and a one-line description saying when reps should pick this cadence.
 
@@ -104,7 +104,11 @@ const clampInt = (v, lo, hi, fallback) => {
  *  the blocker regex is any remaining {{...}}. Single pass — a canonicalize-
  *  then-strip pipeline would strip its own output. */
 export function sanitizeScript(raw) {
-  const s = typeof raw === 'string' ? raw : '';
+  let s = typeof raw === 'string' ? raw : '';
+  // LLMs write "[Your Name]" fill-ins even when told not to — canonicalize the
+  // self-introduction variants to the real merge field BEFORE the brace pass so
+  // the emitted {{rep_name}} rides the allowlist below.
+  s = s.replace(/\[\s*(?:your|my|rep|agent|sender)(?:'s)?\s+name\s*\]/gi, '{{rep_name}}');
   return s.replace(/{{([^}]*)}}/g, (m, inner) => {
     const key = inner.trim().toLowerCase();
     // {{lead-name}}, {{first name}}, {{foo1}}… would block the task — keep the

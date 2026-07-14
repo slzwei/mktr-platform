@@ -38,6 +38,17 @@ describe('sanitizeScript — merge tokens mirror renderTemplate', () => {
   test('canonicalizes allowlisted fields (case/padding) and keeps them', () => {
     expect(sanitizeScript('Hi {{ Contact_Name }}, about {{PARTNER_NAME}} ({{category}})'))
       .toBe('Hi {{contact_name}}, about {{partner_name}} ({{category}})');
+    expect(sanitizeScript('This is {{ Rep_Name }} from Redeem'))
+      .toBe('This is {{rep_name}} from Redeem');
+  });
+
+  test('bracketed self-introduction fill-ins become {{rep_name}}', () => {
+    expect(sanitizeScript("Hi, this is [Your Name] from Redeem")).toBe('Hi, this is {{rep_name}} from Redeem');
+    expect(sanitizeScript('— [ my name ], Redeem')).toBe('— {{rep_name}}, Redeem');
+    expect(sanitizeScript("[Rep's Name] here, [Agent name] and [SENDER NAME] too"))
+      .toBe('{{rep_name}} here, {{rep_name}} and {{rep_name}} too');
+    // unrelated brackets are content, not fill-ins
+    expect(sanitizeScript('offer [20% off] ends [soon]')).toBe('offer [20% off] ends [soon]');
   });
 
   test('strips every blocker-shaped token the live regex would trip on', () => {

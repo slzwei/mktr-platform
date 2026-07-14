@@ -361,11 +361,17 @@ export function makeCadenceService(overrides = {}) {
     const primaryContact = resolved.contactId
       ? await d.PartnerContact.findByPk(resolved.contactId, { attributes: ['id', 'name'], transaction: t })
       : null;
+    // {{rep_name}} = whoever works the task, and the assignee is always the
+    // partner owner — fetched only when the template asks for it.
+    const owner = /{{\s*rep_name\s*}}/i.test(step.scriptTemplate || '')
+      ? await d.User.findByPk(partner.ownerUserId, { attributes: ['firstName', 'fullName'], transaction: t })
+      : null;
     const rendered = renderTemplate(step.scriptTemplate, {
       partner_name: partner.tradingName || partner.brandName || partner.legalName || 'there',
       contact_name: primaryContact?.name || 'there',
       category: partner.category || '',
       recipient: resolved.recipient || '',
+      rep_name: owner?.firstName || owner?.fullName || 'the Redeem team',
     });
     if (!rendered.ok) return { blocked: true, reason: 'unresolved_template' };
 
