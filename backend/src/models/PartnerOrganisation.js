@@ -64,6 +64,12 @@ const PartnerOrganisation = sequelize.define('PartnerOrganisation', {
 
   mergedIntoId: { type: DataTypes.UUID, allowNull: true, references: { model: 'partner_organisations', key: 'id' }, comment: 'Set on merge; row retained, hidden from lists' },
   archivedAt: { type: DataTypes.DATE, allowNull: true },
+
+  // Consumer-facing marketplace profile (migration 067). Everything else on
+  // this model is CRM-internal and must never surface publicly.
+  publicBlurb: { type: DataTypes.TEXT, allowNull: true, comment: 'Consumer-facing partner blurb (marketplace)' },
+  verifiedAt: { type: DataTypes.DATE, allowNull: true, comment: 'Verification stamp — null = unverified; admin-set only' },
+  partnerSince: { type: DataTypes.SMALLINT, allowNull: true, comment: 'Display year for "on Redeem since"' },
   createdBy: { type: DataTypes.UUID, allowNull: false, references: { model: 'users', key: 'id' } }
 }, {
   tableName: 'partner_organisations',

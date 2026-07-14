@@ -28,6 +28,17 @@ const SpecimenPreview = lazy(() => import('./preview/SpecimenPreview'));
 const Homepage = lazy(() => import('./Homepage'));
 const RedeemHome = lazy(() => import('./RedeemHome'));
 const RedeemWinners = lazy(() => import('./RedeemWinners'));
+// Marketplace v2 (redeem build only, dark behind VITE_REDEEM_MARKETPLACE_ENABLED —
+// docs/plans/redeem-marketplace-v2.md Phase 3). None of these chunks are
+// referenced on the mktr build or while the flag is off.
+const MarketplaceHome = lazy(() => import('./marketplace/MarketplaceHome'));
+const MarketplaceBrowse = lazy(() => import('./marketplace/MarketplaceBrowse'));
+const MarketplaceOffer = lazy(() => import('./marketplace/MarketplaceOffer'));
+const MarketplaceFlow = lazy(() => import('./marketplace/MarketplaceFlow'));
+const MarketplaceStatic = lazy(() => import('./marketplace/MarketplaceStatic'));
+
+const MARKETPLACE_ON =
+  IS_REDEEM_BUILD && import.meta.env.VITE_REDEEM_MARKETPLACE_ENABLED === 'true';
 const Features = lazy(() => import('./Features'));
 const Pricing = lazy(() => import('./Pricing'));
 const About = lazy(() => import('./About'));
@@ -201,9 +212,22 @@ function PagesContent() {
  {IS_OPS_SURFACE ? <OpsSurfaceRoutes /> : (
  <Routes>
  {/* Public routes - no protection needed. Lead capture flow stays on both brands. */}
- <Route path="/" element={brand.showHomepage ? <Homepage /> : (IS_REDEEM_BUILD ? <RedeemHome /> : <LeadCapture />)} />
+ <Route path="/" element={brand.showHomepage ? <Homepage /> : (MARKETPLACE_ON ? <MarketplaceHome /> : IS_REDEEM_BUILD ? <RedeemHome /> : <LeadCapture />)} />
  <Route path="/LeadCapture" element={<LeadCapture />} />
  <Route path="/winners" element={IS_REDEEM_BUILD ? <RedeemWinners /> : <NotFoundForBrand />} />
+ {/* Marketplace v2 surfaces (redeem build, flag-gated) */}
+ {MARKETPLACE_ON && (
+ <>
+ <Route path="/explore" element={<MarketplaceBrowse mode="explore" />} />
+ <Route path="/c/:id" element={<MarketplaceBrowse mode="category" />} />
+ <Route path="/dsa" element={<MarketplaceBrowse mode="dsa" />} />
+ <Route path="/offers/:slug" element={<MarketplaceOffer />} />
+ <Route path="/flow/:slug" element={<MarketplaceFlow />} />
+ <Route path="/how-it-works" element={<MarketplaceStatic mode="how" />} />
+ <Route path="/businesses" element={<MarketplaceStatic mode="businesses" />} />
+ <Route path="/legal/:doc" element={<MarketplaceStatic mode="legal" />} />
+ </>
+ )}
  <Route path="/LeadCapture/demo" element={<LeadCaptureDemo />} />
  <Route path="/p/:slug" element={<PublicPreview />} />
  <Route path="/t/:slug" element={<TrackRedirect />} />
@@ -221,7 +245,7 @@ function PagesContent() {
  <Route path="/Homepage" element={brand.showHomepage ? <Homepage /> : <NotFoundForBrand />} />
  <Route path="/features" element={brand.showFeatures ? <Features /> : <NotFoundForBrand />} />
  <Route path="/pricing" element={brand.showPricing ? <Pricing /> : <NotFoundForBrand />} />
- <Route path="/about" element={brand.showAbout ? <About /> : <NotFoundForBrand />} />
+ <Route path="/about" element={brand.showAbout ? <About /> : MARKETPLACE_ON ? <MarketplaceStatic mode="about" /> : <NotFoundForBrand />} />
  <Route path="/Contact" element={<Contact />} />
  <Route path="/personal-data-policy" element={<PersonalDataPolicy />} />
  <Route path="/leads/privacy" element={<LeadsPrivacy />} />

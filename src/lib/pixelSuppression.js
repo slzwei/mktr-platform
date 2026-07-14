@@ -17,7 +17,10 @@
  *   - any URL with `?preview=true`
  *   - test-data campaigns (`campaign.is_test_data === true`)
  *
- * Returns true ONLY for the live `/LeadCapture` page. SSR-safe.
+ * Returns true ONLY for the live `/LeadCapture` page and the marketplace
+ * campaign surfaces `/offers/:slug` + `/flow/:slug` (Analytics Event Taxonomy:
+ * ViewContent fires at the FIRST public content surface for a campaign; every
+ * other route stays suppressed). SSR-safe.
  */
 export function isTrackableLeadCapture({ campaign, pathname, search } = {}) {
   const path = (pathname || '').toLowerCase();
@@ -36,5 +39,9 @@ export function isTrackableLeadCapture({ campaign, pathname, search } = {}) {
 
   if (campaign?.is_test_data === true) return false;
 
-  return path === '/leadcapture';
+  if (path === '/leadcapture') return true;
+  // Marketplace campaign surfaces — a slug segment must be present.
+  if (/^\/offers\/[a-z0-9-]+$/.test(path)) return true;
+  if (/^\/flow\/[a-z0-9-]+$/.test(path)) return true;
+  return false;
 }

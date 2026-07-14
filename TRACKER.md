@@ -123,6 +123,7 @@ Retell AI performs the call and provides analysis natively. MKTR stores the resu
 | Latency monitoring | NONE | No p95/p99 tracking on the webhook delivery path |
 | Alerting | NONE | No alerting on webhook failure rates or lead delivery failures |
 | Rate limiting (Retell webhook) | NONE | `/api/retell/webhook` has no auth or rate limit — only signature check |
+| Redeem marketplace v2 (consumer browse/offer/flow) | DONE (dark) | 2026-07-14, `docs/plans/redeem-marketplace-v2.md`. Public composed API `GET /api/marketplace/campaigns[/:slug]` (flag `MARKETPLACE_PUBLIC_API_ENABLED`), campaigns.slug + firstActivatedAt (066), partner public profile (067), admin-only `marketplaceListed` gate, redeem-build SPA (`/explore`, `/offers/:slug`, `/flow/:slug`, `/dsa`, statics; flag `VITE_REDEEM_MARKETPLACE_ENABLED`), designer Marketplace tab, tracker `qr_entry` branch (flag `MARKETPLACE_QR_REDIRECT_ENABLED`), pixel predicate + `vc:{campaign_id}` session guard + custom funnel events, `sourceMetadata.marketplace` intake, previews/public design_config whitelist hardening. All three flags default OFF. |
 
 ---
 

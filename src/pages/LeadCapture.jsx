@@ -36,6 +36,7 @@ import {
   trackTikTokCompleteRegistration,
   trackTikTokLead,
 } from '../lib/tiktokPixel';
+import { getOrCreateVcState, markVcFired } from '../lib/pixelSession';
 
 export default function LeadCapture() {
   const location = useLocation();
@@ -76,7 +77,6 @@ export default function LeadCapture() {
   // event_id matches any future references, and the Lead event_id matches the
   // CAPI dispatch. UTMs ride along to the submit for sourceMetadata.utm.
   useEffect(() => {
-    if (!viewEventIdRef.current) viewEventIdRef.current = generateEventId();
     if (!leadEventIdRef.current) leadEventIdRef.current = generateEventId();
     if (!registrationEventIdRef.current) registrationEventIdRef.current = generateEventId();
     captureFbcFromUrl(location.search);
@@ -96,8 +96,16 @@ export default function LeadCapture() {
   useEffect(() => {
     if (!campaign) return;
     const trackCtx = { campaign, pathname: location.pathname, search: location.search };
+    // Session-level once-per-campaign guard (vc:{campaign_id}): marketplace
+    // traffic fires ViewContent on the offer detail page first, so a
+    // detail → flow → /LeadCapture navigation must reuse the SAME event_id and
+    // not re-fire. Per-platform flags stay independent (one platform being
+    // unconfigured must not suppress the other). Direct traffic keeps today's
+    // behaviour: first load fires once.
+    const vc = getOrCreateVcState(campaign.id);
+    viewEventIdRef.current = vc.eventId;
 
-    if (!viewContentFiredRef.current && shouldTrack(trackCtx)) {
+    if (!viewContentFiredRef.current && !vc.firedMeta && shouldTrack(trackCtx)) {
       const pixelId = campaign.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
       if (pixelId) {
         initPixel(pixelId);
@@ -107,21 +115,23 @@ export default function LeadCapture() {
         trackEvent(
           'ViewContent',
           { content_name: campaign.name, content_category: 'lead_capture' },
-          { eventID: viewEventIdRef.current }
+          { eventID: vc.eventId }
         );
         viewContentFiredRef.current = true;
+        markVcFired(campaign.id, 'meta');
       }
     }
 
-    if (!ttViewContentFiredRef.current && shouldTrackTikTok(trackCtx)) {
+    if (!ttViewContentFiredRef.current && !vc.firedTiktok && shouldTrackTikTok(trackCtx)) {
       const ttPixelId = campaign?.tiktokPixelId || import.meta.env.VITE_TIKTOK_PIXEL_ID;
       if (ttPixelId) {
         initTikTokPixel(ttPixelId);
         trackTikTokViewContent(
           { content_name: campaign.name, content_type: 'lead_capture' },
-          viewEventIdRef.current
+          vc.eventId
         );
         ttViewContentFiredRef.current = true;
+        markVcFired(campaign.id, 'tiktok');
       }
     }
   }, [campaign, location.pathname, location.search]);

@@ -5,6 +5,7 @@ import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makeInventoryService } from './inventoryService.js';
+import { invalidateMarketplaceCache } from '../marketplaceCache.js';
 
 const ACTIVATION_STATUSES = ['draft', 'preparing', 'active', 'paused', 'completed', 'cancelled'];
 const LIVE_STATUSES = ['preparing', 'active', 'paused'];
@@ -215,7 +216,19 @@ export function makeActivationService(overrides = {}) {
     return activation;
   }
 
-  return { listActivations, getActivation, createActivation, linkCampaign, changeAllocation, setStatus, setRenewal };
+  // Marketplace read cache: activation changes alter public offer state
+  // (capacity, live window) — bust on every mutation so admin actions show
+  // within one request (docs/plans/redeem-marketplace-v2.md Phase 1).
+  const service = { listActivations, getActivation, createActivation, linkCampaign, changeAllocation, setStatus, setRenewal };
+  for (const k of ['createActivation', 'linkCampaign', 'changeAllocation', 'setStatus', 'setRenewal']) {
+    const fn = service[k];
+    service[k] = async (...args) => {
+      const result = await fn(...args);
+      invalidateMarketplaceCache();
+      return result;
+    };
+  }
+  return service;
 }
 
 const _default = makeActivationService();

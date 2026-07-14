@@ -28,6 +28,12 @@ const router = express.Router();
 // paths and would create /api/previews/featured-drops aliases.
 router.get('/featured-drops', campaignController.getFeaturedDrops);
 
+// Authenticated designer support — declared before /:id so "slug-availability"
+// can't be captured as a campaign id. Flag-independent (the designer must be
+// able to stage marketplace content before the public API is enabled).
+router.get('/slug-availability', authenticateToken, campaignController.checkSlugAvailability);
+router.get('/:id/marketplace-preview', authenticateToken, campaignController.getMarketplacePreview);
+
 /**
  * @openapi
  * /campaigns:

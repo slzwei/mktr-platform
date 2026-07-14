@@ -2,6 +2,33 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import * as trackerService from '../services/trackerService.js';
 import { publicHostFromRequest, cookieDomainForPublicHost } from '../utils/publicHost.js';
 import { frontendBaseForHost } from '../utils/frontendBase.js';
+import { Campaign } from '../models/index.js';
+import { passesStaticGate } from '../services/marketplaceService.js';
+
+/**
+ * qr_entry branch (docs/plans/redeem-marketplace-v2.md Phase 5): a marketplace
+ * campaign can opt its QR scans into the offer-detail page instead of the
+ * direct flow. Own flag (flipped only AFTER the SPA routes deploy), redeem
+ * host only (frontendBaseForHost deliberately returns mktr.sg for mktr
+ * requests, and /offers doesn't exist on the mktr build), and the campaign
+ * must pass the marketplace publication gate. Anything else keeps today's
+ * /LeadCapture redirect byte-for-byte.
+ */
+async function marketplaceDetailPath(qrTag, publicHost) {
+  if (process.env.MARKETPLACE_QR_REDIRECT_ENABLED !== 'true') return null;
+  if (!publicHost || !String(publicHost).endsWith('redeem.sg')) return null;
+  if (!qrTag.campaignId) return null;
+  try {
+    const campaign = await Campaign.findByPk(qrTag.campaignId, {
+      attributes: ['id', 'slug', 'type', 'status', 'is_active', 'design_config'],
+    });
+    if (!campaign || !passesStaticGate(campaign)) return null;
+    if (campaign.design_config?.qr_entry !== 'detail') return null;
+    return `/offers/${campaign.slug}`;
+  } catch {
+    return null; // attribution must never break over a marketplace lookup
+  }
+}
 
 export const trackSlug = asyncHandler(async (req, res) => {
   res.set('X-Robots-Tag', 'noindex, nofollow');
@@ -60,6 +87,10 @@ export const trackSlug = asyncHandler(async (req, res) => {
   }
 
   const search = trackerService.buildRedirectParams(qrTag);
+  const detailPath = await marketplaceDetailPath(qrTag, publicHost);
+  if (detailPath) {
+    return res.redirect(302, `${frontendBase}${detailPath}?${search}`);
+  }
   return res.redirect(302, `${frontendBase}/LeadCapture?${search}`);
 });
 

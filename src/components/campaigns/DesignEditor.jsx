@@ -7,13 +7,15 @@ import {
  LayoutTemplate,
  ListChecks,
  PanelLeftClose,
- PanelLeft
+ PanelLeft,
+ Store
 } from"lucide-react";
 
 import ContentPanel from"./editor/ContentPanel";
 import DesignPanel from"./editor/DesignPanel";
 import LayoutPanel from"./editor/LayoutPanel";
 import QuizPanel from"./editor/QuizPanel";
+import MarketplacePanel from"./editor/MarketplacePanel";
 import PreviewFrame from"./editor/PreviewFrame";
 import { genId } from"./editor/constants";
 import GuidedReviewDesigner from"./guided-review/GuidedReviewDesigner";
@@ -41,7 +43,8 @@ const TABS = [
  { id: 'content', label: 'Content', icon: Type },
  { id: 'design', label: 'Design', icon: Palette },
  { id: 'layout', label: 'Layout', icon: LayoutTemplate },
- { id: 'quiz', label: 'Quiz', icon: ListChecks }
+ { id: 'quiz', label: 'Quiz', icon: ListChecks },
+ { id: 'marketplace', label: 'Marketplace', icon: Store }
 ];
 
 function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8rem)]' }) {
@@ -84,6 +87,19 @@ function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8r
  videoUrl: design.videoUrl || '',
  termsContent: design.termsContent || '',
  quiz: design.quiz || null,
+ // Marketplace content (Marketplace tab) — carried through so an ordinary
+ // designer save round-trips it. clampDesignConfig replaces these keys
+ // WHOLESALE from the incoming object (unlike featuredDrop/luckyDraw, which
+ // have preserve-when-omitted policies), so omitting them here would erase
+ // stored marketplace content on every save.
+ ...Object.fromEntries(
+ [
+ 'name', 'category', 'offer_type', 'mode', 'qr_entry', 'age_range',
+ 'school_levels', 'dsa_related', 'showCapacity', 'availability',
+ 'inclusions', 'image_label', 'activation', 'sponsor', 'value_line',
+ 'content_blocks', 'marketplaceListed',
+ ].filter((k) => design[k] !== undefined).map((k) => [k, design[k]])
+ ),
  });
 
  const [saving, setSaving] = useState(false);
@@ -130,6 +146,8 @@ function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8r
  return <LayoutPanel currentDesign={currentDesign} onDesignChange={handleDesignChange} />;
  case 'quiz':
  return <QuizPanel currentDesign={currentDesign} onDesignChange={handleDesignChange} />;
+ case 'marketplace':
+ return <MarketplacePanel currentDesign={currentDesign} onDesignChange={handleDesignChange} campaign={campaign} />;
  default:
  return null;
  }

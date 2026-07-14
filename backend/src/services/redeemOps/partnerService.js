@@ -187,6 +187,8 @@ export function makePartnerService(overrides = {}) {
     'legalName', 'tradingName', 'brandName', 'uen', 'website', 'primaryPhone', 'primaryEmail',
     'instagramHandle', 'tiktokHandle', 'facebookUrl', 'linkedinUrl', 'category', 'subcategory',
     'source', 'tags', 'notes',
+    // Marketplace public profile (067) — echoed on public /offers pages.
+    'publicBlurb', 'partnerSince',
   ];
 
   async function updatePartner(id, body, user, requestId = null) {
@@ -196,6 +198,11 @@ export function makePartnerService(overrides = {}) {
     }
     const updates = {};
     for (const f of EDITABLE_FIELDS) if (body[f] !== undefined) updates[f] = body[f];
+    // Verification is a public trust badge, not ordinary partner data —
+    // admin-only; non-admin attempts are ignored (policy-strip pattern).
+    if (body.verified !== undefined && user?.role === 'admin') {
+      updates.verifiedAt = body.verified === true ? new Date() : null;
+    }
     if (updates.category !== undefined) {
       // currentValue pass-through: an admin rename/retire must never 422 an
       // unrelated edit (the SPA sends category on every save).

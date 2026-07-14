@@ -6,6 +6,7 @@ import {
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
+import { invalidateMarketplaceCache } from '../marketplaceCache.js';
 import { makeInventoryService } from './inventoryService.js';
 import { makeCategoryService } from './categoryService.js';
 import { REWARD_TYPES } from './constants.js';
@@ -237,10 +238,22 @@ export function makeRewardService(overrides = {}) {
     return events;
   }
 
-  return {
+  // Marketplace read cache: offer changes alter public offer state (value,
+  // validity, status, locations) — bust on every mutation so admin actions
+  // show within one request (docs/plans/redeem-marketplace-v2.md Phase 1).
+  const service = {
     listOffers, getOffer, createOffer, updateOffer, setOfferStatus,
     addTermsVersion, setLocations, adjustInventory, getLedger,
   };
+  for (const k of ['createOffer', 'updateOffer', 'setOfferStatus', 'setLocations', 'adjustInventory']) {
+    const fn = service[k];
+    service[k] = async (...args) => {
+      const result = await fn(...args);
+      invalidateMarketplaceCache();
+      return result;
+    };
+  }
+  return service;
 }
 
 const _default = makeRewardService();

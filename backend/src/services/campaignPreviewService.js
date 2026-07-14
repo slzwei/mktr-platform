@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { Campaign, CampaignPreview } from '../models/index.js';
+import { buildPublicDesignConfig } from '../utils/publicDesignConfig.js';
 
 function generateSlug() {
   return crypto.randomBytes(16).toString('hex');
@@ -66,13 +67,17 @@ export async function resolveSlug(slug) {
   if (campaign) {
     snapshot = {
       ...snapshot,
-      design_config: campaign.design_config || {},
+      // Public endpoint: whitelist-rebuild, never the raw JSONB (it carries
+      // internal luckyDraw activation/terms ids).
+      design_config: buildPublicDesignConfig(campaign.design_config),
       name: campaign.name,
       type: campaign.type,
       min_age: campaign.min_age,
       max_age: campaign.max_age,
       is_active: true
     };
+  } else if (snapshot && typeof snapshot === 'object' && snapshot.design_config) {
+    snapshot = { ...snapshot, design_config: buildPublicDesignConfig(snapshot.design_config) };
   }
 
   return { snapshot, campaignId: preview.campaignId };
@@ -97,5 +102,10 @@ export async function getPublicCampaign(id) {
     throw err;
   }
 
-  return campaign;
+  // design_config is an unconstrained JSONB that also carries INTERNAL state
+  // (luckyDraw activation/terms ids, future keys). This endpoint is public —
+  // rebuild through the whitelist, never dump the raw column.
+  const plain = campaign.toJSON();
+  plain.design_config = buildPublicDesignConfig(plain.design_config);
+  return plain;
 }

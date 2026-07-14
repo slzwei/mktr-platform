@@ -27,6 +27,11 @@ const partnerBodySchema = Joi.object({
   tags: Joi.array().items(Joi.string().max(48)).max(20),
   notes: Joi.string().max(5000).allow('', null),
   overrideReason: Joi.string().max(255).allow('', null),
+  // Marketplace public profile (migration 067). `verified` is a request
+  // intent — admin-only, mapped to verifiedAt by the service.
+  publicBlurb: Joi.string().max(600).allow('', null),
+  partnerSince: Joi.number().integer().min(2000).max(2100).allow(null),
+  verified: Joi.boolean(),
 });
 
 function validateBody(schema, body) {
