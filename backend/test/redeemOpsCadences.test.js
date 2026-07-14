@@ -349,7 +349,7 @@ describe('authoring (builder)', () => {
     name: 'Grooming chase',
     description: 'Pet services variant',
     steps: [
-      { channel: 'call', title: 'Groomer intro call', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer', script: 'Hi {{contact_name}}!' },
+      { channel: 'call', title: 'Groomer intro call', delayDays: 0, timeWindow: 'any', continueOn: 'no_answer', script: 'Hi {{contact_name}}, {{rep_name}} from Redeem!' },
       { channel: 'whatsapp', title: 'Groomer WhatsApp', delayDays: 1, timeWindow: 'off_peak' },
       { channel: 'visit', title: 'Drop by the salon', delayDays: 3, timeWindow: 'afternoon' },
     ],
@@ -370,6 +370,9 @@ describe('authoring (builder)', () => {
     await partnerSvc.addLocation(p.id, { name: 'Main salon', addressLine: '1 Grooming Way' }, admin.user);
     const { firstTask } = await svc.enrollPartner(p.id, { cadenceKey: 'grooming_chase' }, execA.user);
     expect(firstTask.title).toBe('Groomer intro call');
+    // {{rep_name}} resolves to the assignee (partner owner); no contact on
+    // record so {{contact_name}} falls back to 'there'
+    expect(firstTask.description).toBe(`Hi there, ${execA.user.firstName} from Redeem!`);
     const r = await svc.completeCadenceTask(firstTask.id, { disposition: 'no_answer' }, execA.user);
     expect(r.nextTask.title).toBe('Groomer WhatsApp');
     // step 2's continueOn defaulted to '*', so 'sent' advances to the visit

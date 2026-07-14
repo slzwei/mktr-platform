@@ -363,7 +363,8 @@ export default function CadenceEditorPage() {
             <p className="text-[15px] font-bold m-0 mb-2">Merge fields</p>
             <p className="text-[12.5px] m-0 leading-relaxed" style={{ color: 'var(--ro-text-2)' }}>
               Scripts can use <code>{'{{partner_name}}'}</code>, <code>{'{{contact_name}}'}</code>,{' '}
-              <code>{'{{category}}'}</code> and <code>{'{{recipient}}'}</code> — filled in when each
+              <code>{'{{category}}'}</code>, <code>{'{{recipient}}'}</code> and{' '}
+              <code>{'{{rep_name}}'}</code> (the assigned rep&apos;s own name) — filled in when each
               task is created. An unknown field blocks the step, so stick to these.
             </p>
           </div>
