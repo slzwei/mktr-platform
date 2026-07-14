@@ -201,26 +201,33 @@ export function makeDiscoveryService(overrides = {}) {
     if (isInstagram && !cfg().igEnabled) {
       throw new AppError('Instagram discovery is not enabled', 503);
     }
-    if (!category || !String(category).trim()) throw new AppError('Category is required', 400);
     if (!area || !String(area).trim()) throw new AppError('Area is required', 400);
-    // Ad-hoc, type-and-go overrides: when the operator supplies their own terms/
-    // hashtags the category becomes just the CRM bucket — its saved terms aren't
-    // needed, so an IG search with ad-hoc tags skips the no-hashtags 422.
+    // Ad-hoc, type-and-go terms/hashtags. When supplied they ARE the search, so a
+    // category is OPTIONAL — it's then just the CRM bucket for filing (an ad-hoc-only
+    // run is Uncategorised until its results are added to the pipeline).
     const cleanList = (a) => (Array.isArray(a)
       ? [...new Set(a.map((x) => String(x).trim().replace(/^#+/, '')).filter(Boolean))].slice(0, 20)
       : []);
     const overrideTerms = cleanList(adHocTerms);
     const overrideTags = cleanList(adHocTags);
-    // Fail fast on an unknown/inactive category (422) BEFORE any run row or Apify
-    // spend — otherwise every add-to-pipeline would fail after the money was paid.
-    // Stores the taxonomy's canonical casing so add-time createPartner re-validation
-    // can only fail on the (rare) delete-category-mid-run race. The IG resolver
-    // additionally 422s when the category has no curated hashtags — unless ad-hoc
-    // hashtags were supplied, where name-only resolution suffices.
-    const resolved = (isInstagram && overrideTags.length === 0)
-      ? await d.categories.resolveCategoryForInstagram(String(category).trim())
-      : await d.categories.resolveCategoryForSearch(String(category).trim());
-    const canonicalCategory = resolved.name;
+    const hasCategory = !!(category && String(category).trim());
+    const override = isInstagram ? overrideTags : overrideTerms;
+    if (!hasCategory && override.length === 0) {
+      throw new AppError(isInstagram
+        ? 'Pick a category or enter hashtags to search'
+        : 'Pick a category or enter search terms', 400);
+    }
+    // Resolve the category only when one was picked. Fail fast on an unknown/inactive
+    // category (422) BEFORE any run row or Apify spend. The IG resolver additionally
+    // 422s when the category has no curated hashtags — unless ad-hoc hashtags were
+    // supplied, where name-only resolution suffices.
+    let resolved = null;
+    if (hasCategory) {
+      resolved = (isInstagram && overrideTags.length === 0)
+        ? await d.categories.resolveCategoryForInstagram(String(category).trim())
+        : await d.categories.resolveCategoryForSearch(String(category).trim());
+    }
+    const canonicalCategory = resolved ? resolved.name : null;
     const c = cfg();
     if (!c.resultQuotaEnabled) await assertQuota(user);
     const requestedLimit = Math.min(Math.max(Number(limit) || 60, 1), c.maxResultsPerRun);
