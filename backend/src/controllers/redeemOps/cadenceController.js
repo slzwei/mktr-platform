@@ -1,6 +1,7 @@
 import Joi from 'joi';
 import { asyncHandler, AppError } from '../../middleware/errorHandler.js';
 import cadenceService from '../../services/redeemOps/cadenceService.js';
+import cadenceAiService, { cadenceAiEnabled } from '../../services/redeemOps/cadenceAiService.js';
 import { LOST_REASONS } from '../../services/redeemOps/constants.js';
 
 function validateBody(schema, body) {
@@ -11,7 +12,23 @@ function validateBody(schema, body) {
 
 export const listCadences = asyncHandler(async (req, res) => {
   const cadences = await cadenceService.listCadences({ includeRetired: req.query.all === 'true' });
-  res.json({ success: true, data: { cadences } });
+  // aiEnabled drives the editor's "Draft with AI" card — same helper the
+  // suggest endpoint gates on, so the UI can never disagree with the API.
+  res.json({ success: true, data: { cadences, aiEnabled: cadenceAiEnabled() } });
+});
+
+const suggestSchema = Joi.object({
+  prompt: Joi.string().trim().min(3).max(1000).required(),
+  // Matches the editor's Steps select (2-12). Omitted = model picks 4-7.
+  stepCount: Joi.number().integer().min(2).max(12),
+});
+
+/** POST /cadences/suggest — free-text brief → builder-dialect draft. Populates
+ *  the editor only; creating the cadence stays on the human-reviewed path. */
+export const suggestCadence = asyncHandler(async (req, res) => {
+  const body = validateBody(suggestSchema, req.body || {});
+  const draft = await cadenceAiService.suggestCadence(body, req.user, req.id);
+  res.json({ success: true, data: { draft } });
 });
 
 const stepSchema = Joi.object({

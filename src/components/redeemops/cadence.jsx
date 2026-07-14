@@ -192,9 +192,12 @@ export function CadencePanel({ partner, canManage = true, variant = 'card' }) {
   });
   const defsQuery = useQuery({
     queryKey: ['redeem-ops', 'cadences'],
-    queryFn: redeemOpsApi.listCadences,
+    // Wrapped: a bare reference would receive React Query's context object as
+    // the params arg and leak it into the query string.
+    queryFn: () => redeemOpsApi.listCadences(),
     enabled: CADENCES_ENABLED && enrollOpen,
   });
+  const cadenceDefs = defsQuery.data?.cadences || [];
 
   const enrollMutation = useMutation({
     mutationFn: (body) => redeemOpsApi.enrollCadence(partnerId, body),
@@ -344,7 +347,7 @@ export function CadencePanel({ partner, canManage = true, variant = 'card' }) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            {(defsQuery.data || []).map((c) => (
+            {cadenceDefs.map((c) => (
               <button
                 key={c.id}
                 type="button"
@@ -359,7 +362,7 @@ export function CadencePanel({ partner, canManage = true, variant = 'card' }) {
               </button>
             ))}
             {defsQuery.isLoading && <p className="text-sm m-0" style={{ color: 'var(--ro-text-2)' }}>Loading cadences…</p>}
-            {!defsQuery.isLoading && (defsQuery.data || []).length === 0 && (
+            {!defsQuery.isLoading && cadenceDefs.length === 0 && (
               <p className="text-sm m-0" style={{ color: 'var(--ro-text-2)' }}>No cadences defined yet.</p>
             )}
           </div>

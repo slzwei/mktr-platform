@@ -7,6 +7,7 @@ import Trash2 from 'lucide-react/icons/trash-2';
 import ArrowUp from 'lucide-react/icons/arrow-up';
 import ArrowDown from 'lucide-react/icons/arrow-down';
 import Zap from 'lucide-react/icons/zap';
+import Sparkles from 'lucide-react/icons/sparkles';
 import { redeemOpsApi } from '@/api/redeemOps';
 import { Button } from '@/components/ui/button';
 import {
@@ -149,13 +150,16 @@ export default function CadenceEditorPage() {
   const [description, setDescription] = useState('');
   const [steps, setSteps] = useState([emptyStep()]);
   const [loadedFrom, setLoadedFrom] = useState(null);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiSteps, setAiSteps] = useState('auto');
 
   const listQuery = useQuery({
     queryKey: ['redeem-ops', 'cadences', 'all'],
+    // Enabled in NEW mode too — the response carries aiEnabled for the AI card.
     queryFn: () => redeemOpsApi.listCadences({ all: 'true' }),
-    enabled: !isNew,
   });
-  const base = isNew ? null : (listQuery.data || []).find((c) => c.id === cadenceId);
+  const base = isNew ? null : (listQuery.data?.cadences || []).find((c) => c.id === cadenceId);
+  const aiEnabled = listQuery.data?.aiEnabled === true;
 
   useEffect(() => {
     if (base && loadedFrom !== base.id) {
@@ -193,6 +197,36 @@ export default function CadenceEditorPage() {
     return saveMutation.mutate(toPayload({ name, description, steps }));
   };
 
+  // The AI draft only POPULATES the builder — creating still goes through the
+  // human-reviewed save above.
+  const suggestMutation = useMutation({
+    mutationFn: () => redeemOpsApi.suggestCadence({
+      prompt: aiPrompt.trim(),
+      ...(aiSteps !== 'auto' ? { stepCount: Number(aiSteps) } : {}),
+    }),
+    onSuccess: (draft) => {
+      if (!draft?.steps?.length) return;
+      setName(draft.name || '');
+      setDescription(draft.description || '');
+      setSteps(draft.steps);
+      toast.success('Draft ready — review each step before creating');
+    },
+    onError: (err) => toast.error('Could not draft the cadence', { description: err.message }),
+  });
+  // Structural pristine check (reference compare would always read dirty —
+  // both the state array and emptyStep() are fresh allocations).
+  const pristineStep = emptyStep();
+  const isPristine = !name.trim() && !description.trim() && steps.length === 1
+    && Object.keys(pristineStep).every((k) => String(steps[0][k]) === String(pristineStep[k]));
+  const generateDraft = () => {
+    if (!isPristine
+      && !window.confirm('Replace your current name, description and steps with the AI draft?')) {
+      return;
+    }
+    suggestMutation.mutate();
+  };
+  const canGenerate = aiPrompt.trim().length >= 3 && !suggestMutation.isPending;
+
   const dayMarks = useMemo(() => cumulativeDays(steps), [steps]);
   const spanDays = dayMarks[dayMarks.length - 1] || 0;
 
@@ -221,6 +255,44 @@ export default function CadenceEditorPage() {
 
       <div className="grid gap-5 lg:grid-cols-[1fr_300px] items-start">
         <div className="space-y-4">
+          {isNew && aiEnabled && (
+            <div className="rounded-2xl p-4 md:p-5 grid gap-3"
+              style={{ background: 'var(--ro-subtle)', border: '1px dashed var(--ro-border)' }}>
+              <p className="text-[14px] font-bold m-0">
+                <Sparkles className="w-4 h-4 inline mr-1.5 -mt-0.5" aria-hidden="true" />
+                Draft with AI
+              </p>
+              <Field label="Describe the cadence you want">
+                <Textarea
+                  rows={2}
+                  value={aiPrompt}
+                  placeholder={'e.g. "Call-first chase for cafés that just opened — gentle tone, WhatsApp follow-ups, finish with a walk-in visit"'}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                />
+              </Field>
+              <div className="flex items-end gap-3">
+                <Field label="Steps" className="w-[110px]">
+                  <Select value={aiSteps} onValueChange={setAiSteps}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">Auto</SelectItem>
+                      {Array.from({ length: 11 }, (_, i) => i + 2).map((n) => (
+                        <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Button variant="outline" disabled={!canGenerate} onClick={generateDraft}>
+                  <Sparkles className="w-4 h-4 mr-1.5" aria-hidden="true" />
+                  {suggestMutation.isPending ? 'Drafting…' : 'Generate draft'}
+                </Button>
+                <p className="text-[12px] m-0 pb-2" style={{ color: 'var(--ro-text-3)' }}>
+                  Fills the builder below — nothing is saved until you hit Create.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="rounded-2xl border border-border bg-white p-4 md:p-5 grid gap-3.5">
             <Field label="Name">
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Beauty salons — call-first" />

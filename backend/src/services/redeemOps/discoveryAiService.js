@@ -1,6 +1,7 @@
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { cfg } from './discoveryService.js';
+import { staffFacingAiError } from './aiSuggestShared.js';
 import { getRuntimeAiSettings } from '../aiSettingsService.js';
 import { requestStructuredJson } from '../guidedReviewAiService.js';
 
@@ -58,19 +59,6 @@ export function normalizeTerms(rawTerms, { isInstagram }) {
   return terms;
 }
 
-/** Guided-review's provider errors read "draft"; rewrite for the Discover audience
- *  (redeem-ops staff can't reach AdminAISettings — that's a platform-admin page). */
-function staffFacing(err) {
-  if (!(err instanceof AppError)) return err;
-  if (err.statusCode === 409) {
-    return new AppError('AI is not set up yet — ask an admin to add a provider key in AI Settings', 409);
-  }
-  if (err.statusCode === 502) {
-    return new AppError('AI suggestion failed — try again shortly', 502);
-  }
-  return err; // 429 (provider rate/spend limit) and 504 (timeout) copy is audience-neutral
-}
-
 export function makeDiscoveryAiService(overrides = {}) {
   const d = { getRuntimeAiSettings, requestStructuredJson, logger, cfg, ...overrides };
 
@@ -85,7 +73,7 @@ export function makeDiscoveryAiService(overrides = {}) {
     try {
       settings = await d.getRuntimeAiSettings(); // admin-picked default provider; no staff override
     } catch (err) {
-      throw staffFacing(err);
+      throw staffFacingAiError(err);
     }
 
     const userPayload = {
@@ -106,17 +94,17 @@ export function makeDiscoveryAiService(overrides = {}) {
         maxOutputTokens: 500,
       });
     } catch (err) {
-      throw staffFacing(err);
+      throw staffFacingAiError(err);
     }
 
     const terms = normalizeTerms(result?.terms, { isInstagram });
     if (terms.length < MIN_TERMS) {
       throw new AppError('AI could not produce usable terms — try rephrasing your description', 502);
     }
-    d.logger.info('discovery.ai_terms.suggested', {
+    d.logger.info({
       userId: user?.id, requestId, mode: userPayload.mode,
       aiProvider: settings.provider, model: settings.model, count: terms.length,
-    }); // never log the description text
+    }, 'discovery.ai_terms.suggested'); // never log the description text
     return terms;
   }
 

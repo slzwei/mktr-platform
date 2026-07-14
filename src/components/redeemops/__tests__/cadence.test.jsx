@@ -26,6 +26,7 @@ const api = vi.hoisted(() => ({
   createCadence: vi.fn(),
   createCadenceVersion: vi.fn(),
   retireCadence: vi.fn(),
+  suggestCadence: vi.fn(),
 }));
 vi.mock('@/api/redeemOps', () => ({ redeemOpsApi: api }));
 
@@ -62,6 +63,8 @@ const callTask = {
 beforeEach(() => {
   vi.clearAllMocks();
   api.completeCadenceTask.mockResolvedValue({ nextTask: null });
+  // The editor fetches the list in NEW mode too (it carries aiEnabled).
+  api.listCadences.mockResolvedValue({ cadences: [], aiEnabled: false });
 });
 
 describe('CadenceChip', () => {
@@ -164,6 +167,53 @@ describe('CadenceEditorPage (full-page builder)', () => {
     await user.click(screen.getByRole('button', { name: /create cadence/i }));
     expect(api.createCadence).not.toHaveBeenCalled();
     expect(toastMock.error).toHaveBeenCalled();
+  });
+
+  it('hides the AI card unless the backend reports aiEnabled', async () => {
+    renderNew();
+    await screen.findByPlaceholderText(/beauty salons/i); // page settled
+    expect(screen.queryByText('Draft with AI')).not.toBeInTheDocument();
+  });
+
+  it('AI draft populates the builder and never creates by itself', async () => {
+    api.listCadences.mockResolvedValue({ cadences: [], aiEnabled: true });
+    api.suggestCadence.mockResolvedValue({
+      name: 'Café chase',
+      description: 'New cafés, gentle tone',
+      steps: [
+        { channel: 'call', title: 'Intro call', script: 'Hi {{contact_name}}', priority: 'medium', delayDays: 0, timeWindow: 'morning', continueOn: 'no_answer' },
+        { channel: 'whatsapp', title: 'WA follow-up', script: '', priority: 'medium', delayDays: 2, timeWindow: 'any', continueOn: '*' },
+      ],
+    });
+    const user = userEvent.setup();
+    renderNew();
+
+    await user.type(await screen.findByPlaceholderText(/call-first chase/i), '5-step chase for new cafés');
+    await user.click(screen.getByRole('button', { name: /generate draft/i }));
+
+    await waitFor(() => expect(api.suggestCadence).toHaveBeenCalledWith({
+      prompt: '5-step chase for new cafés',
+    }));
+    expect(screen.getByPlaceholderText(/beauty salons/i)).toHaveValue('Café chase');
+    expect(screen.getByDisplayValue('Intro call')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('WA follow-up')).toBeInTheDocument();
+    expect(api.createCadence).not.toHaveBeenCalled();
+  });
+
+  it('a dirty builder asks before replacing — cancel keeps everything', async () => {
+    api.listCadences.mockResolvedValue({ cadences: [], aiEnabled: true });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const user = userEvent.setup();
+    renderNew();
+
+    await user.type(await screen.findByPlaceholderText(/beauty salons/i), 'Hand-built name');
+    await user.type(screen.getByPlaceholderText(/call-first chase/i), 'replace everything please');
+    await user.click(screen.getByRole('button', { name: /generate draft/i }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(api.suggestCadence).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText(/beauty salons/i)).toHaveValue('Hand-built name');
+    confirmSpy.mockRestore();
   });
 });
 

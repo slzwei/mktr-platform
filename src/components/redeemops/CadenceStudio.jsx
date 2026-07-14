@@ -34,7 +34,7 @@ export default function CadenceStudio() {
 
   if (!CADENCES_ENABLED) return null;
 
-  const cadences = listQuery.data || [];
+  const cadences = listQuery.data?.cadences || [];
 
   return (
     <Card>

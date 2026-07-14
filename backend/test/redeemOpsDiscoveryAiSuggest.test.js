@@ -131,7 +131,9 @@ describe('suggestTerms', () => {
     const { svc, deps } = makeSvc();
     await svc.suggestTerms({ description: 'SECRET-PII-TEXT here', provider: 'google_maps' }, user, 'req-9');
     expect(deps.logger.info).toHaveBeenCalledTimes(1);
-    const [msg, meta] = deps.logger.info.mock.calls[0];
+    // Pino-style: metadata object FIRST, message second (a trailing object
+    // would be silently dropped by raw pino).
+    const [meta, msg] = deps.logger.info.mock.calls[0];
     expect(msg).toBe('discovery.ai_terms.suggested');
     expect(meta).toMatchObject({ userId: 'user-1', requestId: 'req-9', mode: 'google_maps', count: 3 });
     expect(JSON.stringify(deps.logger.info.mock.calls[0])).not.toContain('SECRET-PII-TEXT');

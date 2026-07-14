@@ -390,6 +390,56 @@ describe('authoring (builder)', () => {
     expect(denied.status).toBe(403);
   });
 
+  test('AI draft route: authoring gate, Joi bounds, flag gate, and the no-key 409 — all without an LLM call', async () => {
+    const url = '/api/redeem-ops/cadences/suggest';
+    const aiFlagBefore = process.env.REDEEM_OPS_CADENCES_AI_ENABLED;
+    const openaiBefore = process.env.OPENAI_API_KEY;
+    const anthropicBefore = process.env.ANTHROPIC_API_KEY;
+    try {
+      process.env.REDEEM_OPS_CADENCES_AI_ENABLED = 'true';
+      // settings.manage gate — same as create/version/retire
+      const denied = await request(app).post(url).set(auth(execA.token)).send({ prompt: 'cafés chase' });
+      expect(denied.status).toBe(403);
+
+      // Joi: prompt too short / stepCount out of the UI's 2-12 range
+      expect((await request(app).post(url).set(auth(admin.token)).send({ prompt: 'ab' })).status).toBe(400);
+      expect((await request(app).post(url).set(auth(admin.token))
+        .send({ prompt: 'cafés chase', stepCount: 1 })).status).toBe(400);
+
+      // Flag off → 503 before any provider work
+      delete process.env.REDEEM_OPS_CADENCES_AI_ENABLED;
+      expect((await request(app).post(url).set(auth(admin.token)).send({ prompt: 'cafés chase' })).status).toBe(503);
+
+      // Flag on but no provider key anywhere → staff-facing 409
+      process.env.REDEEM_OPS_CADENCES_AI_ENABLED = 'true';
+      delete process.env.OPENAI_API_KEY;
+      delete process.env.ANTHROPIC_API_KEY;
+      const noKey = await request(app).post(url).set(auth(admin.token)).send({ prompt: 'cafés chase' });
+      expect(noKey.status).toBe(409);
+      expect(noKey.body.message).toMatch(/ask an admin/);
+    } finally {
+      if (aiFlagBefore === undefined) delete process.env.REDEEM_OPS_CADENCES_AI_ENABLED;
+      else process.env.REDEEM_OPS_CADENCES_AI_ENABLED = aiFlagBefore;
+      if (openaiBefore !== undefined) process.env.OPENAI_API_KEY = openaiBefore;
+      if (anthropicBefore !== undefined) process.env.ANTHROPIC_API_KEY = anthropicBefore;
+    }
+  });
+
+  test('listCadences exposes aiEnabled in lock-step with the suggest flag', async () => {
+    const before = process.env.REDEEM_OPS_CADENCES_AI_ENABLED;
+    try {
+      delete process.env.REDEEM_OPS_CADENCES_AI_ENABLED;
+      const off = await request(app).get('/api/redeem-ops/cadences').set(auth(execA.token));
+      expect(off.body.data.aiEnabled).toBe(false);
+      process.env.REDEEM_OPS_CADENCES_AI_ENABLED = 'true';
+      const on = await request(app).get('/api/redeem-ops/cadences').set(auth(execA.token));
+      expect(on.body.data.aiEnabled).toBe(true);
+    } finally {
+      if (before === undefined) delete process.env.REDEEM_OPS_CADENCES_AI_ENABLED;
+      else process.env.REDEEM_OPS_CADENCES_AI_ENABLED = before;
+    }
+  });
+
   test('editing creates a new version, retires the old, and in-flight enrollments finish on their version', async () => {
     const created = await svc.createCadence({
       name: 'Version test', steps: [
