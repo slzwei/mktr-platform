@@ -108,6 +108,20 @@ describe('DiscoverPage', () => {
     expect(screen.getByText('Popular areas')).toBeInTheDocument();
   });
 
+  it('shows remaining results when the atomic quota response is present', async () => {
+    api.listDiscoveryRuns.mockResolvedValue({
+      runs: [],
+      quota: {
+        mode: 'results', resultsUsed: 125, resultsRemaining: 1375,
+        profilesRemaining: 200, costPerResultUsd: 0.007,
+      },
+    });
+    renderPage();
+    expect(await screen.findByText(/1375/)).toBeInTheDocument();
+    expect(screen.getByText(/results left today/)).toBeInTheDocument();
+    expect(screen.queryByText(/searches today/)).not.toBeInTheDocument();
+  });
+
   it('shows Enriching… while enrichment is pending instead of another paid action', async () => {
     api.listDiscoveryRuns.mockResolvedValue({ runs: [completedRun], quota });
     api.getDiscoveryRun.mockResolvedValue({

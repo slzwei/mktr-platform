@@ -331,7 +331,8 @@ export const {
   RewardTermsVersion, DrawTermsVersion, Draw, DrawEntry, DrawAttempt,
   DrawBoostReview, RewardOfferLocation, RewardInventoryEvent,
   PartnerOnboardingItem, Activation, RewardEntitlement, Redemption,
-  RedemptionEvent, RedeemOpsCategory, DiscoveryTerritory, DiscoveryRun, DiscoveryCandidate,
+  RedemptionEvent, RedeemOpsCategory, DiscoveryTerritory, DiscoveryDailyUsage,
+  DiscoveryRun, DiscoveryCandidate,
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,
   OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression,
   AiSettings

@@ -8,10 +8,15 @@ import { logger } from '../../utils/logger.js';
 import { TASK_STATUSES, TASK_PRIORITIES } from './constants.js';
 
 const TASK_TYPES = ['follow_up', 'call', 'meeting', 'proposal', 'admin', 'other'];
+const SGT_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/** Singapore calendar date for counters/snapshots, independent of server TZ. */
+export function sgDateKey(now = new Date()) {
+  return new Date(now.getTime() + SGT_OFFSET_MS).toISOString().slice(0, 10);
+}
 
 /** "Today" in Singapore time regardless of server TZ. */
 export function sgtDayWindow(now = new Date()) {
-  const SGT_OFFSET_MS = 8 * 60 * 60 * 1000;
   const sgt = new Date(now.getTime() + SGT_OFFSET_MS);
   const startUtcMs = Date.UTC(sgt.getUTCFullYear(), sgt.getUTCMonth(), sgt.getUTCDate()) - SGT_OFFSET_MS;
   return { start: new Date(startUtcMs), end: new Date(startUtcMs + 24 * 60 * 60 * 1000) };

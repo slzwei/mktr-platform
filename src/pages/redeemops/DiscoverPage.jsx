@@ -78,6 +78,7 @@ export default function DiscoverPage() {
   });
   const recentRuns = listQuery.data?.runs || [];
   const quota = listQuery.data?.quota;
+  const resultsQuota = quota?.resultsRemaining != null;
   const categoriesQuery = useQuery({
     queryKey: ['redeem-ops', 'categories'],
     queryFn: () => redeemOpsApi.listCategories(),
@@ -243,8 +244,12 @@ export default function DiscoverPage() {
         actions={quota && (
           <span className="hidden sm:inline-flex items-center gap-2 text-[12.5px] font-semibold rounded-full px-3 py-1.5"
             style={{ color: 'var(--ro-text-2)', background: 'var(--ro-subtle)', border: '1px solid var(--ro-border)' }}>
-            <i className="w-[7px] h-[7px] rounded-full" style={{ background: quota.remaining > 0 ? 'var(--ro-tag-green-fg)' : 'var(--ro-tag-red-fg)' }} />
-            <b style={{ color: 'var(--ro-bunker)' }}>{quota.used}</b> of {quota.limit} searches today
+            <i className="w-[7px] h-[7px] rounded-full" style={{ background: (resultsQuota ? quota.resultsRemaining : quota.remaining) > 0 ? 'var(--ro-tag-green-fg)' : 'var(--ro-tag-red-fg)' }} />
+            {resultsQuota ? (
+              <><b style={{ color: 'var(--ro-bunker)' }}>{quota.resultsRemaining}</b> results left today</>
+            ) : (
+              <><b style={{ color: 'var(--ro-bunker)' }}>{quota.used}</b> of {quota.limit} searches today</>
+            )}
           </span>
         )}
       />
