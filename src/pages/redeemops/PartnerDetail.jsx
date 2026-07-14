@@ -264,7 +264,7 @@ function OnboardingChecklist({ partnerId }) {
 }
 
 const EMPTY_ACTIVITY = { type: 'call_attempt', summary: '', details: '', outcome: '', contactId: '' };
-const EMPTY_CONTACT = { name: '', roleTitle: '', mobile: '', email: '', preferredChannel: '' };
+const EMPTY_CONTACT = { name: '', roleTitle: '', mobile: '', email: '' };
 const EMPTY_LOCATION = { name: '', addressLine: '', postalCode: '', phone: '' };
 
 export default function PartnerDetail() {

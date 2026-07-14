@@ -193,7 +193,7 @@ const contactSchema = Joi.object({
   mobile: Joi.string().max(20).allow('', null),
   whatsapp: Joi.string().max(20).allow('', null),
   email: Joi.string().email().max(160).allow('', null),
-  preferredChannel: Joi.string().valid('call', 'whatsapp', 'email', 'instagram', 'other').allow(null),
+  preferredChannel: Joi.string().valid('call', 'whatsapp', 'email', 'instagram', 'other').allow('', null),
   isPrimary: Joi.boolean(),
   notes: Joi.string().max(2000).allow('', null),
 });
