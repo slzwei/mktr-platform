@@ -14,6 +14,7 @@ import { deriveMatchingKeys, postalDistrictOf } from './normalizers.js';
 import {
   PIPELINE_STAGES, STAGE_TRANSITIONS, PARTNER_AVAILABILITY,
   ACTIVITY_TYPES, MEANINGFUL_ACTIVITY_TYPES, LOST_REASONS,
+  isBackwardStageMove,
 } from './constants.js';
 import { makeOnboardingService } from './onboardingService.js';
 import { makeCategoryService } from './categoryService.js';
@@ -264,10 +265,12 @@ export function makePartnerService(overrides = {}) {
     const allowed = STAGE_TRANSITIONS[fromStage] || [];
     const isForcer = user.role === 'admin' || ['super_admin', 'ops_admin'].includes(user.redeemOpsRole);
     if (!allowed.includes(toStage)) {
-      if (!isForcer) {
+      // Backward corrections (mis-drop fixes) are open to whoever can act on
+      // the row; every other off-map transition stays admin-only.
+      if (!isForcer && !isBackwardStageMove(fromStage, toStage)) {
         throw new AppError(`Cannot move from ${fromStage} to ${toStage}`, 400);
       }
-      if (!reason) throw new AppError('A reason is required to force a non-standard stage change', 400);
+      if (!reason) throw new AppError('A reason is required for a backward or forced stage change', 400);
     }
 
     // Entry requirement for PARTNERED (Salesforce-style stage validation, applies

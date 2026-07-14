@@ -35,6 +35,9 @@ export const PARTNER_AVAILABILITY = ['available', 'owned', 'follow_up_later', 'r
  * Allowed pipeline transitions (docs/redeem-ops/ERD.md §6). Server-enforced in
  * partnerService.changeStage — drag-and-drop or API, same rules. super_admin /
  * ops_admin may force any transition (audited with a required reason).
+ * Backward corrections (isBackwardStageMove) are additionally open to anyone
+ * who can act on the row, so a mis-dropped card is never stuck — same
+ * required-reason audit trail as a forced move.
  */
 export const STAGE_TRANSITIONS = {
   NEW: ['CONTACTED', 'LOST'],
@@ -45,6 +48,18 @@ export const STAGE_TRANSITIONS = {
   // Revival: a lost business can re-enter the conversation.
   LOST: ['CONTACTED'],
 };
+
+/**
+ * A later working stage moving to an earlier one — the "fix a mis-drop"
+ * direction. LOST stays outside this rule: it is terminal, and revival is
+ * CONTACTED-only via STAGE_TRANSITIONS.
+ */
+const WORKING_STAGE_ORDER = PIPELINE_STAGES.filter((s) => s !== 'LOST');
+export function isBackwardStageMove(fromStage, toStage) {
+  const from = WORKING_STAGE_ORDER.indexOf(fromStage);
+  const to = WORKING_STAGE_ORDER.indexOf(toStage);
+  return from !== -1 && to !== -1 && to < from;
+}
 
 /** Activity types that count as real outreach (bump lastActivityAt / clear flags). */
 export const MEANINGFUL_ACTIVITY_TYPES = [

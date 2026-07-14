@@ -202,6 +202,63 @@ describe('stage machine + activities + row-level ownership', () => {
     expect(forced.status).toBe(200);
   });
 
+  test('backward move: owner exec can correct a mis-drop, but only with a reason', async () => {
+    const res = await createPartner(admin.token, { tradingName: 'Backtrack Barbers' });
+    const backId = res.body.data.partner.id;
+    await request(app).post(`/api/redeem-ops/partners/${backId}/claim`).set(auth(execA.token));
+    await request(app)
+      .patch(`/api/redeem-ops/partners/${backId}/stage`)
+      .set(auth(execA.token))
+      .send({ toStage: 'CONTACTED' });
+
+    const noReason = await request(app)
+      .patch(`/api/redeem-ops/partners/${backId}/stage`)
+      .set(auth(execA.token))
+      .send({ toStage: 'NEW' });
+    expect(noReason.status).toBe(400);
+
+    const ok = await request(app)
+      .patch(`/api/redeem-ops/partners/${backId}/stage`)
+      .set(auth(execA.token))
+      .send({ toStage: 'NEW', reason: 'Moved back to correct a mis-drop' });
+    expect(ok.status).toBe(200);
+    const row = await PartnerOrganisation.findByPk(backId);
+    expect(row.pipelineStage).toBe('NEW');
+
+    // Forward skips stay closed to execs even with a reason.
+    const jump = await request(app)
+      .patch(`/api/redeem-ops/partners/${backId}/stage`)
+      .set(auth(execA.token))
+      .send({ toStage: 'MEETING', reason: 'trying to skip ahead' });
+    expect(jump.status).toBe(400);
+  });
+
+  test('backward move rescues a card stuck in PARTNERED (no legal exits)', async () => {
+    const res = await createPartner(admin.token, { tradingName: 'Unstick Studio' });
+    const stuckId = res.body.data.partner.id;
+    await request(app).post(`/api/redeem-ops/partners/${stuckId}/claim`).set(auth(execA.token));
+    await request(app)
+      .post(`/api/redeem-ops/partners/${stuckId}/contacts`)
+      .set(auth(execA.token))
+      .send({ name: 'Deal Maker', mobile: '+6591238888' });
+    for (const toStage of ['CONTACTED', 'MEETING', 'PARTNERED']) {
+      const step = await request(app)
+        .patch(`/api/redeem-ops/partners/${stuckId}/stage`)
+        .set(auth(execA.token))
+        .send({ toStage });
+      expect(step.status).toBe(200);
+    }
+
+    const back = await request(app)
+      .patch(`/api/redeem-ops/partners/${stuckId}/stage`)
+      .set(auth(execA.token))
+      .send({ toStage: 'PROPOSAL', reason: 'Partnered was a mis-drop' });
+    expect(back.status).toBe(200);
+    const row = await PartnerOrganisation.findByPk(stuckId);
+    expect(row.pipelineStage).toBe('PROPOSAL');
+    expect(row.availability).toBe('owned'); // back in the working pool
+  });
+
   test('LOST requires a reason from the fixed list', async () => {
     const res = await createPartner(admin.token, { tradingName: 'Lost Cause Cafe' });
     const lostId = res.body.data.partner.id;

@@ -120,10 +120,13 @@ function BoardCard({ p, draggable, onOpen }) {
   );
 }
 
-function Lane({ stage, items, activeCard, legalTargets, children }) {
+function Lane({ stage, items, activeCard, legalTargets, backTargets = [], children }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage });
   const isSource = activeCard?.pipelineStage === stage;
   const isLegal = !!activeCard && legalTargets.includes(stage);
+  // Backward lanes stay dimmed (they're the unusual direction) but accept the
+  // drop — a confirmation dialog guards the move so mis-drops can be fixed.
+  const isBack = !!activeCard && backTargets.includes(stage);
   const dimmed = !!activeCard && !isLegal && !isSource;
 
   return (
@@ -131,9 +134,11 @@ function Lane({ stage, items, activeCard, legalTargets, children }) {
       ref={setNodeRef}
       className="w-full md:w-auto md:flex-1 md:min-w-[210px] rounded-2xl flex flex-col md:min-h-0 transition-opacity"
       style={{
-        background: isOver && isLegal ? '#EFF6FF' : 'var(--ro-subtle)',
-        opacity: dimmed ? 0.45 : 1,
-        outline: isOver && isLegal ? '2px dashed var(--ro-azure)' : 'none',
+        background: isOver && isLegal ? '#EFF6FF' : isOver && isBack ? '#FFFBEB' : 'var(--ro-subtle)',
+        opacity: isOver && isBack ? 1 : dimmed ? 0.45 : 1,
+        outline: isOver && isLegal
+          ? '2px dashed var(--ro-azure)'
+          : isOver && isBack ? '2px dashed var(--ro-tag-yellow-fg)' : 'none',
         outlineOffset: '-2px',
       }}
     >
@@ -179,6 +184,7 @@ export default function TeamPipeline() {
   const user = useAuthStore((s) => s.user);
   const [activeCard, setActiveCard] = useState(null);
   const [confirmMove, setConfirmMove] = useState(null); // { card } — Partnered is a milestone, confirm it
+  const [backMove, setBackMove] = useState(null); // { card, toStage } — backward correction, confirm it
   const [lostMove, setLostMove] = useState(null); // { card } — Lost requires a reason
   const [lostReason, setLostReason] = useState(null);
   const [showLost, setShowLost] = useState(false);
@@ -203,7 +209,8 @@ export default function TeamPipeline() {
   });
 
   const stageMutation = useMutation({
-    mutationFn: ({ partnerId, toStage, lostReason: lr }) => redeemOpsApi.changeStage(partnerId, toStage, undefined, lr),
+    mutationFn: ({ partnerId, toStage, lostReason: lr, reason }) =>
+      redeemOpsApi.changeStage(partnerId, toStage, reason || undefined, lr),
     onError: (err) => {
       toast.error('Move rejected', { description: err.message });
       queryClient.invalidateQueries({ queryKey: PIPELINE_KEY });
@@ -240,8 +247,14 @@ export default function TeamPipeline() {
 
   const lostItems = byStage.LOST || [];
   const legalTargets = activeCard ? (transitions[activeCard.pipelineStage] || []) : [];
+  // Earlier columns than the dragged card's stage: droppable behind a
+  // confirmation so a mis-dropped card can be walked back (LOST isn't ordered).
+  const activeIdx = activeCard ? STAGES.indexOf(activeCard.pipelineStage) : -1;
+  const backTargets = activeIdx > 0
+    ? STAGES.slice(0, activeIdx).filter((s) => !legalTargets.includes(s))
+    : [];
 
-  const executeMove = (card, toStage, lr = null) => {
+  const executeMove = (card, toStage, lr = null, reason = null) => {
     // Optimistic: move the card locally, server confirms (and audits) the change.
     queryClient.setQueryData(PIPELINE_KEY, (prev) => prev && ({
       ...prev,
@@ -249,7 +262,7 @@ export default function TeamPipeline() {
         ? { ...p, pipelineStage: toStage, lostReason: toStage === 'LOST' ? lr : p.lostReason, stageSince: new Date().toISOString() }
         : p)),
     }));
-    stageMutation.mutate({ partnerId: card.id, toStage, lostReason: lr, name: partnerName(card) });
+    stageMutation.mutate({ partnerId: card.id, toStage, lostReason: lr, reason, name: partnerName(card) });
   };
 
   const handleDragEnd = ({ over }) => {
@@ -259,6 +272,13 @@ export default function TeamPipeline() {
     const toStage = String(over.id);
     if (toStage === card.pipelineStage) return;
     if (!(transitions[card.pipelineStage] || []).includes(toStage)) {
+      const fromIdx = STAGES.indexOf(card.pipelineStage);
+      const toIdx = STAGES.indexOf(toStage);
+      if (fromIdx > -1 && toIdx > -1 && toIdx < fromIdx) {
+        // Backward correction — confirm before committing (server audits it).
+        setBackMove({ card, toStage });
+        return;
+      }
       toast.error(`Can't move ${prettyEnum(card.pipelineStage)} → ${prettyEnum(toStage)} directly`);
       return;
     }
@@ -282,7 +302,7 @@ export default function TeamPipeline() {
         <div>
           <h1 className="ro-title">Team pipeline</h1>
           <p className="ro-sub">
-          Drag a business forward — or onto the red bar to mark it Lost.
+          Drag a business forward — or onto the red bar to mark it Lost. Dragging back to an earlier column asks you to confirm.
           <span className="md:hidden"> Press and hold a card to drag; tap to open.</span>
           <span className="hidden md:inline"> Click to open.</span>
         </p>
@@ -309,7 +329,7 @@ export default function TeamPipeline() {
           {STAGES.map((stage) => {
             const items = byStage[stage] || [];
             return (
-              <Lane key={stage} stage={stage} items={items} activeCard={activeCard} legalTargets={legalTargets}>
+              <Lane key={stage} stage={stage} items={items} activeCard={activeCard} legalTargets={legalTargets} backTargets={backTargets}>
                 {items.slice(0, 30).map((p) => (
                   <BoardCard
                     key={p.id}
@@ -375,6 +395,34 @@ export default function TeamPipeline() {
               }}
             >
               Mark as Partnered
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!backMove} onOpenChange={(open) => { if (!open) setBackMove(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              Move {backMove ? partnerName(backMove.card) : ''} back to {backMove ? prettyEnum(backMove.toStage) : ''}?
+            </DialogTitle>
+            <DialogDescription>
+              {backMove?.card.pipelineStage === 'PARTNERED'
+                ? 'This takes the business out of Partnered and back to an earlier stage. '
+                : 'This moves the business backwards in the pipeline. '}
+              Use it to fix a card dropped in the wrong column — the correction is recorded on the timeline.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBackMove(null)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                const m = backMove;
+                setBackMove(null);
+                if (m) executeMove(m.card, m.toStage, null, 'Moved back to correct a mis-drop');
+              }}
+            >
+              Move back
             </Button>
           </DialogFooter>
         </DialogContent>
