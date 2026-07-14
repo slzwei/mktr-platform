@@ -9,6 +9,7 @@ jest.unstable_mockModule('../src/middleware/auth.js', () => ({
 const allow = (_req, res) => res.sendStatus(204);
 jest.unstable_mockModule('../src/controllers/redeemOps/discoveryController.js', () => ({
   startDiscovery: allow,
+  suggestTerms: allow,
   listRuns: allow,
   getRun: allow,
   enrichCandidates: allow,
@@ -40,6 +41,7 @@ app.use('/api/redeem-ops', router);
 
 const paidRoutes = [
   ['search', '/api/redeem-ops/discovery/runs'],
+  ['search', '/api/redeem-ops/discovery/suggest-terms'],
   ['enrich', '/api/redeem-ops/discovery/candidates/enrich'],
 ];
 

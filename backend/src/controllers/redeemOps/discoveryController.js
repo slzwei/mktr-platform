@@ -1,6 +1,7 @@
 import Joi from 'joi';
 import { asyncHandler, AppError } from '../../middleware/errorHandler.js';
 import discoveryService, { cfg } from '../../services/redeemOps/discoveryService.js';
+import discoveryAiService from '../../services/redeemOps/discoveryAiService.js';
 import { logger } from '../../utils/logger.js';
 
 const startSchema = Joi.object({
@@ -26,6 +27,13 @@ const candidatePatchSchema = Joi.object({
   // Empty body = dismiss, preserving the pre-restore client contract.
   action: Joi.string().valid('dismiss', 'restore').default('dismiss'),
 });
+const suggestSchema = Joi.object({
+  description: Joi.string().trim().min(3).max(500).required(),
+  // Same mechanism enum the start endpoint uses — picks terms vs hashtags output.
+  provider: Joi.string().valid('google_maps', 'instagram_hashtag').default('google_maps'),
+  // Bounded because it is serialized into the LLM prompt (mirrors startSchema's cap).
+  area: Joi.string().trim().max(120).allow(''),
+});
 
 /** POST /discovery/runs — start an Apify search. */
 export const startDiscovery = asyncHandler(async (req, res) => {
@@ -43,7 +51,27 @@ export const listRuns = asyncHandler(async (req, res) => {
   ]);
   // igEnabled drives the Discover Provider toggle: the Instagram option only
   // appears when the pilot flag is on (else the toggle would 503 on submit).
-  res.json({ success: true, data: { runs, quota, igEnabled: cfg().igEnabled } });
+  const c = cfg();
+  res.json({
+    success: true,
+    data: {
+      runs,
+      quota,
+      igEnabled: c.igEnabled,
+      // Drives the AI-assist row on Discover; both flags must be on, matching
+      // what the suggest endpoint will actually allow.
+      aiEnabled: c.enabled && c.aiTermsEnabled,
+    },
+  });
+});
+
+/** POST /discovery/suggest-terms — free-text description → AI-suggested search
+ *  terms (Maps) or hashtags (IG). Populates the input only; never starts a run. */
+export const suggestTerms = asyncHandler(async (req, res) => {
+  const { error, value } = suggestSchema.validate(req.body, { abortEarly: false });
+  if (error) throw new AppError(error.details.map((x) => x.message).join(', '), 400);
+  const terms = await discoveryAiService.suggestTerms(value, req.user, req.id);
+  res.json({ success: true, data: { terms } });
 });
 
 /** GET /discovery/runs/:id — status + candidates (frontend polls this). */

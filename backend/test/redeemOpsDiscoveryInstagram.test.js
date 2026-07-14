@@ -195,6 +195,30 @@ describe('IG run start', () => {
     expect(audit.after.provider).toBe('apify_instagram_hashtag');
     expect(audit.after.hashtags).toEqual(['sgnails', 'homebasednailssg']);
   });
+
+  // Regression: ad-hoc hashtags without a category leave `resolved` null; the audit
+  // payload used to read resolved.hashtags and crash AFTER Apify spend began.
+  test('ad-hoc-only start (no category) completes and audits the fired hashtags', async () => {
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const solo = await createTestUser({ role: 'admin' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+
+    const run = await svc.startDiscovery(
+      { area: 'All Singapore', limit: 20, provider: 'instagram_hashtag', hashtags: ['#SGnails', 'biabsg'] },
+      solo.user,
+    );
+
+    expect(run.status).toBe('running');
+    expect(run.category).toBeNull();
+    const [, input] = apify.startRun.mock.calls[0];
+    expect(input).toEqual({ hashtags: ['SGnails', 'biabsg'], resultsLimit: 20 });
+
+    const audit = await RedeemOpsAuditEvent.findOne({
+      where: { action: 'discovery.run_started', entityId: run.id },
+    });
+    expect(audit.after.hashtags).toEqual(['SGnails', 'biabsg']);
+  });
 });
 
 describe('materialization — posts collapse to distinct accounts', () => {

@@ -25,6 +25,8 @@ export function cfg() {
     // Pilot kill switch for the Instagram hashtag provider (spike doc: unofficial,
     // revocable dependency) — Maps stays the primary/fallback source when off.
     igEnabled: process.env.DISCOVERY_IG_ENABLED === 'true',
+    // AI keyword suggestions (LLM-backed) — free-text description → search terms.
+    aiTermsEnabled: process.env.DISCOVERY_AI_TERMS_ENABLED === 'true',
     searchTermsEnabled: process.env.DISCOVERY_SEARCH_TERMS_ENABLED === 'true',
     territoriesEnabled: process.env.DISCOVERY_TERRITORIES_ENABLED === 'true',
     resultQuotaEnabled: process.env.DISCOVERY_RESULT_QUOTA_ENABLED === 'true',
@@ -332,7 +334,9 @@ export function makeDiscoveryService(overrides = {}) {
       after: {
         category: run.category, area: run.area, requestedLimit,
         ...(isInstagram
-          ? { provider: 'apify_instagram_hashtag', hashtags: resolved.hashtags }
+          // igHashtagsUsed, NOT resolved.hashtags — ad-hoc IG runs have no category,
+          // so `resolved` is null and reading it here crashed AFTER Apify spend began.
+          ? { provider: 'apify_instagram_hashtag', hashtags: igHashtagsUsed }
           : { searchTerms: searchTermsUsed }),
       },
       requestId,

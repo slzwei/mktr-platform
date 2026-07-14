@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
   listTerritories: vi.fn(),
   getDiscoveryRun: vi.fn(),
   startDiscovery: vi.fn(),
+  suggestDiscoveryTerms: vi.fn(),
   enrichDiscoveryCandidates: vi.fn(),
   addDiscoveryCandidates: vi.fn(),
   dismissDiscoveryCandidate: vi.fn(),
@@ -106,6 +107,29 @@ describe('DiscoverPage', () => {
     renderPage();
     expect(await screen.findByPlaceholderText('Neighbourhood or district…')).toBeInTheDocument();
     expect(screen.getByText('Popular areas')).toBeInTheDocument();
+  });
+
+  it('hides the AI-assist row unless the backend reports aiEnabled', async () => {
+    renderPage(); // beforeEach response has no aiEnabled
+    await screen.findByRole('button', { name: /Nail Salon · Tampines/i }); // page settled
+    expect(screen.queryByLabelText('Describe what you want to find')).not.toBeInTheDocument();
+  });
+
+  it('AI suggest populates the terms field and never starts a paid search', async () => {
+    api.listDiscoveryRuns.mockResolvedValue({ runs: [], quota, aiEnabled: true });
+    api.suggestDiscoveryTerms.mockResolvedValue(['taekwondo', 'martial arts school', 'kids karate']);
+    renderPage();
+    const aiInput = await screen.findByLabelText('Describe what you want to find');
+    await userEvent.type(aiInput, 'martial arts for kids');
+    await userEvent.click(screen.getByRole('button', { name: 'Suggest' }));
+    await waitFor(() => expect(api.suggestDiscoveryTerms).toHaveBeenCalledWith({
+      description: 'martial arts for kids',
+      provider: 'google_maps',
+    }));
+    expect(screen.getByPlaceholderText(/nail salon, taekwondo/)).toHaveValue(
+      'taekwondo, martial arts school, kids karate',
+    );
+    expect(api.startDiscovery).not.toHaveBeenCalled();
   });
 
   it('shows remaining results when the atomic quota response is present', async () => {

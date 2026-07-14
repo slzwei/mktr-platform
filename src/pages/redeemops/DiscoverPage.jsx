@@ -76,6 +76,7 @@ export default function DiscoverPage() {
   const [selected, setSelected] = useState(() => new Set());
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('followers');
+  const [aiDesc, setAiDesc] = useState('');
 
   const listQuery = useQuery({
     queryKey: RUNS_KEY,
@@ -89,6 +90,7 @@ export default function DiscoverPage() {
   const quota = listQuery.data?.quota;
   const resultsQuota = quota?.resultsRemaining != null;
   const igEnabled = listQuery.data?.igEnabled === true;
+  const aiEnabled = listQuery.data?.aiEnabled === true;
   const isIg = form.provider === IG_PROVIDER;
   const categoriesQuery = useQuery({
     queryKey: ['redeem-ops', 'categories'],
@@ -220,6 +222,22 @@ export default function DiscoverPage() {
     },
     onError: (err) => toast.error('Could not enrich', { description: err.message }),
   });
+  // Populates the terms/hashtags input only — a search is never auto-started
+  // (searches spend quota + Apify budget; suggestions are review-then-run).
+  const suggestMutation = useMutation({
+    mutationFn: () => redeemOpsApi.suggestDiscoveryTerms({
+      description: aiDesc.trim(),
+      provider: form.provider,
+      ...(form.area.trim() ? { area: form.area.trim() } : {}),
+    }),
+    onSuccess: (terms) => {
+      setForm((f) => ({ ...f, adhoc: terms.join(', ') }));
+      toast.success(`${terms.length} ${isIg ? 'hashtags' : 'search terms'} suggested`, {
+        description: 'Edit them before searching if needed',
+      });
+    },
+    onError: (err) => toast.error('Could not suggest terms', { description: err.message }),
+  });
   const restoreMutation = useMutation({
     mutationFn: (id) => redeemOpsApi.restoreDiscoveryCandidate(id),
     onSuccess: () => runQuery.refetch(),
@@ -258,6 +276,7 @@ export default function DiscoverPage() {
     enrichMutation.mutate(ids);
   };
   const canSearch = form.area.trim() && parseCsv(form.adhoc).length > 0 && !startMutation.isPending;
+  const canSuggest = aiDesc.trim().length >= 3 && !suggestMutation.isPending;
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 pb-24">
@@ -330,6 +349,26 @@ export default function DiscoverPage() {
                 <Search className="w-4 h-4 mr-1.5" aria-hidden="true" />{startMutation.isPending ? 'Starting…' : 'Search'}
               </Button>
             </div>
+            {aiEnabled && (
+              <div className="flex items-center gap-2 mt-3 rounded-xl px-3 py-1.5"
+                style={{ background: 'var(--ro-subtle)', border: '1px dashed var(--ro-border)' }}>
+                <Sparkles className="w-4 h-4 shrink-0" aria-hidden="true" style={{ color: 'var(--ro-text-2)' }} />
+                <Input
+                  value={aiDesc}
+                  placeholder={isIg
+                    ? 'Or describe the niche — e.g. "home-based bakers" — and let AI suggest hashtags'
+                    : 'Or describe who you\'re looking for — e.g. "after-school activities for kids" — and let AI suggest terms'}
+                  aria-label="Describe what you want to find"
+                  className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0 px-0"
+                  onChange={(e) => setAiDesc(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && canSuggest) suggestMutation.mutate(); }}
+                />
+                <Button variant="ghost" size="sm" className="shrink-0 font-semibold" disabled={!canSuggest}
+                  onClick={() => suggestMutation.mutate()}>
+                  {suggestMutation.isPending ? 'Suggesting…' : 'Suggest'}
+                </Button>
+              </div>
+            )}
             {!isIg && (
               <div className="flex items-end gap-3 mt-3">
                 <div className="space-y-1">

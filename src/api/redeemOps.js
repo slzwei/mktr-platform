@@ -93,7 +93,12 @@ export const redeemOpsApi = {
       runs: res.data?.runs || [],
       quota: res.data?.quota || null,
       igEnabled: res.data?.igEnabled === true,
+      aiEnabled: res.data?.aiEnabled === true,
     };
+  },
+  async suggestDiscoveryTerms(body) {
+    const res = await apiClient.post('/redeem-ops/discovery/suggest-terms', body);
+    return res.data?.terms || [];
   },
   async getDiscoveryRun(id) {
     const res = await apiClient.get(`/redeem-ops/discovery/runs/${id}`);
