@@ -230,12 +230,14 @@ export const getConstants = asyncHandler(async (req, res) => {
 const categoryCreateSchema = Joi.object({
   name: Joi.string().min(1).max(64).required(),
   searchTerms: Joi.array().items(Joi.string().min(1).max(64)).max(20),
+  igHashtags: Joi.array().items(Joi.string().min(1).max(64)).max(20),
 });
 
 const categoryUpdateSchema = Joi.object({
   name: Joi.string().min(1).max(64),
   isActive: Joi.boolean(),
   searchTerms: Joi.array().items(Joi.string().min(1).max(64)).max(20),
+  igHashtags: Joi.array().items(Joi.string().min(1).max(64)).max(20),
 }).min(1);
 
 const categoryMergeSchema = Joi.object({

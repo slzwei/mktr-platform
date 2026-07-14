@@ -52,6 +52,24 @@ export function makeCategoryService(overrides = {}) {
     return cleaned.length > 0 ? cleaned : [fallbackName];
   }
 
+  /** IG analog of cleanSearchTerms with NO name fallback: a category name is not
+   *  a hashtag, so an emptied list stores NULL ("no IG tags curated yet") and
+   *  resolveCategoryForInstagram refuses the search until an admin curates tags. */
+  function cleanHashtags(raw) {
+    if (raw === undefined) return undefined;
+    const values = Array.isArray(raw) ? raw : [raw];
+    const seen = new Set();
+    const cleaned = [];
+    for (const value of values) {
+      const tag = String(value ?? '').trim().replace(/^#+/, '').trim().toLowerCase().slice(0, 64);
+      if (!tag || seen.has(tag)) continue;
+      seen.add(tag);
+      cleaned.push(tag);
+      if (cleaned.length === 20) break;
+    }
+    return cleaned.length > 0 ? cleaned : null;
+  }
+
   function whereNameCi(name) {
     return d.sequelize.where(d.sequelize.fn('LOWER', d.sequelize.col('name')), name.toLowerCase());
   }
@@ -76,14 +94,16 @@ export function makeCategoryService(overrides = {}) {
   async function createCategory(body, user, requestId = null) {
     const name = cleanName(body?.name);
     const providerSearchTerms = cleanSearchTerms(body?.searchTerms, name) ?? [name];
+    const igHashtags = cleanHashtags(body?.igHashtags) ?? null;
     const existing = await d.RedeemOpsCategory.findOne({ where: whereNameCi(name) });
     if (existing) throw new AppError(`Category '${existing.name}' already exists`, 409);
     try {
-      const category = await d.RedeemOpsCategory.create({ name, providerSearchTerms });
+      const category = await d.RedeemOpsCategory.create({ name, providerSearchTerms, igHashtags });
       await d.audit.recordAuditEvent({
         actorUser: user, action: 'settings.category_created',
         entityType: 'redeem_ops_category', entityId: category.id,
-        after: { name, searchTerms: providerSearchTerms }, requestId,
+        after: { name, searchTerms: providerSearchTerms, ...(igHashtags ? { igHashtags } : {}) },
+        requestId,
       });
       return category;
     } catch (err) {
@@ -125,12 +145,15 @@ export function makeCategoryService(overrides = {}) {
       const effectiveName = updates.name || category.name;
       updates.providerSearchTerms = cleanSearchTerms(body.searchTerms, effectiveName);
     }
+    if (body?.igHashtags !== undefined) updates.igHashtags = cleanHashtags(body.igHashtags);
     if (Object.keys(updates).length === 0) return category;
 
+    const touchesHashtags = 'igHashtags' in updates;
     const before = {
       name: category.name,
       isActive: category.isActive,
       searchTerms: category.providerSearchTerms,
+      ...(touchesHashtags ? { igHashtags: category.igHashtags } : {}),
     };
     await d.sequelize.transaction(async (t) => {
       await category.update(updates, { transaction: t });
@@ -150,6 +173,7 @@ export function makeCategoryService(overrides = {}) {
           name: updates.name ?? before.name,
           isActive: updates.isActive ?? before.isActive,
           searchTerms: updates.providerSearchTerms ?? before.searchTerms,
+          ...(touchesHashtags ? { igHashtags: updates.igHashtags } : {}),
         },
         requestId, transaction: t,
       });
@@ -267,9 +291,21 @@ export function makeCategoryService(overrides = {}) {
     };
   }
 
+  /** Instagram-discovery resolver (migration 065). Unlike resolveCategoryForSearch
+   *  there is NO name fallback — a category without curated hashtags is not
+   *  IG-searchable, and the 422 names the fix. */
+  async function resolveCategoryForInstagram(input) {
+    const name = String(input ?? '').trim();
+    const match = await findActiveCategory(name);
+    if (!match.igHashtags?.length) {
+      throw new AppError(`Category '${match.name}' has no Instagram hashtags — add them in Settings`, 422);
+    }
+    return { name: match.name, hashtags: match.igHashtags };
+  }
+
   return {
     listCategories, createCategory, updateCategory, mergeCategory, deleteCategory,
-    resolveCategoryName, resolveCategoryForSearch,
+    resolveCategoryName, resolveCategoryForSearch, resolveCategoryForInstagram,
   };
 }
 

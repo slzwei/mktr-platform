@@ -62,6 +62,37 @@ function pruneMapsRaw(raw) {
   return rest;
 }
 
+/**
+ * Apify Instagram hashtag post → the authoring account's identity plus the text
+ * the territory soft-filter reads. Requires BOTH the username and the numeric
+ * owner id: the id is the pilot's namespaced candidate key ('ig:<ownerId>'), so
+ * a post without it cannot be idempotently materialized and is dropped.
+ */
+export function normalizeInstagramHashtagPost(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const ownerUsername = normalizeHandle(raw.ownerUsername || null);
+  const ownerId = raw.ownerId == null ? null : String(raw.ownerId).trim();
+  if (!ownerUsername || !ownerId) return null;
+  return {
+    ownerUsername: trunc(ownerUsername, 64),
+    ownerId,
+    ownerFullName: raw.ownerFullName ? String(raw.ownerFullName).trim() || null : null,
+    caption: typeof raw.caption === 'string' ? raw.caption : null,
+    url: trunc(raw.url || null, 500),
+    locationName: raw.locationName ? String(raw.locationName) : null,
+  };
+}
+
+/** Hashtag-post payload pruning (pruneMapsRaw analog) — IG posts carry far more
+ *  per-item weight: image variants, carousel children, comment threads, music. */
+export function pruneInstagramHashtagRaw(raw) {
+  const rest = { ...(raw || {}) };
+  for (const k of ['images', 'childPosts', 'latestComments', 'musicInfo']) {
+    delete rest[k];
+  }
+  return rest;
+}
+
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
 
 /** Pull an email out of an IG bio (best-effort, low confidence — not a structured field). */

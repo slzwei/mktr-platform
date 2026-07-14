@@ -7,6 +7,8 @@ const startSchema = Joi.object({
   category: Joi.string().min(1).max(64).required(),
   area: Joi.string().min(1).max(120).required(),
   limit: Joi.number().integer().min(1).max(500), // sanity bound; service clamps to DISCOVERY_MAX_RESULTS_PER_RUN
+  // Mechanism pick; omitted = Maps. The IG pilot additionally needs DISCOVERY_IG_ENABLED.
+  provider: Joi.string().valid('google_maps', 'instagram_hashtag'),
 });
 const idsSchema = Joi.object({
   // .max(500): each id can become a PAID scrape — sanity-bound to one full run's
