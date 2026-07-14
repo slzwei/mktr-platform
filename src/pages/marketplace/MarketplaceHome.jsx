@@ -148,7 +148,7 @@ export default function MarketplaceHome() {
         <div className="rm-shell" style={{ padding: 'clamp(40px,6vw,72px) 0', display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 'clamp(28px,4vw,56px)', alignItems: 'center' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <div className="rm-mono-label" style={{ color: 'var(--rm-pine)' }}>For parents</div>
-            <h2 className="rm-serif" style={{ margin: 0, fontSize: 'clamp(26px,3.2vw,38px)', lineHeight: 1.15, maxWidth: '18ch' }}>
+            <h2 className="rm-serif" style={{ margin: 0, fontSize: 'clamp(26px,3.2vw,38px)', lineHeight: 1.15, maxWidth: '18ch', textWrap: 'balance' }}>
               Let your child try it before you commit to it.
             </h2>
             <p style={{ margin: 0, fontSize: 15, lineHeight: 1.65, color: 'var(--rm-sub)', maxWidth: '52ch' }}>
