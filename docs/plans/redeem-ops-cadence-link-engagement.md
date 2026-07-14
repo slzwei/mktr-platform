@@ -51,7 +51,7 @@ measurement, not lead capture).
   link-preview prefetches (the classic false-positive "open") never count. Server-side UA
   denylist on the beacon as defense in depth.
 
-## 4. Data model (next free migration — 066 at time of writing; per-column guards, `IF NOT EXISTS` indexes)
+## 4. Data model (next free migration — 067 at time of writing, 066 = cadence `publishedAt` PR #156; per-column guards, `IF NOT EXISTS` indexes)
 
 ### 4.1 `outreach_link_tokens`
 ```
@@ -176,7 +176,7 @@ zero work, arguably more persuasive). Per-partner personalized pages are out of 
 
 ## 11. Phasing & testing
 
-- **P1:** migration 066 + models/constants; mint in `tryMaterializeTx`; click endpoint +
+- **P1:** migration 067 + models/constants; mint in `tryMaterializeTx`; click endpoint +
   interstitial route (both brands); activity + `engagedAt` + due-date nudge; card chip + queue
   copy rename. ~1 PR-sized.
 - **P2:** per-step CTR endpoint + Settings view; AI-draft prompt teaches `{{link}}`; partners
