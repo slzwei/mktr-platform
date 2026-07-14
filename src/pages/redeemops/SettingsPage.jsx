@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import Plus from 'lucide-react/icons/plus';
 import Pencil from 'lucide-react/icons/pencil';
 import Search from 'lucide-react/icons/search';
+import Instagram from 'lucide-react/icons/instagram';
 import Merge from 'lucide-react/icons/merge';
 import Trash2 from 'lucide-react/icons/trash-2';
 import { RoPageHeader, RoTag } from '@/components/redeemops/ui';
@@ -23,6 +24,7 @@ import { RoPageHeader, RoTag } from '@/components/redeemops/ui';
 const CATEGORIES_KEY = ['redeem-ops', 'categories'];
 const TERRITORIES_KEY = ['redeem-ops', 'territories'];
 const parseSearchTerms = (value) => value.split(',').map((term) => term.trim()).filter(Boolean);
+const parseHashtags = (value) => value.split(',').map((t) => t.trim().replace(/^#+/, '')).filter(Boolean);
 
 /**
  * /redeem-ops/settings — admin knobs (settings.manage). First resident: the
@@ -96,6 +98,21 @@ export default function SettingsPage() {
       invalidate();
     },
     onError: onError('Could not update search terms'),
+  });
+
+  // ── Instagram hashtags (IG discovery provider) ─────────────────────────
+  const [igTarget, setIgTarget] = useState(null);
+  const [igText, setIgText] = useState('');
+  const igHashtagsMutation = useMutation({
+    mutationFn: () => redeemOpsApi.updateCategory(igTarget.id, {
+      igHashtags: parseHashtags(igText),
+    }),
+    onSuccess: () => {
+      toast.success('Instagram hashtags updated');
+      setIgTarget(null);
+      invalidate();
+    },
+    onError: onError('Could not update Instagram hashtags'),
   });
 
   // ── Retire / restore ───────────────────────────────────────────────────
@@ -256,6 +273,15 @@ export default function SettingsPage() {
                     }}
                   >
                     <Search className="w-3.5 h-3.5" aria-hidden="true" />
+                  </Button>
+                  <Button
+                    variant="ghost" size="sm" aria-label={`Edit Instagram hashtags for ${cat.name}`}
+                    onClick={() => {
+                      setIgTarget(cat);
+                      setIgText((cat.igHashtags || []).join(', '));
+                    }}
+                  >
+                    <Instagram className="w-3.5 h-3.5" aria-hidden="true" />
                   </Button>
                   <Button
                     variant="ghost" size="sm" aria-label={`Merge ${cat.name} into another category`}
@@ -431,6 +457,36 @@ export default function SettingsPage() {
               onClick={() => searchTermsMutation.mutate()}
             >
               {searchTermsMutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!igTarget} onOpenChange={(open) => { if (!open) setIgTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Instagram hashtags</DialogTitle>
+            <DialogDescription>
+              Hashtags Discover fires for this category on the Instagram provider — e.g.
+              sgnails, biabsg, homebasednailssg. Comma-separated; the # is optional. With none,
+              Instagram search is unavailable for this category.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5 py-2">
+            <Label htmlFor="category-ig-hashtags">Hashtags</Label>
+            <Input
+              id="category-ig-hashtags"
+              value={igText}
+              onChange={(e) => setIgText(e.target.value)}
+              placeholder="sgnails, biabsg, homebasednailssg"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={igHashtagsMutation.isPending}
+              onClick={() => igHashtagsMutation.mutate()}
+            >
+              {igHashtagsMutation.isPending ? 'Saving…' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>

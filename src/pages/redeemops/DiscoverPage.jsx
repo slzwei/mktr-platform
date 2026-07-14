@@ -17,12 +17,19 @@ import Check from 'lucide-react/icons/check';
 import ChevronRight from 'lucide-react/icons/chevron-right';
 import Instagram from 'lucide-react/icons/instagram';
 import Star from 'lucide-react/icons/star';
+import MapPin from 'lucide-react/icons/map-pin';
 import { RoPageHeader, RoTag, RoAvatar } from '@/components/redeemops/ui';
 import CategorySelect from '@/components/redeemops/CategorySelect';
 
 const TERMINAL = ['completed', 'failed', 'aborted', 'timed_out'];
 const RUNS_KEY = ['redeem-ops', 'discovery', 'runs'];
 const ALL_SINGAPORE = 'All Singapore';
+const IG_PROVIDER = 'instagram_hashtag';
+const IG_RUN_PROVIDER = 'apify_instagram_hashtag';
+// Home-based / mobile is the Maps-invisible segment IG discovery exists to reach.
+// Signal lives in the account name, the (enriched) bio, or the sampled caption.
+const igText = (c) => `${c.name || ''} ${c.bio || ''} ${c.rawPayload?.caption || ''}`;
+const isHomeBased = (c) => /home[\s-]?based|\bmobile\b/i.test(igText(c));
 
 const DEDUPE = {
   new: { tone: 'open', label: 'New' },
@@ -62,7 +69,7 @@ const timeAgo = (iso) => {
 
 export default function DiscoverPage() {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState({ category: '', area: '', limit: '30' });
+  const [form, setForm] = useState({ category: '', area: '', limit: '30', provider: 'google_maps' });
   const [runId, setRunId] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [filter, setFilter] = useState('all');
@@ -79,6 +86,8 @@ export default function DiscoverPage() {
   const recentRuns = listQuery.data?.runs || [];
   const quota = listQuery.data?.quota;
   const resultsQuota = quota?.resultsRemaining != null;
+  const igEnabled = listQuery.data?.igEnabled === true;
+  const isIg = form.provider === IG_PROVIDER;
   const categoriesQuery = useQuery({
     queryKey: ['redeem-ops', 'categories'],
     queryFn: () => redeemOpsApi.listCategories(),
@@ -112,6 +121,7 @@ export default function DiscoverPage() {
     },
   });
   const run = runQuery.data?.run;
+  const isIgRun = run?.provider === IG_RUN_PROVIDER;
   const candidates = useMemo(() => runQuery.data?.candidates || [], [runQuery.data]);
   const isSearching = run && !TERMINAL.includes(run.status);
   const failed = run && ['failed', 'aborted', 'timed_out'].includes(run.status);
@@ -120,7 +130,7 @@ export default function DiscoverPage() {
     // total = visible (non-dismissed); hidden = dismissed (memory auto-hides +
     // manual); materialized = everything the run produced (drives the sparse
     // hint so memory-hiding can't fake a sparse area).
-    const c = { total: 0, hidden: 0, new: 0, partners: 0, possible: 0, seen: 0, ig: 0, materialized: candidates.length };
+    const c = { total: 0, hidden: 0, new: 0, partners: 0, possible: 0, seen: 0, ig: 0, homebased: 0, materialized: candidates.length };
     for (const x of candidates) {
       if (x.status === 'dismissed') { c.hidden += 1; continue; }
       c.total += 1;
@@ -129,6 +139,7 @@ export default function DiscoverPage() {
       else if (x.previouslySeenAt) c.seen += 1;
       else c.new += 1;
       if (x.instagramHandle) c.ig += 1;
+      if (isHomeBased(x)) c.homebased += 1;
     }
     return c;
   }, [candidates]);
@@ -143,6 +154,7 @@ export default function DiscoverPage() {
     else if (filter === 'partners') list = list.filter((c) => c.dedupeStatus === 'existing_partner');
     else if (filter === 'possible') list = list.filter((c) => c.dedupeStatus === 'possible_duplicate');
     else if (filter === 'ig') list = list.filter((c) => c.instagramHandle);
+    else if (filter === 'homebased') list = list.filter(isHomeBased);
     const sorted = [...list];
     if (sort === 'name') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     else sorted.sort((a, b) => num(b[sort === 'followers' ? 'followersCount' : sort === 'rating' ? 'rating' : 'reviewsCount'])
@@ -218,10 +230,10 @@ export default function DiscoverPage() {
     },
   });
 
-  const runSearch = (category, area, limit = 30) => {
+  const runSearch = (category, area, limit = 30, provider = form.provider) => {
     if (!category || !String(area).trim()) return;
-    setForm({ category, area, limit: String(limit) });
-    startMutation.mutate({ category, area: String(area).trim(), limit: Number(limit) });
+    setForm((f) => ({ ...f, category, area, limit: String(limit) }));
+    startMutation.mutate({ category, area: String(area).trim(), limit: Number(limit), provider });
   };
   const toggle = (id) => setSelected((prev) => {
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
@@ -258,6 +270,15 @@ export default function DiscoverPage() {
       {!runId && (
         <>
           <div className="rounded-2xl border border-border bg-white p-4 md:p-5">
+            {igEnabled && (
+              <div className="inline-flex items-center gap-1 mb-4 p-1 rounded-xl"
+                style={{ background: 'var(--ro-subtle)', border: '1px solid var(--ro-border)' }}>
+                <ProviderTab on={!isIg} onClick={() => setForm((f) => ({ ...f, provider: 'google_maps' }))}
+                  icon={<MapPin className="w-3.5 h-3.5" aria-hidden="true" />}>Google Maps</ProviderTab>
+                <ProviderTab on={isIg} onClick={() => setForm((f) => ({ ...f, provider: IG_PROVIDER }))}
+                  icon={<Instagram className="w-3.5 h-3.5" aria-hidden="true" />}>Instagram</ProviderTab>
+              </div>
+            )}
             <div className="grid gap-3 md:grid-cols-[1fr_1fr_120px_auto] md:items-end">
               <div className="space-y-1.5">
                 <Label>Category</Label>
@@ -296,7 +317,7 @@ export default function DiscoverPage() {
               </Button>
             </div>
             <div className="flex flex-wrap items-center gap-2 mt-3">
-              {!territoriesEnabled && (
+              {!territoriesEnabled && !isIg && (
                 <>
                   <span className="text-xs font-semibold" style={{ color: 'var(--ro-text-3)' }}>Popular areas</span>
                   {POPULAR_AREAS.map((a) => (
@@ -306,7 +327,12 @@ export default function DiscoverPage() {
                   ))}
                 </>
               )}
-              {quota?.costPerResultUsd > 0 && (
+              {isIg && (
+                <span className="text-[12px]" style={{ color: 'var(--ro-text-3)' }}>
+                  Fires the category&apos;s Instagram hashtags · area is a soft filter · finds IG-native shops Maps misses
+                </span>
+              )}
+              {!isIg && quota?.costPerResultUsd > 0 && (
                 <span className="ml-auto text-[12px]" style={{ color: 'var(--ro-text-3)' }}>
                   ≈ ${(Number(form.limit) * quota.costPerResultUsd).toFixed(2)} per search
                 </span>
@@ -322,7 +348,7 @@ export default function DiscoverPage() {
                   // Prefill only — Search (with its cost hint) is the single spend
                   // affordance; a one-tap card must never fire a paid run.
                   <button key={`${s.category}-${s.area}`} type="button"
-                    onClick={() => setForm({ category: s.category, area: s.area, limit: '60' })}
+                    onClick={() => setForm((f) => ({ ...f, category: s.category, area: s.area, limit: '60' }))}
                     className="flex items-center gap-3 rounded-2xl border border-border bg-white p-4 text-left hover:bg-[var(--ro-subtle)]">
                     <span className="w-10 h-10 rounded-xl grid place-items-center text-lg shrink-0" style={{ background: 'var(--ro-subtle)' }}>{s.emoji}</span>
                     <span className="min-w-0">
@@ -384,7 +410,7 @@ export default function DiscoverPage() {
         <div>
           <div className="flex items-center gap-3 mb-3">
             <span className="w-[18px] h-[18px] rounded-full animate-spin" style={{ border: '2.4px solid var(--ro-azure-tint)', borderTopColor: 'var(--ro-azure)' }} />
-            <b className="text-[15px]">Searching Google Maps…</b>
+            <b className="text-[15px]">{isIgRun ? 'Searching Instagram…' : 'Searching Google Maps…'}</b>
             <span className="hidden sm:inline text-[13px]" style={{ color: 'var(--ro-text-2)' }}>
               {run?.requestedLimit > 120 ? 'large search — usually 2–6 minutes' : 'usually 30–60 seconds'} · you can keep working other tabs
             </span>
@@ -436,7 +462,8 @@ export default function DiscoverPage() {
             {counts.seen > 0 && <Seg on={filter === 'seen'} onClick={() => setFilter('seen')} dot="var(--ro-tag-gray-fg)">Seen before <b className="tabular-nums">{counts.seen}</b></Seg>}
             <Seg on={filter === 'partners'} onClick={() => setFilter('partners')} dot="var(--ro-tag-gray-fg)">Partners <b className="tabular-nums">{counts.partners}</b></Seg>
             {counts.possible > 0 && <Seg on={filter === 'possible'} onClick={() => setFilter('possible')} dot="var(--ro-tag-yellow-fg)">Possible dup <b className="tabular-nums">{counts.possible}</b></Seg>}
-            <Seg on={filter === 'ig'} onClick={() => setFilter('ig')}>Has Instagram <b className="tabular-nums">{counts.ig}</b></Seg>
+            {!isIgRun && <Seg on={filter === 'ig'} onClick={() => setFilter('ig')}>Has Instagram <b className="tabular-nums">{counts.ig}</b></Seg>}
+            {isIgRun && counts.homebased > 0 && <Seg on={filter === 'homebased'} onClick={() => setFilter('homebased')} dot="var(--ro-tag-green-fg)">Home-based <b className="tabular-nums">{counts.homebased}</b></Seg>}
             {counts.hidden > 0 && <Seg on={filter === 'hidden'} onClick={() => setFilter('hidden')}>Hidden <b className="tabular-nums">{counts.hidden}</b></Seg>}
             <span className="flex-1" />
             <button type="button" onClick={enrichAll} disabled={enrichMutation.isPending}
@@ -484,10 +511,12 @@ export default function DiscoverPage() {
                           : <RoTag tone="completed" size="sm">Added</RoTag>)}
                       </b>
                       <span className="text-[12.5px] block truncate" style={{ color: 'var(--ro-text-2)' }}>
-                        {/* Google's own category label first — makes weak matches
-                            (e.g. "Discount store" for a Pet Grooming search)
-                            self-evident without leaving the list. */}
-                        {[c.rawPayload?.categoryName, c.area, c.primaryPhone].filter(Boolean).join(' · ') || '—'}
+                        {/* IG: lead with the home-based signal + bio (the whole point);
+                            Maps: Google's own category label first so weak matches
+                            (e.g. "Discount store" for a Pet Grooming search) are self-evident. */}
+                        {isIgRun
+                          ? ([isHomeBased(c) && 'Home-based', c.bio, c.area].filter(Boolean).join(' · ') || 'Instagram business')
+                          : ([c.rawPayload?.categoryName, c.area, c.primaryPhone].filter(Boolean).join(' · ') || '—')}
                       </span>
                     </span>
                   </span>
@@ -567,13 +596,15 @@ export default function DiscoverPage() {
           </div>
           {counts.materialized > 0 && run?.requestedLimit >= 30 && counts.materialized < Math.ceil(run.requestedLimit * 0.25) && (
             <p className="text-[12px] mt-2 mb-0" style={{ color: 'var(--ro-text-2)' }}>
-              Google found only {counts.materialized} match{counts.materialized === 1 ? '' : 'es'} in this area — small central
-              districts (like Orchard) genuinely have few of some business types. Try a broader or neighbouring
-              area, and check each row&apos;s category label for weak matches.
+              {isIgRun
+                ? `Instagram surfaced only ${counts.materialized} account${counts.materialized === 1 ? '' : 's'} — add more hashtags to the category in Settings, or widen the area.`
+                : `Google found only ${counts.materialized} match${counts.materialized === 1 ? '' : 'es'} in this area — small central districts (like Orchard) genuinely have few of some business types. Try a broader or neighbouring area, and check each row's category label for weak matches.`}
             </p>
           )}
           <p className="text-[11.5px] mt-2 mb-0" style={{ color: 'var(--ro-text-3)' }}>
-            Phone numbers are reference data — keep outreach IG-first; calls/SMS must respect the DNC registry.
+            {isIgRun
+              ? 'IG-native businesses — many home-based with no storefront. Reach out via Instagram DM; enrich to fill in followers & bio.'
+              : 'Phone numbers are reference data — keep outreach IG-first; calls/SMS must respect the DNC registry.'}
           </p>
         </div>
       )}
@@ -597,6 +628,18 @@ export default function DiscoverPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function ProviderTab({ on, onClick, icon, children }) {
+  return (
+    <button type="button" onClick={onClick}
+      className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-[13px] font-semibold transition-colors"
+      style={on
+        ? { background: '#fff', color: 'var(--ro-bunker)', boxShadow: '0 1px 2px rgba(16,24,40,.08)' }
+        : { background: 'transparent', color: 'var(--ro-text-3)' }}>
+      {icon}{children}
+    </button>
   );
 }
 

@@ -89,7 +89,11 @@ export const redeemOpsApi = {
   },
   async listDiscoveryRuns(params = {}) {
     const res = await apiClient.get('/redeem-ops/discovery/runs', params);
-    return { runs: res.data?.runs || [], quota: res.data?.quota || null };
+    return {
+      runs: res.data?.runs || [],
+      quota: res.data?.quota || null,
+      igEnabled: res.data?.igEnabled === true,
+    };
   },
   async getDiscoveryRun(id) {
     const res = await apiClient.get(`/redeem-ops/discovery/runs/${id}`);
