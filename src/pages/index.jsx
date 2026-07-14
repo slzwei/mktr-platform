@@ -135,9 +135,11 @@ function redeemOpsRouteElements() {
     { path: '/redeem-ops/profile', capability: null, Page: RedeemOpsProfile },
     { path: '/redeem-ops/settings', capability: 'settings.manage', Page: RedeemOpsSettings },
     // Full-page cadence editor (a dialog was too cramped for a step editor).
+    // tasks.manage: any rep can author — unpublished saves stay private drafts
+    // (creator + admins); the service enforces per-row edit rights.
     ...(CADENCES_ENABLED ? [
-      { path: '/redeem-ops/cadences/new', capability: 'settings.manage', Page: RedeemOpsCadenceEditor },
-      { path: '/redeem-ops/cadences/:cadenceId/edit', capability: 'settings.manage', Page: RedeemOpsCadenceEditor },
+      { path: '/redeem-ops/cadences/new', capability: 'tasks.manage', Page: RedeemOpsCadenceEditor },
+      { path: '/redeem-ops/cadences/:cadenceId/edit', capability: 'tasks.manage', Page: RedeemOpsCadenceEditor },
     ] : []),
   ];
   return routes.map(({ path, capability, Page }) => (

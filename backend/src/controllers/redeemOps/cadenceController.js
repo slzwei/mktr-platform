@@ -11,7 +11,11 @@ function validateBody(schema, body) {
 }
 
 export const listCadences = asyncHandler(async (req, res) => {
-  const cadences = await cadenceService.listCadences({ includeRetired: req.query.all === 'true' });
+  // forUser scopes drafts: creator + admins only; published rows go to everyone.
+  const cadences = await cadenceService.listCadences({
+    includeRetired: req.query.all === 'true',
+    forUser: req.user,
+  });
   // aiEnabled drives the editor's "Draft with AI" card — same helper the
   // suggest endpoint gates on, so the UI can never disagree with the API.
   res.json({ success: true, data: { cadences, aiEnabled: cadenceAiEnabled() } });
@@ -44,6 +48,9 @@ const cadenceDefSchema = Joi.object({
   name: Joi.string().max(120).required(),
   description: Joi.string().max(2000).allow('', null),
   steps: Joi.array().items(stepSchema).min(1).max(20).required(),
+  // false = save as a private draft (creator + admins). Omitted = publish,
+  // matching pre-draft behavior for existing callers.
+  publish: Joi.boolean(),
 });
 
 export const createCadence = asyncHandler(async (req, res) => {
@@ -60,6 +67,11 @@ export const createCadenceVersion = asyncHandler(async (req, res) => {
 
 export const retireCadence = asyncHandler(async (req, res) => {
   const cadence = await cadenceService.retireCadence(req.params.cadenceId, req.user, req.id);
+  res.json({ success: true, data: { cadence } });
+});
+
+export const publishCadence = asyncHandler(async (req, res) => {
+  const cadence = await cadenceService.publishCadence(req.params.cadenceId, req.user, req.id);
   res.json({ success: true, data: { cadence } });
 });
 

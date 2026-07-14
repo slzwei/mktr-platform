@@ -257,7 +257,11 @@ mail). Bounce/complaint webhooks → `outreach_suppressions` BEFORE auto mode sh
 ## 9. Permissions & flags
 
 - Enroll/pause/stop/complete: partner owner; managers (existing `isManager` set) any.
-- Definitions (create/retire versions — even before builder UI, via seeds): `settings.manage`.
+- Definitions — UPDATED (draft visibility, migration 066): authoring is `tasks.manage` (any rep);
+  a cadence saves as a private **draft** (`publishedAt` NULL — listed/enrollable only by its
+  creator + admins, i.e. `settings.manage`) or publishes team-wide. Edit/retire/publish are
+  row-ruled to creator-or-admin; invisible drafts 404 so they never leak. Version bumps carry
+  draft-ness; publishing is one-way. (Originally: `settings.manage` for all authoring.)
 - Flags: backend `REDEEM_OPS_CADENCES_ENABLED` (routes + tick + hooks no-op when off), frontend
   `VITE_REDEEM_OPS_CADENCES_ENABLED` (SPA has only the master flag today — verified).
 

@@ -32,6 +32,15 @@ export default function CadenceStudio() {
     onError: (err) => toast.error('Could not retire', { description: err.message }),
   });
 
+  const publishMutation = useMutation({
+    mutationFn: (id) => redeemOpsApi.publishCadence(id),
+    onSuccess: () => {
+      toast.success('Published — it’s in every Start cadence picker now');
+      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'cadences'] });
+    },
+    onError: (err) => toast.error('Could not publish', { description: err.message }),
+  });
+
   if (!CADENCES_ENABLED) return null;
 
   const cadences = listQuery.data?.cadences || [];
@@ -43,7 +52,8 @@ export default function CadenceStudio() {
           <CardTitle className="text-base">Cadences</CardTitle>
           <CardDescription>
             The outreach sequences your team can enroll businesses into. Editing creates a new
-            version — businesses mid-cadence finish on the version they started.
+            version — businesses mid-cadence finish on the version they started. Drafts are
+            visible only to their creator and admins until published.
           </CardDescription>
         </div>
         <Button size="sm" asChild>
@@ -58,11 +68,28 @@ export default function CadenceStudio() {
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold m-0">
                 {c.name} <span className="font-normal" style={{ color: 'var(--ro-text-3)' }}>v{c.version}</span>
+                {!c.publishedAt && (
+                  <span
+                    className="ml-2 inline-block align-middle rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
+                    style={{ color: 'var(--ro-text-2)' }}
+                  >
+                    Draft
+                  </span>
+                )}
               </p>
               <p className="text-xs m-0 mt-0.5 truncate" style={{ color: 'var(--ro-text-2)' }}>
                 {(c.steps || []).length} steps — {(c.steps || []).map((s) => CHANNEL_LABEL[s.channel] || s.channel).join(' → ')}
               </p>
             </div>
+            {!c.publishedAt && (
+              <Button
+                size="sm" variant="outline"
+                disabled={publishMutation.isPending}
+                onClick={() => publishMutation.mutate(c.id)}
+              >
+                Publish
+              </Button>
+            )}
             <Button size="sm" variant="ghost" aria-label={`Edit ${c.name}`} asChild>
               <Link to={`/redeem-ops/cadences/${c.id}/edit`}>
                 <Pencil className="w-3.5 h-3.5" aria-hidden="true" />

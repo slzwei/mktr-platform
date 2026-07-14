@@ -1,9 +1,13 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import Zap from 'lucide-react/icons/zap';
 import Eye from 'lucide-react/icons/eye';
+import Plus from 'lucide-react/icons/plus';
 import { redeemOpsApi } from '@/api/redeemOps';
+import { useAuthStore } from '@/stores/authStore';
+import { hasCapability } from '@/lib/redeemOpsPermissions';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -184,6 +188,9 @@ export function CadencePanel({ partner, canManage = true, variant = 'card' }) {
   const queryClient = useQueryClient();
   const [enrollOpen, setEnrollOpen] = useState(false);
   const partnerId = partner?.id;
+  const authUser = useAuthStore((s) => s.user);
+  // Anyone who works tasks can author; unpublished saves stay private drafts.
+  const canAuthor = hasCapability(authUser, 'tasks.manage');
 
   const cadenceQuery = useQuery({
     queryKey: ['redeem-ops', 'partner-cadence', partnerId],
@@ -355,7 +362,18 @@ export function CadencePanel({ partner, canManage = true, variant = 'card' }) {
                 disabled={enrollMutation.isPending}
                 onClick={() => enrollMutation.mutate({ cadenceId: c.id })}
               >
-                <p className="text-sm font-semibold m-0">{c.name}</p>
+                <p className="text-sm font-semibold m-0">
+                  {c.name}
+                  {/* drafts only reach their creator + admins — flag them */}
+                  {!c.publishedAt && (
+                    <span
+                      className="ml-2 inline-block align-middle rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
+                      style={{ color: 'var(--ro-text-2)' }}
+                    >
+                      Draft
+                    </span>
+                  )}
+                </p>
                 <p className="text-xs m-0 mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
                   {c.steps?.length || 0} steps — {(c.steps || []).map((s) => CHANNEL_LABELS[s.channel] || s.channel).join(' → ')}
                 </p>
@@ -364,6 +382,14 @@ export function CadencePanel({ partner, canManage = true, variant = 'card' }) {
             {defsQuery.isLoading && <p className="text-sm m-0" style={{ color: 'var(--ro-text-2)' }}>Loading cadences…</p>}
             {!defsQuery.isLoading && cadenceDefs.length === 0 && (
               <p className="text-sm m-0" style={{ color: 'var(--ro-text-2)' }}>No cadences defined yet.</p>
+            )}
+            {canAuthor && (
+              <Button size="sm" variant="ghost" className="w-full" asChild>
+                <Link to="/redeem-ops/cadences/new">
+                  <Plus className="w-4 h-4 mr-1.5" aria-hidden="true" />
+                  New cadence — yours stays a private draft until you publish it
+                </Link>
+              </Button>
             )}
           </div>
         </DialogContent>

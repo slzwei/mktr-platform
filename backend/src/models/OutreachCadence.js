@@ -15,6 +15,9 @@ const OutreachCadence = sequelize.define('OutreachCadence', {
   description: { type: DataTypes.TEXT, allowNull: true },
   targetCategory: { type: DataTypes.STRING(64), allowNull: true },
   isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+  // NULL = draft: listed/enrollable only by its creator and admins
+  // (settings.manage). Publishing shares it team-wide; there is no unpublish.
+  publishedAt: { type: DataTypes.DATE, allowNull: true },
   createdBy: { type: DataTypes.UUID, allowNull: false, references: { model: 'users', key: 'id' } },
 }, {
   tableName: 'outreach_cadences',
