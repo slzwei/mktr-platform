@@ -1,6 +1,6 @@
 import Joi from 'joi';
 import { asyncHandler, AppError } from '../../middleware/errorHandler.js';
-import discoveryService from '../../services/redeemOps/discoveryService.js';
+import discoveryService, { cfg } from '../../services/redeemOps/discoveryService.js';
 import { logger } from '../../utils/logger.js';
 
 const startSchema = Joi.object({
@@ -35,7 +35,9 @@ export const listRuns = asyncHandler(async (req, res) => {
     discoveryService.listRuns({ limit: Math.min(Number(req.query.limit) || 20, 50) }),
     discoveryService.getQuota(req.user),
   ]);
-  res.json({ success: true, data: { runs, quota } });
+  // igEnabled drives the Discover Provider toggle: the Instagram option only
+  // appears when the pilot flag is on (else the toggle would 503 on submit).
+  res.json({ success: true, data: { runs, quota, igEnabled: cfg().igEnabled } });
 });
 
 /** GET /discovery/runs/:id — status + candidates (frontend polls this). */
