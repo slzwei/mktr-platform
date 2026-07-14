@@ -19,7 +19,6 @@ import Instagram from 'lucide-react/icons/instagram';
 import Star from 'lucide-react/icons/star';
 import MapPin from 'lucide-react/icons/map-pin';
 import { RoPageHeader, RoTag, RoAvatar } from '@/components/redeemops/ui';
-import CategorySelect from '@/components/redeemops/CategorySelect';
 
 const TERMINAL = ['completed', 'failed', 'aborted', 'timed_out'];
 const RUNS_KEY = ['redeem-ops', 'discovery', 'runs'];
@@ -70,7 +69,7 @@ const timeAgo = (iso) => {
 export default function DiscoverPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
-    category: '', area: '', limit: '30', provider: 'google_maps',
+    area: '', limit: '30', provider: 'google_maps',
     adhoc: '', minStars: 'any', skipClosed: false,
   });
   const [runId, setRunId] = useState(null);
@@ -235,16 +234,13 @@ export default function DiscoverPage() {
 
   const parseCsv = (v) => (v || '').split(',').map((s) => s.trim().replace(/^#+/, '')).filter(Boolean);
   const runSearch = () => {
-    if (!form.category || !form.area.trim() || startMutation.isPending) return;
-    const body = {
-      category: form.category, area: form.area.trim(),
-      limit: Number(form.limit), provider: form.provider,
-    };
-    const adhoc = parseCsv(form.adhoc); // ad-hoc override of the category's saved terms/hashtags
+    const terms = parseCsv(form.adhoc); // the search is what you type: terms (Maps) / hashtags (IG)
+    if (!form.area.trim() || terms.length === 0 || startMutation.isPending) return;
+    const body = { area: form.area.trim(), limit: Number(form.limit), provider: form.provider };
     if (isIg) {
-      if (adhoc.length) body.hashtags = adhoc;
+      body.hashtags = terms;
     } else {
-      if (adhoc.length) body.searchTerms = adhoc;
+      body.searchTerms = terms;
       if (form.minStars && form.minStars !== 'any') body.minStars = form.minStars;
       if (form.skipClosed) body.skipClosed = true;
     }
@@ -261,13 +257,13 @@ export default function DiscoverPage() {
     if (ids.length === 0) { toast.info('Nothing to enrich — no un-enriched Instagram handles'); return; }
     enrichMutation.mutate(ids);
   };
-  const canSearch = form.area.trim() && (form.category || parseCsv(form.adhoc).length > 0) && !startMutation.isPending;
+  const canSearch = form.area.trim() && parseCsv(form.adhoc).length > 0 && !startMutation.isPending;
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 pb-24">
       <RoPageHeader
         title="Discover"
-        sub="Find businesses to prospect by category and area — deduped against your partners, one click to your pipeline."
+        sub="Find businesses to prospect by keyword and area — deduped against your partners, one click to your pipeline."
         actions={quota && (
           <span className="hidden sm:inline-flex items-center gap-2 text-[12.5px] font-semibold rounded-full px-3 py-1.5"
             style={{ color: 'var(--ro-text-2)', background: 'var(--ro-subtle)', border: '1px solid var(--ro-border)' }}>
@@ -296,8 +292,11 @@ export default function DiscoverPage() {
             )}
             <div className="grid gap-3 md:grid-cols-[1fr_1fr_120px_auto] md:items-end">
               <div className="space-y-1.5">
-                <Label>Category <span style={{ color: 'var(--ro-text-3)', fontWeight: 400 }}>(optional)</span></Label>
-                <CategorySelect value={form.category} onChange={(v) => setForm((f) => ({ ...f, category: v }))} />
+                <Label htmlFor="disc-terms">{isIg ? 'Hashtags' : 'Search terms'}</Label>
+                <Input id="disc-terms" value={form.adhoc}
+                  placeholder={isIg ? 'sgnails, biabsg, homebasednailssg' : 'nail salon, taekwondo, kopitiam'}
+                  onChange={(e) => setForm((f) => ({ ...f, adhoc: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(); }} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="disc-area">Area</Label>
@@ -331,17 +330,8 @@ export default function DiscoverPage() {
                 <Search className="w-4 h-4 mr-1.5" aria-hidden="true" />{startMutation.isPending ? 'Starting…' : 'Search'}
               </Button>
             </div>
-            <div className="grid gap-2 mt-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
-              <div className="space-y-1">
-                <Label htmlFor="disc-adhoc">
-                  {isIg ? 'Hashtags' : 'Search terms'} <span style={{ color: 'var(--ro-text-3)', fontWeight: 400 }}>(optional — overrides the category)</span>
-                </Label>
-                <Input id="disc-adhoc" value={form.adhoc}
-                  placeholder={isIg ? 'sgnails, biabsg, homebasednailssg' : 'kopitiam, zi char'}
-                  onChange={(e) => setForm((f) => ({ ...f, adhoc: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(); }} />
-              </div>
-              {!isIg && (
+            {!isIg && (
+              <div className="flex items-end gap-3 mt-3">
                 <div className="space-y-1">
                   <Label>Min rating</Label>
                   <Select value={form.minStars} onValueChange={(v) => setForm((f) => ({ ...f, minStars: v }))}>
@@ -354,15 +344,13 @@ export default function DiscoverPage() {
                     </SelectContent>
                   </Select>
                 </div>
-              )}
-              {!isIg && (
                 <label className="flex items-center gap-2 h-9 px-1 text-[13px] font-semibold cursor-pointer whitespace-nowrap" style={{ color: 'var(--ro-text-2)' }}>
                   <input type="checkbox" className="w-4 h-4 accent-[var(--ro-bunker)]"
                     checked={form.skipClosed} onChange={(e) => setForm((f) => ({ ...f, skipClosed: e.target.checked }))} />
                   Skip closed
                 </label>
-              )}
-            </div>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2 mt-3">
               {!territoriesEnabled && !isIg && (
                 <>
@@ -376,7 +364,7 @@ export default function DiscoverPage() {
               )}
               {isIg && (
                 <span className="text-[12px]" style={{ color: 'var(--ro-text-3)' }}>
-                  Fires the category&apos;s Instagram hashtags · area is a soft filter · finds IG-native shops Maps misses
+                  Searches your Instagram hashtags · area is a soft filter · finds IG-native shops Maps misses
                 </span>
               )}
               {!isIg && quota?.costPerResultUsd > 0 && (
@@ -395,7 +383,7 @@ export default function DiscoverPage() {
                   // Prefill only — Search (with its cost hint) is the single spend
                   // affordance; a one-tap card must never fire a paid run.
                   <button key={`${s.category}-${s.area}`} type="button"
-                    onClick={() => setForm((f) => ({ ...f, category: s.category, area: s.area, limit: '60' }))}
+                    onClick={() => setForm((f) => ({ ...f, adhoc: s.category, area: s.area, limit: '60' }))}
                     className="flex items-center gap-3 rounded-2xl border border-border bg-white p-4 text-left hover:bg-[var(--ro-subtle)]">
                     <span className="w-10 h-10 rounded-xl grid place-items-center text-lg shrink-0" style={{ background: 'var(--ro-subtle)' }}>{s.emoji}</span>
                     <span className="min-w-0">
