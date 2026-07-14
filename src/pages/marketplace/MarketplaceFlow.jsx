@@ -792,7 +792,7 @@ export default function MarketplaceFlow() {
               {needAck && (
                 <div style={{ background: '#F2F6EF', border: '1.5px solid var(--rm-pine)', borderRadius: 14, padding: '16px 18px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span className="rm-ticket" style={{ width: 10, height: 13 }} />
+                    <span className="rm-ticket rm-ticket--plain" style={{ width: 10, height: 13, borderRadius: '5px 5px 1px 1px' }} />
                     <span className="rm-mono-label" style={{ color: 'var(--rm-pine)', fontSize: 10 }}>Activation requirement</span>
                   </div>
                   <div style={{ fontSize: 13, lineHeight: 1.6 }}>{act.detail}</div>
@@ -922,7 +922,7 @@ function Confirmation({ campaign, isDraw, boost, needAck, actSummary, consentCon
 
       {needAck && !isDraw && (
         <div style={{ background: '#F2F6EF', border: '1px solid #CFDDD2', borderRadius: 14, padding: '14px 18px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <span className="rm-ticket" style={{ width: 10, height: 13, marginTop: 3, flexShrink: 0 }} />
+          <span className="rm-ticket rm-ticket--plain" style={{ width: 10, height: 13, borderRadius: '5px 5px 1px 1px', marginTop: 3, flexShrink: 0 }} />
           <span style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--rm-pine2)' }}>
             <strong>Reminder:</strong> {actSummary} — your experience is confirmed after this step.
           </span>

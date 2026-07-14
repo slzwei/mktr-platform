@@ -52,7 +52,7 @@ export default function MarketplaceHome() {
             </div>
           </div>
           <div className="rm-card" style={{ position: 'absolute', left: 0, bottom: 44, boxShadow: 'var(--rm-sh)', borderRadius: 12, padding: '11px 14px', maxWidth: 250, display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-            <span className="rm-ticket" style={{ width: 9, height: 12, marginTop: 3, flexShrink: 0 }} />
+            <span className="rm-ticket rm-ticket--plain" style={{ width: 9, height: 12, borderRadius: '5px 5px 1px 1px', marginTop: 3, flexShrink: 0 }} />
             <span style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--rm-sub)' }}>
               <strong className="rm-mono-label" style={{ color: 'var(--rm-pine)', fontSize: 9 }}>Always shown first</strong>
               <br />
@@ -74,7 +74,7 @@ export default function MarketplaceHome() {
               style={{ background: TINTS[i % 4], padding: 18, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 108 }}
             >
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="rm-ticket" style={{ width: 13, height: 17, opacity: 0.85, flexShrink: 0 }} />
+                <span className="rm-ticket" style={{ width: 13, height: 17, borderRadius: '7px 7px 1px 1px', opacity: 0.85, flexShrink: 0 }} />
                 <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--rm-ink)', lineHeight: 1.25 }}>{cat.label}</span>
               </span>
               <span style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--rm-sub)' }}>{cat.blurb}</span>
@@ -111,14 +111,17 @@ export default function MarketplaceHome() {
         <p style={{ margin: '0 0 34px', fontSize: 14.5, color: 'var(--rm-sub)', maxWidth: '56ch' }}>
           Three steps, no account, no membership. One clearly stated requirement when a campaign has one.
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 22 }}>
-          {HOW_STEPS.map((h) => (
-            <div key={h.n} style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', textAlign: 'center' }}>
-              <span style={{ width: 46, height: 46, borderRadius: '50%', background: 'var(--rm-pine)', color: '#F6F2E6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--rm-mono)', fontSize: 14 }}>{h.n}</span>
-              <span style={{ fontSize: 16, fontWeight: 700 }}>{h.t}</span>
-              <span style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--rm-sub)' }}>{h.d}</span>
-            </div>
-          ))}
+        <div style={{ position: 'relative' }}>
+          <div className="rm-howline" aria-hidden="true" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 22 }}>
+            {HOW_STEPS.map((h) => (
+              <div key={h.n} style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', textAlign: 'center' }}>
+                <span style={{ width: 46, height: 46, borderRadius: '50%', background: 'var(--rm-pine)', color: '#F6F2E6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--rm-mono)', fontSize: 14 }}>{h.n}</span>
+                <span style={{ fontSize: 16, fontWeight: 700 }}>{h.t}</span>
+                <span style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--rm-sub)' }}>{h.d}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -129,7 +132,7 @@ export default function MarketplaceHome() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(250px,1fr))', gap: '22px 32px' }}>
             {TRUST_POINTS.map((tp) => (
               <div key={tp.t} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                <span className="rm-ticket" style={{ width: 11, height: 14, marginTop: 3, flexShrink: 0 }} />
+                <span className="rm-ticket rm-ticket--plain" style={{ width: 11, height: 14, marginTop: 3, flexShrink: 0 }} />
                 <div>
                   <div style={{ fontSize: 14.5, fontWeight: 700 }}>{tp.t}</div>
                   <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--rm-sub)', marginTop: 3 }}>{tp.d}</div>
@@ -190,7 +193,7 @@ export default function MarketplaceHome() {
       {/* Consultant context */}
       <section className="rm-shell" style={{ paddingTop: 'clamp(12px,2vw,24px)', paddingBottom: 'clamp(12px,2vw,24px)' }}>
         <div className="rm-card" style={{ borderRadius: 16, padding: '20px 24px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-          <span className="rm-ticket" style={{ width: 11, height: 14, background: 'var(--rm-apr)', marginTop: 4, flexShrink: 0 }} />
+          <span className="rm-ticket rm-ticket--plain" style={{ width: 11, height: 14, background: 'var(--rm-apr)', marginTop: 4, flexShrink: 0 }} />
           <div>
             <div style={{ fontSize: 14.5, fontWeight: 700 }}>Why do some offers include a financial-planning conversation?</div>
             <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--rm-sub)', marginTop: 4, maxWidth: '90ch' }}>

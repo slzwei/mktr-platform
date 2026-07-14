@@ -191,7 +191,7 @@ export default function MarketplaceOffer() {
             {isDraw && (
               <div style={{ background: '#FDF3EA', border: '1.5px solid var(--rm-apr)', borderRadius: 18, padding: '22px 24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
-                  <span className="rm-ticket" style={{ width: 11, height: 14, background: 'var(--rm-apr)' }} />
+                  <span className="rm-ticket rm-ticket--plain" style={{ width: 11, height: 14, background: 'var(--rm-apr)' }} />
                   <span className="rm-mono-label" style={{ color: 'var(--rm-apr2)', fontSize: 11 }}>How this draw works</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 13.5, lineHeight: 1.6 }}>
@@ -253,7 +253,7 @@ export default function MarketplaceOffer() {
 
             <div style={{ background: '#F2F6EF', border: '1.5px solid var(--rm-pine)', borderRadius: 18, padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 13 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <span className="rm-ticket" style={{ width: 11, height: 14 }} />
+                <span className="rm-ticket rm-ticket--plain" style={{ width: 11, height: 14 }} />
                 <span className="rm-mono-label" style={{ color: 'var(--rm-pine)', fontSize: 11 }}>Before you redeem</span>
               </div>
               {act.detail && <div style={{ fontSize: 13.5, lineHeight: 1.65 }}>{act.detail}</div>}

@@ -257,7 +257,7 @@ function DsaPage() {
       </section>
       <div className="rm-shell" style={{ paddingTop: 'clamp(28px,4vw,44px)', paddingBottom: 'clamp(48px,6vw,72px)', display: 'flex', flexDirection: 'column', gap: 30 }}>
         <div className="rm-warn-box">
-          <span className="rm-ticket" style={{ width: 11, height: 14, background: 'var(--rm-warn)', marginTop: 3, flexShrink: 0 }} />
+          <span className="rm-ticket rm-ticket--plain" style={{ width: 11, height: 14, background: 'var(--rm-warn)', marginTop: 3, flexShrink: 0 }} />
           <div style={{ fontSize: 13.5, lineHeight: 1.6, color: '#5C4A18' }}>
             <strong>Admission is determined entirely by schools.</strong> No provider can guarantee DSA outcomes — treat success-rate claims and admission promises as a red flag. Redeem lists discovery and preparation programmes only.
           </div>

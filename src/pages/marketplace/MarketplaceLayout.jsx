@@ -35,7 +35,7 @@ export default function MarketplaceLayout({ children, minimalChrome = false, chr
           <div className="rm-shell rm-nav-inner" style={{ maxWidth: 720, justifyContent: 'space-between' }}>
             <span className="rm-mono-label" style={{ color: 'var(--rm-sub)' }}>{chromeLabel || 'Campaign'}</span>
             <span className="rm-mono-note" style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-              <span className="rm-ticket" style={{ width: 11, height: 14 }} />
+              <span className="rm-ticket rm-ticket--plain" style={{ width: 11, height: 14 }} />
               Secured by Redeem
             </span>
           </div>
@@ -113,7 +113,7 @@ export default function MarketplaceLayout({ children, minimalChrome = false, chr
           <div className="rm-footer-cols">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 220 }}>
               <span className="rm-wordmark" style={{ color: '#F6F2E6' }}>
-                <span className="rm-ticket" style={{ background: '#E4854F' }} />
+                <span className="rm-ticket" />
                 redeem
               </span>
               <div style={{ fontSize: 12.5, lineHeight: 1.6, color: '#9DB3A3', maxWidth: '30ch' }}>
