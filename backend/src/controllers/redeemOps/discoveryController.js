@@ -9,6 +9,12 @@ const startSchema = Joi.object({
   limit: Joi.number().integer().min(1).max(500), // sanity bound; service clamps to DISCOVERY_MAX_RESULTS_PER_RUN
   // Mechanism pick; omitted = Maps. The IG pilot additionally needs DISCOVERY_IG_ENABLED.
   provider: Joi.string().valid('google_maps', 'instagram_hashtag'),
+  // Ad-hoc, type-and-go overrides of the category's saved terms/hashtags.
+  searchTerms: Joi.array().items(Joi.string().min(1).max(64)).max(20), // Maps override
+  hashtags: Joi.array().items(Joi.string().min(1).max(64)).max(20), // Instagram override
+  // Maps quality inputs (actor-native — filter before paying). Empty/absent = no filter.
+  minStars: Joi.string().valid('', 'three', 'threeAndHalf', 'four', 'fourAndHalf'),
+  skipClosed: Joi.boolean(),
 });
 const idsSchema = Joi.object({
   // .max(500): each id can become a PAID scrape — sanity-bound to one full run's
