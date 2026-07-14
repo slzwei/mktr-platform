@@ -5,7 +5,6 @@ import {
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeClaimService } from './claimService.js';
-import { makeCategoryService } from './categoryService.js';
 
 /**
  * Prospecting pools + Claim Next (docs/redeem-ops/ERD.md §3.8–3.9, brief §21).
@@ -18,7 +17,7 @@ import { makeCategoryService } from './categoryService.js';
 export function makePoolService(overrides = {}) {
   const d = {
     ProspectingPool, ProspectingPoolMember, PartnerOrganisation, sequelize, logger,
-    claims: makeClaimService(), categories: makeCategoryService(), ...overrides,
+    claims: makeClaimService(), ...overrides,
   };
 
   async function createPool(body, user) {
@@ -26,14 +25,14 @@ export function makePoolService(overrides = {}) {
     return d.ProspectingPool.create({
       name: String(body.name).trim(),
       description: body.description || null,
-      category: (await d.categories.resolveCategoryName(body.category)) ?? null,
+      category: String(body.category ?? '').trim() || null,
       area: body.area || null,
       createdBy: user.id,
     });
   }
 
   async function listPools() {
-    const pools = await d.ProspectingPool.findAll({ where: { isActive: true }, order: [['createdAt', 'DESC']] });
+    const pools = await d.ProspectingPool.findAll({ order: [['createdAt', 'DESC']] });
     const counts = await d.ProspectingPoolMember.findAll({
       attributes: ['poolId', 'status', [d.sequelize.fn('COUNT', '*'), 'count']],
       group: ['poolId', 'status'],
@@ -44,7 +43,11 @@ export function makePoolService(overrides = {}) {
       byPool[c.poolId] = byPool[c.poolId] || {};
       byPool[c.poolId][c.status] = Number(c.count);
     }
-    return pools.map((p) => ({ ...p.toJSON(), memberCounts: byPool[p.id] || {} }));
+    return pools.map((p) => {
+      const memberCounts = byPool[p.id] || {};
+      const status = !p.isActive ? 'archived' : (memberCounts.available || 0) > 0 ? 'active' : 'exhausted';
+      return { ...p.toJSON(), memberCounts, status };
+    });
   }
 
   async function updatePool(poolId, body, user) {
@@ -54,11 +57,7 @@ export function makePoolService(overrides = {}) {
     for (const f of ['name', 'description', 'category', 'area', 'isActive']) {
       if (body[f] !== undefined) updates[f] = body[f];
     }
-    if (updates.category !== undefined) {
-      updates.category = await d.categories.resolveCategoryName(updates.category, {
-        currentValue: pool.category,
-      });
-    }
+    if (updates.category !== undefined) updates.category = String(updates.category ?? '').trim() || null;
     await pool.update(updates);
     return pool;
   }

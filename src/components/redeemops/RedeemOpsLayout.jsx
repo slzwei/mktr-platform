@@ -45,7 +45,7 @@ const NAV = [
     : []),
   { title: 'Pipeline', url: '/redeem-ops/pipeline', icon: Kanban, capability: 'pipeline.view_team' },
   { title: 'Tasks', url: '/redeem-ops/tasks', icon: ListChecks, capability: 'tasks.manage' },
-  { title: 'Pools', url: '/redeem-ops/pools', icon: Layers, capability: 'pools.claim_next' },
+  { title: 'Assignment Queues', url: '/redeem-ops/pools', icon: Layers, capability: 'pools.claim_next' },
   { title: 'Rewards', url: '/redeem-ops/rewards', icon: Gift, capability: 'rewards.view' },
   { title: 'Activations', url: '/redeem-ops/activations', icon: Link2, capability: 'activations.view' },
   { title: 'Redemptions', url: '/redeem-ops/redemptions', icon: QrCode, capability: 'redemptions.verify' },
