@@ -6,12 +6,13 @@ import { logger } from '../../utils/logger.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { makePartnerService } from './partnerService.js';
 import { makeCategoryService } from './categoryService.js';
+import { makeDiscoveryUsageService } from './discoveryUsageService.js';
 import { makeDedupeService } from './dedupeService.js';
 import { makeApifyClient } from './discovery/apifyClient.js';
 import { normalizeMapsItem, normalizeInstagramItem, isSingaporeMapsItem } from './discovery/normalizers.js';
 import { normalizeBusinessName, normalizeDomain, normalizeHandle } from './normalizers.js';
 import { normalizePhone } from '../prospectHelpers.js';
-import { sgtDayWindow } from './taskService.js';
+import { sgDateKey, sgtDayWindow } from './taskService.js';
 
 const TERMINAL = ['completed', 'failed', 'aborted', 'timed_out'];
 
@@ -20,6 +21,7 @@ export function cfg() {
     enabled: process.env.DISCOVERY_ENABLED === 'true',
     searchTermsEnabled: process.env.DISCOVERY_SEARCH_TERMS_ENABLED === 'true',
     territoriesEnabled: process.env.DISCOVERY_TERRITORIES_ENABLED === 'true',
+    resultQuotaEnabled: process.env.DISCOVERY_RESULT_QUOTA_ENABLED === 'true',
     mapsActor: process.env.APIFY_MAPS_ACTOR_ID || 'compass~crawler-google-places',
     // MUST be the PROFILE scraper — apify~instagram-scraper (its sibling) has no
     // `usernames` input (wants directUrls), so every enrichment run came back
@@ -36,6 +38,10 @@ export function cfg() {
     // not runs — a run-count cap left per-call size unbounded.
     enrichMaxPerDay: Number(process.env.DISCOVERY_ENRICH_MAX_PER_DAY || 500),
     enrichMaxPerUserDay: Number(process.env.DISCOVERY_ENRICH_MAX_PER_USER_DAY || 200),
+    resultsPerUserDay: Number(process.env.DISCOVERY_RESULTS_PER_USER_DAY || 1500),
+    resultsPerTeamDay: Number(process.env.DISCOVERY_RESULTS_PER_TEAM_DAY || 6000),
+    profilesPerUserDay: Number(process.env.DISCOVERY_PROFILES_PER_USER_DAY || 200),
+    profilesPerTeamDay: Number(process.env.DISCOVERY_PROFILES_PER_TEAM_DAY || 500),
     costPerResultUsd: Number(process.env.DISCOVERY_COST_PER_RESULT_USD || 0.007),
     reconcileStuckMinutes: Number(process.env.DISCOVERY_RECONCILE_STUCK_MINUTES || 10),
     candidateTtlDays: Number(process.env.DISCOVERY_CANDIDATE_TTL_DAYS ?? 90),
@@ -54,6 +60,7 @@ export function makeDiscoveryService(overrides = {}) {
     apify: makeApifyClient(),
     partners: makePartnerService(),
     categories: makeCategoryService(),
+    usage: makeDiscoveryUsageService(),
     dedupe: makeDedupeService(),
     audit: makeRedeemOpsAuditService(),
     ...overrides,
@@ -93,6 +100,20 @@ export function makeDiscoveryService(overrides = {}) {
   /** Per-user search budget for the day (drives the UI's usage chip). */
   async function getQuota(user) {
     const c = cfg();
+    if (c.resultQuotaEnabled) {
+      const usage = await d.usage.getUsage(user.id, sgDateKey());
+      return {
+        mode: 'results',
+        resultsUsed: usage.resultsUsed,
+        resultsLimit: c.resultsPerUserDay,
+        resultsRemaining: Math.max(0, c.resultsPerUserDay - usage.resultsUsed),
+        profilesUsed: usage.profilesUsed,
+        profilesLimit: c.profilesPerUserDay,
+        profilesRemaining: Math.max(0, c.profilesPerUserDay - usage.profilesUsed),
+        estimatedSpendUsd: Number((usage.resultsUsed * c.costPerResultUsd).toFixed(4)),
+        costPerResultUsd: c.costPerResultUsd,
+      };
+    }
     const { start: since } = sgtDayWindow();
     const used = await d.DiscoveryRun.count({
       where: {
@@ -105,6 +126,43 @@ export function makeDiscoveryService(overrides = {}) {
       remaining: Math.max(0, c.maxRunsPerUserDay - used),
       costPerResultUsd: c.costPerResultUsd, // lets the UI show "≈ $x.xx" pre-search
     };
+  }
+
+  function dailyReservation(run) {
+    return run.rawPayload?.dailyUsageReservation || null;
+  }
+
+  async function refundReservation(run, amount, transaction = null) {
+    const reservation = dailyReservation(run);
+    const refundAmount = Math.max(0, Math.trunc(Number(amount) || 0));
+    if (!reservation || refundAmount === 0) return;
+    const args = {
+      userId: run.createdBy,
+      sgDate: reservation.sgDate,
+      amount: refundAmount,
+      transaction,
+    };
+    if (reservation.kind === 'results') await d.usage.refundResults(args);
+    if (reservation.kind === 'profiles') await d.usage.refundProfiles(args);
+  }
+
+  /** Terminal update + result true-up under one run-row lock, so duplicate
+   * webhook/reconcile workers can never refund the same reservation twice. */
+  async function completeRun(run, values) {
+    const reservation = dailyReservation(run);
+    if (reservation?.kind !== 'results') {
+      await run.update(values);
+      return;
+    }
+    await d.sequelize.transaction(async (transaction) => {
+      const locked = await d.DiscoveryRun.findByPk(run.id, {
+        transaction, lock: transaction.LOCK.UPDATE,
+      });
+      if (!locked || TERMINAL.includes(locked.status)) return;
+      const unused = Math.max(0, Number(reservation.amount) - Number(values.resultCount || 0));
+      await refundReservation(locked, unused, transaction);
+      await locked.update(values, { transaction });
+    });
   }
 
   function webhookUrl() {
@@ -125,8 +183,8 @@ export function makeDiscoveryService(overrides = {}) {
     const { name: canonicalCategory, searchTerms } = await d.categories.resolveCategoryForSearch(
       String(category).trim()
     );
-    await assertQuota(user);
     const c = cfg();
+    if (!c.resultQuotaEnabled) await assertQuota(user);
     const requestedLimit = Math.min(Math.max(Number(limit) || 60, 1), c.maxResultsPerRun);
     const searchTermsUsed = c.searchTermsEnabled ? searchTerms : [canonicalCategory];
     // The Maps actor applies this cap to EACH search string, so divide the
@@ -135,13 +193,32 @@ export function makeDiscoveryService(overrides = {}) {
       ? Math.max(1, Math.floor(requestedLimit / searchTermsUsed.length))
       : requestedLimit;
 
-    const run = await d.DiscoveryRun.create({
+    const runValues = {
       createdBy: user.id, provider: 'apify_google_maps',
       category: canonicalCategory, area: String(area).trim(),
       requestedLimit, status: 'pending',
       estimatedCostUsd: Number((requestedLimit * c.costPerResultUsd).toFixed(4)),
-    });
+    };
+    let run;
+    if (c.resultQuotaEnabled) {
+      const sgDate = sgDateKey();
+      const reservation = { kind: 'results', sgDate, amount: requestedLimit };
+      run = await d.sequelize.transaction(async (transaction) => {
+        await d.usage.reserveResults({
+          userId: user.id, sgDate, amount: requestedLimit,
+          userCap: c.resultsPerUserDay, teamCap: c.resultsPerTeamDay,
+          transaction,
+        });
+        return d.DiscoveryRun.create(
+          { ...runValues, rawPayload: { dailyUsageReservation: reservation } },
+          { transaction },
+        );
+      });
+    } else {
+      run = await d.DiscoveryRun.create(runValues);
+    }
 
+    let providerStarted = false;
     try {
       // Geo-anchored search: the area goes in locationQuery (the actor geocodes
       // it and crawls that polygon), NOT concatenated into the search string —
@@ -158,9 +235,25 @@ export function makeDiscoveryService(overrides = {}) {
         scrapeContacts: true, // enables the instagrams/social arrays
       };
       const started = await d.apify.startRun(c.mapsActor, input, { webhookUrl: webhookUrl() });
+      providerStarted = true;
       await run.update({ providerRunId: started.runId, providerDatasetId: started.datasetId || null, status: 'running', startedAt: new Date() });
     } catch (err) {
-      await run.update({ status: 'failed', error: String(err.message).slice(0, 500) });
+      if (dailyReservation(run) && !providerStarted) {
+        await d.sequelize.transaction(async (transaction) => {
+          const locked = await d.DiscoveryRun.findByPk(run.id, {
+            transaction, lock: transaction.LOCK.UPDATE,
+          });
+          if (!locked) return;
+          const reservation = dailyReservation(locked);
+          await refundReservation(locked, reservation?.amount, transaction);
+          await locked.update(
+            { status: 'failed', error: String(err.message).slice(0, 500) },
+            { transaction },
+          );
+        });
+      } else {
+        await run.update({ status: 'failed', error: String(err.message).slice(0, 500) });
+      }
       throw new AppError(`Could not start search: ${err.message}`, 502);
     }
 
@@ -212,7 +305,7 @@ export function makeDiscoveryService(overrides = {}) {
     } else {
       await materializeCandidates(run, items);
     }
-    await run.update({
+    await completeRun(run, {
       status: 'completed', completedAt: new Date(), providerDatasetId: info.datasetId,
       actualCostUsd: info.usageTotalUsd, resultCount: items.length,
     });
@@ -456,60 +549,116 @@ export function makeDiscoveryService(overrides = {}) {
       throw new AppError('Nothing to enrich — no un-enriched Instagram handles in the selection', 400);
     }
 
-    // Quotas count PROFILES (requestedLimit = handle count per run), excluding
-    // runs that never reached Apify. SUM(int) can surface as a bigint string.
-    const { start: since } = sgtDayWindow();
-    const igBase = { provider: 'apify_instagram', createdAt: { [Op.gte]: since }, ...COUNTS_TOWARD_QUOTA };
-    const [globalUsedRaw, userUsedRaw] = await Promise.all([
-      d.DiscoveryRun.sum('requestedLimit', { where: igBase }),
-      d.DiscoveryRun.sum('requestedLimit', { where: { ...igBase, createdBy: user.id } }),
-    ]);
-    const globalUsed = Number(globalUsedRaw) || 0;
-    const userUsed = Number(userUsedRaw) || 0;
-    if (userUsed + handles.length > c.enrichMaxPerUserDay) {
-      const left = Math.max(0, c.enrichMaxPerUserDay - userUsed);
-      throw new AppError(`Daily enrichment limit reached — ${left} profile${left === 1 ? '' : 's'} left today for you`, 429);
-    }
-    if (globalUsed + handles.length > c.enrichMaxPerDay) {
-      const left = Math.max(0, c.enrichMaxPerDay - globalUsed);
-      throw new AppError(`Team enrichment limit reached — ${left} profile${left === 1 ? '' : 's'} left today`, 429);
+    if (!c.resultQuotaEnabled) {
+      // Quotas count PROFILES (requestedLimit = handle count per run), excluding
+      // runs that never reached Apify. SUM(int) can surface as a bigint string.
+      const { start: since } = sgtDayWindow();
+      const igBase = { provider: 'apify_instagram', createdAt: { [Op.gte]: since }, ...COUNTS_TOWARD_QUOTA };
+      const [globalUsedRaw, userUsedRaw] = await Promise.all([
+        d.DiscoveryRun.sum('requestedLimit', { where: igBase }),
+        d.DiscoveryRun.sum('requestedLimit', { where: { ...igBase, createdBy: user.id } }),
+      ]);
+      const globalUsed = Number(globalUsedRaw) || 0;
+      const userUsed = Number(userUsedRaw) || 0;
+      if (userUsed + handles.length > c.enrichMaxPerUserDay) {
+        const left = Math.max(0, c.enrichMaxPerUserDay - userUsed);
+        throw new AppError(`Daily enrichment limit reached — ${left} profile${left === 1 ? '' : 's'} left today for you`, 429);
+      }
+      if (globalUsed + handles.length > c.enrichMaxPerDay) {
+        const left = Math.max(0, c.enrichMaxPerDay - globalUsed);
+        throw new AppError(`Team enrichment limit reached — ${left} profile${left === 1 ? '' : 's'} left today`, 429);
+      }
     }
 
-    // Run row FIRST, then the atomic claim: a crash between claim and Apify
-    // start leaves a pending run with NULL providerRunId — exactly the shape the
-    // stranded-run sweep repairs (targets reset to 'failed').
-    const run = await d.DiscoveryRun.create({
-      createdBy: user.id, provider: 'apify_instagram', status: 'pending', requestedLimit: 0,
-    });
     // Atomic claim — the ONLY transition into enrichment-'pending'. A concurrent
     // duplicate submit claims zero rows and 400s: no double-paid run (Codex F12).
-    const [claimed] = await d.sequelize.query(
-      `UPDATE discovery_candidates
-          SET "enrichmentStatus" = 'pending', "updatedAt" = NOW()
-        WHERE id IN (:ids) AND status = 'pending'
-          AND "instagramHandle" IS NOT NULL
-          AND "enrichmentStatus" IN ('none', 'failed')
-        RETURNING id, "instagramHandle"`,
-      { replacements: { ids: candidateIds } },
-    );
-    if (claimed.length === 0) {
-      await run.update({ status: 'failed', error: 'nothing eligible to enrich (raced or already handled)' });
-      throw new AppError('Nothing to enrich — no un-enriched Instagram handles in the selection', 400);
-    }
-    const claimedIds = claimed.map((x) => x.id);
-    const claimedHandles = [...new Set(claimed.map((x) => x.instagramHandle))];
-    await run.update({ requestedLimit: claimedHandles.length, rawPayload: { targetCandidateIds: claimedIds } });
+    const claimEligible = async (transaction = null) => {
+      const [rows] = await d.sequelize.query(
+        `UPDATE discovery_candidates
+            SET "enrichmentStatus" = 'pending', "updatedAt" = NOW()
+          WHERE id IN (:ids) AND status = 'pending'
+            AND "instagramHandle" IS NOT NULL
+            AND "enrichmentStatus" IN ('none', 'failed')
+          RETURNING id, "instagramHandle"`,
+        { replacements: { ids: candidateIds }, transaction },
+      );
+      return rows;
+    };
 
+    let run;
+    let claimedIds;
+    let claimedHandles;
+    if (c.resultQuotaEnabled) {
+      await d.sequelize.transaction(async (transaction) => {
+        run = await d.DiscoveryRun.create({
+          createdBy: user.id, provider: 'apify_instagram', status: 'pending', requestedLimit: 0,
+        }, { transaction });
+        const claimed = await claimEligible(transaction);
+        if (claimed.length === 0) {
+          throw new AppError('Nothing to enrich — no un-enriched Instagram handles in the selection', 400);
+        }
+        claimedIds = claimed.map((x) => x.id);
+        claimedHandles = [...new Set(claimed.map((x) => x.instagramHandle))];
+        const sgDate = sgDateKey();
+        const reservation = { kind: 'profiles', sgDate, amount: claimedHandles.length };
+        await d.usage.reserveProfiles({
+          userId: user.id, sgDate, amount: claimedHandles.length,
+          userCap: c.profilesPerUserDay, teamCap: c.profilesPerTeamDay,
+          transaction,
+        });
+        await run.update({
+          requestedLimit: claimedHandles.length,
+          rawPayload: { targetCandidateIds: claimedIds, dailyUsageReservation: reservation },
+        }, { transaction });
+      });
+    } else {
+      // Run row FIRST, then the atomic claim: a crash between claim and Apify
+      // start leaves a pending run with NULL providerRunId — exactly the shape the
+      // stranded-run sweep repairs (targets reset to 'failed').
+      run = await d.DiscoveryRun.create({
+        createdBy: user.id, provider: 'apify_instagram', status: 'pending', requestedLimit: 0,
+      });
+      const claimed = await claimEligible();
+      if (claimed.length === 0) {
+        await run.update({ status: 'failed', error: 'nothing eligible to enrich (raced or already handled)' });
+        throw new AppError('Nothing to enrich — no un-enriched Instagram handles in the selection', 400);
+      }
+      claimedIds = claimed.map((x) => x.id);
+      claimedHandles = [...new Set(claimed.map((x) => x.instagramHandle))];
+      await run.update({ requestedLimit: claimedHandles.length, rawPayload: { targetCandidateIds: claimedIds } });
+    }
+
+    let providerStarted = false;
     try {
       // instagram-profile-scraper contract: `usernames` only (one dataset item per
       // profile — username/followersCount/biography/verified, matching the
       // normalizer). resultsType/resultsLimit belong to the OTHER actor.
       const input = { usernames: claimedHandles };
       const started = await d.apify.startRun(c.igActor, input, { webhookUrl: webhookUrl() });
+      providerStarted = true;
       await run.update({ providerRunId: started.runId, status: 'running', startedAt: new Date() });
     } catch (err) {
-      await run.update({ status: 'failed', error: String(err.message).slice(0, 500) });
-      await d.DiscoveryCandidate.update({ enrichmentStatus: 'failed' }, { where: { id: { [Op.in]: claimedIds } } });
+      if (dailyReservation(run) && !providerStarted) {
+        await d.sequelize.transaction(async (transaction) => {
+          const locked = await d.DiscoveryRun.findByPk(run.id, {
+            transaction, lock: transaction.LOCK.UPDATE,
+          });
+          if (!locked) return;
+          await d.DiscoveryCandidate.update(
+            { enrichmentStatus: 'failed' },
+            { where: { id: { [Op.in]: claimedIds } }, transaction },
+          );
+          const reservation = dailyReservation(locked);
+          await refundReservation(locked, reservation?.amount, transaction);
+          await locked.update(
+            { status: 'failed', error: String(err.message).slice(0, 500) },
+            { transaction },
+          );
+        });
+      } else {
+        await run.update({ status: 'failed', error: String(err.message).slice(0, 500) });
+        await d.DiscoveryCandidate.update({ enrichmentStatus: 'failed' }, { where: { id: { [Op.in]: claimedIds } } });
+      }
       throw new AppError(`Could not start enrichment: ${err.message}`, 502);
     }
     await d.audit.recordAuditEvent({
@@ -687,19 +836,46 @@ export function makeDiscoveryService(overrides = {}) {
     });
     for (const run of stranded) {
       try {
-        if (run.provider === 'apify_instagram') {
-          const targetIds = run.rawPayload?.targetCandidateIds || [];
-          if (targetIds.length > 0) {
-            await d.DiscoveryCandidate.update(
-              { enrichmentStatus: 'failed' },
-              { where: { id: { [Op.in]: targetIds }, enrichmentStatus: 'pending' } },
-            );
+        if (dailyReservation(run)) {
+          await d.sequelize.transaction(async (transaction) => {
+            const locked = await d.DiscoveryRun.findByPk(run.id, {
+              transaction, lock: transaction.LOCK.UPDATE,
+            });
+            if (!locked || locked.status !== 'pending' || locked.providerRunId) return;
+            if (locked.provider === 'apify_instagram') {
+              const targetIds = locked.rawPayload?.targetCandidateIds || [];
+              if (targetIds.length > 0) {
+                await d.DiscoveryCandidate.update(
+                  { enrichmentStatus: 'failed' },
+                  {
+                    where: { id: { [Op.in]: targetIds }, enrichmentStatus: 'pending' },
+                    transaction,
+                  },
+                );
+              }
+            }
+            const reservation = dailyReservation(locked);
+            await refundReservation(locked, reservation.amount, transaction);
+            await locked.update({
+              status: 'failed', completedAt: new Date(),
+              error: 'never started — no provider run id recorded',
+            }, { transaction });
+          });
+        } else {
+          if (run.provider === 'apify_instagram') {
+            const targetIds = run.rawPayload?.targetCandidateIds || [];
+            if (targetIds.length > 0) {
+              await d.DiscoveryCandidate.update(
+                { enrichmentStatus: 'failed' },
+                { where: { id: { [Op.in]: targetIds }, enrichmentStatus: 'pending' } },
+              );
+            }
           }
+          await run.update({
+            status: 'failed', completedAt: new Date(),
+            error: 'never started — no provider run id recorded',
+          });
         }
-        await run.update({
-          status: 'failed', completedAt: new Date(),
-          error: 'never started — no provider run id recorded',
-        });
       } catch (err) {
         d.logger.error('discovery.reconcile.stranded_failed', { runId: run.id, error: err.message });
       }
