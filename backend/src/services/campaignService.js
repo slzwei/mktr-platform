@@ -7,6 +7,18 @@ import { AppError } from '../middleware/errorHandler.js';
 import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
 import { applyLuckyDrawPolicy } from '../utils/luckyDraw.js';
+import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/marketplaceContent.js';
+import { invalidateMarketplaceCache } from './marketplaceCache.js';
+
+const SLUG_RE = /^[a-z0-9-]{3,80}$/;
+
+// design_config keys owned by the marketplace normalizer — raw incoming values
+// for these are replaced wholesale by their normalized versions (or dropped).
+const MARKETPLACE_CONTENT_KEYS = [
+  'name', 'category', 'offer_type', 'mode', 'qr_entry', 'age_range',
+  'school_levels', 'dsa_related', 'showCapacity', 'availability', 'inclusions',
+  'image_label', 'activation', 'sponsor', 'value_line', 'content_blocks',
+];
 
 /**
  * Clamp the security-sensitive keys of a design_config before persisting.
@@ -33,6 +45,21 @@ function clampDesignConfig(incoming, storedConfig, role) {
   });
   if (luckyDraw === undefined) delete clamped.luckyDraw;
   else clamped.luckyDraw = luckyDraw;
+
+  // Marketplace content keys: normalized wholesale (echoed on public
+  // /offers pages — see utils/marketplaceContent.js). Raw values replaced.
+  for (const key of MARKETPLACE_CONTENT_KEYS) delete clamped[key];
+  Object.assign(clamped, normalizeMarketplaceContent(incoming));
+
+  // marketplaceListed is the ONLY consumer-exposure switch — admin-only, like
+  // featuredDrop (campaign PUT is open to agents, who can flip is_active).
+  const listed = applyMarketplacePolicy({
+    incoming: incoming.marketplaceListed,
+    stored: storedConfig?.marketplaceListed,
+    role,
+  });
+  if (listed === undefined) delete clamped.marketplaceListed;
+  else clamped.marketplaceListed = listed;
   return clamped;
 }
 
@@ -274,6 +301,14 @@ export async function createCampaign(body, user) {
     status: is_active ? 'active' : 'draft',
     type: body.type || 'lead_generation'
   };
+  if (campaignData.is_active) campaignData.firstActivatedAt = new Date();
+  if (body.slug !== undefined && body.slug !== null && body.slug !== '') {
+    const slug = String(body.slug).trim().toLowerCase();
+    if (!SLUG_RE.test(slug)) {
+      throw new AppError('Slug must be 3-80 chars of lowercase letters, digits and hyphens.', 422);
+    }
+    campaignData.slug = slug;
+  }
   if (commission_amount_driver !== undefined) campaignData.commission_amount_driver = commission_amount_driver;
   if (commission_amount_fleet !== undefined) campaignData.commission_amount_fleet = commission_amount_fleet;
   if (defaultAssignmentMode !== undefined) campaignData.defaultAssignmentMode = defaultAssignmentMode;
@@ -307,7 +342,16 @@ export async function createCampaign(body, user) {
     }
   }
 
-  const campaign = await Campaign.create(campaignData);
+  let campaign;
+  try {
+    campaign = await Campaign.create(campaignData);
+  } catch (err) {
+    if (err?.name === 'SequelizeUniqueConstraintError') {
+      throw new AppError('That marketplace slug is already taken by another campaign.', 409);
+    }
+    throw err;
+  }
+  invalidateMarketplaceCache();
 
   if (campaignData.design_config?.luckyDraw?.enabled === true) {
     const withTerms = await ensureDrawTermsVersion(campaignData.design_config, campaign.id, user.id);
@@ -360,6 +404,23 @@ export async function updateCampaign(id, body, req) {
   if (is_active !== undefined) {
     updateData.is_active = is_active;
     updateData.status = is_active ? 'active' : 'draft';
+    // Durable "ever activated" anchor — locks the marketplace slug (066).
+    if (is_active && !campaign.firstActivatedAt) updateData.firstActivatedAt = new Date();
+  }
+  if (body.slug !== undefined) {
+    const incomingSlug = body.slug === null || body.slug === ''
+      ? null
+      : String(body.slug).trim().toLowerCase();
+    const stored = campaign.slug || null;
+    if (incomingSlug !== stored) {
+      if (campaign.firstActivatedAt) {
+        throw new AppError('The marketplace slug is locked once a campaign has been activated.', 409);
+      }
+      if (incomingSlug !== null && !SLUG_RE.test(incomingSlug)) {
+        throw new AppError('Slug must be 3-80 chars of lowercase letters, digits and hyphens.', 422);
+      }
+      updateData.slug = incomingSlug;
+    }
   }
   if (design_config !== undefined) {
     // Clamp the per-campaign customer host to the enum (never trust a raw host
@@ -378,7 +439,15 @@ export async function updateCampaign(id, body, req) {
   if (body.metaPixelId !== undefined) updateData.metaPixelId = body.metaPixelId || null;
   if (body.tiktokPixelId !== undefined) updateData.tiktokPixelId = body.tiktokPixelId || null;
 
-  await campaign.update(updateData);
+  try {
+    await campaign.update(updateData);
+  } catch (err) {
+    if (err?.name === 'SequelizeUniqueConstraintError') {
+      throw new AppError('That marketplace slug is already taken by another campaign.', 409);
+    }
+    throw err;
+  }
+  invalidateMarketplaceCache();
 
   // Sync agent assignments to join table when assigned_agents is provided
   if (assigned_agents !== undefined) {
@@ -432,7 +501,12 @@ export async function setCampaignLaunchState(id, state, req) {
   }
 
   const isActive = state === 'active';
-  await campaign.update({ is_active: isActive, status: isActive ? 'active' : 'paused' });
+  await campaign.update({
+    is_active: isActive,
+    status: isActive ? 'active' : 'paused',
+    ...(isActive && !campaign.firstActivatedAt ? { firstActivatedAt: new Date() } : {}),
+  });
+  invalidateMarketplaceCache();
 
   // Fan-out: refresh device manifests (same as updateCampaign content changes).
   await notifyDevices(id);
@@ -514,7 +588,9 @@ export async function duplicateCampaign(id, body, req) {
   // deliberately re-enabled as its own draw.
   const dupDesign = (() => {
     if (!rest.design_config || typeof rest.design_config !== 'object') return rest.design_config;
-    const { luckyDraw: _neverCloneDraw, ...base } = rest.design_config;
+    // marketplaceListed never clones either — a duplicate of a listed campaign
+    // must not silently appear on the public marketplace when activated.
+    const { luckyDraw: _neverCloneDraw, marketplaceListed: _neverCloneListing, ...base } = rest.design_config;
     return {
       ...base,
       ...(rest.design_config.featuredDrop && typeof rest.design_config.featuredDrop === 'object'
@@ -530,6 +606,10 @@ export async function duplicateCampaign(id, body, req) {
     status: 'draft',
     createdBy: req.user.id,
     spentAmount: 0,
+    // slug is unique and locked to the original; firstActivatedAt is the
+    // original's activation history — a copy starts with neither.
+    slug: null,
+    firstActivatedAt: null,
     createdAt: undefined,
     updatedAt: undefined
   });

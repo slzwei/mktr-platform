@@ -106,7 +106,9 @@ export const schemas = {
     ad_playlist: Joi.array().items(Joi.object()).optional(),
     enforceLeadQuota: Joi.boolean().optional(),
     metaPixelId: Joi.string().max(64).optional().allow(null, ''),
-    tiktokPixelId: Joi.string().max(64).optional().allow(null, '')
+    tiktokPixelId: Joi.string().max(64).optional().allow(null, ''),
+    // Marketplace URL handle — service enforces charset/lock; format-only here.
+    slug: Joi.string().max(80).optional().allow(null, '')
   }),
 
   campaignUpdate: Joi.object({
@@ -125,7 +127,9 @@ export const schemas = {
     ad_playlist: Joi.array().items(Joi.object()).optional(),
     enforceLeadQuota: Joi.boolean().optional(),
     metaPixelId: Joi.string().max(64).optional().allow(null, ''),
-    tiktokPixelId: Joi.string().max(64).optional().allow(null, '')
+    tiktokPixelId: Joi.string().max(64).optional().allow(null, ''),
+    // Marketplace URL handle — service enforces charset + post-activation lock.
+    slug: Joi.string().max(80).optional().allow(null, '')
   }).min(1),
 
   // Car schemas
@@ -232,6 +236,17 @@ export const schemas = {
     // client; this flag only records that the person ticked the box. That evidence is what
     // releases an otherwise-held DNC-registered lead (services/dncConsent.hasValidDncConsent).
     consent_dnc: Joi.boolean().optional(),
+    // Marketplace flow extras (redeem.sg /flow/:slug — docs/plans/
+    // redeem-marketplace-v2.md Phase 4). Whitelisted here (this endpoint runs
+    // stripUnknown, so an unlisted key is silently dropped); prospectService
+    // VALIDATES the values against the campaign's config before stashing them
+    // at sourceMetadata.marketplace — never trusted as free text downstream.
+    marketplace: Joi.object({
+      child_name: Joi.string().max(120).optional().allow(''),
+      child_school_level: Joi.string().max(120).optional().allow(''),
+      preferred_branch: Joi.string().max(120).optional().allow(''),
+      preferred_timing: Joi.string().max(120).optional().allow('')
+    }).optional(),
     // Quiz funnel: raw answers + an advisory client-computed result. The server
     // RE-SCORES authoritatively from campaign.design_config.quiz (see
     // prospectService.createProspect) and stashes the result in

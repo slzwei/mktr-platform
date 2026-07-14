@@ -66,6 +66,11 @@ export function normalizeLuckyDraw(raw) {
       ? multiplier
       : DEFAULT_MULTIPLIER;
 
+  // Display-only winners count for marketplace copy ("5 winners drawn").
+  // No draw mechanics read it.
+  const winners = Number(raw.winners);
+  if (Number.isInteger(winners) && winners >= 1 && winners <= 1000) out.winners = winners;
+
   for (const key of ['activationId', 'termsVersionId']) {
     if (typeof raw[key] === 'string' && UUID_RE.test(raw[key].trim())) {
       out[key] = raw[key].trim().toLowerCase();

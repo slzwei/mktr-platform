@@ -200,9 +200,20 @@ export function makeProspectService(overrides = {}) {
       consentMetadata: _cm,
       quizResult: _qr, referralRef: _rref,
       utm_source: _us, utm_medium: _um, utm_campaign: _ucmp, utm_content: _ucnt, utm_term: _utm,
+      // Marketplace flow extras — validated against the campaign config below
+      // (never free text into sourceMetadata). NOTE: a caller-supplied
+      // sourceMetadata object itself is preserved for internal callers (the
+      // public route strips it via Joi stripUnknown), but its `marketplace`
+      // subkey is server-built ONLY — scrubbed below before the validated
+      // values are written, so it can never be forged through the body.
+      marketplace: marketplaceRaw,
       ...bodyWithoutMeta
     } = safeBody;
     const incoming = { ...bodyWithoutMeta };
+    if (incoming.sourceMetadata && typeof incoming.sourceMetadata === 'object') {
+      const { marketplace: _forgedMk, ...restSm } = incoming.sourceMetadata;
+      incoming.sourceMetadata = restSm;
+    }
 
     const capiSourceMetadata = {
       ...(eventId ? { eventId } : {}),
@@ -465,6 +476,44 @@ export function makeProspectService(overrides = {}) {
           acceptedAt: new Date().toISOString(),
         },
       };
+    }
+
+    // Marketplace flow extras (docs/plans/redeem-marketplace-v2.md Phase 4).
+    // Values are validated against the campaign's own config — chip-select
+    // fields must match the options the designer authored (mismatches are
+    // dropped + logged, never 4xx'd: losing a lead over a stale label is worse
+    // than losing the preference). child_name is charset-sanitised free text.
+    // NOTE: sourceMetadata (incl. these keys) is forwarded verbatim to the
+    // Lyfe lead.created webhook — child_name is a minor's first name, so the
+    // campaign's data_use copy must disclose it (plan decision 9).
+    if (marketplaceRaw && typeof marketplaceRaw === 'object') {
+      const dcfg = sourceCampaign?.design_config || {};
+      const cleanText = (v) => {
+        if (typeof v !== 'string') return undefined;
+        const t = v.trim().replace(/[<>]/g, '').slice(0, 120);
+        return t || undefined;
+      };
+      const mk = {};
+      const childName = cleanText(marketplaceRaw.child_name);
+      if (childName) mk.child_name = childName;
+      const level = cleanText(marketplaceRaw.child_school_level);
+      if (level && Array.isArray(dcfg.school_levels) && dcfg.school_levels.includes(level)) {
+        mk.child_school_level = level;
+      }
+      const branch = cleanText(marketplaceRaw.preferred_branch);
+      if (branch) mk.preferred_branch = branch;
+      const timing = cleanText(marketplaceRaw.preferred_timing);
+      if (timing) {
+        const days = dcfg.availability?.days || [];
+        const slots = dcfg.availability?.slots || [];
+        const parts = timing.split(/\s+/);
+        const valid = parts.length >= 1 && parts.length <= 2
+          && parts.every((p) => days.includes(p) || slots.includes(p));
+        if (valid) mk.preferred_timing = timing;
+      }
+      if (Object.keys(mk).length > 0) {
+        incoming.sourceMetadata = { ...(incoming.sourceMetadata || {}), marketplace: mk };
+      }
     }
 
     // DNC (Do Not Call) scrubbing mode for this lead. 'off' unless scrubbing is configured

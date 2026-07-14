@@ -166,3 +166,13 @@ export function trackCompleteRegistration(params = {}, eventId) {
 export function trackSubscribe(params = {}) {
   trackEvent('Subscribe', params);
 }
+
+/**
+ * Non-conversion CUSTOM event (fbq('trackCustom')) — funnel diagnostics only
+ * (otp_sent, dnc_gate_shown, duplicate_blocked, …). Never optimised on; safe
+ * to drop without touching conversion integrity (Analytics Event Taxonomy §03).
+ */
+export function trackCustomEvent(eventName, params = {}) {
+  if (typeof window === 'undefined' || typeof window.fbq !== 'function') return;
+  window.fbq('trackCustom', eventName, params);
+}

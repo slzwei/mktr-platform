@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { sequelize } from '../database/connection.js';
 
 const Campaign = sequelize.define('Campaign', {
@@ -208,10 +208,27 @@ const Campaign = sequelize.define('Campaign', {
     allowNull: true,
     field: 'agent_notes',
     comment: 'string[] agent obligations; NULL treated as [] by the catalog'
+  },
+  slug: {
+    type: DataTypes.STRING(80),
+    allowNull: true,
+    validate: { is: /^[a-z0-9-]{3,80}$/ },
+    comment: 'Marketplace URL handle (/offers/:slug, /flow/:slug only). Immutable once firstActivatedAt is set.'
+  },
+  firstActivatedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'Stamped the first time is_active flips true; locks the slug'
   }
 }, {
   tableName: 'campaigns',
   indexes: [
+    {
+      unique: true,
+      fields: ['slug'],
+      where: { slug: { [Op.ne]: null } },
+      name: 'uq_campaigns_slug'
+    },
     {
       fields: ['status']
     },

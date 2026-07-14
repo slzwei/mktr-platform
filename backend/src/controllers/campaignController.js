@@ -1,6 +1,7 @@
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 import * as campaignService from '../services/campaignService.js';
 import * as featuredDropsService from '../services/featuredDropsService.js';
+import * as marketplaceService from '../services/marketplaceService.js';
 import * as leadPackageService from '../services/leadPackageService.js';
 import { loadCampaignReadiness } from '../services/campaignReadinessService.js';
 import { loadQuizAnalytics } from '../services/quizAnalyticsService.js';
@@ -11,6 +12,24 @@ export const getFeaturedDrops = asyncHandler(async (req, res) => {
   const drops = await featuredDropsService.getFeaturedDrops();
   res.set('Cache-Control', 'public, max-age=60');
   res.json({ success: true, data: { drops } });
+});
+
+// Authenticated designer support (docs/plans/redeem-marketplace-v2.md Phase 1):
+// the composed marketplace DTO for ANY campaign (drafts/unlisted included —
+// no publication gate) so the designer can preview what consumers would see,
+// plus a slug-availability check. Both independent of the public feature flag.
+export const getMarketplacePreview = asyncHandler(async (req, res) => {
+  const preview = await marketplaceService.previewMarketplaceCampaign(req.params.id);
+  if (!preview) throw new AppError('Campaign not found', 404);
+  res.json({ success: true, data: { campaign: preview } });
+});
+
+export const checkSlugAvailability = asyncHandler(async (req, res) => {
+  const result = await marketplaceService.checkSlugAvailability(
+    String(req.query.slug || ''),
+    { excludeCampaignId: req.query.excludeCampaignId || undefined }
+  );
+  res.json({ success: true, data: result });
 });
 
 export const listCampaigns = asyncHandler(async (req, res) => {
