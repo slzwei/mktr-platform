@@ -4,7 +4,7 @@ import discoveryService, { cfg } from '../../services/redeemOps/discoveryService
 import { logger } from '../../utils/logger.js';
 
 const startSchema = Joi.object({
-  category: Joi.string().min(1).max(64).required(),
+  category: Joi.string().max(64).allow(''), // optional — ad-hoc terms/hashtags can stand in
   area: Joi.string().min(1).max(120).required(),
   limit: Joi.number().integer().min(1).max(500), // sanity bound; service clamps to DISCOVERY_MAX_RESULTS_PER_RUN
   // Mechanism pick; omitted = Maps. The IG pilot additionally needs DISCOVERY_IG_ENABLED.

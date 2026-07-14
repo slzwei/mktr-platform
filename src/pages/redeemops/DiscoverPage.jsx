@@ -261,7 +261,7 @@ export default function DiscoverPage() {
     if (ids.length === 0) { toast.info('Nothing to enrich — no un-enriched Instagram handles'); return; }
     enrichMutation.mutate(ids);
   };
-  const canSearch = form.category && form.area.trim() && !startMutation.isPending;
+  const canSearch = form.area.trim() && (form.category || parseCsv(form.adhoc).length > 0) && !startMutation.isPending;
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 pb-24">
@@ -296,7 +296,7 @@ export default function DiscoverPage() {
             )}
             <div className="grid gap-3 md:grid-cols-[1fr_1fr_120px_auto] md:items-end">
               <div className="space-y-1.5">
-                <Label>Category</Label>
+                <Label>Category <span style={{ color: 'var(--ro-text-3)', fontWeight: 400 }}>(optional)</span></Label>
                 <CategorySelect value={form.category} onChange={(v) => setForm((f) => ({ ...f, category: v }))} />
               </div>
               <div className="space-y-1.5">
@@ -420,7 +420,7 @@ export default function DiscoverPage() {
                       <Search className="w-4 h-4" aria-hidden="true" />
                     </span>
                     <span className="min-w-0">
-                      <b className="text-[14px] block truncate">{r.category} · {r.area}</b>
+                      <b className="text-[14px] block truncate">{[r.category, r.area].filter(Boolean).join(' · ') || '—'}</b>
                       <span className="text-[12.5px]" style={{ color: 'var(--ro-text-3)' }}>
                         {timeAgo(r.createdAt)} · {r.resultCount || 0} result{r.resultCount === 1 ? '' : 's'}
                         {r.actualCostUsd != null && ` · $${Number(r.actualCostUsd).toFixed(2)}`}
