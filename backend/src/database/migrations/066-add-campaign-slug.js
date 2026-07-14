@@ -21,6 +21,15 @@ export async function up(queryInterface) {
   await queryInterface.sequelize.query(
     'CREATE UNIQUE INDEX IF NOT EXISTS uq_campaigns_slug ON campaigns ("slug") WHERE "slug" IS NOT NULL'
   );
+  // Backfill: campaigns already live when this migration runs get their
+  // activation anchor immediately — otherwise a legacy active campaign could
+  // set AND repeatedly change a live marketplace slug (the lock only fires
+  // when firstActivatedAt is present). Guarded on NULL → idempotent.
+  await queryInterface.sequelize.query(
+    `UPDATE campaigns
+       SET "firstActivatedAt" = COALESCE("updatedAt", now())
+     WHERE "firstActivatedAt" IS NULL AND is_active = true AND status = 'active'`
+  );
 }
 
 export async function down(queryInterface) {

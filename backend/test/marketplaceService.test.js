@@ -24,7 +24,7 @@ jest.unstable_mockModule('../src/utils/logger.js', () => ({
 
 const {
   listMarketplaceCampaigns, getMarketplaceCampaign, composeOps, passesStaticGate,
-  buildPublicDesignConfig, __resetMarketplaceCache,
+  buildPublicDesignConfig, previewMarketplaceCampaign, isDrawEnded, __resetMarketplaceCache,
 } = await import('../src/services/marketplaceService.js');
 
 const NOW = Date.parse('2026-07-14T04:00:00Z');
@@ -168,22 +168,46 @@ describe('DTO exclusions (the public-data boundary)', () => {
     expect(dc.marketplaceListed).toBeUndefined();
     expect(dc.luckyDraw).toEqual({ enabled: true, closesAt: '2026-08-31', multiplier: 10, winners: 5 });
   });
+
+  test('featuredDrop surfaces as a plain boolean (homepage metadata never leaks)', () => {
+    const dc = buildPublicDesignConfig({ featuredDrop: { enabled: true, cap: 100, valueLabel: '$50' } });
+    expect(dc.featuredDrop).toBe(true);
+    expect(buildPublicDesignConfig({ featuredDrop: { enabled: false } }).featuredDrop).toBeUndefined();
+  });
 });
 
 describe('listMarketplaceCampaigns', () => {
-  test('lists only gated campaigns with resolvable ops; sold-out drops off', async () => {
+  test('lists only gated campaigns with resolvable ops; sold-out AND zero-allocation drop off', async () => {
     campaignFindAll.mockResolvedValue([
       listedCampaign(),
       listedCampaign({ id: 'cmp-2', slug: 'unlisted', design_config: { marketplaceListed: false } }),
       listedCampaign({ id: 'cmp-3', slug: 'sold-out-offer' }),
+      // Zero allocation can never issue a reward (entitlementService requires
+      // issued < allocated) — must not appear available.
+      listedCampaign({ id: 'cmp-4', slug: 'zero-allocation' }),
     ]);
     activationFindAll.mockImplementation(async ({ where }) => {
       if (where.campaignId === 'cmp-3') return [liveActivation({ allocatedQuantity: 10, issuedCount: 10 })];
+      if (where.campaignId === 'cmp-4') return [liveActivation({ allocatedQuantity: 0, issuedCount: 0 })];
       return [liveActivation()];
     });
     const list = await listMarketplaceCampaigns({ now: NOW });
     expect(list.map((c) => c.slug)).toEqual(['visual-arts-discovery']);
     expect(list[0].ops.capacity.remaining).toBe(30);
+  });
+
+  test('draws past their entry cutoff drop off the list (intake would 410)', async () => {
+    campaignFindAll.mockResolvedValue([
+      listedCampaign({
+        id: 'cmp-d', slug: 'ended-draw',
+        design_config: { marketplaceListed: true, customerHost: 'redeem', luckyDraw: { enabled: true, closesAt: '2026-07-01' } },
+      }),
+    ]);
+    activationFindAll.mockResolvedValue([liveActivation()]);
+    const list = await listMarketplaceCampaigns({ now: NOW }); // NOW = 2026-07-14
+    expect(list).toEqual([]);
+    expect(isDrawEnded({ luckyDraw: { enabled: true, closesAt: '2026-07-01' } }, NOW)).toBe(true);
+    expect(isDrawEnded({ luckyDraw: { enabled: true, closesAt: '2026-08-31' } }, NOW)).toBe(false);
   });
 
   test('stale-on-error serves the last good list within the bound', async () => {
@@ -214,5 +238,26 @@ describe('getMarketplaceCampaign', () => {
     const dto = await getMarketplaceCampaign('visual-arts-discovery');
     expect(dto.slug).toBe('visual-arts-discovery');
     expect(dto.ops.partner.name).toBe('Artelier Studio');
+  });
+});
+
+describe('previewMarketplaceCampaign (authenticated designer preview)', () => {
+  test('non-admins are scoped to own or staff-public campaigns', async () => {
+    campaignFindOne.mockResolvedValue(null);
+    activationFindAll.mockResolvedValue([]);
+    const result = await previewMarketplaceCampaign('cmp-1', { user: { id: 'agent-1', role: 'agent' } });
+    expect(result).toBeNull();
+    const where = campaignFindOne.mock.calls[0][0].where;
+    // The scoping clause must be present for non-admins (createdBy OR isPublic).
+    expect(Object.getOwnPropertySymbols(where).length).toBeGreaterThan(0);
+  });
+
+  test('admins preview any campaign without the scoping clause', async () => {
+    campaignFindOne.mockResolvedValue(listedCampaign());
+    activationFindAll.mockResolvedValue([liveActivation()]);
+    const result = await previewMarketplaceCampaign('cmp-1', { user: { id: 'admin-1', role: 'admin' } });
+    expect(result.gate.listed).toBe(true);
+    const where = campaignFindOne.mock.calls[0][0].where;
+    expect(Object.getOwnPropertySymbols(where).length).toBe(0);
   });
 });

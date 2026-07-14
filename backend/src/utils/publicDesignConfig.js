@@ -17,8 +17,9 @@
 import { normalizeLuckyDraw } from './luckyDraw.js';
 
 const PUBLIC_PASSTHROUGH_KEYS = [
-  // Lead-capture page chrome + copy
-  'themeColor', 'heroFont', 'imageUrl', 'videoUrl', 'storyText', 'storyEmphasis',
+  // Lead-capture page chrome + copy (mediaType drives the none/image/video
+  // hero switch in LeadCaptureLayout — omitting it breaks video campaigns)
+  'themeColor', 'heroFont', 'imageUrl', 'videoUrl', 'mediaType', 'storyText', 'storyEmphasis',
   'heroCtaLabel', 'ctaText', 'formHeadline', 'formSubheadline', 'formWidth',
   'brandWordmark', 'brandFooter', 'regulatoryFooter', 'termsContent', 'customerHost',
   // Form contract (flat production keys; fieldOrder is string[] OR row objects)

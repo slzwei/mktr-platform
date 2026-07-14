@@ -54,12 +54,17 @@ function brandSeoFiles() {
   // /features, /pricing, /about are hidden (show* flags false) pending a rewrite,
   // so they're intentionally excluded from the sitemap to avoid advertising 404s.
   const mktrOnlyRoutes = []
-  // Marketplace v2 static surfaces (flag-gated in the SPA; harmless in the
-  // sitemap while dark — they fall back to the apex). /offers/:slug pages are
-  // dynamic and get indexed via crawl, not enumerated here.
+  // Marketplace v2 static surfaces — only advertised once the SPA flag is
+  // baked ON for this build (while dark those routes 404, and a sitemap must
+  // never advertise 404s). /offers/:slug pages are dynamic and get indexed
+  // via crawl, not enumerated here.
+  const marketplaceOn = process.env.VITE_REDEEM_MARKETPLACE_ENABLED === 'true'
   const redeemOnlyRoutes = [
-    '/winners', '/explore', '/dsa', '/how-it-works', '/businesses', '/about',
-    '/c/education', '/c/lifestyle', '/legal/terms', '/legal/dnc', '/leads/privacy',
+    '/winners',
+    ...(marketplaceOn
+      ? ['/explore', '/dsa', '/how-it-works', '/businesses', '/about',
+         '/c/education', '/c/lifestyle', '/legal/terms', '/legal/dnc', '/leads/privacy']
+      : []),
   ]
   const routes = BRAND === 'redeem' ? [...sharedRoutes, ...redeemOnlyRoutes] : [...sharedRoutes, ...mktrOnlyRoutes]
 

@@ -154,6 +154,34 @@ export function fmtDateShort(iso) {
 
 export const isDrawCampaign = (campaign) => campaign?.design_config?.luckyDraw?.enabled === true;
 
+/**
+ * Why an offer can't be redeemed right now, or null when it can.
+ * 'draw_closed'   — draw entry cutoff passed (intake would 410; SGT day-end,
+ *                   mirroring the backend's sgtDayEndExclusiveMs gate)
+ * 'sold_out'      — no remaining capacity (zero-allocation activations
+ *                   included: they can never issue a reward)
+ * 'unserviceable' — ops chain unresolvable (activation/offer paused, expired)
+ * Used by the card, the detail CTA AND the flow — the flow must never accept
+ * submissions the pipeline can't service.
+ */
+export function offerUnavailability(campaign, now = new Date()) {
+  const dc = campaign?.design_config || {};
+  if (dc.luckyDraw?.enabled === true && dc.luckyDraw.closesAt) {
+    const end = new Date(`${dc.luckyDraw.closesAt}T23:59:59.999+08:00`);
+    if (!Number.isNaN(end.getTime()) && now > end) return 'draw_closed';
+  }
+  const ops = campaign?.ops;
+  if (!ops) return 'unserviceable';
+  if (ops.capacity && ops.capacity.remaining <= 0) return 'sold_out';
+  return null;
+}
+
+export const UNAVAILABLE_COPY = {
+  draw_closed: { cta: 'Draw closed', title: 'This draw has closed', body: 'Entries are no longer being accepted. Winners are contacted directly and listed on the winners page.' },
+  sold_out: { cta: 'Fully redeemed', title: 'This offer is fully redeemed', body: 'All available slots have been claimed. New campaigns launch weekly.' },
+  unserviceable: { cta: 'Currently unavailable', title: "This offer isn't available right now", body: 'It may have ended or been paused. Plenty of other offers are live.' },
+};
+
 /** Boost tier facts — luckyDraw (authored dates) + ops.draw (live Draw row). */
 export function boostOf(campaign) {
   const ld = campaign?.design_config?.luckyDraw;

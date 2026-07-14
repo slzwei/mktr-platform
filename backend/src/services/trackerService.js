@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { QrTag, QrScan, Attribution, Campaign } from '../models/index.js';
+import { buildPublicDesignConfig } from '../utils/publicDesignConfig.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 if (isProd && !process.env.IP_HASH_SALT) {
@@ -158,9 +159,17 @@ export async function resolveSession(sid, atkCookie) {
     // Must match the attribute list in campaignPreviewService.getPublicCampaign
     // — the QR-scan path (this fn) and the direct campaign_id link path both
     // hydrate the same form.
-    campaign = await Campaign.findByPk(qrTag.campaignId, {
+    const row = await Campaign.findByPk(qrTag.campaignId, {
       attributes: ['id', 'name', 'design_config', 'is_active', 'metaPixelId', 'tiktokPixelId', 'min_age', 'max_age']
     });
+    if (row) {
+      // Public endpoint: same design_config whitelist as previews/public —
+      // the QR path must not become a side door for internal config keys
+      // (luckyDraw activation/terms ids etc.). toJSON-tolerant: DI test mocks
+      // return plain objects.
+      campaign = typeof row.toJSON === 'function' ? row.toJSON() : { ...row };
+      campaign.design_config = buildPublicDesignConfig(campaign.design_config);
+    }
   }
 
   return {

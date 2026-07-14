@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import MarketplaceLayout from './MarketplaceLayout';
 import OfferCard from './OfferCard';
 import { getMarketplaceCampaign, listMarketplaceCampaigns } from '@/api/marketplace';
-import { composeValueLine, ageLabelOf, fmtDateLong, categoryLabel, isDrawCampaign, boostOf } from './content';
+import { composeValueLine, ageLabelOf, fmtDateLong, categoryLabel, isDrawCampaign, boostOf, offerUnavailability, UNAVAILABLE_COPY } from './content';
 import { shouldTrack, initPixel, ensureFbp, trackEvent, captureFbcFromUrl, captureUtmsFromUrl } from '@/lib/metaPixel';
 import { shouldTrackTikTok, initTikTokPixel, trackTikTokViewContent, captureTtclidFromUrl } from '@/lib/tiktokPixel';
 import { getOrCreateVcState, markVcFired } from '@/lib/pixelSession';
@@ -108,7 +108,8 @@ export default function MarketplaceOffer() {
   const act = dc.activation || {};
   const isDraw = isDrawCampaign(campaign);
   const boost = boostOf(campaign);
-  const soldOut = !ops || (ops.capacity && ops.capacity.total > 0 && ops.capacity.remaining <= 0);
+  const unavailable = offerUnavailability(campaign);
+  const soldOut = unavailable !== null;
   const valueLine = composeValueLine(campaign);
   const days = (dc.availability?.days || []).join(' · ');
   const slots = (dc.availability?.slots || []).join(' / ');
@@ -116,7 +117,7 @@ export default function MarketplaceOffer() {
   const locNames = (partner.locations || []).map((l) => l.name).filter(Boolean).join(' · ') || (dc.mode === 'online' ? 'Online — enter from anywhere' : '—');
   const otpLabel = dc.otpChannel === 'whatsapp' ? 'WhatsApp' : 'SMS';
   const relatedCards = related.filter((c) => c.slug !== slug).slice(0, 3);
-  const ctaLabel = soldOut ? (isDraw ? 'Draw closed' : 'Fully redeemed') : isDraw ? 'Enter the draw' : 'Redeem this offer';
+  const ctaLabel = unavailable ? UNAVAILABLE_COPY[unavailable].cta : isDraw ? 'Enter the draw' : 'Redeem this offer';
 
   return (
     <MarketplaceLayout>
@@ -166,8 +167,8 @@ export default function MarketplaceOffer() {
                 <Detail
                   label="Availability"
                   value={
-                    soldOut
-                      ? 'Fully redeemed'
+                    unavailable
+                      ? UNAVAILABLE_COPY[unavailable].cta
                       : `${dc.showCapacity && ops?.capacity ? `${ops.capacity.remaining} of ${ops.capacity.total} slots left` : 'Available'}${ops?.expiry ? ` · until ${fmtDateLong(ops.expiry)}` : ''}`
                   }
                 />
@@ -246,7 +247,7 @@ export default function MarketplaceOffer() {
               <h1 className="rm-serif" style={{ margin: '10px 0 0', fontSize: 'clamp(26px,2.8vw,33px)', lineHeight: 1.15 }}>{dc.name || campaign.name}</h1>
               {valueLine && <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--rm-pine)', marginTop: 10 }}>{valueLine}</div>}
               <div className="rm-mono-note" style={{ fontSize: 11, marginTop: 6 }}>
-                {[ageLabel, soldOut ? 'fully redeemed' : dc.showCapacity && ops?.capacity ? `${ops.capacity.remaining} of ${ops.capacity.total} slots left` : 'Available'].filter(Boolean).join(' · ')}
+                {[ageLabel, unavailable ? UNAVAILABLE_COPY[unavailable].cta : dc.showCapacity && ops?.capacity ? `${ops.capacity.remaining} of ${ops.capacity.total} slots left` : 'Available'].filter(Boolean).join(' · ')}
               </div>
             </div>
 

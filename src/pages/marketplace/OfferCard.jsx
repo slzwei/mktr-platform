@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { composeValueLine, ageLabelOf, fmtDateShort, isDrawCampaign, boostOf } from './content';
+import { composeValueLine, ageLabelOf, fmtDateShort, isDrawCampaign, boostOf, offerUnavailability } from './content';
 
 /**
  * Marketplace offer card (OfferCardV2 spec): reads the two-layer campaign DTO
@@ -13,7 +13,7 @@ export default function OfferCard({ campaign }) {
   const act = dc.activation || {};
   const isDraw = isDrawCampaign(campaign);
   const boost = boostOf(campaign);
-  const soldOut = ops.capacity && ops.capacity.total > 0 && ops.capacity.remaining <= 0;
+  const unavailable = offerUnavailability(campaign);
 
   const areas = [...new Set((partner.locations || []).map((l) => l.area).filter(Boolean))];
   const locLabel = areas.length > 2 ? `${areas[0]} +${areas.length - 1}` : areas.join(' · ');
@@ -24,9 +24,10 @@ export default function OfferCard({ campaign }) {
 
   const facts = [];
   if (isDraw) {
-    if (dc.luckyDraw?.closesAt) facts.push(`closes ${fmtDateShort(dc.luckyDraw.closesAt)}`);
+    if (unavailable === 'draw_closed') facts.push('draw closed');
+    else if (dc.luckyDraw?.closesAt) facts.push(`closes ${fmtDateShort(dc.luckyDraw.closesAt)}`);
   } else {
-    if (soldOut) facts.push('fully redeemed');
+    if (unavailable) facts.push(unavailable === 'sold_out' ? 'fully redeemed' : 'unavailable');
     else if (dc.showCapacity && ops.capacity) facts.push(`${ops.capacity.remaining} left`);
     if (ops.expiry) facts.push(`ends ${fmtDateShort(ops.expiry)}`);
   }

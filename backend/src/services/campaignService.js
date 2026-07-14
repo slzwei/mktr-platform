@@ -413,7 +413,12 @@ export async function updateCampaign(id, body, req) {
       : String(body.slug).trim().toLowerCase();
     const stored = campaign.slug || null;
     if (incomingSlug !== stored) {
-      if (campaign.firstActivatedAt) {
+      // Lock rule: once activated, an EXISTING slug can never change or clear
+      // (its /offers URL may be printed/shared). Setting a slug for the first
+      // time (null → value) stays allowed — no URL exists yet to break, and
+      // legacy campaigns backfilled by migration 066 must still be able to
+      // join the marketplace.
+      if (stored !== null && campaign.firstActivatedAt) {
         throw new AppError('The marketplace slug is locked once a campaign has been activated.', 409);
       }
       if (incomingSlug !== null && !SLUG_RE.test(incomingSlug)) {

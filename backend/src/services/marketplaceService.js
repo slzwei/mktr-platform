@@ -31,6 +31,7 @@ import {
 } from '../utils/marketplaceContent.js';
 import { publicLuckyDraw } from '../utils/publicDesignConfig.js';
 import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
+import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { getMarketplaceCacheState, setMarketplaceCacheState } from './marketplaceCache.js';
 import { logger } from '../utils/logger.js';
 
@@ -175,7 +176,23 @@ export function buildPublicDesignConfig(raw) {
   const ld = publicLuckyDraw(dc.luckyDraw);
   if (ld) out.luckyDraw = ld;
 
+  // Featured flag as a plain boolean (the stored value is the featuredDrop
+  // OBJECT with homepage display metadata — none of that is marketplace data).
+  if (dc.featuredDrop?.enabled === true) out.featuredDrop = true;
+
   return out;
+}
+
+/** A draw campaign stops being marketable once its entry cutoff has passed
+ * (intake 410s after sgtDayEndExclusiveMs(closesAt) — mirror that here). */
+export function isDrawEnded(dc, nowMs = Date.now()) {
+  const ld = dc?.luckyDraw;
+  if (!ld || ld.enabled !== true || !ld.closesAt) return false;
+  try {
+    return nowMs >= sgtDayEndExclusiveMs(ld.closesAt);
+  } catch {
+    return false;
+  }
 }
 
 /** Static publication gate (no ops query) — exported for the QR tracker's
@@ -219,11 +236,15 @@ async function fetchAll(now) {
   const out = [];
   for (const campaign of campaigns) {
     if (!passesStaticGate(campaign)) continue;
+    // Draws past their entry cutoff drop off the list (intake 410s them).
+    if (isDrawEnded(campaign.design_config, now)) continue;
     const ops = await composeOps(campaign.id, { now: new Date(now) });
     if (!ops) continue;
-    // Sold-out / fully issued offers drop off the list; the detail endpoint
-    // re-composes live so a direct link shows the sold-out state instead.
-    if (ops.capacity.total > 0 && ops.capacity.remaining <= 0) continue;
+    // No remaining capacity = not redeemable (a zero-allocation activation
+    // can never issue — entitlementService requires issued < allocated), so
+    // it drops off the list; the detail endpoint re-composes live so a
+    // direct link shows the sold-out state instead.
+    if (ops.capacity.remaining <= 0) continue;
     out.push(toDto(campaign, ops));
   }
 
@@ -280,10 +301,16 @@ export async function getMarketplaceCampaign(slug, { now = new Date() } = {}) {
 /**
  * Authenticated designer preview — same DTO composition WITHOUT the
  * publication gate (drafts, unlisted, pre-slug campaigns all preview).
- * Routed behind authenticateToken; never mounted publicly.
+ * Routed behind authenticateToken; never mounted publicly. Scoped like
+ * campaignService reads: non-admins see only their own or staff-public
+ * campaigns — a bare token must not preview arbitrary drafts by UUID.
  */
-export async function previewMarketplaceCampaign(campaignId, { now = new Date() } = {}) {
-  const campaign = await Campaign.findByPk(campaignId, { attributes: CAMPAIGN_ATTRS });
+export async function previewMarketplaceCampaign(campaignId, { now = new Date(), user } = {}) {
+  const where = { id: campaignId };
+  if (user && user.role !== 'admin') {
+    where[Op.or] = [{ createdBy: user.id }, { isPublic: true }];
+  }
+  const campaign = await Campaign.findOne({ where, attributes: [...CAMPAIGN_ATTRS, 'createdBy', 'isPublic'] });
   if (!campaign) return null;
   const ops = await composeOps(campaign.id, { now });
   const dto = toDto(campaign, ops);

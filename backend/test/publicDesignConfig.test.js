@@ -53,7 +53,7 @@ describe('buildPublicDesignConfig', () => {
 
   test('regression: every key the public LeadCapture surface reads survives', () => {
     const keys = [
-      'themeColor', 'heroFont', 'imageUrl', 'videoUrl', 'storyText', 'storyEmphasis',
+      'themeColor', 'heroFont', 'imageUrl', 'videoUrl', 'mediaType', 'storyText', 'storyEmphasis',
       'heroCtaLabel', 'ctaText', 'formHeadline', 'formSubheadline', 'formWidth',
       'brandWordmark', 'brandFooter', 'regulatoryFooter', 'termsContent', 'customerHost',
       'fieldOrder', 'visibleFields', 'requiredFields',

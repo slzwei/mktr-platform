@@ -4,7 +4,7 @@ import MarketplaceLayout from './MarketplaceLayout';
 import MarketingConsentDialog from '@/components/legal/MarketingConsentDialog';
 import { apiClient } from '@/api/client';
 import { getMarketplaceCampaign } from '@/api/marketplace';
-import { composeValueLine, fmtDateLong, isDrawCampaign, boostOf } from './content';
+import { composeValueLine, fmtDateLong, isDrawCampaign, boostOf, offerUnavailability, UNAVAILABLE_COPY } from './content';
 import { formatDateInput, getAgeValidationError } from '@/components/campaigns/signup/dateUtils';
 import {
   shouldTrack, generateEventId, captureFbcFromUrl, captureUtmsFromUrl,
@@ -59,6 +59,31 @@ const FIELD_DEFS = {
 };
 
 const ALWAYS_VISIBLE = new Set(['name', 'email', 'phone']);
+// Production visibility semantics (CampaignSignupForm submit validation is
+// the authority): dob/postal render unless explicitly hidden; education/
+// income are opt-IN; required only when requiredFields[key] === true.
+const OPT_IN_VISIBLE = new Set(['education_level', 'monthly_income']);
+
+/** Exported for tests — mirrors the live form's field visibility contract. */
+export function isFieldVisible(key, visibleFields = {}) {
+  if (ALWAYS_VISIBLE.has(key)) return true;
+  if (FIELD_DEFS[key]) {
+    return OPT_IN_VISIBLE.has(key) ? visibleFields[key] === true : visibleFields[key] !== false;
+  }
+  return visibleFields[key] === true; // marketplace extras are opt-in
+}
+
+/** Exported for tests — required ONLY on an explicit true (live-form parity). */
+export function isFieldRequired(key, requiredFields = {}) {
+  if (ALWAYS_VISIBLE.has(key)) return true;
+  return requiredFields[key] === true;
+}
+
+/** DD/MM/YYYY (display mask) → YYYY-MM-DD (API contract, live-form parity). */
+export function dobToIso(v) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((v || '').trim());
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
 const STEP_LABELS = { screen: 'Eligibility', advisor: 'Industry check', details: 'Your details', child: 'Your child', prefs: 'Preferences', otp: 'Verify', dnc: 'DNC consent', consent: 'Confirm' };
 
 export default function MarketplaceFlow() {
@@ -155,13 +180,8 @@ export default function MarketplaceFlow() {
   const dc = campaign?.design_config || {};
   const visibleFields = dc.visibleFields || {};
   const requiredFields = dc.requiredFields || {};
-  const isVisible = (key) => ALWAYS_VISIBLE.has(key) || (FIELD_DEFS[key] ? visibleFields[key] !== false : visibleFields[key] === true);
-  const isRequired = (key) => {
-    const v = requiredFields[key];
-    if (v === false || v === 'optional') return false;
-    if (FIELD_DEFS[key]) return true; // production default: required unless opted out
-    return v === true; // marketplace extras: opt-in
-  };
+  const isVisible = (key) => isFieldVisible(key, visibleFields);
+  const isRequired = (key) => isFieldRequired(key, requiredFields);
 
   const isDraw = isDrawCampaign(campaign);
   const boost = boostOf(campaign);
@@ -313,7 +333,9 @@ export default function MarketplaceFlow() {
         lastName: restName.join(' '),
         email: form.email,
         phone: form.phone,
-        date_of_birth: form.dob,
+        // API contract is ISO YYYY-MM-DD (live-form parity) — the display
+        // mask is DD/MM/YYYY, which new Date() misparses server-side.
+        date_of_birth: dobToIso(form.dob),
         postal_code: form.postal_code,
         education_level: form.education_level,
         monthly_income: form.monthly_income,
@@ -394,6 +416,25 @@ export default function MarketplaceFlow() {
           <div className="rm-card" style={{ padding: '48px 28px', textAlign: 'center' }}>
             <div className="rm-serif" style={{ fontSize: 26 }}>This campaign isn't available</div>
             <Link className="rm-btn" to="/explore" style={{ marginTop: 18 }}>Explore live offers</Link>
+          </div>
+        </div>
+      </MarketplaceLayout>
+    );
+  }
+
+  // The flow must never accept submissions the pipeline can't service —
+  // sold-out / ended / closed-draw campaigns get a courteous stop, not a form
+  // (mid-flow submits on a just-exhausted offer still surface server-side).
+  const unavailable = offerUnavailability(campaign);
+  if (unavailable && !result) {
+    const copy = UNAVAILABLE_COPY[unavailable];
+    return (
+      <MarketplaceLayout>
+        <div className="rm-shell rm-shell--flow" style={{ padding: 'clamp(24px,3.5vw,40px) 0 clamp(56px,7vw,88px)' }}>
+          <div className="rm-card rm-fadeup" style={{ padding: '48px 28px', textAlign: 'center' }}>
+            <div className="rm-serif" style={{ fontSize: 26 }}>{copy.title}</div>
+            <p style={{ margin: '10px auto 20px', fontSize: 14, lineHeight: 1.65, color: 'var(--rm-sub)', maxWidth: '46ch' }}>{copy.body}</p>
+            <Link className="rm-btn" to="/explore">Explore live offers</Link>
           </div>
         </div>
       </MarketplaceLayout>
@@ -534,6 +575,13 @@ export default function MarketplaceFlow() {
                             let digits = v.replace(/\D/g, '');
                             if (digits.startsWith('65') && digits.length > 8) digits = digits.substring(2);
                             v = digits.slice(0, 8);
+                            // Verification is bound to the number it was earned
+                            // for — editing the phone invalidates OTP + DNC state
+                            // (otherwise verify A, back-navigate, submit B).
+                            if (v !== form.phone && otp.status !== 'idle') {
+                              setOtp({ status: 'idle', code: '', cooldown: 0, error: '' });
+                              setDnc({ checked: false, hit: false, consent: false });
+                            }
                           }
                           setField(key, v);
                         }}

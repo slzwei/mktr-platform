@@ -87,6 +87,19 @@ function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8r
  videoUrl: design.videoUrl || '',
  termsContent: design.termsContent || '',
  quiz: design.quiz || null,
+ // Marketplace content (Marketplace tab) — carried through so an ordinary
+ // designer save round-trips it. clampDesignConfig replaces these keys
+ // WHOLESALE from the incoming object (unlike featuredDrop/luckyDraw, which
+ // have preserve-when-omitted policies), so omitting them here would erase
+ // stored marketplace content on every save.
+ ...Object.fromEntries(
+ [
+ 'name', 'category', 'offer_type', 'mode', 'qr_entry', 'age_range',
+ 'school_levels', 'dsa_related', 'showCapacity', 'availability',
+ 'inclusions', 'image_label', 'activation', 'sponsor', 'value_line',
+ 'content_blocks', 'marketplaceListed',
+ ].filter((k) => design[k] !== undefined).map((k) => [k, design[k]])
+ ),
  });
 
  const [saving, setSaving] = useState(false);

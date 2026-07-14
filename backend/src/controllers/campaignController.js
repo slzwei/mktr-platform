@@ -19,8 +19,8 @@ export const getFeaturedDrops = asyncHandler(async (req, res) => {
 // no publication gate) so the designer can preview what consumers would see,
 // plus a slug-availability check. Both independent of the public feature flag.
 export const getMarketplacePreview = asyncHandler(async (req, res) => {
-  const preview = await marketplaceService.previewMarketplaceCampaign(req.params.id);
-  if (!preview) throw new AppError('Campaign not found', 404);
+  const preview = await marketplaceService.previewMarketplaceCampaign(req.params.id, { user: req.user });
+  if (!preview) throw new AppError('Campaign not found or access denied', 404);
   res.json({ success: true, data: { campaign: preview } });
 });
 
