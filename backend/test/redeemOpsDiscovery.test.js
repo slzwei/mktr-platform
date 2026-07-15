@@ -816,3 +816,57 @@ describe('cross-run place memory', () => {
     expect(cand.matchedPartnerId).toBe(partner.id);
   });
 });
+
+describe('categoryFilterWords (Maps category allowlist)', () => {
+  // These tests only assert the actor input, but startDiscovery still writes a run
+  // row — lift the shared per-day caps so they never trip the suite-wide budget.
+  beforeEach(() => {
+    process.env.DISCOVERY_MAX_RUNS_PER_DAY = '1000';
+    process.env.DISCOVERY_MAX_RUNS_PER_USER_DAY = '1000';
+  });
+
+  async function startWith(body) {
+    const apify = makeApifyStub();
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+    const svc = makeDiscoveryService({ apify });
+    const { user } = await createTestUser({ role: 'admin' });
+    const run = await svc.startDiscovery({ area: 'Tampines', limit: 60, ...body }, user);
+    return { input: apify.startRun.mock.calls[0][1], run };
+  }
+
+  test('ad-hoc categoryFilterWords are passed straight to the actor input', async () => {
+    const { input } = await startWith({ searchTerms: ['nail salon'], categoryFilterWords: ['Nail salon', 'Beauty salon'] });
+    expect(input.categoryFilterWords).toEqual(['Nail salon', 'Beauty salon']);
+  });
+
+  test('no categoryFilterWords key when none supplied (default stays byte-identical)', async () => {
+    const { input, run } = await startWith({ searchTerms: ['nail salon'] });
+    expect(input).not.toHaveProperty('categoryFilterWords');
+    // Not just the actor input — the run snapshot must stay clean too.
+    expect(run.rawPayload).not.toHaveProperty('categoryFilterWords');
+  });
+
+  test('instagram_hashtag runs never receive categoryFilterWords', async () => {
+    process.env.DISCOVERY_IG_ENABLED = 'true';
+    const { input, run } = await startWith({
+      provider: 'instagram_hashtag', area: 'All Singapore',
+      hashtags: ['sgnails'], categoryFilterWords: ['Nail salon'],
+    });
+    expect(input).not.toHaveProperty('categoryFilterWords'); // Maps-only filter
+    expect(input.hashtags).toEqual(['sgnails']);
+    expect(run.rawPayload).not.toHaveProperty('categoryFilterWords');
+  });
+
+  test("a category's saved categoryFilterWords are used and snapshotted on the run", async () => {
+    await seedRedeemOpsCategory('Cafe', { categoryFilterWords: ['Cafe', 'Coffee shop'] });
+    const { input, run } = await startWith({ category: 'Cafe' });
+    expect(input.categoryFilterWords).toEqual(['Cafe', 'Coffee shop']);
+    expect(run.rawPayload.categoryFilterWords).toEqual(['Cafe', 'Coffee shop']);
+  });
+
+  test('ad-hoc words override the category saved words', async () => {
+    await seedRedeemOpsCategory('Restaurant', { categoryFilterWords: ['Restaurant'] });
+    const { input } = await startWith({ category: 'Restaurant', categoryFilterWords: ['Bakery'] });
+    expect(input.categoryFilterWords).toEqual(['Bakery']);
+  });
+});

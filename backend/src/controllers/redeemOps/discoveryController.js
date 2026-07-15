@@ -16,6 +16,9 @@ const startSchema = Joi.object({
   // Maps quality inputs (actor-native — filter before paying). Empty/absent = no filter.
   minStars: Joi.string().valid('', 'three', 'threeAndHalf', 'four', 'fourAndHalf'),
   skipClosed: Joi.boolean(),
+  // Ad-hoc Google Maps category allowlist (actor `categoryFilterWords`) — keeps
+  // only places whose category matches, overriding the category's saved words.
+  categoryFilterWords: Joi.array().items(Joi.string().min(1).max(64)).max(20),
 });
 const idsSchema = Joi.object({
   // .max(500): each id can become a PAID scrape — sanity-bound to one full run's

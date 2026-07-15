@@ -19,6 +19,7 @@ import Search from 'lucide-react/icons/search';
 import Instagram from 'lucide-react/icons/instagram';
 import Merge from 'lucide-react/icons/merge';
 import Trash2 from 'lucide-react/icons/trash-2';
+import Tags from 'lucide-react/icons/tags';
 import { RoPageHeader, RoTag } from '@/components/redeemops/ui';
 
 const CATEGORIES_KEY = ['redeem-ops', 'categories'];
@@ -113,6 +114,21 @@ export default function SettingsPage() {
       invalidate();
     },
     onError: onError('Could not update Instagram hashtags'),
+  });
+
+  // ── Google Maps categories to keep (Discover quality filter) ───────────
+  const [filterWordsTarget, setFilterWordsTarget] = useState(null);
+  const [filterWordsText, setFilterWordsText] = useState('');
+  const filterWordsMutation = useMutation({
+    mutationFn: () => redeemOpsApi.updateCategory(filterWordsTarget.id, {
+      categoryFilterWords: parseSearchTerms(filterWordsText),
+    }),
+    onSuccess: () => {
+      toast.success('Categories to keep updated');
+      setFilterWordsTarget(null);
+      invalidate();
+    },
+    onError: onError('Could not update categories to keep'),
   });
 
   // ── Retire / restore ───────────────────────────────────────────────────
@@ -282,6 +298,15 @@ export default function SettingsPage() {
                     }}
                   >
                     <Instagram className="w-3.5 h-3.5" aria-hidden="true" />
+                  </Button>
+                  <Button
+                    variant="ghost" size="sm" aria-label={`Edit categories to keep for ${cat.name}`}
+                    onClick={() => {
+                      setFilterWordsTarget(cat);
+                      setFilterWordsText((cat.categoryFilterWords || []).join(', '));
+                    }}
+                  >
+                    <Tags className="w-3.5 h-3.5" aria-hidden="true" />
                   </Button>
                   <Button
                     variant="ghost" size="sm" aria-label={`Merge ${cat.name} into another category`}
@@ -487,6 +512,36 @@ export default function SettingsPage() {
               onClick={() => igHashtagsMutation.mutate()}
             >
               {igHashtagsMutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!filterWordsTarget} onOpenChange={(open) => { if (!open) setFilterWordsTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Categories to keep</DialogTitle>
+            <DialogDescription>
+              Google Maps categories Discover keeps for this category — e.g. hair salon,
+              nail salon, spa. Comma-separated; matched loosely and case-insensitively.
+              Leave empty to keep every result (no filter).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5 py-2">
+            <Label htmlFor="category-filter-words">Categories to keep</Label>
+            <Input
+              id="category-filter-words"
+              value={filterWordsText}
+              onChange={(e) => setFilterWordsText(e.target.value)}
+              placeholder="hair salon, nail salon, spa"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={filterWordsMutation.isPending}
+              onClick={() => filterWordsMutation.mutate()}
+            >
+              {filterWordsMutation.isPending ? 'Saving…' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>

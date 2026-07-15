@@ -70,6 +70,27 @@ export function makeCategoryService(overrides = {}) {
     return cleaned.length > 0 ? cleaned : null;
   }
 
+  /** Google Maps category-filter words (migration 074). Like cleanHashtags there
+   *  is NO name fallback — a CRM category name is rarely a real Google category,
+   *  so an emptied list stores NULL ("no category filter"; the actor input stays
+   *  byte-identical to before). Case is preserved for display; the actor matches
+   *  categories case-insensitively either way. */
+  function cleanCategoryFilterWords(raw) {
+    if (raw === undefined) return undefined;
+    const values = Array.isArray(raw) ? raw : [raw];
+    const seen = new Set();
+    const cleaned = [];
+    for (const value of values) {
+      const word = String(value ?? '').trim().slice(0, 64);
+      const key = word.toLowerCase();
+      if (!word || seen.has(key)) continue;
+      seen.add(key);
+      cleaned.push(word);
+      if (cleaned.length === 20) break;
+    }
+    return cleaned.length > 0 ? cleaned : null;
+  }
+
   function whereNameCi(name) {
     return d.sequelize.where(d.sequelize.fn('LOWER', d.sequelize.col('name')), name.toLowerCase());
   }
@@ -95,14 +116,19 @@ export function makeCategoryService(overrides = {}) {
     const name = cleanName(body?.name);
     const providerSearchTerms = cleanSearchTerms(body?.searchTerms, name) ?? [name];
     const igHashtags = cleanHashtags(body?.igHashtags) ?? null;
+    const categoryFilterWords = cleanCategoryFilterWords(body?.categoryFilterWords) ?? null;
     const existing = await d.RedeemOpsCategory.findOne({ where: whereNameCi(name) });
     if (existing) throw new AppError(`Category '${existing.name}' already exists`, 409);
     try {
-      const category = await d.RedeemOpsCategory.create({ name, providerSearchTerms, igHashtags });
+      const category = await d.RedeemOpsCategory.create({ name, providerSearchTerms, igHashtags, categoryFilterWords });
       await d.audit.recordAuditEvent({
         actorUser: user, action: 'settings.category_created',
         entityType: 'redeem_ops_category', entityId: category.id,
-        after: { name, searchTerms: providerSearchTerms, ...(igHashtags ? { igHashtags } : {}) },
+        after: {
+          name, searchTerms: providerSearchTerms,
+          ...(igHashtags ? { igHashtags } : {}),
+          ...(categoryFilterWords ? { categoryFilterWords } : {}),
+        },
         requestId,
       });
       return category;
@@ -146,14 +172,19 @@ export function makeCategoryService(overrides = {}) {
       updates.providerSearchTerms = cleanSearchTerms(body.searchTerms, effectiveName);
     }
     if (body?.igHashtags !== undefined) updates.igHashtags = cleanHashtags(body.igHashtags);
+    if (body?.categoryFilterWords !== undefined) {
+      updates.categoryFilterWords = cleanCategoryFilterWords(body.categoryFilterWords);
+    }
     if (Object.keys(updates).length === 0) return category;
 
     const touchesHashtags = 'igHashtags' in updates;
+    const touchesFilterWords = 'categoryFilterWords' in updates;
     const before = {
       name: category.name,
       isActive: category.isActive,
       searchTerms: category.providerSearchTerms,
       ...(touchesHashtags ? { igHashtags: category.igHashtags } : {}),
+      ...(touchesFilterWords ? { categoryFilterWords: category.categoryFilterWords } : {}),
     };
     await d.sequelize.transaction(async (t) => {
       await category.update(updates, { transaction: t });
@@ -174,6 +205,7 @@ export function makeCategoryService(overrides = {}) {
           isActive: updates.isActive ?? before.isActive,
           searchTerms: updates.providerSearchTerms ?? before.searchTerms,
           ...(touchesHashtags ? { igHashtags: updates.igHashtags } : {}),
+          ...(touchesFilterWords ? { categoryFilterWords: updates.categoryFilterWords } : {}),
         },
         requestId, transaction: t,
       });
@@ -215,7 +247,15 @@ export function makeCategoryService(overrides = {}) {
         ...(source.providerSearchTerms || []),
         source.name,
       ], target.name);
-      await target.update({ providerSearchTerms: mergedSearchTerms }, { transaction: t });
+      // Category-filter words union (no name fallback — see cleanCategoryFilterWords).
+      const mergedFilterWords = cleanCategoryFilterWords([
+        ...(target.categoryFilterWords || []),
+        ...(source.categoryFilterWords || []),
+      ]);
+      await target.update(
+        { providerSearchTerms: mergedSearchTerms, categoryFilterWords: mergedFilterWords },
+        { transaction: t },
+      );
       await source.destroy({ transaction: t });
       await d.audit.recordAuditEvent({
         actorUser: user, action: 'settings.category_merged',
@@ -224,6 +264,7 @@ export function makeCategoryService(overrides = {}) {
         after: {
           mergedInto: target.name, targetId: target.id, rowsMoved,
           searchTerms: mergedSearchTerms,
+          ...(mergedFilterWords ? { categoryFilterWords: mergedFilterWords } : {}),
         },
         requestId, transaction: t,
       });
@@ -288,6 +329,10 @@ export function makeCategoryService(overrides = {}) {
       searchTerms: match.providerSearchTerms?.length
         ? match.providerSearchTerms
         : [match.name],
+      // Opt-in, like minStars: the key is present only when curated, so the
+      // resolver shape stays byte-identical for categories without a filter
+      // (no name fallback — a CRM name is rarely a real Google category).
+      ...(match.categoryFilterWords?.length ? { categoryFilterWords: match.categoryFilterWords } : {}),
     };
   }
 
