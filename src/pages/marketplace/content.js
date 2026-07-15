@@ -49,14 +49,14 @@ export const HOME_FAQ = [
 export const DSA_GUIDE = {
   ledger: [
     { n: '4,400', d: 'students admitted via DSA in 2023' },
-    { n: '1 in 9', d: 'of the P6 cohort — up from 1 in 11 in 2019' },
-    { n: '~8,000', d: 'places on offer yearly · many go unfilled' },
+    { n: '1 in 9', d: 'of Primary 6 students — and rising' },
+    { n: '~8,000', d: 'places on offer every year' },
     { n: '$0', d: 'to apply — one form, MOE portal' },
   ],
   ledgerSource: 'Source: MOE, parliamentary reply, Feb 2024 · moe.gov.sg',
   chapters: [
     { id: 'basics', n: '01', t: 'The basics', k: 'What DSA actually is' },
-    { id: 'trade', n: '02', t: 'The honest trade', k: 'What it gives · what it asks' },
+    { id: 'trade', n: '02', t: 'Why families choose DSA', k: 'What it gives · what to know' },
     { id: 'routes', n: '03', t: 'The seven routes', k: 'A field guide to each door' },
     { id: 'year', n: '04', t: 'The 2027 calendar', k: 'MOE confirms exact dates each spring' },
     { id: 'runway', n: '05', t: 'The runway', k: 'P3 → P6, without the panic' },
@@ -73,16 +73,16 @@ export const DSA_GUIDE = {
     { k: 'Intake cap', v: 'Up to 20%', s: "of a school's non-IP S1 intake" },
   ],
   gives: [
-    { t: 'A place settled before results week', d: 'The offer is in hand by late August — the P6 year ends calmer for everyone.' },
+    { t: 'A place settled before results week', d: 'The offer is in hand by late August — the Primary 6 year ends calmer for everyone.' },
     { t: 'Entry judged on the talent itself', d: 'Selection looks at aptitude and potential in the talent area — not only the four-subject aggregate.' },
     { t: 'Four years inside the right programme', d: 'Coaches, studios, labs and stages — with schoolmates who chose the same thing.' },
     { t: 'A school chosen for fit', d: 'The question becomes "where will this talent grow?", not just "what\'s the cut-off?"' },
   ],
-  asks: [
-    { t: 'A binding commitment', d: 'A taken-up DSA place means no S1 posting choices and no transfer after PSLE results — the programme is honoured for its duration.' },
-    { t: 'PSLE still gates the door', d: 'Miss the posting group the school offers, and the DSA place lapses. The exam still matters.' },
-    { t: 'The talent continues', d: 'Schools admit contributors — expect the CCA or programme to run through the secondary years.' },
-    { t: 'Honesty about whose dream it is', d: "Four years is a long time to carry a parent's ambition. The interest has to be the child's." },
+  goodToKnow: [
+    { t: "It's a real commitment", d: "A confirmed place is exactly that — your child joins the school and its programme for the full journey. Choose schools you'd be delighted to say yes to." },
+    { t: 'PSLE still counts', d: "The place is confirmed once the PSLE result meets the school's usual entry range — steady schoolwork carries the offer home." },
+    { t: 'The talent keeps growing', d: "Schools welcome children who'll keep at it — expect four rewarding years inside the CCA or programme they chose." },
+    { t: 'Let the interest lead', d: "Applications shine brightest when the passion is genuinely your child's — build around what already lights them up." },
   ],
   routes: [
     {
@@ -160,9 +160,9 @@ export const DSA_GUIDE = {
     { date: 'Jan – May', t: 'Explore schools', d: 'Open houses and school DSA pages: each school lists its talent areas and selection format. Shortlist where the programme fits — not just the name on the gate.' },
     { date: 'Early May', date2: '– early Jun', key: true, t: 'Applications open — one free form', d: 'Submitted once on the MOE DSA-Sec portal: up to three choices, each tagged to a school and talent area, at most two choices at the same school. The 2026 window ran 6 May – 2 June; expect the same shape.' },
     { date: 'Jun – Aug', t: 'Selection at the schools', d: 'Trials, auditions, portfolio reviews and interviews. Shortlists go out around early July; every applicant hears back by end August (28 August in 2026) — Confirmed Offer, Wait List, or unsuccessful.' },
-    { date: 'Late Sep – Oct', t: 'PSLE written papers', d: 'DSA outcomes are already known before the first paper — which is rather the point. The exam still decides the posting group.' },
-    { date: 'Mid – late Oct', key: true, t: 'Rank your offers', d: 'Students holding offers submit school preferences on the portal — 19–23 October in 2026. Rank only schools your child will genuinely commit to — this choice is binding.' },
-    { date: 'Late Nov', t: 'Results, with S1 posting', d: "A confirmed, ranked DSA place is guaranteed if the PSLE score qualifies for the school's posting group.", note: 'MOE publishes exact 2027 dates at moe.gov.sg/secondary/dsa' },
+    { date: 'Late Sep – Oct', t: 'PSLE written papers', d: 'DSA outcomes are already known before the first paper — which is rather the point. Your child sits the papers knowing a place may already be waiting.' },
+    { date: 'Mid – late Oct', key: true, t: 'Rank your offers', d: 'Students holding offers submit school preferences on the portal — 19–23 October in 2026. Rank the schools your child would be happiest to join — the strongest confirmed choice becomes theirs.' },
+    { date: 'Late Nov', t: 'Results day — place confirmed', d: "A confirmed, ranked DSA place is locked in once the PSLE result meets the school's entry range — your child starts secondary school already home.", note: 'MOE publishes exact 2027 dates at moe.gov.sg/secondary/dsa' },
   ],
   stages: [
     { tag: 'P3 – P4', t: 'Explore', d: 'Try widely and cheaply. The goal is honest signal: does the interest survive six months of Saturdays? Trials exist for exactly this.' },
@@ -184,10 +184,10 @@ export const DSA_GUIDE = {
     'What would make you advise us not to continue?',
   ],
   faq: [
-    { q: 'Does PSLE still matter if we hold a confirmed offer?', a: "Yes. The offer converts only if the PSLE score qualifies for the school's posting group under Full Subject-Based Banding. DSA changes how your child is admitted — not whether they must qualify." },
-    { q: 'Can we change our mind after taking up a place?', a: "Treat the October ranking as binding. Successful DSA students don't take part in S1 posting, can't transfer schools after results are released, and are expected to honour the talent programme for its duration. Rank only schools your child will genuinely commit to." },
-    { q: 'Is DSA only for national champions?', a: 'No. Schools assess aptitude and potential, not just trophies — and a large share of the ~8,000 yearly places go unfilled. The right school-talent match matters far more than raw prestige.' },
-    { q: "What happens if the application doesn't succeed?", a: 'Nothing is lost. Your child goes through S1 posting exactly like everyone else — and can usually still join the same CCA at whichever school they post to.' },
+    { q: 'Does PSLE still matter if we hold a confirmed offer?', a: "Yes — the place is confirmed once the PSLE result meets the school's usual entry range, so schoolwork still matters. The difference: DSA decides how your child is admitted, with far less pressure riding on results day." },
+    { q: 'Can we change our mind after taking up a place?', a: "Treat the October ranking as a real decision. A confirmed DSA place becomes your child's school for the whole journey ahead — so rank only schools your child would be excited to join." },
+    { q: 'Is DSA only for national champions?', a: 'No. Schools assess aptitude and potential, not just trophies — and with ~8,000 places on offer every year, there\'s more room than most families expect. The right school-talent match matters far more than raw prestige.' },
+    { q: "What happens if the application doesn't succeed?", a: 'Nothing is lost. Your child simply chooses a secondary school the usual way after PSLE — and can still join the same CCA there. Many families find the experience itself builds real confidence.' },
     { q: 'How many talent areas can one child apply with?', a: 'Up to three choices in total, each tagged to a school and talent area — with at most two choices at the same school. Depth beats spread: three half-hearted applications rarely beat one genuine one.' },
     { q: 'Are there academic tests at selection?', a: 'Selection is talent-specific. A school may test the domain itself — an olympiad-style paper for a STEM application, say — but general academic-ability testing isn\'t part of DSA selection.' },
     { q: 'Does DSA exist beyond Secondary 1?', a: 'Yes. DSA-JC admits O-Level students to junior colleges on talent, and the polytechnics and ITE run their own aptitude-based Early Admissions Exercise (EAE). The principle is the same: demonstrated aptitude, considered before grades alone.' },

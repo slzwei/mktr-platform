@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
 /* Accordion over the rm-faq classes (marketplace.css). items: [{ q, a }]. */
-export default function FaqList({ items }) {
-  const [open, setOpen] = useState(-1);
+export default function FaqList({ items, defaultOpen = -1 }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <div>
       {items.map((f, i) => {

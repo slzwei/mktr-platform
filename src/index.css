@@ -67,7 +67,13 @@
 
   html,
   body {
-    @apply bg-background text-foreground overflow-x-hidden;
+    @apply bg-background text-foreground;
+    /* Sideways-scroll protection. Must be clip, not hidden: overflow-x hidden
+       turns html/body into scroll containers, which silently disables
+       position:sticky for every descendant (DSA mobile TOC, offer-detail
+       rail). hidden stays as the fallback for pre-clip engines. */
+    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   /* Prevent zooming on inputs on mobile */

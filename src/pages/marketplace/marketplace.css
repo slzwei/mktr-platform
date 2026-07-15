@@ -354,3 +354,38 @@
   .rm-dsa-close-doors { justify-content: flex-start; }
   .rm-dsa-kicker { display: none; }
 }
+
+/* ---------- DSA field guide — mobile experience (DSA Guide - Mobile design) ---------- */
+.rm-dsa-pbar { position: fixed; top: 64px; left: 0; right: 0; height: 2px; background: var(--rm-apr); transform: scaleX(0); transform-origin: left; z-index: 51; }
+.rm-dsa-swipehint { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 34px; font-family: var(--rm-mono); font-size: 10px; color: #7e958a; }
+.rm-dsa-swipehint span:first-child { letter-spacing: 0.12em; text-transform: uppercase; }
+.rm-dsa-toc-row a.is-active { background: var(--rm-pine); border-color: var(--rm-pine); color: #f6f2e6; }
+.rm-dsa-toc-row a.is-active b { color: var(--rm-apr); }
+.rm-dsa-accs { display: flex; flex-direction: column; gap: 12px; margin-top: 22px; }
+.rm-dsa-acc { background: var(--rm-card); border: 1px solid var(--rm-line); border-radius: 18px; overflow: hidden; }
+.rm-dsa-acc-head { display: flex; width: 100%; gap: 16px; align-items: center; padding: 16px; }
+.rm-dsa-acc-arch { width: 46px; border-radius: 999px 999px 4px 4px; }
+.rm-dsa-acc-arch::after { width: 3px; height: 3px; }
+.rm-dsa-acc-arch .rm-dsa-archnum { top: 8px; font-size: 9px; }
+.rm-dsa-acc-title { flex: 1; min-width: 0; }
+.rm-dsa-acc-name { display: block; font-family: var(--rm-serif); font-size: 19px; font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; }
+.rm-dsa-acc-share { display: block; font-family: var(--rm-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--rm-apr2); margin-top: 6px; line-height: 1.5; }
+.rm-dsa-acc-head .rm-faq-sym { font-size: 18px; }
+.rm-dsa-acc-body { padding: 0 16px 20px; display: flex; flex-direction: column; gap: 16px; }
+.rm-dsa-sticky { position: fixed; left: 0; right: 0; bottom: 0; z-index: 55; padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); background: linear-gradient(to top, rgba(247, 243, 233, 0.98), rgba(247, 243, 233, 0.9)); backdrop-filter: blur(8px); border-top: 1px solid var(--rm-line); transform: translateY(120%); transition: transform 0.45s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.rm-dsa-sticky.is-on { transform: translateY(0); }
+.rm-dsa-sticky .rm-btn { width: 100%; }
+@media (max-width: 719px) {
+  .rm-dsa-cover h1 { font-size: 46px; }
+  .rm-dsa-doors { display: flex; gap: 14px; align-items: flex-end; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; margin: 16px calc(-1 * clamp(16px, 4vw, 44px)) 0; padding: 0 clamp(16px, 4vw, 44px) 30px; scroll-padding-left: clamp(16px, 4vw, 44px); }
+  .rm-dsa-doors::-webkit-scrollbar { display: none; }
+  .rm-dsa-doorlink { flex: none; width: 92px; scroll-snap-align: start; gap: 10px; padding-bottom: 0; }
+  .rm-dsa-toc { position: sticky; top: 66px; z-index: 40; background: rgba(247, 243, 233, 0.95); backdrop-filter: blur(10px); }
+  .rm-dsa-toc-row { gap: 6px; padding-top: 10px; padding-bottom: 10px; scrollbar-width: none; }
+  .rm-dsa-toc-row::-webkit-scrollbar { display: none; }
+  .rm-dsa-toc-row a { font-size: 10.5px; border: 1px solid var(--rm-line); padding: 7px 13px; transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease; }
+  .rm-dsa-toc-row a.is-active { background: var(--rm-pine); border-color: var(--rm-pine); color: #f6f2e6; }
+  .rm-dsa-chapter { scroll-margin-top: 116px; }
+  .rm-dsa-acc { scroll-margin-top: 118px; }
+  .rm-dsa-close h2 { font-size: 34px; }
+}
