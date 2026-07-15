@@ -81,30 +81,33 @@ export function makeWalletService(overrides = {}) {
    * Find-or-create the campaign's hidden wallet package. The UNIQUE partial index
    * (campaignId WHERE kind='wallet') makes the create race-safe: a concurrent first
    * commit loses the insert and re-reads the winner's row.
+   *
+   * Runs OUTSIDE the money transaction on purpose: catching a unique violation
+   * INSIDE an open Postgres transaction leaves it aborted (25P02 — every later
+   * statement fails), so the lose-and-re-read retry only works standalone. A
+   * stray empty wallet package from a commit that later fails is harmless
+   * (isPublic:false, price 0 — invisible to the buy catalog and to routing).
    */
-  async function ensureWalletPackage(campaignId, transaction) {
-    const existing = await d.LeadPackage.findOne({ where: { campaignId, kind: 'wallet' }, transaction });
+  async function ensureWalletPackage(campaignId) {
+    const existing = await d.LeadPackage.findOne({ where: { campaignId, kind: 'wallet' } });
     if (existing) return existing;
     const systemAgentId = await d.getSystemAgentId();
     try {
-      return await d.LeadPackage.create(
-        {
-          name: 'Wallet commitments',
-          type: 'custom',
-          kind: 'wallet',
-          campaignId,
-          isPublic: false,
-          status: 'active',
-          currency: 'SGD',
-          price: 0,
-          leadCount: 0,
-          createdBy: systemAgentId,
-        },
-        { transaction }
-      );
+      return await d.LeadPackage.create({
+        name: 'Wallet commitments',
+        type: 'custom',
+        kind: 'wallet',
+        campaignId,
+        isPublic: false,
+        status: 'active',
+        currency: 'SGD',
+        price: 0,
+        leadCount: 0,
+        createdBy: systemAgentId,
+      });
     } catch (err) {
       if (err?.name === 'SequelizeUniqueConstraintError') {
-        const winner = await d.LeadPackage.findOne({ where: { campaignId, kind: 'wallet' }, transaction });
+        const winner = await d.LeadPackage.findOne({ where: { campaignId, kind: 'wallet' } });
         if (winner) return winner;
       }
       throw err;
@@ -113,16 +116,25 @@ export function makeWalletService(overrides = {}) {
 
   /**
    * Agent self-serve commit: N leads of campaign X at the admin-set price.
-   * One transaction: validate → ensure wallet package → create assignment →
-   * debit (guarded; overdraft rolls the assignment back). No cancel path exists.
+   * Wallet package is ensured up front (own retry, see above); then one money
+   * transaction: validate campaign under a SHARE row lock → create assignment →
+   * debit (guarded; overdraft rolls the assignment back). The SHARE lock
+   * serializes against archiveCampaign's FOR UPDATE, so a commit either lands
+   * BEFORE the archive (and its refund sweep sees the new assignment) or sees
+   * 'archived' and rejects — no window for an orphaned paid commitment.
+   * No cancel path exists.
    */
   async function commit(agentId, campaignId, quantity) {
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_COMMIT_QUANTITY) {
       throw new AppError(`Quantity must be an integer between 1 and ${MAX_COMMIT_QUANTITY}`, 400);
     }
 
+    const exists = await d.Campaign.findByPk(campaignId, { attributes: ['id'] });
+    if (!exists) throw new AppError('Campaign not found', 404);
+    const pkg = await ensureWalletPackage(campaignId);
+
     const result = await d.sequelize.transaction(async (t) => {
-      const campaign = await d.Campaign.findByPk(campaignId, { transaction: t });
+      const campaign = await d.Campaign.findByPk(campaignId, { transaction: t, lock: t.LOCK.SHARE });
       if (!campaign) throw new AppError('Campaign not found', 404);
       const priced = Number.isInteger(campaign.leadPriceCents) && campaign.leadPriceCents > 0;
       if (campaign.status !== 'active' || campaign.is_active !== true || !priced) {
@@ -130,7 +142,6 @@ export function makeWalletService(overrides = {}) {
       }
 
       const totalCents = quantity * campaign.leadPriceCents;
-      const pkg = await ensureWalletPackage(campaignId, t);
       const assignment = await d.LeadPackageAssignment.create(
         {
           agentId,
@@ -201,21 +212,20 @@ export function makeWalletService(overrides = {}) {
         continue;
       }
       const refundCents = row.leadsRemaining * row.unitPriceCents;
-      try {
-        await credit(row.agentId, refundCents, {
-          type: 'takedown_refund',
-          assignmentId: row.id,
-          campaignId,
-          note: reason,
-          transaction,
-        });
-      } catch (err) {
-        if (err?.name === 'SequelizeUniqueConstraintError') {
-          d.logger.warn('[wallet] refund.replay — assignment already refunded', { assignmentId: row.id, campaignId });
-          continue;
-        }
-        throw err;
-      }
+      // NOTE: no catch-and-continue here. The unique partial index (one
+      // takedown_refund per assignment) is unreachable in normal operation —
+      // ledger row + assignment completion commit together, and the row locks
+      // + re-check above serialize concurrent archives. If it EVER fires it
+      // signals a code bug, and swallowing it inside this open transaction
+      // would poison it anyway (Postgres 25P02) — so it aborts loudly and the
+      // whole archive rolls back.
+      await credit(row.agentId, refundCents, {
+        type: 'takedown_refund',
+        assignmentId: row.id,
+        campaignId,
+        note: reason,
+        transaction,
+      });
       await row.update({ leadsRemaining: 0, status: 'completed' }, { transaction });
       refunded += 1;
       totalCents += refundCents;

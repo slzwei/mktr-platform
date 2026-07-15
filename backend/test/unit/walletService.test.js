@@ -157,10 +157,10 @@ describe('walletService.commit', () => {
     const { svc, LeadPackage, LeadPackageAssignment, WalletLedger } = build({ campaign: activeCampaign(), balanceAfter: 200 });
     const r = await svc.commit('agent-1', 'c-1', 12);
 
-    // Hidden wallet package created with complete NOT NULL values
+    // Hidden wallet package created with complete NOT NULL values — OUTSIDE the
+    // money tx (unique-violation retry can't live inside an open pg transaction)
     expect(LeadPackage.create).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'wallet', campaignId: 'c-1', isPublic: false, status: 'active', price: 0, leadCount: 0, createdBy: 'sys-agent' }),
-      expect.anything()
+      expect.objectContaining({ kind: 'wallet', campaignId: 'c-1', isPublic: false, status: 'active', price: 0, leadCount: 0, createdBy: 'sys-agent' })
     );
     // Assignment: source wallet + per-lead snapshot + dollars priceSnapshot
     expect(LeadPackageAssignment.create).toHaveBeenCalledWith(
@@ -243,28 +243,18 @@ describe('walletService.refundCampaignCommitments', () => {
     expect(WalletLedger.create).not.toHaveBeenCalled();
   });
 
-  test('unique-violation on the refund ledger row = replay → skipped, others continue', async () => {
+  test('a unique violation on the refund ledger aborts loudly (code-bug signal, whole archive rolls back)', async () => {
     const rowA = refundableRow({ id: 'asg-1' });
-    const rowB = refundableRow({ id: 'asg-2', agentId: 'agent-2', leadsRemaining: 3 });
-    const { svc, WalletLedger, sequelize } = build({
-      refundCandidates: [{ id: 'asg-1' }, { id: 'asg-2' }],
-      lockedRows: [rowA, rowB],
+    const { svc, WalletLedger } = build({
+      refundCandidates: [{ id: 'asg-1' }],
+      lockedRows: [rowA],
     });
-    // First credit hits the unique partial index (already refunded), second succeeds.
-    let call = 0;
-    sequelize.query.mockImplementation(async (sql) => {
-      if (String(sql).trim().startsWith('UPDATE users')) {
-        call += 1;
-        if (call === 1) throw uniqueViolation();
-        return [[{ walletBalanceCents: 111 }]];
-      }
-      return [[]];
-    });
-    const r = await svc.refundCampaignCommitments('c-1', { transaction: FAKE_TX });
-    expect(r).toEqual({ refunded: 1, totalCents: 2400 });
+    // The unique partial index fires only on a genuine double-refund bug —
+    // swallowing it inside the open transaction would poison it (pg 25P02),
+    // so it must PROPAGATE and take the archive down with it.
+    WalletLedger.create.mockImplementationOnce(async () => { throw uniqueViolation(); });
+    await expect(svc.refundCampaignCommitments('c-1', { transaction: FAKE_TX })).rejects.toMatchObject({ name: 'SequelizeUniqueConstraintError' });
     expect(rowA.update).not.toHaveBeenCalled();
-    expect(rowB.update).toHaveBeenCalled();
-    expect(WalletLedger.create).toHaveBeenCalledTimes(1);
   });
 
   test('wallet assignment without unitPriceCents is skipped (logged, never guessed)', async () => {
