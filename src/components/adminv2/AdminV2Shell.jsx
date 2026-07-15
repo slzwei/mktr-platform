@@ -45,7 +45,7 @@ export function useAdminV2Theme() {
   return [theme, setTheme];
 }
 
-export default function AdminV2Shell({ children, fullBleed = false }) {
+export default function AdminV2Shell({ children, fullBleed = false, legacyBridge = false }) {
   const [theme, setTheme] = useAdminV2Theme();
   const navigate = useNavigate();
   const logout = useAuthStore((s) => s.logout);
@@ -60,7 +60,7 @@ export default function AdminV2Shell({ children, fullBleed = false }) {
   };
 
   return (
-    <div className="admin-v2" data-theme={theme}>
+    <div className={legacyBridge ? 'admin-v2 av2-legacy-bridge' : 'admin-v2'} data-theme={theme}>
       <div style={{ display: 'flex', minHeight: '100vh' }}>
         {/* ── Sidebar (228px fixed) ── */}
         <aside
