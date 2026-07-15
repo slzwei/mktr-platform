@@ -4,9 +4,20 @@ import { pushService } from '../services/pushService.js';
 import { Impression, Campaign } from '../models/index.js';
 import rateLimit from 'express-rate-limit';
 
-export const meta = { path: '/api/adtech', flag: 'BEACONS_ENABLED', flagDefault: 'true' };
+export const meta = { path: '/api/adtech', flag: 'FLEET_ROUTES_ENABLED' };
 
 const router = express.Router();
+
+// BEACONS_ENABLED keeps its request-level kill switch (historically default
+// ON) so it still works independently when FLEET_ROUTES_ENABLED mounts this
+// router for tests or a rollback.
+router.use((req, res, next) => {
+  const val = String(process.env.BEACONS_ENABLED ?? 'true').toLowerCase();
+  if (val !== 'true') {
+    return res.status(404).json({ success: false, message: 'Not found' });
+  }
+  return next();
+});
 
 // Strict rate limiting for analytics ingress
 const beaconLimiter = rateLimit({

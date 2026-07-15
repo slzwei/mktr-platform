@@ -8,7 +8,7 @@ import { incCounter, logEvent, timeMs } from '../services/observability.js';
 import { Campaign, DeviceCampaignAssignment, VehicleCampaignAssignment, CampaignMediaItem } from '../models/index.js';
 import { pushService } from '../services/pushService.js';
 
-export const meta = { path: '/api/adtech', flag: 'MANIFEST_ENABLED' };
+export const meta = { path: '/api/adtech', flag: 'FLEET_ROUTES_ENABLED' };
 
 const router = express.Router();
 

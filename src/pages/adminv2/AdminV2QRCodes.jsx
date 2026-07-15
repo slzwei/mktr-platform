@@ -1,7 +1,7 @@
 /**
  * Switchboard QR Codes — every tag with scans/unique/last-scan and its bound
  * campaign. Create keeps to the simple promotional flow (label + campaign);
- * car/agent-bound generation stays on the specialist legacy flows. Downloads
+ * agent-bound generation stays on the specialist legacy flows (car QR creation retired with the fleet programme). Downloads
  * fetch the image WITH auth (the endpoint requires a bearer token, so a plain
  * link can't work).
  */
@@ -68,7 +68,7 @@ function CreateDialog({ campaigns, onClose }) {
         <DialogHeader>
           <DialogTitle style={{ color: 'var(--ink)', fontFamily: 'var(--font-ui)', fontSize: 15, fontWeight: 800, textAlign: 'left' }}>New promotional QR</DialogTitle>
           <DialogDescription style={{ color: 'var(--ink-2)', fontSize: 11.5, textAlign: 'left' }}>
-            The image bakes the campaign’s customer host at creation. Car-bound and agent-routed QRs stay on the specialist flows.
+            The image bakes the campaign’s customer host at creation. Agent-routed QRs stay on the specialist flows; car QRs are retired.
           </DialogDescription>
         </DialogHeader>
         <label style={{ display: 'grid', gap: 6, marginBottom: 12 }}>

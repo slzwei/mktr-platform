@@ -78,10 +78,47 @@ export function EmptyState({ icon = '○', title, hint, action }) {
  * row/cell structured — bare children of a table role get flattened or
  * mis-announced by screen readers.
  */
-export function StateRow({ children }) {
+export function StateRow({ children, grid = false }) {
   return (
     <div role="row">
-      <div role="cell" style={{ flex: 1 }}>{children}</div>
+      <div role={grid ? 'gridcell' : 'cell'} style={{ flex: 1 }}>{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Interactive row for role="grid" listings (Prospects, Campaigns): the whole
+ * row is one keyboard-activatable target (Enter/Space = onActivate). Static
+ * listings use role="table" + plain rows instead — reach for this only when
+ * clicking the row opens something. Direct children must be role="gridcell".
+ */
+export function GridRow({ onActivate, selected, children, ...rest }) {
+  return (
+    <div
+      className="av2-row"
+      role="row"
+      tabIndex={0}
+      aria-selected={selected === undefined ? undefined : selected}
+      data-selected={selected || undefined}
+      onClick={onActivate}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onActivate(e);
+        } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          // Grid-pattern vertical navigation between sibling rows.
+          if (e.target !== e.currentTarget) return; // don't hijack inner controls
+          e.preventDefault();
+          const rows = Array.from(
+            e.currentTarget.closest('[role="grid"]')?.querySelectorAll('.av2-row[role="row"]') || []
+          );
+          const next = rows[rows.indexOf(e.currentTarget) + (e.key === 'ArrowDown' ? 1 : -1)];
+          next?.focus();
+        }
+      }}
+      {...rest}
+    >
+      {children}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { pushService } from '../services/pushService.js';
 
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 
-export const meta = { path: '/api/devices/events', priority: -1 };
+export const meta = { path: '/api/devices/events', priority: -1, flag: 'FLEET_ROUTES_ENABLED' };
 
 const router = express.Router();
 

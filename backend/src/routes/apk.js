@@ -5,7 +5,7 @@ import fs from 'fs';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.js';
 
-export const meta = { path: '/api/apk' };
+export const meta = { path: '/api/apk', flag: 'FLEET_ROUTES_ENABLED' };
 
 const router = express.Router();
 

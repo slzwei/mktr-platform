@@ -2,7 +2,7 @@ import express from 'express';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import * as ctrl from '../controllers/deviceController.js';
 
-export const meta = { path: '/api/devices' };
+export const meta = { path: '/api/devices', flag: 'FLEET_ROUTES_ENABLED' };
 
 const router = express.Router();
 

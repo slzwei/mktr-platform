@@ -6,8 +6,7 @@ import * as ctrl from '../controllers/fleetController.js';
 
 export const meta = {
   mounts: [
-    { path: '/api/fleet' },
-    { path: '/api/fleet', flag: 'ENABLE_DOMAIN_PREFIXES' },
+    { path: '/api/fleet', flag: 'FLEET_ROUTES_ENABLED' },
   ],
 };
 

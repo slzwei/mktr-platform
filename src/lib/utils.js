@@ -12,9 +12,9 @@ export function getDefaultRouteForRole(role) {
  case 'agent':
  return '/AgentDashboard'
  case 'fleet_owner':
- return '/FleetOwnerDashboard'
  case 'driver_partner':
- return '/DriverDashboard'
+ // Fleet/driver portals retired (Phase D teardown, 2026-07)
+ return '/portal-retired'
  case 'redeem_ops':
  return '/redeem-ops'
  case 'customer':

@@ -60,7 +60,12 @@ export const schemas = {
     firstName: Joi.string().min(1).max(50),
     lastName: Joi.string().min(1).max(50),
     phone: Joi.string().min(10).max(20).optional(),
-    role: Joi.string().valid('customer', 'driver_partner', 'fleet_owner').optional()
+    // driver_partner / fleet_owner self-registration retired with the fleet
+    // programme — selectable only while FLEET_ROUTES_ENABLED (read at import,
+    // same as the route-loader mount flags).
+    role: String(process.env.FLEET_ROUTES_ENABLED || 'false').toLowerCase() === 'true'
+      ? Joi.string().valid('customer', 'driver_partner', 'fleet_owner').optional()
+      : Joi.string().valid('customer').optional()
   }).custom((value, helpers) => {
     const hasFull = !!value.full_name || !!value.fullName;
     const hasParts = !!value.firstName && !!value.lastName;

@@ -5,7 +5,11 @@ import { AppError } from '../middleware/errorHandler.js';
  * Update a user's role during onboarding.
  */
 export async function updateRole(user, role) {
-  if (!['driver_partner', 'agent', 'fleet_owner'].includes(role)) {
+  // Fleet-era self-signup roles are retired; they stay selectable only while
+  // FLEET_ROUTES_ENABLED (the same master switch that mounts their routes).
+  const fleetOpen = String(process.env.FLEET_ROUTES_ENABLED || 'false').toLowerCase() === 'true';
+  const allowed = fleetOpen ? ['driver_partner', 'agent', 'fleet_owner'] : ['agent'];
+  if (!allowed.includes(role)) {
     throw new AppError('Invalid role', 400);
   }
   await user.update({ role });

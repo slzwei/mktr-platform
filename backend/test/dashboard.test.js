@@ -33,9 +33,11 @@ describe('Dashboard overview', () => {
     expect(res.body.data.stats.users).toBeDefined()
     expect(res.body.data.stats.campaigns).toBeDefined()
     expect(res.body.data.stats.prospects).toBeDefined()
-    expect(res.body.data.stats.commissions).toBeDefined()
     expect(res.body.data.stats.qrCodes).toBeDefined()
-    expect(res.body.data.stats.fleet).toBeDefined()
+    // Fleet-era blocks are gone from admin stats (Phase D teardown).
+    expect(res.body.data.stats.commissions).toBeUndefined()
+    expect(res.body.data.stats.fleet).toBeUndefined()
+    expect(res.body.data.stats.impressions).toBeUndefined()
     expect(res.body.data.stats.users.total).toBeGreaterThanOrEqual(1)
   })
 
@@ -128,17 +130,13 @@ describe('Dashboard overview stats structure', () => {
     expect(typeof stats.prospects.total).toBe('number')
     expect(stats.prospects.total).toBeGreaterThanOrEqual(0)
 
-    // commissions
-    expect(stats.commissions).toHaveProperty('total')
-    expect(stats.commissions).toHaveProperty('pending')
-
     // qrCodes
     expect(stats.qrCodes).toHaveProperty('total')
     expect(stats.qrCodes).toHaveProperty('totalScans')
 
-    // fleet
-    expect(stats.fleet).toHaveProperty('totalCars')
-    expect(stats.fleet).toHaveProperty('activeCars')
+    // fleet-era keys removed (Phase D teardown)
+    expect(stats.commissions).toBeUndefined()
+    expect(stats.fleet).toBeUndefined()
   })
 
   it('GET /api/dashboard/overview — response includes lastUpdated timestamp', async () => {
@@ -212,15 +210,14 @@ describe('Dashboard overview — expanded coverage', () => {
     expect(Array.isArray(stats.recentActivities)).toBe(true)
   })
 
-  it('GET /api/dashboard/overview?period=90d — admin stats include impressions.today', async () => {
+  it('GET /api/dashboard/overview?period=90d — admin stats no longer include impressions', async () => {
     const res = await request(app)
       .get('/api/dashboard/overview?period=90d')
       .set('Authorization', `Bearer ${adminToken}`)
 
     expect(res.status).toBe(200)
     const { stats } = res.body.data
-    expect(stats.impressions).toBeDefined()
-    expect(typeof stats.impressions.today).toBe('number')
+    expect(stats.impressions).toBeUndefined()
   })
 
   it('GET /api/dashboard/overview?period=7d — admin users.growth is an array', async () => {

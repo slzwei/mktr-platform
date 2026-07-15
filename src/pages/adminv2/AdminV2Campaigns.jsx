@@ -9,7 +9,7 @@ import { useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCampaignLeaderboard, useAttention } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtSGD, fmtDate, daysUntil } from '@/lib/adminV2/format';
-import { Chip, PageHeader, PeriodSwitch, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
+import { Chip, PageHeader, PeriodSwitch, Skeleton, ErrorState, EmptyState, StateRow, GridRow } from '@/components/adminv2/primitives';
 
 const STATUS_TONE = { active: 'ok', draft: '', paused: 'warn', completed: '', archived: '' };
 const TYPE_LABELS = {
@@ -86,22 +86,22 @@ export default function AdminV2Campaigns() {
         ))}
       </div>
 
-      <div className="av2-card" style={{ overflow: 'hidden' }}>
-        <div className="av2-thead">
-          <span className="av2-microcaps" style={{ flex: 1.6 }}>Campaign</span>
-          <span className="av2-microcaps" style={{ width: 90, flex: 'none' }}>Type</span>
-          <span className="av2-microcaps" style={{ flex: 1.4 }}>Signals</span>
-          <span className="av2-microcaps" style={{ width: 90, flex: 'none', textAlign: 'right' }}>Leads · {period}</span>
-          <span className="av2-microcaps" style={{ width: 80, flex: 'none', textAlign: 'right' }}>All-time</span>
-          <span className="av2-microcaps" style={{ width: 90, flex: 'none', textAlign: 'right' }}>Ends</span>
+      <div className="av2-card" role="grid" aria-label="Campaigns" aria-busy={campaigns.isLoading || undefined} style={{ overflow: 'hidden' }}>
+        <div className="av2-thead" role="row">
+          <span role="columnheader" className="av2-microcaps" style={{ flex: 1.6 }}>Campaign</span>
+          <span role="columnheader" className="av2-microcaps" style={{ width: 90, flex: 'none' }}>Type</span>
+          <span role="columnheader" className="av2-microcaps" style={{ flex: 1.4 }}>Signals</span>
+          <span role="columnheader" className="av2-microcaps" style={{ width: 90, flex: 'none', textAlign: 'right' }}>Leads · {period}</span>
+          <span role="columnheader" className="av2-microcaps" style={{ width: 80, flex: 'none', textAlign: 'right' }}>All-time</span>
+          <span role="columnheader" className="av2-microcaps" style={{ width: 90, flex: 'none', textAlign: 'right' }}>Ends</span>
         </div>
 
         {campaigns.isLoading && [0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="av2-row" style={{ cursor: 'default' }}><Skeleton height={32} /></div>
+          <div key={i} className="av2-row" role="row" style={{ cursor: 'default' }}><span role="gridcell" style={{ flex: 1 }}><Skeleton height={32} /></span></div>
         ))}
-        {campaigns.isError && <ErrorState error={campaigns.error} onRetry={campaigns.refetch} />}
+        {campaigns.isError && <StateRow grid><ErrorState error={campaigns.error} onRetry={campaigns.refetch} /></StateRow>}
         {!campaigns.isLoading && !campaigns.isError && rows.length === 0 && (
-          <EmptyState title="No campaigns match" hint={statusFilter ? 'Try a different status.' : 'Create your first campaign to start capturing leads.'} />
+          <StateRow grid><EmptyState title="No campaigns match" hint={statusFilter ? 'Try a different status.' : 'Create your first campaign to start capturing leads.'} /></StateRow>
         )}
 
         {rows.map((c) => {
@@ -109,32 +109,25 @@ export default function AdminV2Campaigns() {
           const drawDays = draw?.enabled ? daysUntil(draw.closesAt) : null;
           const priced = Number.isInteger(c.leadPriceCents) && c.leadPriceCents > 0;
           return (
-            <div
-              key={c.id}
-              className="av2-row"
-              role="button"
-              tabIndex={0}
-              onClick={() => navigate(`/admin/campaigns/${c.id}`)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/admin/campaigns/${c.id}`); } }}
-            >
-              <span style={{ flex: 1.6, minWidth: 0 }}>
+            <GridRow key={c.id} onActivate={() => navigate(`/admin/campaigns/${c.id}`)} aria-label={c.name}>
+              <span role="gridcell" style={{ flex: 1.6, minWidth: 0 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
                   <Chip tone={STATUS_TONE[c.status] ?? ''}>{c.status}</Chip>
                 </span>
                 <span className="av2-caption">{priced ? `${fmtSGD(c.leadPriceCents)}/lead` : 'not priced'} · {fmtNumber(c.qrTagCount || 0)} QR</span>
               </span>
-              <span style={{ width: 90, flex: 'none', fontSize: 12, color: 'var(--ink-2)' }}>{TYPE_LABELS[c.type] || c.type}</span>
-              <span style={{ flex: 1.4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <span role="gridcell" style={{ width: 90, flex: 'none', fontSize: 12, color: 'var(--ink-2)' }}>{TYPE_LABELS[c.type] || c.type}</span>
+              <span role="gridcell" style={{ flex: 1.4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {attention.isSuccess && zeroCommitIds.has(c.id) && <Chip tone="bad" glyph="▲">0 commitments</Chip>}
                 {c.committedRemaining > 0 && <Chip tone="accent">{fmtNumber(c.committedRemaining)} committed · {fmtSGD(c.committedValueCents)}</Chip>}
                 {drawDays !== null && drawDays > 0 && <Chip tone="warn">Draw closes {drawDays}d</Chip>}
                 {c.design_config?.marketplaceListed === true && <Chip tone="accent">Marketplace</Chip>}
               </span>
-              <span className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{fmtNumber(c.leadsThisPeriod || 0)}</span>
-              <span className="av2-mono" style={{ width: 80, flex: 'none', fontSize: 11, color: 'var(--ink-3)', textAlign: 'right' }}>{fmtNumber(c.leadsTotal ?? c.prospectCount ?? 0)}</span>
-              <span className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }}>{c.end_date ? fmtDate(c.end_date) : '—'}</span>
-            </div>
+              <span role="gridcell" className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{fmtNumber(c.leadsThisPeriod || 0)}</span>
+              <span role="gridcell" className="av2-mono" style={{ width: 80, flex: 'none', fontSize: 11, color: 'var(--ink-3)', textAlign: 'right' }}>{fmtNumber(c.leadsTotal ?? c.prospectCount ?? 0)}</span>
+              <span role="gridcell" className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }}>{c.end_date ? fmtDate(c.end_date) : '—'}</span>
+            </GridRow>
           );
         })}
       </div>

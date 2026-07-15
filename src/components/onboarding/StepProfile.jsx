@@ -7,9 +7,7 @@ import CheckCircle2 from 'lucide-react/icons/check-circle-2';
 import AlertCircle from 'lucide-react/icons/alert-circle';
 import X from 'lucide-react/icons/x';
 import Loader2 from 'lucide-react/icons/loader-2';
-import CarIcon from 'lucide-react/icons/car';
 import UserIcon from 'lucide-react/icons/user';
-import BuildingIcon from 'lucide-react/icons/building-2';
 import { AnimatePresence, motion } from 'framer-motion';
 import { isValidSgMobile } from '@/utils/validation';
 import LoadingButton from '@/components/onboarding/LoadingButton';
@@ -49,19 +47,12 @@ export default function StepProfile({
  return (
  <div className="w-full flex-shrink-0 p-6 space-y-4">
  <div>
+ {/* Driver / Fleet Owner signup retired with the fleet programme (Phase D, 2026-07). */}
  <label className="block text-sm text-muted-foreground mb-1">I am signing up as</label>
- <div className="grid grid-cols-3 gap-2">
+ <div className="grid grid-cols-1 gap-2">
  <button onClick={() => changeRole('agent')} className={`rounded p-3 flex flex-col items-center ${role === 'agent' ? 'border-2 border-foreground bg-warning' : 'border border-border bg-warning/15'}`}>
  <UserIcon className="h-5 w-5"/>
  <span className={`text-xs mt-1 ${role === 'agent' ? 'font-bold' : ''}`}>Salesperson</span>
- </button>
- <button onClick={() => changeRole('driver_partner')} className={`rounded p-3 flex flex-col items-center ${role === 'driver_partner' ? 'border-2 border-foreground bg-info' : 'border border-border bg-info/15'}`}>
- <CarIcon className="h-5 w-5"/>
- <span className={`text-xs mt-1 ${role === 'driver_partner' ? 'font-bold' : ''}`}>Driver</span>
- </button>
- <button onClick={() => changeRole('fleet_owner')} className={`rounded p-3 flex flex-col items-center ${role === 'fleet_owner' ? 'border-2 border-foreground bg-success' : 'border border-border bg-success/15'}`}>
- <BuildingIcon className="h-5 w-5"/>
- <span className={`text-xs mt-1 ${role === 'fleet_owner' ? 'font-bold' : ''}`}>Fleet Owner</span>
  </button>
  </div>
  </div>
