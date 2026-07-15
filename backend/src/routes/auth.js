@@ -47,7 +47,11 @@ router.post('/accept-invite', auth.acceptInvite);
 // ─── Onboarding ─────────────────────────────────────────────────────────────
 router.post('/onboarding/role', authenticateToken, auth.updateRole);
 router.post('/onboarding/payout', authenticateToken, auth.savePayout);
-router.post('/onboarding/car', authenticateToken, auth.createCar);
-router.post('/onboarding/cars/bulk', authenticateToken, auth.bulkCreateCars);
+// Car onboarding rode the retired fleet programme; same master switch as the
+// fleet routers (read at import, like the route-loader mount flags).
+if (String(process.env.FLEET_ROUTES_ENABLED || 'false').toLowerCase() === 'true') {
+  router.post('/onboarding/car', authenticateToken, auth.createCar);
+  router.post('/onboarding/cars/bulk', authenticateToken, auth.bulkCreateCars);
+}
 
 export default router;
