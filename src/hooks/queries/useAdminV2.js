@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   fetchOverview, fetchAttention, fetchSeries, fetchFunnel,
   fetchProspects, fetchCampaignsList, fetchAgentOptions,
+  fetchAgentsRoster, fetchCampaignSummary, fetchWallets, fetchWalletLedger, fetchAgentGroups,
 } from '@/api/adminV2';
 
 const STALE_MS = 30_000;
@@ -41,4 +42,29 @@ export function useCampaignLeaderboard(period) {
 
 export function useAgentOptions(enabled) {
   return useQuery({ queryKey: ['adminV2', 'agentOptions'], queryFn: fetchAgentOptions, staleTime: 300_000, enabled });
+}
+
+export function useAgentsRoster(params) {
+  return useQuery({ queryKey: ['adminV2', 'agentsRoster', params], queryFn: () => fetchAgentsRoster(params), staleTime: STALE_MS, keepPreviousData: true });
+}
+
+export function useCampaignSummary(id) {
+  return useQuery({ queryKey: ['adminV2', 'campaignSummary', id], queryFn: () => fetchCampaignSummary(id), staleTime: STALE_MS, enabled: !!id });
+}
+
+export function useWallets() {
+  return useQuery({ queryKey: ['adminV2', 'wallets'], queryFn: fetchWallets, staleTime: STALE_MS });
+}
+
+export function useWalletLedger(agentId, page = 1) {
+  return useQuery({
+    queryKey: ['adminV2', 'walletLedger', agentId, page],
+    queryFn: () => fetchWalletLedger(agentId, { page }),
+    enabled: !!agentId,
+    keepPreviousData: true,
+  });
+}
+
+export function useAgentGroups() {
+  return useQuery({ queryKey: ['adminV2', 'agentGroups'], queryFn: fetchAgentGroups, staleTime: STALE_MS });
 }

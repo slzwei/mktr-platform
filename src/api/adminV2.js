@@ -53,14 +53,70 @@ export async function fetchCampaignsList(period) {
   return { rows: data.campaigns || [], total: data.pagination?.totalItems ?? (data.campaigns || []).length };
 }
 
-/** Agent picker for the bulk assign action (staff-facing lightweight list). */
+/** Agent picker for bulk assign + group membership (lightweight roster slice). */
 export async function fetchAgentOptions() {
   const resp = await apiClient.get('/agents?limit=200&status=active');
   const data = resp?.data ?? {};
   return (data.agents || []).map((a) => ({
     id: a.id,
     name: a.fullName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || a.email,
+    phone: a.phone || null,
+    email: a.email || null,
+    firstName: a.firstName || '',
+    lastName: a.lastName || '',
   }));
+}
+
+/** Full agents roster (B7 aggregates: assignedThisPeriod, wallet columns…). */
+export async function fetchAgentsRoster({ period = '30d', search = '', status = '' } = {}) {
+  const qs = new URLSearchParams({ limit: '200', period });
+  if (search) qs.set('search', search);
+  if (status) qs.set('status', status);
+  const resp = await apiClient.get(`/agents?${qs.toString()}`);
+  const data = resp?.data ?? {};
+  return { rows: data.agents || [], total: data.pagination?.totalItems ?? (data.agents || []).length };
+}
+
+/** Campaign detail composite (B6): campaign + 30d series + commitments + recent + QR tags. */
+export async function fetchCampaignSummary(id) {
+  const resp = await apiClient.get(`/campaigns/${id}/summary`);
+  return resp?.data ?? null;
+}
+
+// ── Wallets & Commitments (Phase A admin endpoints — live-dark in prod) ─────
+
+export async function fetchWallets() {
+  const resp = await apiClient.get('/admin/wallets');
+  return resp?.data?.wallets || [];
+}
+
+export async function fetchWalletLedger(agentId, { page = 1, limit = 25 } = {}) {
+  const resp = await apiClient.get(`/admin/wallets/${agentId}/ledger?page=${page}&limit=${limit}`);
+  return resp?.data ?? { entries: [], total: 0, page: 1, limit };
+}
+
+/** Manual adjustment — signed cents + MANDATORY note; requestId = idempotency key. */
+export function adjustWallet(agentId, { amountCents, note, requestId }) {
+  return apiClient.post(`/admin/wallets/${agentId}/adjust`, { amountCents, note, requestId });
+}
+
+// ── Agent groups (named phone-keyed member collections) ─────────────────────
+
+export async function fetchAgentGroups() {
+  const resp = await apiClient.get('/admin/agent-groups');
+  return resp?.data || [];
+}
+
+export function createAgentGroup({ name, description, agents }) {
+  return apiClient.post('/admin/agent-groups', { name, description, agents });
+}
+
+export function updateAgentGroup(id, { name, description, agents }) {
+  return apiClient.put(`/admin/agent-groups/${id}`, { name, description, agents });
+}
+
+export function deleteAgentGroup(id) {
+  return apiClient.delete(`/admin/agent-groups/${id}`);
 }
 
 // ── Bulk actions (existing endpoints — wired LIVE, not stubbed) ──────────────
