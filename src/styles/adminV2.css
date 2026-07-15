@@ -215,10 +215,16 @@
 /* ── Legacy-token bridge (campaign editors inside the v2 shell) ──────────────
    The pre-rebuild editors (workspace / designer / form) are styled entirely
    with shadcn/Tropic tokens (bg-card, text-primary, border-border…). Remapping
-   those variables inside .admin-v2 reskins them to Switchboard wholesale —
-   same pattern as .gr-designer-chrome. The customer-facing design preview
-   opts back out via .av2-theme-reset below. */
-.admin-v2 {
+   those variables reskins them to Switchboard wholesale — same pattern as
+   .gr-designer-chrome. The customer-facing design preview opts back out via
+   .av2-theme-reset below.
+
+   SCOPED to .av2-legacy-bridge (AdminV2Shell `legacyBridge` — only the five
+   editor routes), NOT bare .admin-v2: shadcn's token set collides with
+   Switchboard's own --accent, and declaring the triplet later on the same
+   selector clobbered `var(--accent)` for every v2 screen (invisible primary
+   buttons / checked checkboxes — live bug 2026-07-15). */
+.admin-v2.av2-legacy-bridge {
   --background: 220 27.3% 95.7%;
   --foreground: 220 21.4% 11%;
   --card: 0 0% 100%;
@@ -241,7 +247,7 @@
   --radius: 0.625rem;
 }
 
-.admin-v2[data-theme='dark'] {
+.admin-v2.av2-legacy-bridge[data-theme='dark'] {
   color-scheme: dark;
   --background: 222.9 18.9% 7.3%;
   --foreground: 220 36% 95.1%;

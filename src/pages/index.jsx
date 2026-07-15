@@ -368,7 +368,7 @@ function PagesContent() {
  path="/admin/campaigns/new" element={
  <ProtectedRoute requiredRole="admin">
  {ADMIN_V2 ? (
- <AdminV2Shell>
+ <AdminV2Shell legacyBridge>
  <AdminCampaignForm />
  </AdminV2Shell>
  ) : (
@@ -383,7 +383,7 @@ function PagesContent() {
  path="/admin/campaigns/:id/edit" element={
  <ProtectedRoute requiredRole="admin">
  {ADMIN_V2 ? (
- <AdminV2Shell>
+ <AdminV2Shell legacyBridge>
  <AdminCampaignForm />
  </AdminV2Shell>
  ) : (
@@ -399,7 +399,7 @@ function PagesContent() {
  path="/admin/campaigns/workspace" element={
  <ProtectedRoute requiredRole="admin">
  {ADMIN_V2 ? (
- <AdminV2Shell fullBleed>
+ <AdminV2Shell fullBleed legacyBridge>
  <AdminCampaignWorkspace />
  </AdminV2Shell>
  ) : (
@@ -414,7 +414,7 @@ function PagesContent() {
  path="/admin/campaigns/:id/workspace" element={
  <ProtectedRoute requiredRole="admin">
  {ADMIN_V2 ? (
- <AdminV2Shell fullBleed>
+ <AdminV2Shell fullBleed legacyBridge>
  <AdminCampaignWorkspace />
  </AdminV2Shell>
  ) : (
@@ -507,7 +507,7 @@ function PagesContent() {
  path="/AdminCampaignDesigner" element={
  <ProtectedRoute requiredRole="admin">
  {ADMIN_V2 ? (
- <AdminV2Shell fullBleed>
+ <AdminV2Shell fullBleed legacyBridge>
  <AdminCampaignDesigner />
  </AdminV2Shell>
  ) : (
