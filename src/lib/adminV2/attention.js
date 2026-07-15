@@ -5,7 +5,7 @@
  * Every row deep-links pre-filtered — whole-row links, per the design.
  */
 import { HELD_REASON_LABELS } from './constants.js';
-import { fmtSGD, daysUntil } from './format.js';
+import { fmtSGD, fmtNumber, daysUntil } from './format.js';
 
 export const SEVERITY_ORDER = { incident: 0, held: 1, warning: 2, watch: 3 };
 
@@ -112,38 +112,82 @@ export function composeAttentionRows(data) {
   return rows;
 }
 
-/** Health-strip cells from the same payload (mono value + caption). */
-export function composeHealthCells(data) {
+/**
+ * Health strip — the five joined segments across the top of the dashboard
+ * (MKTR Admin.dc.html): webhooks · held · committed demand · wallet float ·
+ * draws closing. Each is a whole-segment deep link; `shape` is the SVG glyph
+ * key (tri/dia/cir/sq) so state is never color alone.
+ */
+export function composeHealthStrip(data) {
   if (!data) return [];
   const wh = data.webhooks || {};
+  const held = data.held || { total: 0, byReason: {} };
   const committed = data.committed || {};
   const wallets = data.wallets || {};
-  const held = data.held || {};
+  const draws = data.drawsClosing || [];
+
+  // A disabled subscriber outranks failure counts — deliveries are OFF.
+  const webBad = (wh.failedLast24h || 0) > 0 || wh.subscriberDisabled;
+  const heldParts = Object.entries(held.byReason || {})
+    .filter(([, n]) => n > 0)
+    .map(([reason, n]) => `${n} ${(HELD_REASON_LABELS[reason] || reason).toLowerCase()}`);
+  const zeroN = (wallets.zero || []).length;
+  const lowN = (wallets.low || []).length;
+  const firstDraw = draws[0];
+  const firstDrawDays = firstDraw ? daysUntil(firstDraw.closesAt) : null;
+
   return [
     {
       id: 'webhooks',
-      // A disabled subscriber outranks failure counts — deliveries are OFF.
-      value: wh.subscriberDisabled ? 'Subscriber disabled' : wh.failedLast24h > 0 ? `${wh.failedLast24h} failed` : 'Healthy',
-      caption: 'Lyfe webhooks · 24h',
-      tone: wh.failedLast24h > 0 || wh.subscriberDisabled ? 'bad' : 'ok',
-    },
-    {
-      id: 'committed',
-      value: fmtSGD(committed.valueCents || 0),
-      caption: `Committed demand · ${committed.leads || 0} leads pre-sold`,
-      tone: 'accent',
-    },
-    {
-      id: 'float',
-      value: fmtSGD(wallets.floatCents || 0),
-      caption: `Wallet float · ${wallets.total || 0} external agents`,
-      tone: (wallets.zero || []).length > 0 ? 'warn' : 'neutral',
+      href: '/AdminProspects',
+      shape: webBad ? 'tri' : 'cir',
+      tone: webBad ? 'bad' : 'ok',
+      value: wh.subscriberDisabled ? 'Disabled' : webBad ? `${wh.failedLast24h} failed` : 'Healthy',
+      valueTone: webBad ? 'bad' : null,
+      label: 'Lyfe webhooks · 24h',
+      detail: `${wh.pending || 0} pending in queue${wh.subscriberDisabled ? ' · subscriber disabled' : ''}`,
     },
     {
       id: 'held',
+      href: '/AdminProspects?assignment=held',
+      shape: held.total > 0 ? 'dia' : 'cir',
+      tone: held.total > 0 ? 'hold' : 'ok',
       value: String(held.total || 0),
-      caption: 'Leads held',
-      tone: (held.total || 0) > 0 ? 'hold' : 'neutral',
+      valueTone: held.total > 0 ? 'hold' : null,
+      label: 'Leads held',
+      detail: held.total > 0 ? `${heldParts.join(' · ') || 'quarantined'} — triage` : 'nothing quarantined',
+    },
+    {
+      id: 'committed',
+      href: '/AdminWallets',
+      shape: 'sq',
+      tone: 'accent',
+      value: fmtSGD(committed.valueCents || 0),
+      valueTone: null,
+      label: 'Committed demand',
+      detail: `${fmtNumber(committed.leads || 0)} leads pre-sold · ${committed.campaigns || 0} campaign${committed.campaigns === 1 ? '' : 's'}`,
+    },
+    {
+      id: 'float',
+      href: '/AdminWallets',
+      shape: zeroN > 0 ? 'tri' : 'cir',
+      tone: zeroN > 0 ? 'warn' : 'ok',
+      value: fmtSGD(wallets.floatCents || 0),
+      valueTone: zeroN > 0 ? 'warn' : null,
+      label: 'Wallet float',
+      detail: zeroN > 0 || lowN > 0 ? `${zeroN} at S$0 · ${lowN} low` : 'all wallets funded',
+    },
+    {
+      id: 'draws',
+      href: '/AdminCampaigns',
+      shape: 'cir',
+      tone: draws.length > 0 ? 'accent' : 'neutral',
+      value: String(draws.length),
+      valueTone: draws.length > 0 ? 'accent-text' : null,
+      label: 'Draws closing ≤7d',
+      detail: firstDraw
+        ? `${(firstDraw.name || 'Draw').replace(' Lucky Draw', '')} · ${firstDrawDays}d`
+        : 'none inside 7 days',
     },
   ];
 }

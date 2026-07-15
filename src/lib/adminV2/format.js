@@ -53,6 +53,18 @@ export function fmtRelative(value, now = Date.now()) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
+/** Compact stream timestamp ("5m", "3h", "Mon", "3 Jul") for tight columns. */
+export function fmtAgoShort(value, now = Date.now()) {
+  if (!value) return '—';
+  const t = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  if (Number.isNaN(t)) return '—';
+  const s = Math.max(0, Math.round((now - t) / 1000));
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m`;
+  if (s < 86400) return `${Math.round(s / 3600)}h`;
+  if (s < 7 * 86400) return new Date(t).toLocaleDateString('en-SG', { weekday: 'short', timeZone: SGT });
+  return new Date(t).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', timeZone: SGT });
+}
+
 /** "days until" for deadlines (SGT end-of-day strings or ISO dates). */
 export function daysUntil(value, now = Date.now()) {
   if (!value) return null;

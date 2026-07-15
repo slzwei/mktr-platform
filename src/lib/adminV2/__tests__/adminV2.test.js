@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { composeAttentionRows, composeHealthCells, SEVERITY_ORDER } from '../attention.js';
+import { composeAttentionRows, composeHealthStrip, SEVERITY_ORDER } from '../attention.js';
 import { prospectsToCsv } from '../csv.js';
 import { fmtSGD, fmtSGDExact, fmtDateTime, fmtRelative, daysUntil, fmtNumber } from '../format.js';
 import { HELD_REASON_LABELS, STATUS_LABELS, STATUS_CHIP_CLASS, SOURCE_LABELS, LEAD_STATUSES, LEAD_SOURCES } from '../constants.js';
@@ -86,18 +86,41 @@ describe('composeAttentionRows — severity ordering + deep links', () => {
   });
 });
 
-describe('composeHealthCells', () => {
-  it('webhook cell turns bad on failures; float warns on zero wallets', () => {
-    const cells = composeHealthCells({
-      webhooks: { failedLast24h: 2, pending: 1, subscriberDisabled: false },
-      committed: { leads: 189, valueCents: 207000 },
-      wallets: { total: 5, zero: [{ id: 'a1' }], low: [], floatCents: 12400 },
-      held: { total: 3 },
+describe('composeHealthStrip', () => {
+  it('always returns the five segments with deep links, tones and glyph shapes', () => {
+    const strip = composeHealthStrip({
+      webhooks: { failedLast24h: 2, pending: 3, subscriberDisabled: false },
+      held: { total: 2, byReason: { no_funded_agent: 1, dnc_pending: 1 } },
+      committed: { leads: 189, valueCents: 207000, campaigns: 6 },
+      wallets: { total: 7, zero: [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }], low: [{ id: 'a4' }], floatCents: 200400 },
+      drawsClosing: [{ id: 'c1', name: 'Tokyo Getaway Lucky Draw', closesAt: new Date(Date.now() + 3 * 86400000).toISOString() }],
     });
-    expect(cells.find((c) => c.id === 'webhooks')).toMatchObject({ value: '2 failed', tone: 'bad' });
-    expect(cells.find((c) => c.id === 'committed').value).toBe('S$2,070');
-    expect(cells.find((c) => c.id === 'float')).toMatchObject({ value: 'S$124', tone: 'warn' });
-    expect(cells.find((c) => c.id === 'held')).toMatchObject({ value: '3', tone: 'hold' });
+    expect(strip.map((s) => s.id)).toEqual(['webhooks', 'held', 'committed', 'float', 'draws']);
+    expect(strip[0]).toMatchObject({ value: '2 failed', tone: 'bad', shape: 'tri', href: '/AdminProspects' });
+    expect(strip[0].detail).toBe('3 pending in queue');
+    expect(strip[1]).toMatchObject({ value: '2', tone: 'hold', shape: 'dia', href: '/AdminProspects?assignment=held' });
+    expect(strip[1].detail).toContain('1 no funded agent');
+    expect(strip[2]).toMatchObject({ value: 'S$2,070', tone: 'accent', shape: 'sq' });
+    expect(strip[2].detail).toBe('189 leads pre-sold · 6 campaigns');
+    expect(strip[3]).toMatchObject({ value: 'S$2,004', tone: 'warn', shape: 'tri' });
+    expect(strip[3].detail).toBe('3 at S$0 · 1 low');
+    expect(strip[4]).toMatchObject({ value: '1', tone: 'accent' });
+    expect(strip[4].detail).toBe('Tokyo Getaway · 3d');
+  });
+
+  it('healthy payload reads calm: ok tones, circles, no warnings', () => {
+    const strip = composeHealthStrip({
+      webhooks: { failedLast24h: 0, pending: 0, subscriberDisabled: false },
+      held: { total: 0, byReason: {} },
+      committed: { leads: 0, valueCents: 0, campaigns: 0 },
+      wallets: { total: 5, zero: [], low: [], floatCents: 50000 },
+      drawsClosing: [],
+    });
+    expect(strip[0]).toMatchObject({ value: 'Healthy', tone: 'ok', shape: 'cir', valueTone: null });
+    expect(strip[1].detail).toBe('nothing quarantined');
+    expect(strip[3]).toMatchObject({ tone: 'ok', detail: 'all wallets funded' });
+    expect(strip[4]).toMatchObject({ value: '0', tone: 'neutral', detail: 'none inside 7 days' });
+    expect(composeHealthStrip(null)).toEqual([]);
   });
 });
 
