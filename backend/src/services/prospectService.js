@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'crypto';
-import { Op, Transaction } from 'sequelize';
+import { Op, Transaction, fn as sqlFn, col as sqlCol, where as sqlWhere } from 'sequelize';
 import {
   Prospect,
   User,
@@ -1605,6 +1605,11 @@ export function makeProspectService(overrides = {}) {
         // a bare Op.ne would also exclude unassigned NULL rows). Re-assigning a
         // no-op row used to double-charge the agent for a lead they already held.
         { [Op.or]: [{ assignedAgentId: null }, { assignedAgentId: { [Op.ne]: agentId } }] },
+        // External-buyer-owned rows are fenced: assignedAgentId and
+        // externalAgentId are mutually exclusive owners, and writing the
+        // internal FK without clearing the external one would double-own the
+        // lead. Transfers from the external pool are not a bulk operation.
+        { externalAgentId: null },
       ],
     };
 
@@ -1638,7 +1643,7 @@ export function makeProspectService(overrides = {}) {
       // classification matches what the locked UPDATE saw.
       requestedRows = await m.Prospect.findAll({
         where: { id: { [Op.in]: requestedIds }, ...scopeFilter },
-        attributes: ['id', 'assignedAgentId', 'quarantinedAt', 'quarantineReason'],
+        attributes: ['id', 'assignedAgentId', 'externalAgentId', 'quarantinedAt', 'quarantineReason'],
         transaction,
       });
     });
@@ -1649,7 +1654,7 @@ export function makeProspectService(overrides = {}) {
     // Skip accounting for the UI toast: classify every requested id that did NOT change.
     // (Post-UPDATE snapshot: affected rows are classified off the pre-UPDATE lock set.)
     const requestedById = new Map(requestedRows.map((r) => [r.id, r]));
-    const skipped = { notFound: 0, alreadyAssigned: 0, heldFenced: 0 };
+    const skipped = { notFound: 0, alreadyAssigned: 0, heldFenced: 0, externalOwned: 0 };
     let releasedCount = 0;
     for (const id of requestedIds) {
       if (lockedById.has(id)) {
@@ -1658,6 +1663,7 @@ export function makeProspectService(overrides = {}) {
       }
       const row = requestedById.get(id);
       if (!row) skipped.notFound += 1;
+      else if (row.externalAgentId) skipped.externalOwned += 1;
       else if (row.quarantinedAt && !RELEASABLE_HOLD_REASONS.includes(row.quarantineReason)) skipped.heldFenced += 1;
       else skipped.alreadyAssigned += 1;
     }
@@ -1902,6 +1908,13 @@ export function makeProspectService(overrides = {}) {
         { lastName: { [likeOp]: `%${sanitizedSearch}%` } },
         { email: { [likeOp]: `%${sanitizedSearch}%` } },
         { company: { [likeOp]: `%${sanitizedSearch}%` } },
+        // Phone matches ignore spacing (stored "+65 9231 8804", operators type
+        // digits) — strip spaces on both sides of the comparison. Sequelize
+        // STATICS (not instance methods) so DI-mocked unit suites stay valid.
+        sqlWhere(
+          sqlFn('REPLACE', sqlCol('Prospect.phone'), ' ', ''),
+          { [likeOp]: `%${sanitizedSearch.replace(/\s+/g, '')}%` }
+        ),
       ];
     }
 
@@ -2422,6 +2435,10 @@ export function makeProspectService(overrides = {}) {
     // ── Promotion arm (web-admin only): an unassigned, unheld stray joins the held pool.
     // No webhook — it has no owner app copy to vanish. Conditional UPDATE = race-safe.
     if (!previousAgentId) {
+      // External-buyer-owned rows are NOT strays: externalAgentId is the other
+      // mutually-exclusive owner FK, and quarantining such a row would hold a
+      // lead an external buyer already paid for and holds a copy of.
+      if (prospect.externalAgentId) return { status: 'undeliverable' };
       if (!promoteUnassigned) return { status: 'already_handled' };
       const pt = await d.sequelize.transaction();
       try {

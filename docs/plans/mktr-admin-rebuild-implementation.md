@@ -352,6 +352,28 @@ Phased per the standing direction (hide → dark-flag → drop models later):
 
 ---
 
+## Codex review log — Phase C PR3 post-implementation (2026-07-15, gpt-5.6-sol xhigh)
+
+1 BLOCKER / 7 MAJOR / 6 MINOR; verdict confirmed flag-off leaves legacy chunks
+untouched and the adapters faithful. Dispositions (all verified first):
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | BLOCKER: bulk assign/return could double-own or quarantine EXTERNAL-buyer leads (backend hole, made reachable by the new UI) | **Backend fixed** — `externalAgentId IS NULL` fence in bulkAssign's WHERE + `skipped.externalOwned` accounting; return-to-held promotion arm returns `undeliverable` for external-owned rows. Two DB-backed fence tests. UI labels external rows ("External" chip / "external buyer" in drawer) |
+| 2 | Legacy `?campaign=` / `?qrTagId=` deep links ignored | Fixed — read/pass/removable chips |
+| 3 | Debounce race + back/forward desync | Fixed — functional `setSearchParams` in the timer + draft resync when q changes externally |
+| 4 | Toasts reported assumed counts | Fixed (pre-review commit + refined) — server counts incl. summed `skipped` object; zero-work warns |
+| 5 | Bulk delete leaves a live Lyfe-app orphan | **Accepted parity** — the legacy web admin exposes the same delete with the same documented backend limitation; `lead.deleted` propagation is a backend fast-follow, not a UI gate |
+| 6 | Leaderboard zero-commit drifted from the server definition | Fixed — consumes `attention.zeroCommitCampaigns` (authoritative). Top-6-of-newest-100 window accepted at current scale |
+| 7 | Disabled subscriber displayed "Healthy" | Fixed — value prioritizes "Subscriber disabled" |
+| 8 | Row keyboard semantics | Fixed targeted (Space activates, checkbox keydown never bubbles); full grid/columnheader semantics deferred to PR4 polish |
+| 9 | Search placeholder promised phone | **Backend delivers it** — space-insensitive phone iLike added to listProspects search |
+| 10 | Drawer skips detail endpoint + consent | Consent section added (submit-flag display mapping from sourceMetadata — the list rows already carry every drawer field); activities/detail fetch lands with PR4's drawer story |
+| 11 | Partial-payload NaN guards | Fixed — series/funnel normalized defensively |
+| 12 | CSV guard missed leading whitespace/control chars | Fixed + test |
+| 13 | Double sonner Toaster | Fixed — App.jsx's global instance is the only mount |
+| 14 | /AdminWallets registered flag-off | Fixed — route exists only when ADMIN_V2 |
+
 ## Codex review log — Phase B post-implementation (2026-07-15, gpt-5.6-sol xhigh)
 
 Verdict "not merge-ready" on 4 MAJORs / 3 MINORs; core plumbing (period-keyed

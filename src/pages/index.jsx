@@ -56,6 +56,16 @@ const DevRoutes = lazy(() => import('../dev/DevRoutes'));
 
 const AdminDashboard = lazy(() => import('./AdminDashboard'));
 const AdminProspects = lazy(() => import('./AdminProspects'));
+
+// ── Switchboard admin v2 (docs/plans/mktr-admin-rebuild-implementation.md
+// Phase C) — dark until VITE_ADMIN_V2_ENABLED=true is baked into the build.
+// Flag ON swaps the SAME admin URLs onto the v2 screens (bookmarks survive);
+// un-rebuilt routes keep their legacy pages until their PR lands.
+const ADMIN_V2 = import.meta.env.VITE_ADMIN_V2_ENABLED === 'true';
+const AdminV2Shell = lazy(() => import('@/components/adminv2/AdminV2Shell'));
+const AdminV2Dashboard = lazy(() => import('./adminv2/AdminV2Dashboard'));
+const AdminV2Prospects = lazy(() => import('./adminv2/AdminV2Prospects'));
+const AdminV2Stub = lazy(() => import('./adminv2/AdminV2Stub'));
 const AdminCampaigns = lazy(() => import('./AdminCampaigns'));
 const AdminCampaignForm = lazy(() => import('./AdminCampaignForm'));
 const AdminQRCodes = lazy(() => import('./AdminQRCodes'));
@@ -266,9 +276,15 @@ function PagesContent() {
  <Route
  path="/AdminDashboard" element={
  <ProtectedRoute requiredRole="admin">
+ {ADMIN_V2 ? (
+ <AdminV2Shell>
+ <AdminV2Dashboard />
+ </AdminV2Shell>
+ ) : (
  <DashboardLayout>
  <AdminDashboard />
  </DashboardLayout>
+ )}
  </ProtectedRoute>
  }
  />
@@ -284,12 +300,29 @@ function PagesContent() {
  <Route
  path="/AdminProspects" element={
  <ProtectedRoute requiredRole="admin">
+ {ADMIN_V2 ? (
+ <AdminV2Shell>
+ <AdminV2Prospects />
+ </AdminV2Shell>
+ ) : (
  <DashboardLayout>
  <AdminProspects />
  </DashboardLayout>
+ )}
  </ProtectedRoute>
  }
  />
+ {ADMIN_V2 && (
+ <Route
+ path="/AdminWallets" element={
+ <ProtectedRoute requiredRole="admin">
+ <AdminV2Shell>
+ <AdminV2Stub title="Wallets & Commitments" arrives="the next release (PR4)" />
+ </AdminV2Shell>
+ </ProtectedRoute>
+ }
+ />
+ )}
  <Route
  path="/AdminCampaigns" element={
  <ProtectedRoute requiredRole="admin">

@@ -19,7 +19,7 @@ const DAY_MS = 24 * 3600e3
 
 let app, admin, adminToken, agent, agentToken, externalAgent
 let campaign, pricedCoveredCampaign, pricedUncoveredCampaign, drawCampaign
-let walletPkg, walletAssignment
+let walletPkg, walletAssignment, extProspect
 
 beforeAll(async () => {
   app = await getApp()
@@ -79,7 +79,7 @@ beforeAll(async () => {
   // Externally-assigned prospect (the SECOND assignee FK): must count as
   // "assigned", never appear under "unassigned".
   const extBuyer = await ExternalAgent.create({ phone: `+65${String(Date.now()).slice(-8)}`, name: 'Ext Buyer' })
-  await createTestProspect(campaign.id, { firstName: 'Ext-Assigned', externalAgentId: extBuyer.id })
+  extProspect = await createTestProspect(campaign.id, { firstName: 'Ext-Assigned', externalAgentId: extBuyer.id })
 
   await createTestQrTag(campaign.id, admin.id, { scanCount: 90 })
 
@@ -249,6 +249,32 @@ describe('B5 — GET /api/prospects multi-select + sort', () => {
     const names = unassigned.body.data.prospects.map((p) => p.firstName)
     expect(names).toContain('Aa-Unassigned')
     expect(names).not.toContain('Ext-Assigned')
+  })
+
+  it('bulk assign FENCES external-buyer-owned rows (ownership invariant)', async () => {
+    const res = await request(app)
+      .patch('/api/prospects/bulk/assign')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ prospectIds: [extProspect.id], agentId: agent.id })
+    expect(res.status).toBe(200)
+    expect(res.body.data.affectedCount).toBe(0)
+    expect(res.body.data.skipped.externalOwned).toBe(1)
+
+    await extProspect.reload()
+    expect(extProspect.assignedAgentId).toBeNull() // never double-owned
+    expect(extProspect.externalAgentId).not.toBeNull()
+  })
+
+  it('bulk return-to-held never quarantines an external-buyer-owned row', async () => {
+    const res = await request(app)
+      .patch('/api/prospects/bulk/return-to-held')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ prospectIds: [extProspect.id] })
+    expect(res.status).toBe(200)
+    expect(res.body.data.returned).toBe(0)
+
+    await extProspect.reload()
+    expect(extProspect.quarantinedAt).toBeNull()
   })
 
   it('assignment=assigned composes with search (Op.or collision guard)', async () => {

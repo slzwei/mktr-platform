@@ -117,10 +117,12 @@ describe('LIKE injection protection (prospectService.listProspects)', () => {
     await service.listProspects({ id: 'user-1', role: 'admin' }, { search: 'test' });
 
     const orClause = capturedWhere[Op.or];
-    expect(orClause).toHaveLength(4);
+    expect(orClause).toHaveLength(5); // + space-insensitive phone (sequelize.where AST)
 
-    const fieldNames = orClause.map((condition) => Object.keys(condition)[0]);
+    const fieldNames = orClause.slice(0, 4).map((condition) => Object.keys(condition)[0]);
     expect(fieldNames).toEqual(['firstName', 'lastName', 'email', 'company']);
+    // The fifth entry is the REPLACE(phone) comparison — still iLike-escaped.
+    expect(orClause[4].attribute).toMatchObject({ fn: 'REPLACE' });
   });
 
   it('does not add search conditions when search param is absent', async () => {
