@@ -1,7 +1,7 @@
 import request from 'supertest'
 import { getApp, closeDb, createTestUser, createTestCampaign, createTestProspect, createTestQrTag } from './helpers.js'
 import { resetAdminStatsCache } from '../src/services/dashboardService.js'
-import { LeadPackage, LeadPackageAssignment, WebhookSubscriber, WebhookDelivery } from '../src/models/index.js'
+import { LeadPackage, LeadPackageAssignment, WebhookSubscriber, WebhookDelivery, ExternalAgent } from '../src/models/index.js'
 
 /**
  * Admin rebuild Phase B — API extensions (docs/plans/mktr-admin-rebuild-implementation.md).
@@ -75,6 +75,11 @@ beforeAll(async () => {
     quarantinedAt: new Date(), quarantineReason: 'some_future_reason',
   })
   await createTestProspect(campaign.id, { firstName: 'Aa-Unassigned', leadSource: 'website' })
+
+  // Externally-assigned prospect (the SECOND assignee FK): must count as
+  // "assigned", never appear under "unassigned".
+  const extBuyer = await ExternalAgent.create({ phone: `+65${String(Date.now()).slice(-8)}`, name: 'Ext Buyer' })
+  await createTestProspect(campaign.id, { firstName: 'Ext-Assigned', externalAgentId: extBuyer.id })
 
   await createTestQrTag(campaign.id, admin.id, { scanCount: 90 })
 
@@ -232,6 +237,30 @@ describe('B5 — GET /api/prospects multi-select + sort', () => {
     expect(res.body.data.prospects).toHaveLength(0)
   })
 
+  it('assignment filters see BOTH assignee FKs (external-assigned is never "unassigned")', async () => {
+    const assigned = await request(app)
+      .get('/api/prospects?assignment=assigned&limit=100')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(assigned.body.data.prospects.map((p) => p.firstName)).toContain('Ext-Assigned')
+
+    const unassigned = await request(app)
+      .get('/api/prospects?assignment=unassigned&limit=100')
+      .set('Authorization', `Bearer ${adminToken}`)
+    const names = unassigned.body.data.prospects.map((p) => p.firstName)
+    expect(names).toContain('Aa-Unassigned')
+    expect(names).not.toContain('Ext-Assigned')
+  })
+
+  it('assignment=assigned composes with search (Op.or collision guard)', async () => {
+    const res = await request(app)
+      .get('/api/prospects?assignment=assigned&search=Zz-Won&limit=50')
+      .set('Authorization', `Bearer ${adminToken}`)
+    expect(res.status).toBe(200)
+    const names = res.body.data.prospects.map((p) => p.firstName)
+    expect(names).toContain('Zz-Won')
+    expect(names).not.toContain('Ext-Assigned') // search still narrows
+  })
+
   it('sort=firstName orders ascending; junk sort falls back to -createdAt', async () => {
     const asc = await request(app)
       .get('/api/prospects?sort=firstName&limit=100')
@@ -256,11 +285,13 @@ describe('B6 — campaign aggregates', () => {
     expect(res.status).toBe(200)
     const rows = res.body.data.campaigns
     const covered = rows.find((c) => c.id === pricedCoveredCampaign.id)
-    expect(Number(covered.committedRemaining)).toBe(3)
-    expect(Number(covered.committedValueCents)).toBe(2400)
+    // JSON numbers, not pg-bigint strings — asserted WITHOUT coercion.
+    expect(covered.committedRemaining).toBe(3)
+    expect(covered.committedValueCents).toBe(2400)
     const main = rows.find((c) => c.id === campaign.id)
-    expect(Number(main.leadsThisPeriod)).toBeGreaterThanOrEqual(6) // 10d-old row outside 7d
-    expect(Number(main.prospectCount)).toBeGreaterThanOrEqual(7)   // all-time key untouched
+    expect(main.leadsThisPeriod).toBeGreaterThanOrEqual(6) // 10d-old row outside 7d
+    expect(main.leadsTotal).toBeGreaterThanOrEqual(7)      // Phase C contract key
+    expect(Number(main.prospectCount)).toBeGreaterThanOrEqual(7) // legacy key untouched
   })
 
   it('GET /api/campaigns/:id/summary is admin-only and composes the detail payload', async () => {
@@ -295,13 +326,16 @@ describe('B7 — GET /api/agents roster aggregates', () => {
     expect(res.status).toBe(200)
     const rows = res.body.data.agents
     const internal = rows.find((a) => a.id === agent.id)
-    expect(Number(internal.assignedThisPeriod)).toBeGreaterThanOrEqual(3)
+    expect(internal.assignedThisPeriod).toBeGreaterThanOrEqual(3)
     expect(internal.lastAssignedAt).toBeTruthy()
-    expect(Number(internal.committedLeads)).toBe(0)
+    // Internal agents have no wallet — null, never a misleading 0.
+    expect(internal.walletBalanceCents).toBeNull()
+    expect(internal.committedLeads).toBeNull()
+    expect(internal.committedValueCents).toBeNull()
 
     const external = rows.find((a) => a.id === externalAgent.id)
     expect(external.walletBalanceCents).toBe(2500)
-    expect(Number(external.committedLeads)).toBe(3)
-    expect(Number(external.committedValueCents)).toBe(2400)
+    expect(external.committedLeads).toBe(3)
+    expect(external.committedValueCents).toBe(2400)
   })
 })

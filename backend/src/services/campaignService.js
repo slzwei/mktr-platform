@@ -233,10 +233,14 @@ export async function listCampaigns(user, query, req) {
         [sequelize.literal('(SELECT COUNT(*) FROM prospects WHERE prospects."campaignId" = "Campaign".id)'), 'prospectCount'],
         [sequelize.literal('(SELECT COUNT(*) FROM qr_tags WHERE qr_tags."campaignId" = "Campaign".id)'), 'qrTagCount'],
         [sequelize.literal('(SELECT COALESCE(SUM("scanCount"), 0) FROM qr_tags WHERE qr_tags."campaignId" = "Campaign".id)'), 'totalScans'],
-        // Phase B aggregates (admin rebuild): period leads + open wallet-commitment demand.
-        [sequelize.literal(`(SELECT COUNT(*) FROM prospects WHERE prospects."campaignId" = "Campaign".id AND prospects."createdAt" >= '${periodStartIso}')`), 'leadsThisPeriod'],
+        // Phase B aggregates (admin rebuild): period leads + open wallet-commitment
+        // demand. All cast ::int so they serialize as JSON numbers (pg returns
+        // bigint COUNT/SUM as strings otherwise); int32 bounds are ample here
+        // (committedValueCents caps at ~S$21M before overflow — far beyond scale).
+        [sequelize.literal('(SELECT COUNT(*) FROM prospects WHERE prospects."campaignId" = "Campaign".id)::int'), 'leadsTotal'],
+        [sequelize.literal(`(SELECT COUNT(*) FROM prospects WHERE prospects."campaignId" = "Campaign".id AND prospects."createdAt" >= '${periodStartIso}')::int`), 'leadsThisPeriod'],
         [sequelize.literal('(SELECT COALESCE(SUM(lpa."leadsRemaining"), 0)::int FROM lead_package_assignments lpa JOIN lead_packages lp ON lpa."leadPackageId" = lp.id WHERE lp."campaignId" = "Campaign".id AND lpa."source" = \'wallet\' AND lpa.status = \'active\')'), 'committedRemaining'],
-        [sequelize.literal('(SELECT COALESCE(SUM(lpa."leadsRemaining" * lpa."unitPriceCents"), 0)::bigint FROM lead_package_assignments lpa JOIN lead_packages lp ON lpa."leadPackageId" = lp.id WHERE lp."campaignId" = "Campaign".id AND lpa."source" = \'wallet\' AND lpa.status = \'active\' AND lpa."unitPriceCents" IS NOT NULL)'), 'committedValueCents'],
+        [sequelize.literal('(SELECT COALESCE(SUM(lpa."leadsRemaining" * lpa."unitPriceCents"), 0)::int FROM lead_package_assignments lpa JOIN lead_packages lp ON lpa."leadPackageId" = lp.id WHERE lp."campaignId" = "Campaign".id AND lpa."source" = \'wallet\' AND lpa.status = \'active\' AND lpa."unitPriceCents" IS NOT NULL)'), 'committedValueCents'],
       ]
     },
     include: [

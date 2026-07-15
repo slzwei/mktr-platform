@@ -159,7 +159,10 @@ straight to the service): `sort` param — whitelist
 `leadSource` accept comma-lists (`IN` filter), single value stays
 backward-compatible. Comma-list handling: split, trim, dedupe, whitelist
 every token against the enum and DROP invalid tokens (never let an unknown
-string reach a Postgres enum cast → 500); all-invalid ⇒ ignore the filter.
+string reach a Postgres enum cast → 500); **all-invalid ⇒ EMPTY PAGE** — the
+long-standing single-value degrade semantic. (Amended at implementation:
+"ignore the filter" would silently show everything when the caller asked to
+narrow — an explicitly typed filter must never widen the result.)
 
 ### B6. Campaign aggregates:
 - Extend the admin campaigns list payload with `leadsThisPeriod`,
@@ -348,6 +351,22 @@ Phased per the standing direction (hide → dark-flag → drop models later):
   the existing package join (regression-tested).
 
 ---
+
+## Codex review log — Phase B post-implementation (2026-07-15, gpt-5.6-sol xhigh)
+
+Verdict "not merge-ready" on 4 MAJORs / 3 MINORs; core plumbing (period-keyed
+cache, SGT alignment, injection surface, raw-include key, additive envelopes,
+summary auth) explicitly confirmed sound. All verified and resolved:
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | Campaign list missing the contract's `leadsTotal` key | Fixed — `leadsTotal` literal added; legacy `prospectCount` untouched |
+| 2 | `assignment=assigned/unassigned` ignored `externalAgentId` | Fixed — both FKs, composed under `Op.and` so the search `Op.or` never collides; collision regression test added |
+| 3 | All-invalid enum list: plan said "ignore filter", code returns empty page | **Plan text amended** — empty page is the deliberate semantic (a typed filter must never silently widen) |
+| 4 | Internal agents got wallet `0`s instead of `null` | Fixed in the DTO (`computeAgentStatsFromCounts`) — null for non-external, numbers for external |
+| 5 | Attention wallet cohort excluded inactive external agents (money vanishes from float) | Fixed — full cohort; zero/low entries carry `isActive` for UI badging |
+| 6 | Aggregate JSON types inconsistent (pg bigint strings) | Fixed — all new aggregates cast `::int` (bounds documented); tests assert types WITHOUT coercion |
+| 7 | Missing composite indexes for the period aggregates | Migration 072: prospects (campaignId, createdAt) + (assignedAgentId, createdAt) + partial open-wallet-assignment index, mirrored on models |
 
 ## Codex review log (round 1 — 2026-07-15, gpt-5.6-sol xhigh)
 

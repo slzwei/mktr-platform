@@ -1869,9 +1869,17 @@ export function makeProspectService(overrides = {}) {
 
     // Assignment-state filter: 'unassigned' means truly in limbo (not held — held rows
     // have their own bucket so the admin's pending pool and the strays stay separable).
-    if (assignment === 'assigned') whereConditions.assignedAgentId = { [Op.ne]: null };
-    else if (assignment === 'unassigned') {
+    // Prospects carry TWO mutually-exclusive assignee FKs (assignedAgentId for users,
+    // externalAgentId for the ExternalAgent buyer pool) — both count as "assigned".
+    // The Op.or lives inside Op.and so it can never clobber the search Op.or below.
+    if (assignment === 'assigned') {
+      whereConditions[Op.and] = [
+        ...(whereConditions[Op.and] || []),
+        { [Op.or]: [{ assignedAgentId: { [Op.ne]: null } }, { externalAgentId: { [Op.ne]: null } }] },
+      ];
+    } else if (assignment === 'unassigned') {
       whereConditions.assignedAgentId = null;
+      whereConditions.externalAgentId = null;
       whereConditions.quarantinedAt = null;
     } else if (assignment === 'held') whereConditions.quarantinedAt = { [Op.ne]: null };
 

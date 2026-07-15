@@ -110,10 +110,10 @@ export async function listAgents(query) {
         // Phase B roster aggregates (admin rebuild): period assignment volume,
         // recency, and open wallet-commitment demand (0s for internal agents —
         // the UI renders "—" when mktrLeadsId is null).
-        [sequelize.literal(`(SELECT COUNT(*) FROM prospects WHERE prospects."assignedAgentId" = "User".id AND prospects."createdAt" >= '${periodStartIso}')`), 'assignedThisPeriod'],
+        [sequelize.literal(`(SELECT COUNT(*) FROM prospects WHERE prospects."assignedAgentId" = "User".id AND prospects."createdAt" >= '${periodStartIso}')::int`), 'assignedThisPeriod'],
         [sequelize.literal('(SELECT MAX(prospects."createdAt") FROM prospects WHERE prospects."assignedAgentId" = "User".id)'), 'lastAssignedAt'],
         [sequelize.literal('(SELECT COALESCE(SUM(lpa."leadsRemaining"), 0)::int FROM lead_package_assignments lpa WHERE lpa."agentId" = "User".id AND lpa."source" = \'wallet\' AND lpa.status = \'active\')'), 'committedLeads'],
-        [sequelize.literal('(SELECT COALESCE(SUM(lpa."leadsRemaining" * lpa."unitPriceCents"), 0)::bigint FROM lead_package_assignments lpa WHERE lpa."agentId" = "User".id AND lpa."source" = \'wallet\' AND lpa.status = \'active\' AND lpa."unitPriceCents" IS NOT NULL)'), 'committedValueCents'],
+        [sequelize.literal('(SELECT COALESCE(SUM(lpa."leadsRemaining" * lpa."unitPriceCents"), 0)::int FROM lead_package_assignments lpa WHERE lpa."agentId" = "User".id AND lpa."source" = \'wallet\' AND lpa.status = \'active\' AND lpa."unitPriceCents" IS NOT NULL)'), 'committedValueCents'],
       ]
     },
     include: [

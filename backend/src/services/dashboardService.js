@@ -172,9 +172,12 @@ export async function getAttention() {
       raw: true
     }).catch(() => []),
     safeCount(Prospect, { where: { assignedAgentId: null, externalAgentId: null, quarantinedAt: null } }),
+    // FULL external cohort, including inactive agents — the agent-sync can
+    // deactivate a user who still holds a balance, and money must never
+    // vanish from the float. Rows carry isActive so the UI can badge them.
     User.findAll({
-      where: { mktrLeadsId: { [Op.ne]: null }, role: 'agent', isActive: true },
-      attributes: ['id', 'firstName', 'lastName', 'fullName', 'email', 'walletBalanceCents'],
+      where: { mktrLeadsId: { [Op.ne]: null }, role: 'agent' },
+      attributes: ['id', 'firstName', 'lastName', 'fullName', 'email', 'walletBalanceCents', 'isActive'],
       raw: true
     }).catch(() => []),
     LeadPackageAssignment.findAll({
@@ -199,12 +202,14 @@ export async function getAttention() {
     else byReason.other += n;
   }
 
-  // Wallets — EXTERNAL agents only (v1 cohort).
+  // Wallets — EXTERNAL agents only (v1 cohort), inactive included.
   const name = (a) => a.fullName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || a.email;
-  const zero = externalAgents.filter((a) => a.walletBalanceCents === 0).map((a) => ({ id: a.id, name: name(a) }));
+  const zero = externalAgents
+    .filter((a) => a.walletBalanceCents === 0)
+    .map((a) => ({ id: a.id, name: name(a), isActive: a.isActive }));
   const low = externalAgents
     .filter((a) => a.walletBalanceCents > 0 && a.walletBalanceCents < LOW_WALLET_CENTS)
-    .map((a) => ({ id: a.id, name: name(a), balanceCents: a.walletBalanceCents }));
+    .map((a) => ({ id: a.id, name: name(a), balanceCents: a.walletBalanceCents, isActive: a.isActive }));
   const floatCents = externalAgents.reduce((s, a) => s + (a.walletBalanceCents || 0), 0);
 
   // Committed demand — open wallet commitments across all campaigns.

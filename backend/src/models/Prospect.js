@@ -316,7 +316,10 @@ const Prospect = sequelize.define('Prospect', {
     },
     { fields: ['createdAt'], name: 'idx_prospects_createdat' },
     { fields: ['conversionDate'], name: 'idx_prospects_conversiondate', where: { conversionDate: { [Op.ne]: null } } },
-    { fields: ['assignedAgentId', 'leadStatus'], name: 'idx_prospects_agent_status' }
+    { fields: ['assignedAgentId', 'leadStatus'], name: 'idx_prospects_agent_status' },
+    // Phase B admin aggregates (migration 072): per-campaign / per-agent period counts.
+    { fields: ['campaignId', 'createdAt'], name: 'idx_prospects_campaign_created' },
+    { fields: ['assignedAgentId', 'createdAt'], name: 'idx_prospects_agent_created' }
   ]
 });
 
