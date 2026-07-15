@@ -27,6 +27,8 @@ const api = vi.hoisted(() => ({
   createCadenceVersion: vi.fn(),
   retireCadence: vi.fn(),
   suggestCadence: vi.fn(),
+  listTasks: vi.fn(),
+  updateTask: vi.fn(),
 }));
 vi.mock('@/api/redeemOps', () => ({ redeemOpsApi: api }));
 
@@ -65,6 +67,8 @@ beforeEach(() => {
   api.completeCadenceTask.mockResolvedValue({ nextTask: null });
   // The editor fetches the list in NEW mode too (it carries aiEnabled).
   api.listCadences.mockResolvedValue({ cadences: [], aiEnabled: false });
+  api.listTasks.mockResolvedValue({ tasks: [] });
+  api.updateTask.mockResolvedValue({});
 });
 
 describe('CadenceChip', () => {
@@ -257,5 +261,98 @@ describe('CadencePanel', () => {
     api.getPartnerCadence.mockResolvedValue({ enrollment: null, openTask: null });
     wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
     expect(await screen.findByRole('button', { name: /start cadence/i })).toBeInTheDocument();
+  });
+});
+
+/* ── The Cadence & Tasks rail section (Business Detail design) ── */
+
+const activeEnrollment = {
+  id: 'e-1', state: 'active',
+  cadence: { id: 'c-1', name: 'F&B call-first', version: 1, steps: [
+    { id: 's-1', stepOrder: 1, title: 'Intro call' },
+    { id: 's-2', stepOrder: 2, title: 'WhatsApp intro' },
+  ] },
+  currentStep: { id: 's-2', stepOrder: 2 },
+};
+
+function isoDaysFromToday(days) {
+  const d = new Date(); d.setHours(9, 0, 0, 0); d.setDate(d.getDate() + days);
+  return d.toISOString();
+}
+
+const cadenceRowTask = {
+  id: 'task-c', title: 'WhatsApp intro', partnerOrganisationId: 'p-1', status: 'open',
+  dueAt: isoDaysFromToday(0), snapshotRecipient: '+6581234567',
+  cadenceStep: { id: 's-2', stepOrder: 2, channel: 'whatsapp', title: 'WhatsApp intro', cadence: { id: 'c-1', name: 'F&B call-first', version: 1 } },
+};
+const overdueManualTask = {
+  id: 'task-m1', title: 'Prepare partnership one-pager', partnerOrganisationId: 'p-1',
+  status: 'open', dueAt: isoDaysFromToday(-1), cadenceStep: null,
+};
+const laterManualTask = {
+  id: 'task-m2', title: 'Call Sarah re: trial-class slots', partnerOrganisationId: 'p-1',
+  status: 'open', dueAt: isoDaysFromToday(3), cadenceStep: null,
+};
+
+describe('CadencePanel — outstanding tasks zone', () => {
+  it('lists the cadence task first (Outcome) and manual tasks with one-click complete', async () => {
+    api.getPartnerCadence.mockResolvedValue({ enrollment: activeEnrollment, openTask: cadenceRowTask });
+    api.listTasks.mockResolvedValue({ tasks: [overdueManualTask, cadenceRowTask, laterManualTask] });
+    const user = userEvent.setup();
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'MEETING' }} />);
+
+    // header count + overdue tally
+    expect(await screen.findByText('· 3')).toBeInTheDocument();
+    expect(screen.getByText('1 overdue')).toBeInTheDocument();
+
+    // the cadence task is actionable via Outcome, never a checkbox
+    expect(screen.getByRole('button', { name: /outcome/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /complete whatsapp intro/i })).not.toBeInTheDocument();
+
+    // manual tasks complete through the generic PATCH
+    await user.click(screen.getByRole('button', { name: /complete prepare partnership one-pager/i }));
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('task-m1', { status: 'completed' }));
+  });
+
+  it('a paused enrollment freezes the cadence task row', async () => {
+    api.getPartnerCadence.mockResolvedValue({
+      enrollment: { ...activeEnrollment, state: 'paused' },
+      openTask: cadenceRowTask,
+    });
+    api.listTasks.mockResolvedValue({ tasks: [cadenceRowTask] });
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'MEETING' }} />);
+    expect(await screen.findByText(/no tasks will be scheduled until resumed/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /outcome/i })).toBeDisabled();
+  });
+
+  it('truncates past four rows into "View all n" linking to the filtered Tasks page', async () => {
+    api.getPartnerCadence.mockResolvedValue({ enrollment: null, openTask: null });
+    api.listTasks.mockResolvedValue({
+      tasks: [1, 2, 3, 4, 5, 6].map((n) => ({
+        id: `t-${n}`, title: `Manual task ${n}`, partnerOrganisationId: 'p-1',
+        status: 'open', dueAt: isoDaysFromToday(n), cadenceStep: null,
+      })),
+    });
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} />);
+    const viewAll = await screen.findByRole('link', { name: /view all 6/i });
+    expect(viewAll).toHaveAttribute('href', '/redeem-ops/tasks?partnerId=p-1');
+    expect(screen.getByText('Manual task 4')).toBeInTheDocument();
+    expect(screen.queryByText('Manual task 5')).not.toBeInTheDocument();
+  });
+
+  it('the ghost add opens the page dialog; terminal stages hide it', async () => {
+    api.getPartnerCadence.mockResolvedValue({ enrollment: null, openTask: null });
+    const onAddTask = vi.fn();
+    const user = userEvent.setup();
+    const { unmount } = wrap(
+      <CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'NEW' }} onAddTask={onAddTask} />
+    );
+    await user.click(await screen.findByRole('button', { name: /add task/i }));
+    expect(onAddTask).toHaveBeenCalledTimes(1);
+    unmount();
+
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'LOST' }} onAddTask={onAddTask} />);
+    await screen.findByText(/no open tasks/i);
+    expect(screen.queryByRole('button', { name: /add task/i })).not.toBeInTheDocument();
   });
 });

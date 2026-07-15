@@ -266,6 +266,7 @@ function OnboardingChecklist({ partnerId }) {
 const EMPTY_ACTIVITY = { type: 'call_attempt', summary: '', details: '', outcome: '', contactId: '' };
 const EMPTY_CONTACT = { name: '', roleTitle: '', mobile: '', email: '' };
 const EMPTY_LOCATION = { name: '', addressLine: '', postalCode: '', phone: '' };
+const EMPTY_TASK_FORM = { title: '', dueDate: '', priority: 'medium', description: '', assigneeUserId: '' };
 
 export default function PartnerDetail() {
   const { id } = useParams();
@@ -289,7 +290,8 @@ export default function PartnerDetail() {
   const teamQuery = useQuery({
     queryKey: ['redeem-ops', 'team'],
     queryFn: redeemOpsApi.getTeam,
-    enabled: hasCapability(user, 'partners.reassign'),
+    // Reassign pickers AND the task-dialog assignee select both need the roster.
+    enabled: hasCapability(user, 'partners.reassign') || hasCapability(user, 'pipeline.view_team'),
   });
 
   const invalidate = () => {
@@ -350,23 +352,56 @@ export default function PartnerDetail() {
   });
 
   const [taskOpen, setTaskOpen] = useState(false);
-  const [task, setTask] = useState({ title: '', dueDate: '', priority: 'medium' });
+  const [task, setTask] = useState(EMPTY_TASK_FORM);
+  const invalidateTasks = () => {
+    queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'tasks'] });
+    queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'queue'] });
+    queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partner', id, 'timeline'] });
+  };
   const taskMutation = useMutation({
     mutationFn: () => redeemOpsApi.createTask({
       partnerOrganisationId: id,
       title: task.title.trim(),
       dueAt: new Date(`${task.dueDate}T09:00:00`).toISOString(),
       priority: task.priority,
+      ...(task.description.trim() ? { description: task.description.trim() } : {}),
+      ...(task.assigneeUserId ? { assigneeUserId: task.assigneeUserId } : {}),
     }),
     onSuccess: () => {
       toast.success('Task created');
       setTaskOpen(false);
-      setTask({ title: '', dueDate: '', priority: 'medium' });
-      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'queue'] });
-      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partner', id, 'timeline'] });
+      setTask(EMPTY_TASK_FORM);
+      invalidateTasks();
     },
     onError: (err) => toast.error('Could not create task', { description: err.message }),
+  });
+
+  // Edit an outstanding manual task in place (rail card ⋯ menu).
+  const [taskEdit, setTaskEdit] = useState(null); // { id, title, dueDate, priority, description, assigneeUserId }
+  const taskEditMutation = useMutation({
+    mutationFn: () => redeemOpsApi.updateTask(taskEdit.id, {
+      title: taskEdit.title.trim(),
+      dueAt: new Date(`${taskEdit.dueDate}T09:00:00`).toISOString(),
+      priority: taskEdit.priority,
+      description: taskEdit.description.trim() || null,
+      ...(hasCapability(user, 'pipeline.view_team') && taskEdit.assigneeUserId
+        ? { assigneeUserId: taskEdit.assigneeUserId }
+        : {}),
+    }),
+    onSuccess: () => {
+      toast.success('Task updated');
+      setTaskEdit(null);
+      invalidateTasks();
+    },
+    onError: (err) => toast.error('Could not update task', { description: err.message }),
+  });
+  const openTaskEdit = (t) => setTaskEdit({
+    id: t.id,
+    title: t.title,
+    dueDate: new Date(t.dueAt).toISOString().slice(0, 10),
+    priority: t.priority,
+    description: t.description || '',
+    assigneeUserId: t.assigneeUserId || '',
   });
 
   const [editForm, setEditForm] = useState(null); // null = closed; object = open
@@ -624,10 +659,16 @@ export default function PartnerDetail() {
         </div>
       </div>
 
-      {/* Mobile: the cadence state sits right under the header — the 320px rail
-          lands below all tab content on small screens (cadence.jsx renders
-          nothing while the feature flag is off). */}
-      <CadencePanel partner={partner} canManage={hasCapability(user, 'tasks.manage')} variant="summary" />
+      {/* Mobile: the primary owed task (cadence or manual) is actionable right
+          under the header — the 320px rail lands below all tab content on
+          small screens, so the strip is the mobile surface for tasks. */}
+      <CadencePanel
+        partner={partner}
+        canManage={hasCapability(user, 'tasks.manage')}
+        variant="summary"
+        onAddTask={() => setTaskOpen(true)}
+        onEditTask={openTaskEdit}
+      />
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px] items-start">
         <Tabs defaultValue="timeline">
@@ -754,9 +795,6 @@ export default function PartnerDetail() {
         </Tabs>
 
         <div className="space-y-4">
-          <div className="hidden lg:block">
-            <CadencePanel partner={partner} canManage={hasCapability(user, 'tasks.manage')} />
-          </div>
           <div className="rounded-2xl border border-border bg-white p-5">
             <p className="text-[15px] font-bold m-0 mb-3">Owner</p>
             {partner.owner ? (
@@ -776,6 +814,15 @@ export default function PartnerDetail() {
                 Unowned — claim it to start outreach.
               </p>
             )}
+          </div>
+
+          <div className="hidden lg:block">
+            <CadencePanel
+              partner={partner}
+              canManage={hasCapability(user, 'tasks.manage')}
+              onAddTask={() => setTaskOpen(true)}
+              onEditTask={openTaskEdit}
+            />
           </div>
 
           {partner.notes && (
@@ -851,6 +898,28 @@ export default function PartnerDetail() {
                 </Select>
               </div>
             </div>
+            {hasCapability(user, 'pipeline.view_team') && (teamQuery.data || []).filter((m) => m.isActive).length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Assign to</Label>
+                <Select value={task.assigneeUserId} onValueChange={(assigneeUserId) => setTask((t) => ({ ...t, assigneeUserId }))}>
+                  <SelectTrigger><SelectValue placeholder="Myself" /></SelectTrigger>
+                  <SelectContent>
+                    {(teamQuery.data || []).filter((m) => m.isActive).map((m) => (
+                      <SelectItem key={m.id} value={m.id}>{m.fullName || m.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>Description <span className="font-normal" style={{ color: 'var(--ro-text-3)' }}>(optional — scripts live here)</span></Label>
+              <Textarea
+                rows={3}
+                value={task.description}
+                onChange={(e) => setTask((t) => ({ ...t, description: e.target.value }))}
+                placeholder="Call script, context, links…"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -858,6 +927,75 @@ export default function PartnerDetail() {
               disabled={!task.title.trim() || !task.dueDate || taskMutation.isPending}
             >
               {taskMutation.isPending ? 'Saving…' : 'Create task'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!taskEdit} onOpenChange={(open) => { if (!open) setTaskEdit(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit task</DialogTitle>
+          </DialogHeader>
+          {taskEdit && (
+            <div className="space-y-3 py-2">
+              <div className="space-y-1.5">
+                <Label>What needs doing? *</Label>
+                <Input
+                  value={taskEdit.title}
+                  onChange={(e) => setTaskEdit((t) => ({ ...t, title: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Due date *</Label>
+                  <Input
+                    type="date"
+                    value={taskEdit.dueDate}
+                    onChange={(e) => setTaskEdit((t) => ({ ...t, dueDate: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Priority</Label>
+                  <Select value={taskEdit.priority} onValueChange={(priority) => setTaskEdit((t) => ({ ...t, priority }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {hasCapability(user, 'pipeline.view_team') && (teamQuery.data || []).filter((m) => m.isActive).length > 0 && (
+                <div className="space-y-1.5">
+                  <Label>Assignee</Label>
+                  <Select value={taskEdit.assigneeUserId} onValueChange={(assigneeUserId) => setTaskEdit((t) => ({ ...t, assigneeUserId }))}>
+                    <SelectTrigger><SelectValue placeholder="Unchanged" /></SelectTrigger>
+                    <SelectContent>
+                      {(teamQuery.data || []).filter((m) => m.isActive).map((m) => (
+                        <SelectItem key={m.id} value={m.id}>{m.fullName || m.email}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label>Description <span className="font-normal" style={{ color: 'var(--ro-text-3)' }}>(optional — scripts live here)</span></Label>
+                <Textarea
+                  rows={3}
+                  value={taskEdit.description}
+                  onChange={(e) => setTaskEdit((t) => ({ ...t, description: e.target.value }))}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              disabled={!taskEdit?.title?.trim() || !taskEdit?.dueDate || taskEditMutation.isPending}
+              onClick={() => taskEditMutation.mutate()}
+            >
+              {taskEditMutation.isPending ? 'Saving…' : 'Save changes'}
             </Button>
           </DialogFooter>
         </DialogContent>
