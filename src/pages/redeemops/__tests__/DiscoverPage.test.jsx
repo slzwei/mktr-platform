@@ -178,6 +178,34 @@ describe('DiscoverPage', () => {
     await waitFor(() => expect(api.restoreDiscoveryCandidate).toHaveBeenCalledWith('c2'));
   });
 
+  it('recent searches show the exact terms that were searched', async () => {
+    api.listDiscoveryRuns.mockResolvedValue({
+      runs: [{
+        id: 'r9', status: 'completed', category: null, area: 'All Singapore',
+        requestedLimit: 500, resultCount: 365, createdAt: new Date().toISOString(),
+        rawPayload: { searchTerms: ['nail salon', 'facial', 'lashes'] },
+      }],
+      quota,
+    });
+    renderPage();
+    // terms lead the row title, area follows — not just the bare area
+    expect(await screen.findByText('nail salon, facial, lashes · All Singapore')).toBeInTheDocument();
+  });
+
+  it('the results view shows a Terms pill and a back button that returns to the list', async () => {
+    const runWithTerms = { ...completedRun, category: null, rawPayload: { searchTerms: ['nail salon', 'taekwondo'] } };
+    api.listDiscoveryRuns.mockResolvedValue({ runs: [runWithTerms], quota });
+    api.getDiscoveryRun.mockResolvedValue({ run: runWithTerms, candidates: [baseCandidate] });
+    renderPage();
+    await openResults();
+    // query bar surfaces the fired terms (ad-hoc run → no Category pill '—')
+    expect(await screen.findByText('Terms')).toBeInTheDocument();
+    expect(screen.getByText('nail salon, taekwondo')).toBeInTheDocument();
+    // back button returns to the recent-searches list
+    await userEvent.click(screen.getByRole('button', { name: /All searches/i }));
+    expect(await screen.findByRole('button', { name: /Open results/i })).toBeInTheDocument();
+  });
+
   it('seen-before rows carry the Seen previously badge', async () => {
     api.listDiscoveryRuns.mockResolvedValue({ runs: [completedRun], quota });
     api.getDiscoveryRun.mockResolvedValue({

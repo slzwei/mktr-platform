@@ -442,7 +442,11 @@ describe('provider-default Maps path stays byte-identical', () => {
     });
     expect(opts.webhookUrl).toContain('test-secret');
     expect(run.provider).toBe('apify_google_maps');
-    expect(run.rawPayload).toBeNull(); // no IG snapshot on the Maps path
+    // Maps snapshots its own terms (for the recent-searches UI) but the IG
+    // hashtag/territory snapshot must never leak onto the Maps path.
+    expect(run.rawPayload.searchTerms).toEqual([category]);
+    expect(run.rawPayload.hashtags).toBeUndefined();
+    expect(run.rawPayload.territory).toBeUndefined();
 
     const audit = await RedeemOpsAuditEvent.findOne({
       where: { action: 'discovery.run_started', entityId: run.id },

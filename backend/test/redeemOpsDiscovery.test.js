@@ -342,6 +342,21 @@ describe('geo-anchored search input', () => {
     expect(audit.after.searchTerms).toEqual(providerSearchTerms);
   });
 
+  test('a Maps run snapshots the fired terms into rawPayload for the recent-searches UI', async () => {
+    process.env.DISCOVERY_SEARCH_TERMS_ENABLED = 'true';
+    const category = `Snapshot Terms ${Date.now()}`;
+    const providerSearchTerms = ['nail salon', 'gel nails'];
+    await seedRedeemOpsCategory(category, { providerSearchTerms });
+    const apify = makeApifyStub();
+    const svc = makeDiscoveryService({ apify });
+    const solo = await createTestUser({ role: 'admin' });
+    apify.startRun.mockImplementation(async () => uniqueRunId());
+
+    const run = await svc.startDiscovery({ category, area: 'Tampines', limit: 10 }, solo.user);
+    const saved = await DiscoveryRun.findByPk(run.id);
+    expect(saved.rawPayload?.searchTerms).toEqual(providerSearchTerms);
+  });
+
   test('an area already naming Singapore is not double-suffixed', async () => {
     const apify = makeApifyStub();
     const svc = makeDiscoveryService({ apify });

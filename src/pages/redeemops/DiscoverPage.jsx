@@ -18,6 +18,7 @@ import ChevronRight from 'lucide-react/icons/chevron-right';
 import Instagram from 'lucide-react/icons/instagram';
 import Star from 'lucide-react/icons/star';
 import MapPin from 'lucide-react/icons/map-pin';
+import ArrowLeft from 'lucide-react/icons/arrow-left';
 import { RoPageHeader, RoTag, RoAvatar } from '@/components/redeemops/ui';
 
 const TERMINAL = ['completed', 'failed', 'aborted', 'timed_out'];
@@ -58,6 +59,16 @@ const CURATED = {
 };
 const num = (v) => (v == null ? -1 : v);
 const fmtFollowers = (n) => (n == null ? null : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
+// The exact query a run fired: #hashtags (IG) or comma-joined terms (Maps).
+// Runs created before terms were snapshotted return null → callers fall back
+// to the category.
+const searchTermsOf = (r) => {
+  const tags = r?.rawPayload?.hashtags;
+  if (Array.isArray(tags) && tags.length) return tags.map((t) => `#${t}`).join(' ');
+  const terms = r?.rawPayload?.searchTerms;
+  if (Array.isArray(terms) && terms.length) return terms.join(', ');
+  return null;
+};
 const timeAgo = (iso) => {
   if (!iso) return '';
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -126,6 +137,7 @@ export default function DiscoverPage() {
   });
   const run = runQuery.data?.run;
   const isIgRun = run?.provider === IG_RUN_PROVIDER;
+  const runTerms = searchTermsOf(run);
   const candidates = useMemo(() => runQuery.data?.candidates || [], [runQuery.data]);
   const isSearching = run && !TERMINAL.includes(run.status);
   const failed = run && ['failed', 'aborted', 'timed_out'].includes(run.status);
@@ -447,7 +459,7 @@ export default function DiscoverPage() {
                       <Search className="w-4 h-4" aria-hidden="true" />
                     </span>
                     <span className="min-w-0">
-                      <b className="text-[14px] block truncate">{[r.category, r.area].filter(Boolean).join(' · ') || '—'}</b>
+                      <b className="text-[14px] block truncate">{[searchTermsOf(r) || r.category, r.area].filter(Boolean).join(' · ') || '—'}</b>
                       <span className="text-[12.5px]" style={{ color: 'var(--ro-text-3)' }}>
                         {timeAgo(r.createdAt)} · {r.resultCount || 0} result{r.resultCount === 1 ? '' : 's'}
                         {r.actualCostUsd != null && ` · $${Number(r.actualCostUsd).toFixed(2)}`}
@@ -463,19 +475,30 @@ export default function DiscoverPage() {
         </>
       )}
 
-      {/* ── Active run: query bar ─────────────────────────────────────────── */}
+      {/* ── Active run: back link + query bar ─────────────────────────────── */}
       {runId && (
-        <div className="flex items-center gap-2 flex-wrap rounded-2xl border border-border bg-white px-4 py-3">
-          {[
-            ['Category', run?.category], ['Area', run?.area], ['Results', run?.requestedLimit],
-            ...(run?.actualCostUsd != null ? [['Cost', `$${Number(run.actualCostUsd).toFixed(2)}`]] : []),
-          ].map(([k, v]) => (
-            <span key={k} className="inline-flex items-center gap-2 h-9 px-3.5 rounded-full text-[13.5px] font-semibold" style={{ border: '1px solid var(--ro-border-strong)' }}>
-              <span style={{ color: 'var(--ro-text-3)', fontWeight: 500 }}>{k}</span> {v ?? '—'}
-            </span>
-          ))}
-          <button type="button" onClick={() => setRunId(null)}
-            className="ml-auto h-9 px-4 rounded-full text-[13px] font-semibold" style={{ border: '1px solid var(--ro-border-strong)', background: '#fff' }}>New search</button>
+        <div className="space-y-3">
+          <button type="button" onClick={() => { setRunId(null); setSelected(new Set()); }}
+            className="ro-link inline-flex items-center gap-1 text-[13.5px]">
+            <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> All searches
+          </button>
+          <div className="flex items-center gap-2 flex-wrap rounded-2xl border border-border bg-white px-4 py-3">
+            {[
+              // Lead with the exact query fired; Category is only shown when the run
+              // was filed under one (ad-hoc runs have none — no more bare "—").
+              ...(runTerms ? [[isIgRun ? 'Hashtags' : 'Terms', runTerms, true]] : []),
+              ...(run?.category ? [['Category', run.category, false]] : []),
+              ['Area', run?.area, false], ['Results', run?.requestedLimit, false],
+              ...(run?.actualCostUsd != null ? [['Cost', `$${Number(run.actualCostUsd).toFixed(2)}`, false]] : []),
+            ].map(([k, v, truncate]) => (
+              <span key={k} className="inline-flex items-center gap-2 h-9 px-3.5 rounded-full text-[13.5px] font-semibold max-w-full min-w-0" style={{ border: '1px solid var(--ro-border-strong)' }}>
+                <span className="shrink-0" style={{ color: 'var(--ro-text-3)', fontWeight: 500 }}>{k}</span>
+                <span className={truncate ? 'truncate' : ''} title={truncate ? String(v) : undefined}>{v ?? '—'}</span>
+              </span>
+            ))}
+            <button type="button" onClick={() => setRunId(null)}
+              className="ml-auto h-9 px-4 rounded-full text-[13px] font-semibold shrink-0" style={{ border: '1px solid var(--ro-border-strong)', background: '#fff' }}>New search</button>
+          </div>
         </div>
       )}
 

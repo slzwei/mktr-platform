@@ -250,11 +250,13 @@ export function makeDiscoveryService(overrides = {}) {
       requestedLimit, status: 'pending',
       estimatedCostUsd: Number((requestedLimit * c.costPerResultUsd).toFixed(4)),
     };
-    // IG runs snapshot the fired hashtags + territory so materialization's soft
-    // filter and the UI never re-resolve the category (it may be edited mid-run).
-    const igPayload = isInstagram
+    // Snapshot the fired query so the recent-searches list and the results query
+    // bar can show exactly what was searched — the category is only the CRM bucket
+    // (and ad-hoc runs have none). IG additionally keeps territory for
+    // materialization's soft filter; both never re-resolve a mid-run category edit.
+    const searchPayload = isInstagram
       ? { hashtags: igHashtagsUsed, territory: runValues.area }
-      : null;
+      : { searchTerms: searchTermsUsed };
     let run;
     if (c.resultQuotaEnabled) {
       const sgDate = sgDateKey();
@@ -266,12 +268,12 @@ export function makeDiscoveryService(overrides = {}) {
           transaction,
         });
         return d.DiscoveryRun.create(
-          { ...runValues, rawPayload: { ...(igPayload || {}), dailyUsageReservation: reservation } },
+          { ...runValues, rawPayload: { ...searchPayload, dailyUsageReservation: reservation } },
           { transaction },
         );
       });
     } else {
-      run = await d.DiscoveryRun.create(igPayload ? { ...runValues, rawPayload: igPayload } : runValues);
+      run = await d.DiscoveryRun.create({ ...runValues, rawPayload: searchPayload });
     }
 
     let providerStarted = false;
