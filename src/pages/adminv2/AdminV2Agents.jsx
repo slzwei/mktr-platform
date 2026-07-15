@@ -76,13 +76,13 @@ export default function AdminV2Agents() {
         ))}
       </div>
 
-      <div className="av2-card" style={{ overflow: 'hidden' }}>
-        <div className="av2-thead">
-          <span className="av2-microcaps" style={{ flex: 1.5 }}>Agent</span>
-          <span className="av2-microcaps" style={{ width: 110, flex: 'none', textAlign: 'right' }}>Assigned · {period}</span>
-          <span className="av2-microcaps" style={{ width: 100, flex: 'none', textAlign: 'right' }}>Last assigned</span>
-          <span className="av2-microcaps" style={{ width: 100, flex: 'none', textAlign: 'right' }}>Wallet</span>
-          <span className="av2-microcaps" style={{ width: 150, flex: 'none', textAlign: 'right' }}>Committed</span>
+      <div className="av2-card" style={{ overflow: 'hidden' }} role="grid" aria-label="Agents roster">
+        <div className="av2-thead" role="row">
+          <span className="av2-microcaps" role="columnheader" style={{ flex: 1.5 }}>Agent</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 110, flex: 'none', textAlign: 'right' }}>Assigned · {period}</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 100, flex: 'none', textAlign: 'right' }}>Last assigned</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 100, flex: 'none', textAlign: 'right' }}>Wallet</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 150, flex: 'none', textAlign: 'right' }}>Committed</span>
         </div>
 
         {roster.isLoading && [0, 1, 2, 3].map((i) => (
@@ -97,8 +97,8 @@ export default function AdminV2Agents() {
           const external = a.mktrLeadsId != null;
           const name = a.fullName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || a.email;
           return (
-            <div key={a.id} className="av2-row" style={{ cursor: 'default' }}>
-              <span style={{ flex: 1.5, minWidth: 0 }}>
+            <div key={a.id} className="av2-row" role="row" style={{ cursor: 'default' }}>
+              <span role="gridcell" style={{ flex: 1.5, minWidth: 0 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 700 }}>{name}</span>
                   {external && <Chip tone="accent">External</Chip>}
@@ -106,12 +106,12 @@ export default function AdminV2Agents() {
                 </span>
                 <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)' }}>{a.email}</span>
               </span>
-              <span className="av2-mono" style={{ width: 110, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{fmtNumber(a.assignedThisPeriod ?? 0)}</span>
-              <span className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }}>{a.lastAssignedAt ? fmtRelative(a.lastAssignedAt) : '—'}</span>
-              <span className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 12, textAlign: 'right', color: a.walletBalanceCents === 0 ? 'var(--warn)' : 'var(--ink)' }}>
+              <span role="gridcell" className="av2-mono" style={{ width: 110, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{fmtNumber(a.assignedThisPeriod ?? 0)}</span>
+              <span role="gridcell" className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }}>{a.lastAssignedAt ? fmtRelative(a.lastAssignedAt) : '—'}</span>
+              <span role="gridcell" className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 12, textAlign: 'right', color: a.walletBalanceCents === 0 ? 'var(--warn)' : 'var(--ink)' }}>
                 {a.walletBalanceCents === null || a.walletBalanceCents === undefined ? '—' : fmtSGD(a.walletBalanceCents)}
               </span>
-              <span style={{ width: 150, flex: 'none', textAlign: 'right' }}>
+              <span role="gridcell" style={{ width: 150, flex: 'none', textAlign: 'right' }}>
                 {a.committedLeads === null || a.committedLeads === undefined ? (
                   <span className="av2-mono" style={{ fontSize: 12, color: 'var(--ink-3)' }}>—</span>
                 ) : a.committedLeads > 0 ? (

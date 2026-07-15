@@ -172,13 +172,13 @@ export default function AdminV2AgentGroups() {
         <button type="button" className="av2-btn av2-btn--primary" onClick={() => setEditor({})}>+ New group</button>
       </PageHeader>
 
-      <div className="av2-card" style={{ overflow: 'hidden' }}>
-        <div className="av2-thead">
-          <span className="av2-microcaps" style={{ flex: 1.2 }}>Group</span>
-          <span className="av2-microcaps" style={{ flex: 1.6 }}>Description</span>
-          <span className="av2-microcaps" style={{ width: 90, flex: 'none', textAlign: 'right' }}>Members</span>
-          <span className="av2-microcaps" style={{ width: 110, flex: 'none', textAlign: 'right' }}>Funded</span>
-          <span className="av2-microcaps" style={{ width: 130, flex: 'none', textAlign: 'right' }}>Actions</span>
+      <div className="av2-card" style={{ overflow: 'hidden' }} role="grid" aria-label="Agent groups">
+        <div className="av2-thead" role="row">
+          <span className="av2-microcaps" role="columnheader" style={{ flex: 1.2 }}>Group</span>
+          <span className="av2-microcaps" role="columnheader" style={{ flex: 1.6 }}>Description</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 90, flex: 'none', textAlign: 'right' }}>Members</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 110, flex: 'none', textAlign: 'right' }}>Funded</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 130, flex: 'none', textAlign: 'right' }}>Actions</span>
         </div>
 
         {groups.isLoading && [0, 1, 2].map((i) => (
@@ -193,18 +193,18 @@ export default function AdminV2AgentGroups() {
           const members = g.members || [];
           const funded = members.filter((m) => m.userId && fundedIds.has(m.userId)).length;
           return (
-            <div key={g.id} className="av2-row" style={{ cursor: 'default' }}>
-              <span style={{ flex: 1.2, fontSize: 13, fontWeight: 700 }}>{g.name}</span>
-              <span style={{ flex: 1.6, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.description || '—'}</span>
-              <span className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{members.length}</span>
-              <span style={{ width: 110, flex: 'none', textAlign: 'right' }}>
+            <div key={g.id} className="av2-row" role="row" style={{ cursor: 'default' }}>
+              <span role="gridcell" style={{ flex: 1.2, fontSize: 13, fontWeight: 700 }}>{g.name}</span>
+              <span role="gridcell" style={{ flex: 1.6, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.description || '—'}</span>
+              <span role="gridcell" className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{members.length}</span>
+              <span role="gridcell" style={{ width: 110, flex: 'none', textAlign: 'right' }}>
                 {wallets.isLoading
                   ? <span className="av2-mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>…</span>
                   : wallets.isError
                     ? <span className="av2-mono" title="Wallet data failed to load" style={{ fontSize: 11, color: 'var(--ink-3)' }}>—</span>
                     : <Chip tone={funded < members.length && members.length > 0 ? 'warn' : 'ok'}>{funded}/{members.length} funded</Chip>}
               </span>
-              <span style={{ width: 130, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <span role="gridcell" style={{ width: 130, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                 <button type="button" className="av2-btn av2-btn--sm" onClick={() => setEditor(g)}>Edit</button>
                 <button type="button" className="av2-btn av2-btn--sm" style={{ borderColor: 'var(--bad)', color: 'var(--bad)' }} onClick={() => setConfirmDelete(g)}>Delete</button>
               </span>

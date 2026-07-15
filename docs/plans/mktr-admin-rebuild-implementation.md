@@ -366,7 +366,7 @@ dispositions (verified first):
 | 4 | Secondary-query failures rendered as healthy zeros | Fixed — attention failure hides zero-commit badges + shows a warning line; wallet failure renders "—" funded, never 0/N |
 | 5 | Money entry silently rounded (1.005 → S$1.00) + submittable overdrafts | Fixed — amount validated as a STRING (≤2 decimals, no rounding-for-you, inline error); client overdraft guard with the balance named (server 409 stays authoritative) |
 | 6 | Adjustment overlay wasn't a real modal (no trap/restore/inert) | Fixed — rebuilt on Radix Dialog; dismissal blocked while the mutation is pending |
-| 7 | Table/grid semantics still missing (deferred from PR3) | **Deferred again, narrowed + owned**: PR5 ships the grid pattern (role=grid/row/gridcell incl. interactive rows) across all five list screens in one consistent pass — piecemeal roles without cell roles degrade screen-reader output worse than none |
+| 7 | Table/grid semantics still missing (deferred from PR3) | **Landed in PR5 for every read-only table** (QR, Short Links, Users + retrofit of Agents, Groups, Wallets — full grid/row/columnheader/gridcell). The two INTERACTIVE-row screens (Prospects, Campaigns) get the pattern via a shared Av2Table primitive in the pre-flip polish PR — regex-retrofitting focus-managed rows risks breaking working screens |
 
 ## Codex review log — Phase C PR3 post-implementation (2026-07-15, gpt-5.6-sol xhigh)
 

@@ -210,13 +210,13 @@ export default function AdminV2Wallets() {
         the only automatic refund is a campaign takedown returning undelivered commitments as credits.
       </div>
 
-      <div className="av2-card" style={{ overflow: 'hidden' }}>
-        <div className="av2-thead">
-          <span className="av2-microcaps" style={{ flex: 1.4 }}>Agent</span>
-          <span className="av2-microcaps" style={{ width: 110, flex: 'none', textAlign: 'right' }}>Balance</span>
-          <span className="av2-microcaps" style={{ flex: 1.6 }}>Open commitments</span>
-          <span className="av2-microcaps" style={{ width: 100, flex: 'none', textAlign: 'right' }}>Last activity</span>
-          <span className="av2-microcaps" style={{ width: 150, flex: 'none', textAlign: 'right' }}>Actions</span>
+      <div className="av2-card" style={{ overflow: 'hidden' }} role="grid" aria-label="Agent wallets">
+        <div className="av2-thead" role="row">
+          <span className="av2-microcaps" role="columnheader" style={{ flex: 1.4 }}>Agent</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 110, flex: 'none', textAlign: 'right' }}>Balance</span>
+          <span className="av2-microcaps" role="columnheader" style={{ flex: 1.6 }}>Open commitments</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 100, flex: 'none', textAlign: 'right' }}>Last activity</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 150, flex: 'none', textAlign: 'right' }}>Actions</span>
         </div>
 
         {wallets.isLoading && [0, 1, 2].map((i) => (
@@ -231,18 +231,18 @@ export default function AdminV2Wallets() {
         )}
 
         {rows.map((w) => (
-          <div key={w.id} className="av2-row" style={{ cursor: 'default' }}>
-            <span style={{ flex: 1.4, minWidth: 0 }}>
+          <div key={w.id} className="av2-row" role="row" style={{ cursor: 'default' }}>
+            <span role="gridcell" style={{ flex: 1.4, minWidth: 0 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 700 }}>{w.name}</span>
                 {w.isActive === false && <Chip tone="warn">Inactive</Chip>}
               </span>
               <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)' }}>{w.email}</span>
             </span>
-            <span className="av2-mono" style={{ width: 110, flex: 'none', fontSize: 13, fontWeight: 600, textAlign: 'right', color: w.walletBalanceCents === 0 ? 'var(--warn)' : 'var(--ink)' }}>
+            <span role="gridcell" className="av2-mono" style={{ width: 110, flex: 'none', fontSize: 13, fontWeight: 600, textAlign: 'right', color: w.walletBalanceCents === 0 ? 'var(--warn)' : 'var(--ink)' }}>
               {fmtSGDExact(w.walletBalanceCents)}
             </span>
-            <span style={{ flex: 1.6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <span role="gridcell" style={{ flex: 1.6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {(w.openCommitments || []).length === 0
                 ? <span className="av2-caption">none</span>
                 : (w.openCommitments || []).map((oc) => (
@@ -251,10 +251,10 @@ export default function AdminV2Wallets() {
                   </Chip>
                 ))}
             </span>
-            <span className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }}>
+            <span role="gridcell" className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }}>
               {w.lastActivityAt ? fmtRelative(w.lastActivityAt) : '—'}
             </span>
-            <span style={{ width: 150, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <span role="gridcell" style={{ width: 150, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
               <button type="button" className="av2-btn av2-btn--sm" onClick={() => setLedgerFor(w)}>Ledger</button>
               <button type="button" className="av2-btn av2-btn--sm" onClick={() => setAdjustFor(w)}>Adjust</button>
             </span>
