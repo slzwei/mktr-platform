@@ -81,15 +81,21 @@ export async function catalog(req, res) {
 }
 
 export async function commitHandler(req, res) {
-  const { agentMktrUserId, campaignId, quantity } = req.body || {};
+  const { agentMktrUserId, campaignId, quantity, requestId } = req.body || {};
   if (!agentMktrUserId || !campaignId) {
     return res.status(400).json({ success: false, error: 'agentMktrUserId and campaignId are required' });
+  }
+  // Mandatory idempotency: a broker/client retry after a lost response must
+  // return the SAME commitment, never a second debit. The app generates a
+  // UUID per user action and reuses it across retries.
+  if (typeof requestId !== 'string' || !requestId.trim()) {
+    return res.status(400).json({ success: false, error: 'requestId is required (idempotency key)' });
   }
   try {
     const agent = await resolveAgent(agentMktrUserId);
     if (!agent) return res.status(400).json({ success: false, error: 'invalid_agent' });
-    const result = await commit(agent.id, campaignId, quantity);
-    return res.status(201).json({ success: true, ...result });
+    const result = await commit(agent.id, campaignId, quantity, { requestId: requestId.trim() });
+    return res.status(result.replayed ? 200 : 201).json({ success: true, ...result });
   } catch (err) {
     return sendError(res, err, 'commit');
   }

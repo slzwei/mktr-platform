@@ -59,7 +59,16 @@ const LeadPackageAssignment = sequelize.define('LeadPackageAssignment', {
     },
     unitPriceCents: {
         type: DataTypes.INTEGER,
-        allowNull: true
+        allowNull: true,
+        validate: {
+            // Wallet commitments MUST carry a positive per-lead snapshot — the
+            // takedown refund is leadsRemaining × unitPriceCents (DB CHECK in 069).
+            requiredForWallet(value) {
+                if (this.source === 'wallet' && !(Number.isInteger(value) && value > 0)) {
+                    throw new Error('Wallet assignments require a positive unitPriceCents');
+                }
+            }
+        }
     }
 }, {
     tableName: 'lead_package_assignments',

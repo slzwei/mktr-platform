@@ -360,9 +360,13 @@ export async function deactivateUser(userId, actorId) {
     throw new AppError('User not found', 404);
   }
 
-  await assertNoOpenWalletState(userId);
-
   await sequelize.transaction(async (t) => {
+    // Lock the user row FIRST, then run the wallet guard INSIDE the same
+    // transaction — serializes against walletService.commit's own user lock,
+    // so a commit can't slip between the guard check and the deactivation.
+    await User.findByPk(userId, { transaction: t, lock: t.LOCK.UPDATE });
+    await assertNoOpenWalletState(userId, { transaction: t });
+
     const assignedProspects = await Prospect.findAll({
       where: { assignedAgentId: userId },
       attributes: ['id'],

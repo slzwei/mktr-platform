@@ -647,6 +647,10 @@ export async function duplicateCampaign(id, body, req) {
     // original's activation history — a copy starts with neither.
     slug: null,
     firstActivatedAt: null,
+    // Never clone the wallet commit price: it is admin-only policy, and a
+    // non-admin duplicating a priced public campaign must not mint a new
+    // commit-able campaign (an admin re-prices the copy deliberately).
+    leadPriceCents: null,
     createdAt: undefined,
     updatedAt: undefined
   });

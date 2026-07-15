@@ -8,7 +8,8 @@ import { logger } from '../utils/logger.js';
  * Agents only see active + public packages.
  */
 export async function listPackages({ status, campaignId, userRole }) {
-  const where = {};
+  // Hidden wallet containers are managed by the wallet service, never here.
+  const where = { kind: { [Op.ne]: 'wallet' } };
   if (status) where.status = status;
   if (campaignId) where.campaignId = campaignId;
 
@@ -103,6 +104,7 @@ export async function updatePackage(id, fields) {
   if (!pkg) {
     throw new AppError('Package not found', 404);
   }
+  rejectWalletPackage(pkg);
 
   // NOTE: `currency` is deliberately absent — it is forced SGD at create and is
   // never editable (length-only validation on the column would otherwise accept
@@ -333,6 +335,8 @@ export async function resolveCreator(actorMktrUserId) {
 /** Catalog list for the admin app — full fields + per-package assignmentCount (Archive vs Delete). */
 export async function getExternalAdminCatalog() {
   const packages = await LeadPackage.findAll({
+    // Wallet containers are not grantable SKUs — hidden from the admin catalog.
+    where: { kind: { [Op.ne]: 'wallet' } },
     include: [{ model: Campaign, as: 'campaign', attributes: ['id', 'name', 'status'] }],
     order: [['createdAt', 'DESC']],
   });
@@ -456,6 +460,24 @@ async function loadMktrLeadsAssignment(assignmentId) {
 }
 
 /**
+ * Wallet commitments are PAID financial records with their own lifecycle
+ * (walletService: debit at commit, refund only on campaign takedown). No
+ * generic package-admin mutation may touch them — inflating, cancelling,
+ * moving or destroying one corrupts the ledger's audit trail.
+ */
+function rejectWalletAssignment(assignment) {
+  if (assignment?.source === 'wallet') {
+    throw new AppError('Wallet commitments cannot be modified here — they resolve only by delivery or campaign takedown.', 409);
+  }
+}
+
+function rejectWalletPackage(pkg) {
+  if (pkg?.kind === 'wallet') {
+    throw new AppError('This is a hidden wallet-commitment container managed by the wallet service — it cannot be edited or deleted.', 409);
+  }
+}
+
+/**
  * Assign an ACTIVE catalog package to a mktr-leads agent. Active-only guard +
  * duplicate guard under the same per-package advisory lock bulkAssignPackage uses
  * (no unique (agentId,leadPackageId) index). Optional custom leadsTotal override.
@@ -520,6 +542,7 @@ export async function assignPackageExternal({ agentMktrUserId, packageId, leadsT
 export async function topUpAssignment({ assignmentId, addLeads, setRemaining }) {
   const a = await loadMktrLeadsAssignment(assignmentId);
   if (!a) throw new AppError('Assignment not found', 404);
+  rejectWalletAssignment(a);
   if (a.status !== 'active' && a.status !== 'completed') {
     throw new AppError('Cannot modify a cancelled or expired assignment', 409);
   }
@@ -550,6 +573,7 @@ export async function topUpAssignment({ assignmentId, addLeads, setRemaining }) 
 export async function cancelAssignment(assignmentId) {
   const a = await loadMktrLeadsAssignment(assignmentId);
   if (!a) throw new AppError('Assignment not found', 404);
+  rejectWalletAssignment(a);
   if (a.status === 'cancelled') return { assignment: a };
   await a.update({ status: 'cancelled' });
   return { assignment: a };
@@ -559,6 +583,7 @@ export async function cancelAssignment(assignmentId) {
 export async function removeAssignmentExternal(assignmentId) {
   const a = await loadMktrLeadsAssignment(assignmentId);
   if (!a) throw new AppError('Assignment not found', 404);
+  rejectWalletAssignment(a);
   await a.destroy();
   return { ok: true };
 }
@@ -571,6 +596,7 @@ export async function deleteAssignment(id) {
   if (!assignment) {
     throw new AppError('Assignment not found', 404);
   }
+  rejectWalletAssignment(assignment);
 
   await assignment.destroy();
 }
@@ -583,6 +609,7 @@ export async function updateAssignment(id, { leadsRemaining }) {
   if (!assignment) {
     throw new AppError('Assignment not found', 404);
   }
+  rejectWalletAssignment(assignment);
 
   if (leadsRemaining !== undefined) {
     const newCount = parseInt(leadsRemaining, 10);
@@ -622,6 +649,7 @@ export async function deletePackage(id) {
   if (!pkg) {
     throw new AppError('Package not found', 404);
   }
+  rejectWalletPackage(pkg);
 
   const assignmentCount = await LeadPackageAssignment.count({
     where: { leadPackageId: id }

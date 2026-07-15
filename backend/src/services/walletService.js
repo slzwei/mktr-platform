@@ -20,15 +20,44 @@
  * DI-factory (house pattern) so it unit-tests without a DB.
  */
 import { Op } from 'sequelize';
-import { User, Campaign, LeadPackage, LeadPackageAssignment, WalletLedger, sequelize } from '../models/index.js';
+import { User, Campaign, LeadPackage, LeadPackageAssignment, WalletLedger, IdempotencyKey, sequelize } from '../models/index.js';
 import { getSystemAgentId } from './systemAgent.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 
 const MAX_COMMIT_QUANTITY = 10000; // fat-finger guard; the wallet balance is the real bound
+const IDEMPOTENCY_TTL_MS = 24 * 3600e3;
+const REQUEST_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 
 export function makeWalletService(overrides = {}) {
-  const d = { User, Campaign, LeadPackage, LeadPackageAssignment, WalletLedger, sequelize, getSystemAgentId, logger, ...overrides };
+  const d = { User, Campaign, LeadPackage, LeadPackageAssignment, WalletLedger, IdempotencyKey, sequelize, getSystemAgentId, logger, ...overrides };
+
+  /**
+   * Money-op replay shield over the house IdempotencyKey table (key = PK, so
+   * keys are namespaced). The key row is created as the FIRST statement of the
+   * money transaction and its response stored in the SAME transaction — so a
+   * stored row implies the op committed, and a concurrent duplicate aborts the
+   * whole duplicate transaction on the PK collision (caught OUT here, never
+   * inside the open tx). requestId is caller-supplied (broker/admin UI).
+   */
+  async function withIdempotency(scope, requestId, run) {
+    if (requestId === undefined || requestId === null) return run(null);
+    if (typeof requestId !== 'string' || !REQUEST_ID_RE.test(requestId)) {
+      throw new AppError('requestId must be 8-64 chars of [A-Za-z0-9_-]', 400);
+    }
+    const key = `${scope}:${requestId}`;
+    const prior = await d.IdempotencyKey.findByPk(key);
+    if (prior) return { ...(prior.responseBody || {}), replayed: true };
+    try {
+      return await run(key);
+    } catch (err) {
+      if (err?.name === 'SequelizeUniqueConstraintError') {
+        const winner = await d.IdempotencyKey.findByPk(key);
+        if (winner) return { ...(winner.responseBody || {}), replayed: true };
+      }
+      throw err;
+    }
+  }
 
   /**
    * The single write path: guarded atomic balance UPDATE + ledger INSERT, in the
@@ -124,7 +153,7 @@ export function makeWalletService(overrides = {}) {
    * 'archived' and rejects — no window for an orphaned paid commitment.
    * No cancel path exists.
    */
-  async function commit(agentId, campaignId, quantity) {
+  async function commit(agentId, campaignId, quantity, { requestId } = {}) {
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_COMMIT_QUANTITY) {
       throw new AppError(`Quantity must be an integer between 1 and ${MAX_COMMIT_QUANTITY}`, 400);
     }
@@ -133,48 +162,78 @@ export function makeWalletService(overrides = {}) {
     if (!exists) throw new AppError('Campaign not found', 404);
     const pkg = await ensureWalletPackage(campaignId);
 
-    const result = await d.sequelize.transaction(async (t) => {
-      const campaign = await d.Campaign.findByPk(campaignId, { transaction: t, lock: t.LOCK.SHARE });
-      if (!campaign) throw new AppError('Campaign not found', 404);
-      const priced = Number.isInteger(campaign.leadPriceCents) && campaign.leadPriceCents > 0;
-      if (campaign.status !== 'active' || campaign.is_active !== true || !priced) {
-        throw new AppError('This campaign is not open for commitments', 409);
-      }
+    const result = await withIdempotency(`wallet:commit:${agentId}`, requestId, (idemKey) =>
+      d.sequelize.transaction(async (t) => {
+        // Replay shield first: a duplicate request collides on the PK and
+        // aborts this whole transaction before any money moves.
+        if (idemKey) {
+          await d.IdempotencyKey.create(
+            { key: idemKey, scope: 'wallet:commit', expiresAt: new Date(Date.now() + IDEMPOTENCY_TTL_MS) },
+            { transaction: t }
+          );
+        }
 
-      const totalCents = quantity * campaign.leadPriceCents;
-      const assignment = await d.LeadPackageAssignment.create(
-        {
-          agentId,
-          leadPackageId: pkg.id,
-          source: 'wallet',
+        // Re-validate the agent UNDER LOCK: serializes against deactivation so
+        // a wallet can't be debited for an agent leaving the routing pool.
+        const agent = await d.User.findOne({
+          where: { id: agentId, isActive: true, mktrLeadsId: { [Op.ne]: null } },
+          attributes: ['id'],
+          transaction: t,
+          lock: t.LOCK.UPDATE,
+        });
+        if (!agent) throw new AppError('Agent is not an active external (wallet) agent', 409);
+
+        const campaign = await d.Campaign.findByPk(campaignId, { transaction: t, lock: t.LOCK.SHARE });
+        if (!campaign) throw new AppError('Campaign not found', 404);
+        const priced = Number.isInteger(campaign.leadPriceCents) && campaign.leadPriceCents > 0;
+        if (campaign.status !== 'active' || campaign.is_active !== true || !priced) {
+          throw new AppError('This campaign is not open for commitments', 409);
+        }
+
+        const totalCents = quantity * campaign.leadPriceCents;
+        const assignment = await d.LeadPackageAssignment.create(
+          {
+            agentId,
+            leadPackageId: pkg.id,
+            source: 'wallet',
+            unitPriceCents: campaign.leadPriceCents,
+            leadsTotal: quantity,
+            leadsRemaining: quantity,
+            priceSnapshot: (totalCents / 100).toFixed(2),
+            status: 'active',
+            purchaseDate: new Date(),
+          },
+          { transaction: t }
+        );
+        const entry = await debit(agentId, totalCents, {
+          type: 'commit',
+          assignmentId: assignment.id,
+          campaignId,
+          transaction: t,
+        });
+
+        const response = {
+          assignmentId: assignment.id,
+          campaignId,
+          campaignName: campaign.name,
+          quantity,
           unitPriceCents: campaign.leadPriceCents,
-          leadsTotal: quantity,
-          leadsRemaining: quantity,
-          priceSnapshot: (totalCents / 100).toFixed(2),
-          status: 'active',
-          purchaseDate: new Date(),
-        },
-        { transaction: t }
-      );
-      const entry = await debit(agentId, totalCents, {
-        type: 'commit',
-        assignmentId: assignment.id,
-        campaignId,
-        transaction: t,
-      });
+          totalCents,
+          balanceCents: entry.balanceAfterCents,
+        };
+        if (idemKey) {
+          await d.IdempotencyKey.update(
+            { responseBody: response, responseCode: 201 },
+            { where: { key: idemKey }, transaction: t }
+          );
+        }
+        return response;
+      })
+    );
 
-      return {
-        assignmentId: assignment.id,
-        campaignId,
-        campaignName: campaign.name,
-        quantity,
-        unitPriceCents: campaign.leadPriceCents,
-        totalCents,
-        balanceCents: entry.balanceAfterCents,
-      };
-    });
-
-    d.logger.info('[wallet] commit.created', { agentId, campaignId, quantity, totalCents: result.totalCents, assignmentId: result.assignmentId });
+    if (!result.replayed) {
+      d.logger.info('[wallet] commit.created', { agentId, campaignId, quantity, totalCents: result.totalCents, assignmentId: result.assignmentId });
+    }
     return result;
   }
 
@@ -208,8 +267,11 @@ export function makeWalletService(overrides = {}) {
       // Re-check under the lock — a concurrent archive may have completed it.
       if (row.source !== 'wallet' || row.status !== 'active' || !(row.leadsRemaining > 0)) continue;
       if (!Number.isInteger(row.unitPriceCents) || row.unitPriceCents <= 0) {
-        d.logger.error('[wallet] refund.skipped — wallet assignment missing unitPriceCents', { assignmentId: row.id, campaignId });
-        continue;
+        // Data corruption (commit always snapshots a positive price; the DB
+        // CHECK in 069 enforces it). Skipping would archive the campaign with
+        // an open, unrefundable paid commitment stranded — abort instead.
+        d.logger.error('[wallet] refund.aborted — wallet assignment missing unitPriceCents', { assignmentId: row.id, campaignId });
+        throw new AppError('A wallet commitment on this campaign has no unit price; resolve it before archiving.', 500);
       }
       const refundCents = row.leadsRemaining * row.unitPriceCents;
       // NOTE: no catch-and-continue here. The unique partial index (one
@@ -357,7 +419,7 @@ export function makeWalletService(overrides = {}) {
    * Admin manual adjustment — the ONLY admin-side ledger mutation. Signed cents,
    * mandatory note, actor recorded. Negative adjustments obey the >= 0 guard.
    */
-  async function adminAdjust(agentId, amountCents, note, actorId) {
+  async function adminAdjust(agentId, amountCents, note, actorId, { requestId } = {}) {
     if (!Number.isInteger(amountCents) || amountCents === 0) {
       throw new AppError('Adjustment amount must be a non-zero integer (cents)', 400);
     }
@@ -367,13 +429,32 @@ export function makeWalletService(overrides = {}) {
     const target = await d.User.findOne({ where: { id: agentId, mktrLeadsId: { [Op.ne]: null } }, attributes: ['id'] });
     if (!target) throw new AppError('Agent not found or not an external (wallet) agent', 404);
 
-    const entry = await applyLedgerEntry(agentId, amountCents, {
-      type: 'adjustment',
-      note: note.trim(),
-      createdBy: actorId ?? null,
-    });
-    d.logger.info('[wallet] adjustment.applied', { agentId, amountCents, actorId: actorId ?? null });
-    return { balanceCents: entry.balanceAfterCents, entryId: entry.id };
+    const result = await withIdempotency(`wallet:adjust:${agentId}`, requestId, (idemKey) =>
+      d.sequelize.transaction(async (t) => {
+        if (idemKey) {
+          await d.IdempotencyKey.create(
+            { key: idemKey, scope: 'wallet:adjust', expiresAt: new Date(Date.now() + IDEMPOTENCY_TTL_MS) },
+            { transaction: t }
+          );
+        }
+        const entry = await applyLedgerEntry(agentId, amountCents, {
+          type: 'adjustment',
+          note: note.trim(),
+          createdBy: actorId ?? null,
+          transaction: t,
+        });
+        const response = { balanceCents: entry.balanceAfterCents, entryId: entry.id };
+        if (idemKey) {
+          await d.IdempotencyKey.update(
+            { responseBody: response, responseCode: 201 },
+            { where: { key: idemKey }, transaction: t }
+          );
+        }
+        return response;
+      })
+    );
+    if (!result.replayed) d.logger.info('[wallet] adjustment.applied', { agentId, amountCents, actorId: actorId ?? null });
+    return result;
   }
 
   return { applyLedgerEntry, credit, debit, commit, refundCampaignCommitments, getCatalog, getSummary, getLedger, listWallets, adminAdjust, ensureWalletPackage };

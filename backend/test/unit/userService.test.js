@@ -26,6 +26,7 @@ const WalletLedger = { count: jest.fn() };
 const mockTransaction = {
   commit: jest.fn(),
   rollback: jest.fn(),
+  LOCK: { UPDATE: 'UPDATE', SHARE: 'SHARE' },
 };
 
 const sequelize = {

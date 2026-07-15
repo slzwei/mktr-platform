@@ -90,9 +90,14 @@ function build({
     }),
   };
   const getSystemAgentId = jest.fn(async () => 'sys-agent');
+  const IdempotencyKey = {
+    findByPk: jest.fn(async () => null),
+    create: jest.fn(async (attrs) => attrs),
+    update: jest.fn(async () => [1]),
+  };
   const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
-  const svc = makeWalletService({ User, Campaign, LeadPackage, LeadPackageAssignment, WalletLedger, sequelize, getSystemAgentId, logger });
-  return { svc, User, Campaign, LeadPackage, LeadPackageAssignment, WalletLedger, sequelize, logger, ledgerRows, createdAssignments };
+  const svc = makeWalletService({ User, Campaign, LeadPackage, LeadPackageAssignment, WalletLedger, IdempotencyKey, sequelize, getSystemAgentId, logger });
+  return { svc, User, Campaign, LeadPackage, LeadPackageAssignment, WalletLedger, IdempotencyKey, sequelize, logger, ledgerRows, createdAssignments };
 }
 
 describe('walletService credit/debit (applyLedgerEntry)', () => {
@@ -199,6 +204,50 @@ describe('walletService.commit', () => {
     const { svc } = build({ campaign: activeCampaign(), guardedUpdateEmpty: true, userCount: 1 });
     await expect(svc.commit('agent-1', 'c-1', 5)).rejects.toMatchObject({ statusCode: 409 });
   });
+
+  test('rejects when the agent is no longer an active external agent (in-tx revalidation)', async () => {
+    const { svc, WalletLedger } = build({ campaign: activeCampaign(), externalTarget: null });
+    await expect(svc.commit('agent-1', 'c-1', 5)).rejects.toMatchObject({ statusCode: 409 });
+    expect(WalletLedger.create).not.toHaveBeenCalled();
+  });
+
+  test('idempotent commit: the key row is written FIRST inside the tx and the response stored', async () => {
+    const { svc, IdempotencyKey } = build({ campaign: activeCampaign() });
+    const r = await svc.commit('agent-1', 'c-1', 2, { requestId: 'req-abc-12345' });
+    expect(r.replayed).toBeUndefined();
+    expect(IdempotencyKey.create).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'wallet:commit:agent-1:req-abc-12345', scope: 'wallet:commit' }),
+      { transaction: FAKE_TX }
+    );
+    expect(IdempotencyKey.update).toHaveBeenCalledWith(
+      expect.objectContaining({ responseBody: expect.objectContaining({ totalCents: 1600 }), responseCode: 201 }),
+      expect.objectContaining({ where: { key: 'wallet:commit:agent-1:req-abc-12345' } })
+    );
+  });
+
+  test('idempotent commit replay: stored response returned, no money moves', async () => {
+    const { svc, IdempotencyKey, WalletLedger, sequelize } = build({ campaign: activeCampaign() });
+    IdempotencyKey.findByPk.mockResolvedValueOnce({ responseBody: { assignmentId: 'asg-prior', totalCents: 1600 } });
+    const r = await svc.commit('agent-1', 'c-1', 2, { requestId: 'req-abc-12345' });
+    expect(r).toEqual({ assignmentId: 'asg-prior', totalCents: 1600, replayed: true });
+    expect(sequelize.transaction).not.toHaveBeenCalled();
+    expect(WalletLedger.create).not.toHaveBeenCalled();
+  });
+
+  test('concurrent duplicate: PK collision aborts the duplicate tx and returns the winner', async () => {
+    const { svc, IdempotencyKey } = build({ campaign: activeCampaign() });
+    IdempotencyKey.create.mockRejectedValueOnce(uniqueViolation());
+    IdempotencyKey.findByPk
+      .mockResolvedValueOnce(null) // pre-check: not yet written
+      .mockResolvedValueOnce({ responseBody: { assignmentId: 'asg-winner' } }); // after collision
+    const r = await svc.commit('agent-1', 'c-1', 2, { requestId: 'req-abc-12345' });
+    expect(r).toEqual({ assignmentId: 'asg-winner', replayed: true });
+  });
+
+  test('malformed requestId is rejected before any read', async () => {
+    const { svc } = build({ campaign: activeCampaign() });
+    await expect(svc.commit('agent-1', 'c-1', 2, { requestId: 'no spaces!' })).rejects.toMatchObject({ statusCode: 400 });
+  });
 });
 
 function refundableRow(over = {}) {
@@ -257,13 +306,13 @@ describe('walletService.refundCampaignCommitments', () => {
     expect(rowA.update).not.toHaveBeenCalled();
   });
 
-  test('wallet assignment without unitPriceCents is skipped (logged, never guessed)', async () => {
+  test('wallet assignment without unitPriceCents ABORTS the archive (data corruption, never strand)', async () => {
     const row = refundableRow({ unitPriceCents: null });
     const { svc, logger, WalletLedger } = build({ refundCandidates: [{ id: 'asg-1' }], lockedRows: [row] });
-    const r = await svc.refundCampaignCommitments('c-1', { transaction: FAKE_TX });
-    expect(r.refunded).toBe(0);
+    await expect(svc.refundCampaignCommitments('c-1', { transaction: FAKE_TX })).rejects.toMatchObject({ statusCode: 500 });
     expect(WalletLedger.create).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalled();
+    expect(row.update).not.toHaveBeenCalled();
   });
 });
 

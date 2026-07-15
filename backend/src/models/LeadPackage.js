@@ -47,7 +47,16 @@ const LeadPackage = sequelize.define('LeadPackage', {
     type: DataTypes.INTEGER,
     allowNull: false,
     validate: {
-      min: 1
+      // Kind-aware: catalog SKUs sell ≥1 lead; the hidden wallet container is
+      // a pure grouping row and MUST stay 0 (commitments carry their own counts).
+      leadCountMatchesKind(value) {
+        const kind = this.kind || 'catalog';
+        if (kind === 'wallet') {
+          if (Number(value) !== 0) throw new Error('Wallet packages must have leadCount 0');
+        } else if (!(Number(value) >= 1)) {
+          throw new Error('Validation min on leadCount failed');
+        }
+      }
     }
   },
   qualityScore: {

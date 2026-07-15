@@ -26,9 +26,18 @@ export async function up(queryInterface) {
   await queryInterface.sequelize.query(
     'ALTER TABLE lead_package_assignments ADD COLUMN IF NOT EXISTS "unitPriceCents" INTEGER'
   );
+  // Wallet commitments must always be refundable: positive per-lead snapshot.
+  await queryInterface.sequelize.query(`
+    DO $$ BEGIN
+      ALTER TABLE lead_package_assignments
+        ADD CONSTRAINT chk_lpa_wallet_unit_price
+        CHECK ("source" <> 'wallet' OR ("unitPriceCents" IS NOT NULL AND "unitPriceCents" > 0));
+    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+  `);
 }
 
 export async function down(queryInterface) {
+  await queryInterface.sequelize.query('ALTER TABLE lead_package_assignments DROP CONSTRAINT IF EXISTS chk_lpa_wallet_unit_price');
   await queryInterface.sequelize.query('DROP INDEX IF EXISTS uq_lead_packages_wallet_campaign');
   await queryInterface.sequelize.query('ALTER TABLE lead_packages DROP COLUMN IF EXISTS "kind"');
   await queryInterface.sequelize.query('ALTER TABLE lead_package_assignments DROP COLUMN IF EXISTS "source"');

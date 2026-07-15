@@ -232,6 +232,52 @@ paths erase paid commitments. Policy:
    fields, with the admin-only clamp on both paths (verified: current schemas
    reject/strip it and the service ignores it).
 
+### Codex round 2 — post-implementation review (2026-07-15, PR #159)
+
+Reviewed the built diff at commit 184f339; verdict "do not merge yet" on
+3 BLOCKERs / 4 MAJORs. All verified against code and FIXED in the follow-up
+commit, except one accepted risk (below):
+
+1. **Model validation rejected both entry paths** (LeadPackage.leadCount +
+   Payment.leadCount had `min:1`; wallet rows carry 0 — my DI-mocked unit
+   tests bypassed model validation entirely, which is why they were green).
+   → kind-aware validators on both models.
+2. **Soft-quota overdelivery**: priced campaigns on the default
+   `enforceLeadQuota:false` path could deliver free leads on a failed/raced
+   charge. → `leadQuota.decideAssignment` now treats **priced (leadPriceCents
+   set) as always-enforced** — a pre-sold lead is never delivered free;
+   the existing SKIP-LOCKED concurrency guarantee now covers wallet
+   campaigns. Integration tests added (priced+soft+unfunded → held;
+   priced+soft+funded → delivered + charged).
+3. **Legacy package-admin paths could mutate paid commitments**
+   (topUp/cancel/remove/delete/updateAssignment; updatePackage/deletePackage
+   on the hidden container; catalogs listing it). → `rejectWalletAssignment`
+   / `rejectWalletPackage` fences on all six mutation paths; wallet
+   containers excluded from listPackages + getExternalAdminCatalog (the buy
+   catalog already excluded them via price>0 + isPublic).
+4. **duplicateCampaign spread leadPriceCents** — a non-admin could mint a
+   priced campaign by duplicating a public one. → duplicates always start
+   with `leadPriceCents: null`.
+5. **Refund skipped malformed rows**, stranding an open commitment on an
+   archived campaign. → refund now ABORTS the archive (500) on a wallet
+   assignment without a positive unitPriceCents; DB CHECK
+   `chk_lpa_wallet_unit_price` added in 069 + model validator.
+6. **Lifecycle races**: deactivation guard now runs INSIDE the transaction
+   under a user row lock, and `commit()` revalidates the agent (active +
+   mktrLeadsId) under `FOR UPDATE` — commit and deactivate serialize.
+   **Accepted risk (documented, not fixed):** `toggleUserStatus`/`updateUser`
+   can still flip `isActive` without the wallet guard — but they destroy
+   NOTHING; the commitment simply pauses with the agent and resumes on
+   reactivation. Money cannot be lost through those paths.
+7. **No idempotency on commit/adjust** — a broker retry after a lost
+   response double-debited. → `withIdempotency` over the house
+   IdempotencyKey table (key = `wallet:commit:{agentId}:{requestId}`,
+   PK-collision aborts the duplicate transaction atomically, response stored
+   in the same tx). `requestId` is REQUIRED on `/commit`, optional on admin
+   adjust. 24h TTL.
+8. Payment model now mirrors migration 040's three unique partial indexes
+   (test `sync({force:true})` parity).
+
 ### Non-goals
 - Internal (Lyfe) agents — later migration, same rails.
 - Uncovered-lead "commit now" push loop (v2).
