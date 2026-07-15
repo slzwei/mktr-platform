@@ -59,6 +59,22 @@ describe('composeAttentionRows — severity ordering + deep links', () => {
     expect(rows[0].title).toContain('disabled');
   });
 
+  it('null names in wallet/draw/campaign entries never crash (live prod shape)', () => {
+    const rows = composeAttentionRows({
+      webhooks: { pending: 0, failedLast24h: 0, subscriberDisabled: false },
+      held: { total: 0, byReason: {} },
+      unassigned: 0,
+      zeroCommitCampaigns: [{ id: 'c1', name: null }],
+      wallets: { total: 2, zero: [{ id: 'a1', name: null }], low: [], floatCents: 0 },
+      committed: {},
+      drawsClosing: [{ id: 'c2', name: null, closesAt: '2099-01-01', multiplier: 5, winners: 1 }],
+      endingCampaigns: [{ id: 'c3', name: null, endsAt: new Date(Date.now() + 2 * 86400000).toISOString() }],
+    });
+    expect(rows.length).toBe(4);
+    for (const r of rows) expect(typeof r.title).toBe('string');
+    expect(rows.find((r) => r.id === 'att-wallets').detail).toContain('Agent');
+  });
+
   it('a quiet day composes to an empty rail (never fake rows)', () => {
     expect(composeAttentionRows({
       webhooks: { pending: 0, failedLast24h: 0, subscriberDisabled: false },

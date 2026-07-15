@@ -34,7 +34,7 @@ export function composeAttentionRows(data) {
     rows.push({
       id: `att-zc-${c.id}`,
       severity: 'incident',
-      title: `“${c.name}” has 0 open commitments`,
+      title: `“${c.name || 'Campaign'}” has 0 open commitments`,
       detail: 'New leads will quarantine (no funded agent)',
       href: `/AdminCampaigns`,
       cta: 'Review',
@@ -71,7 +71,9 @@ export function composeAttentionRows(data) {
   const zeroN = (w.zero || []).length;
   const lowN = (w.low || []).length;
   if (zeroN > 0 || lowN > 0) {
-    const names = [...(w.zero || []), ...(w.low || [])].map((a) => a.name.split(' ')[0]).slice(0, 4);
+    // Names can be null (raw queries skip the fullName virtual; synced external
+    // agents may have no email) — a null here crashed the whole dashboard chunk.
+    const names = [...(w.zero || []), ...(w.low || [])].map((a) => (a.name || 'Agent').split(' ')[0]).slice(0, 4);
     rows.push({
       id: 'att-wallets',
       severity: 'warning',
@@ -87,7 +89,7 @@ export function composeAttentionRows(data) {
     rows.push({
       id: `att-draw-${c.id}`,
       severity: 'watch',
-      title: `${c.name.replace(' Lucky Draw', '')} draw closes in ${dd}d`,
+      title: `${(c.name || 'Draw').replace(' Lucky Draw', '')} draw closes in ${dd}d`,
       detail: `${c.multiplier ? `×${c.multiplier} boost` : 'Draw'} · ${c.winners || 1} winner${(c.winners || 1) > 1 ? 's' : ''}`,
       href: `/AdminCampaigns`,
       cta: 'View draw',
@@ -99,7 +101,7 @@ export function composeAttentionRows(data) {
     rows.push({
       id: `att-end-${c.id}`,
       severity: 'watch',
-      title: `“${c.name}” ends in ${dd}d`,
+      title: `“${c.name || 'Campaign'}” ends in ${dd}d`,
       detail: 'Extend, archive, or let it lapse',
       href: `/AdminCampaigns`,
       cta: 'Review',
