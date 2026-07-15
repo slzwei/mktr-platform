@@ -352,6 +352,24 @@ Phased per the standing direction (hide → dark-flag → drop models later):
 
 ---
 
+## Codex review log — Phase C PR5 post-implementation (2026-07-15, gpt-5.6-sol xhigh)
+
+1 BLOCKER / 4 MAJOR / 4 MINOR; verdict confirmed QR create/download, AI PUT
+contract, route swaps and flag-off parity sound. (Ops note: the first review
+run WEDGED — 35 min, 0.08s CPU — killed + re-run with a 15-min watchdog.)
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | BLOCKER: "Invite admin" always 400s (service whitelist had no `admin`) | **Backend extended** — `admin` added to the invite whitelist + label; acceptance flow verified role-agnostic (role stamps at invite time). New invitations test case |
+| 2 | Copied short links pointed at root `/{slug}` — only `/share/:slug` resolves | Fixed — copy/toast/row all use `/share/`; created-toast prefers the server-returned URL |
+| 3 | New QR labels unsearchable; deprecated `name` outranked canonical `label` | **Backend** search now covers `label` too; UI renders + downloads `label \|\| name \|\| slug` |
+| 4 | AI Settings GET failure showed an endless skeleton (error branch unreachable) | Fixed — `isError` renders before the `!form` loading branch |
+| 5 | Short Links/Users silently truncated; QR claimed lifetime sorting over a capped subset | Fixed — truncation captions on all three ("SHOWING NEWEST/FIRST N"); QR caption says "(WITHIN SHOWN SET)" when capped. Server pagination stays deferred at current scale (same PR4 disposition) |
+| 6 | Short Links campaign column always "—" | **Backend** — listLinks now includes the campaign projection |
+| 7 | AI clear-key + replacement both submittable | Fixed — mutually exclusive in the form (typing clears the flag; toggling clear wipes the draft) |
+| 8 | Raw invitation tokens shipped in the users-list payload/React Query cache | **Backend** — listUsers strips `invitationToken`, exposes `invitationPending`; legacy UserTable + v2 screen read the boolean |
+| 9 | Loading/error/empty blocks were bare children of role=grid | Fixed — read-only lists use role="table" (no grid keyboard behavior to justify grid) and every state renders inside a StateRow (row > cell) |
+
 ## Codex review log — Phase C PR4 post-implementation (2026-07-15, gpt-5.6-sol xhigh)
 
 6 MAJOR / 1 MINOR; verdict confirmed envelope fidelity, ledger pagination,

@@ -77,6 +77,9 @@ export async function listQrCodes(user, query) {
   if (search) {
     const sanitizedSearch = String(search).slice(0, 100).replace(/%/g, '\\%').replace(/_/g, '\\_');
     where[Op.or] = [
+      // `label` is the canonical field on new rows; `name` is the deprecated
+      // legacy alias — both must stay searchable.
+      { label: { [Op.iLike]: `%${sanitizedSearch}%` } },
       { name: { [Op.iLike]: `%${sanitizedSearch}%` } },
       { description: { [Op.iLike]: `%${sanitizedSearch}%` } }
     ];

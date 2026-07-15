@@ -73,6 +73,19 @@ export function EmptyState({ icon = '○', title, hint, action }) {
   );
 }
 
+/**
+ * Loading/error/empty blocks inside a role="table" container must still be
+ * row/cell structured — bare children of a table role get flattened or
+ * mis-announced by screen readers.
+ */
+export function StateRow({ children }) {
+  return (
+    <div role="row">
+      <div role="cell" style={{ flex: 1 }}>{children}</div>
+    </div>
+  );
+}
+
 /** Page header: title + mono meta line left, actions right (max one primary). */
 export function PageHeader({ title, meta, children }) {
   return (

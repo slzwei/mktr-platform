@@ -59,7 +59,7 @@ function ProviderCard({ id, label, settings, form, setForm, onTest, testing }) {
                 className="av2-btn av2-btn--sm"
                 style={form[clearKey] ? { borderColor: 'var(--bad)', color: 'var(--bad)' } : undefined}
                 aria-pressed={form[clearKey]}
-                onClick={() => setForm((f) => ({ ...f, [clearKey]: !f[clearKey] }))}
+                onClick={() => setForm((f) => ({ ...f, [clearKey]: !f[clearKey], [keyKey]: '' }))}
               >
                 {form[clearKey] ? 'Will clear on save' : 'Clear key'}
               </button>
@@ -73,7 +73,7 @@ function ProviderCard({ id, label, settings, form, setForm, onTest, testing }) {
               autoComplete="off"
               placeholder="Paste the new API key (stored encrypted, shown as last-4 only)"
               value={form[keyKey]}
-              onChange={(e) => setForm((f) => ({ ...f, [keyKey]: e.target.value }))}
+              onChange={(e) => setForm((f) => ({ ...f, [keyKey]: e.target.value, [clearKey]: false }))}
             />
             <button type="button" className="av2-btn av2-btn--sm" onClick={() => { setEditingKey(false); setForm((f) => ({ ...f, [keyKey]: '' })); }}>✕</button>
           </div>
@@ -138,6 +138,9 @@ export default function AdminV2AISettings() {
     }
   };
 
+  // Error must render BEFORE the !form loading branch — a failed GET never
+  // seeds the form, so the old order showed an endless skeleton.
+  if (settings.isError) return <ErrorState error={settings.error} onRetry={settings.refetch} />;
   if (settings.isLoading || !form) {
     return (
       <div>
@@ -146,7 +149,6 @@ export default function AdminV2AISettings() {
       </div>
     );
   }
-  if (settings.isError) return <ErrorState error={settings.error} onRetry={settings.refetch} />;
 
   return (
     <div>

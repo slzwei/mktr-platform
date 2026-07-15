@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { apiClient } from '@/api/client';
 import { useCampaignLeaderboard } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtRelative } from '@/lib/adminV2/format';
-import { Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
+import { Chip, PageHeader, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const fetchQrTags = async ({ search, campaignId }) => {
@@ -37,7 +37,7 @@ async function downloadQr(tag) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${(tag.name || tag.slug || 'qr').replace(/[^\w-]+/g, '-')}.png`;
+  a.download = `${(tag.label || tag.name || tag.slug || 'qr').replace(/[^\w-]+/g, '-')}.png`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -129,7 +129,7 @@ export default function AdminV2QRCodes() {
 
   return (
     <div>
-      <PageHeader title="QR Codes" meta={`${fmtNumber(tags.data?.total ?? 0)} TAGS${(tags.data?.total ?? 0) > rows.length && rows.length > 0 ? ` · SHOWING FIRST ${fmtNumber(rows.length)}` : ''} · SORTED BY SCANS (LIFETIME)`}>
+      <PageHeader title="QR Codes" meta={`${fmtNumber(tags.data?.total ?? 0)} TAGS${(tags.data?.total ?? 0) > rows.length && rows.length > 0 ? ` · SHOWING FIRST ${fmtNumber(rows.length)}` : ''} · SORTED BY SCANS${(tags.data?.total ?? 0) > rows.length && rows.length > 0 ? ' (WITHIN SHOWN SET)' : ' (LIFETIME)'}`}>
         <button type="button" className="av2-btn av2-btn--primary" onClick={() => setCreating(true)}>+ New QR</button>
       </PageHeader>
 
@@ -156,7 +156,7 @@ export default function AdminV2QRCodes() {
         </select>
       </div>
 
-      <div className="av2-card" style={{ overflow: 'hidden' }} role="grid" aria-label="QR tags">
+      <div className="av2-card" style={{ overflow: 'hidden' }} role="table" aria-label="QR tags">
         <div className="av2-thead" role="row">
           <span className="av2-microcaps" role="columnheader" style={{ flex: 1.4 }}>Tag</span>
           <span className="av2-microcaps" role="columnheader" style={{ flex: 1 }}>Campaign</span>
@@ -167,28 +167,28 @@ export default function AdminV2QRCodes() {
         </div>
 
         {tags.isLoading && [0, 1, 2, 3].map((i) => (
-          <div key={i} className="av2-row" style={{ cursor: 'default' }}><Skeleton height={30} /></div>
+          <div key={i} className="av2-row" role="row" style={{ cursor: 'default' }}><span role="cell" style={{ flex: 1 }}><Skeleton height={30} /></span></div>
         ))}
-        {tags.isError && <ErrorState error={tags.error} onRetry={tags.refetch} />}
+        {tags.isError && <StateRow><ErrorState error={tags.error} onRetry={tags.refetch} /></StateRow>}
         {!tags.isLoading && !tags.isError && rows.length === 0 && (
-          <EmptyState title="No QR tags match" hint="Create one, or clear the filters." />
+          <StateRow><EmptyState title="No QR tags match" hint="Create one, or clear the filters." /></StateRow>
         )}
 
         {rows.map((t) => (
           <div key={t.id} className="av2-row" style={{ cursor: 'default' }} role="row">
-            <span role="gridcell" style={{ flex: 1.4, minWidth: 0 }}>
+            <span role="cell" style={{ flex: 1.4, minWidth: 0 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name || t.label || t.slug}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label || t.name || t.slug}</span>
                 {t.active === false && <Chip tone="warn">inactive</Chip>}
                 {t.targetHost === 'mktr' && <Chip tone="accent">mktr.sg</Chip>}
               </span>
               {t.slug && <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)' }}>/t/{t.slug}</span>}
             </span>
-            <span role="gridcell" style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.campaign?.name || '—'}</span>
-            <span role="gridcell" className="av2-mono" style={{ width: 80, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{fmtNumber(t.scanCount || 0)}</span>
-            <span role="gridcell" className="av2-mono" style={{ width: 80, flex: 'none', fontSize: 11, color: 'var(--ink-2)', textAlign: 'right' }}>{fmtNumber(t.uniqueScanCount || 0)}</span>
-            <span role="gridcell" className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }}>{t.lastScanned ? fmtRelative(t.lastScanned) : '—'}</span>
-            <span role="gridcell" style={{ width: 160, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <span role="cell" style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.campaign?.name || '—'}</span>
+            <span role="cell" className="av2-mono" style={{ width: 80, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{fmtNumber(t.scanCount || 0)}</span>
+            <span role="cell" className="av2-mono" style={{ width: 80, flex: 'none', fontSize: 11, color: 'var(--ink-2)', textAlign: 'right' }}>{fmtNumber(t.uniqueScanCount || 0)}</span>
+            <span role="cell" className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }}>{t.lastScanned ? fmtRelative(t.lastScanned) : '—'}</span>
+            <span role="cell" style={{ width: 160, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
               <button type="button" className="av2-btn av2-btn--sm" disabled={downloading === t.id} onClick={() => handleDownload(t)}>
                 {downloading === t.id ? 'Fetching…' : 'Download'}
               </button>

@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { useWallets, useWalletLedger } from '@/hooks/queries/useAdminV2';
 import { adjustWallet } from '@/api/adminV2';
 import { fmtNumber, fmtSGD, fmtSGDExact, fmtDateTime, fmtRelative } from '@/lib/adminV2/format';
-import { Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
+import { Chip, PageHeader, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
@@ -142,7 +142,7 @@ function LedgerDrawer({ wallet, onClose }) {
         </SheetHeader>
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {ledger.isLoading && <div style={{ padding: 16 }}><Skeleton height={120} /></div>}
-          {ledger.isError && <ErrorState error={ledger.error} onRetry={ledger.refetch} />}
+          {ledger.isError && <StateRow><ErrorState error={ledger.error} onRetry={ledger.refetch} /></StateRow>}
           {!ledger.isLoading && !ledger.isError && entries.length === 0 && (
             <EmptyState title="No ledger entries" hint="Top-ups, commitments, refunds and adjustments land here." />
           )}
@@ -210,7 +210,7 @@ export default function AdminV2Wallets() {
         the only automatic refund is a campaign takedown returning undelivered commitments as credits.
       </div>
 
-      <div className="av2-card" style={{ overflow: 'hidden' }} role="grid" aria-label="Agent wallets">
+      <div className="av2-card" style={{ overflow: 'hidden' }} role="table" aria-label="Agent wallets">
         <div className="av2-thead" role="row">
           <span className="av2-microcaps" role="columnheader" style={{ flex: 1.4 }}>Agent</span>
           <span className="av2-microcaps" role="columnheader" style={{ width: 110, flex: 'none', textAlign: 'right' }}>Balance</span>
@@ -220,29 +220,29 @@ export default function AdminV2Wallets() {
         </div>
 
         {wallets.isLoading && [0, 1, 2].map((i) => (
-          <div key={i} className="av2-row" style={{ cursor: 'default' }}><Skeleton height={36} /></div>
+          <div key={i} className="av2-row" role="row" style={{ cursor: 'default' }}><span role="cell" style={{ flex: 1 }}><Skeleton height={36} /></span></div>
         ))}
-        {wallets.isError && <ErrorState error={wallets.error} onRetry={wallets.refetch} />}
+        {wallets.isError && <StateRow><ErrorState error={wallets.error} onRetry={wallets.refetch} /></StateRow>}
         {!wallets.isLoading && !wallets.isError && rows.length === 0 && (
-          <EmptyState
+          <StateRow><EmptyState
             title="No external agents yet"
             hint="Wallets appear when mktr-leads agents are synced. Balances stay S$0 until the wallet goes live and agents top up."
-          />
+          /></StateRow>
         )}
 
         {rows.map((w) => (
           <div key={w.id} className="av2-row" role="row" style={{ cursor: 'default' }}>
-            <span role="gridcell" style={{ flex: 1.4, minWidth: 0 }}>
+            <span role="cell" style={{ flex: 1.4, minWidth: 0 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 700 }}>{w.name}</span>
                 {w.isActive === false && <Chip tone="warn">Inactive</Chip>}
               </span>
               <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)' }}>{w.email}</span>
             </span>
-            <span role="gridcell" className="av2-mono" style={{ width: 110, flex: 'none', fontSize: 13, fontWeight: 600, textAlign: 'right', color: w.walletBalanceCents === 0 ? 'var(--warn)' : 'var(--ink)' }}>
+            <span role="cell" className="av2-mono" style={{ width: 110, flex: 'none', fontSize: 13, fontWeight: 600, textAlign: 'right', color: w.walletBalanceCents === 0 ? 'var(--warn)' : 'var(--ink)' }}>
               {fmtSGDExact(w.walletBalanceCents)}
             </span>
-            <span role="gridcell" style={{ flex: 1.6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <span role="cell" style={{ flex: 1.6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {(w.openCommitments || []).length === 0
                 ? <span className="av2-caption">none</span>
                 : (w.openCommitments || []).map((oc) => (
@@ -251,10 +251,10 @@ export default function AdminV2Wallets() {
                   </Chip>
                 ))}
             </span>
-            <span role="gridcell" className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }}>
+            <span role="cell" className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }}>
               {w.lastActivityAt ? fmtRelative(w.lastActivityAt) : '—'}
             </span>
-            <span role="gridcell" style={{ width: 150, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <span role="cell" style={{ width: 150, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
               <button type="button" className="av2-btn av2-btn--sm" onClick={() => setLedgerFor(w)}>Ledger</button>
               <button type="button" className="av2-btn av2-btn--sm" onClick={() => setAdjustFor(w)}>Adjust</button>
             </span>

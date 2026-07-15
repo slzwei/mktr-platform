@@ -9,7 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiClient } from '@/api/client';
 import { fmtNumber, fmtRelative } from '@/lib/adminV2/format';
-import { Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
+import { Chip, PageHeader, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
@@ -30,8 +30,8 @@ function CreateDialog({ onClose }) {
   const create = useMutation({
     mutationFn: () => apiClient.post('/shortlinks', { targetUrl: targetUrl.trim(), purpose: 'admin' }),
     onSuccess: (r) => {
-      const slug = r?.data?.slug || r?.data?.link?.slug;
-      toast.success(slug ? `Created mktr.sg/${slug}` : 'Short link created');
+      const url = r?.data?.url || (r?.data?.slug ? `https://mktr.sg/share/${r.data.slug}` : null);
+      toast.success(url ? `Created ${url.replace('https://', '')}` : 'Short link created');
       queryClient.invalidateQueries({ queryKey: ['adminV2', 'shortlinks'] });
       onClose();
     },
@@ -90,19 +90,20 @@ export default function AdminV2ShortLinks() {
 
   const rows = links.data?.rows || [];
 
+  // Short links resolve at /share/:slug — the SPA has no root-level slug route.
   const copy = (slug) => {
-    navigator.clipboard?.writeText(`https://mktr.sg/${slug}`)
-      .then(() => toast.success(`Copied mktr.sg/${slug}`))
+    navigator.clipboard?.writeText(`https://mktr.sg/share/${slug}`)
+      .then(() => toast.success(`Copied mktr.sg/share/${slug}`))
       .catch(() => toast.error('Copy failed'));
   };
 
   return (
     <div>
-      <PageHeader title="Short Links" meta={`${fmtNumber(links.data?.total ?? 0)} LINKS · CLICKS ARE LIFETIME`}>
+      <PageHeader title="Short Links" meta={`${fmtNumber(links.data?.total ?? 0)} LINKS${(links.data?.total ?? 0) > (links.data?.rows || []).length && (links.data?.rows || []).length > 0 ? ` · SHOWING NEWEST ${fmtNumber((links.data?.rows || []).length)}` : ''} · CLICKS ARE LIFETIME`}>
         <button type="button" className="av2-btn av2-btn--primary" onClick={() => setCreating(true)}>+ New link</button>
       </PageHeader>
 
-      <div className="av2-card" style={{ overflow: 'hidden' }} role="grid" aria-label="Short links">
+      <div className="av2-card" style={{ overflow: 'hidden' }} role="table" aria-label="Short links">
         <div className="av2-thead" role="row">
           <span className="av2-microcaps" role="columnheader" style={{ width: 150, flex: 'none' }}>Short</span>
           <span className="av2-microcaps" role="columnheader" style={{ flex: 1.8 }}>Target</span>
@@ -113,26 +114,26 @@ export default function AdminV2ShortLinks() {
         </div>
 
         {links.isLoading && [0, 1, 2].map((i) => (
-          <div key={i} className="av2-row" style={{ cursor: 'default' }}><Skeleton height={30} /></div>
+          <div key={i} className="av2-row" role="row" style={{ cursor: 'default' }}><span role="cell" style={{ flex: 1 }}><Skeleton height={30} /></span></div>
         ))}
-        {links.isError && <ErrorState error={links.error} onRetry={links.refetch} />}
+        {links.isError && <StateRow><ErrorState error={links.error} onRetry={links.refetch} /></StateRow>}
         {!links.isLoading && !links.isError && rows.length === 0 && (
-          <EmptyState title="No short links" hint="Create one for ads, print, or chat blasts." />
+          <StateRow><EmptyState title="No short links" hint="Create one for ads, print, or chat blasts." /></StateRow>
         )}
 
         {rows.map((l) => {
           const active = isActive(l);
           return (
             <div key={l.id} className="av2-row" style={{ cursor: 'default' }} role="row">
-              <span role="gridcell" style={{ width: 150, flex: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span className="av2-mono" style={{ fontSize: 12, fontWeight: 600 }}>/{l.slug}</span>
+              <span role="cell" style={{ width: 150, flex: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="av2-mono" style={{ fontSize: 12, fontWeight: 600 }}>/share/{l.slug}</span>
                 {!active && <Chip tone="warn">expired</Chip>}
               </span>
-              <span role="gridcell" className="av2-mono" style={{ flex: 1.8, fontSize: 10.5, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={l.targetUrl}>{l.targetUrl}</span>
-              <span role="gridcell" style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.campaignName || l.campaign?.name || '—'}</span>
-              <span role="gridcell" className="av2-mono" style={{ width: 70, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{fmtNumber(l.clickCount ?? l.clicks ?? 0)}</span>
-              <span role="gridcell" className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }}>{l.lastClickedAt ? fmtRelative(l.lastClickedAt) : '—'}</span>
-              <span role="gridcell" style={{ width: 150, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <span role="cell" className="av2-mono" style={{ flex: 1.8, fontSize: 10.5, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={l.targetUrl}>{l.targetUrl}</span>
+              <span role="cell" style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.campaignName || l.campaign?.name || '—'}</span>
+              <span role="cell" className="av2-mono" style={{ width: 70, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{fmtNumber(l.clickCount ?? l.clicks ?? 0)}</span>
+              <span role="cell" className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 10.5, color: 'var(--ink-3)', textAlign: 'right' }}>{l.lastClickedAt ? fmtRelative(l.lastClickedAt) : '—'}</span>
+              <span role="cell" style={{ width: 150, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                 <button type="button" className="av2-btn av2-btn--sm" onClick={() => copy(l.slug)}>Copy</button>
                 <button type="button" className="av2-btn av2-btn--sm" style={{ borderColor: 'var(--bad)', color: 'var(--bad)' }} onClick={() => setConfirmDelete(l)}>Delete</button>
               </span>
