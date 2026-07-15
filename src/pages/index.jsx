@@ -65,7 +65,11 @@ const ADMIN_V2 = import.meta.env.VITE_ADMIN_V2_ENABLED === 'true';
 const AdminV2Shell = lazy(() => import('@/components/adminv2/AdminV2Shell'));
 const AdminV2Dashboard = lazy(() => import('./adminv2/AdminV2Dashboard'));
 const AdminV2Prospects = lazy(() => import('./adminv2/AdminV2Prospects'));
-const AdminV2Stub = lazy(() => import('./adminv2/AdminV2Stub'));
+const AdminV2Campaigns = lazy(() => import('./adminv2/AdminV2Campaigns'));
+const AdminV2CampaignDetail = lazy(() => import('./adminv2/AdminV2CampaignDetail'));
+const AdminV2Agents = lazy(() => import('./adminv2/AdminV2Agents'));
+const AdminV2AgentGroups = lazy(() => import('./adminv2/AdminV2AgentGroups'));
+const AdminV2Wallets = lazy(() => import('./adminv2/AdminV2Wallets'));
 const AdminCampaigns = lazy(() => import('./AdminCampaigns'));
 const AdminCampaignForm = lazy(() => import('./AdminCampaignForm'));
 const AdminQRCodes = lazy(() => import('./AdminQRCodes'));
@@ -314,10 +318,21 @@ function PagesContent() {
  />
  {ADMIN_V2 && (
  <Route
+ path="/admin/campaigns/:id" element={
+ <ProtectedRoute requiredRole="admin">
+ <AdminV2Shell>
+ <AdminV2CampaignDetail />
+ </AdminV2Shell>
+ </ProtectedRoute>
+ }
+ />
+ )}
+ {ADMIN_V2 && (
+ <Route
  path="/AdminWallets" element={
  <ProtectedRoute requiredRole="admin">
  <AdminV2Shell>
- <AdminV2Stub title="Wallets & Commitments" arrives="the next release (PR4)" />
+ <AdminV2Wallets />
  </AdminV2Shell>
  </ProtectedRoute>
  }
@@ -326,9 +341,15 @@ function PagesContent() {
  <Route
  path="/AdminCampaigns" element={
  <ProtectedRoute requiredRole="admin">
+ {ADMIN_V2 ? (
+ <AdminV2Shell>
+ <AdminV2Campaigns />
+ </AdminV2Shell>
+ ) : (
  <DashboardLayout>
  <AdminCampaigns />
  </DashboardLayout>
+ )}
  </ProtectedRoute>
  }
  />
@@ -381,18 +402,30 @@ function PagesContent() {
  <Route
  path="/AdminAgentGroups" element={
  <ProtectedRoute requiredRole="admin">
+ {ADMIN_V2 ? (
+ <AdminV2Shell>
+ <AdminV2AgentGroups />
+ </AdminV2Shell>
+ ) : (
  <DashboardLayout>
  <AdminAgentGroups />
  </DashboardLayout>
+ )}
  </ProtectedRoute>
  }
  />
  <Route
  path="/AdminAgents" element={
  <ProtectedRoute requiredRole="admin">
+ {ADMIN_V2 ? (
+ <AdminV2Shell>
+ <AdminV2Agents />
+ </AdminV2Shell>
+ ) : (
  <DashboardLayout>
  <AdminAgents />
  </DashboardLayout>
+ )}
  </ProtectedRoute>
  }
  />
