@@ -25,12 +25,23 @@ function GroupEditor({ group, onClose }) {
   const agents = useAgentOptions(true);
   const queryClient = useQueryClient();
 
+  // The service REPLACES the member list on update, so the payload must be
+  // built from the EXISTING member snapshots first (name/email/lyfeId survive
+  // the round-trip even when the member is outside the active-roster picker),
+  // falling back to roster rows only for new additions.
+  const existingByPhone = useMemo(
+    () => new Map((group?.members || []).filter((m) => m.phone).map((m) => [m.phone, m])),
+    [group]
+  );
+
   const save = useMutation({
     mutationFn: () => {
-      const byPhone = new Map((agents.data || []).map((a) => [a.phone, a]));
+      const rosterByPhone = new Map((agents.data || []).map((a) => [a.phone, a]));
       const members = [...selected].map((phone) => {
-        const a = byPhone.get(phone);
-        return { phone, firstName: a?.firstName || '', lastName: a?.lastName || '', email: a?.email || null, name: a?.name || '' };
+        const prev = existingByPhone.get(phone);
+        if (prev) return { phone, name: prev.name || null, email: prev.email || null, lyfeId: prev.lyfeId || null };
+        const a = rosterByPhone.get(phone);
+        return { phone, name: a?.name || '', email: a?.email || null };
       });
       const payload = { name: name.trim(), description: description.trim() || null, agents: members };
       return isNew ? createAgentGroup(payload) : updateAgentGroup(group.id, payload);
@@ -71,6 +82,30 @@ function GroupEditor({ group, onClose }) {
             <div className="av2-microcaps" style={{ marginBottom: 6 }}>Members · {selected.size}</div>
             <div className="av2-card" style={{ boxShadow: 'none', maxHeight: 320, overflowY: 'auto' }}>
               {agents.isLoading && <div style={{ padding: 12 }}><Skeleton height={80} /></div>}
+              {agents.isError && <div className="av2-caption" style={{ padding: 12, color: 'var(--bad)' }}>Agent roster failed to load — saving is disabled so members can’t be silently dropped.</div>}
+              {/* Existing members outside the active roster (inactive/legacy) — kept unless removed. */}
+              {[...existingByPhone.values()].filter((m) => !(agents.data || []).some((a) => a.phone === m.phone)).map((m) => {
+                const on = selected.has(m.phone);
+                return (
+                  <button
+                    key={`kept-${m.phone}`}
+                    type="button"
+                    onClick={() => togglePhone(m.phone)}
+                    aria-pressed={on}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+                      padding: '8px 12px', border: 'none', borderBottom: '1px solid var(--line)',
+                      background: on ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer',
+                      fontFamily: 'var(--font-ui)', color: 'var(--ink)',
+                    }}
+                  >
+                    <span style={{ fontSize: 12.5, fontWeight: 600, flex: 1 }}>{m.name || m.phone}</span>
+                    <Chip tone="warn">not in roster</Chip>
+                    <span className="av2-mono" style={{ fontSize: 10.5, color: 'var(--ink-3)' }}>{m.phone}</span>
+                    {on && <span aria-hidden="true" style={{ color: 'var(--accent-text)', fontWeight: 800 }}>✓</span>}
+                  </button>
+                );
+              })}
               {(agents.data || []).filter((a) => a.phone).map((a) => {
                 const on = selected.has(a.phone);
                 return (
@@ -98,7 +133,7 @@ function GroupEditor({ group, onClose }) {
         </div>
         <div style={{ padding: 16, borderTop: '1px solid var(--line)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button type="button" className="av2-btn" onClick={onClose}>Cancel</button>
-          <button type="button" className="av2-btn av2-btn--primary" disabled={!name.trim() || save.isPending} onClick={() => save.mutate()}>
+          <button type="button" className="av2-btn av2-btn--primary" disabled={!name.trim() || save.isPending || agents.isError || agents.isLoading} onClick={() => save.mutate()}>
             {save.isPending ? 'Saving…' : isNew ? 'Create group' : 'Save changes'}
           </button>
         </div>
@@ -165,7 +200,9 @@ export default function AdminV2AgentGroups() {
               <span style={{ width: 110, flex: 'none', textAlign: 'right' }}>
                 {wallets.isLoading
                   ? <span className="av2-mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>…</span>
-                  : <Chip tone={funded < members.length && members.length > 0 ? 'warn' : 'ok'}>{funded}/{members.length} funded</Chip>}
+                  : wallets.isError
+                    ? <span className="av2-mono" title="Wallet data failed to load" style={{ fontSize: 11, color: 'var(--ink-3)' }}>—</span>
+                    : <Chip tone={funded < members.length && members.length > 0 ? 'warn' : 'ok'}>{funded}/{members.length} funded</Chip>}
               </span>
               <span style={{ width: 130, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                 <button type="button" className="av2-btn av2-btn--sm" onClick={() => setEditor(g)}>Edit</button>

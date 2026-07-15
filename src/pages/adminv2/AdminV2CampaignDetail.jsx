@@ -6,7 +6,7 @@
  * editing surface.
  */
 import { Link, useParams } from 'react-router-dom';
-import { useCampaignSummary } from '@/hooks/queries/useAdminV2';
+import { useCampaignSummary, useAttention } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtSGD, fmtDate, fmtDateTime, fmtRelative, daysUntil } from '@/lib/adminV2/format';
 import { STATUS_LABELS, STATUS_CHIP_CLASS, HELD_REASON_LABELS } from '@/lib/adminV2/constants';
 import { Card, Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
@@ -26,6 +26,10 @@ function Tile({ label, value, caption, tone }) {
 export default function AdminV2CampaignDetail() {
   const { id } = useParams();
   const summary = useCampaignSummary(id);
+  // Zero-commitment truth comes from /attention (wallet OR package funding —
+  // a legacy-package-covered campaign must NOT get a false incident banner).
+  // The summary's own commitments list is wallet-only by design.
+  const attention = useAttention();
 
   if (summary.isLoading) {
     return (
@@ -43,7 +47,9 @@ export default function AdminV2CampaignDetail() {
   const draw = c.design_config?.luckyDraw;
   const drawDays = draw?.enabled ? daysUntil(draw.closesAt) : null;
   const priced = Number.isInteger(c.leadPriceCents) && c.leadPriceCents > 0;
-  const zeroCommit = priced && c.status === 'active' && !(committedRemaining > 0);
+  const zeroCommit = attention.isSuccess
+    ? (attention.data?.zeroCommitCampaigns || []).some((z) => z.id === c.id)
+    : false; // attention unavailable → no banner rather than a possibly-false one
   const editHref = WORKSPACE_ON ? `/admin/campaigns/${c.id}/workspace?tab=details` : `/admin/campaigns/${c.id}/edit`;
   const designHref = WORKSPACE_ON ? `/admin/campaigns/${c.id}/workspace?tab=design` : `/AdminCampaignDesigner?campaign_id=${c.id}`;
   const maxDay = Math.max(1, ...(series?.days || []).map((d) => d.count));
@@ -106,7 +112,7 @@ export default function AdminV2CampaignDetail() {
               icon={zeroCommit ? '▲' : '○'}
               title={priced ? 'No open commitments' : 'Not priced'}
               hint={priced
-                ? (zeroCommit ? 'New leads will quarantine with no funded agent.' : 'Waiting for the first agent commitment.')
+                ? (zeroCommit ? 'New leads will quarantine with no funded agent.' : 'No wallet commitments yet (legacy package coverage, if any, is not shown here).')
                 : 'Set a lead price in Edit details to open this campaign to commitments.'}
             />
           ) : (

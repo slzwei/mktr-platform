@@ -5,8 +5,8 @@
  * and design stay on the existing flows (workspace / designer) — this screen
  * observes and navigates, it does not fork the editing surface.
  */
-import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCampaignLeaderboard, useAttention } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtSGD, fmtDate, daysUntil } from '@/lib/adminV2/format';
 import { Chip, PageHeader, PeriodSwitch, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
@@ -25,8 +25,22 @@ const WORKSPACE_ON = import.meta.env.VITE_CAMPAIGN_WORKSPACE_ENABLED === 'true';
 export const newCampaignHref = () => (WORKSPACE_ON ? '/admin/campaigns/workspace' : '/admin/campaigns/new');
 
 export default function AdminV2Campaigns() {
-  const [period, setPeriod] = useState('30d');
-  const [statusFilter, setStatusFilter] = useState('');
+  // Filters live in the URL (shareable, back/forward safe) — same rule as Prospects.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const period = ['7d', '30d', '90d'].includes(searchParams.get('period')) ? searchParams.get('period') : '30d';
+  const statusFilter = searchParams.get('status') || '';
+  const patch = (changes) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      for (const [k, v] of Object.entries(changes)) {
+        if (v === null || v === '' || v === undefined) next.delete(k);
+        else next.set(k, v);
+      }
+      return next;
+    }, { replace: true });
+  };
+  const setPeriod = (p) => patch({ period: p === '30d' ? null : p });
+  const setStatusFilter = (v) => patch({ status: v || null });
   const navigate = useNavigate();
   const campaigns = useCampaignLeaderboard(period);
   const attention = useAttention();
@@ -45,13 +59,18 @@ export default function AdminV2Campaigns() {
 
   return (
     <div>
-      <PageHeader title="Campaigns" meta={`${fmtNumber(rows.length)} SHOWN · SORTED BY LEADS · LAST ${period.toUpperCase()}`}>
+      <PageHeader title="Campaigns" meta={`${fmtNumber(rows.length)} SHOWN${campaigns.data?.total > (campaigns.data?.rows || []).length ? ` OF ${fmtNumber(campaigns.data.total)} (NEWEST FIRST)` : ''} · SORTED BY LEADS · LAST ${period.toUpperCase()}`}>
         <PeriodSwitch value={period} onChange={setPeriod} />
         <Link to={newCampaignHref()} className="av2-btn av2-btn--primary" style={{ textDecoration: 'none' }}>
           + New campaign
         </Link>
       </PageHeader>
 
+      {attention.isError && (
+        <div className="av2-caption" style={{ color: 'var(--warn)', marginBottom: 8 }}>
+          ▲ Attention feed unavailable — zero-commitment badges are hidden (they can’t be trusted right now).
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         {statuses.map((s) => (
           <button
@@ -107,7 +126,7 @@ export default function AdminV2Campaigns() {
               </span>
               <span style={{ width: 90, flex: 'none', fontSize: 12, color: 'var(--ink-2)' }}>{TYPE_LABELS[c.type] || c.type}</span>
               <span style={{ flex: 1.4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {zeroCommitIds.has(c.id) && <Chip tone="bad" glyph="▲">0 commitments</Chip>}
+                {attention.isSuccess && zeroCommitIds.has(c.id) && <Chip tone="bad" glyph="▲">0 commitments</Chip>}
                 {c.committedRemaining > 0 && <Chip tone="accent">{fmtNumber(c.committedRemaining)} committed · {fmtSGD(c.committedValueCents)}</Chip>}
                 {drawDays !== null && drawDays > 0 && <Chip tone="warn">Draw closes {drawDays}d</Chip>}
                 {c.design_config?.marketplaceListed === true && <Chip tone="accent">Marketplace</Chip>}

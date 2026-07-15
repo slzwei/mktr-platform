@@ -4,22 +4,50 @@
  * (null from the API — they have no wallets in v1); external agents link
  * through to Wallets & Commitments.
  */
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAgentsRoster } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtSGD, fmtRelative } from '@/lib/adminV2/format';
 import { Chip, PageHeader, PeriodSwitch, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
 
 export default function AdminV2Agents() {
-  const [period, setPeriod] = useState('30d');
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('active');
-  const roster = useAgentsRoster({ period, search, status });
+  const [searchParams, setSearchParams] = useSearchParams();
+  const period = ['7d', '30d', '90d'].includes(searchParams.get('period')) ? searchParams.get('period') : '30d';
+  const status = searchParams.get('status') ?? 'active';
+  const urlSearch = searchParams.get('q') || '';
+  const [search, setSearch] = useState(urlSearch);
+  const patch = (changes) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      for (const [k, v] of Object.entries(changes)) {
+        if (v === null || v === '' || v === undefined) next.delete(k);
+        else next.set(k, v);
+      }
+      return next;
+    }, { replace: true });
+  };
+  const setPeriod = (p) => patch({ period: p === '30d' ? null : p });
+  const setStatus = (v) => patch({ status: v === 'active' ? null : v });
+  // Debounce the search into the URL (functional — never clobbers other params).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchParams((prev) => {
+        if ((prev.get('q') || '') === search) return prev;
+        const next = new URLSearchParams(prev);
+        if (search) next.set('q', search);
+        else next.delete('q');
+        return next;
+      }, { replace: true });
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+  const roster = useAgentsRoster({ period, search: urlSearch, status });
   const rows = roster.data?.rows || [];
 
   return (
     <div>
-      <PageHeader title="Agents" meta={`${fmtNumber(roster.data?.total ?? 0)} AGENTS · ASSIGNMENT VOLUME LAST ${period.toUpperCase()}`}>
+      <PageHeader title="Agents" meta={`${fmtNumber(roster.data?.total ?? 0)} AGENTS${(roster.data?.total ?? 0) > rows.length && rows.length > 0 ? ` · SHOWING FIRST ${fmtNumber(rows.length)}` : ''} · ASSIGNMENT VOLUME LAST ${period.toUpperCase()}`}>
         <PeriodSwitch value={period} onChange={setPeriod} />
       </PageHeader>
 

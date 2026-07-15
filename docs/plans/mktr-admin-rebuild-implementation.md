@@ -352,6 +352,22 @@ Phased per the standing direction (hide → dark-flag → drop models later):
 
 ---
 
+## Codex review log — Phase C PR4 post-implementation (2026-07-15, gpt-5.6-sol xhigh)
+
+6 MAJOR / 1 MINOR; verdict confirmed envelope fidelity, ledger pagination,
+route ranking (/new, /workspace safe vs /:id) and flag-off parity. All
+dispositions (verified first):
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | Campaign detail derived zero-commit from the wallet-only summary set (false banner on package-funded campaigns) | Fixed — consumes `attention.zeroCommitCampaigns`; attention-unavailable ⇒ no banner rather than a possibly-false one; empty-state copy states the list is wallet-only |
+| 2 | Campaigns/Agents truncate (100/200) with local-state filters | Fixed pragmatically — filters + period now live in the URL (Prospects rule); headers show "N OF M (NEWEST FIRST)" / "SHOWING FIRST N" whenever truncated. Full server pagination on these boards is deferred: prod has ~13 campaigns / ~20 agents; the honesty caption fires long before it matters |
+| 3 | Group editor could ERASE member identity (picker = 200 active agents; save rebuilds from roster) | Fixed — payload built from EXISTING member snapshots first (name/email/lyfeId survive), roster only for additions; out-of-roster members render as "not in roster" kept-by-default entries; save disabled while the roster is loading/failed |
+| 4 | Secondary-query failures rendered as healthy zeros | Fixed — attention failure hides zero-commit badges + shows a warning line; wallet failure renders "—" funded, never 0/N |
+| 5 | Money entry silently rounded (1.005 → S$1.00) + submittable overdrafts | Fixed — amount validated as a STRING (≤2 decimals, no rounding-for-you, inline error); client overdraft guard with the balance named (server 409 stays authoritative) |
+| 6 | Adjustment overlay wasn't a real modal (no trap/restore/inert) | Fixed — rebuilt on Radix Dialog; dismissal blocked while the mutation is pending |
+| 7 | Table/grid semantics still missing (deferred from PR3) | **Deferred again, narrowed + owned**: PR5 ships the grid pattern (role=grid/row/gridcell incl. interactive rows) across all five list screens in one consistent pass — piecemeal roles without cell roles degrade screen-reader output worse than none |
+
 ## Codex review log — Phase C PR3 post-implementation (2026-07-15, gpt-5.6-sol xhigh)
 
 1 BLOCKER / 7 MAJOR / 6 MINOR; verdict confirmed flag-off leaves legacy chunks

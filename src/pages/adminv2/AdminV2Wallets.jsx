@@ -14,6 +14,7 @@ import { adjustWallet } from '@/api/adminV2';
 import { fmtNumber, fmtSGD, fmtSGDExact, fmtDateTime, fmtRelative } from '@/lib/adminV2/format';
 import { Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const LEDGER_LABELS = {
   topup: { label: 'Top-up', tone: 'ok' },
@@ -31,8 +32,13 @@ function AdjustDialog({ wallet, onClose }) {
   const [requestId] = useState(() => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : `adj${Date.now()}${Math.random().toString(36).slice(2, 10)}`));
   const queryClient = useQueryClient();
 
-  const cents = Math.round(Number(amount) * 100);
-  const valid = Number.isFinite(cents) && cents > 0 && note.trim().length > 0;
+  // Money is validated as a STRING: whole dollars + at most 2 decimals. No
+  // silent rounding — "1.005" is an error the operator must fix, never a
+  // different amount than they typed.
+  const amountValid = /^\d+(\.\d{1,2})?$/.test(amount.trim()) && Number(amount) > 0;
+  const cents = amountValid ? Math.round(Number(amount.trim()) * 100) : 0;
+  const overdraft = direction === 'debit' && amountValid && cents > wallet.walletBalanceCents;
+  const valid = amountValid && !overdraft && note.trim().length > 0;
 
   const mutation = useMutation({
     mutationFn: () => adjustWallet(wallet.id, {
@@ -51,20 +57,21 @@ function AdjustDialog({ wallet, onClose }) {
   });
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Manual adjustment for ${wallet.name}`}
-      style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(22,26,34,.4)' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="av2-card admin-v2" style={{ width: 420, maxWidth: '92vw', padding: 20, background: 'var(--surface)' }}>
-        <div className="av2-h2" style={{ marginBottom: 2 }}>Manual adjustment</div>
-        <div className="av2-caption" style={{ marginBottom: 14 }}>
-          {wallet.name} · balance {fmtSGDExact(wallet.walletBalanceCents)} — the exception path. Top-ups happen in the agent app; refunds only via campaign takedown.
-        </div>
+    <Dialog open onOpenChange={(open) => { if (!open && !mutation.isPending) onClose(); }}>
+      <DialogContent
+        className="admin-v2"
+        style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)', maxWidth: 440 }}
+        onInteractOutside={(e) => { if (mutation.isPending) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (mutation.isPending) e.preventDefault(); }}
+      >
+        <DialogHeader>
+          <DialogTitle style={{ color: 'var(--ink)', fontFamily: 'var(--font-ui)', fontSize: 15, fontWeight: 800, textAlign: 'left' }}>Manual adjustment</DialogTitle>
+          <DialogDescription style={{ color: 'var(--ink-2)', fontSize: 11.5, textAlign: 'left' }}>
+            {wallet.name} · balance {fmtSGDExact(wallet.walletBalanceCents)} — the exception path. Top-ups happen in the agent app; refunds only via campaign takedown.
+          </DialogDescription>
+        </DialogHeader>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-          {[['credit', '+ Credit'], ['debit', '− Debit']].map(([v, label]) => (
+          {[['credit', '+ Credit'], ['debit', '\u2212 Debit']].map(([v, label]) => (
             <button
               key={v}
               type="button"
@@ -81,29 +88,35 @@ function AdjustDialog({ wallet, onClose }) {
             <input
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              type="number" min="0.01" step="0.01" placeholder="0.00"
+              inputMode="decimal" placeholder="0.00"
               aria-label="Adjustment amount in dollars"
+              aria-invalid={amount.trim() !== '' && !amountValid}
               style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, font: 'inherit', color: 'inherit', fontFamily: 'var(--font-mono)', fontSize: 12 }}
             />
           </div>
         </div>
+        {amount.trim() !== '' && !amountValid && (
+          <div className="av2-caption" style={{ color: 'var(--bad)', marginBottom: 8 }}>
+            Enter dollars with at most two decimals (e.g. 12.50) — amounts are never rounded for you.
+          </div>
+        )}
+        {overdraft && (
+          <div className="av2-caption" style={{ color: 'var(--bad)', marginBottom: 8 }}>
+            That debit exceeds the current balance ({fmtSGDExact(wallet.walletBalanceCents)}) — wallets can never go below S$0.
+          </div>
+        )}
         <label style={{ display: 'grid', gap: 6, marginBottom: 14 }}>
           <span className="av2-microcaps">Note (required — lands in the ledger)</span>
           <input className="av2-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. duplicate delivery on 2 leads — goodwill credit" />
         </label>
-        {direction === 'debit' && (
-          <div className="av2-caption" style={{ color: 'var(--warn)', marginBottom: 10 }}>
-            Debits cannot take the balance below S$0 — the server rejects an overdraft.
-          </div>
-        )}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button type="button" className="av2-btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="av2-btn" disabled={mutation.isPending} onClick={onClose}>Cancel</button>
           <button type="button" className="av2-btn av2-btn--primary" disabled={!valid || mutation.isPending} onClick={() => mutation.mutate()}>
-            {mutation.isPending ? 'Applying…' : `Apply ${direction === 'credit' ? '+' : '−'}${amount ? `S$${amount}` : ''}`}
+            {mutation.isPending ? 'Applying\u2026' : `Apply ${direction === 'credit' ? '+' : '\u2212'}${amountValid ? fmtSGDExact(cents) : ''}`}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
