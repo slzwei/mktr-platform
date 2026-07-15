@@ -70,6 +70,10 @@ const AdminV2CampaignDetail = lazy(() => import('./adminv2/AdminV2CampaignDetail
 const AdminV2Agents = lazy(() => import('./adminv2/AdminV2Agents'));
 const AdminV2AgentGroups = lazy(() => import('./adminv2/AdminV2AgentGroups'));
 const AdminV2Wallets = lazy(() => import('./adminv2/AdminV2Wallets'));
+const AdminV2QRCodes = lazy(() => import('./adminv2/AdminV2QRCodes'));
+const AdminV2ShortLinks = lazy(() => import('./adminv2/AdminV2ShortLinks'));
+const AdminV2Users = lazy(() => import('./adminv2/AdminV2Users'));
+const AdminV2AISettings = lazy(() => import('./adminv2/AdminV2AISettings'));
 const AdminCampaigns = lazy(() => import('./AdminCampaigns'));
 const AdminCampaignForm = lazy(() => import('./AdminCampaignForm'));
 const AdminQRCodes = lazy(() => import('./AdminQRCodes'));
@@ -295,9 +299,15 @@ function PagesContent() {
  <Route
  path="/AdminShortLinks" element={
  <ProtectedRoute requiredRole="admin">
+ {ADMIN_V2 ? (
+ <AdminV2Shell>
+ <AdminV2ShortLinks />
+ </AdminV2Shell>
+ ) : (
  <DashboardLayout>
  <AdminShortLinks />
  </DashboardLayout>
+ )}
  </ProtectedRoute>
  }
  />
@@ -393,9 +403,15 @@ function PagesContent() {
  <Route
  path="/AdminQRCodes" element={
  <ProtectedRoute requiredRole="admin">
+ {ADMIN_V2 ? (
+ <AdminV2Shell>
+ <AdminV2QRCodes />
+ </AdminV2Shell>
+ ) : (
  <DashboardLayout>
  <AdminQRCodes />
  </DashboardLayout>
+ )}
  </ProtectedRoute>
  }
  />
@@ -441,9 +457,15 @@ function PagesContent() {
  <Route
  path="/AdminUsers" element={
  <ProtectedRoute requiredRole="admin">
+ {ADMIN_V2 ? (
+ <AdminV2Shell>
+ <AdminV2Users />
+ </AdminV2Shell>
+ ) : (
  <DashboardLayout>
  <AdminUsers />
  </DashboardLayout>
+ )}
  </ProtectedRoute>
  }
  />
@@ -641,9 +663,15 @@ function PagesContent() {
  <Route
  path="/AdminAISettings" element={
  <ProtectedRoute requiredRole="admin">
+ {ADMIN_V2 ? (
+ <AdminV2Shell>
+ <AdminV2AISettings />
+ </AdminV2Shell>
+ ) : (
  <DashboardLayout>
  <AdminAISettings />
  </DashboardLayout>
+ )}
  </ProtectedRoute>
  }
  />

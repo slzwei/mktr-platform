@@ -158,7 +158,7 @@ const UserRow = React.memo(function UserRow({ user, onEditUser, onDeleteUser, on
  <CheckCircle className="mr-2 h-4 w-4"/> Approve User
  </DropdownMenuItem>
  )}
- {(!user.isActive && (user.invitationToken || user.status === 'pending_registration')) && (
+ {(!user.isActive && (user.invitationPending || user.invitationToken || user.status === 'pending_registration')) && (
  <DropdownMenuItem onClick={() => onResendInvite(user.email)}>
  <Mail className="mr-2 h-4 w-4"/> Resend Invite
  </DropdownMenuItem>

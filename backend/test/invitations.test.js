@@ -36,6 +36,18 @@ describe('POST /api/users/invite', () => {
     expect(res.body.data.inviteLink).toContain('token=')
   })
 
+  it('admin invites another ADMIN (Switchboard Users screen contract)', async () => {
+    const email = `invite-admin-${Date.now()}@test.com`
+    const res = await request(app)
+      .post('/api/users/invite')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email, full_name: 'Invited Admin', role: 'admin' })
+
+    expect(res.status).toBe(201)
+    expect(res.body.data.user.role).toBe('admin')
+    expect(res.body.data.inviteLink).toContain('token=')
+  })
+
   it('admin invites a fleet owner', async () => {
     const email = `invite-fleet-${Date.now()}@test.com`
     const res = await request(app)

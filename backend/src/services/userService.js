@@ -137,8 +137,17 @@ export async function listUsers(query) {
     ]
   });
 
+  // Raw invitation tokens are CREDENTIALS (the accept-invite link) — never
+  // ship them in a list payload. Consumers get a boolean instead.
+  const safeUsers = users.map((u) => {
+    const row = u.toJSON();
+    row.invitationPending = Boolean(row.invitationToken);
+    delete row.invitationToken;
+    return row;
+  });
+
   return {
-    users,
+    users: safeUsers,
     pagination: {
       currentPage: parseInt(page),
       totalPages: Math.ceil(count / limit),
@@ -171,9 +180,12 @@ export async function inviteUser(email, fullName, role, owedLeadsCount, inviterE
   // created capability-less until a super admin grants one (the dedicated
   // POST /api/redeem-ops/team/invite sets the sub-role at invite time and is the
   // preferred flow — docs/redeem-ops/PERMISSION_MATRIX.md).
-  const allowedRoles = ['agent', 'fleet_owner', 'driver_partner', 'redeem_ops'];
+  // 'admin' invites the back-office console (Switchboard Users screen) — the
+  // acceptance flow is role-agnostic (role is stamped on the user row at
+  // invite time), so no changes are needed there.
+  const allowedRoles = ['agent', 'fleet_owner', 'driver_partner', 'redeem_ops', 'admin'];
   if (!allowedRoles.includes(role)) {
-    throw new AppError('Invalid role. Must be one of agent, fleet_owner, driver_partner, redeem_ops', 400);
+    throw new AppError('Invalid role. Must be one of agent, fleet_owner, driver_partner, redeem_ops, admin', 400);
   }
 
   const extraFields = {};
@@ -181,7 +193,7 @@ export async function inviteUser(email, fullName, role, owedLeadsCount, inviterE
     extraFields.owed_leads_count = parseInt(owedLeadsCount) || 0;
   }
 
-  const roleLabel = role === 'agent' ? 'Agent' : role === 'fleet_owner' ? 'Fleet Owner' : 'Driver Partner';
+  const roleLabel = role === 'agent' ? 'Agent' : role === 'fleet_owner' ? 'Fleet Owner' : role === 'admin' ? 'Admin' : role === 'redeem_ops' ? 'Redeem Ops' : 'Driver Partner';
 
   return { extraFields, roleLabel };
 }

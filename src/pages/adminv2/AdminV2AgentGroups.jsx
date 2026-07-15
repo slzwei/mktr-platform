@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { useAgentGroups, useAgentOptions, useWallets } from '@/hooks/queries/useAdminV2';
 import { createAgentGroup, updateAgentGroup, deleteAgentGroup } from '@/api/adminV2';
 import { fmtNumber } from '@/lib/adminV2/format';
-import { Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
+import { Chip, PageHeader, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
@@ -172,39 +172,39 @@ export default function AdminV2AgentGroups() {
         <button type="button" className="av2-btn av2-btn--primary" onClick={() => setEditor({})}>+ New group</button>
       </PageHeader>
 
-      <div className="av2-card" style={{ overflow: 'hidden' }}>
-        <div className="av2-thead">
-          <span className="av2-microcaps" style={{ flex: 1.2 }}>Group</span>
-          <span className="av2-microcaps" style={{ flex: 1.6 }}>Description</span>
-          <span className="av2-microcaps" style={{ width: 90, flex: 'none', textAlign: 'right' }}>Members</span>
-          <span className="av2-microcaps" style={{ width: 110, flex: 'none', textAlign: 'right' }}>Funded</span>
-          <span className="av2-microcaps" style={{ width: 130, flex: 'none', textAlign: 'right' }}>Actions</span>
+      <div className="av2-card" style={{ overflow: 'hidden' }} role="table" aria-label="Agent groups">
+        <div className="av2-thead" role="row">
+          <span className="av2-microcaps" role="columnheader" style={{ flex: 1.2 }}>Group</span>
+          <span className="av2-microcaps" role="columnheader" style={{ flex: 1.6 }}>Description</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 90, flex: 'none', textAlign: 'right' }}>Members</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 110, flex: 'none', textAlign: 'right' }}>Funded</span>
+          <span className="av2-microcaps" role="columnheader" style={{ width: 130, flex: 'none', textAlign: 'right' }}>Actions</span>
         </div>
 
         {groups.isLoading && [0, 1, 2].map((i) => (
-          <div key={i} className="av2-row" style={{ cursor: 'default' }}><Skeleton height={32} /></div>
+          <div key={i} className="av2-row" role="row" style={{ cursor: 'default' }}><span role="cell" style={{ flex: 1 }}><Skeleton height={32} /></span></div>
         ))}
-        {groups.isError && <ErrorState error={groups.error} onRetry={groups.refetch} />}
+        {groups.isError && <StateRow><ErrorState error={groups.error} onRetry={groups.refetch} /></StateRow>}
         {!groups.isLoading && !groups.isError && rows.length === 0 && (
-          <EmptyState title="No groups yet" hint="Groups are reusable agent pickers — create one to speed up assignment." action={<button type="button" className="av2-btn av2-btn--sm" onClick={() => setEditor({})}>New group</button>} />
+          <StateRow><EmptyState title="No groups yet" hint="Groups are reusable agent pickers — create one to speed up assignment." action={<button type="button" className="av2-btn av2-btn--sm" onClick={() => setEditor({})}>New group</button>} /></StateRow>
         )}
 
         {rows.map((g) => {
           const members = g.members || [];
           const funded = members.filter((m) => m.userId && fundedIds.has(m.userId)).length;
           return (
-            <div key={g.id} className="av2-row" style={{ cursor: 'default' }}>
-              <span style={{ flex: 1.2, fontSize: 13, fontWeight: 700 }}>{g.name}</span>
-              <span style={{ flex: 1.6, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.description || '—'}</span>
-              <span className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{members.length}</span>
-              <span style={{ width: 110, flex: 'none', textAlign: 'right' }}>
+            <div key={g.id} className="av2-row" role="row" style={{ cursor: 'default' }}>
+              <span role="cell" style={{ flex: 1.2, fontSize: 13, fontWeight: 700 }}>{g.name}</span>
+              <span role="cell" style={{ flex: 1.6, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.description || '—'}</span>
+              <span role="cell" className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{members.length}</span>
+              <span role="cell" style={{ width: 110, flex: 'none', textAlign: 'right' }}>
                 {wallets.isLoading
                   ? <span className="av2-mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>…</span>
                   : wallets.isError
                     ? <span className="av2-mono" title="Wallet data failed to load" style={{ fontSize: 11, color: 'var(--ink-3)' }}>—</span>
                     : <Chip tone={funded < members.length && members.length > 0 ? 'warn' : 'ok'}>{funded}/{members.length} funded</Chip>}
               </span>
-              <span style={{ width: 130, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <span role="cell" style={{ width: 130, flex: 'none', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                 <button type="button" className="av2-btn av2-btn--sm" onClick={() => setEditor(g)}>Edit</button>
                 <button type="button" className="av2-btn av2-btn--sm" style={{ borderColor: 'var(--bad)', color: 'var(--bad)' }} onClick={() => setConfirmDelete(g)}>Delete</button>
               </span>

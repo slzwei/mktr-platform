@@ -255,7 +255,8 @@ export async function listLinks({ page = 1, limit = 20, search = '', campaignId,
     where,
     order: [['createdAt', 'DESC']],
     offset: (pageNum - 1) * limitNum,
-    limit: limitNum
+    limit: limitNum,
+    include: [{ association: 'campaign', attributes: ['id', 'name'], required: false }]
   });
   return { items: rows, total: count };
 }
