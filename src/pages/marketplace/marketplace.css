@@ -69,9 +69,15 @@
 .rm-mono-note { font-family: var(--rm-mono); font-size: 10.5px; color: var(--rm-mut); }
 
 /* ---------- Nav ---------- */
-.rm-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 50; background: rgba(247, 243, 233, 0.94); backdrop-filter: blur(10px); border-bottom: 1px solid var(--rm-line); }
+.rm-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 50; background: rgba(247, 243, 233, 0.94); backdrop-filter: blur(10px); border-bottom: 1px solid var(--rm-line); transition: background 0.35s ease, border-color 0.35s ease; }
+/* Menu open: the nav floats above the pine overlay — chrome goes transparent,
+   the wordmark flips cream + apricot, and the burger (now an ✕) stays put. */
+.rm-nav.is-menu-open { z-index: 70; background: transparent; border-bottom-color: transparent; }
+.rm-nav.is-menu-open .rm-wordmark { color: #f6f2e6; }
+.rm-nav.is-menu-open .rm-wordmark .rm-ticket { background: var(--rm-apr); }
 .rm-nav-inner { height: 66px; display: flex; align-items: center; gap: 22px; }
-.rm-wordmark { display: inline-flex; align-items: center; gap: 9px; color: var(--rm-ink); font-family: var(--rm-serif); font-size: 22px; font-weight: 700; }
+.rm-wordmark { display: inline-flex; align-items: center; gap: 9px; color: var(--rm-ink); font-family: var(--rm-serif); font-size: 22px; font-weight: 700; transition: color 0.35s ease; }
+.rm-wordmark .rm-ticket { transition: background 0.35s ease; }
 .rm-ticket { position: relative; display: inline-block; width: 16px; height: 20px; border-radius: 8px 8px 2px 2px; background: var(--rm-pine); }
 /* Knob position is proportional so inline-resized doors keep it mid-door
    (prototype: 54% down, ~18.5% in from the right). */
@@ -87,17 +93,35 @@
 .rm-nav-link:hover { background: var(--rm-tint); color: var(--rm-ink); }
 .rm-nav-cta { margin-left: auto; }
 .rm-burger { margin-left: auto; display: none; flex-direction: column; gap: 5px; padding: 10px; min-width: 44px; min-height: 44px; justify-content: center; align-items: center; }
-.rm-burger span { display: block; width: 20px; height: 2px; background: var(--rm-ink); border-radius: 2px; }
-.rm-burger span:last-child { width: 14px; }
+.rm-burger span { display: block; width: 19px; height: 2px; background: var(--rm-ink); border-radius: 2px; transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.25s ease, background 0.35s ease; }
+.rm-burger.is-open span { background: #f6f2e6; }
+.rm-burger.is-open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.rm-burger.is-open span:nth-child(2) { opacity: 0; }
+.rm-burger.is-open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 @media (max-width: 940px) {
   .rm-nav-links { display: none; }
   .rm-burger { display: flex; }
 }
-.rm-drawer-scrim { position: fixed; inset: 0; z-index: 70; background: rgba(23, 37, 31, 0.35); opacity: 0; pointer-events: none; transition: opacity 0.28s ease; }
-.rm-drawer-scrim.is-open { opacity: 1; pointer-events: auto; }
-.rm-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(320px, 85vw); z-index: 71; background: var(--rm-card); box-shadow: -12px 0 40px rgba(23, 37, 31, 0.18); padding: 20px 22px 32px; overflow-y: auto; transform: translateX(105%); visibility: hidden; transition: transform 0.34s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s 0.34s; }
-.rm-drawer.is-open { transform: translateX(0); visibility: visible; transition: transform 0.34s cubic-bezier(0.32, 0.72, 0, 1); }
-.rm-drawer a { display: block; padding: 10px 0; font-size: 15px; color: var(--rm-ink); font-weight: 500; }
+
+/* ---------- Mobile menu — full-screen pine overlay (DSA Guide - Mobile design) ---------- */
+.rm-menu { position: fixed; inset: 0; z-index: 60; background: #132720; color: #f6f2e6; display: flex; flex-direction: column; padding: 78px 22px 26px; overflow-y: auto; transform: translateX(103%); visibility: hidden; transition: transform 0.5s cubic-bezier(0.77, 0, 0.18, 1), visibility 0s 0.5s; }
+.rm-menu.is-open { transform: translateX(0); visibility: visible; transition: transform 0.5s cubic-bezier(0.77, 0, 0.18, 1); }
+.rm-menu-links { display: flex; flex-direction: column; }
+.rm-menu-link { display: flex; align-items: baseline; gap: 14px; padding: 15px 2px; border-bottom: 1px solid rgba(246, 242, 230, 0.12); color: #f6f2e6; font-family: var(--rm-serif); font-size: 27px; font-weight: 700; letter-spacing: -0.01em; }
+.rm-menu-links .rm-menu-link:last-child { border-bottom: none; }
+.rm-menu-link:hover, .rm-menu-link.is-here { color: var(--rm-apr); }
+.rm-menu-num { font-family: var(--rm-mono); font-size: 10px; font-weight: 400; color: #7e958a; letter-spacing: 0.12em; }
+.rm-menu-here { font-family: var(--rm-mono); font-size: 9px; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; color: #a8c3b4; border: 1px solid rgba(168, 195, 180, 0.4); border-radius: 999px; padding: 3px 9px; margin-left: 2px; white-space: nowrap; }
+.rm-menu-foot { margin-top: auto; padding-top: 28px; }
+.rm-menu-doors { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 22px; }
+.rm-menu-doors span { display: block; aspect-ratio: 5 / 7; border-radius: 999px 999px 4px 4px; }
+.rm-menu-doors span:nth-child(1) { width: 34px; background: #cbd9cb; }
+.rm-menu-doors span:nth-child(2) { width: 26px; background: #f2d8c2; }
+.rm-menu-doors span:nth-child(3) { width: 20px; background: #e8e3cd; }
+.rm-menu-tag { font-family: var(--rm-mono); font-size: 10px; color: #7e958a; text-align: center; margin-top: 16px; }
+/* Staggered rise-in: items wait for the panel slide, then cascade. */
+.rm-menu-item { opacity: 0; transform: translateY(16px); transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.rm-menu.is-open .rm-menu-item { opacity: 1; transform: none; transition-delay: calc(0.14s + var(--i, 0) * 0.055s); }
 
 /* ---------- Buttons / chips ---------- */
 .rm-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--rm-pine); color: #f6f2e6; font-size: 14.5px; font-weight: 600; padding: 12px 24px; border-radius: 999px; min-height: 44px; transition: background 0.2s ease, transform 0.2s ease; text-align: center; box-sizing: border-box; }

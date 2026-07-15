@@ -4,10 +4,41 @@ import { CATEGORIES } from './content';
 import './marketplace.css';
 
 /**
- * Marketplace shell — fixed nav (desktop links / mobile drawer) + dark footer.
- * Pine/cream editorial system from the approved Prototype v2. Redeem build
- * only (routes are gated in pages/index.jsx).
+ * Marketplace shell — fixed nav (desktop links / mobile menu overlay) + dark
+ * footer. Pine/cream editorial system from the approved Prototype v2; the
+ * mobile menu is the full-screen pine overlay from the "DSA Guide - Mobile"
+ * design (burger morphs to an X, numbered serif links stagger in, the active
+ * route carries a "You are here" pill). Redeem build only (routes are gated
+ * in pages/index.jsx).
  */
+
+const MENU_LINKS = [
+  { n: '01', label: 'Explore', to: '/explore' },
+  { n: '02', label: 'Education', to: '/c/education' },
+  { n: '03', label: 'Lifestyle', to: '/c/lifestyle' },
+  { n: '04', label: 'DSA guide', to: '/dsa' },
+  { n: '05', label: 'How it works', to: '/how-it-works' },
+  { n: '06', label: 'For businesses', to: '/businesses' },
+  { n: '07', label: 'About', to: '/about' },
+];
+
+/** Which menu entry the current path belongs to (-1 = none). */
+function menuIndexForPath(pathname) {
+  if (pathname === '/explore') return 0;
+  if (pathname.startsWith('/c/')) {
+    const id = pathname.slice(3);
+    if (id === 'education') return 1;
+    if (id === 'lifestyle') return 2;
+    const cat = CATEGORIES.find((c) => c.id === id);
+    if (cat) return cat.group === 'education' ? 1 : 2;
+  }
+  if (pathname === '/dsa') return 3;
+  if (pathname === '/how-it-works') return 4;
+  if (pathname === '/businesses') return 5;
+  if (pathname === '/about') return 6;
+  return -1;
+}
+
 export default function MarketplaceLayout({ children, minimalChrome = false, chromeLabel }) {
   const [drawer, setDrawer] = useState(false);
   const location = useLocation();
@@ -34,8 +65,7 @@ export default function MarketplaceLayout({ children, minimalChrome = false, chr
     };
   }, [drawer]);
 
-  const eduCats = CATEGORIES.filter((c) => c.group === 'education');
-  const lifeCats = CATEGORIES.filter((c) => c.group === 'lifestyle');
+  const activeIndex = menuIndexForPath(location.pathname);
 
   if (minimalChrome) {
     return (
@@ -65,7 +95,7 @@ export default function MarketplaceLayout({ children, minimalChrome = false, chr
       >
         Skip to content
       </a>
-      <header className="rm-nav">
+      <header className={`rm-nav${drawer ? ' is-menu-open' : ''}`}>
         <div className="rm-shell rm-nav-inner">
           <Link to="/" aria-label="Redeem home" className="rm-wordmark">
             <span className="rm-ticket" />
@@ -81,34 +111,32 @@ export default function MarketplaceLayout({ children, minimalChrome = false, chr
             <Link className="rm-nav-link" to="/about">About</Link>
             <Link className="rm-btn rm-nav-cta" to="/explore">Explore offers</Link>
           </nav>
-          <button className="rm-burger" aria-label="Menu" onClick={() => setDrawer(true)}>
+          <button
+            className={`rm-burger${drawer ? ' is-open' : ''}`}
+            aria-label={drawer ? 'Close menu' : 'Menu'}
+            aria-expanded={drawer}
+            onClick={() => setDrawer(!drawer)}
+          >
             <span /><span /><span />
           </button>
         </div>
       </header>
 
-      <div className={`rm-drawer-scrim${drawer ? ' is-open' : ''}`} onClick={() => setDrawer(false)} aria-hidden="true" />
-      <div role="dialog" aria-label="Menu" inert={!drawer} className={`rm-drawer${drawer ? ' is-open' : ''}`}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <span className="rm-serif" style={{ fontSize: 20 }}>redeem</span>
-              <button onClick={() => setDrawer(false)} aria-label="Close menu" style={{ fontSize: 22, color: 'var(--rm-mut)', minWidth: 44, minHeight: 44 }}>✕</button>
-            </div>
-            <Link to="/explore" style={{ fontWeight: 700 }}>Explore</Link>
-            <div className="rm-mono-label" style={{ padding: '12px 0 4px' }}>Education</div>
-            {eduCats.map((c) => (
-              <Link key={c.id} to={`/c/${c.id}`} style={{ paddingLeft: 12, fontSize: 14, color: 'var(--rm-sub)' }}>{c.label}</Link>
-            ))}
-            <Link to="/dsa" style={{ paddingLeft: 12, fontSize: 14, color: 'var(--rm-pine)', fontWeight: 600 }}>DSA discovery guide</Link>
-            <div className="rm-mono-label" style={{ padding: '12px 0 4px' }}>Lifestyle</div>
-            {lifeCats.map((c) => (
-              <Link key={c.id} to={`/c/${c.id}`} style={{ paddingLeft: 12, fontSize: 14, color: 'var(--rm-sub)' }}>{c.label}</Link>
-            ))}
-            <div style={{ height: 1, background: 'var(--rm-line)', margin: '14px 0' }} />
-            <Link to="/how-it-works">How it works</Link>
-            <Link to="/businesses">For businesses</Link>
-            <Link to="/about">About</Link>
-            <Link to="/winners">Lucky-draw winners</Link>
-        <Link className="rm-btn" to="/explore" style={{ marginTop: 16, width: '100%' }}>Explore offers</Link>
+      <div role="dialog" aria-label="Menu" inert={!drawer} className={`rm-menu${drawer ? ' is-open' : ''}`}>
+        <nav className="rm-menu-links" aria-label="Menu">
+          {MENU_LINKS.map((l, i) => (
+            <Link key={l.to} to={l.to} className={`rm-menu-link rm-menu-item${activeIndex === i ? ' is-here' : ''}`} style={{ '--i': i }}>
+              <span className="rm-menu-num">{l.n}</span>
+              {l.label}
+              {activeIndex === i && <span className="rm-menu-here">You are here</span>}
+            </Link>
+          ))}
+        </nav>
+        <div className="rm-menu-foot rm-menu-item" style={{ '--i': MENU_LINKS.length }}>
+          <div className="rm-menu-doors" aria-hidden="true"><span /><span /><span /></div>
+          <Link className="rm-btn rm-btn--apricot rm-btn--big" to="/explore" style={{ width: '100%' }}>Explore offers</Link>
+          <div className="rm-menu-tag">redeem.sg · verified local programmes</div>
+        </div>
       </div>
 
       <main id="rm-main" style={{ flex: 1, paddingTop: 66 }}>{children}</main>
