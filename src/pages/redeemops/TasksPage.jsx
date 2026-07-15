@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Plus from 'lucide-react/icons/plus';
 import Pencil from 'lucide-react/icons/pencil';
+import X from 'lucide-react/icons/x';
 import { RoMobileCard, RoPageHeader, RoTag, RoAvatar, prettyEnum } from '@/components/redeemops/ui';
 import { CadenceChip, CadenceOutcomeButton } from '@/components/redeemops/cadence';
 
@@ -112,13 +113,22 @@ export default function TasksPage() {
   const user = useAuthStore((s) => s.user);
   const isManager = hasCapability(user, 'pipeline.view_team');
   const queryClient = useQueryClient();
-  const [view, setView] = useState('today');
+  // "View all n" on a business detail page deep-links here pre-filtered.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const partnerId = searchParams.get('partnerId') || '';
+  const [view, setView] = useState(partnerId ? 'mine' : 'today');
 
   const activeView = VIEWS.find((v) => v.key === view) || VIEWS[0];
+  const listParams = { ...activeView.params, ...(partnerId ? { partnerId } : {}) };
   const tasksQuery = useQuery({
-    queryKey: ['redeem-ops', 'tasks', activeView.params],
-    queryFn: () => redeemOpsApi.listTasks({ ...activeView.params, limit: 50 }),
+    queryKey: ['redeem-ops', 'tasks', listParams],
+    queryFn: () => redeemOpsApi.listTasks({ ...listParams, limit: 50 }),
     placeholderData: keepPreviousData,
+  });
+  const filterPartnerQuery = useQuery({
+    queryKey: ['redeem-ops', 'partner', partnerId],
+    queryFn: () => redeemOpsApi.getPartner(partnerId),
+    enabled: !!partnerId,
   });
   const teamQuery = useQuery({
     queryKey: ['redeem-ops', 'team'],
@@ -195,6 +205,25 @@ export default function TasksPage() {
         </TabsList>
         </div>
       </Tabs>
+
+      {partnerId && (
+        <span
+          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] font-semibold"
+          style={{ background: 'var(--ro-tag-blue-bg)', color: 'var(--ro-tag-blue-fg)' }}
+        >
+          {filterPartnerQuery.data
+            ? (filterPartnerQuery.data.tradingName || filterPartnerQuery.data.brandName || filterPartnerQuery.data.legalName)
+            : 'One business'}
+          <button
+            type="button"
+            aria-label="Clear business filter"
+            className="grid place-items-center rounded-full cursor-pointer border-0 bg-transparent p-0"
+            onClick={() => setSearchParams({}, { replace: true })}
+          >
+            <X className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+        </span>
+      )}
 
       <div className="rounded-2xl border border-border bg-white overflow-hidden">
         <div className="md:hidden">
