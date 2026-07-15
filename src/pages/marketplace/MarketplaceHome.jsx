@@ -237,7 +237,7 @@ export default function MarketplaceHome() {
       </section>
 
       {/* FAQ */}
-      <section className="rm-shell rm-shell--narrow" style={{ paddingTop: 'clamp(28px,4vw,56px)', paddingBottom: 'clamp(44px,6vw,80px)' }}>
+      <section id="faq" className="rm-shell rm-shell--narrow" style={{ paddingTop: 'clamp(28px,4vw,56px)', paddingBottom: 'clamp(44px,6vw,80px)', scrollMarginTop: 78 }}>
         <h2 className="rm-serif" style={{ margin: '0 0 22px', fontSize: 'clamp(24px,3vw,34px)' }}>Questions, answered</h2>
         <div>
           {HOME_FAQ.map((f, i) => {

@@ -45,7 +45,7 @@ function HowItWorksPage() {
         </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 26 }}>
           <Link className="rm-btn rm-btn--big" to="/explore">Explore experiences</Link>
-          <Link className="rm-btn rm-btn--outline" to="/">Read the FAQ</Link>
+          <Link className="rm-btn rm-btn--outline" to="/#faq">Read the FAQ</Link>
         </div>
       </div>
     </MarketplaceLayout>

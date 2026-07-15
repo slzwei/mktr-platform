@@ -14,8 +14,10 @@ export default function MarketplaceLayout({ children, minimalChrome = false, chr
 
   useEffect(() => {
     setDrawer(false);
-    window.scrollTo({ top: 0 });
-  }, [location.pathname]);
+    const target = location.hash ? document.getElementById(location.hash.slice(1)) : null;
+    if (target) target.scrollIntoView();
+    else window.scrollTo({ top: 0 });
+  }, [location]);
 
   useEffect(() => {
     const onKey = (e) => {
