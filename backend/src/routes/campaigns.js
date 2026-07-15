@@ -87,6 +87,9 @@ router.get('/', authenticateToken, campaignController.listCampaigns);
 router.post('/', authenticateToken, requireAgentOrAdmin, validate(schemas.campaignCreate), campaignController.createCampaign);
 
 // Get campaign by ID
+// Admin campaign-detail composite (Phase B rebuild) — read-only aggregation
+router.get('/:id/summary', authenticateToken, requireAdmin, campaignController.getCampaignSummary);
+
 router.get('/:id', authenticateToken, campaignController.getCampaign);
 
 // Update campaign

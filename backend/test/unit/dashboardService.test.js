@@ -49,6 +49,17 @@ function buildMocks() {
     count: jest.fn().mockResolvedValue(42),
   };
 
+  // Phase B (attention/committed aggregates) deps — inert defaults.
+  const WebhookDelivery = {
+    count: jest.fn().mockResolvedValue(0),
+  };
+  const WebhookSubscriber = {
+    count: jest.fn().mockResolvedValue(0),
+  };
+  const LeadPackageAssignment = {
+    findAll: jest.fn().mockResolvedValue([]),
+  };
+
   const sequelize = {
     query: jest.fn().mockResolvedValue([[]]),
     fn: jest.fn((fnName, col) => `${fnName}(${col})`),
@@ -59,6 +70,7 @@ function buildMocks() {
   return {
     User, Campaign, Prospect, QrTag, Commission,
     Car, Driver, FleetOwner, Impression, sequelize,
+    WebhookDelivery, WebhookSubscriber, LeadPackageAssignment,
   };
 }
 
@@ -78,6 +90,9 @@ beforeEach(async () => {
     Driver: mocks.Driver,
     FleetOwner: mocks.FleetOwner,
     Impression: mocks.Impression,
+    WebhookDelivery: mocks.WebhookDelivery,
+    WebhookSubscriber: mocks.WebhookSubscriber,
+    LeadPackageAssignment: mocks.LeadPackageAssignment,
     sequelize: mocks.sequelize,
   }));
 

@@ -39,6 +39,12 @@ export const listCampaigns = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+// Admin campaign-detail composite (Phase B) — one round-trip for the rebuild.
+export const getCampaignSummary = asyncHandler(async (req, res) => {
+  const data = await campaignService.getCampaignSummary(req.params.id, req);
+  res.json({ success: true, data });
+});
+
 export const createCampaign = asyncHandler(async (req, res) => {
   const campaign = await campaignService.createCampaign(req.body, req.user);
 

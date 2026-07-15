@@ -129,8 +129,21 @@ export function computeAgentStatsFromCounts(agent, assignedCounts, packageBreakd
     : 0;
   const totalLeadsOwed = manualLeads + packageLeads;
 
+  // Wallet columns are meaningful for EXTERNAL (mktr-leads) agents only —
+  // internal agents read null (the UI renders "—"), never a misleading 0.
+  const isExternal = plain.mktrLeadsId != null;
+  const walletFields = isExternal
+    ? {
+        walletBalanceCents: parseInt(plain.walletBalanceCents, 10) || 0,
+        committedLeads: parseInt(plain.committedLeads, 10) || 0,
+        committedValueCents: parseInt(plain.committedValueCents, 10) || 0,
+      }
+    : { walletBalanceCents: null, committedLeads: null, committedValueCents: null };
+
   return {
     ...plain,
+    ...walletFields,
+    assignedThisPeriod: parseInt(plain.assignedThisPeriod, 10) || 0,
     owed_leads_count: totalLeadsOwed,
     owed_leads_manual_count: manualLeads,
     // Per-campaign split of the package portion — credits are campaign-scoped

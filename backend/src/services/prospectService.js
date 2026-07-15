@@ -74,6 +74,40 @@ const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'proposal_sent', '
 // an empty page (same pattern as VALID_LEAD_STATUSES).
 const VALID_ASSIGNMENT_FILTERS = ['assigned', 'unassigned', 'held'];
 
+// Mirrors the Prospect.leadSource ENUM (same enum-cast protection as statuses).
+const VALID_LEAD_SOURCES = ['qr_code', 'website', 'referral', 'social_media', 'advertisement', 'direct', 'call_bot', 'other'];
+
+// List-endpoint sort whitelist (admin rebuild Phase B). `-` prefix = DESC.
+// Anything outside the map falls back to the default — never a 500, never an
+// unindexed free-form ORDER BY.
+const PROSPECT_SORT_FIELDS = ['firstName', 'leadStatus', 'createdAt'];
+const DEFAULT_PROSPECT_SORT = '-createdAt';
+
+/**
+ * Comma-list enum filter: split, trim, dedupe, whitelist. Returns
+ *  { skip: true }               when the param is absent (no filter),
+ *  { values: [...] }            when ≥1 token is valid (Op.in / Op.eq),
+ *  { empty: true }              when a value was given but NO token is valid —
+ * the caller degrades to an empty page, matching the long-standing single-value
+ * behavior (a bad filter never errors AND never silently shows everything).
+ */
+function parseEnumFilter(value, allowed) {
+  if (value === undefined || value === null || value === '') return { skip: true };
+  const tokens = [...new Set(String(value).split(',').map((s) => s.trim()).filter(Boolean))];
+  const valid = tokens.filter((t) => allowed.includes(t));
+  if (valid.length === 0) return { empty: true };
+  return { values: valid };
+}
+
+/** Sort param → Sequelize order tuple, whitelisted with default fallback. */
+function parseProspectSort(sort) {
+  const raw = typeof sort === 'string' && sort.trim() ? sort.trim() : DEFAULT_PROSPECT_SORT;
+  const desc = raw.startsWith('-');
+  const field = desc ? raw.slice(1) : raw;
+  if (!PROSPECT_SORT_FIELDS.includes(field)) return [['createdAt', 'DESC']];
+  return [[field, desc ? 'DESC' : 'ASC']];
+}
+
 // Hold reasons a MANUAL admin (re)assign may release. Everything else is fenced:
 // 'no_funded_external_buyer' (external buyer pool), 'dnc_pending'/'dnc_registered'
 // (DNC gate). 'returned_by_admin' is the web-admin return flavor — deliberately
@@ -1808,6 +1842,7 @@ export function makeProspectService(overrides = {}) {
       dateFrom,
       dateTo,
       qrTagId,
+      sort,
     } = params;
 
     // Clamp pagination so malformed query params (e.g. ?page=-1&limit=-5) don't
@@ -1818,9 +1853,14 @@ export function makeProspectService(overrides = {}) {
     const scopeFilter = await d.buildProspectWhere(user);
     const whereConditions = { ...scopeFilter };
 
-    // Unknown leadStatus would hit the Postgres enum and 500; degrade to "no
-    // matches" so a bad filter value returns an empty page rather than erroring.
-    if (leadStatus && !VALID_LEAD_STATUSES.includes(leadStatus)) {
+    // leadStatus / leadSource accept comma-lists (Phase B multi-select filters);
+    // single values stay backward-compatible. Tokens are whitelisted against
+    // the enum so nothing unknown ever reaches a Postgres enum cast (→ 500);
+    // an all-invalid value degrades to an empty page — the long-standing
+    // single-value behavior.
+    const statusFilter = parseEnumFilter(leadStatus, VALID_LEAD_STATUSES);
+    const sourceFilter = parseEnumFilter(leadSource, VALID_LEAD_SOURCES);
+    if (statusFilter.empty || sourceFilter.empty) {
       return { prospects: [], pagination: { currentPage: pageNum, totalPages: 0, totalItems: 0, itemsPerPage: limitNum } };
     }
     if (assignment && !VALID_ASSIGNMENT_FILTERS.includes(assignment)) {
@@ -1829,16 +1869,28 @@ export function makeProspectService(overrides = {}) {
 
     // Assignment-state filter: 'unassigned' means truly in limbo (not held — held rows
     // have their own bucket so the admin's pending pool and the strays stay separable).
-    if (assignment === 'assigned') whereConditions.assignedAgentId = { [Op.ne]: null };
-    else if (assignment === 'unassigned') {
+    // Prospects carry TWO mutually-exclusive assignee FKs (assignedAgentId for users,
+    // externalAgentId for the ExternalAgent buyer pool) — both count as "assigned".
+    // The Op.or lives inside Op.and so it can never clobber the search Op.or below.
+    if (assignment === 'assigned') {
+      whereConditions[Op.and] = [
+        ...(whereConditions[Op.and] || []),
+        { [Op.or]: [{ assignedAgentId: { [Op.ne]: null } }, { externalAgentId: { [Op.ne]: null } }] },
+      ];
+    } else if (assignment === 'unassigned') {
       whereConditions.assignedAgentId = null;
+      whereConditions.externalAgentId = null;
       whereConditions.quarantinedAt = null;
     } else if (assignment === 'held') whereConditions.quarantinedAt = { [Op.ne]: null };
 
     if (qrTagId) whereConditions.qrTagId = qrTagId;
-    if (leadStatus) whereConditions.leadStatus = leadStatus;
+    if (statusFilter.values) {
+      whereConditions.leadStatus = statusFilter.values.length === 1 ? statusFilter.values[0] : { [Op.in]: statusFilter.values };
+    }
     if (priority) whereConditions.priority = priority;
-    if (leadSource) whereConditions.leadSource = leadSource;
+    if (sourceFilter.values) {
+      whereConditions.leadSource = sourceFilter.values.length === 1 ? sourceFilter.values[0] : { [Op.in]: sourceFilter.values };
+    }
     if (assignedAgentId) whereConditions.assignedAgentId = assignedAgentId;
     if (campaignId) whereConditions.campaignId = campaignId;
 
@@ -1863,7 +1915,7 @@ export function makeProspectService(overrides = {}) {
       where: whereConditions,
       limit: limitNum,
       offset,
-      order: [['createdAt', 'DESC']],
+      order: parseProspectSort(sort),
       include: [
         {
           association: 'assignedAgent',

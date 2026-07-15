@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { sequelize } from '../database/connection.js';
 
 const LeadPackageAssignment = sequelize.define('LeadPackageAssignment', {
@@ -82,7 +82,13 @@ const LeadPackageAssignment = sequelize.define('LeadPackageAssignment', {
         {
             fields: ['status']
         },
-        { fields: ['agentId', 'status', 'leadsRemaining'], name: 'idx_lpa_agent_status_remaining' }
+        { fields: ['agentId', 'status', 'leadsRemaining'], name: 'idx_lpa_agent_status_remaining' },
+        // Phase B attention rail (migration 072): open wallet commitments scan.
+        {
+            fields: ['leadPackageId', 'agentId'],
+            where: { source: 'wallet', status: 'active', leadsRemaining: { [Op.gt]: 0 } },
+            name: 'idx_lpa_open_wallet'
+        }
     ]
 });
 
