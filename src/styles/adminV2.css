@@ -1,0 +1,213 @@
+/**
+ * Switchboard — Admin v2 design tokens + primitives.
+ * Source of truth: claude.ai/design project 57e68763 "Design System" (§1–4).
+ * Scoped under .admin-v2 so legacy admin pages are untouched; dark theme is a
+ * [data-theme="dark"] attribute swap on the same root (AA re-checked per pair).
+ */
+@import url('https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+.admin-v2 {
+  --canvas: #F1F3F7;
+  --surface: #FFFFFF;
+  --surface-2: #F6F7FA;
+  --ink: #161A22;
+  --ink-2: #535B6E;
+  --ink-3: #8A92A6;
+  --line: #E2E6EE;
+  --line-strong: #C9CFDC;
+  --accent: #2C46E6;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #E8ECFE;
+  --accent-text: #2440CC;
+  --ok: #0B7A44;
+  --ok-soft: #DDF3E6;
+  --warn: #9A5B00;
+  --warn-soft: #FEF0D8;
+  --bad: #C42B1C;
+  --bad-soft: #FCE4E0;
+  --hold: #6440D4;
+  --hold-soft: #ECE6FC;
+  --shadow: 0 1px 2px rgba(22, 26, 34, .04), 0 6px 20px rgba(22, 26, 34, .05);
+  --font-ui: 'Schibsted Grotesk', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+.admin-v2[data-theme='dark'] {
+  --canvas: #0F1116;
+  --surface: #171A21;
+  --surface-2: #1E222B;
+  --ink: #EEF1F7;
+  --ink-2: #A6AEC1;
+  --ink-3: #707A8E;
+  --line: #272C38;
+  --line-strong: #3A4150;
+  --accent: #6D7FFF;
+  --accent-ink: #0F1116;
+  --accent-soft: #232A4E;
+  --accent-text: #96A3FF;
+  --ok: #4CC38A;
+  --ok-soft: #153226;
+  --warn: #F0A33A;
+  --warn-soft: #37280F;
+  --bad: #F0655A;
+  --bad-soft: #3B1815;
+  --hold: #A78BFF;
+  --hold-soft: #251D48;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 6px 20px rgba(0, 0, 0, .28);
+}
+
+/* ── Focus (DS §4: 2px accent outline, 2px offset, everywhere) ── */
+.admin-v2 :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Type scale (DS §2) ── */
+.av2-h1 { font-size: 23px; font-weight: 800; letter-spacing: -0.015em; color: var(--ink); }
+.av2-kpi { font-size: 42px; font-weight: 800; letter-spacing: -0.03em; color: var(--ink); line-height: 1.05; }
+.av2-h2 { font-size: 15px; font-weight: 800; letter-spacing: -0.01em; color: var(--ink); }
+.av2-caption { font-size: 11.5px; font-weight: 600; color: var(--ink-2); }
+.av2-microcaps {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--ink-2);
+}
+.av2-mono { font-family: var(--font-mono); }
+.av2-meta { font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em; color: var(--ink-3); }
+
+/* ── Card (DS §3/§4: radius 14, one shadow token, hairline border) ── */
+.av2-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+.av2-card-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* ── Chips (DS §4: 10.5/700, radius 6; color never alone — glyph/label carries state) ── */
+.av2-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; font-weight: 700;
+  border-radius: 6px; padding: 2px 8px;
+  background: var(--surface-2); color: var(--ink-2);
+  white-space: nowrap;
+}
+.av2-chip--accent { background: var(--accent-soft); color: var(--accent-text); }
+.av2-chip--ok { background: var(--ok-soft); color: var(--ok); }
+.av2-chip--warn { background: var(--warn-soft); color: var(--warn); }
+.av2-chip--bad { background: var(--bad-soft); color: var(--bad); }
+.av2-chip--hold { background: var(--hold-soft); color: var(--hold); }
+
+/* Removable filter chip (mono, accent-soft) */
+.av2-filterchip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  background: var(--accent-soft); color: var(--accent-text);
+  border-radius: 7px; padding: 4px 9px; border: none; cursor: pointer;
+}
+
+/* ── Buttons (DS §4: one primary per screen) ── */
+.av2-btn {
+  height: 40px; display: inline-flex; align-items: center; gap: 8px;
+  padding: 0 14px; border-radius: 10px; font-size: 13px; font-weight: 600;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line-strong); cursor: pointer;
+  font-family: var(--font-ui);
+}
+.av2-btn--primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+.av2-btn--ghost { background: var(--surface-2); color: var(--ink-2); border-color: transparent; font-weight: 700; font-size: 12.5px; padding: 0 12px; }
+.av2-btn--danger { background: var(--bad); color: #fff; border-color: var(--bad); font-weight: 700; }
+.av2-btn--sm { height: 32px; border-radius: 9px; font-size: 12.5px; padding: 0 12px; }
+.av2-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Segmented period control (ink-filled active) */
+.av2-seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.av2-seg button {
+  height: 34px; padding: 0 14px; border: none; background: transparent;
+  color: var(--ink-2); font-size: 12.5px; font-weight: 700; border-radius: 8px;
+  cursor: pointer; font-family: var(--font-ui);
+}
+.av2-seg button[aria-pressed='true'] { background: var(--ink); color: var(--canvas); }
+
+/* ── Inputs ── */
+.av2-input {
+  height: 40px; display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 0 12px; background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: 10px;
+  font-size: 13px; color: var(--ink); font-family: var(--font-ui);
+}
+.av2-input::placeholder { color: var(--ink-3); }
+
+/* ── Table anatomy (DS §4: header 38px surface-2 micro-caps, rows ≥44px) ── */
+.av2-thead {
+  display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 38px;
+  background: var(--surface-2); border-bottom: 1px solid var(--line);
+}
+.av2-row {
+  display: flex; align-items: center; gap: 12px; padding: 6px 16px;
+  min-height: 48px; border-bottom: 1px solid var(--line);
+  cursor: pointer; text-align: left; width: 100%;
+  background: transparent; border-left: none; border-right: none; border-top: none;
+  font-family: var(--font-ui); color: var(--ink);
+}
+.av2-row:hover { background: var(--surface-2); }
+.av2-row[data-selected='true'] { background: var(--accent-soft); }
+
+/* ── Attention queue rows (severity grammar ▲◆●) ── */
+.av2-qrow {
+  display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+  border-bottom: 1px solid var(--line); text-decoration: none; color: inherit;
+}
+.av2-qrow:hover { background: var(--surface-2); }
+.av2-qicon {
+  width: 32px; height: 32px; flex: none; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center; font-size: 13px;
+}
+
+/* ── Skeleton (mirrors final geometry, zero reflow) ── */
+.av2-skeleton {
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--line) 30%, var(--surface-2) 50%, var(--line) 70%);
+  background-size: 200% 100%;
+  animation: av2-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes av2-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Bulk bar (ink-filled, floating bottom-center while selection exists) ── */
+.av2-bulkbar {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  background: var(--ink); color: var(--canvas);
+  border-radius: 14px; padding: 10px 14px; z-index: 60;
+  box-shadow: var(--shadow);
+}
+.av2-bulkbar .av2-btn--sm {
+  background: transparent; color: var(--canvas); border: 1px solid var(--ink-2);
+}
+
+/* ── Sidebar nav ── */
+.av2-nav a {
+  display: flex; align-items: center; gap: 10px;
+  height: 36px; padding: 0 12px; border-radius: 9px;
+  font-size: 13px; font-weight: 600; color: var(--ink-2); text-decoration: none;
+}
+.av2-nav a:hover { background: var(--surface-2); color: var(--ink); }
+.av2-nav a[aria-current='page'] { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* KV rows in the drawer */
+.av2-kv { display: flex; gap: 12px; font-size: 12.5px; padding: 3px 0; }
+.av2-kv > span:first-child { width: 110px; flex: none; color: var(--ink-3); }
+.av2-kv > span:last-child { font-family: var(--font-mono); color: var(--ink); overflow-wrap: anywhere; }
