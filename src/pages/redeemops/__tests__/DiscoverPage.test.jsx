@@ -91,7 +91,7 @@ describe('DiscoverPage', () => {
       territories: [{ name: 'Bedok' }, { name: 'Tampines' }],
     });
     renderPage();
-    const areaPicker = await screen.findByRole('combobox', { name: 'Area' });
+    const areaPicker = await screen.findByRole('combobox', { name: 'Search territory' });
     expect(screen.queryByPlaceholderText('Neighbourhood or district…')).not.toBeInTheDocument();
     expect(screen.queryByText('Popular areas')).not.toBeInTheDocument();
     areaPicker.hasPointerCapture = vi.fn(() => false);
@@ -119,6 +119,8 @@ describe('DiscoverPage', () => {
     api.listDiscoveryRuns.mockResolvedValue({ runs: [], quota, aiEnabled: true });
     api.suggestDiscoveryTerms.mockResolvedValue(['taekwondo', 'martial arts school', 'kids karate']);
     renderPage();
+    // AI is now a reveal — open it first.
+    await userEvent.click(await screen.findByRole('button', { name: /Get AI suggestions/i }));
     const aiInput = await screen.findByLabelText('Describe what you want to find');
     await userEvent.type(aiInput, 'martial arts for kids');
     await userEvent.click(screen.getByRole('button', { name: 'Suggest' }));
@@ -169,13 +171,31 @@ describe('DiscoverPage', () => {
     api.restoreDiscoveryCandidate.mockResolvedValue({});
     renderPage();
     await openResults();
-    // hidden by default, surfaced in the count line
-    expect(await screen.findByText(/1 hidden/)).toBeInTheDocument();
+    // dismissed by default, surfaced in the count line
+    expect(await screen.findByText(/1 dismissed/)).toBeInTheDocument();
     expect(screen.queryByText('Hidden Nails')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /Hidden 1/ }));
     expect(await screen.findByText('Hidden Nails')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Restore Hidden Nails' }));
     await waitFor(() => expect(api.restoreDiscoveryCandidate).toHaveBeenCalledWith('c2'));
+  });
+
+  it('post-search category facet hides an off-vertical Google category from the results', async () => {
+    const cands = [
+      { ...baseCandidate, id: 'c1', name: 'Robotics Academy', rawPayload: { categoryName: 'Learning center' } },
+      { ...baseCandidate, id: 'c2', name: 'Coding Lab', rawPayload: { categoryName: 'Learning center' } },
+      { ...baseCandidate, id: 'c3', name: 'Korean Buffet', rawPayload: { categoryName: 'Korean restaurant' } },
+    ];
+    api.listDiscoveryRuns.mockResolvedValue({ runs: [completedRun], quota });
+    api.getDiscoveryRun.mockResolvedValue({ run: completedRun, candidates: cands });
+    renderPage();
+    await openResults();
+    expect(await screen.findByText('Korean Buffet')).toBeInTheDocument();
+    // uncheck the off-vertical category → its row drops, the on-vertical ones stay
+    await userEvent.click(screen.getByRole('button', { name: /Korean restaurant/i }));
+    await waitFor(() => expect(screen.queryByText('Korean Buffet')).not.toBeInTheDocument());
+    expect(screen.getByText(/1 hidden by type/)).toBeInTheDocument();
+    expect(screen.getByText('Robotics Academy')).toBeInTheDocument();
   });
 
   it('recent searches show the exact terms that were searched', async () => {
