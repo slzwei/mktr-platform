@@ -17,7 +17,7 @@ import {
 } from '@/lib/adminV2/constants';
 import { fmtDateTime, fmtRelative } from '@/lib/adminV2/format';
 import { prospectsToCsv, downloadCsv } from '@/lib/adminV2/csv';
-import { Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
+import { Chip, PageHeader, Skeleton, ErrorState, EmptyState, StateRow, GridRow } from '@/components/adminv2/primitives';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
@@ -65,20 +65,27 @@ function CheckboxGlyph({ checked }) {
 function SortHeader({ label, field, sort, onSort, width, align }) {
   const active = sort === field || sort === `-${field}`;
   const desc = sort === `-${field}`;
+  // aria-sort lives on the columnheader wrapper; the button inside stays the
+  // click/keyboard target (a bare button is not a valid grid header child).
   return (
-    <button
-      type="button"
-      onClick={() => onSort(active && !desc ? `-${field}` : field)}
-      className="av2-microcaps"
-      style={{
-        width, flex: width ? 'none' : 1, textAlign: align || 'left', background: 'none',
-        border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-ui)',
-        color: active ? 'var(--ink)' : 'var(--ink-2)',
-      }}
+    <span
+      role="columnheader"
       aria-sort={active ? (desc ? 'descending' : 'ascending') : 'none'}
+      style={{ width, flex: width ? 'none' : 1, display: 'flex' }}
     >
-      {label}{active ? (desc ? ' ▼' : ' ▲') : ''}
-    </button>
+      <button
+        type="button"
+        onClick={() => onSort(active && !desc ? `-${field}` : field)}
+        className="av2-microcaps"
+        style={{
+          width: '100%', textAlign: align || 'left', background: 'none',
+          border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-ui)',
+          color: active ? 'var(--ink)' : 'var(--ink-2)',
+        }}
+      >
+        {label}{active ? (desc ? ' ▼' : ' ▲') : ''}
+      </button>
+    </span>
   );
 }
 
@@ -369,83 +376,86 @@ export default function AdminV2Prospects() {
       )}
 
       {/* ── Table ── */}
-      <div className="av2-card" style={{ overflow: 'hidden' }}>
-        <div className="av2-thead">
-          <button type="button" onClick={toggleAll} aria-label={allOnPageSelected ? 'Deselect all on page' : 'Select all on page'} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex' }}>
-            <CheckboxGlyph checked={allOnPageSelected} />
-          </button>
+      <div className="av2-card" role="grid" aria-label="Leads" aria-multiselectable="true" aria-busy={prospects.isLoading || undefined} style={{ overflow: 'hidden' }}>
+        <div className="av2-thead" role="row">
+          <span role="columnheader" aria-label="Select" style={{ display: 'flex' }}>
+            <button type="button" onClick={toggleAll} aria-label={allOnPageSelected ? 'Deselect all on page' : 'Select all on page'} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex' }}>
+              <CheckboxGlyph checked={allOnPageSelected} />
+            </button>
+          </span>
           <SortHeader label="Lead" field="firstName" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} />
-          <span className="av2-microcaps" style={{ width: 110, flex: 'none' }}>Phone</span>
+          <span role="columnheader" className="av2-microcaps" style={{ width: 110, flex: 'none' }}>Phone</span>
           <SortHeader label="Status" field="leadStatus" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} width={130} />
-          <span className="av2-microcaps" style={{ flex: 1 }}>Campaign</span>
-          <span className="av2-microcaps" style={{ width: 100, flex: 'none' }}>Agent</span>
+          <span role="columnheader" className="av2-microcaps" style={{ flex: 1 }}>Campaign</span>
+          <span role="columnheader" className="av2-microcaps" style={{ width: 100, flex: 'none' }}>Agent</span>
           <SortHeader label="Created" field="createdAt" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} width={100} align="right" />
         </div>
 
         {prospects.isLoading && [0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="av2-row" style={{ cursor: 'default' }}><Skeleton height={32} /></div>
+          <div key={i} className="av2-row" role="row" style={{ cursor: 'default' }}><span role="gridcell" style={{ flex: 1 }}><Skeleton height={32} /></span></div>
         ))}
-        {prospects.isError && <ErrorState error={prospects.error} onRetry={prospects.refetch} />}
+        {prospects.isError && <StateRow><ErrorState error={prospects.error} onRetry={prospects.refetch} /></StateRow>}
         {!prospects.isLoading && !prospects.isError && rows.length === 0 && (
-          <EmptyState
+          <StateRow><EmptyState
             title="No leads match these filters"
             hint="Loosen a filter or clear them all."
             action={activeChips.length > 0 && (
               <button type="button" className="av2-btn av2-btn--sm" onClick={() => { setSearchDraft(''); setSearchParams(new URLSearchParams(), { replace: true }); }}>Clear all filters</button>
             )}
-          />
+          /></StateRow>
         )}
 
         {rows.map((p) => {
           const held = !!p.quarantinedAt;
           const isSelected = selected.has(p.id);
           return (
-            <div key={p.id} className="av2-row" data-selected={isSelected} role="button" tabIndex={0}
-              onClick={() => setDrawer(p)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDrawer(p); } }}
-            >
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); toggleOne(p.id); }}
-                onKeyDown={(e) => e.stopPropagation()}
-                aria-label={isSelected ? 'Deselect' : 'Select'}
-                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex' }}
-              >
-                <CheckboxGlyph checked={isSelected} />
-              </button>
-              <span style={{ flex: 1, minWidth: 0 }}>
+            <GridRow key={p.id} selected={isSelected} onActivate={() => setDrawer(p)} aria-label={`${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Lead'}>
+              <span role="gridcell" style={{ display: 'flex' }}>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggleOne(p.id); }}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  aria-label={isSelected ? 'Deselect' : 'Select'}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex' }}
+                >
+                  <CheckboxGlyph checked={isSelected} />
+                </button>
+              </span>
+              <span role="gridcell" style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 13, fontWeight: 700 }}>{p.firstName} {p.lastName}</span>
                 <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email || '—'}</span>
               </span>
-              <span className="av2-mono" style={{ width: 110, flex: 'none', fontSize: 11, color: 'var(--ink-2)' }}>{p.phone || '—'}</span>
-              <span style={{ width: 130, flex: 'none' }}>
+              <span role="gridcell" className="av2-mono" style={{ width: 110, flex: 'none', fontSize: 11, color: 'var(--ink-2)' }}>{p.phone || '—'}</span>
+              <span role="gridcell" style={{ width: 130, flex: 'none' }}>
                 {held
                   ? <Chip tone="hold" glyph="◆">{HELD_REASON_LABELS[p.quarantineReason]?.split(' ').slice(0, 2).join(' ') || 'Held'}</Chip>
                   : <Chip tone={STATUS_CHIP_CLASS[p.leadStatus]?.replace('av2-chip--', '') || ''}>{STATUS_LABELS[p.leadStatus] || p.leadStatus}</Chip>}
               </span>
-              <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.campaign?.name || '—'}</span>
-              <span style={{ width: 100, flex: 'none', fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span role="gridcell" style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.campaign?.name || '—'}</span>
+              <span role="gridcell" style={{ width: 100, flex: 'none', fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {p.assignedAgent
                   ? `${p.assignedAgent.firstName || ''}`
                   : p.externalAgentId
                     ? <Chip tone="accent">External</Chip>
                     : held ? '—' : <Chip tone="warn">none</Chip>}
               </span>
-              <span className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 10, color: 'var(--ink-3)', textAlign: 'right' }} title={fmtDateTime(p.createdAt)}>
+              <span role="gridcell" className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 10, color: 'var(--ink-3)', textAlign: 'right' }} title={fmtDateTime(p.createdAt)}>
                 {fmtRelative(p.createdAt)}
               </span>
-            </div>
+            </GridRow>
           );
         })}
 
-        {/* ── Pagination footer ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px' }}>
-          <span className="av2-mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-            {rangeStart}–{rangeEnd} of {total.toLocaleString('en-SG')}
+        {/* ── Pagination footer (a grid row so the grid has no role-less children) ── */}
+        <div role="row" style={{ display: 'flex', alignItems: 'center', padding: '10px 16px' }}>
+          <span role="gridcell" style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+            <span className="av2-mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+              {rangeStart}–{rangeEnd} of {total.toLocaleString('en-SG')}
+            </span>
+            <span style={{ flex: 1 }} />
+            <button type="button" className="av2-btn av2-btn--sm" disabled={filters.page <= 1} onClick={() => patch({ page: String(filters.page - 1) })}>← Prev</button>
+            <button type="button" className="av2-btn av2-btn--sm" disabled={filters.page >= totalPages} onClick={() => patch({ page: String(filters.page + 1) })}>Next →</button>
           </span>
-          <span style={{ flex: 1 }} />
-          <button type="button" className="av2-btn av2-btn--sm" disabled={filters.page <= 1} onClick={() => patch({ page: String(filters.page - 1) })}>← Prev</button>
-          <button type="button" className="av2-btn av2-btn--sm" disabled={filters.page >= totalPages} onClick={() => patch({ page: String(filters.page + 1) })}>Next →</button>
         </div>
       </div>
 

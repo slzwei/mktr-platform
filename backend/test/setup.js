@@ -14,3 +14,8 @@ if (!process.env.JWT_SECRET) {
 
 process.env.NODE_ENV = 'test';
 process.env.WEBHOOK_ENABLED = 'false';
+
+// Fleet-era routers (fleet/vehicles/devices/provisioning/commissions/apk/adtech)
+// are dark in production (FLEET_ROUTES_ENABLED unset) but stay mounted under
+// test so their suites keep guarding the code until it is removed outright.
+process.env.FLEET_ROUTES_ENABLED = 'true';

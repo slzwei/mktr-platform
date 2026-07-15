@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import * as prospectService from '@/services/prospectService';
 import * as campaignService from '@/services/campaignService';
-import * as fleetService from '@/services/fleetService';
 import * as userService from '@/services/userService';
 
 export function useDashboardData(period = '30d', enabled = true) {
@@ -32,18 +31,9 @@ export function useDashboardData(period = '30d', enabled = true) {
  enabled,
  });
 
- // Lightweight car list for fleet size display.
- const carsQuery = useQuery({
- queryKey: ['cars', 'list'],
- queryFn: () => fleetService.listCars().catch(() => []),
- enabled,
- });
-
  return {
  prospects: prospectsQuery.data ?? [],
  campaigns: campaignsQuery.data ?? [],
- commissions: [], // Totals come from overview
- cars: carsQuery.data ?? [],
  overview: overviewQuery.data,
  isLoading: overviewQuery.isLoading || prospectsQuery.isLoading,
  error: overviewQuery.error || prospectsQuery.error,

@@ -119,11 +119,12 @@ describe('dashboardService (unit)', () => {
       expect(result).toHaveProperty('users');
       expect(result).toHaveProperty('campaigns');
       expect(result).toHaveProperty('prospects');
-      expect(result).toHaveProperty('commissions');
       expect(result).toHaveProperty('qrCodes');
-      expect(result).toHaveProperty('fleet');
-      expect(result).toHaveProperty('impressions');
       expect(result).toHaveProperty('recentActivities');
+      // Fleet-era blocks removed from admin stats (Phase D teardown).
+      expect(result).not.toHaveProperty('commissions');
+      expect(result).not.toHaveProperty('fleet');
+      expect(result).not.toHaveProperty('impressions');
     });
 
     it('returns agent stats for agent role', async () => {

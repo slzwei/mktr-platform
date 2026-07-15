@@ -85,17 +85,14 @@ async function getAdminStats(startDate, endDate, period = '30d') {
     return cached.result;
   }
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-
   // Prospects can be assigned through EITHER assignee FK (internal users OR
   // the ExternalAgent buyer pool) — "assigned" must count both.
   const anyAssignee = { [Op.or]: [{ assignedAgentId: { [Op.ne]: null } }, { externalAgentId: { [Op.ne]: null } }] };
 
   const [
     totalUsers, activeUsers, totalCampaigns, activeCampaigns,
-    totalProspects, newProspects, totalCommissions, pendingCommissions,
-    totalQrTags, totalScans, totalCars, activeCars, impressionsToday,
+    totalProspects, newProspects,
+    totalQrTags, totalScans,
     periodTotal, periodAssigned, periodConverted
   ] = await Promise.all([
     safeCount(User),
@@ -104,13 +101,8 @@ async function getAdminStats(startDate, endDate, period = '30d') {
     safeCount(Campaign, { where: { [Op.or]: [{ status: 'active' }, { is_active: true }] } }),
     safeCount(Prospect),
     safeCount(Prospect, { where: { createdAt: { [Op.gte]: startDate } } }),
-    safeSum(Commission, 'amount'),
-    safeSum(Commission, 'amount', { where: { status: 'pending' } }),
     safeCount(QrTag),
     safeSum(QrTag, 'scanCount'),
-    safeCount(Car),
-    safeCount(Car, { where: { status: 'active' } }),
-    safeCount(Impression, { where: { occurredAt: { [Op.gte]: todayStart } } }),
     // Phase B additions — period-scoped; existing `total` (all-time) and `new`
     // keep their semantics for the legacy dashboard during coexistence.
     safeCount(Prospect, { where: { createdAt: { [Op.gte]: startDate } } }),
@@ -132,10 +124,7 @@ async function getAdminStats(startDate, endDate, period = '30d') {
       converted: periodConverted,
       conversionRate: periodTotal > 0 ? Number(((periodConverted / periodTotal) * 100).toFixed(1)) : 0
     },
-    commissions: { total: totalCommissions, pending: pendingCommissions },
     qrCodes: { total: totalQrTags, totalScans },
-    fleet: { totalCars, activeCars },
-    impressions: { today: impressionsToday },
     recentActivities
   };
 

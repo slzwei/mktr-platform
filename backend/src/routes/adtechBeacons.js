@@ -4,7 +4,7 @@ import { pushService } from '../services/pushService.js';
 import { Impression, Campaign } from '../models/index.js';
 import rateLimit from 'express-rate-limit';
 
-export const meta = { path: '/api/adtech', flag: 'BEACONS_ENABLED', flagDefault: 'true' };
+export const meta = { path: '/api/adtech', flag: 'FLEET_ROUTES_ENABLED' };
 
 const router = express.Router();
 

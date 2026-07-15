@@ -81,28 +81,15 @@ const AdminQRCodes = lazy(() => import('./AdminQRCodes'));
 const AdminAgents = lazy(() => import('./AdminAgents'));
 const AdminAgentDetail = lazy(() => import('./AdminAgentDetail'));
 const AdminUsers = lazy(() => import('./AdminUsers'));
-const AdminFleet = lazy(() => import('./AdminFleet'));
 const AdminCampaignDesigner = lazy(() => import('./AdminCampaignDesigner'));
 const AdminCampaignWorkspace = lazy(() => import('./AdminCampaignWorkspace'));
-const AdminCommissions = lazy(() => import('./AdminCommissions'));
 const AdminShortLinks = lazy(() => import('./AdminShortLinks'));
 const AdminLeadPackages = lazy(() => import('./AdminLeadPackages'));
-const AdminDevices = lazy(() => import('./AdminDevices'));
-const AdminVehicles = lazy(() => import('./AdminVehicles'));
-const AdminFleetMap = lazy(() => import('./AdminFleetMap'));
-
-const AdminDeviceLogs = lazy(() => import('./AdminDeviceLogs'));
-const ProvisionDevice = lazy(() => import('./ProvisionDevice')); // Added
-const AdminApkManager = lazy(() => import('./AdminApkManager')); // Added
 const AdminAgentGroups = lazy(() => import('./AdminAgentGroups'));
 const AdminAISettings = lazy(() => import('./AdminAISettings'));
 const AgentDashboard = lazy(() => import('./AgentDashboard'));
 
-const FleetOwnerDashboard = lazy(() => import('./FleetOwnerDashboard'));
-const DriverDashboard = lazy(() => import('./DriverDashboard'));
-const DriverProfile = lazy(() => import('./DriverProfile'));
-const DriverPayoutHistory = lazy(() => import('./DriverPayoutHistory'));
-const DriverPayslip = lazy(() => import('./DriverPayslip'));
+const PortalRetired = lazy(() => import('./PortalRetired'));
 const MyProspects = lazy(() => import('./MyProspects'));
 const ProspectDetailPage = lazy(() => import('./ProspectDetailPage'));
 const AgentProfile = lazy(() => import('./AgentProfile'));
@@ -495,15 +482,6 @@ function PagesContent() {
  }
  />
  <Route
- path="/AdminFleet" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminFleet />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
  path="/AdminCampaignDesigner" element={
  <ProtectedRoute requiredRole="admin">
  {ADMIN_V2 ? (
@@ -519,81 +497,10 @@ function PagesContent() {
  }
  />
  <Route
- path="/AdminCommissions" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminCommissions />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
  path="/AdminLeadPackages" element={
  <ProtectedRoute requiredRole="admin">
  <DashboardLayout>
  <AdminLeadPackages />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/AdminDevices" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminDevices />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/AdminFleetMap" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminFleetMap />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- {/* Alias for lowercase compatibility */}
- <Route
- path="/admin/vehicles" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminVehicles />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/AdminVehicles" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminVehicles />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/admin/devices/:id/logs" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminDeviceLogs />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/provision/:code" element={
- <ProtectedRoute requiredRole="admin">
- <ProvisionDevice />
- </ProtectedRoute>
- }
- />
- <Route
- path="/AdminApkManager" element={
- <ProtectedRoute requiredRole="admin">
- <DashboardLayout>
- <AdminApkManager />
  </DashboardLayout>
  </ProtectedRoute>
  }
@@ -629,54 +536,15 @@ function PagesContent() {
  }
  />
 
- {/* Protected Fleet Owner routes */}
- <Route
- path="/FleetOwnerDashboard" element={
- <ProtectedRoute requiredRole="fleet_owner">
- <DashboardLayout>
- <FleetOwnerDashboard />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
-
- {/* Protected Driver Partner routes */}
- <Route
- path="/DriverDashboard" element={
- <ProtectedRoute requiredRole="driver_partner">
- <DashboardLayout>
- <DriverDashboard />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/DriverProfile" element={
- <ProtectedRoute requiredRole="driver_partner">
- <DashboardLayout>
- <DriverProfile />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/DriverPayoutHistory" element={
- <ProtectedRoute requiredRole="driver_partner">
- <DashboardLayout>
- <DriverPayoutHistory />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
- <Route
- path="/DriverPayslip" element={
- <ProtectedRoute requiredRole="driver_partner">
- <DashboardLayout>
- <DriverPayslip />
- </DashboardLayout>
- </ProtectedRoute>
- }
- />
+ {/* Fleet owner / driver portals retired (Phase D teardown, 2026-07).
+ Old bookmarks and the role-based post-login redirect land on the
+ retirement notice; the paths stay so nothing 404s. */}
+ <Route path="/portal-retired" element={<PortalRetired />} />
+ <Route path="/FleetOwnerDashboard" element={<Navigate to="/portal-retired" replace />} />
+ <Route path="/DriverDashboard" element={<Navigate to="/portal-retired" replace />} />
+ <Route path="/DriverProfile" element={<Navigate to="/portal-retired" replace />} />
+ <Route path="/DriverPayoutHistory" element={<Navigate to="/portal-retired" replace />} />
+ <Route path="/DriverPayslip" element={<Navigate to="/portal-retired" replace />} />
 
  {/* Redeem Ops — flag-gated internal staff surface (shared with ops.redeem.sg) */}
  {redeemOpsRouteElements()}

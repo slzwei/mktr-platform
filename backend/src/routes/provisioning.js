@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import * as provisioningController from '../controllers/provisioningController.js';
 
-export const meta = { path: '/api/provision' };
+export const meta = { path: '/api/provision', flag: 'FLEET_ROUTES_ENABLED' };
 
 const router = express.Router();
 

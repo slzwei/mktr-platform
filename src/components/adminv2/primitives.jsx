@@ -86,6 +86,34 @@ export function StateRow({ children }) {
   );
 }
 
+/**
+ * Interactive row for role="grid" listings (Prospects, Campaigns): the whole
+ * row is one keyboard-activatable target (Enter/Space = onActivate). Static
+ * listings use role="table" + plain rows instead — reach for this only when
+ * clicking the row opens something. Direct children must be role="gridcell".
+ */
+export function GridRow({ onActivate, selected, children, ...rest }) {
+  return (
+    <div
+      className="av2-row"
+      role="row"
+      tabIndex={0}
+      aria-selected={selected === undefined ? undefined : selected}
+      data-selected={selected || undefined}
+      onClick={onActivate}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onActivate(e);
+        }
+      }}
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+}
+
 /** Page header: title + mono meta line left, actions right (max one primary). */
 export function PageHeader({ title, meta, children }) {
   return (

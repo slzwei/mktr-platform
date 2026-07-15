@@ -13,6 +13,5 @@
  */
 export * as prospectService from './prospectService';
 export * as campaignService from './campaignService';
-export * as fleetService from './fleetService';
 export * as userService from './userService';
 export * from './formatters';

@@ -309,6 +309,50 @@ Phased per the standing direction (hide → dark-flag → drop models later):
 5. Driver/fleet_owner **roles** remain in the enum (users may exist);
    login routing for those roles points at a "retired" notice page.
 
+### Phase D delivered (PR6, 2026-07-15)
+
+Shipped as planned with two deliberate deviations:
+
+- **Legacy `AdminDashboard` kept (trimmed), not deleted.** The plan assumed
+  the legacy dashboard dies in this PR; instead it stays as the flag-off
+  rollback path until `VITE_ADMIN_V2_ENABLED` itself is removed. Its
+  Revenue / Fleet Size / Ad Impressions cards, cars/commissions plumbing, and
+  the Revenue Trend chart are gone (they'd read keys `getAdminStats` no
+  longer returns and call routes that are now dark). Legacy v2-replaced pages
+  (AdminProspects, AdminCampaigns, …) also stay for the same reason — the
+  final sweep deletes them together with the flag.
+- **Car QR creation removed from `CampaignQRManager`** (workspace Sources
+  tab + legacy QR page): its `CarQRDirectory` tab called the now-dark
+  `/api/fleet/cars`. `CarQRTable` stays — it renders *existing* car-type
+  QR tags from `/api/qrcodes`, which remains live, so historical car QRs
+  are still visible/manageable.
+
+Inventory of the rest: 14 page files + `CommissionSummary` +
+`useFleetQuery` + `fleetService` (+ barrel export) + entity classes
+(`Car`/`Driver`/`FleetOwner`/`Commission`) deleted; `/portal-retired`
+notice page added with `Navigate` redirects from the five retired role
+paths; `getDefaultRouteForRole` points fleet_owner/driver_partner there;
+DashboardLayout + CommandPalette lose the Fleet/Finance/App-Versions
+sections and retired-role nav; all 9 routers behind `FLEET_ROUTES_ENABLED`
+(default off; `adtechBeacons` loses its `flagDefault: 'true'`, and the two
+`ENABLE_DOMAIN_PREFIXES` prefix mounts on fleet/commissions are dropped
+rather than double-flagged — the loader supports one flag per mount).
+`backend/test/setup.js` sets the flag so the 8 suites covering retired
+routers keep guarding the code until deletion. Boot-time verification:
+with the flag unset, all 7 dark path families 404 while campaigns/
+prospects/dashboard still mount.
+
+Also folded in: the owed **grid a11y retrofit** for the two interactive
+listings — shared `GridRow` primitive (role="row" + Enter/Space activation
++ aria-selected), `role="grid"` containers with columnheader/gridcell
+roles on Prospects (multiselectable, checkbox column, sort headers carry
+aria-sort on the columnheader wrapper) and Campaigns.
+
+Pre-existing failures NOT from this PR (verified on pristine origin/main):
+vitest `PublicPreview.test.jsx` (1), backend `migrations.test.js`
+(duplicate `066-` migration number), `externalHeldLeadsController.test.js`
+(`batch: null` contract drift), plus the 4 chronically-red unit suites.
+
 ---
 
 ## Rollout

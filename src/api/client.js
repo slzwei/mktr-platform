@@ -546,54 +546,6 @@ class QrTagEntity extends BaseEntity {
  }
 }
 
-// Commission Entity
-class CommissionEntity extends BaseEntity {
- constructor() {
- super('/commissions', 'commissions', 'commission');
- }
-
- async approve(id, notes) {
- const response = await apiClient.patch(`${this.endpoint}/${id}/approve`, { notes });
- return response.data;
- }
-
- async markPaid(id, paymentData) {
- const response = await apiClient.patch(`${this.endpoint}/${id}/pay`, paymentData);
- return response.data;
- }
-
- async getStats(period = 'month') {
- const response = await apiClient.get(`${this.endpoint}/stats/overview`, { period });
- return response.data;
- }
-}
-
-// Fleet Owner Entity
-class FleetOwnerEntity extends BaseEntity {
- constructor() {
- super('/fleet/owners', 'fleetOwners', 'fleetOwner');
- }
-}
-
-// Car Entity
-class CarEntity extends BaseEntity {
- constructor() {
- super('/fleet/cars', 'cars', 'car');
- }
-
- async assignDriver(id, driverId) {
- const response = await apiClient.patch(`${this.endpoint}/${id}/assign-driver`, { driverId });
- return response.data;
- }
-}
-
-// Driver Entity
-class DriverEntity extends BaseEntity {
- constructor() {
- super('/fleet/drivers', 'drivers', 'driver');
- }
-}
-
 // Lead Package Entity
 class LeadPackageEntity extends BaseEntity {
  constructor() {
@@ -650,7 +602,6 @@ class UserEntity extends BaseEntity {
  }
 
  async invite({ email, full_name, role, owed_leads_count }) {
- // Generic invite endpoint supports agent, fleet_owner, driver_partner
  const response = await apiClient.post('/users/invite', { email, full_name, role, owed_leads_count });
  return response.data;
  }
@@ -659,12 +610,8 @@ class UserEntity extends BaseEntity {
 // Create entity instances
 export const entities = {
  Campaign: new CampaignEntity(),
- Car: new CarEntity(),
  Prospect: new ProspectEntity(),
  QrTag: new QrTagEntity(),
- Commission: new CommissionEntity(),
- FleetOwner: new FleetOwnerEntity(),
- Driver: new DriverEntity(),
  LeadPackage: new LeadPackageEntity(),
  User: new UserEntity(),
 };
@@ -804,16 +751,6 @@ export const agents = {
  },
 };
 
-/**
- * Fleet API
- */
-export const fleet = {
- async getStats() {
- const response = await apiClient.get('/fleet/stats/overview');
- return response.data;
- },
-};
-
 // Initialize authentication on module load — validate session via cookie
 if (typeof window !== 'undefined') {
  const storedUser = getStoredUser();
@@ -836,7 +773,6 @@ export const mktrAPI = {
  dashboard,
  notifications,
  agents,
- fleet,
  client: apiClient,
 };
 

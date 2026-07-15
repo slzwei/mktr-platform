@@ -5,8 +5,7 @@ import * as ctrl from '../controllers/commissionController.js';
 
 export const meta = {
   mounts: [
-    { path: '/api/commissions' },
-    { path: '/api/leadgen/commissions', flag: 'ENABLE_DOMAIN_PREFIXES' },
+    { path: '/api/commissions', flag: 'FLEET_ROUTES_ENABLED' },
   ],
 };
 

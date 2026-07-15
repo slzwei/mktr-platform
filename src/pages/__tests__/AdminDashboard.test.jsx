@@ -15,8 +15,6 @@ vi.mock('@/stores/authStore', () => ({
 const mockDashboardData = {
  prospects: [],
  campaigns: [],
- commissions: [],
- cars: [],
  overview: null,
  isLoading: false,
  error: null,
@@ -115,15 +113,10 @@ describe('AdminDashboard', () => {
  Object.assign(mockDashboardData, {
  prospects: [],
  campaigns: [],
- commissions: [],
- cars: [],
  overview: {
  stats: {
  prospects: { total: 150, new: 12 },
  campaigns: { total: 10, active: 7 },
- commissions: { total: 5000 },
- impressions: { today: 320 },
- fleet: { totalCars: 25 },
  },
  },
  isLoading: false,
@@ -158,42 +151,32 @@ describe('AdminDashboard', () => {
  expect(screen.getByText('Dashboard')).toBeInTheDocument();
  });
 
- it('renders stats grid with 5 stat cards', () => {
+ it('renders stats grid with 2 stat cards (fleet-era cards removed)', () => {
  renderDashboard();
  expect(screen.getByTestId('stats-grid')).toBeInTheDocument();
- // buildAdminCards returns 5 cards
+ // buildAdminCards returns 2 cards since the Phase D teardown
  expect(screen.getByTestId('stat-card-0')).toBeInTheDocument();
- expect(screen.getByTestId('stat-card-4')).toBeInTheDocument();
- });
-
- it('shows Total Revenue card with formatted value', () => {
- renderDashboard();
- expect(screen.getByTestId('stat-title-0')).toHaveTextContent('Total Revenue');
- expect(screen.getByTestId('stat-value-0')).toHaveTextContent('$5,000.00');
+ expect(screen.getByTestId('stat-card-1')).toBeInTheDocument();
+ expect(screen.queryByTestId('stat-card-2')).not.toBeInTheDocument();
  });
 
  it('shows Active Campaigns card', () => {
  renderDashboard();
- expect(screen.getByTestId('stat-title-1')).toHaveTextContent('Active Campaigns');
- expect(screen.getByTestId('stat-value-1')).toHaveTextContent('7');
+ expect(screen.getByTestId('stat-title-0')).toHaveTextContent('Active Campaigns');
+ expect(screen.getByTestId('stat-value-0')).toHaveTextContent('7');
  });
 
  it('shows Total Prospects card', () => {
  renderDashboard();
- expect(screen.getByTestId('stat-title-2')).toHaveTextContent('Total Prospects');
- expect(screen.getByTestId('stat-value-2')).toHaveTextContent('150');
+ expect(screen.getByTestId('stat-title-1')).toHaveTextContent('Total Prospects');
+ expect(screen.getByTestId('stat-value-1')).toHaveTextContent('150');
  });
 
- it('shows Fleet Size card', () => {
+ it('does not render retired Revenue / Fleet / Impressions cards', () => {
  renderDashboard();
- expect(screen.getByTestId('stat-title-3')).toHaveTextContent('Fleet Size');
- expect(screen.getByTestId('stat-value-3')).toHaveTextContent('25');
- });
-
- it('shows Ad Impressions card', () => {
- renderDashboard();
- expect(screen.getByTestId('stat-title-4')).toHaveTextContent('Ad Impressions');
- expect(screen.getByTestId('stat-value-4')).toHaveTextContent('320');
+ expect(screen.queryByText('Total Revenue')).not.toBeInTheDocument();
+ expect(screen.queryByText('Fleet Size')).not.toBeInTheDocument();
+ expect(screen.queryByText('Ad Impressions')).not.toBeInTheDocument();
  });
 
  // --- Sub-components rendered ---
