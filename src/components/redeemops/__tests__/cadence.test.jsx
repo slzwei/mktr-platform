@@ -314,6 +314,20 @@ describe('CadencePanel — outstanding tasks zone', () => {
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('task-m1', { status: 'completed' }));
   });
 
+  it('shows the template message inline with a working Copy message', async () => {
+    const script = 'Hi! Keen to feature Coding Lab on Redeem?';
+    api.getPartnerCadence.mockResolvedValue({ enrollment: activeEnrollment, openTask: null });
+    api.listTasks.mockResolvedValue({ tasks: [{ ...cadenceRowTask, description: script }] });
+    const user = userEvent.setup();
+    wrap(<CadencePanel partner={{ id: 'p-1', ownerUserId: 'u-1', pipelineStage: 'MEETING' }} />);
+
+    expect(await screen.findByText(script)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /copy message/i }));
+    await waitFor(async () => {
+      expect(await navigator.clipboard.readText()).toBe(script);
+    });
+  });
+
   it('a paused enrollment freezes the cadence task row', async () => {
     api.getPartnerCadence.mockResolvedValue({
       enrollment: { ...activeEnrollment, state: 'paused' },

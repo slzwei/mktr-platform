@@ -81,6 +81,15 @@ export function taskDueMeta(task) {
   };
 }
 
+async function copyTaskMessage(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success('Message copied');
+  } catch {
+    toast.error('Could not copy — select the text instead');
+  }
+}
+
 /** Small pill marking a task as cadence-driven: "⚡ F&B call-first · 3". */
 export function CadenceChip({ task }) {
   const step = task?.cadenceStep;
@@ -137,15 +146,6 @@ export function CadenceOutcomeButton({ task, size = 'sm', disabled = false, disa
       return;
     }
     completeMutation.mutate({ disposition });
-  };
-
-  const copyScript = async () => {
-    try {
-      await navigator.clipboard.writeText(task.description);
-      toast.success('Message copied');
-    } catch {
-      toast.error('Could not copy — select the text instead');
-    }
   };
 
   return (
@@ -221,7 +221,7 @@ export function CadenceOutcomeButton({ task, size = 'sm', disabled = false, disa
           </p>
           {task.description && (
             <DialogFooter>
-              <Button variant="outline" onClick={copyScript}>
+              <Button variant="outline" onClick={() => copyTaskMessage(task.description)}>
                 <Copy className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> Copy message
               </Button>
             </DialogFooter>
@@ -250,6 +250,45 @@ function CompleteCircle({ task, busy, onComplete }) {
     >
       {busy && <Check className="w-3 h-3" strokeWidth={3} style={{ color: '#fff' }} aria-hidden="true" />}
     </button>
+  );
+}
+
+/* Inline template message under a task row (design: the copyable script box —
+   the rep reads/copies the DM text without opening anything). Long scripts
+   clamp to three lines behind a Show more toggle. */
+const SCRIPT_CLAMP_CHARS = 140;
+
+function TaskScriptBox({ text }) {
+  const [expanded, setExpanded] = useState(false);
+  const clampable = text.length > SCRIPT_CLAMP_CHARS || text.split('\n').length > 3;
+  return (
+    <div className="mt-2 rounded-[10px] px-3 py-2" style={{ background: 'var(--ro-subtle)' }}>
+      <p
+        className={`text-xs leading-relaxed m-0 whitespace-pre-wrap ${clampable && !expanded ? 'line-clamp-3' : ''}`}
+        style={{ color: 'var(--ro-text-2)' }}
+      >
+        {text}
+      </p>
+      <div className="flex items-center justify-between gap-2 mt-2">
+        {clampable && (
+          <button
+            type="button"
+            className="ro-link p-0 border-0 bg-transparent text-[11.5px] font-semibold cursor-pointer"
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? 'Show less' : 'Show more'}
+          </button>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto h-[26px] px-2.5 text-[11.5px] font-medium"
+          onClick={() => copyTaskMessage(text)}
+        >
+          <Copy className="w-3 h-3 mr-1" aria-hidden="true" /> Copy message
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -321,6 +360,7 @@ function PartnerTaskRow({
             <span className="text-[11px] italic" style={{ color: 'var(--ro-text-3)' }}>paused</span>
           )}
         </div>
+        {task.description && <TaskScriptBox text={task.description} />}
       </div>
     </div>
   );
