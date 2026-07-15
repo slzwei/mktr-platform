@@ -38,6 +38,10 @@ function readFilters(searchParams) {
     search: searchParams.get('q') || '',
     sort: searchParams.get('sort') || '-createdAt',
     page: Math.max(1, parseInt(searchParams.get('page'), 10) || 1),
+    // Legacy deep-link params — AdminCampaigns links ?campaign=<id>, the QR
+    // tables link ?qrTagId=<id>. Both must keep narrowing the table.
+    campaign: searchParams.get('campaign') || searchParams.get('campaignId') || '',
+    qrTagId: searchParams.get('qrTagId') || '',
   };
 }
 
@@ -115,9 +119,15 @@ function LeadDrawer({ prospect, onClose }) {
           </section>
           <section>
             <div className="av2-microcaps" style={{ marginBottom: 6 }}>Routing</div>
-            <div className="av2-kv"><span>agent</span><span>{p.assignedAgent ? `${p.assignedAgent.firstName || ''} ${p.assignedAgent.lastName || ''}`.trim() : held ? 'held' : 'unassigned'}</span></div>
+            <div className="av2-kv"><span>agent</span><span>{p.assignedAgent ? `${p.assignedAgent.firstName || ''} ${p.assignedAgent.lastName || ''}`.trim() : p.externalAgentId ? 'external buyer' : held ? 'held' : 'unassigned'}</span></div>
             {held && <div className="av2-kv"><span>held since</span><span>{fmtDateTime(p.quarantinedAt)}</span></div>}
             {held && <div className="av2-kv"><span>reason</span><span>{HELD_REASON_LABELS[p.quarantineReason] || p.quarantineReason || '—'}</span></div>}
+          </section>
+          <section>
+            <div className="av2-microcaps" style={{ marginBottom: 6 }}>Consent</div>
+            <div className="av2-kv"><span>marketing</span><span>{p.sourceMetadata?.consent_contact === true ? 'yes' : p.sourceMetadata?.consent_contact === false ? 'no' : '—'}</span></div>
+            <div className="av2-kv"><span>terms</span><span>{p.sourceMetadata?.consent_terms === true ? 'yes' : p.sourceMetadata?.consent_terms === false ? 'no' : '—'}</span></div>
+            <div className="av2-kv"><span>third-party</span><span>{p.sourceMetadata?.consent_third_party === true ? 'yes' : p.sourceMetadata?.consent_third_party === false ? 'no' : '—'}</span></div>
           </section>
           <section>
             <div className="av2-microcaps" style={{ marginBottom: 6 }}>Timeline</div>
@@ -140,22 +150,42 @@ export default function AdminV2Prospects() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const queryClient = useQueryClient();
 
-  // Debounced search → URL (which drives the query)
+  // Debounced search → URL (which drives the query). The timer applies its
+  // change FUNCTIONALLY over the latest params, so a filter clicked during the
+  // 350ms window is never clobbered by the stale closure.
   useEffect(() => {
     const t = setTimeout(() => {
-      if (searchDraft !== filters.search) patch({ q: searchDraft || null, page: null });
+      setSearchParams((prev) => {
+        if ((prev.get('q') || '') === searchDraft) return prev;
+        const next = new URLSearchParams(prev);
+        if (searchDraft) next.set('q', searchDraft);
+        else next.delete('q');
+        next.delete('page');
+        return next;
+      }, { replace: true });
     }, 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchDraft]);
 
-  function patch(changes) {
-    const next = new URLSearchParams(searchParams);
-    for (const [k, v] of Object.entries(changes)) {
-      if (v === null || v === '' || v === undefined) next.delete(k);
-      else next.set(k, v);
+  // Back/forward (or a pasted URL) changes q outside the input — resync the
+  // draft unless the operator is mid-typing.
+  useEffect(() => {
+    if (document.activeElement?.getAttribute('aria-label') !== 'Search prospects' && filters.search !== searchDraft) {
+      setSearchDraft(filters.search);
     }
-    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.search]);
+
+  function patch(changes) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      for (const [k, v] of Object.entries(changes)) {
+        if (v === null || v === '' || v === undefined) next.delete(k);
+        else next.set(k, v);
+      }
+      return next;
+    }, { replace: true });
   }
 
   const queryParams = useMemo(() => ({
@@ -165,6 +195,8 @@ export default function AdminV2Prospects() {
     ...(filters.source.length ? { leadSource: filters.source.join(',') } : {}),
     ...(filters.assignment ? { assignment: filters.assignment } : {}),
     ...(filters.search ? { search: filters.search } : {}),
+    ...(filters.campaign ? { campaignId: filters.campaign } : {}),
+    ...(filters.qrTagId ? { qrTagId: filters.qrTagId } : {}),
     sort: filters.sort,
   }), [filters]);
 
@@ -187,6 +219,8 @@ export default function AdminV2Prospects() {
     ...filters.source.map((s) => ({ key: `source:${s}`, label: SOURCE_LABELS[s] || s, clear: () => toggleList('source', s) })),
     ...(filters.assignment ? [{ key: 'assignment', label: `${filters.assignment} only`, clear: () => patch({ assignment: null, page: null }) }] : []),
     ...(filters.search ? [{ key: 'q', label: `“${filters.search}”`, clear: () => { setSearchDraft(''); patch({ q: null, page: null }); } }] : []),
+    ...(filters.campaign ? [{ key: 'campaign', label: 'campaign filter', clear: () => patch({ campaign: null, campaignId: null, page: null }) }] : []),
+    ...(filters.qrTagId ? [{ key: 'qrTagId', label: 'QR tag filter', clear: () => patch({ qrTagId: null, page: null }) }] : []),
   ];
 
   // ── Bulk actions (live endpoints) ──────────────────────────────────────────
@@ -194,19 +228,43 @@ export default function AdminV2Prospects() {
   const ids = [...selected];
   const agentOptions = useAgentOptions(selected.size > 0);
 
+  // Toasts report the SERVER's counts — the backend legitimately skips rows
+  // (e.g. DNC-held leads are not releasable via assign), and the operator must
+  // see that, never an assumed "N done".
   const assignMutation = useMutation({
     mutationFn: ({ agentId }) => bulkAssign(ids, agentId),
-    onSuccess: (_r, { agentName }) => { toast.success(`${ids.length} lead${ids.length === 1 ? '' : 's'} assigned to ${agentName}`); setSelected(new Set()); invalidate(); },
+    onSuccess: (r, { agentName }) => {
+      const n = r?.data?.affectedCount ?? 0;
+      const skippedObj = r?.data?.skipped || {};
+      const skipped = Object.values(skippedObj).reduce((a, b) => a + (Number(b) || 0), 0);
+      if (n > 0) toast.success(`${n} lead${n === 1 ? '' : 's'} assigned to ${agentName}${skipped ? ` · ${skipped} skipped (not releasable)` : ''}`);
+      else toast.warning(`Nothing assigned — ${skipped || ids.length} lead${(skipped || ids.length) === 1 ? ' was' : 's were'} not eligible`);
+      setSelected(new Set()); invalidate();
+    },
     onError: (e) => toast.error(e?.message || 'Assign failed'),
   });
   const returnMutation = useMutation({
     mutationFn: () => bulkReturnToHeld(ids),
-    onSuccess: () => { toast.success(`${ids.length} lead${ids.length === 1 ? '' : 's'} returned to held`); setSelected(new Set()); invalidate(); },
+    onSuccess: (r) => {
+      const c = r?.data || {};
+      const n = c.returned ?? 0;
+      const rest = (c.alreadyHeld || 0) + (c.undeliverable || 0) + (c.notFound || 0);
+      if (n > 0) toast.success(`${n} lead${n === 1 ? '' : 's'} returned to held${rest ? ` · ${rest} skipped` : ''}`);
+      else toast.warning('Nothing returned — the selection was already held or not eligible');
+      setSelected(new Set()); invalidate();
+    },
     onError: (e) => toast.error(e?.message || 'Return failed'),
   });
   const deleteMutation = useMutation({
     mutationFn: () => bulkDelete(ids),
-    onSuccess: () => { toast.success(`${ids.length} lead${ids.length === 1 ? '' : 's'} deleted`); setSelected(new Set()); setConfirmDelete(false); invalidate(); },
+    onSuccess: (r) => {
+      const c = r?.data || {};
+      const n = c.deleted ?? 0;
+      const rest = (c.notFound || 0) + (c.failed || 0);
+      if (n > 0) toast.success(`${n} lead${n === 1 ? '' : 's'} deleted${rest ? ` · ${rest} skipped` : ''}`);
+      else toast.warning('Nothing deleted');
+      setSelected(new Set()); setConfirmDelete(false); invalidate();
+    },
     onError: (e) => { toast.error(e?.message || 'Delete failed'); setConfirmDelete(false); },
   });
 
@@ -344,11 +402,12 @@ export default function AdminV2Prospects() {
           return (
             <div key={p.id} className="av2-row" data-selected={isSelected} role="button" tabIndex={0}
               onClick={() => setDrawer(p)}
-              onKeyDown={(e) => { if (e.key === 'Enter') setDrawer(p); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDrawer(p); } }}
             >
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); toggleOne(p.id); }}
+                onKeyDown={(e) => e.stopPropagation()}
                 aria-label={isSelected ? 'Deselect' : 'Select'}
                 style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex' }}
               >
@@ -366,7 +425,11 @@ export default function AdminV2Prospects() {
               </span>
               <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.campaign?.name || '—'}</span>
               <span style={{ width: 100, flex: 'none', fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {p.assignedAgent ? `${p.assignedAgent.firstName || ''}` : held ? '—' : <Chip tone="warn">none</Chip>}
+                {p.assignedAgent
+                  ? `${p.assignedAgent.firstName || ''}`
+                  : p.externalAgentId
+                    ? <Chip tone="accent">External</Chip>
+                    : held ? '—' : <Chip tone="warn">none</Chip>}
               </span>
               <span className="av2-mono" style={{ width: 100, flex: 'none', fontSize: 10, color: 'var(--ink-3)', textAlign: 'right' }} title={fmtDateTime(p.createdAt)}>
                 {fmtRelative(p.createdAt)}

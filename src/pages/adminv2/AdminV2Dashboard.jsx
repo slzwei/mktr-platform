@@ -51,7 +51,7 @@ function KpiCard({ period }) {
   }
   if (series.isError) return <Card span={5}><ErrorState error={series.error} onRetry={series.refetch} /></Card>;
 
-  const s = series.data;
+  const s = { days: [], today: 0, avgPerDay: 0, total: 0, ...(series.data || {}) };
   const p = overview.data?.prospects;
   const delta = s.avgPerDay > 0 ? Math.round(((s.today - s.avgPerDay) / s.avgPerDay) * 100) : null;
   return (
@@ -130,7 +130,7 @@ function LeadFlow({ period }) {
   if (series.isLoading) return <Card span={7} title="Lead flow"><div style={{ padding: 16 }}><Skeleton height={160} /></div></Card>;
   if (series.isError) return <Card span={7} title="Lead flow"><ErrorState error={series.error} onRetry={series.refetch} /></Card>;
 
-  const { days } = series.data;
+  const days = series.data?.days || [];
   const max = Math.max(1, ...days.map((d) => d.count));
   const labelEvery = Math.max(1, Math.floor(days.length / 6));
   return (
@@ -160,12 +160,13 @@ function Funnel({ period }) {
   if (funnel.isLoading) return <Card span={5} title="Funnel"><div style={{ padding: 16, display: 'grid', gap: 10 }}>{[0, 1, 2, 3].map((i) => <Skeleton key={i} height={30} />)}</div></Card>;
   if (funnel.isError) return <Card span={5} title="Funnel"><ErrorState error={funnel.error} onRetry={funnel.refetch} /></Card>;
 
-  const f = funnel.data;
+  const f = funnel.data || {};
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const stages = [
-    { label: `Scans${f.estimated ? ' (est.)' : ''}`, value: f.scans },
-    { label: 'Submits', value: f.submits },
-    { label: 'Assigned', value: f.assigned },
-    { label: 'Won', value: f.won },
+    { label: `Scans${f.estimated ? ' (est.)' : ''}`, value: num(f.scans) },
+    { label: 'Submits', value: num(f.submits) },
+    { label: 'Assigned', value: num(f.assigned) },
+    { label: 'Won', value: num(f.won) },
   ];
   const max = Math.max(1, ...stages.map((s) => s.value));
   return (
@@ -228,6 +229,12 @@ function RecentLeads() {
 
 function Leaderboard({ period }) {
   const campaigns = useCampaignLeaderboard(period);
+  // The zero-commitment incident set comes from /attention — the server's
+  // authoritative definition (wallet OR package funding, active+priced).
+  // Deriving it client-side from committedRemaining (wallet-only) would flag
+  // package-funded campaigns with a false red badge.
+  const attention = useAttention();
+  const zeroCommitIds = new Set((attention.data?.zeroCommitCampaigns || []).map((c) => c.id));
   if (campaigns.isLoading) return <Card span={12} title="Campaign leaderboard"><div style={{ padding: 16, display: 'grid', gap: 10 }}>{[0, 1, 2].map((i) => <Skeleton key={i} height={36} />)}</div></Card>;
   if (campaigns.isError) return <Card span={12} title="Campaign leaderboard"><ErrorState error={campaigns.error} onRetry={campaigns.refetch} /></Card>;
 
@@ -246,7 +253,7 @@ function Leaderboard({ period }) {
           const draw = c.design_config?.luckyDraw;
           const drawDays = draw?.enabled ? daysUntil(draw.closesAt) : null;
           const priced = Number.isInteger(c.leadPriceCents) && c.leadPriceCents > 0;
-          const zeroCommit = priced && c.status === 'active' && !(c.committedRemaining > 0);
+          const zeroCommit = zeroCommitIds.has(c.id);
           return (
             <div key={c.id} className="av2-qrow" style={{ cursor: 'default' }}>
               <span style={{ flex: 1.4, minWidth: 0 }}>

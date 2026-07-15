@@ -312,19 +312,17 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
+ {ADMIN_V2 && (
  <Route
  path="/AdminWallets" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
  <AdminV2Shell>
  <AdminV2Stub title="Wallets & Commitments" arrives="the next release (PR4)" />
  </AdminV2Shell>
- ) : (
- <Navigate to="/AdminDashboard" replace />
- )}
  </ProtectedRoute>
  }
  />
+ )}
  <Route
  path="/AdminCampaigns" element={
  <ProtectedRoute requiredRole="admin">

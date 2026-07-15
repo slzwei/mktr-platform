@@ -120,7 +120,8 @@ export function composeHealthCells(data) {
   return [
     {
       id: 'webhooks',
-      value: wh.failedLast24h > 0 ? `${wh.failedLast24h} failed` : 'Healthy',
+      // A disabled subscriber outranks failure counts — deliveries are OFF.
+      value: wh.subscriberDisabled ? 'Subscriber disabled' : wh.failedLast24h > 0 ? `${wh.failedLast24h} failed` : 'Healthy',
       caption: 'Lyfe webhooks · 24h',
       tone: wh.failedLast24h > 0 || wh.subscriberDisabled ? 'bad' : 'ok',
     },

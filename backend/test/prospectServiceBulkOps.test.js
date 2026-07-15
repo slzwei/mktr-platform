@@ -111,7 +111,7 @@ describe('bulkAssignProspects — held release, batch context, skip accounting',
 
     expect(res.affectedCount).toBe(2);
     expect(res.releasedCount).toBe(1);
-    expect(res.skipped).toEqual({ notFound: 0, alreadyAssigned: 0, heldFenced: 0 });
+    expect(res.skipped).toEqual({ notFound: 0, alreadyAssigned: 0, heldFenced: 0, externalOwned: 0 });
 
     // The atomic UPDATE clears the hold alongside the assignment.
     const updateArgs = deps.models.Prospect.update.mock.calls[0][0];
@@ -155,7 +155,7 @@ describe('bulkAssignProspects — held release, batch context, skip accounting',
     const res = await svc.bulkAssignProspects(['p-dnc', 'p-ext', 'p-mine', 'p-gone'], 'agent-1', ADMIN);
 
     expect(res.affectedCount).toBe(0);
-    expect(res.skipped).toEqual({ notFound: 1, alreadyAssigned: 1, heldFenced: 2 });
+    expect(res.skipped).toEqual({ notFound: 1, alreadyAssigned: 1, heldFenced: 2, externalOwned: 0 });
     expect(deps.dispatchEvent).not.toHaveBeenCalled();
   });
 

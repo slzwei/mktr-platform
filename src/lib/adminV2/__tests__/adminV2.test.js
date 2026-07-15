@@ -106,6 +106,16 @@ describe('prospectsToCsv', () => {
     expect(csv).toContain("\"'=HYPERLINK(\"\"http://evil\"\")\"");
   });
 
+  it('neutralizes formula markers hidden behind leading whitespace/control chars', () => {
+    for (const hostile of ['  =2+5', '\t+cmd', '\r@SUM(A1)']) {
+      const csv = prospectsToCsv([{ ...lead, firstName: hostile }]);
+      const cell = csv.split('\r\n')[1].split(',')[1];
+      // The stored cell must begin with the neutralizing apostrophe (possibly
+      // inside RFC-4180 quotes when the payload carries commas/CRs).
+      expect(cell.replace(/^"/, '').startsWith("'")).toBe(true);
+    }
+  });
+
   it('held rows carry the reason; assigned-held never both', () => {
     const csv = prospectsToCsv([{ ...lead, quarantinedAt: '2026-07-15T02:00:00Z', quarantineReason: 'dnc_pending', assignedAgent: null }]);
     expect(csv.split('\r\n')[1]).toContain('dnc_pending');

@@ -558,7 +558,7 @@ describe('Bulk return-to-held / bulk delete / assignment filter', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.data.affectedCount).toBe(0)
-    expect(res.body.data.skipped).toEqual({ notFound: 1, alreadyAssigned: 1, heldFenced: 0 })
+    expect(res.body.data.skipped).toEqual({ notFound: 1, alreadyAssigned: 1, heldFenced: 0, externalOwned: 0 })
   })
 
   it('POST /bulk/delete — deletes rows, counts unknown ids, never aborts the batch', async () => {

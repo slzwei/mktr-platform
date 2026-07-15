@@ -838,7 +838,7 @@ describe('prospectService (unit)', () => {
       // Op.or should contain iLike conditions
       const orConditions = whereArg[Op.or];
       expect(orConditions).toBeDefined();
-      expect(orConditions).toHaveLength(4); // firstName, lastName, email, company
+      expect(orConditions).toHaveLength(5); // firstName, lastName, email, company + space-insensitive phone
 
       // Verify at least one uses iLike pattern
       const firstCondition = orConditions[0];

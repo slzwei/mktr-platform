@@ -7,7 +7,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
-import { Toaster } from '@/components/ui/sonner';
 import '@/styles/adminV2.css';
 
 const THEME_KEY = 'mktr_admin_v2_theme';
@@ -125,7 +124,8 @@ export default function AdminV2Shell({ children }) {
           </main>
         </div>
       </div>
-      <Toaster position="bottom-right" theme={theme} />
+      {/* Toasts render through the app-wide sonner Toaster (App.jsx) — a second
+          mount here would double-render every toast. */}
     </div>
   );
 }

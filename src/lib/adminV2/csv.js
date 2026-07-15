@@ -7,7 +7,10 @@
 function csvCell(value) {
   if (value === null || value === undefined) return '';
   let s = String(value);
-  if (/^[=+\-@]/.test(s)) s = `'${s}`;
+  // Formula markers can hide behind leading whitespace/control chars in
+  // spreadsheets - guard the first meaningful character, not position zero.
+  // eslint-disable-next-line no-control-regex
+  if (/^[\s\u0000-\u001F]*[=+\-@]/.test(s)) s = `'${s}`;
   if (/[",\n\r]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
   return s;
 }
