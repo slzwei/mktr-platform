@@ -144,14 +144,12 @@ function ExplorePage() {
           {filterRow('Age', ['all', ...Object.keys(AGE_BANDS)].map((a) => (
             <Chip key={a} active={age === a} onClick={() => setAge(a)}>{a === 'all' ? 'Any age' : a}</Chip>
           )))}
-          {filterRow('When', [
-            ...['all', 'weekend', 'weekday'].map((d) => (
-              <Chip key={d} active={day === d} onClick={() => setDay(d)}>{d === 'all' ? 'Any day' : d === 'weekend' ? 'Weekends' : 'Weekdays'}</Chip>
-            )),
-            ...['all', 'physical', 'online', 'hybrid'].map((m) => (
-              <Chip key={`m-${m}`} active={mode === m} onClick={() => setMode(m)}>{m === 'all' ? 'Anywhere' : m === 'physical' ? 'In-person' : m.charAt(0).toUpperCase() + m.slice(1)}</Chip>
-            )),
-          ])}
+          {filterRow('When', ['all', 'weekend', 'weekday'].map((d) => (
+            <Chip key={d} active={day === d} onClick={() => setDay(d)}>{d === 'all' ? 'Any day' : d === 'weekend' ? 'Weekends' : 'Weekdays'}</Chip>
+          )))}
+          {filterRow('Where', ['all', 'physical', 'online', 'hybrid'].map((m) => (
+            <Chip key={m} active={mode === m} onClick={() => setMode(m)}>{m === 'all' ? 'Anywhere' : m === 'physical' ? 'In-person' : m.charAt(0).toUpperCase() + m.slice(1)}</Chip>
+          )))}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', borderTop: '1px solid var(--rm-line)', paddingTop: 13 }}>
             <Chip active={dsa} onClick={() => setDsa(!dsa)}>DSA-related{dsa ? ' ✓' : ''}</Chip>
             <select aria-label="Sort offers" value={sort} onChange={(e) => setSort(e.target.value)} className="rm-select" style={{ width: 'auto', marginLeft: 'auto', borderRadius: 10, padding: '8px 12px', fontSize: 13, background: 'var(--rm-card)' }}>
