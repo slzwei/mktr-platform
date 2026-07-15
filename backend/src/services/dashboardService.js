@@ -203,7 +203,9 @@ export async function getAttention() {
   }
 
   // Wallets — EXTERNAL agents only (v1 cohort), inactive included.
-  const name = (a) => a.fullName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || a.email;
+  // raw:true skips the fullName VIRTUAL and synced external agents can lack an
+  // email — this must never emit null (it crashed the v2 dashboard).
+  const name = (a) => a.fullName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || a.email || 'Agent';
   const zero = externalAgents
     .filter((a) => a.walletBalanceCents === 0)
     .map((a) => ({ id: a.id, name: name(a), isActive: a.isActive }));

@@ -403,7 +403,7 @@ export function makeWalletService(overrides = {}) {
       const mine = (byAgent.get(a.id) || []).map(({ agentId: _drop, ...rest }) => rest);
       return {
         id: a.id,
-        name: a.fullName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || a.email,
+        name: a.fullName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || a.email || 'Agent',
         email: a.email,
         isActive: a.isActive,
         walletBalanceCents: a.walletBalanceCents,
