@@ -37,7 +37,7 @@ export default function MarketplaceDsa() {
         <div className="rm-shell" style={{ paddingTop: 'clamp(48px,6vw,84px)' }}>
           <div className="rm-dsa-eyebrow">
             <span className="rm-ticket rm-ticket--sm rm-ticket--apr" style={{ width: 11, height: 14 }} />
-            The Redeem field guide · Updated for the 2026 exercise
+            The Redeem field guide · Updated for the 2027 exercise
           </div>
           <div className="rm-dsa-cover-grid">
             <h1>Seven <em>doors</em> into secondary school.</h1>
@@ -161,6 +161,7 @@ export default function MarketplaceDsa() {
       {/* 04 · The 2026 calendar */}
       <section className="rm-dsa-chapter rm-shell" id={year.id}>
         <ChapterHead chapter={year} />
+        <p className="rm-dsa-intro">The 2027 schedule lands on MOE's portal around April — but the rhythm barely moves year to year. Applied in May 2026? Outcomes arrive by 28 August, ranking follows in October, results in late November.</p>
         <div className="rm-dsa-tl">
           {DSA_GUIDE.timeline.map((t) => (
             <div key={t.t} className={`rm-dsa-tl-item${t.key ? ' is-key' : ''}`}>
@@ -256,7 +257,7 @@ export default function MarketplaceDsa() {
             </div>
           </div>
           <div className="rm-dsa-close-note">
-            Facts on this page: MOE DSA-Sec 2026 schedule &amp; parliamentary replies (Feb 2024). Selection formats vary by school — always verify on the school's DSA page and moe.gov.sg.
+            Facts on this page: MOE's published DSA-Sec schedule &amp; parliamentary replies (Feb 2024). Selection formats vary by school — always verify on the school's DSA page and moe.gov.sg.
           </div>
         </div>
       </section>
