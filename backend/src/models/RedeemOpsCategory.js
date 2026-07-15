@@ -14,6 +14,10 @@ const RedeemOpsCategory = sequelize.define('RedeemOpsCategory', {
   // Instagram hashtag-discovery tags (migration 065). NULL = not curated yet —
   // there is deliberately no name fallback (a category name is not a hashtag).
   igHashtags: { type: DataTypes.ARRAY(DataTypes.TEXT), allowNull: true },
+  // Google Maps actor `categoryFilterWords` — categories of the answer to KEEP
+  // (migration 074). NULL/empty = no filter (byte-identical actor input); no name
+  // fallback (a CRM name is rarely a real Google category). Opt-in, like minStars.
+  categoryFilterWords: { type: DataTypes.ARRAY(DataTypes.TEXT), allowNull: true },
   isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
 }, {
   tableName: 'redeem_ops_categories',

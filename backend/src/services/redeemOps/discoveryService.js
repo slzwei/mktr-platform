@@ -194,6 +194,7 @@ export function makeDiscoveryService(overrides = {}) {
   async function startDiscovery({
     category, area, limit, provider = 'google_maps',
     searchTerms: adHocTerms, hashtags: adHocTags, minStars, skipClosed,
+    categoryFilterWords: adHocFilterWords,
   }, user, requestId = null) {
     assertEnabled();
     const isInstagram = provider === 'instagram_hashtag';
@@ -212,6 +213,7 @@ export function makeDiscoveryService(overrides = {}) {
       : []);
     const overrideTerms = cleanList(adHocTerms);
     const overrideTags = cleanList(adHocTags);
+    const overrideFilterWords = cleanList(adHocFilterWords);
     const hasCategory = !!(category && String(category).trim());
     const override = isInstagram ? overrideTags : overrideTerms;
     if (!hasCategory && override.length === 0) {
@@ -239,6 +241,12 @@ export function makeDiscoveryService(overrides = {}) {
     const searchTermsUsed = isInstagram ? null
       : (overrideTerms.length ? overrideTerms
         : (c.searchTermsEnabled ? resolved.searchTerms : [canonicalCategory]));
+    // Category allowlist (actor `categoryFilterWords`): ad-hoc words override the
+    // category's saved list; either may be empty → no filter, so the actor input
+    // stays byte-identical to before (opt-in, like minStars/skipClosed). Maps-only.
+    const filterWordsUsed = isInstagram ? []
+      : (overrideFilterWords.length ? overrideFilterWords
+        : (resolved?.categoryFilterWords || []));
     // The Maps actor applies this cap to EACH search string, so divide the requested
     // total across terms to avoid multiplying crawl cost by N (a single term = full limit).
     const perSearchLimit = isInstagram ? null
@@ -256,7 +264,7 @@ export function makeDiscoveryService(overrides = {}) {
     // materialization's soft filter; both never re-resolve a mid-run category edit.
     const searchPayload = isInstagram
       ? { hashtags: igHashtagsUsed, territory: runValues.area }
-      : { searchTerms: searchTermsUsed };
+      : { searchTerms: searchTermsUsed, ...(filterWordsUsed.length ? { categoryFilterWords: filterWordsUsed } : {}) };
     let run;
     if (c.resultQuotaEnabled) {
       const sgDate = sgDateKey();
@@ -305,6 +313,9 @@ export function makeDiscoveryService(overrides = {}) {
           // (no-filter) input stays byte-identical to before.
           ...(minStars ? { placeMinimumStars: minStars } : {}),
           ...(skipClosed ? { skipClosedPlaces: true } : {}),
+          // Category allowlist: keep only places whose Google category matches one
+          // of these words (drops the off-vertical padding a niche query pulls in).
+          ...(filterWordsUsed.length ? { categoryFilterWords: filterWordsUsed } : {}),
         };
       }
       const started = await d.apify.startRun(actorId, input, { webhookUrl: webhookUrl() });
@@ -339,7 +350,7 @@ export function makeDiscoveryService(overrides = {}) {
           // igHashtagsUsed, NOT resolved.hashtags — ad-hoc IG runs have no category,
           // so `resolved` is null and reading it here crashed AFTER Apify spend began.
           ? { provider: 'apify_instagram_hashtag', hashtags: igHashtagsUsed }
-          : { searchTerms: searchTermsUsed }),
+          : { searchTerms: searchTermsUsed, ...(filterWordsUsed.length ? { categoryFilterWords: filterWordsUsed } : {}) }),
       },
       requestId,
     });

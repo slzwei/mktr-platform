@@ -81,7 +81,7 @@ export default function DiscoverPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     area: '', limit: '30', provider: 'google_maps',
-    adhoc: '', minStars: 'any', skipClosed: false,
+    adhoc: '', minStars: 'any', skipClosed: false, filterWords: '',
   });
   const [runId, setRunId] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
@@ -273,6 +273,8 @@ export default function DiscoverPage() {
       body.searchTerms = terms;
       if (form.minStars && form.minStars !== 'any') body.minStars = form.minStars;
       if (form.skipClosed) body.skipClosed = true;
+      const filterWords = parseCsv(form.filterWords);
+      if (filterWords.length) body.categoryFilterWords = filterWords;
     }
     startMutation.mutate(body);
   };
@@ -382,25 +384,35 @@ export default function DiscoverPage() {
               </div>
             )}
             {!isIg && (
-              <div className="flex items-end gap-3 mt-3">
-                <div className="space-y-1">
-                  <Label>Min rating</Label>
-                  <Select value={form.minStars} onValueChange={(v) => setForm((f) => ({ ...f, minStars: v }))}>
-                    <SelectTrigger className="w-full min-w-[104px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="any">Any</SelectItem>
-                      <SelectItem value="three">3.0★+</SelectItem>
-                      <SelectItem value="threeAndHalf">3.5★+</SelectItem>
-                      <SelectItem value="four">4.0★+</SelectItem>
-                    </SelectContent>
-                  </Select>
+              <>
+                <div className="flex items-end gap-3 mt-3">
+                  <div className="space-y-1">
+                    <Label>Min rating</Label>
+                    <Select value={form.minStars} onValueChange={(v) => setForm((f) => ({ ...f, minStars: v }))}>
+                      <SelectTrigger className="w-full min-w-[104px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="any">Any</SelectItem>
+                        <SelectItem value="three">3.0★+</SelectItem>
+                        <SelectItem value="threeAndHalf">3.5★+</SelectItem>
+                        <SelectItem value="four">4.0★+</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <label className="flex items-center gap-2 h-9 px-1 text-[13px] font-semibold cursor-pointer whitespace-nowrap" style={{ color: 'var(--ro-text-2)' }}>
+                    <input type="checkbox" className="w-4 h-4 accent-[var(--ro-bunker)]"
+                      checked={form.skipClosed} onChange={(e) => setForm((f) => ({ ...f, skipClosed: e.target.checked }))} />
+                    Skip closed
+                  </label>
                 </div>
-                <label className="flex items-center gap-2 h-9 px-1 text-[13px] font-semibold cursor-pointer whitespace-nowrap" style={{ color: 'var(--ro-text-2)' }}>
-                  <input type="checkbox" className="w-4 h-4 accent-[var(--ro-bunker)]"
-                    checked={form.skipClosed} onChange={(e) => setForm((f) => ({ ...f, skipClosed: e.target.checked }))} />
-                  Skip closed
-                </label>
-              </div>
+                <div className="space-y-1 mt-3">
+                  <Label htmlFor="disc-filter-words">
+                    Categories to keep <span style={{ color: 'var(--ro-text-3)', fontWeight: 400 }}>· optional</span>
+                  </Label>
+                  <Input id="disc-filter-words" value={form.filterWords}
+                    placeholder="restaurant, cafe, bakery — drops off-category results"
+                    onChange={(e) => setForm((f) => ({ ...f, filterWords: e.target.value }))} />
+                </div>
+              </>
             )}
             <div className="flex flex-wrap items-center gap-2 mt-3">
               {!territoriesEnabled && !isIg && (
@@ -488,6 +500,8 @@ export default function DiscoverPage() {
               // was filed under one (ad-hoc runs have none — no more bare "—").
               ...(runTerms ? [[isIgRun ? 'Hashtags' : 'Terms', runTerms, true]] : []),
               ...(run?.category ? [['Category', run.category, false]] : []),
+              ...(run?.rawPayload?.categoryFilterWords?.length
+                ? [['Categories', run.rawPayload.categoryFilterWords.join(', '), true]] : []),
               ['Area', run?.area, false], ['Results', run?.requestedLimit, false],
               ...(run?.actualCostUsd != null ? [['Cost', `$${Number(run.actualCostUsd).toFixed(2)}`, false]] : []),
             ].map(([k, v, truncate]) => (

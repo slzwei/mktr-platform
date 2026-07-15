@@ -275,6 +275,44 @@ describe('resolveCategoryForSearch', () => {
   });
 });
 
+describe('categoryFilterWords (Maps category allowlist)', () => {
+  const categoryService = makeCategoryService();
+
+  test('create persists categoryFilterWords and the resolver returns them', async () => {
+    const name = uniq('Filtered Salon');
+    const res = await request(app).post('/api/redeem-ops/categories').set(auth(admin.token))
+      .send({ name, categoryFilterWords: ['Nail salon', 'Beauty salon'] });
+    expect(res.body?.data?.category?.id).toBeTruthy();
+    const stored = await RedeemOpsCategory.findByPk(res.body.data.category.id);
+    expect(stored.categoryFilterWords).toEqual(['Nail salon', 'Beauty salon']);
+    await expect(categoryService.resolveCategoryForSearch(name)).resolves.toEqual({
+      name, searchTerms: [name], categoryFilterWords: ['Nail salon', 'Beauty salon'],
+    });
+  });
+
+  test('updating categoryFilterWords to [] clears it and the resolver omits the key', async () => {
+    const name = uniq('Clearable Cafe');
+    const created = await request(app).post('/api/redeem-ops/categories').set(auth(admin.token))
+      .send({ name, categoryFilterWords: ['Cafe'] });
+    const id = created.body.data.category.id;
+    const upd = await request(app).patch(`/api/redeem-ops/categories/${id}`).set(auth(admin.token))
+      .send({ categoryFilterWords: [] });
+    expect(upd.status).toBe(200);
+    expect((await RedeemOpsCategory.findByPk(id)).categoryFilterWords).toBeNull();
+    await expect(categoryService.resolveCategoryForSearch(name)).resolves.toEqual({
+      name, searchTerms: [name],
+    });
+  });
+
+  test('categoryFilterWords are trimmed and de-duped case-insensitively', async () => {
+    const name = uniq('Deduped Cat');
+    const res = await request(app).post('/api/redeem-ops/categories').set(auth(admin.token))
+      .send({ name, categoryFilterWords: ['Spa', 'spa', '  SPA  ', 'Gym'] });
+    expect((await RedeemOpsCategory.findByPk(res.body.data.category.id)).categoryFilterWords)
+      .toEqual(['Spa', 'Gym']);
+  });
+});
+
 describe('delete reference guard', () => {
   test('unreferenced category deletes; referenced one → 409', async () => {
     const unused = await createCategory(admin.token, uniq('Unused'));
