@@ -211,3 +211,84 @@
 .av2-kv { display: flex; gap: 12px; font-size: 12.5px; padding: 3px 0; }
 .av2-kv > span:first-child { width: 110px; flex: none; color: var(--ink-3); }
 .av2-kv > span:last-child { font-family: var(--font-mono); color: var(--ink); overflow-wrap: anywhere; }
+
+/* ── Legacy-token bridge (campaign editors inside the v2 shell) ──────────────
+   The pre-rebuild editors (workspace / designer / form) are styled entirely
+   with shadcn/Tropic tokens (bg-card, text-primary, border-border…). Remapping
+   those variables inside .admin-v2 reskins them to Switchboard wholesale —
+   same pattern as .gr-designer-chrome. The customer-facing design preview
+   opts back out via .av2-theme-reset below. */
+.admin-v2 {
+  --background: 220 27.3% 95.7%;
+  --foreground: 220 21.4% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 21.4% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 21.4% 11%;
+  --primary: 231.6 78.8% 53.7%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 225 28.6% 97.3%;
+  --secondary-foreground: 222.2 14% 37.8%;
+  --muted: 225 28.6% 97.3%;
+  --muted-foreground: 222.2 14% 37.8%;
+  --accent: 229.1 91.7% 95.3%;
+  --accent-foreground: 230 70% 47.1%;
+  --destructive: 5.4 75% 43.9%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 26.1% 91%;
+  --input: 221.1 21.3% 82.5%;
+  --ring: 231.6 78.8% 53.7%;
+  --radius: 0.625rem;
+}
+
+.admin-v2[data-theme='dark'] {
+  color-scheme: dark;
+  --background: 222.9 18.9% 7.3%;
+  --foreground: 220 36% 95.1%;
+  --card: 222 17.9% 11%;
+  --card-foreground: 220 36% 95.1%;
+  --popover: 222 17.9% 11%;
+  --popover-foreground: 220 36% 95.1%;
+  --primary: 232.6 100% 71.4%;
+  --primary-foreground: 222.9 18.9% 7.3%;
+  --secondary: 221.5 17.8% 14.3%;
+  --secondary-foreground: 222.2 17.9% 70.4%;
+  --muted: 221.5 17.8% 14.3%;
+  --muted-foreground: 222.2 17.9% 70.4%;
+  --accent: 230.2 38.1% 22.2%;
+  --accent-foreground: 232.6 100% 79.4%;
+  --destructive: 4.4 83.3% 64.7%;
+  --destructive-foreground: 222.9 18.9% 7.3%;
+  --border: 222.4 17.9% 18.6%;
+  --input: 220.9 15.9% 27.1%;
+  --ring: 232.6 100% 71.4%;
+}
+
+/* The design-editor PREVIEW renders the real customer page inline (no iframe —
+   Radix portals must reach the top document). It must show the CUSTOMER look,
+   never admin chrome: restore the app's original tokens + font. Safe outside
+   .admin-v2 too (it just restates the defaults). */
+.av2-theme-reset {
+  color-scheme: light;
+  font-family: 'Albert Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --background: 0 0% 100%;
+  --foreground: 45 8% 9.8%;
+  --card: 42 61.9% 95.9%;
+  --card-foreground: 45 8% 9.8%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 45 8% 9.8%;
+  --primary: 15 67.6% 50.4%;
+  --primary-foreground: 42 61.9% 95.9%;
+  --secondary: 24 62.8% 91.6%;
+  --secondary-foreground: 15 69.2% 38.2%;
+  --muted: 81 30.4% 91%;
+  --muted-foreground: 36 7.2% 27.1%;
+  --accent: 24 62.8% 91.6%;
+  --accent-foreground: 15 69.2% 38.2%;
+  --destructive: 5 59.1% 44.1%;
+  --destructive-foreground: 42 61.9% 95.9%;
+  --border: 43 29.6% 86.1%;
+  --input: 43 29.6% 86.1%;
+  --ring: 15 67.6% 50.4%;
+  --radius: 0.5rem;
+}

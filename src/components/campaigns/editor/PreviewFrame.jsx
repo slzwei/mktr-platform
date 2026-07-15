@@ -73,7 +73,7 @@ export default function PreviewFrame({ currentDesign, campaign }) {
  {/* Light-mode isolated viewport — render the REAL page. Fills the
  remaining height and scrolls; no fixed height, so the footer is
  never clipped by the parent container. */}
- <div className="light flex-1 min-h-0 overflow-y-auto" data-theme="light">
+ <div className="light av2-theme-reset flex-1 min-h-0 overflow-y-auto" data-theme="light">
  <LeadCaptureLayout
  design={currentDesign}
  maxWidth={currentDesign.formWidth}

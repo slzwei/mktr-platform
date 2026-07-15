@@ -45,7 +45,7 @@ export function useAdminV2Theme() {
   return [theme, setTheme];
 }
 
-export default function AdminV2Shell({ children }) {
+export default function AdminV2Shell({ children, fullBleed = false }) {
   const [theme, setTheme] = useAdminV2Theme();
   const navigate = useNavigate();
   const logout = useAuthStore((s) => s.logout);
@@ -119,7 +119,9 @@ export default function AdminV2Shell({ children }) {
             </button>
           </div>
 
-          <main style={{ flex: 1, width: '100%', maxWidth: 1520, margin: '0 auto', padding: 24 }}>
+          <main style={fullBleed
+            ? { flex: 1, width: '100%', minWidth: 0 }
+            : { flex: 1, width: '100%', maxWidth: 1520, margin: '0 auto', padding: 24 }}>
             {children}
           </main>
         </div>
