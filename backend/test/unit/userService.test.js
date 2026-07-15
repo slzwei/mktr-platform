@@ -17,8 +17,11 @@ const User = {
 const Campaign = { count: jest.fn() };
 const Commission = { count: jest.fn() };
 const Prospect = { findAll: jest.fn(), update: jest.fn() };
-const LeadPackageAssignment = { destroy: jest.fn() };
+const LeadPackageAssignment = { destroy: jest.fn(), count: jest.fn() };
 const ProspectActivity = { bulkCreate: jest.fn() };
+// Wallet guards (agent-wallet build): ledger history RESTRICTs hard-deletes;
+// open wallet state (balance / open commitments) 409s deactivate + delete.
+const WalletLedger = { count: jest.fn() };
 
 const mockTransaction = {
   commit: jest.fn(),
@@ -39,7 +42,7 @@ const AppError = class extends Error {
 };
 
 jest.unstable_mockModule('../../src/models/index.js', () => ({
-  User, Campaign, Commission, Prospect, LeadPackageAssignment, ProspectActivity, sequelize, Op,
+  User, Campaign, Commission, Prospect, LeadPackageAssignment, ProspectActivity, WalletLedger, sequelize, Op,
 }));
 jest.unstable_mockModule('../../src/middleware/errorHandler.js', () => ({ AppError }));
 
@@ -79,6 +82,8 @@ describe('userService (unit)', () => {
     Prospect.findAll.mockResolvedValue([]);
     Prospect.update.mockResolvedValue([0]);
     LeadPackageAssignment.destroy.mockResolvedValue(0);
+    LeadPackageAssignment.count.mockResolvedValue(0);
+    WalletLedger.count.mockResolvedValue(0);
     ProspectActivity.bulkCreate.mockResolvedValue([]);
   });
 
@@ -213,11 +218,26 @@ describe('userService (unit)', () => {
         expect.objectContaining({ where: { assignedAgentId: 'user-1' } })
       );
       expect(LeadPackageAssignment.destroy).toHaveBeenCalled();
+      // wallet-source rows are financial history — never destroyed here
+      expect(LeadPackageAssignment.destroy.mock.calls[0][0].where.source).toEqual({ [Op.ne]: 'wallet' });
       expect(mockUser.update).toHaveBeenCalledWith(
         { isActive: false },
         expect.objectContaining({ transaction: mockTransaction })
       );
       expect(result.message).toContain('deactivated');
+    });
+
+    it('409s when the user still holds a wallet balance', async () => {
+      User.count.mockResolvedValueOnce(1); // walletBalanceCents > 0 check
+      await expect(deactivateUser('user-1', 'admin-1')).rejects.toMatchObject({ statusCode: 409 });
+      expect(LeadPackageAssignment.destroy).not.toHaveBeenCalled();
+    });
+
+    it('409s when the user has open wallet commitments', async () => {
+      User.count.mockResolvedValueOnce(0);
+      LeadPackageAssignment.count.mockResolvedValueOnce(3);
+      await expect(deactivateUser('user-1', 'admin-1')).rejects.toMatchObject({ statusCode: 409 });
+      expect(LeadPackageAssignment.destroy).not.toHaveBeenCalled();
     });
   });
 
@@ -236,6 +256,14 @@ describe('userService (unit)', () => {
 
       await expect(permanentlyDeleteUser('user-1', 'admin-1'))
         .rejects.toThrow('Cannot delete user with commissions');
+    });
+
+    it('throws 409 when user has wallet history (financial records are never erased)', async () => {
+      WalletLedger.count.mockResolvedValueOnce(4);
+
+      await expect(permanentlyDeleteUser('user-1', 'admin-1'))
+        .rejects.toThrow('Cannot delete user with wallet history');
+      expect(mockUser.destroy).not.toHaveBeenCalled();
     });
 
     it('destroys user record in transaction', async () => {

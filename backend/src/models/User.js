@@ -151,6 +151,14 @@ const User = sequelize.define('User', {
     allowNull: true,
     unique: true
   },
+  // Agent-wallet fast read (migration 071). The wallet_ledger is the audit
+  // truth — this column is maintained atomically with every ledger insert
+  // (walletService) and must never be written anywhere else.
+  walletBalanceCents: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  },
   // Phase 2 — preserves upstream platform role (agent|manager|director).
   // Internal MKTR `role` keeps using 'agent' for permission purposes;
   // external_role is the lossless mirror for read-side filtering.

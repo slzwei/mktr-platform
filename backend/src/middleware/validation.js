@@ -107,6 +107,8 @@ export const schemas = {
     enforceLeadQuota: Joi.boolean().optional(),
     metaPixelId: Joi.string().max(64).optional().allow(null, ''),
     tiktokPixelId: Joi.string().max(64).optional().allow(null, ''),
+    // Wallet commit price (cents) — service enforces the admin-only clamp.
+    leadPriceCents: Joi.number().integer().min(1).max(100000000).optional().allow(null),
     // Marketplace URL handle — service enforces charset/lock; format-only here.
     slug: Joi.string().max(80).optional().allow(null, '')
   }),
@@ -128,6 +130,8 @@ export const schemas = {
     enforceLeadQuota: Joi.boolean().optional(),
     metaPixelId: Joi.string().max(64).optional().allow(null, ''),
     tiktokPixelId: Joi.string().max(64).optional().allow(null, ''),
+    // Wallet commit price (cents) — service enforces the admin-only clamp.
+    leadPriceCents: Joi.number().integer().min(1).max(100000000).optional().allow(null),
     // Marketplace URL handle — service enforces charset + post-activation lock.
     slug: Joi.string().max(80).optional().allow(null, '')
   }).min(1),

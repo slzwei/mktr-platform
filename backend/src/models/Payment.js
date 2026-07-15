@@ -100,6 +100,15 @@ const Payment = sequelize.define('Payment', {
     allowNull: false,
     defaultValue: 'pending',
   },
+  // Branches checkout + settlement (migration 071): 'package_purchase' rides
+  // the assignment-granting path; 'wallet_topup' credits the agent wallet
+  // inside the same locked settlement transaction (no package involved).
+  kind: {
+    type: DataTypes.STRING(24),
+    allowNull: false,
+    defaultValue: 'package_purchase',
+    validate: { isIn: [['package_purchase', 'wallet_topup']] },
+  },
   source: {
     type: DataTypes.ENUM('mktr_leads_app', 'web', 'admin_comp'),
     allowNull: false,

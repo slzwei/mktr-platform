@@ -219,6 +219,14 @@ const Campaign = sequelize.define('Campaign', {
     type: DataTypes.DATE,
     allowNull: true,
     comment: 'Stamped the first time is_active flips true; locks the slug'
+  },
+  // Agent-wallet commit price (migration 068). Admin-set, positive cents;
+  // NULL = not commit-able by external agents (hidden from the wallet
+  // catalog). Independent of externalEligible (inert buyer-pool flag).
+  leadPriceCents: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    validate: { min: 1 }
   }
 }, {
   tableName: 'campaigns',

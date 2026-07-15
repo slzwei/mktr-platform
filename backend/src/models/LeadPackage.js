@@ -111,10 +111,26 @@ const LeadPackage = sequelize.define('LeadPackage', {
       model: 'campaigns',
       key: 'id'
     }
+  },
+  // 'catalog' = normal buyable SKU; 'wallet' = the hidden per-campaign
+  // container that wallet commitments hang off (migration 069). Wallet
+  // packages are isPublic:false + price 0, so the buy catalog never shows
+  // them; the unique partial index below enforces one per campaign.
+  kind: {
+    type: DataTypes.STRING(16),
+    allowNull: false,
+    defaultValue: 'catalog',
+    validate: { isIn: [['catalog', 'wallet']] }
   }
 }, {
   tableName: 'lead_packages',
   indexes: [
+    {
+      unique: true,
+      fields: ['campaignId'],
+      where: { kind: 'wallet' },
+      name: 'uq_lead_packages_wallet_campaign'
+    },
     {
       fields: ['status']
     },

@@ -1,6 +1,30 @@
 import { Op } from 'sequelize';
-import { User, Campaign, Commission, sequelize, Prospect, LeadPackageAssignment, ProspectActivity } from '../models/index.js';
+import { User, Campaign, Commission, sequelize, Prospect, LeadPackageAssignment, ProspectActivity, WalletLedger } from '../models/index.js';
 import { AppError } from '../middleware/errorHandler.js';
+
+/**
+ * Wallet-account closure policy (docs/plans/agent-wallet-commitments.md):
+ * deactivation/deletion must never erase or strand paid credits. Throws 409
+ * when the user holds a balance or open wallet commitments — the admin
+ * resolves those first (campaign takedown, or a manual adjustment to zero).
+ */
+async function assertNoOpenWalletState(userIds, { transaction } = {}) {
+  const ids = Array.isArray(userIds) ? userIds : [userIds];
+  const funded = await User.count({
+    where: { id: { [Op.in]: ids }, walletBalanceCents: { [Op.gt]: 0 } },
+    transaction
+  });
+  if (funded > 0) {
+    throw new AppError('User has a wallet balance. Zero it (manual adjustment, note required) before deactivating or deleting.', 409);
+  }
+  const openCommitments = await LeadPackageAssignment.count({
+    where: { agentId: { [Op.in]: ids }, source: 'wallet', status: 'active', leadsRemaining: { [Op.gt]: 0 } },
+    transaction
+  });
+  if (openCommitments > 0) {
+    throw new AppError('User has open wallet commitments. They resolve only by delivery or campaign takedown.', 409);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -336,6 +360,8 @@ export async function deactivateUser(userId, actorId) {
     throw new AppError('User not found', 404);
   }
 
+  await assertNoOpenWalletState(userId);
+
   await sequelize.transaction(async (t) => {
     const assignedProspects = await Prospect.findAll({
       where: { assignedAgentId: userId },
@@ -355,8 +381,10 @@ export async function deactivateUser(userId, actorId) {
       { where: { assignedAgentId: userId }, transaction: t }
     );
 
+    // Wallet-source rows are financial history — never destroyed here (the
+    // pre-check above guarantees none are still open).
     await LeadPackageAssignment.destroy({
-      where: { agentId: userId }, transaction: t
+      where: { agentId: userId, source: { [Op.ne]: 'wallet' } }, transaction: t
     });
 
     await user.update({ isActive: false }, { transaction: t });
@@ -384,6 +412,14 @@ export async function permanentlyDeleteUser(userId, actorId) {
   const commissionCount = await Commission.count({ where: { agentId: userId } });
   if (commissionCount > 0) {
     throw new AppError('Cannot delete user with commissions. Archive commissions first.', 409);
+  }
+
+  // Wallet history is a DB-level RESTRICT (wallet_ledger.agentId) — pre-check
+  // for a friendly 409 instead of a raw FK error. Any ledger row blocks
+  // hard-deletion permanently: financial history is never erased.
+  const walletHistoryCount = await WalletLedger.count({ where: { agentId: userId } });
+  if (walletHistoryCount > 0) {
+    throw new AppError('Cannot delete user with wallet history. Deactivate the account instead.', 409);
   }
 
   await sequelize.transaction(async (t) => {
@@ -415,6 +451,14 @@ export async function permanentlyDeleteUser(userId, actorId) {
 export async function bulkDeleteUsers(userIds, actorId) {
   let deletedCount = 0;
 
+  // Same wallet guards as single delete: open state 409s, and ANY ledger
+  // history blocks hard-deletion (DB RESTRICT would abort the tx anyway).
+  await assertNoOpenWalletState(userIds);
+  const walletHistoryCount = await WalletLedger.count({ where: { agentId: { [Op.in]: userIds } } });
+  if (walletHistoryCount > 0) {
+    throw new AppError('One or more users have wallet history and cannot be hard-deleted. Deactivate them instead.', 409);
+  }
+
   await sequelize.transaction(async (t) => {
     // Fetch agent info for activity logs
     const agents = await User.findAll({
@@ -444,7 +488,7 @@ export async function bulkDeleteUsers(userIds, actorId) {
     );
 
     await LeadPackageAssignment.destroy({
-      where: { agentId: { [Op.in]: userIds } },
+      where: { agentId: { [Op.in]: userIds }, source: { [Op.ne]: 'wallet' } },
       transaction: t
     });
 

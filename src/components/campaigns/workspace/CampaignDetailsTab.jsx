@@ -28,6 +28,7 @@ export default function CampaignDetailsTab({ initial, type, isEdit, saving, onSu
     commission_amount_driver: initial?.commission_amount_driver ?? '',
     commission_amount_fleet: initial?.commission_amount_fleet ?? '',
     enforceLeadQuota: initial?.enforceLeadQuota === true,
+    leadPriceDollars: initial?.leadPriceCents != null ? String(initial.leadPriceCents / 100) : '',
     metaPixelId: initial?.metaPixelId || '',
     tiktokPixelId: initial?.tiktokPixelId || '',
   });
@@ -46,6 +47,10 @@ export default function CampaignDetailsTab({ initial, type, isEdit, saving, onSu
       commission_amount_driver: form.commission_amount_driver === '' ? null : Number(form.commission_amount_driver),
       commission_amount_fleet: form.commission_amount_fleet === '' ? null : Number(form.commission_amount_fleet),
       enforceLeadQuota: form.enforceLeadQuota,
+      leadPriceCents: (() => {
+        const n = Number(form.leadPriceDollars);
+        return form.leadPriceDollars !== '' && Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+      })(),
       metaPixelId: form.metaPixelId.trim() || null,
       tiktokPixelId: form.tiktokPixelId.trim() || null,
     });
@@ -85,6 +90,13 @@ export default function CampaignDetailsTab({ initial, type, isEdit, saving, onSu
               </p>
             </div>
             <Switch id="quota" checked={form.enforceLeadQuota} onCheckedChange={(c) => set('enforceLeadQuota', c)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="leadPrice">Lead price (SGD per lead)</Label>
+            <Input id="leadPrice" type="number" step="0.01" min="0" value={form.leadPriceDollars} onChange={(e) => set('leadPriceDollars', e.target.value)} placeholder="e.g. 8.00" />
+            <p className="text-xs text-muted-foreground">
+              What external agents pay per lead when committing wallet credits to this campaign. Leave blank to keep it closed to commitments.
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2"><Label htmlFor="cad">Driver commission (SGD)</Label><Input id="cad" type="number" step="0.01" min="0" value={form.commission_amount_driver} onChange={(e) => set('commission_amount_driver', e.target.value)} placeholder="0.00" /></div>

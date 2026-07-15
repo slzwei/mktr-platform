@@ -15,10 +15,14 @@ import { Op } from 'sequelize';
 import { Payment, LeadPackage, LeadPackageAssignment, User, Campaign, sequelize } from '../models/index.js';
 import * as hitpay from './hitpayClient.js';
 import { buildPurchaseDocument, docTypeForStatus } from './billingDocumentService.js';
+import { credit as walletCredit } from './walletService.js';
 import { logger } from '../utils/logger.js';
 
 const VALID_CHECKOUT_MODES = ['in_app', 'web', 'off'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Wallet top-up presets (cents). Strict whitelist — the app UI offers exactly
+// these; anything else is rejected before a Payment row exists.
+const WALLET_TOPUP_PRESETS_CENTS = [10000, 50000, 200000];
 
 /**
  * Strict money string → integer cents. Rejects non-canonical input (exponent, >2 decimals,
@@ -61,7 +65,7 @@ function campaignNotes(c) {
 }
 
 export function makeBillingService(overrides = {}) {
-  const d = { Payment, LeadPackage, LeadPackageAssignment, User, Campaign, sequelize, hitpay, buildPurchaseDocument, logger, ...overrides };
+  const d = { Payment, LeadPackage, LeadPackageAssignment, User, Campaign, sequelize, hitpay, buildPurchaseDocument, walletCredit, logger, ...overrides };
 
   /** Server-controlled in-app-checkout kill switch (App-Store mitigation). */
   function checkoutMode() {
@@ -222,6 +226,58 @@ export function makeBillingService(overrides = {}) {
     }
   }
 
+  /**
+   * Create a pending wallet TOP-UP Payment + HitPay request (kind:'wallet_topup').
+   * No package involved: leadPackageId null, leadCount 0. Amount must be one of
+   * the preset whitelist. Settlement (fulfillFromWebhook) credits the wallet
+   * inside the same locked transaction that flips the Payment to paid.
+   * Typed outcomes: created | invalid_agent | invalid_amount | provider_error.
+   */
+  async function createWalletTopupCheckout({ agentMktrUserId, amountCents }) {
+    const agent = await resolveAgent(agentMktrUserId);
+    if (!agent) return { status: 'invalid_agent' };
+    if (!Number.isInteger(amountCents) || !WALLET_TOPUP_PRESETS_CENTS.includes(amountCents)) {
+      return { status: 'invalid_amount', presets: WALLET_TOPUP_PRESETS_CENTS };
+    }
+    const amountDollars = (amountCents / 100).toFixed(2);
+
+    const payment = await d.Payment.create({
+      agentId: agent.id,
+      beneficiaryUserId: null,
+      forTeam: false,
+      beneficiaryName: null,
+      leadPackageId: null,
+      kind: 'wallet_topup',
+      provider: 'hitpay',
+      amount: amountDollars,
+      currency: 'SGD',
+      leadCount: 0,
+      packageName: 'Wallet top-up',
+      campaignName: null,
+      status: 'pending',
+      source: 'mktr_leads_app',
+    });
+
+    try {
+      const { id, url } = await d.hitpay.createPaymentRequest({
+        amount: amountDollars,
+        referenceNumber: payment.id,
+        name: agent.fullName || `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || undefined,
+        email: agent.email || undefined,
+        redirectUrl: process.env.HITPAY_REDIRECT_URL || undefined,
+        webhookUrl: process.env.HITPAY_WEBHOOK_URL || undefined,
+        purpose: 'Wallet top-up',
+      });
+      await payment.update({ providerRequestId: id });
+      d.logger.info('[billing] topup.checkout.created', { purchaseId: payment.id, agentId: agent.id, amountCents });
+      return { status: 'created', url, purchaseId: payment.id };
+    } catch (err) {
+      await payment.update({ status: 'failed' }).catch(() => {});
+      d.logger.error('[billing] topup checkout HitPay create failed', { purchaseId: payment.id, error: err?.message || String(err) });
+      return { status: 'provider_error' };
+    }
+  }
+
   /** Poll one of the agent's OWN purchases (self-scoped). */
   async function getPurchaseStatus({ agentMktrUserId, purchaseId }) {
     const agent = await resolveAgent(agentMktrUserId);
@@ -371,6 +427,39 @@ export function makeBillingService(overrides = {}) {
         return { status: 'rejected' };
       }
 
+      // ── Wallet top-up branch (kind:'wallet_topup') ─────────────────────────
+      // No package is involved: credit the agent's wallet INSIDE this locked
+      // transaction, then flip the Payment to paid. The row lock + only-pending
+      // flip give idempotency; the unique (paymentId WHERE type='topup') ledger
+      // index is defense in depth. Must run BEFORE the package path so a top-up
+      // can never fall into paid_unfulfilled.
+      if (payment.kind === 'wallet_topup') {
+        if (!payment.agentId) {
+          await payment.update(
+            { status: 'paid', providerPaymentId: providerPaymentId ? String(providerPaymentId) : payment.providerPaymentId, rawWebhook: payload },
+            { transaction: t },
+          );
+          d.logger.error('[billing] topup.unfulfillable — paid but agent missing; manual review', { ref });
+          return { status: 'paid_unfulfilled' };
+        }
+        const creditCents = toCents(payment.amount);
+        await d.walletCredit(payment.agentId, creditCents, {
+          type: 'topup',
+          paymentId: payment.id,
+          transaction: t,
+        });
+        await payment.update(
+          {
+            status: 'paid',
+            providerPaymentId: providerPaymentId ? String(providerPaymentId) : payment.providerPaymentId,
+            rawWebhook: payload,
+          },
+          { transaction: t },
+        );
+        d.logger.info('[billing] topup.fulfilled', { ref, agentId: payment.agentId, amountCents: creditCents });
+        return { status: 'fulfilled', walletTopup: true };
+      }
+
       // The GRANTEE: the snapshotted beneficiary for a team purchase, else the payer.
       // forTeam is immutable and survives the beneficiary FK SET NULL, so an explicit
       // team purchase NEVER silently falls back to crediting the payer.
@@ -428,13 +517,14 @@ export function makeBillingService(overrides = {}) {
     return result;
   }
 
-  return { getCatalog, createCheckout, getPurchaseStatus, getHistory, getDocument, fulfillFromWebhook, checkoutMode };
+  return { getCatalog, createCheckout, createWalletTopupCheckout, getPurchaseStatus, getHistory, getDocument, fulfillFromWebhook, checkoutMode };
 }
 
 // --- Backward-compatible named exports (house pattern) ---
 const _default = makeBillingService();
 export const getCatalog = _default.getCatalog;
 export const createCheckout = _default.createCheckout;
+export const createWalletTopupCheckout = _default.createWalletTopupCheckout;
 export const getPurchaseStatus = _default.getPurchaseStatus;
 export const getHistory = _default.getHistory;
 export const getDocument = _default.getDocument;

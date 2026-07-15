@@ -29,7 +29,8 @@ function defineAssociations() {
     Device, BeaconEvent, Impression, ShortLink, ShortLinkClick,
     Vehicle, WebhookSubscriber, WebhookDelivery, AgentGroup,
     AgentGroupMember, DeviceCampaignAssignment, VehicleCampaignAssignment,
-    CampaignMediaItem, CampaignAgentAssignment, ExternalAgent, ExternalCampaignAgent
+    CampaignMediaItem, CampaignAgentAssignment, ExternalAgent, ExternalCampaignAgent,
+    WalletLedger
   } = models;
 
   // User associations
@@ -124,6 +125,16 @@ function defineAssociations() {
   Payment.belongsTo(LeadPackage, { foreignKey: 'leadPackageId', as: 'package', onDelete: 'SET NULL' });
   LeadPackageAssignment.hasOne(Payment, { foreignKey: 'leadPackageAssignmentId', as: 'payment', onDelete: 'SET NULL' });
   Payment.belongsTo(LeadPackageAssignment, { foreignKey: 'leadPackageAssignmentId', as: 'assignment', onDelete: 'SET NULL' });
+
+  // WalletLedger associations — append-only financial history. RESTRICT on the
+  // agent (history blocks user hard-deletion; userService pre-checks 409),
+  // SET NULL on refs (a deleted campaign/payment/assignment never erases rows).
+  User.hasMany(WalletLedger, { foreignKey: 'agentId', as: 'walletLedger', onDelete: 'RESTRICT' });
+  WalletLedger.belongsTo(User, { foreignKey: 'agentId', as: 'agent', onDelete: 'RESTRICT' });
+  WalletLedger.belongsTo(User, { foreignKey: 'createdBy', as: 'actor', onDelete: 'SET NULL' });
+  WalletLedger.belongsTo(Payment, { foreignKey: 'paymentId', as: 'payment', onDelete: 'SET NULL' });
+  WalletLedger.belongsTo(LeadPackageAssignment, { foreignKey: 'assignmentId', as: 'assignment', onDelete: 'SET NULL' });
+  WalletLedger.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
 
   // Device associations
   Device.hasMany(BeaconEvent, { foreignKey: 'deviceId', as: 'events', onDelete: 'CASCADE' });
@@ -335,7 +346,7 @@ export const {
   DiscoveryRun, DiscoveryCandidate,
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,
   OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression,
-  AiSettings
+  AiSettings, WalletLedger
 } = models;
 
 export { sequelize };
