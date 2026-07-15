@@ -6,22 +6,16 @@
  * exception path. Roster is attention-first (S$0 wallets on top).
  */
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { useWallets, useWalletLedger } from '@/hooks/queries/useAdminV2';
+import { useWallets } from '@/hooks/queries/useAdminV2';
 import { adjustWallet } from '@/api/adminV2';
-import { fmtNumber, fmtSGD, fmtSGDExact, fmtDateTime, fmtRelative } from '@/lib/adminV2/format';
+import { fmtNumber, fmtSGD, fmtSGDExact, fmtRelative } from '@/lib/adminV2/format';
 import { Chip, PageHeader, Skeleton, ErrorState, EmptyState, StateRow } from '@/components/adminv2/primitives';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-
-const LEDGER_LABELS = {
-  topup: { label: 'Top-up', tone: 'ok' },
-  commit: { label: 'Commitment', tone: 'accent' },
-  takedown_refund: { label: 'Takedown refund', tone: 'hold' },
-  adjustment: { label: 'Adjustment', tone: 'warn' },
-};
+import WalletLedgerList from '@/components/adminv2/WalletLedgerList';
 
 function AdjustDialog({ wallet, onClose }) {
   const [amount, setAmount] = useState('');
@@ -121,14 +115,7 @@ function AdjustDialog({ wallet, onClose }) {
 }
 
 function LedgerDrawer({ wallet, onClose }) {
-  const [page, setPage] = useState(1);
-  const ledger = useWalletLedger(wallet?.id, page);
   if (!wallet) return null;
-  const entries = ledger.data?.entries || [];
-  const total = ledger.data?.total ?? 0;
-  const limit = ledger.data?.limit ?? 25;
-  const totalPages = Math.max(1, Math.ceil(total / limit));
-
   return (
     <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}>
       <SheetContent side="right" className="admin-v2" style={{ width: 432, maxWidth: '90vw', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column' }}>
@@ -140,42 +127,9 @@ function LedgerDrawer({ wallet, onClose }) {
             balance {fmtSGDExact(wallet.walletBalanceCents)} · append-only, newest first
           </div>
         </SheetHeader>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {ledger.isLoading && <div style={{ padding: 16 }}><Skeleton height={120} /></div>}
-          {ledger.isError && <StateRow><ErrorState error={ledger.error} onRetry={ledger.refetch} /></StateRow>}
-          {!ledger.isLoading && !ledger.isError && entries.length === 0 && (
-            <EmptyState title="No ledger entries" hint="Top-ups, commitments, refunds and adjustments land here." />
-          )}
-          {entries.map((e) => {
-            const meta = LEDGER_LABELS[e.type] || { label: e.type, tone: '' };
-            const credit = e.amountCents > 0;
-            return (
-              <div key={e.id} className="av2-qrow" style={{ cursor: 'default', alignItems: 'flex-start' }}>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <Chip tone={meta.tone}>{meta.label}</Chip>
-                    {e.note && <span className="av2-caption" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.note}</span>}
-                  </span>
-                  <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)', marginTop: 3 }}>{fmtDateTime(e.createdAt)}</span>
-                </span>
-                <span style={{ textAlign: 'right', flex: 'none' }}>
-                  <span className="av2-mono" style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: credit ? 'var(--ok)' : 'var(--ink)' }}>
-                    {credit ? '+' : '−'}{fmtSGDExact(Math.abs(e.amountCents))}
-                  </span>
-                  <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)' }}>→ {fmtSGDExact(e.balanceAfterCents)}</span>
-                </span>
-              </div>
-            );
-          })}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 0 12px' }}>
+          <WalletLedgerList agentId={wallet.id} />
         </div>
-        {totalPages > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderTop: '1px solid var(--line)' }}>
-            <span className="av2-mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>page {page} / {totalPages}</span>
-            <span style={{ flex: 1 }} />
-            <button type="button" className="av2-btn av2-btn--sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>← Newer</button>
-            <button type="button" className="av2-btn av2-btn--sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Older →</button>
-          </div>
-        )}
       </SheetContent>
     </Sheet>
   );
@@ -185,6 +139,24 @@ export default function AdminV2Wallets() {
   const wallets = useWallets();
   const [ledgerFor, setLedgerFor] = useState(null);
   const [adjustFor, setAdjustFor] = useState(null);
+
+  // ?focus=<agentId> deep-link (design contract — the Agents page "Ledger →"
+  // lands here with that agent's drawer open). Closing clears the param so
+  // refresh/back doesn't resurrect the drawer.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusId = searchParams.get('focus');
+  const focusWallet = useMemo(
+    () => (focusId ? (wallets.data || []).find((w) => w.id === focusId) || null : null),
+    [wallets.data, focusId]
+  );
+  const clearFocus = () => {
+    if (!focusId) return;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('focus');
+      return next;
+    }, { replace: true });
+  };
 
   const rows = useMemo(() => {
     // Attention-first: S$0 on top, then ascending balance (design contract).
@@ -262,7 +234,7 @@ export default function AdminV2Wallets() {
         ))}
       </div>
 
-      <LedgerDrawer wallet={ledgerFor} onClose={() => setLedgerFor(null)} />
+      <LedgerDrawer wallet={ledgerFor || focusWallet} onClose={() => { setLedgerFor(null); clearFocus(); }} />
       {adjustFor && <AdjustDialog wallet={adjustFor} onClose={() => setAdjustFor(null)} />}
     </div>
   );
