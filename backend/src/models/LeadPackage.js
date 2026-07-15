@@ -47,7 +47,16 @@ const LeadPackage = sequelize.define('LeadPackage', {
     type: DataTypes.INTEGER,
     allowNull: false,
     validate: {
-      min: 1
+      // Kind-aware: catalog SKUs sell ≥1 lead; the hidden wallet container is
+      // a pure grouping row and MUST stay 0 (commitments carry their own counts).
+      leadCountMatchesKind(value) {
+        const kind = this.kind || 'catalog';
+        if (kind === 'wallet') {
+          if (Number(value) !== 0) throw new Error('Wallet packages must have leadCount 0');
+        } else if (!(Number(value) >= 1)) {
+          throw new Error('Validation min on leadCount failed');
+        }
+      }
     }
   },
   qualityScore: {
@@ -111,10 +120,26 @@ const LeadPackage = sequelize.define('LeadPackage', {
       model: 'campaigns',
       key: 'id'
     }
+  },
+  // 'catalog' = normal buyable SKU; 'wallet' = the hidden per-campaign
+  // container that wallet commitments hang off (migration 069). Wallet
+  // packages are isPublic:false + price 0, so the buy catalog never shows
+  // them; the unique partial index below enforces one per campaign.
+  kind: {
+    type: DataTypes.STRING(16),
+    allowNull: false,
+    defaultValue: 'catalog',
+    validate: { isIn: [['catalog', 'wallet']] }
   }
 }, {
   tableName: 'lead_packages',
   indexes: [
+    {
+      unique: true,
+      fields: ['campaignId'],
+      where: { kind: 'wallet' },
+      name: 'uq_lead_packages_wallet_campaign'
+    },
     {
       fields: ['status']
     },

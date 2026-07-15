@@ -21,7 +21,7 @@
 import crypto from 'crypto';
 import { logger } from '../utils/logger.js';
 import { verifyWebhook as verifyHitpayWebhook } from '../services/hitpayClient.js';
-import { getCatalog, createCheckout, getPurchaseStatus, getHistory, getDocument, fulfillFromWebhook } from '../services/billingService.js';
+import { getCatalog, createCheckout, createWalletTopupCheckout, getPurchaseStatus, getHistory, getDocument, fulfillFromWebhook } from '../services/billingService.js';
 
 const MAX_AGE_MS = 5 * 60 * 1000;
 const MAX_FUTURE_MS = 2 * 60 * 1000; // tolerate clock skew
@@ -92,9 +92,28 @@ export async function catalog(req, res) {
   }
 }
 
-// ── Checkout (create purchase) ────────────────────────────────────────────────
+// ── Checkout (create purchase OR wallet top-up) ───────────────────────────────
 export async function checkout(req, res) {
-  const { agentMktrUserId, packageId, beneficiaryMktrUserId } = req.body || {};
+  const { agentMktrUserId, packageId, beneficiaryMktrUserId, kind, amountCents } = req.body || {};
+
+  // Wallet top-up branch (kind:'wallet_topup'): no package — amount preset only.
+  // Shipped app cohorts never send `kind`, so the package path below is untouched.
+  if (kind === 'wallet_topup') {
+    if (!agentMktrUserId) {
+      return res.status(400).json({ success: false, error: 'agentMktrUserId is required' });
+    }
+    try {
+      const r = await createWalletTopupCheckout({ agentMktrUserId, amountCents });
+      if (r.status === 'created') {
+        return res.status(201).json({ success: true, checkoutUrl: r.url, purchaseId: r.purchaseId });
+      }
+      const codeByStatus = { invalid_agent: 400, invalid_amount: 400, provider_error: 502 };
+      return res.status(codeByStatus[r.status] || 500).json({ success: false, status: r.status, ...(r.presets ? { presets: r.presets } : {}) });
+    } catch (err) {
+      return sendError(res, err, 'topup-checkout');
+    }
+  }
+
   if (!agentMktrUserId || !packageId) {
     return res.status(400).json({ success: false, error: 'agentMktrUserId and packageId are required' });
   }

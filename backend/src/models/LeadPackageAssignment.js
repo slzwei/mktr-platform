@@ -47,6 +47,28 @@ const LeadPackageAssignment = sequelize.define('LeadPackageAssignment', {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: false,
         comment: 'Snapshot of price at time of assignment'
+    },
+    // Wallet commitments ride the package rails (migration 069): source marks
+    // the origin; unitPriceCents snapshots the per-lead price at commit time
+    // (takedown refund = leadsRemaining × unitPriceCents).
+    source: {
+        type: DataTypes.STRING(16),
+        allowNull: false,
+        defaultValue: 'package',
+        validate: { isIn: [['package', 'wallet']] }
+    },
+    unitPriceCents: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        validate: {
+            // Wallet commitments MUST carry a positive per-lead snapshot — the
+            // takedown refund is leadsRemaining × unitPriceCents (DB CHECK in 069).
+            requiredForWallet(value) {
+                if (this.source === 'wallet' && !(Number.isInteger(value) && value > 0)) {
+                    throw new Error('Wallet assignments require a positive unitPriceCents');
+                }
+            }
+        }
     }
 }, {
     tableName: 'lead_package_assignments',

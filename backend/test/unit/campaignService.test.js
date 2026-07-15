@@ -10,6 +10,7 @@ import { Op } from 'sequelize';
 const mockTransaction = {
   commit: jest.fn(),
   rollback: jest.fn(),
+  LOCK: { UPDATE: 'UPDATE', SHARE: 'SHARE' },
 };
 
 const Campaign = {
@@ -104,6 +105,13 @@ jest.unstable_mockModule('../../src/middleware/errorHandler.js', () => ({
 
 jest.unstable_mockModule('../../src/services/pushService.js', () => ({
   pushService: { sendEvent: pushSendEvent },
+}));
+
+// Wallet takedown-refund dep of archiveCampaign — mocked so this suite never
+// loads walletService's transitive model graph (systemAgent, WalletLedger…).
+const refundCampaignCommitments = jest.fn(async () => ({ refunded: 0, totalCents: 0 }));
+jest.unstable_mockModule('../../src/services/walletService.js', () => ({
+  refundCampaignCommitments,
 }));
 
 // Dynamic import AFTER mocks are registered
@@ -557,13 +565,29 @@ describe('campaignService (unit)', () => {
   // ────────────────────────────────────────────────
 
   describe('archiveCampaign', () => {
-    it('sets status to archived on success', async () => {
+    it('locks the row, refunds wallet commitments, then archives — one transaction', async () => {
       const inst = makeCampaignInstance({ status: 'active' });
       Campaign.findOne.mockResolvedValue(inst);
 
       await campaignService.archiveCampaign('camp-1', makeReq());
 
-      expect(inst.update).toHaveBeenCalledWith({ status: 'archived' });
+      expect(Campaign.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({ transaction: mockTransaction, lock: 'UPDATE' })
+      );
+      expect(refundCampaignCommitments).toHaveBeenCalledWith(
+        'camp-1',
+        expect.objectContaining({ reason: 'campaign_archived', transaction: mockTransaction })
+      );
+      expect(inst.update).toHaveBeenCalledWith({ status: 'archived' }, { transaction: mockTransaction });
+    });
+
+    it('a failing refund aborts the archive (status never flips)', async () => {
+      const inst = makeCampaignInstance({ status: 'active' });
+      Campaign.findOne.mockResolvedValue(inst);
+      refundCampaignCommitments.mockRejectedValueOnce(new Error('corrupt wallet assignment'));
+
+      await expect(campaignService.archiveCampaign('camp-1', makeReq())).rejects.toThrow('corrupt wallet assignment');
+      expect(inst.update).not.toHaveBeenCalled();
     });
 
     it('throws 400 when campaign is already archived', async () => {

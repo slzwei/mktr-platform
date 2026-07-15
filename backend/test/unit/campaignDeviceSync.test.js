@@ -117,6 +117,12 @@ jest.unstable_mockModule('../../src/services/pushService.js', () => ({
   pushService: mockPushService,
 }));
 
+// Wallet takedown-refund dep of archiveCampaign — mocked so this suite never
+// loads walletService's transitive model graph (systemAgent, WalletLedger…).
+jest.unstable_mockModule('../../src/services/walletService.js', () => ({
+  refundCampaignCommitments: jest.fn(async () => ({ refunded: 0, totalCents: 0 })),
+}));
+
 const campaignService = await import('../../src/services/campaignService.js');
 
 // ── Tests ──

@@ -9,8 +9,19 @@ import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
 import { applyLuckyDrawPolicy } from '../utils/luckyDraw.js';
 import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/marketplaceContent.js';
 import { invalidateMarketplaceCache } from './marketplaceCache.js';
+import { refundCampaignCommitments } from './walletService.js';
 
 const SLUG_RE = /^[a-z0-9-]{3,80}$/;
+
+/** Wallet commit price: null/'' clears; else a positive integer in cents. */
+function normalizeLeadPriceCents(value) {
+  if (value === null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 100000000) {
+    throw new AppError('leadPriceCents must be a positive integer (cents) or null', 422);
+  }
+  return n;
+}
 
 // design_config keys owned by the marketplace normalizer — raw incoming values
 // for these are replaced wholesale by their normalized versions (or dropped).
@@ -315,6 +326,11 @@ export async function createCampaign(body, user) {
   if (enforceLeadQuota !== undefined) campaignData.enforceLeadQuota = enforceLeadQuota;
   if (body.metaPixelId !== undefined) campaignData.metaPixelId = body.metaPixelId || null;
   if (body.tiktokPixelId !== undefined) campaignData.tiktokPixelId = body.tiktokPixelId || null;
+  // Wallet commit price — admin-only (campaign POST is open to agents; the
+  // same silent-clamp policy as design_config's admin-gated keys).
+  if (body.leadPriceCents !== undefined && user?.role === 'admin') {
+    campaignData.leadPriceCents = normalizeLeadPriceCents(body.leadPriceCents);
+  }
   // Allow design_config at creation time (mirrors updateCampaign) so a campaign
   // can be created with its designer config in one call, not create-then-update.
   if (body.design_config !== undefined) {
@@ -443,6 +459,10 @@ export async function updateCampaign(id, body, req) {
   if (enforceLeadQuota !== undefined) updateData.enforceLeadQuota = enforceLeadQuota;
   if (body.metaPixelId !== undefined) updateData.metaPixelId = body.metaPixelId || null;
   if (body.tiktokPixelId !== undefined) updateData.tiktokPixelId = body.tiktokPixelId || null;
+  // Wallet commit price — admin-only silent clamp (non-admin edits never touch it).
+  if (body.leadPriceCents !== undefined && req.user?.role === 'admin') {
+    updateData.leadPriceCents = normalizeLeadPriceCents(body.leadPriceCents);
+  }
 
   try {
     await campaign.update(updateData);
@@ -520,18 +540,30 @@ export async function setCampaignLaunchState(id, state, req) {
 }
 
 /**
- * Soft-delete (archive) a campaign.
+ * Soft-delete (archive) a campaign. Transactional: the campaign row is locked,
+ * open wallet commitments are refunded (takedown refund — the ONLY refund path,
+ * see walletService), and the status flips, all-or-nothing. A concurrent
+ * archive either loses the row lock and sees 'archived' (400) or the unique
+ * per-assignment refund index blocks the double-credit. QR detach stays
+ * post-commit (best-effort side effect, as before). NOTE: if a 'completed'
+ * status transition is ever added, it MUST route through this same
+ * refund-then-flip transaction — 'completed' is takedown too (product
+ * decision 5 in docs/plans/agent-wallet-commitments.md).
  */
 export async function archiveCampaign(id, req) {
   const where = buildOwnerWhere(req, { id });
-  const campaign = await Campaign.findOne({ where });
-  if (!campaign) throw new AppError('Campaign not found or access denied', 404);
+  const campaign = await sequelize.transaction(async (t) => {
+    const row = await Campaign.findOne({ where, transaction: t, lock: t.LOCK.UPDATE });
+    if (!row) throw new AppError('Campaign not found or access denied', 404);
+    if (row.status === 'archived') {
+      throw new AppError('Campaign is already archived', 400);
+    }
 
-  if (campaign.status === 'archived') {
-    throw new AppError('Campaign is already archived', 400);
-  }
+    await refundCampaignCommitments(id, { reason: 'campaign_archived', transaction: t });
+    await row.update({ status: 'archived' }, { transaction: t });
+    return row;
+  });
 
-  await campaign.update({ status: 'archived' });
   await detachCarQrTags(id);
   return campaign;
 }
@@ -615,6 +647,10 @@ export async function duplicateCampaign(id, body, req) {
     // original's activation history — a copy starts with neither.
     slug: null,
     firstActivatedAt: null,
+    // Never clone the wallet commit price: it is admin-only policy, and a
+    // non-admin duplicating a priced public campaign must not mint a new
+    // commit-able campaign (an admin re-prices the copy deliberately).
+    leadPriceCents: null,
     createdAt: undefined,
     updatedAt: undefined
   });

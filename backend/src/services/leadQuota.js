@@ -35,7 +35,13 @@ const EXEMPT_ROUTES = new Set(['self', 'admin']);
 export async function decideAssignment({ campaign, routing, campaignId, transaction = null, charge }) {
   const via = routing?.via ?? 'fallback';
   const agentId = routing?.agentId ?? null;
-  const quota = campaign?.enforceLeadQuota === true;
+  // Priced campaigns (agent-wallet commitments, leadPriceCents set) are ALWAYS
+  // quota-enforced: their leads are pre-sold, so a failed charge must hold the
+  // lead, never deliver it free — independent of the admin's enforceLeadQuota
+  // toggle (which stays the knob for unpriced/package campaigns). Exempt human
+  // routes (self/admin) keep their deliberate-override semantics.
+  const priced = Number.isInteger(campaign?.leadPriceCents) && campaign.leadPriceCents > 0;
+  const quota = campaign?.enforceLeadQuota === true || priced;
   const exempt = EXEMPT_ROUTES.has(via);
 
   // Soft campaigns, or exempt human/explicit routes: deliver exactly as today. The

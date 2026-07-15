@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { sequelize } from '../database/connection.js';
 
 /**
@@ -85,7 +85,18 @@ const Payment = sequelize.define('Payment', {
   leadCount: {
     type: DataTypes.INTEGER,
     allowNull: false,
-    validate: { min: 1 },
+    validate: {
+      // Kind-aware: package purchases snapshot ≥1 lead; wallet top-ups carry
+      // no leads at all and MUST stay 0.
+      leadCountMatchesKind(value) {
+        const kind = this.kind || 'package_purchase';
+        if (kind === 'wallet_topup') {
+          if (Number(value) !== 0) throw new Error('Wallet top-ups must have leadCount 0');
+        } else if (!(Number(value) >= 1)) {
+          throw new Error('Validation min on leadCount failed');
+        }
+      },
+    },
   },
   packageName: {
     type: DataTypes.STRING,
@@ -99,6 +110,15 @@ const Payment = sequelize.define('Payment', {
     type: DataTypes.ENUM('pending', 'paid', 'failed', 'expired', 'refunded', 'comp'),
     allowNull: false,
     defaultValue: 'pending',
+  },
+  // Branches checkout + settlement (migration 071): 'package_purchase' rides
+  // the assignment-granting path; 'wallet_topup' credits the agent wallet
+  // inside the same locked settlement transaction (no package involved).
+  kind: {
+    type: DataTypes.STRING(24),
+    allowNull: false,
+    defaultValue: 'package_purchase',
+    validate: { isIn: [['package_purchase', 'wallet_topup']] },
   },
   source: {
     type: DataTypes.ENUM('mktr_leads_app', 'web', 'admin_comp'),
@@ -115,8 +135,26 @@ const Payment = sequelize.define('Payment', {
   indexes: [
     { fields: ['agentId', 'status'], name: 'idx_payments_agent_status' },
     { fields: ['status'] },
-    { fields: ['providerRequestId'] },
-    { fields: ['providerPaymentId'] },
+    // Mirror migration 040's unique partials so test sync({force:true})
+    // reproduces prod constraints (provider replay + one payment per assignment).
+    {
+      unique: true,
+      fields: ['providerRequestId'],
+      where: { providerRequestId: { [Op.ne]: null } },
+      name: 'uniq_payments_provider_request',
+    },
+    {
+      unique: true,
+      fields: ['providerPaymentId'],
+      where: { providerPaymentId: { [Op.ne]: null } },
+      name: 'uniq_payments_provider_payment',
+    },
+    {
+      unique: true,
+      fields: ['leadPackageAssignmentId'],
+      where: { leadPackageAssignmentId: { [Op.ne]: null } },
+      name: 'uniq_payments_assignment',
+    },
   ],
 });
 

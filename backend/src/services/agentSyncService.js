@@ -470,7 +470,8 @@ async function runSync(adapter, localIdField, startedAt) {
             AND "${localIdField}" IS NOT NULL
             AND "${localIdField}" NOT IN (:upstreamExternalIds)
             AND pending_deletion_at IS NULL
-            AND id NOT IN (SELECT DISTINCT "assignedAgentId" FROM prospects WHERE "assignedAgentId" IS NOT NULL)`,
+            AND id NOT IN (SELECT DISTINCT "assignedAgentId" FROM prospects WHERE "assignedAgentId" IS NOT NULL)
+            AND id NOT IN (SELECT DISTINCT "agentId" FROM wallet_ledger)`,
         { replacements: { upstreamExternalIds } }
       );
 
@@ -487,6 +488,7 @@ async function runSync(adapter, localIdField, startedAt) {
                AND pending_deletion_at IS NOT NULL
                AND pending_deletion_at < NOW() - INTERVAL '${DELETE_GRACE_HOURS} hours'
                AND id NOT IN (SELECT DISTINCT "assignedAgentId" FROM prospects WHERE "assignedAgentId" IS NOT NULL)
+               AND id NOT IN (SELECT DISTINCT "agentId" FROM wallet_ledger)
             RETURNING id
          )
          SELECT COUNT(*)::int AS count FROM deleted`,

@@ -144,6 +144,31 @@ describe('createProspect under quota (web capture)', () => {
     expect(p.quarantinedAt).toBeNull();
     expect(p.assignedAgentId).not.toBeNull(); // System-Agent fallback, as before
   });
+
+  // ── Priced campaigns (agent-wallet commitments) are ALWAYS enforced ──
+  // leadPriceCents non-null means every lead is pre-sold: a failed/absent
+  // charge must hold the lead even when the admin left enforceLeadQuota off.
+
+  it('priced + soft + unfunded → quarantined (a pre-sold lead is never delivered free)', async () => {
+    const c = await createTestCampaign(admin.id, { enforceLeadQuota: false, leadPriceCents: 800 });
+    const p = await prospectFromRes(await postLead(c.id));
+    expect(p.assignedAgentId).toBeNull();
+    expect(p.quarantinedAt).not.toBeNull();
+    expect(p.quarantineReason).toBe('no_funded_agent');
+  });
+
+  it('priced + soft + funded → delivered AND charged (authoritative gate, not best-effort)', async () => {
+    const c = await createTestCampaign(admin.id, { enforceLeadQuota: false, leadPriceCents: 800 });
+    const { agent, assignment } = await fundedAgent(c.id, 1);
+
+    const p = await prospectFromRes(await postLead(c.id));
+    expect(p.assignedAgentId).toBe(agent.id);
+    expect(p.quarantinedAt).toBeNull();
+
+    await assignment.reload();
+    expect(assignment.leadsRemaining).toBe(0);
+    expect(assignment.status).toBe('completed');
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
