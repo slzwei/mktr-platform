@@ -43,6 +43,7 @@ const SORTS = [
   { v: 'name', label: 'Name' },
 ];
 const POPULAR_AREAS = ['Tampines', 'Orchard', 'Jurong East', 'Katong', 'Bedok', 'Serangoon'];
+const MINSTAR_LABEL = { three: '3.0★+', threeAndHalf: '3.5★+', four: '4.0★+' };
 // Curated flavour for the common verticals; anything else falls back gracefully.
 const CURATED = {
   'nail salon': { emoji: '💅', note: 'High density, strong IG reach' },
@@ -81,13 +82,18 @@ export default function DiscoverPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     area: '', limit: '30', provider: 'google_maps',
-    adhoc: '', minStars: 'any', skipClosed: false, filterWords: '',
+    adhoc: '', minStars: 'any', skipClosed: true, filterWords: '',
   });
   const [runId, setRunId] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('followers');
   const [aiDesc, setAiDesc] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [showAi, setShowAi] = useState(false);
+  // Post-search category facet — Google categories the operator has hidden from
+  // the current results (client-side only; the paid rows were already fetched).
+  const [hiddenCats, setHiddenCats] = useState(() => new Set());
 
   const listQuery = useQuery({
     queryKey: RUNS_KEY,
@@ -161,6 +167,24 @@ export default function DiscoverPage() {
   }, [candidates]);
   const addedCount = useMemo(() => candidates.filter((c) => c.status === 'added').length, [candidates]);
 
+  // Distinct Google categories in the live results + how many the operator hid
+  // (Maps only — IG candidates carry no Google categoryName). Drives the facet.
+  const catFacet = useMemo(() => {
+    if (isIgRun) return [];
+    const m = new Map();
+    for (const c of candidates) {
+      if (c.status === 'dismissed') continue;
+      const cat = c.rawPayload?.categoryName;
+      if (cat) m.set(cat, (m.get(cat) || 0) + 1);
+    }
+    return [...m.entries()].map(([cat, count]) => ({ cat, count })).sort((a, b) => b.count - a.count);
+  }, [candidates, isIgRun]);
+  const catHidden = useMemo(
+    () => (isIgRun || !hiddenCats.size ? 0
+      : candidates.filter((c) => c.status !== 'dismissed' && hiddenCats.has(c.rawPayload?.categoryName)).length),
+    [candidates, hiddenCats, isIgRun],
+  );
+
   const visible = useMemo(() => {
     let list = candidates;
     if (filter === 'hidden') list = list.filter((c) => c.status === 'dismissed');
@@ -171,12 +195,14 @@ export default function DiscoverPage() {
     else if (filter === 'possible') list = list.filter((c) => c.dedupeStatus === 'possible_duplicate');
     else if (filter === 'ig') list = list.filter((c) => c.instagramHandle);
     else if (filter === 'homebased') list = list.filter(isHomeBased);
+    // Post-search category facet (Maps only) — hide unchecked Google categories.
+    if (!isIgRun && hiddenCats.size) list = list.filter((c) => !hiddenCats.has(c.rawPayload?.categoryName));
     const sorted = [...list];
     if (sort === 'name') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     else sorted.sort((a, b) => num(b[sort === 'followers' ? 'followersCount' : sort === 'rating' ? 'rating' : 'reviewsCount'])
       - num(a[sort === 'followers' ? 'followersCount' : sort === 'rating' ? 'rating' : 'reviewsCount']));
     return sorted;
-  }, [candidates, filter, sort]);
+  }, [candidates, filter, sort, hiddenCats, isIgRun]);
 
   const selectableIds = useMemo(
     () => visible.filter((c) => c.status === 'pending' && c.dedupeStatus !== 'existing_partner').map((c) => c.id),
@@ -191,6 +217,9 @@ export default function DiscoverPage() {
       return next.size === prev.size ? prev : next;
     });
   }, [candidates]);
+  // A fresh run starts with every category shown.
+  useEffect(() => { setHiddenCats(new Set()); }, [runId]);
+
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
   const suggestions = useMemo(() => {
@@ -282,6 +311,17 @@ export default function DiscoverPage() {
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
   });
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(selectableIds));
+  const toggleCat = (cat) => {
+    const hiding = !hiddenCats.has(cat);
+    setHiddenCats((prev) => {
+      const next = new Set(prev); next.has(cat) ? next.delete(cat) : next.add(cat); return next;
+    });
+    // Never let a hidden row ride a bulk action — drop its selections on hide.
+    if (hiding) {
+      setSelected((prev) => new Set([...prev].filter((id) =>
+        candidates.find((c) => c.id === id)?.rawPayload?.categoryName !== cat)));
+    }
+  };
   const enrichAll = () => {
     const ids = candidates
       .filter((c) => c.instagramHandle && !['enriched', 'pending', 'cached'].includes(c.enrichmentStatus) && c.status !== 'dismissed')
@@ -291,6 +331,12 @@ export default function DiscoverPage() {
   };
   const canSearch = form.area.trim() && parseCsv(form.adhoc).length > 0 && !startMutation.isPending;
   const canSuggest = aiDesc.trim().length >= 3 && !suggestMutation.isPending;
+  const filterWordCount = parseCsv(form.filterWords).length;
+  const activeFilterSummary = [
+    form.minStars !== 'any' && MINSTAR_LABEL[form.minStars],
+    form.skipClosed && 'closed excluded',
+    filterWordCount && `${filterWordCount} categor${filterWordCount === 1 ? 'y' : 'ies'}`,
+  ].filter(Boolean).join(' · ') || 'rating · closed · categories';
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6 pb-24">
@@ -315,24 +361,61 @@ export default function DiscoverPage() {
         <>
           <div className="rounded-2xl border border-border bg-white p-4 md:p-5">
             {igEnabled && (
-              <div className="inline-flex items-center gap-1 mb-4 p-1 rounded-xl"
-                style={{ background: 'var(--ro-subtle)', border: '1px solid var(--ro-border)' }}>
-                <ProviderTab on={!isIg} onClick={() => setForm((f) => ({ ...f, provider: 'google_maps' }))}
-                  icon={<MapPin className="w-3.5 h-3.5" aria-hidden="true" />}>Google Maps</ProviderTab>
-                <ProviderTab on={isIg} onClick={() => setForm((f) => ({ ...f, provider: IG_PROVIDER }))}
-                  icon={<Instagram className="w-3.5 h-3.5" aria-hidden="true" />}>Instagram</ProviderTab>
+              <div className="mb-4">
+                <div className="inline-flex items-center gap-1 p-1 rounded-xl"
+                  style={{ background: 'var(--ro-subtle)', border: '1px solid var(--ro-border)' }}>
+                  <ProviderTab on={!isIg} onClick={() => setForm((f) => ({ ...f, provider: 'google_maps' }))}
+                    icon={<MapPin className="w-3.5 h-3.5" aria-hidden="true" />}>Google Maps</ProviderTab>
+                  <ProviderTab on={isIg} onClick={() => setForm((f) => ({ ...f, provider: IG_PROVIDER }))}
+                    icon={<Instagram className="w-3.5 h-3.5" aria-hidden="true" />}>Instagram</ProviderTab>
+                </div>
+                <p className="text-[12px] mt-2 mb-0" style={{ color: 'var(--ro-text-3)' }}>
+                  {isIg ? 'Accounts, including home-based businesses Maps can\'t see' : 'Listed storefronts & local businesses'}
+                </p>
               </div>
             )}
-            <div className="grid gap-3 md:grid-cols-[1fr_1fr_120px_auto] md:items-end">
-              <div className="space-y-1.5">
-                <Label htmlFor="disc-terms">{isIg ? 'Hashtags' : 'Search terms'}</Label>
-                <Input id="disc-terms" value={form.adhoc}
-                  placeholder={isIg ? 'sgnails, biabsg, homebasednailssg' : 'nail salon, taekwondo, kopitiam'}
-                  onChange={(e) => setForm((f) => ({ ...f, adhoc: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(); }} />
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="disc-terms">{isIg ? 'Hashtags' : 'Search phrases'}</Label>
+                {aiEnabled && (
+                  <button type="button" onClick={() => setShowAi((v) => !v)} aria-expanded={showAi}
+                    className="ro-link inline-flex items-center gap-1 text-[12.5px] font-semibold">
+                    <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />{showAi ? 'Hide AI' : 'Get AI suggestions'}
+                  </button>
+                )}
               </div>
+              <Input id="disc-terms" value={form.adhoc}
+                placeholder={isIg ? 'sgnails, biabsg, homebasednailssg' : 'nail salon, taekwondo, kopitiam'}
+                onChange={(e) => setForm((f) => ({ ...f, adhoc: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(); }} />
+              <p className="text-[12px] m-0" style={{ color: 'var(--ro-text-3)' }}>
+                {isIg
+                  ? 'Each hashtag is scanned on Instagram. The # is optional. Separate with commas.'
+                  : 'Each phrase is sent to Google Maps as its own search. Separate with commas.'}
+              </p>
+              {aiEnabled && showAi && (
+                <div className="flex items-center gap-2 mt-1 rounded-xl px-3 py-1.5"
+                  style={{ background: 'var(--ro-subtle)', border: '1px dashed var(--ro-border)' }}>
+                  <Sparkles className="w-4 h-4 shrink-0" aria-hidden="true" style={{ color: 'var(--ro-text-2)' }} />
+                  <Input value={aiDesc}
+                    placeholder={isIg
+                      ? 'Describe the niche — e.g. "home-based bakers"'
+                      : 'Describe who you\'re looking for — e.g. "after-school activities for kids"'}
+                    aria-label="Describe what you want to find"
+                    className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0 px-0"
+                    onChange={(e) => setAiDesc(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && canSuggest) suggestMutation.mutate(); }} />
+                  <Button variant="ghost" size="sm" className="shrink-0 font-semibold" disabled={!canSuggest}
+                    onClick={() => suggestMutation.mutate()}>
+                    {suggestMutation.isPending ? 'Suggesting…' : 'Suggest'}
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-[1fr_120px_auto] md:items-end mt-4">
               <div className="space-y-1.5">
-                <Label htmlFor="disc-area">Area</Label>
+                <Label htmlFor="disc-area">{isIg ? 'Location hint' : 'Search territory'}</Label>
                 {territoriesEnabled ? (
                   <Select value={form.area} onValueChange={(area) => setForm((f) => ({ ...f, area }))}>
                     <SelectTrigger id="disc-area" className="w-full">
@@ -360,59 +443,53 @@ export default function DiscoverPage() {
                 </Select>
               </div>
               <Button disabled={!canSearch} onClick={() => runSearch()}>
-                <Search className="w-4 h-4 mr-1.5" aria-hidden="true" />{startMutation.isPending ? 'Starting…' : 'Search'}
+                <Search className="w-4 h-4 mr-1.5" aria-hidden="true" />{startMutation.isPending ? 'Starting…' : (isIg ? 'Search Instagram' : 'Search Google Maps')}
               </Button>
             </div>
-            {aiEnabled && (
-              <div className="flex items-center gap-2 mt-3 rounded-xl px-3 py-1.5"
-                style={{ background: 'var(--ro-subtle)', border: '1px dashed var(--ro-border)' }}>
-                <Sparkles className="w-4 h-4 shrink-0" aria-hidden="true" style={{ color: 'var(--ro-text-2)' }} />
-                <Input
-                  value={aiDesc}
-                  placeholder={isIg
-                    ? 'Or describe the niche — e.g. "home-based bakers" — and let AI suggest hashtags'
-                    : 'Or describe who you\'re looking for — e.g. "after-school activities for kids" — and let AI suggest terms'}
-                  aria-label="Describe what you want to find"
-                  className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0 px-0"
-                  onChange={(e) => setAiDesc(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && canSuggest) suggestMutation.mutate(); }}
-                />
-                <Button variant="ghost" size="sm" className="shrink-0 font-semibold" disabled={!canSuggest}
-                  onClick={() => suggestMutation.mutate()}>
-                  {suggestMutation.isPending ? 'Suggesting…' : 'Suggest'}
-                </Button>
-              </div>
-            )}
             {!isIg && (
-              <>
-                <div className="flex items-end gap-3 mt-3">
-                  <div className="space-y-1">
-                    <Label>Min rating</Label>
-                    <Select value={form.minStars} onValueChange={(v) => setForm((f) => ({ ...f, minStars: v }))}>
-                      <SelectTrigger className="w-full min-w-[104px]"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="any">Any</SelectItem>
-                        <SelectItem value="three">3.0★+</SelectItem>
-                        <SelectItem value="threeAndHalf">3.5★+</SelectItem>
-                        <SelectItem value="four">4.0★+</SelectItem>
-                      </SelectContent>
-                    </Select>
+              <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--ro-border)' }}>
+                <button type="button" onClick={() => setShowFilters((v) => !v)} aria-expanded={showFilters}
+                  className="flex items-center gap-2 w-full text-left">
+                  <span className="text-[13px] font-bold">More filters</span>
+                  <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showFilters ? 'rotate-90' : ''}`} style={{ color: 'var(--ro-text-3)' }} aria-hidden="true" />
+                  {!showFilters && <span className="ml-auto text-[12px]" style={{ color: 'var(--ro-text-3)' }}>{activeFilterSummary}</span>}
+                </button>
+                {showFilters && (
+                  <div className="mt-3 space-y-3">
+                    <div className="flex items-end gap-3">
+                      <div className="space-y-1">
+                        <Label>Min rating</Label>
+                        <Select value={form.minStars} onValueChange={(v) => setForm((f) => ({ ...f, minStars: v }))}>
+                          <SelectTrigger className="w-full min-w-[104px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="any">Any</SelectItem>
+                            <SelectItem value="three">3.0★+</SelectItem>
+                            <SelectItem value="threeAndHalf">3.5★+</SelectItem>
+                            <SelectItem value="four">4.0★+</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <label className="flex items-center gap-2 h-9 px-1 text-[13px] font-semibold cursor-pointer whitespace-nowrap" style={{ color: 'var(--ro-text-2)' }}>
+                        <input type="checkbox" className="w-4 h-4 accent-[var(--ro-bunker)]"
+                          checked={form.skipClosed} onChange={(e) => setForm((f) => ({ ...f, skipClosed: e.target.checked }))} />
+                        Exclude closed businesses
+                      </label>
+                    </div>
+                    <div className="rounded-xl p-3" style={{ background: 'var(--ro-subtle)', border: '1px dashed var(--ro-border)' }}>
+                      <Label htmlFor="disc-filter-words" className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded" style={{ color: 'var(--ro-azure-dark)', background: 'var(--ro-azure-tint)' }}>Advanced</span>
+                        Restrict Google categories <span style={{ color: 'var(--ro-text-3)', fontWeight: 400 }}>before fetching · optional</span>
+                      </Label>
+                      <Input id="disc-filter-words" className="mt-2" value={form.filterWords}
+                        placeholder="learning center, education center"
+                        onChange={(e) => setForm((f) => ({ ...f, filterWords: e.target.value }))} />
+                      <p className="text-[11.5px] mt-1.5 mb-0" style={{ color: 'var(--ro-text-3)' }}>
+                        Cost control for big sweeps. Matches the Google <b>category</b>, not the name — may miss valid targets. Usually better to filter <b>after</b> the search, below.
+                      </p>
+                    </div>
                   </div>
-                  <label className="flex items-center gap-2 h-9 px-1 text-[13px] font-semibold cursor-pointer whitespace-nowrap" style={{ color: 'var(--ro-text-2)' }}>
-                    <input type="checkbox" className="w-4 h-4 accent-[var(--ro-bunker)]"
-                      checked={form.skipClosed} onChange={(e) => setForm((f) => ({ ...f, skipClosed: e.target.checked }))} />
-                    Skip closed
-                  </label>
-                </div>
-                <div className="space-y-1 mt-3">
-                  <Label htmlFor="disc-filter-words">
-                    Categories to keep <span style={{ color: 'var(--ro-text-3)', fontWeight: 400 }}>· optional</span>
-                  </Label>
-                  <Input id="disc-filter-words" value={form.filterWords}
-                    placeholder="restaurant, cafe, bakery — drops off-category results"
-                    onChange={(e) => setForm((f) => ({ ...f, filterWords: e.target.value }))} />
-                </div>
-              </>
+                )}
+              </div>
             )}
             <div className="flex flex-wrap items-center gap-2 mt-3">
               {!territoriesEnabled && !isIg && (
@@ -425,14 +502,18 @@ export default function DiscoverPage() {
                   ))}
                 </>
               )}
-              {isIg && (
+              {isIg ? (
                 <span className="text-[12px]" style={{ color: 'var(--ro-text-3)' }}>
-                  Searches your Instagram hashtags · area is a soft filter · finds IG-native shops Maps misses
+                  Area is a soft filter — Instagram location data is incomplete. Finds IG-native shops Maps misses.
+                </span>
+              ) : (
+                <span className="text-[12px]" style={{ color: 'var(--ro-text-3)' }}>
+                  Results is a total, split across your phrases.
                 </span>
               )}
               {!isIg && quota?.costPerResultUsd > 0 && (
                 <span className="ml-auto text-[12px]" style={{ color: 'var(--ro-text-3)' }}>
-                  ≈ ${(Number(form.limit) * quota.costPerResultUsd).toFixed(2)} per search
+                  ≈ ${(Number(form.limit) * quota.costPerResultUsd).toFixed(2)} max
                 </span>
               )}
             </div>
@@ -564,8 +645,11 @@ export default function DiscoverPage() {
             )}
             <span className="text-[15px] font-bold mr-1">
               {selected.size > 0 ? `${selected.size} selected` : `${counts.total} found`}
-              {selected.size === 0 && counts.hidden > 0 && (
-                <span className="font-medium text-[12.5px]" style={{ color: 'var(--ro-text-3)' }}> · {counts.hidden} hidden</span>
+              {selected.size === 0 && (catHidden > 0 || counts.hidden > 0) && (
+                <span className="font-medium text-[12.5px]" style={{ color: 'var(--ro-text-3)' }}>
+                  {catHidden > 0 && ` · ${catHidden} hidden by type`}
+                  {counts.hidden > 0 && ` · ${counts.hidden} dismissed`}
+                </span>
               )}
             </span>
             <Seg on={filter === 'all'} onClick={() => setFilter('all')}>All <b className="tabular-nums">{counts.total}</b></Seg>
@@ -587,6 +671,41 @@ export default function DiscoverPage() {
               <SelectContent>{SORTS.map((s) => <SelectItem key={s.v} value={s.v}>{s.label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
+
+          {/* Post-search category facet — see the Google categories that came back
+              and uncheck the off-vertical junk (drops rows client-side; no re-fetch). */}
+          {!isIgRun && catFacet.length > 1 && (
+            <div className="rounded-xl border border-border p-3 mb-3.5" style={{ background: 'var(--ro-subtle)' }}>
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--ro-text-3)' }}>
+                  Google categories · uncheck to hide
+                </span>
+                {hiddenCats.size > 0 && (
+                  <button type="button" onClick={() => setHiddenCats(new Set())}
+                    className="ro-link text-[12px] font-semibold ml-auto">Show all</button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {catFacet.map(({ cat, count }) => {
+                  const on = !hiddenCats.has(cat);
+                  return (
+                    <button key={cat} type="button" onClick={() => toggleCat(cat)} aria-pressed={on}
+                      className="inline-flex items-center gap-2 h-7 pl-1.5 pr-3 rounded-full text-[12.5px] font-semibold"
+                      style={on
+                        ? { background: '#fff', border: '1px solid var(--ro-border-strong)', color: 'var(--ro-bunker)' }
+                        : { background: 'transparent', border: '1px solid var(--ro-border)', color: 'var(--ro-text-3)' }}>
+                      <span className="w-4 h-4 rounded-[5px] grid place-items-center shrink-0"
+                        style={on ? { background: 'var(--ro-azure)' } : { border: '1.5px solid var(--ro-border-strong)' }}>
+                        {on && <Check className="w-3 h-3" style={{ color: '#fff' }} strokeWidth={3} aria-hidden="true" />}
+                      </span>
+                      <span className={on ? '' : 'line-through'}>{cat}</span>
+                      <span className="tabular-nums" style={{ color: 'var(--ro-text-3)', fontWeight: 500 }}>{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="rounded-2xl border border-border bg-white overflow-hidden">
             {visible.length === 0 && (
