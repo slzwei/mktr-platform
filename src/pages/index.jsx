@@ -36,6 +36,7 @@ const MarketplaceBrowse = lazy(() => import('./marketplace/MarketplaceBrowse'));
 const MarketplaceOffer = lazy(() => import('./marketplace/MarketplaceOffer'));
 const MarketplaceFlow = lazy(() => import('./marketplace/MarketplaceFlow'));
 const MarketplaceStatic = lazy(() => import('./marketplace/MarketplaceStatic'));
+const MarketplaceDsa = lazy(() => import('./marketplace/MarketplaceDsa'));
 
 const MARKETPLACE_ON =
   IS_REDEEM_BUILD && import.meta.env.VITE_REDEEM_MARKETPLACE_ENABLED === 'true';
@@ -234,7 +235,7 @@ function PagesContent() {
  <>
  <Route path="/explore" element={<MarketplaceBrowse mode="explore" />} />
  <Route path="/c/:id" element={<MarketplaceBrowse mode="category" />} />
- <Route path="/dsa" element={<MarketplaceBrowse mode="dsa" />} />
+ <Route path="/dsa" element={<MarketplaceDsa />} />
  <Route path="/offers/:slug" element={<MarketplaceOffer />} />
  <Route path="/flow/:slug" element={<MarketplaceFlow />} />
  <Route path="/how-it-works" element={<MarketplaceStatic mode="how" />} />

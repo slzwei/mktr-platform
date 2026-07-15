@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import MarketplaceLayout from './MarketplaceLayout';
 import OfferCard from './OfferCard';
 import { listMarketplaceCampaigns } from '@/api/marketplace';
-import { CATEGORIES, DSA_CONTENT, categoryLabel } from './content';
+import { CATEGORIES, categoryLabel } from './content';
 
 /**
  * Browse surfaces — /explore (mode="explore"), /c/:id (mode="category",
@@ -14,7 +14,7 @@ import { CATEGORIES, DSA_CONTENT, categoryLabel } from './content';
 
 const AGE_BANDS = { '3–6': [3, 6], '7–9': [7, 9], '10–12': [10, 12], '13–16': [13, 16], Adults: [21, 99] };
 
-function useCampaignList() {
+export function useCampaignList() {
   const [campaigns, setCampaigns] = useState(null);
   useEffect(() => {
     let alive = true;
@@ -28,7 +28,7 @@ function useCampaignList() {
   return campaigns;
 }
 
-function CardGrid({ campaigns, emptyTitle, emptyBody }) {
+export function CardGrid({ campaigns, emptyTitle, emptyBody }) {
   if (campaigns === null) {
     return (
       <div className="rm-grid-cards">
@@ -236,79 +236,7 @@ function CategoryPage() {
   );
 }
 
-function DsaPage() {
-  const campaigns = useCampaignList();
-  const dsaOffers = campaigns === null ? null : campaigns.filter((c) => c.design_config?.dsa_related);
-
-  return (
-    <MarketplaceLayout>
-      <section style={{ background: 'var(--rm-sage)', borderBottom: '1px solid var(--rm-line)' }}>
-        <div className="rm-shell" style={{ paddingTop: 'clamp(36px,5vw,64px)', paddingBottom: 'clamp(36px,5vw,64px)' }}>
-          <div className="rm-mono-label" style={{ color: 'var(--rm-pine)' }}>DSA discovery</div>
-          <h1 className="rm-serif" style={{ margin: '12px 0 0', fontSize: 'clamp(28px,3.6vw,42px)', lineHeight: 1.12, maxWidth: '24ch' }}>
-            Explore programmes that may support your child's talent-development journey.
-          </h1>
-          <p style={{ margin: '14px 0 0', fontSize: 15, lineHeight: 1.65, color: 'var(--rm-sub)', maxWidth: '64ch' }}>
-            The Direct School Admission (DSA) exercise lets students seek secondary-school places through talents and achievements beyond PSLE scores. Discovery sessions and assessments below help you explore — calmly, and without commitment.
-          </p>
-        </div>
-      </section>
-      <div className="rm-shell" style={{ paddingTop: 'clamp(28px,4vw,44px)', paddingBottom: 'clamp(48px,6vw,72px)', display: 'flex', flexDirection: 'column', gap: 30 }}>
-        <div className="rm-warn-box">
-          <span className="rm-ticket rm-ticket--sm" style={{ width: 11, height: 14, background: 'var(--rm-warn)', marginTop: 3, flexShrink: 0 }} />
-          <div style={{ fontSize: 13.5, lineHeight: 1.6, color: '#5C4A18' }}>
-            <strong>Admission is determined entirely by schools.</strong> No provider can guarantee DSA outcomes — treat success-rate claims and admission promises as a red flag. Redeem lists discovery and preparation programmes only.
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 20 }}>
-          <div className="rm-card rm-card--pad">
-            <div className="rm-mono-label" style={{ marginBottom: 12 }}>DSA talent areas</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {DSA_CONTENT.talents.map((t) => (
-                <span key={t} className="rm-chip" style={{ cursor: 'default' }}>{t}</span>
-              ))}
-            </div>
-            <div className="rm-mono-label" style={{ margin: '20px 0 10px' }}>Typical preparation</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {DSA_CONTENT.prep.map((p) => (
-                <div key={p} style={{ display: 'flex', gap: 10, fontSize: 13.5, lineHeight: 1.6, color: 'var(--rm-sub)' }}>
-                  <span style={{ color: 'var(--rm-pine)', fontWeight: 700 }}>—</span><span>{p}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="rm-card rm-card--pad">
-            <div className="rm-mono-label" style={{ marginBottom: 12 }}>How to evaluate a provider</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-              {DSA_CONTENT.evaluate.map((e2) => (
-                <div key={e2} style={{ display: 'flex', gap: 10, fontSize: 13.5, lineHeight: 1.6, color: 'var(--rm-sub)' }}>
-                  <span style={{ color: 'var(--rm-pine)', fontWeight: 700 }}>✓</span><span>{e2}</span>
-                </div>
-              ))}
-            </div>
-            <div className="rm-mono-label" style={{ margin: '20px 0 10px' }}>Questions worth asking</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {DSA_CONTENT.questions.map((qq) => (
-                <div key={qq} style={{ fontSize: 13.5, lineHeight: 1.55, fontStyle: 'italic' }}>"{qq}"</div>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div>
-          <h2 className="rm-serif" style={{ margin: '0 0 18px', fontSize: 'clamp(22px,2.6vw,28px)' }}>DSA-related offers, live now</h2>
-          <CardGrid
-            campaigns={dsaOffers}
-            emptyTitle="No DSA-related offers live right now"
-            emptyBody="New discovery sessions launch regularly — explore everything in the meantime."
-          />
-        </div>
-      </div>
-    </MarketplaceLayout>
-  );
-}
-
 export default function MarketplaceBrowse({ mode }) {
   if (mode === 'category') return <CategoryPage />;
-  if (mode === 'dsa') return <DsaPage />;
   return <ExplorePage />;
 }
