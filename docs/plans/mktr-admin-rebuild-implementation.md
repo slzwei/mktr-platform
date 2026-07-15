@@ -396,6 +396,32 @@ vitest `PublicPreview.test.jsx` (1), backend `migrations.test.js`
 
 ---
 
+## Codex review log — Phase D PR6 post-implementation (2026-07-15, gpt-5.6-sol xhigh)
+
+Reviewed f0fc2fd (teardown) against origin/main; the signup-path commit
+37ca670 landed mid-review and was noted by the reviewer. 9 findings, none
+BLOCKER. Every finding verified against real code before folding.
+
+| # | Severity | Finding | Disposition |
+|---|----------|---------|-------------|
+| 1 | SHOULD-FIX | `/api/auth/register` Joi schema still accepted `driver_partner`/`fleet_owner` (onboarding was closed, direct registration wasn't) | **Fixed** — validation.js role enum collapses to `customer` unless `FLEET_ROUTES_ENABLED` (read at import, same as the other gates) |
+| 2 | SHOULD-FIX | Swapping `BEACONS_ENABLED` for the master flag deleted the beacons' independent kill switch (manifest kept its request-level guard, beacons had none) | **Fixed** — request-level `BEACONS_ENABLED` guard added to adtechBeacons (default **on**, matching its historical `flagDefault: 'true'`), so it still works independently under a rollback |
+| 3 | SHOULD-FIX | Orphaned modules importing deleted entity exports (`components/fleet/*`, `CarQRSelection`, `AssignCampaignDialog`) — dead but broken | **Fixed** — deleted the whole `src/components/fleet/` dir (9 files) + `CarQRSelection.jsx` + `devices/AssignCampaignDialog.jsx` |
+| 4 | SHOULD-FIX | Playwright e2e still targeted `/AdminCommissions` and the dashboard revenue card | **Fixed** — `commission-workflow.spec.js` deleted; the two commission cases removed from `prospect-lifecycle.spec.js` |
+| 5 | SHOULD-FIX | Trimmed legacy dashboard still declared `columns={5}` for its 2 cards (layout + skeleton mismatch) | **Fixed** — `columns={2}` |
+| 6 | SHOULD-FIX | `StateRow` emits `role="cell"`, invalid inside the new `role="grid"` containers | **Fixed** — `StateRow` gains a `grid` prop (emits `gridcell`); the four grid call sites pass it |
+| 7 | SHOULD-FIX | Grids had no arrow-key navigation (every row + checkbox a tab stop) | **Partially fixed** — `GridRow` handles ArrowUp/ArrowDown between sibling rows (guarded so inner controls aren't hijacked). Full roving-tabindex (single tab stop, Home/End) deliberately deferred — noted for the final a11y pass |
+| 8 | NIT | CustomerLogin still advertised a "Fleet Owner Portal" tab with its own login form | **Fixed** — fleet tab + form removed, agent-only TabsList |
+| 9 | INFO | Paused tablet client generates QR links to the deleted `/provision/:code` page | **Accepted, no fix** — the tablet app is retired with the fleet direction; the QR lands on the SPA 404, which is accurate |
+
+Reviewer-confirmed clean: retired-role redirects loop-free; no surviving
+consumer of admin `commissions`/`fleet`/`impressions`; CampaignQRManager
+can't reach the removed `car` tab state; checkbox/sort keyboard behavior and
+SortHeader geometry intact; no runtime consumer of the dropped
+`ENABLE_DOMAIN_PREFIXES` mounts.
+
+---
+
 ## Codex review log — Phase C PR5 post-implementation (2026-07-15, gpt-5.6-sol xhigh)
 
 1 BLOCKER / 4 MAJOR / 4 MINOR; verdict confirmed QR create/download, AI PUT

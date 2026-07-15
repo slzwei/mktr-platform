@@ -394,9 +394,9 @@ export default function AdminV2Prospects() {
         {prospects.isLoading && [0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="av2-row" role="row" style={{ cursor: 'default' }}><span role="gridcell" style={{ flex: 1 }}><Skeleton height={32} /></span></div>
         ))}
-        {prospects.isError && <StateRow><ErrorState error={prospects.error} onRetry={prospects.refetch} /></StateRow>}
+        {prospects.isError && <StateRow grid><ErrorState error={prospects.error} onRetry={prospects.refetch} /></StateRow>}
         {!prospects.isLoading && !prospects.isError && rows.length === 0 && (
-          <StateRow><EmptyState
+          <StateRow grid><EmptyState
             title="No leads match these filters"
             hint="Loosen a filter or clear them all."
             action={activeChips.length > 0 && (

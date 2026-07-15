@@ -99,9 +99,9 @@ export default function AdminV2Campaigns() {
         {campaigns.isLoading && [0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="av2-row" role="row" style={{ cursor: 'default' }}><span role="gridcell" style={{ flex: 1 }}><Skeleton height={32} /></span></div>
         ))}
-        {campaigns.isError && <StateRow><ErrorState error={campaigns.error} onRetry={campaigns.refetch} /></StateRow>}
+        {campaigns.isError && <StateRow grid><ErrorState error={campaigns.error} onRetry={campaigns.refetch} /></StateRow>}
         {!campaigns.isLoading && !campaigns.isError && rows.length === 0 && (
-          <StateRow><EmptyState title="No campaigns match" hint={statusFilter ? 'Try a different status.' : 'Create your first campaign to start capturing leads.'} /></StateRow>
+          <StateRow grid><EmptyState title="No campaigns match" hint={statusFilter ? 'Try a different status.' : 'Create your first campaign to start capturing leads.'} /></StateRow>
         )}
 
         {rows.map((c) => {

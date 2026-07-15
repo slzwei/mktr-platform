@@ -173,7 +173,7 @@ export default function AdminDashboard() {
  </div>
  </div>
 
- <ResponsiveStatsGrid cards={cards} loading={loading} columns={5} />
+ <ResponsiveStatsGrid cards={cards} loading={loading} columns={2} />
 
  <DashboardCharts stats={filteredStats} loading={loading} />
 

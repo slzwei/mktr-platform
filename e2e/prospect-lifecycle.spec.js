@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
  * Prospect Lifecycle E2E Tests
  *
  * These tests cover the full prospect journey from lead capture submission
- * through agent assignment, status progression, and commission creation.
+ * through agent assignment and status progression.
  *
  * Prerequisites:
  *   - A running backend with seeded admin/agent users
@@ -295,23 +295,6 @@ test.describe('Prospect Lifecycle', () => {
     }
   });
 
-  test('commission section is accessible from admin dashboard', async ({ page }) => {
-    await adminLogin(page);
-
-    // Dashboard should have a commission/revenue card
-    await page.waitForTimeout(2000);
-    const revenueCard = page.locator('text=/revenue|commission/i').first();
-    await expect(revenueCard).toBeVisible({ timeout: 10000 });
-  });
-
-  test('admin can navigate to commissions page', async ({ page }) => {
-    await adminLogin(page);
-    await page.goto('/AdminCommissions');
-    await page.waitForTimeout(2000);
-
-    // Commissions page should render
-    await expect(page.locator('body')).not.toBeEmpty();
-    const header = page.locator('text=/commission/i').first();
-    await expect(header).toBeVisible({ timeout: 10000 });
-  });
+  // Commission dashboard/page cases removed — the commissions surface was
+  // retired in the Phase D teardown (routes dark, page deleted).
 });

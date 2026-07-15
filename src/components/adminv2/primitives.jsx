@@ -78,10 +78,10 @@ export function EmptyState({ icon = '○', title, hint, action }) {
  * row/cell structured — bare children of a table role get flattened or
  * mis-announced by screen readers.
  */
-export function StateRow({ children }) {
+export function StateRow({ children, grid = false }) {
   return (
     <div role="row">
-      <div role="cell" style={{ flex: 1 }}>{children}</div>
+      <div role={grid ? 'gridcell' : 'cell'} style={{ flex: 1 }}>{children}</div>
     </div>
   );
 }
@@ -105,6 +105,15 @@ export function GridRow({ onActivate, selected, children, ...rest }) {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onActivate(e);
+        } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          // Grid-pattern vertical navigation between sibling rows.
+          if (e.target !== e.currentTarget) return; // don't hijack inner controls
+          e.preventDefault();
+          const rows = Array.from(
+            e.currentTarget.closest('[role="grid"]')?.querySelectorAll('.av2-row[role="row"]') || []
+          );
+          const next = rows[rows.indexOf(e.currentTarget) + (e.key === 'ArrowDown' ? 1 : -1)];
+          next?.focus();
         }
       }}
       {...rest}
