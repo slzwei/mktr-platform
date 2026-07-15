@@ -98,7 +98,7 @@ export const redeemOpsApi = {
   },
   async suggestDiscoveryTerms(body) {
     const res = await apiClient.post('/redeem-ops/discovery/suggest-terms', body);
-    return res.data?.terms || [];
+    return { terms: res.data?.terms || [], categories: res.data?.categories || [] };
   },
   async getDiscoveryRun(id) {
     const res = await apiClient.get(`/redeem-ops/discovery/runs/${id}`);

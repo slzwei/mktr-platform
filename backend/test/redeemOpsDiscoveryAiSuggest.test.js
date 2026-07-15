@@ -9,7 +9,7 @@
  * PDPA rule that the description text is never logged.
  */
 import { jest } from '@jest/globals';
-import { makeDiscoveryAiService, normalizeTerms } from '../src/services/redeemOps/discoveryAiService.js';
+import { makeDiscoveryAiService, normalizeTerms, normalizeCategories } from '../src/services/redeemOps/discoveryAiService.js';
 import { AppError } from '../src/middleware/errorHandler.js';
 
 const flagsOn = () => ({ enabled: true, aiTermsEnabled: true });
@@ -58,6 +58,17 @@ describe('normalizeTerms — LLM output → Discover input contract', () => {
   });
 });
 
+describe('normalizeCategories — Maps category-filter contract', () => {
+  test('trims, dedupes case-insensitively, PRESERVES case, caps at 6', () => {
+    expect(normalizeCategories([' Learning center ', 'learning CENTER', 'Nail salon', 42, '']))
+      .toEqual(['Learning center', 'Nail salon']);
+    expect(normalizeCategories(Array.from({ length: 9 }, (_, i) => `Cat ${i}`))).toHaveLength(6);
+  });
+  test('non-array input yields []', () => {
+    expect(normalizeCategories(undefined)).toEqual([]);
+  });
+});
+
 describe('suggestTerms', () => {
   test('503 when the AI flag is off, and when Discover itself is off', async () => {
     for (const flags of [{ enabled: true, aiTermsEnabled: false }, { enabled: false, aiTermsEnabled: true }]) {
@@ -70,10 +81,11 @@ describe('suggestTerms', () => {
 
   test('returns normalized terms and passes the untrusted-data prompt payload', async () => {
     const { svc, deps } = makeSvc();
-    const terms = await svc.suggestTerms(
+    const { terms, categories } = await svc.suggestTerms(
       { description: 'kids martial arts', provider: 'google_maps', area: 'Tampines' }, user, 'req-1',
     );
     expect(terms).toEqual(['nail salon', 'lash studio', 'brow bar']);
+    expect(categories).toEqual([]); // default mock returns no categories → []
 
     const call = deps.requestStructuredJson.mock.calls[0][0];
     expect(call).toMatchObject({
@@ -85,6 +97,26 @@ describe('suggestTerms', () => {
       mode: 'google_maps', area: 'Tampines', description: 'kids martial arts',
     });
     expect(call.schema.properties.terms.items.type).toBe('string');
+  });
+
+  test('maps mode returns normalized categories alongside terms', async () => {
+    const { svc } = makeSvc({
+      requestStructuredJson: jest.fn(async () => ({
+        terms: ['nail salon', 'lash studio'],
+        categories: ['Nail salon', 'nail salon', 'Beauty salon'],
+      })),
+    });
+    const { terms, categories } = await svc.suggestTerms({ description: 'nails', provider: 'google_maps' }, user);
+    expect(terms).toEqual(['nail salon', 'lash studio']);
+    expect(categories).toEqual(['Nail salon', 'Beauty salon']); // case preserved, deduped
+  });
+
+  test('instagram mode never returns categories', async () => {
+    const { svc } = makeSvc({
+      requestStructuredJson: jest.fn(async () => ({ terms: ['sgnails', 'biabsg'], categories: ['Nail salon'] })),
+    });
+    const { categories } = await svc.suggestTerms({ description: 'home nails', provider: 'instagram_hashtag' }, user);
+    expect(categories).toEqual([]);
   });
 
   test('area defaults to All Singapore; IG mode is passed through', async () => {

@@ -73,8 +73,8 @@ export const listRuns = asyncHandler(async (req, res) => {
 export const suggestTerms = asyncHandler(async (req, res) => {
   const { error, value } = suggestSchema.validate(req.body, { abortEarly: false });
   if (error) throw new AppError(error.details.map((x) => x.message).join(', '), 400);
-  const terms = await discoveryAiService.suggestTerms(value, req.user, req.id);
-  res.json({ success: true, data: { terms } });
+  const { terms, categories } = await discoveryAiService.suggestTerms(value, req.user, req.id);
+  res.json({ success: true, data: { terms, categories } });
 });
 
 /** GET /discovery/runs/:id — status + candidates (frontend polls this). */

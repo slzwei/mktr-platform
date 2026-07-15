@@ -91,6 +91,10 @@ export default function DiscoverPage() {
   const [aiDesc, setAiDesc] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [showAi, setShowAi] = useState(false);
+  // AI-suggested Google categories (Maps) — fill the pre-search filter AND arm a
+  // one-time post-results facet cleanup for the run they were searched into.
+  const [aiCats, setAiCats] = useState([]);
+  const [aiArmedRunId, setAiArmedRunId] = useState(null);
   // Post-search category facet — Google categories the operator has hidden from
   // the current results (client-side only; the paid rows were already fetched).
   const [hiddenCats, setHiddenCats] = useState(() => new Set());
@@ -220,6 +224,24 @@ export default function DiscoverPage() {
   // A fresh run starts with every category shown.
   useEffect(() => { setHiddenCats(new Set()); }, [runId]);
 
+  // Arm-and-fire: when a run STARTED from an AI suggestion completes, pre-hide the
+  // returned Google categories the AI didn't flag as on-target — once, so manual
+  // re-checks stick. Never hides everything, and only the run it was armed for
+  // (opening an old run is never auto-cleaned).
+  useEffect(() => {
+    if (isIgRun || run?.status !== 'completed') return;
+    if (runId !== aiArmedRunId || !aiCats.length) return;
+    const returned = [...new Set(candidates
+      .filter((c) => c.status !== 'dismissed' && c.rawPayload?.categoryName)
+      .map((c) => c.rawPayload.categoryName))];
+    const off = returned.filter((cat) => !aiCats.some((ai) => {
+      const a = ai.toLowerCase(); const b = cat.toLowerCase();
+      return b.includes(a) || a.includes(b);
+    }));
+    if (off.length && off.length < returned.length) setHiddenCats(new Set(off));
+    setAiArmedRunId(null);
+  }, [run?.status, candidates, aiCats, aiArmedRunId, isIgRun, runId]);
+
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
   const suggestions = useMemo(() => {
@@ -235,6 +257,9 @@ export default function DiscoverPage() {
     mutationFn: (body) => redeemOpsApi.startDiscovery(body),
     onSuccess: (r) => {
       setRunId(r.id); setSelected(new Set()); setFilter('all'); setSort('followers');
+      // Arm the one-time facet auto-clean for THIS run iff it was searched from an
+      // AI suggestion — opening an old run later must never be auto-cleaned.
+      setAiArmedRunId(aiCats.length ? r.id : null);
       queryClient.invalidateQueries({ queryKey: RUNS_KEY });
     },
     onError: (err) => toast.error('Could not start search', { description: err.message }),
@@ -271,11 +296,19 @@ export default function DiscoverPage() {
       provider: form.provider,
       ...(form.area.trim() ? { area: form.area.trim() } : {}),
     }),
-    onSuccess: (terms) => {
-      setForm((f) => ({ ...f, adhoc: terms.join(', ') }));
-      toast.success(`${terms.length} ${isIg ? 'hashtags' : 'search terms'} suggested`, {
-        description: 'Edit them before searching if needed',
-      });
+    onSuccess: ({ terms, categories }) => {
+      const cats = isIg ? [] : (categories || []);
+      setForm((f) => ({
+        ...f,
+        adhoc: terms.join(', '),
+        ...(cats.length ? { filterWords: cats.join(', ') } : {}),
+      }));
+      setAiCats(cats);
+      if (cats.length) setShowFilters(true); // reveal the pre-filled category filter
+      toast.success(
+        `${terms.length} ${isIg ? 'hashtags' : 'phrases'}${cats.length ? ` + ${cats.length} categories` : ''} suggested`,
+        { description: 'Review before searching — clear the categories to keep everything.' },
+      );
     },
     onError: (err) => toast.error('Could not suggest terms', { description: err.message }),
   });
@@ -364,9 +397,9 @@ export default function DiscoverPage() {
               <div className="mb-4">
                 <div className="inline-flex items-center gap-1 p-1 rounded-xl"
                   style={{ background: 'var(--ro-subtle)', border: '1px solid var(--ro-border)' }}>
-                  <ProviderTab on={!isIg} onClick={() => setForm((f) => ({ ...f, provider: 'google_maps' }))}
+                  <ProviderTab on={!isIg} onClick={() => { setForm((f) => ({ ...f, provider: 'google_maps' })); setAiCats([]); }}
                     icon={<MapPin className="w-3.5 h-3.5" aria-hidden="true" />}>Google Maps</ProviderTab>
-                  <ProviderTab on={isIg} onClick={() => setForm((f) => ({ ...f, provider: IG_PROVIDER }))}
+                  <ProviderTab on={isIg} onClick={() => { setForm((f) => ({ ...f, provider: IG_PROVIDER })); setAiCats([]); }}
                     icon={<Instagram className="w-3.5 h-3.5" aria-hidden="true" />}>Instagram</ProviderTab>
                 </div>
                 <p className="text-[12px] mt-2 mb-0" style={{ color: 'var(--ro-text-3)' }}>
@@ -386,7 +419,7 @@ export default function DiscoverPage() {
               </div>
               <Input id="disc-terms" value={form.adhoc}
                 placeholder={isIg ? 'sgnails, biabsg, homebasednailssg' : 'nail salon, taekwondo, kopitiam'}
-                onChange={(e) => setForm((f) => ({ ...f, adhoc: e.target.value }))}
+                onChange={(e) => { setForm((f) => ({ ...f, adhoc: e.target.value })); if (aiCats.length) setAiCats([]); }}
                 onKeyDown={(e) => { if (e.key === 'Enter' && canSearch) runSearch(); }} />
               <p className="text-[12px] m-0" style={{ color: 'var(--ro-text-3)' }}>
                 {isIg
@@ -527,7 +560,7 @@ export default function DiscoverPage() {
                   // Prefill only — Search (with its cost hint) is the single spend
                   // affordance; a one-tap card must never fire a paid run.
                   <button key={`${s.category}-${s.area}`} type="button"
-                    onClick={() => setForm((f) => ({ ...f, adhoc: s.category, area: s.area, limit: '60' }))}
+                    onClick={() => { setForm((f) => ({ ...f, adhoc: s.category, area: s.area, limit: '60' })); setAiCats([]); }}
                     className="flex items-center gap-3 rounded-2xl border border-border bg-white p-4 text-left hover:bg-[var(--ro-subtle)]">
                     <span className="w-10 h-10 rounded-xl grid place-items-center text-lg shrink-0" style={{ background: 'var(--ro-subtle)' }}>{s.emoji}</span>
                     <span className="min-w-0">
