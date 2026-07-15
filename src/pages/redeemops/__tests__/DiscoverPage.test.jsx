@@ -117,7 +117,10 @@ describe('DiscoverPage', () => {
 
   it('AI suggest populates the terms field and never starts a paid search', async () => {
     api.listDiscoveryRuns.mockResolvedValue({ runs: [], quota, aiEnabled: true });
-    api.suggestDiscoveryTerms.mockResolvedValue(['taekwondo', 'martial arts school', 'kids karate']);
+    api.suggestDiscoveryTerms.mockResolvedValue({
+      terms: ['taekwondo', 'martial arts school', 'kids karate'],
+      categories: ['Martial arts school', 'Gym'],
+    });
     renderPage();
     // AI is now a reveal — open it first.
     await userEvent.click(await screen.findByRole('button', { name: /Get AI suggestions/i }));
@@ -131,7 +134,37 @@ describe('DiscoverPage', () => {
     expect(screen.getByPlaceholderText(/nail salon, taekwondo/)).toHaveValue(
       'taekwondo, martial arts school, kids karate',
     );
+    // categories are pre-filled into the now-revealed Restrict-categories field
+    expect(screen.getByPlaceholderText('learning center, education center')).toHaveValue(
+      'Martial arts school, Gym',
+    );
     expect(api.startDiscovery).not.toHaveBeenCalled();
+  });
+
+  it('after an AI-suggested search, off-target categories are auto-hidden in the results', async () => {
+    api.listDiscoveryRuns.mockResolvedValue({ runs: [], quota, aiEnabled: true });
+    api.suggestDiscoveryTerms.mockResolvedValue({
+      terms: ['children robotics', 'coding enrichment'], categories: ['Learning center'],
+    });
+    api.startDiscovery.mockResolvedValue({ id: 'rNew' });
+    api.getDiscoveryRun.mockResolvedValue({
+      run: { id: 'rNew', status: 'completed', category: null, area: 'All Singapore', requestedLimit: 30 },
+      candidates: [
+        { ...baseCandidate, id: 'k1', name: 'Robotics Academy', rawPayload: { categoryName: 'Learning center' } },
+        { ...baseCandidate, id: 'k2', name: 'Korean Buffet', rawPayload: { categoryName: 'Korean restaurant' } },
+      ],
+    });
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: /Get AI suggestions/i }));
+    await userEvent.type(await screen.findByLabelText('Describe what you want to find'), 'robotics for kids');
+    await userEvent.click(screen.getByRole('button', { name: 'Suggest' }));
+    await screen.findByDisplayValue('children robotics, coding enrichment');
+    await userEvent.type(screen.getByPlaceholderText('Neighbourhood or district…'), 'All Singapore');
+    await userEvent.click(screen.getByRole('button', { name: /Search Google Maps/i }));
+    // results load; the off-target category (Korean restaurant) is auto-hidden, the on-target one stays
+    expect(await screen.findByText('Robotics Academy')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Korean Buffet')).not.toBeInTheDocument());
+    expect(screen.getByText(/1 hidden by type/)).toBeInTheDocument();
   });
 
   it('shows remaining results when the atomic quota response is present', async () => {
