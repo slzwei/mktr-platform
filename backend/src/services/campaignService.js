@@ -196,12 +196,18 @@ function buildOwnerWhere(req, extra = {}) {
  * List campaigns with pagination, filtering, and role-based scoping.
  */
 export async function listCampaigns(user, query, req) {
-  const { page = 1, limit = 10, status, type, search, createdBy } = query;
+  const { page = 1, limit = 10, status, type, search, createdBy, period } = query;
   // Clamp pagination so malformed query params (?page=-1&limit=-5, ?page=abc)
   // don't reach Sequelize as a negative/NaN LIMIT/OFFSET, which throws → 500.
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(Math.max(1, parseInt(limit, 10) || 10), 200);
   const offset = (pageNum - 1) * limitNum;
+
+  // Phase B: validated rolling window for leadsThisPeriod (additive — every
+  // existing key keeps its all-time semantics). The start date is computed
+  // server-side and interpolated as an ISO literal (never user input).
+  const periodDays = { '7d': 7, '30d': 30, '90d': 90 }[period] || 30;
+  const periodStartIso = new Date(Date.now() - periodDays * 24 * 3600e3).toISOString();
 
   const where = buildCampaignWhere(req);
 
@@ -227,6 +233,10 @@ export async function listCampaigns(user, query, req) {
         [sequelize.literal('(SELECT COUNT(*) FROM prospects WHERE prospects."campaignId" = "Campaign".id)'), 'prospectCount'],
         [sequelize.literal('(SELECT COUNT(*) FROM qr_tags WHERE qr_tags."campaignId" = "Campaign".id)'), 'qrTagCount'],
         [sequelize.literal('(SELECT COALESCE(SUM("scanCount"), 0) FROM qr_tags WHERE qr_tags."campaignId" = "Campaign".id)'), 'totalScans'],
+        // Phase B aggregates (admin rebuild): period leads + open wallet-commitment demand.
+        [sequelize.literal(`(SELECT COUNT(*) FROM prospects WHERE prospects."campaignId" = "Campaign".id AND prospects."createdAt" >= '${periodStartIso}')`), 'leadsThisPeriod'],
+        [sequelize.literal('(SELECT COALESCE(SUM(lpa."leadsRemaining"), 0)::int FROM lead_package_assignments lpa JOIN lead_packages lp ON lpa."leadPackageId" = lp.id WHERE lp."campaignId" = "Campaign".id AND lpa."source" = \'wallet\' AND lpa.status = \'active\')'), 'committedRemaining'],
+        [sequelize.literal('(SELECT COALESCE(SUM(lpa."leadsRemaining" * lpa."unitPriceCents"), 0)::bigint FROM lead_package_assignments lpa JOIN lead_packages lp ON lpa."leadPackageId" = lp.id WHERE lp."campaignId" = "Campaign".id AND lpa."source" = \'wallet\' AND lpa.status = \'active\' AND lpa."unitPriceCents" IS NOT NULL)'), 'committedValueCents'],
       ]
     },
     include: [
@@ -501,6 +511,62 @@ export async function updateCampaign(id, body, req) {
   plain.ad_playlist = mediaItemsToPlaylist(plain.mediaItems);
   plain.assigned_agents = agentRows.map(r => r.agentId);
   return plain;
+}
+
+/**
+ * Admin campaign-detail composite (Phase B): one round-trip for the rebuild's
+ * detail screen — campaign row + 30d SGT lead series + open wallet commitments
+ * + latest leads + QR tags. Read-only aggregation over existing data.
+ */
+export async function getCampaignSummary(id, req) {
+  const where = buildOwnerWhere(req, { id });
+  const campaign = await Campaign.findOne({ where });
+  if (!campaign) throw new AppError('Campaign not found or access denied', 404);
+
+  const { getLeadSeries } = await import('./dashboardService.js');
+  const { LeadPackageAssignment, Prospect: ProspectModel, QrTag: QrTagModel } = await import('../models/index.js');
+
+  const [series, commitmentRows, recent, qrTags] = await Promise.all([
+    getLeadSeries('30d', { campaignId: id }),
+    LeadPackageAssignment.findAll({
+      where: { source: 'wallet', status: 'active', leadsRemaining: { [Op.gt]: 0 } },
+      include: [
+        { association: 'package', attributes: [], where: { campaignId: id }, required: true },
+        { association: 'agent', attributes: ['id', 'firstName', 'lastName', 'fullName', 'email'] },
+      ],
+      order: [['purchaseDate', 'ASC']],
+    }),
+    ProspectModel.findAll({
+      where: { campaignId: id },
+      attributes: ['id', 'firstName', 'lastName', 'leadStatus', 'leadSource', 'quarantinedAt', 'quarantineReason', 'assignedAgentId', 'createdAt'],
+      order: [['createdAt', 'DESC']],
+      limit: 6,
+    }),
+    QrTagModel.findAll({
+      where: { campaignId: id },
+      attributes: ['id', 'name', 'scanCount', 'uniqueScanCount', 'lastScanned', 'active'],
+      order: [['scanCount', 'DESC']],
+    }),
+  ]);
+
+  const commitments = commitmentRows.map((r) => ({
+    assignmentId: r.id,
+    agentId: r.agent?.id ?? r.agentId,
+    agent: r.agent ? (r.agent.fullName || `${r.agent.firstName || ''} ${r.agent.lastName || ''}`.trim() || r.agent.email) : null,
+    remaining: r.leadsRemaining,
+    unitPriceCents: r.unitPriceCents,
+    valueCents: Number.isInteger(r.unitPriceCents) ? r.leadsRemaining * r.unitPriceCents : null,
+  }));
+
+  return {
+    campaign: campaign.toJSON(),
+    series,
+    commitments,
+    committedRemaining: commitments.reduce((s, c) => s + c.remaining, 0),
+    committedValueCents: commitments.reduce((s, c) => s + (c.valueCents || 0), 0),
+    recent,
+    qrTags,
+  };
 }
 
 /**

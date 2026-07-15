@@ -13,6 +13,11 @@ router.get('/overview', authenticateToken, asyncHandler(ctrl.getOverview));
 // Get analytics data for charts
 router.get('/analytics', authenticateToken, requireAgentOrAdmin, asyncHandler(ctrl.getAnalytics));
 
+// Admin rebuild Phase B — needs-attention aggregates, lead series, funnel (admin-only)
+router.get('/attention', authenticateToken, requireRole('admin'), asyncHandler(ctrl.getAttention));
+router.get('/series', authenticateToken, requireRole('admin'), asyncHandler(ctrl.getSeries));
+router.get('/funnel', authenticateToken, requireRole('admin'), asyncHandler(ctrl.getFunnel));
+
 // Driver Partner: successful submissions trend
 router.get('/driver/scans', authenticateToken, requireRole('driver_partner', 'admin'), asyncHandler(ctrl.getDriverScans));
 

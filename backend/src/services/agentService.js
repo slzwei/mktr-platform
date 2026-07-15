@@ -58,12 +58,17 @@ export function normalizeAgentSort(sortBy, order) {
  * List agents with pagination, search, and computed stats.
  */
 export async function listAgents(query) {
-  const { page = 1, limit = 10, search, status, sortBy = 'createdAt', order = 'DESC' } = query;
+  const { page = 1, limit = 10, search, status, sortBy = 'createdAt', order = 'DESC', period } = query;
   // Clamp pagination so malformed query params (?page=0, ?limit=-1) don't reach
   // Sequelize as a negative/NaN LIMIT/OFFSET, which throws → 500.
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(Math.max(1, parseInt(limit, 10) || 10), 200);
   const offset = (pageNum - 1) * limitNum;
+
+  // Phase B: validated rolling window for assignedThisPeriod (additive keys).
+  // Server-computed ISO literal — never user input.
+  const periodDays = { '7d': 7, '30d': 30, '90d': 90 }[period] || 30;
+  const periodStartIso = new Date(Date.now() - periodDays * 24 * 3600e3).toISOString();
 
   const whereConditions = { role: 'agent' };
 
@@ -102,6 +107,13 @@ export async function listAgents(query) {
         [sequelize.literal('(SELECT COALESCE(SUM(amount), 0) FROM commissions WHERE commissions."agentId" = "User".id AND commissions.status = \'paid\')'), 'paidCommissions'],
         [sequelize.literal('(SELECT COUNT(*) FROM campaigns WHERE campaigns."createdBy" = "User".id)'), 'createdCampaignsCount'],
         [sequelize.literal('(SELECT COUNT(*) FROM campaigns WHERE campaigns."createdBy" = "User".id AND campaigns.status = \'active\')'), 'activeCampaignsCount'],
+        // Phase B roster aggregates (admin rebuild): period assignment volume,
+        // recency, and open wallet-commitment demand (0s for internal agents —
+        // the UI renders "—" when mktrLeadsId is null).
+        [sequelize.literal(`(SELECT COUNT(*) FROM prospects WHERE prospects."assignedAgentId" = "User".id AND prospects."createdAt" >= '${periodStartIso}')`), 'assignedThisPeriod'],
+        [sequelize.literal('(SELECT MAX(prospects."createdAt") FROM prospects WHERE prospects."assignedAgentId" = "User".id)'), 'lastAssignedAt'],
+        [sequelize.literal('(SELECT COALESCE(SUM(lpa."leadsRemaining"), 0)::int FROM lead_package_assignments lpa WHERE lpa."agentId" = "User".id AND lpa."source" = \'wallet\' AND lpa.status = \'active\')'), 'committedLeads'],
+        [sequelize.literal('(SELECT COALESCE(SUM(lpa."leadsRemaining" * lpa."unitPriceCents"), 0)::bigint FROM lead_package_assignments lpa WHERE lpa."agentId" = "User".id AND lpa."source" = \'wallet\' AND lpa.status = \'active\' AND lpa."unitPriceCents" IS NOT NULL)'), 'committedValueCents'],
       ]
     },
     include: [
