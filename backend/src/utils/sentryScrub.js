@@ -3,6 +3,8 @@
 // patterns. Substring-based, case-insensitive match on key names so
 // `agentPhone`, `lead_email`, `staff_full_name`, etc. all get redacted.
 
+import { maskTokenUrl } from './redactTokens.js';
+
 const PII_KEY_PATTERN = /phone|email|nric|name|token|jwt|address|otp|password|signature|secret|private_?key|authorization/i;
 
 export function scrubObject(input) {
@@ -27,6 +29,9 @@ export function scrubEvent(event) {
   if (event.tags) event.tags = scrubObject(event.tags);
   if (event.contexts) event.contexts = scrubObject(event.contexts);
   if (event.request?.data) event.request.data = scrubObject(event.request.data);
+  // Reward-claim URLs carry live bearer tokens — mask the path segment
+  // (scrubObject only matches key NAMES; a token inside a `url` value slips by).
+  if (typeof event.request?.url === 'string') event.request.url = maskTokenUrl(event.request.url);
   // Strip user PII — only id is allowed.
   if (event.user) event.user = { id: event.user.id };
   return event;
@@ -34,6 +39,10 @@ export function scrubEvent(event) {
 
 export function scrubBreadcrumb(breadcrumb) {
   if (!breadcrumb) return breadcrumb;
-  if (breadcrumb.data) breadcrumb.data = scrubObject(breadcrumb.data);
+  if (breadcrumb.data) {
+    breadcrumb.data = scrubObject(breadcrumb.data);
+    if (typeof breadcrumb.data.url === 'string') breadcrumb.data.url = maskTokenUrl(breadcrumb.data.url);
+  }
+  if (typeof breadcrumb.message === 'string') breadcrumb.message = maskTokenUrl(breadcrumb.message);
   return breadcrumb;
 }

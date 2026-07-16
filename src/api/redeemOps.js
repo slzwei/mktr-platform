@@ -340,6 +340,12 @@ export const redeemOpsApi = {
     const res = await apiClient.post('/redeem-ops/entitlements/unlock', body);
     return res.data;
   },
+  async resendEntitlementPass(id, { channel = 'email' } = {}) {
+    // Re-mints the current credential (the old QR/link dies) and either emails
+    // it or returns { link, waMessage, waUrl } once for staff to share.
+    // Full response returned — the toast needs the server's message.
+    return apiClient.post(`/redeem-ops/entitlements/${id}/resend-pass`, { channel });
+  },
   async verifyVoucher(token) {
     const res = await apiClient.post('/redeem-ops/redemptions/verify', { token });
     return res.data;

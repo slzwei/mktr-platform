@@ -2,7 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { User } from '../models/index.js';
-import { makeEntitlementService } from '../services/redeemOps/entitlementService.js';
+import { makeWiredEntitlementService } from '../services/redeemOps/entitlementWiring.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -78,16 +78,24 @@ router.post('/entitlement-unlock', asyncHandler(async (req, res) => {
     // only a presentation token (the customer's QR pass, presented live) counts
     // as scan evidence; a bare prospectId is always the button path
     // (docs/plans/lucky-draw-10x.md §4.4).
-    const result = await makeEntitlementService().unlockEntitlement(
+    const result = await makeWiredEntitlementService().unlockEntitlement(
       presentationToken ? { presentationToken } : { prospectId },
       agent,
       presentationToken ? 'agent_scan' : 'agent_button'
     );
+    // Truthful messaging: only claim an email went out when one was actually
+    // scheduled (Retell leads have no real address — staff must share the link).
+    const message = result.already
+      ? 'Already unlocked'
+      : result.emailQueued
+        ? 'Voucher unlocked — the customer has been emailed their voucher'
+        : 'Voucher unlocked — no email on file; share the customer\'s pass link with them';
     return res.json({
       success: true,
-      message: result.already ? 'Already unlocked' : 'Voucher unlocked — the customer has been notified',
+      message,
       data: {
         already: result.already,
+        emailQueued: result.emailQueued === true,
         entitlementId: result.entitlement.id,
         status: result.entitlement.status,
         tokenHint: result.entitlement.tokenHint,

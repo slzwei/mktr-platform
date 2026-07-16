@@ -20,6 +20,7 @@ import leadCaptureBind from './routes/leadCaptureBind.js';
 import { optionalAuth } from './middleware/auth.js';
 import { blockRedeemForInternalRoutes } from './middleware/internalRouteHostGuard.js';
 import { logger } from './utils/logger.js';
+import { maskTokenUrl } from './utils/redactTokens.js';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger.js';
 
@@ -130,8 +131,19 @@ export const init = async (app) => {
   // redeem.sg public-host signature. CORS preflight already passed above.
   app.use('/api', blockRedeemForInternalRoutes);
 
-  // Structured request logging via Pino
-  app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/health' } }));
+  // Structured request logging via Pino. The req serializer masks reward-claim
+  // bearer tokens — /api/reward-claim/:token is a live credential and must
+  // never land in access logs (see utils/redactTokens.js).
+  app.use(pinoHttp({
+    logger,
+    autoLogging: { ignore: (req) => req.url === '/health' },
+    serializers: {
+      req(req) {
+        req.url = maskTokenUrl(req.url);
+        return req;
+      },
+    },
+  }));
 
   // Body parsing middleware
   // The verify callback captures the raw body for webhook signature verification.

@@ -8,9 +8,21 @@ import { logger } from '../../utils/logger.js';
 import { makeInventoryService } from './inventoryService.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { mintToken, hashToken, tokenHintOf } from './tokens.js';
+import { canEmailProspect, makeFulfilmentNotify } from './fulfilmentNotify.js';
 
 const DEFAULT_RESERVATION_DAYS = 30;
 const DEFAULT_REDEMPTION_DAYS = 90;
+const RESEND_COOLDOWN_MS = 60 * 1000;
+
+// In-flight fire-and-forget deliveries (all service instances share this).
+// flushDeliveries() lets tests — and anything else that needs a barrier —
+// await every queued email + receipt write deterministically.
+const pendingDeliveries = new Set();
+export async function flushDeliveries() {
+  while (pendingDeliveries.size > 0) {
+    await Promise.allSettled([...pendingDeliveries]);
+  }
+}
 
 /**
  * Reward entitlements (docs/redeem-ops/MKTR_INTEGRATION.md §2, ERD.md §3.16).
@@ -23,6 +35,13 @@ const DEFAULT_REDEMPTION_DAYS = 90;
  * unlockPolicy='agent_unlock' (default): capture creates a locked RESERVATION
  * (presentation-pass token only); the lead's assigned consultant unlocks at the
  * physical meeting (scan or button) which mints the voucher token.
+ *
+ * DELIVERY lives in this service (single choke point — hook-, sweep-, and
+ * manual-issued entitlements all deliver): fresh issuance and unlock queue the
+ * reservation/voucher email post-commit via the null-safe notify deps, and
+ * every attempt writes a `notified`/`notify_failed` receipt event. Wire the
+ * deps with makeWiredEntitlementService (entitlementWiring.js) — a bare
+ * instance sends nothing by design (tests, flag-off).
  */
 export function makeEntitlementService(overrides = {}) {
   const d = {
@@ -30,8 +49,14 @@ export function makeEntitlementService(overrides = {}) {
     Prospect, User, sequelize, logger,
     inventory: makeInventoryService(),
     audit: makeRedeemOpsAuditService(),
-    notifyUnlock: null, // injected by fulfilment wiring (email/SMS) — null-safe
+    notifyUnlock: null, // injected by entitlementWiring (voucher email) — null-safe
+    notifyReservation: null, // injected by entitlementWiring (reservation-pass email) — null-safe
+    builders: null, // share/claim-URL builders; defaults lazily to makeFulfilmentNotify()
     ...overrides,
+  };
+  const builders = () => {
+    if (!d.builders) d.builders = makeFulfilmentNotify();
+    return d.builders;
   };
 
   async function writeEvent(t, evt) {
@@ -53,20 +78,74 @@ export function makeEntitlementService(overrides = {}) {
   }
 
   /**
+   * Post-commit, fire-and-forget email delivery + truthful receipt. Returns
+   * whether a FRESH attempt was scheduled (the `emailQueued` the routes
+   * surface). Receipts: `notified` on accepted hand-off, `notify_failed` on
+   * mailer failure — never on a no-email skip (nothing was attempted).
+   */
+  function queueDelivery({ entitlement, prospect, kind, presentationToken = null, voucherToken = null }) {
+    const fn = kind === 'voucher' ? d.notifyUnlock : d.notifyReservation;
+    if (typeof fn !== 'function' || !canEmailProspect(prospect)) return false;
+    const args = kind === 'voucher'
+      ? { entitlement, prospect, voucherToken }
+      : { entitlement, prospect, presentationToken };
+    const delivery = Promise.resolve()
+      .then(() => fn(args))
+      .then((r) => {
+        if (r?.skipped) return null;
+        return writeDeliveryReceipt(entitlement.id, kind, r || { sent: false, error: 'no sender result' });
+      })
+      .catch((err) => writeDeliveryReceipt(entitlement.id, kind, { sent: false, error: err?.message }));
+    pendingDeliveries.add(delivery);
+    delivery.finally(() => pendingDeliveries.delete(delivery));
+    return true;
+  }
+
+  async function writeDeliveryReceipt(entitlementId, kind, r) {
+    try {
+      await d.RedemptionEvent.create({
+        entitlementId,
+        type: r.sent ? 'notified' : 'notify_failed',
+        actorType: 'system',
+        metadata: {
+          kind,
+          channel: 'email',
+          to: r.to || null, // already masked by the sender
+          ...(r.error ? { error: String(r.error).slice(0, 200) } : {}),
+        },
+      });
+    } catch (err) {
+      d.logger.error('redeem_ops.delivery.receipt_failed', { entitlementId, error: err?.message });
+    }
+  }
+
+  /**
    * Issue (reserve) for a captured lead. Returns the entitlement or null with a
    * reason — NEVER throws into the capture path (the hook wraps it anyway).
+   * `activationId` (manual path) pins the EXACT activation staff selected —
+   * without it, issueManual could issue/email a different activation than the
+   * audit row claims (Codex blocker, 2026-07-16).
    */
-  async function issueForProspect(prospect, { via = 'hook' } = {}) {
+  async function issueForProspect(prospect, { via = 'hook', activationId = null } = {}) {
     try {
-      if (!prospect?.campaignId) return { entitlement: null, reason: 'no_campaign' };
-      if (prospect.quarantinedAt) return { entitlement: null, reason: 'quarantined' };
+      if (!activationId && !prospect?.campaignId) return { entitlement: null, reason: 'no_campaign' };
+      if (prospect?.quarantinedAt) return { entitlement: null, reason: 'quarantined' };
       if (!verificationStampOf(prospect)) return { entitlement: null, reason: 'phone_not_verified' };
 
-      const activation = await d.Activation.findOne({
-        where: { campaignId: prospect.campaignId, status: 'active' },
-        include: [{ model: d.RewardOffer, as: 'rewardOffer' }],
-      });
-      if (!activation) return { entitlement: null, reason: 'no_active_activation' };
+      let activation;
+      if (activationId) {
+        activation = await d.Activation.findOne({
+          where: { id: activationId, status: 'active' },
+          include: [{ model: d.RewardOffer, as: 'rewardOffer' }],
+        });
+        if (!activation) return { entitlement: null, reason: 'activation_not_active' };
+      } else {
+        activation = await d.Activation.findOne({
+          where: { campaignId: prospect.campaignId, status: 'active' },
+          include: [{ model: d.RewardOffer, as: 'rewardOffer' }],
+        });
+        if (!activation) return { entitlement: null, reason: 'no_active_activation' };
+      }
 
       const existing = await d.RewardEntitlement.findOne({
         where: { activationId: activation.id, prospectId: prospect.id },
@@ -121,12 +200,24 @@ export function makeEntitlementService(overrides = {}) {
         return created;
       });
 
+      // Post-commit delivery: reservation pass (agent_unlock) or voucher
+      // (on_capture) — fire-and-forget, receipt-tracked. This is the single
+      // delivery choke point for hook, sweep AND manual issuance.
+      const emailQueued = queueDelivery({
+        entitlement,
+        prospect,
+        kind: onCapture ? 'voucher' : 'pass',
+        presentationToken: onCapture ? null : presentation.raw,
+        voucherToken: voucher ? voucher.raw : null,
+      });
+
       // Raw tokens returned ONCE for delivery (email/link); only hashes persist.
       return {
         entitlement,
         reason: null,
         presentationToken: presentation.raw,
         voucherToken: voucher ? voucher.raw : null,
+        emailQueued,
       };
     } catch (err) {
       if (err?._soft) return { entitlement: null, reason: err.message };
@@ -146,6 +237,8 @@ export function makeEntitlementService(overrides = {}) {
    * `by` = { presentationToken } (scan — proves presence) or { prospectId } (button).
    * The acting agent must be the lead's assigned consultant (admin override allowed).
    * Idempotent: an already-unlocked entitlement returns { already: true }.
+   * `emailQueued` means a FRESH voucher email was scheduled by THIS call —
+   * always false on replay (no duplicate mail) and when no usable email exists.
    */
   async function unlockEntitlement(by, agentUser, via = 'agent_scan') {
     let entitlement;
@@ -162,7 +255,7 @@ export function makeEntitlementService(overrides = {}) {
     if (!entitlement) throw new AppError('Entitlement not found', 404);
 
     if (['issued', 'redeemed'].includes(entitlement.status)) {
-      return { entitlement, already: true, voucherToken: null };
+      return { entitlement, already: true, voucherToken: null, emailQueued: false };
     }
     if (entitlement.status !== 'eligible') {
       throw new AppError(`Entitlement is ${entitlement.status}`, 409);
@@ -181,7 +274,7 @@ export function makeEntitlementService(overrides = {}) {
     const redemptionDays = offer?.redemptionExpiryDays || DEFAULT_REDEMPTION_DAYS;
     const voucher = mintToken();
 
-    const result = await d.sequelize.transaction(async (t) => {
+    await d.sequelize.transaction(async (t) => {
       const [count] = await d.RewardEntitlement.update(
         {
           status: 'issued',
@@ -208,16 +301,14 @@ export function makeEntitlementService(overrides = {}) {
         entitlementId: entitlement.id, type: 'unlocked',
         actorType: 'agent', actorUserId: agentUser.id, metadata: { via },
       });
-      return true;
     });
 
     await entitlement.reload();
-    if (result && typeof d.notifyUnlock === 'function') {
-      // Fire-and-forget consumer notification (voucher email w/ QR + link)
-      Promise.resolve(d.notifyUnlock({ entitlement, prospect, voucherToken: voucher.raw }))
-        .catch((err) => d.logger.error('redeem_ops.unlock.notify_failed', { error: err?.message }));
-    }
-    return { entitlement, already: false, voucherToken: voucher.raw };
+    // Fire-and-forget voucher email (receipt-tracked)
+    const emailQueued = queueDelivery({
+      entitlement, prospect, kind: 'voucher', voucherToken: voucher.raw,
+    });
+    return { entitlement, already: false, voucherToken: voucher.raw, emailQueued };
   }
 
   /** Manual issue by redemption_ops (requires an existing lead). */
@@ -229,9 +320,12 @@ export function makeEntitlementService(overrides = {}) {
     const prospect = await d.Prospect.findByPk(prospectId);
     if (!prospect) throw new AppError('Lead not found', 404);
 
+    // activationId is threaded through so the SELECTED activation is the one
+    // issued + emailed + audited (issueForProspect would otherwise re-resolve
+    // by the prospect's campaign and could pick a different activation).
     const result = await issueForProspect(
       { ...prospect.toJSON(), sourceMetadata: { ...(prospect.sourceMetadata || {}), phoneVerifiedAt: prospect.sourceMetadata?.phoneVerifiedAt || new Date().toISOString() } },
-      { via: 'manual' }
+      { via: 'manual', activationId }
     );
     if (!result.entitlement) throw new AppError(`Cannot issue: ${result.reason}`, 409);
     await d.audit.recordAuditEvent({
@@ -239,6 +333,91 @@ export function makeEntitlementService(overrides = {}) {
       entityId: result.entitlement.id, after: { activationId, prospectId }, requestId,
     });
     return result;
+  }
+
+  /**
+   * Ops resend / share (docs/plans/trial-reward-funnel-hardening-prompt.md PR A).
+   * Re-mints the CURRENT credential (pass while eligible, voucher once issued)
+   * as an ATOMIC conditional transition — racing unlock/redeem/expiry loses
+   * cleanly with a typed 409 instead of rotating hashes for the wrong state.
+   * channel 'email' re-sends via the notify seam; channel 'link' returns the
+   * branded /r/ url + WhatsApp-paste bundle ONCE (the no-email path).
+   * The OLD credential of that kind stops working — deliberate.
+   */
+  async function resendDelivery(id, user, { channel = 'email' } = {}, requestId = null) {
+    const entitlement = await d.RewardEntitlement.findByPk(id);
+    if (!entitlement) throw new AppError('Entitlement not found', 404);
+
+    const kind = entitlement.status === 'eligible' ? 'pass'
+      : entitlement.status === 'issued' ? 'voucher' : null;
+    if (!kind) throw new AppError(`Entitlement is ${entitlement.status}`, 409);
+    if (entitlement.expiresAt && new Date(entitlement.expiresAt) <= new Date()) {
+      throw new AppError('Reward has expired — nothing to resend', 409);
+    }
+
+    const prospect = entitlement.prospectId ? await d.Prospect.findByPk(entitlement.prospectId) : null;
+    if (channel === 'email' && !canEmailProspect(prospect)) {
+      throw new AppError('No usable email on file — use the copy-link option instead', 409);
+    }
+
+    // Per-entitlement cooldown: any delivery/rotation for this kind in the
+    // last 60s → 429 (the global per-IP limiter is no protection here).
+    const recent = await d.RedemptionEvent.findAll({
+      where: {
+        entitlementId: id,
+        createdAt: { [Op.gt]: new Date(Date.now() - RESEND_COOLDOWN_MS) },
+        type: { [Op.in]: ['notified', 'notify_failed', 'manual_override'] },
+      },
+      order: [['createdAt', 'DESC']],
+      limit: 10,
+    });
+    const resendAction = kind === 'pass' ? 'resend_pass' : 'resend_voucher';
+    const clash = recent.some((e) => {
+      const m = e.metadata || {};
+      if (e.type === 'manual_override') return m.action === resendAction || (m.action === 'auto_resend' && m.kind === kind);
+      return m.kind === kind;
+    });
+    if (clash) {
+      throw new AppError('A delivery for this reward was attempted less than a minute ago — wait and retry', 429);
+    }
+
+    const fresh = mintToken();
+    const fields = kind === 'pass'
+      ? { presentationTokenHash: fresh.hash }
+      : { tokenHash: fresh.hash, tokenHint: tokenHintOf(fresh.raw) };
+    await d.sequelize.transaction(async (t) => {
+      const [count] = await d.RewardEntitlement.update(fields, {
+        where: {
+          id,
+          status: entitlement.status, // conditional — unlock/redeem/cancel races lose here
+          [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: d.sequelize.literal('NOW()') } }],
+        },
+        transaction: t,
+      });
+      if (count === 0) {
+        throw new AppError('Reward state changed (unlocked, redeemed or expired) — refresh and retry', 409);
+      }
+      await writeEvent(t, {
+        entitlementId: id, type: 'manual_override', actorType: 'staff', actorUserId: user.id,
+        metadata: { action: resendAction, channel },
+      });
+      await d.audit.recordAuditEvent({
+        actorUser: user, action: 'entitlement.resend_delivery', entityType: 'reward_entitlement',
+        entityId: id, after: { kind, channel }, requestId, transaction: t,
+      });
+    });
+    await entitlement.reload();
+
+    if (channel === 'link') {
+      const bundle = await builders().buildShareBundle({ entitlement, prospect, kind, rawToken: fresh.raw });
+      return { entitlement, kind, channel, emailQueued: false, ...bundle };
+    }
+    const emailQueued = queueDelivery({
+      entitlement, prospect, kind,
+      presentationToken: kind === 'pass' ? fresh.raw : null,
+      voucherToken: kind === 'voucher' ? fresh.raw : null,
+    });
+    return { entitlement, kind, channel, emailQueued };
   }
 
   async function cancelEntitlement(id, user, reason, requestId = null) {
@@ -315,6 +494,8 @@ export function makeEntitlementService(overrides = {}) {
    * Reconciliation sweep (at-least-once backstop for the capture hook): recent
    * verified, unquarantined leads on ACTIVE activation campaigns lacking an
    * entitlement get one. The unique anchor dedupes against hook races.
+   * On a WIRED instance, issueForProspect delivers the pass itself — sweep-
+   * issued entitlements are no longer silently undeliverable (defect 2).
    */
   async function reconcileMissedLeads({ sinceHours = 48 } = {}) {
     const activations = await d.Activation.findAll({
@@ -345,6 +526,83 @@ export function makeEntitlementService(overrides = {}) {
     return issued;
   }
 
+  /**
+   * Delivery-recovery sweep (Codex blocker, 2026-07-16): an entitlement whose
+   * email never got a `notified` receipt (crash between commit and send, SMTP
+   * failure) is otherwise stranded FOREVER — the raw token is gone and
+   * reconcileMissedLeads skips existing rows. Re-mint atomically and retry, up
+   * to `maxAttempts` per kind; rows younger than `minAgeMinutes` are skipped so
+   * an in-flight fire-and-forget send isn't pointlessly rotated. Requires the
+   * notify deps to be wired — a bare instance returns 0 (never rotate a
+   * credential we cannot deliver).
+   */
+  async function reconcileMissedDeliveries({ maxAttempts = 3, minAgeMinutes = 10 } = {}) {
+    const cutoff = new Date(Date.now() - minAgeMinutes * 60 * 1000);
+    const candidates = await d.RewardEntitlement.findAll({
+      where: {
+        status: { [Op.in]: ['eligible', 'issued'] },
+        [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: new Date() } }],
+      },
+      include: [{ model: d.Prospect, as: 'prospect' }],
+      order: [['createdAt', 'ASC']],
+      limit: 200,
+    });
+    let recovered = 0;
+    for (const ent of candidates) {
+      try {
+        const kind = ent.status === 'eligible' ? 'pass' : 'voucher';
+        const fn = kind === 'voucher' ? d.notifyUnlock : d.notifyReservation;
+        if (typeof fn !== 'function') continue; // unwired — never rotate undeliverably
+        if (!canEmailProspect(ent.prospect)) continue; // link-channel-only customer
+        const stateSince = kind === 'voucher' ? (ent.unlockedAt || ent.createdAt) : ent.createdAt;
+        if (new Date(stateSince) > cutoff) continue; // give the in-flight send its window
+
+        const receipts = await d.RedemptionEvent.findAll({
+          where: { entitlementId: ent.id, type: { [Op.in]: ['notified', 'notify_failed'] } },
+          order: [['createdAt', 'DESC']],
+          limit: 20,
+        });
+        const forKind = receipts.filter((e) => e.metadata?.kind === kind && (e.metadata?.channel || 'email') === 'email');
+        if (forKind.some((e) => e.type === 'notified')) continue; // delivered
+        if (forKind.length >= maxAttempts) continue; // gave up — visible on the console
+
+        const fresh = mintToken();
+        const fields = kind === 'pass'
+          ? { presentationTokenHash: fresh.hash }
+          : { tokenHash: fresh.hash, tokenHint: tokenHintOf(fresh.raw) };
+        let rotated = false;
+        await d.sequelize.transaction(async (t) => {
+          const [count] = await d.RewardEntitlement.update(fields, {
+            where: {
+              id: ent.id,
+              status: ent.status,
+              [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: d.sequelize.literal('NOW()') } }],
+            },
+            transaction: t,
+          });
+          if (count === 0) return;
+          rotated = true;
+          await writeEvent(t, {
+            entitlementId: ent.id, type: 'manual_override', actorType: 'system',
+            metadata: { action: 'auto_resend', kind, channel: 'email' },
+          });
+        });
+        if (!rotated) continue;
+        await ent.reload();
+        queueDelivery({
+          entitlement: ent, prospect: ent.prospect, kind,
+          presentationToken: kind === 'pass' ? fresh.raw : null,
+          voucherToken: kind === 'voucher' ? fresh.raw : null,
+        });
+        recovered += 1;
+      } catch (err) {
+        d.logger.warn('redeem_ops.delivery.recover_failed', { id: ent.id, error: err?.message });
+      }
+    }
+    if (recovered > 0) d.logger.info('redeem_ops.deliveries.recovered', { recovered });
+    return recovered;
+  }
+
   /** Ops listing (staff view — lead PII via JOIN at read time, never copied). */
   async function listEntitlements(query = {}) {
     const where = {};
@@ -370,7 +628,9 @@ export function makeEntitlementService(overrides = {}) {
         {
           model: d.Prospect,
           as: 'prospect',
-          attributes: ['id', 'firstName', 'lastName', 'phone'],
+          // email is selected ONLY to compute emailDeliverable — it is
+          // stripped below and never serialized to the console.
+          attributes: ['id', 'firstName', 'lastName', 'phone', 'email'],
           ...(query.search ? { where: prospectWhere, required: true } : {}),
         },
         { model: d.RewardOffer, as: 'rewardOffer', attributes: ['id', 'title'] },
@@ -379,18 +639,45 @@ export function makeEntitlementService(overrides = {}) {
       order: [['createdAt', 'DESC']],
       limit, offset: (page - 1) * limit,
     });
+
+    // Latest delivery receipt per (entitlement, channel) — one batched query.
+    const ids = rows.map((r) => r.id);
+    const receiptRows = ids.length
+      ? await d.RedemptionEvent.findAll({
+          where: {
+            entitlementId: { [Op.in]: ids },
+            type: { [Op.in]: ['notified', 'notify_failed'] },
+          },
+          order: [['createdAt', 'DESC']],
+        })
+      : [];
+    const latestReceipt = new Map();
+    for (const e of receiptRows) {
+      const key = `${e.entitlementId}:${e.metadata?.channel || 'email'}`;
+      if (!latestReceipt.has(key)) latestReceipt.set(key, e); // DESC → first is latest
+    }
+
     // Mask phones by default (redemptions.verify unmasks at the console)
     const masked = rows.map((r) => {
       const j = r.toJSON();
-      if (j.prospect?.phone) j.prospect.phone = `••••${String(j.prospect.phone).slice(-4)}`;
+      j.emailDeliverable = canEmailProspect(j.prospect);
+      const em = latestReceipt.get(`${j.id}:email`);
+      j.delivery = {
+        email: em ? { kind: em.metadata?.kind || null, at: em.createdAt, ok: em.type === 'notified' } : null,
+      };
+      if (j.prospect) {
+        if (j.prospect.phone) j.prospect.phone = `••••${String(j.prospect.phone).slice(-4)}`;
+        delete j.prospect.email;
+      }
       return j;
     });
     return { entitlements: masked, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
   }
 
   return {
-    issueForProspect, unlockEntitlement, issueManual, cancelEntitlement,
-    expireReservations, reconcileMissedLeads, listEntitlements, verificationStampOf,
+    issueForProspect, unlockEntitlement, issueManual, cancelEntitlement, resendDelivery,
+    expireReservations, reconcileMissedLeads, reconcileMissedDeliveries,
+    listEntitlements, verificationStampOf,
   };
 }
 

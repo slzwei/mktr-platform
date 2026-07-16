@@ -20,8 +20,12 @@ const LYFE_SECRET = 'test-lyfe-outcome-secret';
 
 const unlockMock = jest.fn();
 
-jest.unstable_mockModule('../src/services/redeemOps/entitlementService.js', () => ({
-  makeEntitlementService: () => ({ unlockEntitlement: unlockMock }),
+// The routes consume the WIRED factory (entitlementWiring.js) since PR A —
+// mocking the wiring here keeps the models mock minimal (the real wiring
+// statically imports fulfilmentNotify, whose model imports the User-only
+// mock below could not satisfy at ESM link time).
+jest.unstable_mockModule('../src/services/redeemOps/entitlementWiring.js', () => ({
+  makeWiredEntitlementService: () => ({ unlockEntitlement: unlockMock }),
 }));
 jest.unstable_mockModule('../src/models/index.js', () => ({
   User: { findOne: jest.fn().mockResolvedValue({ id: 'agent-1', role: 'agent' }) },

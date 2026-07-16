@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { logger } from '../utils/logger.js';
+import { maskEmail } from '../utils/redactTokens.js';
 import { normalizeCustomerHostChoice, customerHostOrigin } from '../utils/customerHost.js';
 import { getOrCreateProspectShareLink } from './shortlinkService.js';
 
@@ -70,8 +71,10 @@ export async function sendEmail({ to, subject, html, text, context, from, attach
 
   const transporter = getTransporter();
   if (!transporter) {
-    logger.info('[DEV Fallback] Email not sent (mailer not configured)', { to, subject, from: resolvedFrom });
-    logger.debug('Email body preview', { body: html || text || '(no body)' });
+    // Recipient masked and no body preview — reward emails carry live bearer
+    // tokens in their links/QRs, and log lines outlive the emails.
+    logger.info('[DEV Fallback] Email not sent (mailer not configured)', { to: maskEmail(to), subject, from: resolvedFrom });
+    logger.debug('Email body preview suppressed', { bodyBytes: (html || text || '').length });
     return { success: false, message: 'Mailer not configured; logged instead.' };
   }
 
@@ -89,7 +92,7 @@ export async function sendEmail({ to, subject, html, text, context, from, attach
     // only sees a generic "Mail command failed" string and the actual
     // SES reason (e.g., "Email address is not verified") is lost.
     logger.error('Email send failed', {
-      to,
+      to: maskEmail(to),
       from: resolvedFrom,
       subject,
       code: err.code,
