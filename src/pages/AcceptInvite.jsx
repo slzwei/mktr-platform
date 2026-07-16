@@ -145,13 +145,17 @@ export default function AcceptInvite() {
  } catch (err) {
  console.error('Send OTP error:', err);
  let errorMessage ="Unable to send verification code.";
- const respData = err.response?.data || err.data;
- if (err.response?.status === 429) {
+ // apiClient errors carry err.status / err.data / err.message — never
+ // err.response (this branch was dead until 2026-07-17).
+ const respData = err.data;
+ if (err.status === 429) {
  errorMessage ="Too many attempts. Please wait 10 minutes.";
  setResendCooldown(600);
  } else if (respData?.message) {
  errorMessage = respData.message;
  if (respData.retryAfter) setResendCooldown(respData.retryAfter);
+ } else if (err.message) {
+ errorMessage = err.message;
  }
  setOtpError(errorMessage);
  }
@@ -358,10 +362,12 @@ export default function AcceptInvite() {
  {otpState === 'idle' && (
  <Button
  type="button" onClick={handleSendOtp}
- disabled={otpLoading === 'sending' || phone.length !== 8}
+ disabled={otpLoading === 'sending' || phone.length !== 8 || resendCooldown > 0}
  size="sm" className="h-8 px-3 text-xs font-semibold bg-foreground text-background hover:bg-foreground rounded-lg transition-colors shadow-sm" >
  {otpLoading === 'sending' ? (
  <Loader2 className="w-3.5 h-3.5 animate-spin"/>
+ ) : resendCooldown > 0 ? (
+ `Wait ${Math.floor(resendCooldown / 60)}:${String(resendCooldown % 60).padStart(2, '0')}`
  ) : (
  'Verify'
  )}

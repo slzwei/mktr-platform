@@ -87,6 +87,15 @@ function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8r
  videoUrl: design.videoUrl || '',
  termsContent: design.termsContent || '',
  quiz: design.quiz || null,
+ // heroFont + featuredDrop — conditionally seeded (only when stored) so a
+ // stored value round-trips a save. heroFont has NO preserve policy, so an
+ // omitting save wipes it; featuredDrop's admin preserve-when-omitted policy
+ // is bypassed the moment the toggle sends a partial object (it used to send
+ // {enabled} alone, erasing title/valueLabel/emoji/cap/endsAt). Absent keys
+ // stay absent — the panels render safe defaults without them, and luckyDraw
+ // (no designer UI writes it) stays omit-preserved on purpose.
+ ...(design.heroFont !== undefined ? { heroFont: design.heroFont } : {}),
+ ...(design.featuredDrop !== undefined ? { featuredDrop: design.featuredDrop } : {}),
  // Marketplace content (Marketplace tab) — carried through so an ordinary
  // designer save round-trips it. clampDesignConfig replaces these keys
  // WHOLESALE from the incoming object (unlike featuredDrop/luckyDraw, which

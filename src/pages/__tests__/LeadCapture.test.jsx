@@ -26,6 +26,11 @@ vi.mock('@/components/campaigns/CampaignSignupForm', () => ({
  <button onClick={() => onSubmit({ name: 'Test User', email: 'test@test.com', phone: '6591234567' })}>
  Submit
  </button>
+ {/* Mirrors the real form when the DNC gate was shown and consented: dataToSubmit
+     carries consent_dnc (CampaignSignupForm), which handleSubmit must forward. */}
+ <button onClick={() => onSubmit({ name: 'Test User', email: 'test@test.com', phone: '6591234567', consent_dnc: true })}>
+ Submit With DNC Consent
+ </button>
  </div>
  ),
 }));
@@ -383,6 +388,35 @@ describe('LeadCapture', () => {
  expect(call).toBeTruthy();
  expect(call[1].campaignId).toBe('camp-1');
  expect(call[1].qrTagId).toBeUndefined();
+ });
+ });
+
+ // consent_dnc is the intent the server turns into the hold-release evidence for a
+ // DNC-registered lead (prospectService → dncConsent). Until 2026-07-17 handleSubmit's
+ // basePayload rebuild dropped it, stranding consented leads in the held state.
+ it('forwards consent_dnc to /prospects when the form submits it', async () => {
+ renderPage();
+ await waitFor(() => expect(screen.getByTestId('signup-form')).toBeInTheDocument());
+ const user = userEvent.setup();
+ await user.click(screen.getByText('Submit With DNC Consent'));
+
+ await waitFor(() => {
+ const call = apiClient.post.mock.calls.find((c) => c[0] === '/prospects');
+ expect(call).toBeTruthy();
+ expect(call[1].consent_dnc).toBe(true);
+ });
+ });
+
+ it('leaves consent_dnc undefined when the gate never showed', async () => {
+ renderPage();
+ await waitFor(() => expect(screen.getByTestId('signup-form')).toBeInTheDocument());
+ const user = userEvent.setup();
+ await user.click(screen.getByText('Submit'));
+
+ await waitFor(() => {
+ const call = apiClient.post.mock.calls.find((c) => c[0] === '/prospects');
+ expect(call).toBeTruthy();
+ expect(call[1].consent_dnc).toBeUndefined();
  });
  });
 });

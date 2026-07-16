@@ -297,6 +297,12 @@ export default function LeadCapture() {
         consent_contact: formData.consent_contact,
         consent_terms: formData.consent_terms,
         consent_third_party: formData.consent_third_party,
+        // DNC-gate consent intent — CampaignSignupForm includes it ONLY when the
+        // gate was shown (undefined otherwise → dropped by JSON.stringify). The
+        // server builds the hold-release evidence from it (prospectService →
+        // dncConsent); omitting it here stranded consented DNC-registered leads
+        // in the held state until 2026-07-17.
+        consent_dnc: formData.consent_dnc,
         leadSource: isReferral ? 'referral' : qrTag?.id ? 'qr_code' : 'website',
         campaignId: campaign?.id,
         qrTagId: qrTag?.id,

@@ -228,3 +228,117 @@ describe('DesignEditor — Guided Review format', () => {
     });
   });
 });
+
+// A stored value must survive an unrelated save (clampDesignConfig replaces the
+// whole design_config from the incoming document, so an unseeded key = a wiped
+// key), while a config that never had the key must not gain it (the seed is
+// conditional, preserving the server's preserve-when-omitted policies).
+describe('DesignEditor — heroFont persistence (seeded from stored config)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('round-trips a stored non-default heroFont through an unrelated save', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const styled = {
+      id: 'camp-font',
+      name: 'Styled',
+      design_config: { formHeadline: 'Hi', heroFont: 'space-grotesk' },
+    };
+    render(<DesignEditor campaign={styled} onSave={onSave} />);
+    await user.type(screen.getByPlaceholderText('e.g., Get Started Now!'), '!');
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).toMatchObject({ heroFont: 'space-grotesk' });
+  });
+
+  it('does not invent a heroFont for a config that never stored one', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<DesignEditor campaign={campaign} onSave={onSave} />);
+    await user.type(screen.getByPlaceholderText('e.g., Get Started Now!'), '!');
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('heroFont');
+  });
+});
+
+describe('DesignEditor — featuredDrop persistence (seeded from stored config)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const DROP_SWITCH = { name: 'Feature on redeem.sg homepage' };
+  const storedDrop = {
+    enabled: true,
+    title: 'Tokyo Getaway',
+    valueLabel: 'FREE',
+    emoji: '🧳',
+    cap: 100,
+    endsAt: '2026-12-31',
+  };
+  const dropCampaign = (drop) => ({
+    id: 'camp-drop',
+    name: 'Droppy',
+    design_config: { formHeadline: 'Hi', featuredDrop: drop },
+  });
+
+  it('renders the homepage switch ON for a stored enabled drop and round-trips every field', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<DesignEditor campaign={dropCampaign(storedDrop)} onSave={onSave} />);
+    expect(screen.getByRole('switch', DROP_SWITCH)).toBeChecked();
+    await user.type(screen.getByPlaceholderText('e.g., Get Started Now!'), '!');
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0].featuredDrop).toEqual(storedDrop);
+  });
+
+  it('keeps title/valueLabel/emoji/cap/endsAt when the drop is toggled OFF and back ON', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<DesignEditor campaign={dropCampaign(storedDrop)} onSave={onSave} />);
+    // The pre-fix editor rebuilt featuredDrop from {} here, so this exact
+    // interaction used to save {enabled:true} alone and wipe the rest.
+    await user.click(screen.getByRole('switch', DROP_SWITCH));
+    await user.click(screen.getByRole('switch', DROP_SWITCH));
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0].featuredDrop).toEqual(storedDrop);
+  });
+
+  it('re-enables a stored disabled drop without losing its saved fields', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const disabledDrop = { ...storedDrop, enabled: false };
+    render(<DesignEditor campaign={dropCampaign(disabledDrop)} onSave={onSave} />);
+    const drop = screen.getByRole('switch', DROP_SWITCH);
+    expect(drop).not.toBeChecked();
+    await user.click(drop);
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0].featuredDrop).toEqual({ ...storedDrop, enabled: true });
+  });
+
+  it('does not invent a featuredDrop for a config that never stored one', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<DesignEditor campaign={campaign} onSave={onSave} />);
+    await user.type(screen.getByPlaceholderText('e.g., Get Started Now!'), '!');
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('featuredDrop');
+  });
+});
+
+describe('DesignEditor — video upload copy states the real cap', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('shows the env-derived limit (default 10MB), not the old hardcoded 60MB', () => {
+    const videoCampaign = {
+      id: 'camp-video',
+      name: 'Video',
+      design_config: { formHeadline: 'Hi', mediaType: 'video' },
+    };
+    render(<DesignEditor campaign={videoCampaign} onSave={vi.fn()} />);
+    expect(screen.getByText(/Up to 10MB/)).toBeInTheDocument();
+    expect(screen.queryByText(/60MB/)).not.toBeInTheDocument();
+  });
+});

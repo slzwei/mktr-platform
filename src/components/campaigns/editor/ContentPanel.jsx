@@ -21,6 +21,7 @@ import { resolveImageUrl } from"../LeadCaptureLayout";
 import { TC_TEMPLATES } from './constants';
 import { brand } from"@/lib/brand";
 import { HERO_FONTS, DEFAULT_HERO_FONT } from"@/lib/heroFonts";
+import { MAX_UPLOAD_SIZE_MB } from"@/lib/uploadLimits";
 
 export default function ContentPanel({ currentDesign, onDesignChange, campaignName }) {
  const [uploading, setUploading] = useState(false);
@@ -39,7 +40,9 @@ export default function ContentPanel({ currentDesign, onDesignChange, campaignNa
  onDesignChange('imageUrl', relativeUrl);
  } catch (error) {
  console.error('Error uploading image:', error);
- toast.error('Failed to upload image. Please try again.');
+ toast.error(error?.message === 'File too large'
+ ? `Image is too large — maximum ${MAX_UPLOAD_SIZE_MB}MB.`
+ : 'Failed to upload image. Please try again.');
  }
  setUploading(false);
 
@@ -64,7 +67,12 @@ export default function ContentPanel({ currentDesign, onDesignChange, campaignNa
  if (relativeUrl) onDesignChange('videoUrl', relativeUrl);
  } catch (error) {
  console.error('Error uploading video:', error);
- toast.error(error?.response?.data?.message || error?.message || 'Failed to upload video. Keep it under 10MB.');
+ // The multer 400 for an oversize file carries message 'File too large'
+ // (backend/src/routes/uploads.js) — surface it with the real cap instead of
+ // a hardcoded guess. (err.response never exists on apiClient errors.)
+ toast.error(error?.message === 'File too large'
+ ? `Video is too large — maximum ${MAX_UPLOAD_SIZE_MB}MB.`
+ : error?.message || 'Failed to upload video. Please try again.');
  }
  setUploadingVideo(false);
 
@@ -109,6 +117,7 @@ export default function ContentPanel({ currentDesign, onDesignChange, campaignNa
         <div className="flex items-center justify-between">
           <Label className="text-sm font-semibold text-foreground">Feature on redeem.sg homepage</Label>
           <Switch
+            aria-label="Feature on redeem.sg homepage"
             checked={featuredDrop.enabled === true}
             onCheckedChange={(v) => setFeaturedDrop({ enabled: v === true })}
           />
@@ -356,7 +365,7 @@ export default function ContentPanel({ currentDesign, onDesignChange, campaignNa
  <Video className="w-10 h-10 text-muted-foreground mx-auto"/>
  <div>
  <p className="text-sm font-medium text-foreground mb-1">Upload a video</p>
- <p className="text-xs text-muted-foreground">MP4, MOV or WebM — auto-converted, muted &amp; optimized for the hero. Up to 60MB; keep it short for fast loading.</p>
+ <p className="text-xs text-muted-foreground">{`MP4, MOV or WebM — auto-converted, muted & optimized for the hero. Up to ${MAX_UPLOAD_SIZE_MB}MB; keep it short for fast loading.`}</p>
  </div>
  <Button variant="outline" onClick={() => videoInputRef.current?.click()} disabled={uploadingVideo}>
  {uploadingVideo ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin"/>Optimizing…</>) : (<><Upload className="w-4 h-4 mr-2"/>Choose video</>)}

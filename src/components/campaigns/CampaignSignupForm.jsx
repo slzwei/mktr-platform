@@ -150,8 +150,10 @@ export default function CampaignSignupForm({
       }
     } catch (err) {
       let msg = 'Unable to send verification code. Please try again.';
-      const respData = err.response?.data || err.data;
-      if (err.response?.status === 429) {
+      // apiClient errors carry err.status / err.data / err.message — never
+      // err.response (this branch was dead until 2026-07-17).
+      const respData = err.data;
+      if (err.status === 429) {
         msg = 'Too many verification attempts. Please wait 10 minutes before trying again.';
         setResendCooldown(600);
       } else if (respData?.message) {
@@ -200,8 +202,15 @@ export default function CampaignSignupForm({
         setLoading(null);
       }
     } catch (err) {
-      const respData = err.response?.data || err.data;
-      setError(respData?.message || err.message || 'Verification failed. Please try again.');
+      // The verify rate limiter is shared across /verify/send and /verify/check,
+      // so a 429 here gets the same friendly cooldown as a send 429.
+      if (err.status === 429) {
+        setError('Too many verification attempts. Please wait 10 minutes before trying again.');
+        setResendCooldown(600);
+      } else {
+        const respData = err.data;
+        setError(respData?.message || err.message || 'Verification failed. Please try again.');
+      }
       setLoading(null);
     }
   };
@@ -367,6 +376,9 @@ export default function CampaignSignupForm({
     otpState,
     loading,
     handleSendOtp,
+    // Lets the idle-state Verify button honor the send cooldown (a 429 used to
+    // set it while nothing outside the OTP panel read it).
+    resendCooldown,
     handleDobBlur,
     dobIncomplete,
     ageError,
@@ -386,6 +398,7 @@ export default function CampaignSignupForm({
           <FieldRenderer fieldId="phone" {...fieldRendererProps} />
           {dncGateOpen && (
             <DncConsentGate
+              advertiser={campaign?.name}
               consented={dncConsent}
               onGiveConsent={() => setDncConsent(true)}
               onRevoke={() => setDncConsent(false)}
