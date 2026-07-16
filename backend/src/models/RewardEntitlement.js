@@ -42,6 +42,11 @@ const RewardEntitlement = sequelize.define('RewardEntitlement', {
   tokenHash: { type: DataTypes.STRING(64), allowNull: true, comment: 'SHA-256 of the redemption voucher token — minted at unlock' },
   tokenHint: { type: DataTypes.STRING(8), allowNull: true, comment: 'Last 4 of the voucher code, for support' },
   issuedVia: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'hook', comment: 'hook|sweep|manual' },
+  phoneKey: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    comment: 'Digits-only holder phone at issuance — anti-farming dedupe key (one live reward per phone per activation)'
+  },
   createdBy: { type: DataTypes.UUID, allowNull: true }
 }, {
   tableName: 'reward_entitlements',
@@ -49,6 +54,15 @@ const RewardEntitlement = sequelize.define('RewardEntitlement', {
     // Idempotency anchor for hook+sweep issuance — partial because deleted
     // prospects SET-NULL and Postgres treats NULLs as distinct (ERD.md §3.16)
     { unique: true, fields: ['activationId', 'prospectId'], name: 'uq_re_activation_prospect', where: { prospectId: { [Op.ne]: null } } },
+    // Anti-farming (migration 075): one LIVE reward per phone per activation —
+    // expired/cancelled rows leave the partial set and free the slot. Mirrored
+    // here because test mode builds schema from models via sync({force:true}).
+    {
+      unique: true,
+      fields: ['activationId', 'phoneKey'],
+      name: 'uq_re_activation_phone',
+      where: { phoneKey: { [Op.ne]: null }, status: { [Op.in]: ['eligible', 'issued', 'redeemed'] } }
+    },
     { unique: true, fields: ['presentationTokenHash'], name: 'uq_re_presentation_token' },
     { unique: true, fields: ['tokenHash'], name: 'uq_re_voucher_token', where: { tokenHash: { [Op.ne]: null } } },
     { fields: ['activationId', 'status'], name: 'idx_re_activation_status' },

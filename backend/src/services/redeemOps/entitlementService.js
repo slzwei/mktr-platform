@@ -13,6 +13,18 @@ import { canEmailProspect, makeFulfilmentNotify } from './fulfilmentNotify.js';
 const DEFAULT_RESERVATION_DAYS = 30;
 const DEFAULT_REDEMPTION_DAYS = 90;
 const RESEND_COOLDOWN_MS = 60 * 1000;
+// Statuses that hold the per-phone slot (matches uq_re_activation_phone's
+// partial WHERE) — expired/cancelled rows free it.
+const LIVE_PHONE_STATUSES = ['eligible', 'issued', 'redeemed'];
+
+/**
+ * Anti-farming dedupe key: digits-only phone (`+65 9123 4567` → `6591234567`).
+ * Null for missing/garbage values so junk can never occupy a slot.
+ */
+export function phoneKeyOf(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  return digits.length >= 8 ? digits : null;
+}
 
 // In-flight fire-and-forget deliveries (all service instances share this).
 // flushDeliveries() lets tests — and anything else that needs a barrier —
@@ -152,6 +164,22 @@ export function makeEntitlementService(overrides = {}) {
       });
       if (existing) return { entitlement: existing, reason: 'duplicate' };
 
+      // Anti-farming (migration 075): one LIVE reward per phone per activation.
+      // Hook/sweep issuance REQUIRES a phone key — a null key would bypass the
+      // dedupe entirely (OTP-verified leads always have one; this guards the
+      // theoretical hole). Manual issue without a phone stays allowed (audited
+      // escape hatch; NULL keys never collide). The pre-check is UX — the
+      // partial unique index is the authoritative guard (see the catch below).
+      const phoneKey = phoneKeyOf(prospect.phone);
+      if (!phoneKey && via !== 'manual') return { entitlement: null, reason: 'no_phone' };
+      if (phoneKey) {
+        const livePhone = await d.RewardEntitlement.findOne({
+          where: { activationId: activation.id, phoneKey, status: { [Op.in]: LIVE_PHONE_STATUSES } },
+          order: [['createdAt', 'DESC']],
+        });
+        if (livePhone) return { entitlement: livePhone, reason: 'duplicate_phone' };
+      }
+
       const offer = activation.rewardOffer;
       const onCapture = activation.unlockPolicy === 'on_capture';
       const reservationDays = offer.claimExpiryDays || DEFAULT_RESERVATION_DAYS;
@@ -190,6 +218,7 @@ export function makeEntitlementService(overrides = {}) {
             tokenHash: voucher ? voucher.hash : null,
             tokenHint: voucher ? tokenHintOf(voucher.raw) : null,
             issuedVia: via,
+            phoneKey,
           },
           { transaction: t }
         );
@@ -222,6 +251,19 @@ export function makeEntitlementService(overrides = {}) {
     } catch (err) {
       if (err?._soft) return { entitlement: null, reason: err.message };
       if (err?.name === 'SequelizeUniqueConstraintError') {
+        // Two partial uniques can fire: the (activationId, prospectId)
+        // idempotency anchor → 'duplicate', or the (activationId, phoneKey)
+        // anti-farming guard → 'duplicate_phone' (a concurrent same-phone
+        // signup lost the race). The transaction rolled back, so counters are
+        // intact either way.
+        const constraint = err?.parent?.constraint || err?.original?.constraint || '';
+        if (constraint === 'uq_re_activation_phone') {
+          const winner = await d.RewardEntitlement.findOne({
+            where: { phoneKey: phoneKeyOf(prospect.phone), status: { [Op.in]: LIVE_PHONE_STATUSES } },
+            order: [['createdAt', 'DESC']],
+          });
+          return { entitlement: winner, reason: 'duplicate_phone' };
+        }
         const existing = await d.RewardEntitlement.findOne({
           where: { prospectId: prospect.id },
           order: [['createdAt', 'DESC']],
@@ -328,6 +370,11 @@ export function makeEntitlementService(overrides = {}) {
       { via: 'manual', activationId }
     );
     if (!result.entitlement) throw new AppError(`Cannot issue: ${result.reason}`, 409);
+    if (result.reason === 'duplicate_phone') {
+      // The returned entitlement belongs to ANOTHER prospect with the same
+      // phone — never report that as a successful manual issue.
+      throw new AppError('Cannot issue: duplicate_phone — this phone already holds a live reward for this activation', 409);
+    }
     await d.audit.recordAuditEvent({
       actorUser: user, action: 'entitlement.issued_manual', entityType: 'reward_entitlement',
       entityId: result.entitlement.id, after: { activationId, prospectId }, requestId,

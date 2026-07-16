@@ -464,7 +464,16 @@ describe('resend / share', () => {
   });
 
   test('link channel without a phone: waUrl null + typed reason', async () => {
-    const { issue } = await issueBackdated({ phone: null });
+    // Since PR B, hook/sweep issuance REQUIRES a phone (no_phone guard), so a
+    // phoneless entitlement is only reachable via MANUAL issue — the audited
+    // escape hatch.
+    const prospect = await makeProspect({ phone: null });
+    const issue = await svc.issueManual(
+      { activationId: activationA.id, prospectId: prospect.id }, admin.user
+    );
+    await settle();
+    await backdateHistory(issue.entitlement.id, 15);
+    sendEmailMock.mockClear();
     const res = await request(app)
       .post(`/api/redeem-ops/entitlements/${issue.entitlement.id}/resend-pass`)
       .set(auth(redemptionOps.token))
