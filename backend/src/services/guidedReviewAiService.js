@@ -168,10 +168,24 @@ export async function requestStructuredJson({ provider, apiKey, model, system, u
       }),
       signal: controller.signal,
     });
-    if (!response.ok) throw providerError(provider, response.status);
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '');
+      logger.warn({ provider, model, status: response.status, body: errBody.slice(0, 400) }, 'ai.provider.http_error');
+      throw providerError(provider, response.status);
+    }
     const data = await response.json();
     const text = outputText(data);
-    if (!text) throw new AppError('The AI provider returned no usable draft.', 502);
+    if (!text) {
+      // Reasoning models spend max_output_tokens on hidden reasoning first; too small
+      // a budget returns status 'incomplete' with no message. Log the reason so a
+      // truncation names itself instead of surfacing as a generic 502.
+      logger.warn({
+        provider, model, status: data?.status,
+        incompleteReason: data?.incomplete_details?.reason ?? data?.stop_reason,
+        usage: data?.usage,
+      }, 'ai.provider.no_output');
+      throw new AppError('The AI provider returned no usable draft.', 502);
+    }
     try {
       return JSON.parse(text);
     } catch {
@@ -215,7 +229,7 @@ export async function testAiProvider(provider, userId) {
       type: 'object', additionalProperties: false,
       properties: { ok: { type: 'boolean', enum: [true] } }, required: ['ok'],
     },
-    maxOutputTokens: 100,
+    maxOutputTokens: 1000, // reasoning models need headroom above the answer itself
   });
   logger.info({ provider, model: settings.model, userId }, 'Tested AI provider connection');
   return { provider, model: settings.model, ok: true };
