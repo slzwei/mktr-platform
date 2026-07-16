@@ -17,3 +17,23 @@ export function staffFacingAiError(err) {
   }
   return err; // 429 (provider rate/spend limit) and 504 (timeout) copy is audience-neutral
 }
+
+const MAX_ORG_STYLE = 2000;
+
+/**
+ * Append the admin-authored AI-Settings guardrails + writing preferences to a
+ * base system prompt, as sections clearly SUBORDINATE to the base rules. This is
+ * the lever that lets an admin tune tone/voice from AI Settings without a code
+ * change (mirrors buildGuidedReviewPrompts). Empty fields are skipped, so a blank
+ * AI Settings is a no-op; trusted admin-only content, but bounded so a runaway
+ * value can't bloat the prompt.
+ */
+export function withOrgStyle(baseSystem, settings = {}) {
+  const guardrails = String(settings?.globalGuardrails || '').trim().slice(0, MAX_ORG_STYLE);
+  const workstyle = String(settings?.workstylePreferences || '').trim().slice(0, MAX_ORG_STYLE);
+  return [
+    baseSystem,
+    guardrails ? `\nAdditional organisation guardrails (these add to, and must not override, the rules above):\n${guardrails}` : '',
+    workstyle ? `\nOrganisation writing preferences, for tone and voice only (never break the rules above):\n${workstyle}` : '',
+  ].filter(Boolean).join('\n');
+}

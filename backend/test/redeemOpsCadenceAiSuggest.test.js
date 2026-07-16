@@ -13,6 +13,7 @@ import {
   makeCadenceAiService, normalizeCadenceDraft, sanitizeScript, cadenceAiEnabled,
 } from '../src/services/redeemOps/cadenceAiService.js';
 import { AppError } from '../src/middleware/errorHandler.js';
+import { withOrgStyle } from '../src/services/redeemOps/aiSuggestShared.js';
 
 const settings = { provider: 'openai', apiKey: 'k', model: 'gpt-5.6-terra' };
 const user = { id: 'user-1' };
@@ -60,6 +61,23 @@ describe('sanitizeScript — merge tokens mirror renderTemplate', () => {
   test('non-string input becomes empty string', () => {
     expect(sanitizeScript(null)).toBe('');
     expect(sanitizeScript(42)).toBe('');
+  });
+});
+
+describe('withOrgStyle — AI-Settings guardrails + writing prefs on the base prompt', () => {
+  test('empty/blank settings leave the base prompt unchanged', () => {
+    expect(withOrgStyle('BASE', {})).toBe('BASE');
+    expect(withOrgStyle('BASE', { globalGuardrails: '', workstylePreferences: '   ' })).toBe('BASE');
+  });
+  test('appends guardrails then writing prefs, subordinate to the base rules', () => {
+    const out = withOrgStyle('BASE RULES', { globalGuardrails: 'Say complimentary not free', workstylePreferences: 'Warm and concise' });
+    expect(out.startsWith('BASE RULES')).toBe(true);
+    expect(out).toContain('must not override');
+    expect(out).toContain('Say complimentary not free');
+    expect(out.indexOf('Say complimentary')).toBeLessThan(out.indexOf('Warm and concise'));
+  });
+  test('caps each field so a runaway value cannot bloat the prompt', () => {
+    expect(withOrgStyle('B', { workstylePreferences: 'x'.repeat(5000) }).length).toBeLessThan(2200);
   });
 });
 
@@ -194,6 +212,17 @@ describe('suggestCadence', () => {
     expect(JSON.parse(call.user.slice(call.user.indexOf('\n') + 1)))
       .toEqual({ brief: 'cafés chase', requestedSteps: 2 });
     expect(call.schema.properties.steps.items.properties.channel.enum).toContain('instagram_dm');
+  });
+
+  test('layers AI Settings guardrails + writing preferences onto the system prompt', async () => {
+    const styled = { ...settings, globalGuardrails: 'Never say free, say complimentary.', workstylePreferences: 'Warm, concise, mobile-first.' };
+    const { svc, deps } = makeSvc({ getRuntimeAiSettings: jest.fn(async () => styled) });
+    await svc.suggestCadence({ prompt: 'kids soccer' }, user);
+    const call = deps.requestStructuredJson.mock.calls[0][0];
+    expect(call.system).toContain('Warm, concise, mobile-first.');
+    expect(call.system).toContain('Never say free, say complimentary.');
+    // the fixed rules still lead; Settings are appended after
+    expect(call.system.indexOf('THE OFFER')).toBeLessThan(call.system.indexOf('Warm, concise'));
   });
 
   test('logs pino-style (meta first) without the brief text', async () => {
