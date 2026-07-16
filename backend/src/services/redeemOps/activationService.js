@@ -1,5 +1,6 @@
+import { Op } from 'sequelize';
 import {
-  Activation, RewardOffer, PartnerOrganisation, Campaign, sequelize,
+  Activation, ActivationIssuanceSkip, RewardOffer, PartnerOrganisation, Campaign, sequelize,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
@@ -28,7 +29,7 @@ const UNLOCK_POLICIES = ['on_capture', 'agent_unlock'];
  */
 export function makeActivationService(overrides = {}) {
   const d = {
-    Activation, RewardOffer, PartnerOrganisation, Campaign, sequelize, logger,
+    Activation, ActivationIssuanceSkip, RewardOffer, PartnerOrganisation, Campaign, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     inventory: makeInventoryService(),
     ...overrides,
@@ -50,6 +51,28 @@ export function makeActivationService(overrides = {}) {
     const activation = await d.Activation.findByPk(id, { include: INCLUDES });
     if (!activation) throw new AppError('Activation not found', 404);
     return activation;
+  }
+
+  /**
+   * Last-24h skipped-issuance breakdown (PR C observability). Includes rows
+   * attributed to this activation AND campaign-level `no_active_activation`
+   * rows (no activation existed to attribute — the detached/starved case).
+   */
+  async function getIssuanceSkips24h(id) {
+    const activation = await getActivation(id);
+    const or = [{ activationId: id }];
+    if (activation.campaignId) or.push({ activationId: null, campaignId: activation.campaignId });
+    const rows = await d.ActivationIssuanceSkip.findAll({
+      attributes: ['reason', [d.sequelize.fn('COUNT', d.sequelize.col('id')), 'count']],
+      where: {
+        createdAt: { [Op.gt]: new Date(Date.now() - 24 * 3600 * 1000) },
+        [Op.or]: or,
+      },
+      group: ['reason'],
+      order: [[d.sequelize.literal('count'), 'DESC']],
+      raw: true,
+    });
+    return rows.map((r) => ({ reason: r.reason, count: Number(r.count) }));
   }
 
   async function createActivation(body, user, requestId = null) {
@@ -94,6 +117,17 @@ export function makeActivationService(overrides = {}) {
   /** Link (or unlink with campaignId=null) the canonical MKTR campaign. */
   async function linkCampaign(id, campaignId, user, requestId = null) {
     const activation = await getActivation(id);
+
+    // Linkage guard (PR C, funnel-audit defect 5): unlinking or relinking a
+    // LIVE activation silently stops issuance — the sweep skips null-campaign
+    // activations while the console still says "active". Only non-live
+    // activations may change campaign.
+    if (LIVE_STATUSES.includes(activation.status)) {
+      throw new AppError(
+        `Activation is ${activation.status} — complete or cancel it first before changing its campaign link`,
+        409
+      );
+    }
 
     if (campaignId === null) {
       const before = { campaignId: activation.campaignId };
@@ -219,7 +253,7 @@ export function makeActivationService(overrides = {}) {
   // Marketplace read cache: activation changes alter public offer state
   // (capacity, live window) — bust on every mutation so admin actions show
   // within one request (docs/plans/redeem-marketplace-v2.md Phase 1).
-  const service = { listActivations, getActivation, createActivation, linkCampaign, changeAllocation, setStatus, setRenewal };
+  const service = { listActivations, getActivation, getIssuanceSkips24h, createActivation, linkCampaign, changeAllocation, setStatus, setRenewal };
   for (const k of ['createActivation', 'linkCampaign', 'changeAllocation', 'setStatus', 'setRenewal']) {
     const fn = service[k];
     service[k] = async (...args) => {

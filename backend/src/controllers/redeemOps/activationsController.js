@@ -25,7 +25,10 @@ export const getActivation = asyncHandler(async (req, res) => {
   if (activation.campaignId) {
     campaignRef = await campaignProjection.getCampaignReference(activation.campaignId).catch(() => null);
   }
-  res.json({ success: true, data: { activation, campaign: campaignRef } });
+  // A detached/starved funnel must be visible: last-24h skipped-issuance
+  // reasons (never fails the detail read).
+  const issuanceSkips24h = await activationService.getIssuanceSkips24h(req.params.id).catch(() => []);
+  res.json({ success: true, data: { activation, campaign: campaignRef, issuanceSkips24h } });
 });
 
 export const createActivation = asyncHandler(async (req, res) => {

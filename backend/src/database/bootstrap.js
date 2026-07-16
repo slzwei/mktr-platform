@@ -257,6 +257,7 @@ export async function bootstrapDatabase() {
             await svc.expireReservations();
             await svc.reconcileMissedLeads();
             await svc.reconcileMissedDeliveries();
+            await svc.purgeIssuanceSkips(); // 30-day retention on the skip log
           } catch (err) {
             logger.warn('[RedeemOps] fulfilment sweep failed (non-fatal)', { error: err?.message });
           }
