@@ -9,8 +9,11 @@ import { TOKENS } from '@/components/campaigns/LeadCaptureLayout';
  *   confirmed (sage) → records consent; Edit revokes it.
  * Reveal slides in from the left; honors prefers-reduced-motion.
  *
- * `{Advertiser}` is kept as a LITERAL interpolation token (mono chip) per the handoff — the real
- * advertiser name is interpolated later.
+ * `advertiser` (mono chip) is the name the person consents to being contacted by —
+ * CampaignSignupForm threads `campaign.name`; the neutral fallback below should never
+ * render in practice. The design handoff's `{Advertiser}` was an interpolation slot,
+ * not copy. Editing this component's wording requires bumping DNC_CONSENT_VERSION
+ * (backend/src/services/dncConsent.js) so recorded consent evidence stays accurate.
  */
 
 const FRAUNCES = 'Fraunces, serif';
@@ -45,7 +48,7 @@ const KEYFRAMES = `
   }
 `;
 
-export default function DncConsentGate({ advertiser = '{Advertiser}', consented, onGiveConsent, onRevoke }) {
+export default function DncConsentGate({ advertiser = 'the advertiser', consented, onGiveConsent, onRevoke }) {
   if (consented) {
     return (
       <div

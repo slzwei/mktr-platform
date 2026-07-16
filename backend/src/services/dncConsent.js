@@ -35,7 +35,7 @@
  * the DNC consent disclosure on the lead-capture form (DncConsentGate / CampaignSignupForm)
  * is edited.
  */
-export const DNC_CONSENT_VERSION = '2026-06-30';
+export const DNC_CONSENT_VERSION = '2026-07-17';
 
 /**
  * DNC channels the consent covers. The PDPC register has three sub-registers

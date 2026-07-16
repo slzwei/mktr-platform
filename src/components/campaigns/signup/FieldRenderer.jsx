@@ -122,6 +122,9 @@ export default function FieldRenderer({
   otpState,
   loading,
   handleSendOtp,
+  // Send cooldown (seconds). After a rate-limited send, the idle Verify button
+  // disables and counts down instead of inviting more rate-limited requests.
+  resendCooldown,
   phoneOtpPanel,
   // DOB props
   handleDobBlur,
@@ -138,6 +141,11 @@ export default function FieldRenderer({
     fieldId === 'name' || fieldId === 'email' || fieldId === 'phone' || visibleFields[fieldId] !== false;
   if (!isVisible) return null;
 
+  // Only the truly-optional fields (dob / postal / education / salary) consult
+  // requiredFields for their label. Name, email, and phone are enforced as
+  // required by the submit gate AND the backend regardless of config, so their
+  // labels hardcode the asterisk — a legacy/hand-set requiredFields entry must
+  // never render a "(optional)" the form won't honor.
   const reqLevel = (key) => {
     const v = requiredFields[key];
     if (v === false) return { required: false, optional: true };
@@ -151,7 +159,7 @@ export default function FieldRenderer({
     case 'name':
       return (
         <div style={{ marginBottom: 20 }}>
-          <Label htmlFor="name" required={reqLevel('name').required !== false}>
+          <Label htmlFor="name" required>
             Full Name
           </Label>
           <input
@@ -174,7 +182,7 @@ export default function FieldRenderer({
     case 'email':
       return (
         <div style={{ marginBottom: 20 }}>
-          <Label htmlFor="email" {...reqLevel('email')}>
+          <Label htmlFor="email" required>
             Email Address
           </Label>
           <input
@@ -234,31 +242,36 @@ export default function FieldRenderer({
                 }}
               />
             </div>
-            {otpState === 'idle' && (
-              <button
-                type="button"
-                onClick={handleSendOtp}
-                disabled={loading === 'sending' || formData.phone.length !== 8}
-                style={{
-                  height: 52,
-                  paddingLeft: 22,
-                  paddingRight: 22,
-                  borderRadius: RADIUS.pill,
-                  border: 'none',
-                  cursor: formData.phone.length === 8 ? 'pointer' : 'not-allowed',
-                  fontFamily: 'Albert Sans, system-ui, sans-serif',
-                  fontWeight: 600,
-                  fontSize: 14,
-                  color: readableTextOn(formData.phone.length === 8 ? themeColor || TOKENS.accent : TOKENS.hairline),
-                  backgroundColor: formData.phone.length === 8 ? themeColor || TOKENS.accent : TOKENS.hairline,
-                  transition: 'background-color 200ms ease',
-                  whiteSpace: 'nowrap',
-                  minWidth: 100,
-                }}
-              >
-                {loading === 'sending' ? '…' : 'Verify'}
-              </button>
-            )}
+            {otpState === 'idle' && (() => {
+              const coolingDown = resendCooldown > 0;
+              const canSend = formData.phone.length === 8 && !coolingDown;
+              const cooldownLabel = `${Math.floor(resendCooldown / 60)}:${String(resendCooldown % 60).padStart(2, '0')}`;
+              return (
+                <button
+                  type="button"
+                  onClick={handleSendOtp}
+                  disabled={loading === 'sending' || !canSend}
+                  style={{
+                    height: 52,
+                    paddingLeft: 22,
+                    paddingRight: 22,
+                    borderRadius: RADIUS.pill,
+                    border: 'none',
+                    cursor: canSend ? 'pointer' : 'not-allowed',
+                    fontFamily: 'Albert Sans, system-ui, sans-serif',
+                    fontWeight: 600,
+                    fontSize: 14,
+                    color: readableTextOn(canSend ? themeColor || TOKENS.accent : TOKENS.hairline),
+                    backgroundColor: canSend ? themeColor || TOKENS.accent : TOKENS.hairline,
+                    transition: 'background-color 200ms ease',
+                    whiteSpace: 'nowrap',
+                    minWidth: 100,
+                  }}
+                >
+                  {loading === 'sending' ? '…' : coolingDown ? `Wait ${cooldownLabel}` : 'Verify'}
+                </button>
+              );
+            })()}
             {otpState === 'verified' && (
               <div
                 className="lc-verified-badge"

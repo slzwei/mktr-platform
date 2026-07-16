@@ -339,3 +339,108 @@ describe('CampaignSignupForm — exclude financial consultants gate', () => {
     expect(await screen.findByRole('button', { name: 'Submit Now' })).toBeInTheDocument();
   });
 });
+
+describe('CampaignSignupForm — OTP rate limiting (429)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const COOLDOWN_MSG = 'Too many verification attempts. Please wait 10 minutes before trying again.';
+  const err429 = () => Object.assign(new Error('HTTP 429: Too Many Requests'), { status: 429 });
+
+  it('shows the cooldown message and locks the Verify button after a rate-limited send', async () => {
+    const user = userEvent.setup();
+    apiClient.post.mockRejectedValueOnce(err429());
+    renderForm();
+
+    await user.type(screen.getByPlaceholderText('9123 4567'), '91234567');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+
+    // The friendly branch (dead until 2026-07-17: it read err.response?.status,
+    // which apiClient never sets) — not the raw "HTTP 429" string.
+    expect(await screen.findByText(COOLDOWN_MSG)).toBeInTheDocument();
+    expect(screen.queryByText('HTTP 429: Too Many Requests')).not.toBeInTheDocument();
+
+    // The idle Verify button now honors the cooldown: disabled + counting down,
+    // so it can't invite more rate-limited requests.
+    const waitButton = screen.getByRole('button', { name: /^Wait \d+:\d{2}$/ });
+    expect(waitButton).toBeDisabled();
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the cooldown message when /verify/check is rate-limited (shared limiter)', async () => {
+    const user = userEvent.setup();
+    apiClient.post.mockImplementation((url) => {
+      if (url === '/verify/send') return Promise.resolve({ success: true });
+      if (url === '/verify/check') return Promise.reject(err429());
+      return Promise.resolve({ success: true });
+    });
+    renderForm();
+
+    await user.type(screen.getByPlaceholderText('9123 4567'), '91234567');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+    await user.type(await screen.findByPlaceholderText('6-digit code'), '123456');
+
+    expect(await screen.findByText(COOLDOWN_MSG)).toBeInTheDocument();
+  });
+
+  it('surfaces the server message for a non-429 send failure', async () => {
+    const user = userEvent.setup();
+    apiClient.post.mockRejectedValueOnce(
+      Object.assign(new Error('Only Singapore (+65) phone numbers are supported.'), { status: 400 })
+    );
+    renderForm();
+
+    await user.type(screen.getByPlaceholderText('9123 4567'), '91234567');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+
+    expect(
+      await screen.findByText('Only Singapore (+65) phone numbers are supported.')
+    ).toBeInTheDocument();
+  });
+});
+
+describe('CampaignSignupForm — always-required labels never render "(optional)"', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it.each([false, 'optional'])(
+    'name/email labels ignore requiredFields set to %j (backend requires them regardless)',
+    (value) => {
+      renderForm({ design: { requiredFields: { name: value, email: value } } });
+      expect(screen.queryByText('(optional)')).not.toBeInTheDocument();
+      // Both labels still carry the required asterisk.
+      expect(screen.getByText('Full Name')).toBeInTheDocument();
+      expect(screen.getByText('Email Address')).toBeInTheDocument();
+    }
+  );
+
+  it('still renders "(optional)" for a genuinely optional field', () => {
+    renderForm({ design: { requiredFields: { postal_code: false } } });
+    expect(screen.getByText('(optional)')).toBeInTheDocument();
+  });
+});
+
+describe('CampaignSignupForm — DNC consent gate advertiser', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('names the campaign, never the {Advertiser} placeholder, when the verified number is registered', async () => {
+    const user = userEvent.setup();
+    apiClient.post.mockImplementation((url) => {
+      if (url === '/verify/send') return Promise.resolve({ success: true });
+      if (url === '/verify/check') return Promise.resolve({ success: true, data: { verified: true } });
+      if (url === '/dnc/check') return Promise.resolve({ success: true, data: { registered: true } });
+      return Promise.resolve({ success: true });
+    });
+    renderForm({ design: { dncCheckAtSubmit: true } });
+
+    await user.type(screen.getByPlaceholderText('9123 4567'), '91234567');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+    await user.type(await screen.findByPlaceholderText('6-digit code'), '123456');
+
+    // onVerified fires after the panel's success/collapse timeouts, then the
+    // DNC check resolves 'registered' and the gate opens.
+    expect(
+      await screen.findByText(/Do Not Call Registry/, {}, { timeout: 5000 })
+    ).toBeInTheDocument();
+    expect(screen.getByText('Test Campaign')).toBeInTheDocument();
+    expect(screen.queryByText('{Advertiser}')).not.toBeInTheDocument();
+  });
+});
