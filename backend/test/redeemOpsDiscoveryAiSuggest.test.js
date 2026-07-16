@@ -90,7 +90,7 @@ describe('suggestTerms', () => {
     const call = deps.requestStructuredJson.mock.calls[0][0];
     expect(call).toMatchObject({
       provider: 'anthropic', apiKey: 'k', model: 'claude-sonnet-4-6',
-      schemaName: 'discovery_term_suggestions', maxOutputTokens: 4000,
+      schemaName: 'discovery_term_suggestions', maxOutputTokens: 8000,
     });
     expect(call.user).toContain('Untrusted input');
     expect(JSON.parse(call.user.slice(call.user.indexOf('\n') + 1))).toEqual({
