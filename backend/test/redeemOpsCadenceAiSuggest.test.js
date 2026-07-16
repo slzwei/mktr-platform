@@ -123,6 +123,16 @@ describe('normalizeCadenceDraft — clamp to the engine vocab', () => {
     expect(out.description).toBe('');
     expect(out.steps[0].title).toBe('Call 1');
   });
+
+  test('em and en dashes are stripped from name, description and scripts', () => {
+    const out = normalizeCadenceDraft(draft(
+      [step({ script: 'Free trial, no cost — and we pay for the ads.' })],
+      { name: 'Kids soccer — free reward outreach', description: 'use when a partner offers a freebie – no fee to them' },
+    ));
+    expect(out.name).not.toMatch(/[—–]/);
+    expect(out.description).not.toMatch(/[—–]/);
+    expect(out.steps[0].script).toBe('Free trial, no cost, and we pay for the ads.');
+  });
 });
 
 describe('cadenceAiEnabled', () => {
