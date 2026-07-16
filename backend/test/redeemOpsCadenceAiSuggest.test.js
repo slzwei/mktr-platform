@@ -188,7 +188,7 @@ describe('suggestCadence', () => {
     const call = deps.requestStructuredJson.mock.calls[0][0];
     expect(call).toMatchObject({
       provider: 'openai', apiKey: 'k', model: 'gpt-5.6-terra',
-      schemaName: 'cadence_draft', maxOutputTokens: 4000,
+      schemaName: 'cadence_draft', maxOutputTokens: 8000,
     });
     expect(call.user).toContain('Untrusted input');
     expect(JSON.parse(call.user.slice(call.user.indexOf('\n') + 1)))

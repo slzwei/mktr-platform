@@ -118,8 +118,8 @@ export function makeDiscoveryAiService(overrides = {}) {
         schemaName: 'discovery_term_suggestions',
         // gpt-5.x is a reasoning model: max_output_tokens caps reasoning + answer
         // combined, and 500 left no room for the answer → empty output → 502.
-        // Matches the (working) cadence-draft budget.
-        maxOutputTokens: 4000,
+        // Generous headroom — it is a ceiling, not a spend, and the output is small.
+        maxOutputTokens: 8000,
       });
     } catch (err) {
       throw staffFacingAiError(err);
