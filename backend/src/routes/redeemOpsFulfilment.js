@@ -22,6 +22,9 @@ router.post('/entitlements', requireRedeemOps('entitlements.issue_manual'), ctrl
 // Manual unlock (testing / counter fallback). The capability gates the route;
 // the service additionally enforces assigned-consultant binding for non-admins.
 router.post('/entitlements/unlock', requireRedeemOps('entitlements.issue_manual'), ctrl.unlockEntitlement);
+// Resend/share: re-mints the current credential (old QR dies — deliberate) and
+// emails it, or returns the link once for staff to WhatsApp themselves.
+router.post('/entitlements/:id/resend-pass', requireRedeemOps('entitlements.issue_manual'), ctrl.resendPass);
 router.patch('/entitlements/:id/cancel', requireRedeemOps('entitlements.issue_manual'), ctrl.cancelEntitlement);
 
 // Redemption console (voucher verify → complete; unmasked holder identity here only)

@@ -1,5 +1,6 @@
 import { ValidationError, DatabaseError, ConnectionError } from 'sequelize';
 import { logger } from '../utils/logger.js';
+import { maskTokenUrl } from '../utils/redactTokens.js';
 
 export const errorHandler = (err, req, res, _next) => {
   let error = { ...err };
@@ -9,7 +10,7 @@ export const errorHandler = (err, req, res, _next) => {
   logger.error(
     {
       err: { message: err.message, statusCode: err.statusCode, stack: err.stack },
-      req: { method: req.method, url: req.originalUrl, id: req.id },
+      req: { method: req.method, url: maskTokenUrl(req.originalUrl), id: req.id },
     },
     'Request error'
   );

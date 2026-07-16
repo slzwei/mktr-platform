@@ -235,37 +235,28 @@ export async function bootstrapDatabase() {
       if (String(process.env.REDEEM_OPS_ENTITLEMENTS_ENABLED || 'false').toLowerCase() === 'true') {
         await safeRun('Redeem Ops entitlement hook', async () => {
           const { registerLeadCapturedHook } = await import('../services/prospectService.js');
-          const { makeEntitlementService } = await import('../services/redeemOps/entitlementService.js');
-          const { makeFulfilmentNotify } = await import('../services/redeemOps/fulfilmentNotify.js');
-          const notify = makeFulfilmentNotify();
-          const entitlements = makeEntitlementService({
-            notifyUnlock: ({ entitlement, prospect, voucherToken }) =>
-              notify.sendVoucherEmail({ entitlement, prospect, voucherToken }),
-          });
+          const { makeWiredEntitlementService } = await import('../services/redeemOps/entitlementWiring.js');
+          // Delivery (reservation + voucher emails, receipt events) lives
+          // INSIDE the wired service now — one choke point for hook, sweep and
+          // manual issuance (trial-reward-funnel-hardening PR A).
+          const entitlements = makeWiredEntitlementService();
           registerLeadCapturedHook(async (prospect) => {
-            const r = await entitlements.issueForProspect(prospect, { via: 'hook' });
-            if (r?.entitlement && r.reason === null && r.presentationToken && !r.voucherToken) {
-              // agent_unlock policy: deliver the reservation pass (fire-and-forget)
-              notify.sendReservationEmail({
-                entitlement: r.entitlement, prospect, presentationToken: r.presentationToken,
-              }).catch((err) => logger.error('[RedeemOps] reservation email failed', { error: err?.message }));
-            } else if (r?.voucherToken) {
-              notify.sendVoucherEmail({
-                entitlement: r.entitlement, prospect, voucherToken: r.voucherToken,
-              }).catch((err) => logger.error('[RedeemOps] voucher email failed', { error: err?.message }));
-            }
+            await entitlements.issueForProspect(prospect, { via: 'hook' });
           });
           logger.info('[RedeemOps] entitlement capture hook registered');
         });
 
-        // Reservation expiry + missed-lead reconciliation (at-least-once backstop
-        // for the hook; idempotent via the unique (activationId, prospectId) anchor).
+        // Reservation expiry + missed-lead reconciliation + delivery recovery
+        // (at-least-once backstops for the hook; issuance stays exactly-once
+        // via the unique (activationId, prospectId) anchor, and delivery
+        // recovery re-mints only rows with no successful `notified` receipt).
         const runFulfilmentSweepSafe = async () => {
           try {
-            const { makeEntitlementService } = await import('../services/redeemOps/entitlementService.js');
-            const svc = makeEntitlementService();
+            const { makeWiredEntitlementService } = await import('../services/redeemOps/entitlementWiring.js');
+            const svc = makeWiredEntitlementService();
             await svc.expireReservations();
             await svc.reconcileMissedLeads();
+            await svc.reconcileMissedDeliveries();
           } catch (err) {
             logger.warn('[RedeemOps] fulfilment sweep failed (non-fatal)', { error: err?.message });
           }

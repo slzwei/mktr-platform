@@ -1,7 +1,11 @@
 import Joi from 'joi';
 import { asyncHandler, AppError } from '../../middleware/errorHandler.js';
-import entitlementService from '../../services/redeemOps/entitlementService.js';
+import { makeWiredEntitlementService } from '../../services/redeemOps/entitlementWiring.js';
 import redemptionService from '../../services/redeemOps/redemptionService.js';
+
+// Wired instance (voucher/reservation emails actually send) — the bare default
+// export of entitlementService has null notify deps and delivers nothing.
+const entitlementService = makeWiredEntitlementService();
 
 function validateBody(schema, body) {
   const { error, value } = schema.validate(body, { abortEarly: false });
@@ -30,6 +34,9 @@ export const unlockEntitlement = asyncHandler(async (req, res) => {
     success: true,
     data: {
       already: result.already,
+      // Whether a voucher email was scheduled by THIS unlock — the toast must
+      // not claim "email sent" for replays or no-email leads.
+      emailQueued: result.emailQueued === true,
       // The raw voucher token is NOT returned here — it travels to the
       // consumer via the unlock email; staff see only the hint.
       entitlement: {
@@ -39,6 +46,43 @@ export const unlockEntitlement = asyncHandler(async (req, res) => {
         expiresAt: e.expiresAt,
         unlockedVia: e.unlockedVia,
       },
+    },
+  });
+});
+
+export const resendPass = asyncHandler(async (req, res) => {
+  const body = validateBody(
+    Joi.object({ channel: Joi.string().valid('email', 'link').default('email') }),
+    req.body || {}
+  );
+  const result = await entitlementService.resendDelivery(
+    req.params.id, req.user, { channel: body.channel }, req.id
+  );
+  const e = result.entitlement;
+  const noun = result.kind === 'pass' ? 'reservation pass' : 'voucher';
+  const oldCredential = result.kind === 'pass' ? 'pass QR/link' : 'voucher code/QR';
+  const message = result.channel === 'email'
+    ? `New ${noun} emailed — the previous ${oldCredential} no longer works.`
+    : `New ${noun} link created — the previous ${oldCredential} no longer works. Share it with the customer yourself.`;
+  // The link channel returns a LIVE bearer credential in the body — it must
+  // never be cached by any intermediary or the browser.
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    success: true,
+    message,
+    data: {
+      kind: result.kind,
+      channel: result.channel,
+      emailQueued: result.emailQueued === true,
+      entitlement: { id: e.id, status: e.status, tokenHint: e.tokenHint, expiresAt: e.expiresAt },
+      ...(result.channel === 'link'
+        ? {
+            link: result.link,
+            waMessage: result.waMessage,
+            waUrl: result.waUrl,
+            waUnavailableReason: result.waUnavailableReason,
+          }
+        : {}),
     },
   });
 });
@@ -56,6 +100,9 @@ export const issueManual = asyncHandler(async (req, res) => {
     success: true,
     data: {
       entitlement: result.entitlement,
+      // The customer is also emailed (when a usable address exists) — manual
+      // issue is usually recovery from a failed delivery.
+      emailQueued: result.emailQueued === true,
       // Raw tokens are returned ONCE at manual issue for staff hand-delivery
       presentationToken: result.presentationToken || null,
       voucherToken: result.voucherToken || null,

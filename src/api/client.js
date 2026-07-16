@@ -2,6 +2,7 @@
  * MKTR API Client - Replaces Base44 SDK
  * Provides all the same functionality but connects to our custom backend
  */
+import { maskTokenUrl } from '../lib/sentryScrub';
 
 // API Configuration
 const baseURL = import.meta.env.VITE_API_URL;
@@ -163,7 +164,9 @@ class APIClient {
 
  return isJson ? data : { success: false, message: data };
  } catch (error) {
- console.error(`API Error [${config.method} ${endpoint}]:`, error);
+ // maskTokenUrl: /api/reward-claim/:token is a live bearer credential —
+ // it must not land in the console (or Sentry console breadcrumbs).
+ console.error(`API Error [${config.method} ${maskTokenUrl(endpoint)}]:`, error);
  throw error;
  }
  }

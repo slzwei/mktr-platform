@@ -2,7 +2,7 @@ import express from 'express';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { requireExternalHmac } from '../controllers/externalBillingController.js';
 import { User } from '../models/index.js';
-import { makeEntitlementService } from '../services/redeemOps/entitlementService.js';
+import { makeWiredEntitlementService } from '../services/redeemOps/entitlementWiring.js';
 
 /**
  * mktr-leads consultant → voucher unlock (docs/redeem-ops/MKTR_INTEGRATION.md §2).
@@ -41,7 +41,7 @@ router.post('/unlock', requireExternalHmac, asyncHandler(async (req, res) => {
     // only a presentation token (the customer's QR pass, presented live) counts
     // as scan evidence; a bare prospectId is always the button path. Draw
     // weighting treats the two differently (docs/plans/lucky-draw-10x.md §4.4).
-    const result = await makeEntitlementService().unlockEntitlement(
+    const result = await makeWiredEntitlementService().unlockEntitlement(
       presentationToken ? { presentationToken } : { prospectId },
       agent,
       presentationToken ? 'agent_scan' : 'agent_button'
@@ -49,6 +49,9 @@ router.post('/unlock', requireExternalHmac, asyncHandler(async (req, res) => {
     return res.json({
       success: true,
       already: result.already,
+      // Whether a voucher email was scheduled by THIS unlock — false on
+      // replay and for no-email leads (client should tell the consultant).
+      emailQueued: result.emailQueued === true,
       entitlementId: result.entitlement.id,
       status: result.entitlement.status,
       tokenHint: result.entitlement.tokenHint,
