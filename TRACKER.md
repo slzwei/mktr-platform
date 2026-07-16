@@ -116,6 +116,7 @@ Retell AI performs the call and provides analysis natively. MKTR stores the resu
 | Integration tests (lead capture) | DONE | `backend/test/integration/leadCapture.test.js` |
 | Unit tests (webhook dispatch) | DONE | `backend/test/unit/webhookDispatch.test.js` |
 | Unit tests (webhook service) | DONE | `backend/test/unit/webhookService.test.js` |
+| design_config v2 core (Campaign Studio PR 1) | DONE (dark) | Twin schema modules `src/lib/designConfigV2.js` ↔ `backend/src/utils/designConfigV2.js` (lock-step vitest), lossless v1→v2 canonicalizing migration + downgrade/readLegacyView, version-aware clamp + leaf-level public v2 whitelist, hybrid-alias scrub, cross-version accessors. Write gate `DESIGN_CONFIG_V2_WRITES_ENABLED` default OFF — version-tagged saves 422 `DESIGN_CONFIG_VERSION_UNSUPPORTED`; stored-v2 overwrite by v1 save 409 `DESIGN_CONFIG_VERSION_CONFLICT`. v1 clamp behavior frozen by base-commit oracle `test-fixtures/designConfigV1ClampOracle.json` (`backend/test/designConfigV1Golden.test.js`). |
 | Sentry error tracking | PARTIAL | `server.js:9-15` — init only if SENTRY_DSN set; not in edge functions |
 | Structured logging (pino) | DONE | All services use `logger.js` (pino) |
 | Health check | DONE | `GET /health` on monolith |

@@ -8,6 +8,12 @@ import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
 import { applyLuckyDrawPolicy } from '../utils/luckyDraw.js';
 import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/marketplaceContent.js';
+import {
+  classifyDesignConfigVersion,
+  clampDesignConfigV2,
+  designConfigV2WritesEnabled,
+  getStoredTermsHtml,
+} from '../utils/designConfigV2Clamp.js';
 import { invalidateMarketplaceCache } from './marketplaceCache.js';
 import { refundCampaignCommitments } from './walletService.js';
 
@@ -39,8 +45,25 @@ const MARKETPLACE_CONTENT_KEYS = [
  * luckyDraw: draw-campaign enforcement settings — admin-only, same policy
  * (see utils/luckyDraw.js and docs/plans/lucky-draw-10x.md §4.1).
  */
-function clampDesignConfig(incoming, storedConfig, role) {
+export function clampDesignConfig(incoming, storedConfig, role) {
   if (!incoming || typeof incoming !== 'object') return incoming;
+  // design_config v2 (Campaign Studio) dispatch. Version-tagged documents are
+  // REJECTED until DESIGN_CONFIG_V2_WRITES_ENABLED flips on (PR 2/3 make every
+  // reader version-aware first) — accepting one early would let a hybrid
+  // payload bypass the admin publication policy and break the live v1 readers.
+  // Untagged documents take the v1 path below, byte-for-byte as before.
+  const versionClass = classifyDesignConfigVersion(incoming);
+  if (versionClass !== 'legacy') {
+    if (versionClass !== 'v2' || !designConfigV2WritesEnabled()) {
+      const err = new AppError(
+        'This design_config version is not accepted yet. Campaign Studio (v2) documents are gated until rollout completes.',
+        422
+      );
+      err.data = { code: 'DESIGN_CONFIG_VERSION_UNSUPPORTED' };
+      throw err;
+    }
+    return clampDesignConfigV2(incoming, storedConfig, role);
+  }
   const clamped = { ...incoming, customerHost: normalizeCustomerHostChoice(incoming.customerHost) };
   const featuredDrop = applyFeaturedDropPolicy({
     incoming: incoming.featuredDrop,
@@ -98,7 +121,8 @@ export async function ensureDrawTermsVersion(designConfig, campaignId, userId, d
       422
     );
   }
-  const content = typeof designConfig.termsContent === 'string' ? designConfig.termsContent.trim() : '';
+  // Version-aware terms read: v1 termsContent / v2 form.terms.html.
+  const content = getStoredTermsHtml(designConfig).trim();
   if (!content) {
     throw new AppError(
       'Lucky-draw campaigns need Terms & Conditions content (designer → Terms & Conditions) before they can be enabled.',
@@ -362,8 +386,7 @@ export async function createCampaign(body, user) {
         422
       );
     }
-    const terms = typeof campaignData.design_config.termsContent === 'string'
-      ? campaignData.design_config.termsContent.trim() : '';
+    const terms = getStoredTermsHtml(campaignData.design_config).trim();
     if (!terms) {
       throw new AppError(
         'Lucky-draw campaigns need Terms & Conditions content (designer → Terms & Conditions) before they can be enabled.',
@@ -458,6 +481,20 @@ export async function updateCampaign(id, body, req) {
     }
   }
   if (design_config !== undefined) {
+    // A Studio-saved (v2) document must never be overwritten by an untagged
+    // v1 save — the v1 clamp would wholesale-replace the nested doc. The old
+    // designer gets a read-only guard in the Studio PR; this is its server twin.
+    if (
+      classifyDesignConfigVersion(campaign.design_config) === 'v2' &&
+      classifyDesignConfigVersion(design_config) === 'legacy'
+    ) {
+      const err = new AppError(
+        "This campaign's design was saved by Campaign Studio and cannot be overwritten by the classic designer. Reopen it in the Studio.",
+        409
+      );
+      err.data = { code: 'DESIGN_CONFIG_VERSION_CONFLICT' };
+      throw err;
+    }
     // Clamp the per-campaign customer host to the enum (never trust a raw host
     // from client JSON) and gate featuredDrop/luckyDraw changes to admins;
     // preserve all other design keys untouched.
@@ -698,12 +735,26 @@ export async function duplicateCampaign(id, body, req) {
     // marketplaceListed never clones either — a duplicate of a listed campaign
     // must not silently appear on the public marketplace when activated.
     const { luckyDraw: _neverCloneDraw, marketplaceListed: _neverCloneListing, ...base } = rest.design_config;
-    return {
+    const copy = {
       ...base,
       ...(rest.design_config.featuredDrop && typeof rest.design_config.featuredDrop === 'object'
         ? { featuredDrop: { ...rest.design_config.featuredDrop, enabled: false } }
         : {}),
     };
+    // v2 (Campaign Studio) docs keep publication state under distribution.* —
+    // the same never-clone rules apply at those paths.
+    if (classifyDesignConfigVersion(copy) === 'v2' && copy.distribution && typeof copy.distribution === 'object') {
+      const distribution = { ...copy.distribution };
+      if (distribution.featuredDrop && typeof distribution.featuredDrop === 'object') {
+        distribution.featuredDrop = { ...distribution.featuredDrop, enabled: false };
+      }
+      if (distribution.marketplace && typeof distribution.marketplace === 'object') {
+        const { listed: _neverCloneV2Listing, ...marketplace } = distribution.marketplace;
+        distribution.marketplace = marketplace;
+      }
+      copy.distribution = distribution;
+    }
+    return copy;
   })();
   const copy = await Campaign.create({
     ...rest,

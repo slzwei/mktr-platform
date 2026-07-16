@@ -1,0 +1,4674 @@
+{
+  "__provenance": {
+    "capturedAt": "pre-v2 implementation",
+    "baseCommit": "7b5f0dd",
+    "note": "Output of clampDesignConfig/buildPublicDesignConfig BEFORE any design_config-v2 code. Do not regenerate casually."
+  },
+  "results": {
+    "editorialBaseline::role=admin::stored=create": {
+      "formHeadline": "Get your $10 voucher",
+      "formSubheadline": "Your voucher code arrives by SMS after verification.",
+      "brandWordmark": "redeem.sg",
+      "storyText": "We are celebrating our new rewards programme by giving away 2,000 vouchers to Singapore households.\n\nSign up, verify your mobile number, and your voucher code arrives within minutes.",
+      "storyEmphasis": "S$10, yours in under a minute.",
+      "heroCtaLabel": "Claim my voucher",
+      "ctaText": "Redeem Now",
+      "regulatoryFooter": "Redeem (a service of MKTR PTE. LTD., UEN: 202507548M) operates this referral platform.",
+      "brandFooter": "Powered by MKTR",
+      "imageUrl": "/uploads/campaign-assets/groceries.jpg",
+      "themeColor": "#D17029",
+      "heroFont": "fraunces",
+      "formWidth": 400,
+      "mediaType": "image",
+      "videoUrl": "",
+      "termsContent": "<h4>Campaign Terms</h4><p>One registration per person.</p>",
+      "customerHost": "redeem",
+      "otpChannel": "sms",
+      "sgPrOnly": true,
+      "excludeAdvisors": false,
+      "dncCheckAtSubmit": true,
+      "visibleFields": {
+        "phone": true,
+        "dob": true,
+        "postal_code": true
+      },
+      "requiredFields": {
+        "dob": true,
+        "postal_code": false
+      },
+      "fieldOrder": [
+        {
+          "id": "r-name",
+          "columns": [
+            "name"
+          ]
+        },
+        {
+          "id": "r-phone",
+          "columns": [
+            "phone"
+          ]
+        },
+        {
+          "id": "r-email",
+          "columns": [
+            "email"
+          ]
+        },
+        {
+          "id": "r-pair",
+          "columns": [
+            "dob",
+            "postal_code"
+          ]
+        },
+        {
+          "id": "r-edu",
+          "columns": [
+            "education_level"
+          ]
+        },
+        {
+          "id": "r-inc",
+          "columns": [
+            "monthly_income"
+          ]
+        }
+      ],
+      "quiz": null
+    },
+    "editorialBaseline::role=admin::stored=updateOverRich": {
+      "formHeadline": "Get your $10 voucher",
+      "formSubheadline": "Your voucher code arrives by SMS after verification.",
+      "brandWordmark": "redeem.sg",
+      "storyText": "We are celebrating our new rewards programme by giving away 2,000 vouchers to Singapore households.\n\nSign up, verify your mobile number, and your voucher code arrives within minutes.",
+      "storyEmphasis": "S$10, yours in under a minute.",
+      "heroCtaLabel": "Claim my voucher",
+      "ctaText": "Redeem Now",
+      "regulatoryFooter": "Redeem (a service of MKTR PTE. LTD., UEN: 202507548M) operates this referral platform.",
+      "brandFooter": "Powered by MKTR",
+      "imageUrl": "/uploads/campaign-assets/groceries.jpg",
+      "themeColor": "#D17029",
+      "heroFont": "fraunces",
+      "formWidth": 400,
+      "mediaType": "image",
+      "videoUrl": "",
+      "termsContent": "<h4>Campaign Terms</h4><p>One registration per person.</p>",
+      "customerHost": "redeem",
+      "otpChannel": "sms",
+      "sgPrOnly": true,
+      "excludeAdvisors": false,
+      "dncCheckAtSubmit": true,
+      "visibleFields": {
+        "phone": true,
+        "dob": true,
+        "postal_code": true
+      },
+      "requiredFields": {
+        "dob": true,
+        "postal_code": false
+      },
+      "fieldOrder": [
+        {
+          "id": "r-name",
+          "columns": [
+            "name"
+          ]
+        },
+        {
+          "id": "r-phone",
+          "columns": [
+            "phone"
+          ]
+        },
+        {
+          "id": "r-email",
+          "columns": [
+            "email"
+          ]
+        },
+        {
+          "id": "r-pair",
+          "columns": [
+            "dob",
+            "postal_code"
+          ]
+        },
+        {
+          "id": "r-edu",
+          "columns": [
+            "education_level"
+          ]
+        },
+        {
+          "id": "r-inc",
+          "columns": [
+            "monthly_income"
+          ]
+        }
+      ],
+      "quiz": null,
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "editorialBaseline::role=agent::stored=create": {
+      "formHeadline": "Get your $10 voucher",
+      "formSubheadline": "Your voucher code arrives by SMS after verification.",
+      "brandWordmark": "redeem.sg",
+      "storyText": "We are celebrating our new rewards programme by giving away 2,000 vouchers to Singapore households.\n\nSign up, verify your mobile number, and your voucher code arrives within minutes.",
+      "storyEmphasis": "S$10, yours in under a minute.",
+      "heroCtaLabel": "Claim my voucher",
+      "ctaText": "Redeem Now",
+      "regulatoryFooter": "Redeem (a service of MKTR PTE. LTD., UEN: 202507548M) operates this referral platform.",
+      "brandFooter": "Powered by MKTR",
+      "imageUrl": "/uploads/campaign-assets/groceries.jpg",
+      "themeColor": "#D17029",
+      "heroFont": "fraunces",
+      "formWidth": 400,
+      "mediaType": "image",
+      "videoUrl": "",
+      "termsContent": "<h4>Campaign Terms</h4><p>One registration per person.</p>",
+      "customerHost": "redeem",
+      "otpChannel": "sms",
+      "sgPrOnly": true,
+      "excludeAdvisors": false,
+      "dncCheckAtSubmit": true,
+      "visibleFields": {
+        "phone": true,
+        "dob": true,
+        "postal_code": true
+      },
+      "requiredFields": {
+        "dob": true,
+        "postal_code": false
+      },
+      "fieldOrder": [
+        {
+          "id": "r-name",
+          "columns": [
+            "name"
+          ]
+        },
+        {
+          "id": "r-phone",
+          "columns": [
+            "phone"
+          ]
+        },
+        {
+          "id": "r-email",
+          "columns": [
+            "email"
+          ]
+        },
+        {
+          "id": "r-pair",
+          "columns": [
+            "dob",
+            "postal_code"
+          ]
+        },
+        {
+          "id": "r-edu",
+          "columns": [
+            "education_level"
+          ]
+        },
+        {
+          "id": "r-inc",
+          "columns": [
+            "monthly_income"
+          ]
+        }
+      ],
+      "quiz": null
+    },
+    "editorialBaseline::role=agent::stored=updateOverRich": {
+      "formHeadline": "Get your $10 voucher",
+      "formSubheadline": "Your voucher code arrives by SMS after verification.",
+      "brandWordmark": "redeem.sg",
+      "storyText": "We are celebrating our new rewards programme by giving away 2,000 vouchers to Singapore households.\n\nSign up, verify your mobile number, and your voucher code arrives within minutes.",
+      "storyEmphasis": "S$10, yours in under a minute.",
+      "heroCtaLabel": "Claim my voucher",
+      "ctaText": "Redeem Now",
+      "regulatoryFooter": "Redeem (a service of MKTR PTE. LTD., UEN: 202507548M) operates this referral platform.",
+      "brandFooter": "Powered by MKTR",
+      "imageUrl": "/uploads/campaign-assets/groceries.jpg",
+      "themeColor": "#D17029",
+      "heroFont": "fraunces",
+      "formWidth": 400,
+      "mediaType": "image",
+      "videoUrl": "",
+      "termsContent": "<h4>Campaign Terms</h4><p>One registration per person.</p>",
+      "customerHost": "redeem",
+      "otpChannel": "sms",
+      "sgPrOnly": true,
+      "excludeAdvisors": false,
+      "dncCheckAtSubmit": true,
+      "visibleFields": {
+        "phone": true,
+        "dob": true,
+        "postal_code": true
+      },
+      "requiredFields": {
+        "dob": true,
+        "postal_code": false
+      },
+      "fieldOrder": [
+        {
+          "id": "r-name",
+          "columns": [
+            "name"
+          ]
+        },
+        {
+          "id": "r-phone",
+          "columns": [
+            "phone"
+          ]
+        },
+        {
+          "id": "r-email",
+          "columns": [
+            "email"
+          ]
+        },
+        {
+          "id": "r-pair",
+          "columns": [
+            "dob",
+            "postal_code"
+          ]
+        },
+        {
+          "id": "r-edu",
+          "columns": [
+            "education_level"
+          ]
+        },
+        {
+          "id": "r-inc",
+          "columns": [
+            "monthly_income"
+          ]
+        }
+      ],
+      "quiz": null,
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "editorialBaseline::role=none::stored=create": {
+      "formHeadline": "Get your $10 voucher",
+      "formSubheadline": "Your voucher code arrives by SMS after verification.",
+      "brandWordmark": "redeem.sg",
+      "storyText": "We are celebrating our new rewards programme by giving away 2,000 vouchers to Singapore households.\n\nSign up, verify your mobile number, and your voucher code arrives within minutes.",
+      "storyEmphasis": "S$10, yours in under a minute.",
+      "heroCtaLabel": "Claim my voucher",
+      "ctaText": "Redeem Now",
+      "regulatoryFooter": "Redeem (a service of MKTR PTE. LTD., UEN: 202507548M) operates this referral platform.",
+      "brandFooter": "Powered by MKTR",
+      "imageUrl": "/uploads/campaign-assets/groceries.jpg",
+      "themeColor": "#D17029",
+      "heroFont": "fraunces",
+      "formWidth": 400,
+      "mediaType": "image",
+      "videoUrl": "",
+      "termsContent": "<h4>Campaign Terms</h4><p>One registration per person.</p>",
+      "customerHost": "redeem",
+      "otpChannel": "sms",
+      "sgPrOnly": true,
+      "excludeAdvisors": false,
+      "dncCheckAtSubmit": true,
+      "visibleFields": {
+        "phone": true,
+        "dob": true,
+        "postal_code": true
+      },
+      "requiredFields": {
+        "dob": true,
+        "postal_code": false
+      },
+      "fieldOrder": [
+        {
+          "id": "r-name",
+          "columns": [
+            "name"
+          ]
+        },
+        {
+          "id": "r-phone",
+          "columns": [
+            "phone"
+          ]
+        },
+        {
+          "id": "r-email",
+          "columns": [
+            "email"
+          ]
+        },
+        {
+          "id": "r-pair",
+          "columns": [
+            "dob",
+            "postal_code"
+          ]
+        },
+        {
+          "id": "r-edu",
+          "columns": [
+            "education_level"
+          ]
+        },
+        {
+          "id": "r-inc",
+          "columns": [
+            "monthly_income"
+          ]
+        }
+      ],
+      "quiz": null
+    },
+    "editorialBaseline::role=none::stored=updateOverRich": {
+      "formHeadline": "Get your $10 voucher",
+      "formSubheadline": "Your voucher code arrives by SMS after verification.",
+      "brandWordmark": "redeem.sg",
+      "storyText": "We are celebrating our new rewards programme by giving away 2,000 vouchers to Singapore households.\n\nSign up, verify your mobile number, and your voucher code arrives within minutes.",
+      "storyEmphasis": "S$10, yours in under a minute.",
+      "heroCtaLabel": "Claim my voucher",
+      "ctaText": "Redeem Now",
+      "regulatoryFooter": "Redeem (a service of MKTR PTE. LTD., UEN: 202507548M) operates this referral platform.",
+      "brandFooter": "Powered by MKTR",
+      "imageUrl": "/uploads/campaign-assets/groceries.jpg",
+      "themeColor": "#D17029",
+      "heroFont": "fraunces",
+      "formWidth": 400,
+      "mediaType": "image",
+      "videoUrl": "",
+      "termsContent": "<h4>Campaign Terms</h4><p>One registration per person.</p>",
+      "customerHost": "redeem",
+      "otpChannel": "sms",
+      "sgPrOnly": true,
+      "excludeAdvisors": false,
+      "dncCheckAtSubmit": true,
+      "visibleFields": {
+        "phone": true,
+        "dob": true,
+        "postal_code": true
+      },
+      "requiredFields": {
+        "dob": true,
+        "postal_code": false
+      },
+      "fieldOrder": [
+        {
+          "id": "r-name",
+          "columns": [
+            "name"
+          ]
+        },
+        {
+          "id": "r-phone",
+          "columns": [
+            "phone"
+          ]
+        },
+        {
+          "id": "r-email",
+          "columns": [
+            "email"
+          ]
+        },
+        {
+          "id": "r-pair",
+          "columns": [
+            "dob",
+            "postal_code"
+          ]
+        },
+        {
+          "id": "r-edu",
+          "columns": [
+            "education_level"
+          ]
+        },
+        {
+          "id": "r-inc",
+          "columns": [
+            "monthly_income"
+          ]
+        }
+      ],
+      "quiz": null,
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "editorialBaseline::public": {
+      "themeColor": "#D17029",
+      "heroFont": "fraunces",
+      "imageUrl": "/uploads/campaign-assets/groceries.jpg",
+      "videoUrl": "",
+      "mediaType": "image",
+      "storyText": "We are celebrating our new rewards programme by giving away 2,000 vouchers to Singapore households.\n\nSign up, verify your mobile number, and your voucher code arrives within minutes.",
+      "storyEmphasis": "S$10, yours in under a minute.",
+      "heroCtaLabel": "Claim my voucher",
+      "ctaText": "Redeem Now",
+      "formHeadline": "Get your $10 voucher",
+      "formSubheadline": "Your voucher code arrives by SMS after verification.",
+      "formWidth": 400,
+      "brandWordmark": "redeem.sg",
+      "brandFooter": "Powered by MKTR",
+      "regulatoryFooter": "Redeem (a service of MKTR PTE. LTD., UEN: 202507548M) operates this referral platform.",
+      "termsContent": "<h4>Campaign Terms</h4><p>One registration per person.</p>",
+      "customerHost": "redeem",
+      "fieldOrder": [
+        {
+          "id": "r-name",
+          "columns": [
+            "name"
+          ]
+        },
+        {
+          "id": "r-phone",
+          "columns": [
+            "phone"
+          ]
+        },
+        {
+          "id": "r-email",
+          "columns": [
+            "email"
+          ]
+        },
+        {
+          "id": "r-pair",
+          "columns": [
+            "dob",
+            "postal_code"
+          ]
+        },
+        {
+          "id": "r-edu",
+          "columns": [
+            "education_level"
+          ]
+        },
+        {
+          "id": "r-inc",
+          "columns": [
+            "monthly_income"
+          ]
+        }
+      ],
+      "visibleFields": {
+        "phone": true,
+        "dob": true,
+        "postal_code": true
+      },
+      "requiredFields": {
+        "dob": true,
+        "postal_code": false
+      },
+      "sgPrOnly": true,
+      "excludeAdvisors": false,
+      "dncCheckAtSubmit": true,
+      "otpChannel": "sms",
+      "quiz": null
+    },
+    "quizCampaign::role=admin::stored=create": {
+      "formHeadline": "Ready to raise your ceiling?",
+      "formSubheadline": "Claim your complimentary 20-minute session.",
+      "themeColor": "#8A5BB8",
+      "heroFont": "space-grotesk",
+      "customerHost": "redeem",
+      "otpChannel": "whatsapp",
+      "sgPrOnly": false,
+      "excludeAdvisors": true,
+      "dncCheckAtSubmit": true,
+      "visibleFields": {
+        "education_level": true,
+        "monthly_income": true,
+        "dob": false,
+        "postal_code": false
+      },
+      "requiredFields": {},
+      "quiz": {
+        "enabled": true,
+        "quizId": "protection-personality",
+        "version": 2,
+        "scoring": {
+          "method": "profile-sum",
+          "tiebreak": "prepared-first",
+          "profileOrder": [
+            "the-rock",
+            "the-strategist",
+            "the-dreamer",
+            "the-free-spirit"
+          ],
+          "readiness": {
+            "enabled": true,
+            "label": "Your Protection Readiness",
+            "rankFactor": {
+              "the-rock": 1,
+              "the-strategist": 0.66,
+              "the-dreamer": 0.33,
+              "the-free-spirit": 0
+            }
+          },
+          "leadScore": {
+            "enabled": true,
+            "tagPoints": {
+              "exposed": 3,
+              "uncertain": 2,
+              "covered": 1,
+              "confident": 0,
+              "family-dependents": 3,
+              "couple": 2,
+              "single": 1,
+              "single-free": 1,
+              "life-income": 2,
+              "savings-retirement": 2,
+              "nurture-warm": 1,
+              "nurture-cold": 0
+            },
+            "bands": [
+              {
+                "gte": 6,
+                "label": "Hot",
+                "badge": "🔥"
+              },
+              {
+                "gte": 3,
+                "label": "Warm",
+                "badge": "🌤️"
+              },
+              {
+                "label": "Cool",
+                "badge": "❄️"
+              }
+            ]
+          }
+        },
+        "steps": [
+          {
+            "id": "step1",
+            "questions": [
+              {
+                "id": "q1_weekend",
+                "prompt": "Pick your ideal weekend",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "cosy",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "mix",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "adventure",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "night",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step2",
+            "questions": [
+              {
+                "id": "q2_payday",
+                "prompt": "Payday hits. First move?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "save",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "split",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "bills",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "treat",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step3",
+            "questions": [
+              {
+                "id": "q3_circle",
+                "prompt": "Who's in your circle right now?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "family",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "family-dependents"
+                  },
+                  {
+                    "id": "partner",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "couple"
+                  },
+                  {
+                    "id": "solo",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "single"
+                  },
+                  {
+                    "id": "free",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "single-free"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step4",
+            "questions": [
+              {
+                "id": "q4_worry",
+                "prompt": "The 'what if' that nags you most?",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "family_ok",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "life-income"
+                  },
+                  {
+                    "id": "saving",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "savings-retirement"
+                  },
+                  {
+                    "id": "eventually",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "nurture-warm"
+                  },
+                  {
+                    "id": "avoid",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "nurture-cold"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step5",
+            "questions": [
+              {
+                "id": "q5_protected",
+                "prompt": "How protected do you feel right now?",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "solid",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "confident"
+                  },
+                  {
+                    "id": "basics",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "covered"
+                  },
+                  {
+                    "id": "patchy",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "uncertain"
+                  },
+                  {
+                    "id": "exposed",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "exposed"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step6",
+            "questions": [
+              {
+                "id": "q6_bill",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "fund",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "sting",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "credit",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "later",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "resultProfiles": [
+          {
+            "id": "the-rock",
+            "title": "The Rock",
+            "agentAngle": "optimise / legacy / wealth transfer"
+          },
+          {
+            "id": "the-strategist",
+            "title": "The Strategist",
+            "agentAngle": "savings / retirement top-up"
+          },
+          {
+            "id": "the-dreamer",
+            "title": "The Big Dreamer",
+            "agentAngle": "starter health + CI, then savings"
+          },
+          {
+            "id": "the-free-spirit",
+            "title": "The Free Spirit",
+            "agentAngle": "affordable starter protection"
+          }
+        ]
+      }
+    },
+    "quizCampaign::role=admin::stored=updateOverRich": {
+      "formHeadline": "Ready to raise your ceiling?",
+      "formSubheadline": "Claim your complimentary 20-minute session.",
+      "themeColor": "#8A5BB8",
+      "heroFont": "space-grotesk",
+      "customerHost": "redeem",
+      "otpChannel": "whatsapp",
+      "sgPrOnly": false,
+      "excludeAdvisors": true,
+      "dncCheckAtSubmit": true,
+      "visibleFields": {
+        "education_level": true,
+        "monthly_income": true,
+        "dob": false,
+        "postal_code": false
+      },
+      "requiredFields": {},
+      "quiz": {
+        "enabled": true,
+        "quizId": "protection-personality",
+        "version": 2,
+        "scoring": {
+          "method": "profile-sum",
+          "tiebreak": "prepared-first",
+          "profileOrder": [
+            "the-rock",
+            "the-strategist",
+            "the-dreamer",
+            "the-free-spirit"
+          ],
+          "readiness": {
+            "enabled": true,
+            "label": "Your Protection Readiness",
+            "rankFactor": {
+              "the-rock": 1,
+              "the-strategist": 0.66,
+              "the-dreamer": 0.33,
+              "the-free-spirit": 0
+            }
+          },
+          "leadScore": {
+            "enabled": true,
+            "tagPoints": {
+              "exposed": 3,
+              "uncertain": 2,
+              "covered": 1,
+              "confident": 0,
+              "family-dependents": 3,
+              "couple": 2,
+              "single": 1,
+              "single-free": 1,
+              "life-income": 2,
+              "savings-retirement": 2,
+              "nurture-warm": 1,
+              "nurture-cold": 0
+            },
+            "bands": [
+              {
+                "gte": 6,
+                "label": "Hot",
+                "badge": "🔥"
+              },
+              {
+                "gte": 3,
+                "label": "Warm",
+                "badge": "🌤️"
+              },
+              {
+                "label": "Cool",
+                "badge": "❄️"
+              }
+            ]
+          }
+        },
+        "steps": [
+          {
+            "id": "step1",
+            "questions": [
+              {
+                "id": "q1_weekend",
+                "prompt": "Pick your ideal weekend",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "cosy",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "mix",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "adventure",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "night",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step2",
+            "questions": [
+              {
+                "id": "q2_payday",
+                "prompt": "Payday hits. First move?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "save",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "split",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "bills",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "treat",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step3",
+            "questions": [
+              {
+                "id": "q3_circle",
+                "prompt": "Who's in your circle right now?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "family",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "family-dependents"
+                  },
+                  {
+                    "id": "partner",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "couple"
+                  },
+                  {
+                    "id": "solo",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "single"
+                  },
+                  {
+                    "id": "free",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "single-free"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step4",
+            "questions": [
+              {
+                "id": "q4_worry",
+                "prompt": "The 'what if' that nags you most?",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "family_ok",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "life-income"
+                  },
+                  {
+                    "id": "saving",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "savings-retirement"
+                  },
+                  {
+                    "id": "eventually",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "nurture-warm"
+                  },
+                  {
+                    "id": "avoid",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "nurture-cold"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step5",
+            "questions": [
+              {
+                "id": "q5_protected",
+                "prompt": "How protected do you feel right now?",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "solid",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "confident"
+                  },
+                  {
+                    "id": "basics",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "covered"
+                  },
+                  {
+                    "id": "patchy",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "uncertain"
+                  },
+                  {
+                    "id": "exposed",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "exposed"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step6",
+            "questions": [
+              {
+                "id": "q6_bill",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "fund",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "sting",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "credit",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "later",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "resultProfiles": [
+          {
+            "id": "the-rock",
+            "title": "The Rock",
+            "agentAngle": "optimise / legacy / wealth transfer"
+          },
+          {
+            "id": "the-strategist",
+            "title": "The Strategist",
+            "agentAngle": "savings / retirement top-up"
+          },
+          {
+            "id": "the-dreamer",
+            "title": "The Big Dreamer",
+            "agentAngle": "starter health + CI, then savings"
+          },
+          {
+            "id": "the-free-spirit",
+            "title": "The Free Spirit",
+            "agentAngle": "affordable starter protection"
+          }
+        ]
+      },
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "quizCampaign::role=agent::stored=create": {
+      "formHeadline": "Ready to raise your ceiling?",
+      "formSubheadline": "Claim your complimentary 20-minute session.",
+      "themeColor": "#8A5BB8",
+      "heroFont": "space-grotesk",
+      "customerHost": "redeem",
+      "otpChannel": "whatsapp",
+      "sgPrOnly": false,
+      "excludeAdvisors": true,
+      "dncCheckAtSubmit": true,
+      "visibleFields": {
+        "education_level": true,
+        "monthly_income": true,
+        "dob": false,
+        "postal_code": false
+      },
+      "requiredFields": {},
+      "quiz": {
+        "enabled": true,
+        "quizId": "protection-personality",
+        "version": 2,
+        "scoring": {
+          "method": "profile-sum",
+          "tiebreak": "prepared-first",
+          "profileOrder": [
+            "the-rock",
+            "the-strategist",
+            "the-dreamer",
+            "the-free-spirit"
+          ],
+          "readiness": {
+            "enabled": true,
+            "label": "Your Protection Readiness",
+            "rankFactor": {
+              "the-rock": 1,
+              "the-strategist": 0.66,
+              "the-dreamer": 0.33,
+              "the-free-spirit": 0
+            }
+          },
+          "leadScore": {
+            "enabled": true,
+            "tagPoints": {
+              "exposed": 3,
+              "uncertain": 2,
+              "covered": 1,
+              "confident": 0,
+              "family-dependents": 3,
+              "couple": 2,
+              "single": 1,
+              "single-free": 1,
+              "life-income": 2,
+              "savings-retirement": 2,
+              "nurture-warm": 1,
+              "nurture-cold": 0
+            },
+            "bands": [
+              {
+                "gte": 6,
+                "label": "Hot",
+                "badge": "🔥"
+              },
+              {
+                "gte": 3,
+                "label": "Warm",
+                "badge": "🌤️"
+              },
+              {
+                "label": "Cool",
+                "badge": "❄️"
+              }
+            ]
+          }
+        },
+        "steps": [
+          {
+            "id": "step1",
+            "questions": [
+              {
+                "id": "q1_weekend",
+                "prompt": "Pick your ideal weekend",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "cosy",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "mix",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "adventure",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "night",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step2",
+            "questions": [
+              {
+                "id": "q2_payday",
+                "prompt": "Payday hits. First move?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "save",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "split",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "bills",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "treat",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step3",
+            "questions": [
+              {
+                "id": "q3_circle",
+                "prompt": "Who's in your circle right now?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "family",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "family-dependents"
+                  },
+                  {
+                    "id": "partner",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "couple"
+                  },
+                  {
+                    "id": "solo",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "single"
+                  },
+                  {
+                    "id": "free",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "single-free"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step4",
+            "questions": [
+              {
+                "id": "q4_worry",
+                "prompt": "The 'what if' that nags you most?",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "family_ok",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "life-income"
+                  },
+                  {
+                    "id": "saving",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "savings-retirement"
+                  },
+                  {
+                    "id": "eventually",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "nurture-warm"
+                  },
+                  {
+                    "id": "avoid",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "nurture-cold"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step5",
+            "questions": [
+              {
+                "id": "q5_protected",
+                "prompt": "How protected do you feel right now?",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "solid",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "confident"
+                  },
+                  {
+                    "id": "basics",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "covered"
+                  },
+                  {
+                    "id": "patchy",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "uncertain"
+                  },
+                  {
+                    "id": "exposed",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "exposed"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step6",
+            "questions": [
+              {
+                "id": "q6_bill",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "fund",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "sting",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "credit",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "later",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "resultProfiles": [
+          {
+            "id": "the-rock",
+            "title": "The Rock",
+            "agentAngle": "optimise / legacy / wealth transfer"
+          },
+          {
+            "id": "the-strategist",
+            "title": "The Strategist",
+            "agentAngle": "savings / retirement top-up"
+          },
+          {
+            "id": "the-dreamer",
+            "title": "The Big Dreamer",
+            "agentAngle": "starter health + CI, then savings"
+          },
+          {
+            "id": "the-free-spirit",
+            "title": "The Free Spirit",
+            "agentAngle": "affordable starter protection"
+          }
+        ]
+      }
+    },
+    "quizCampaign::role=agent::stored=updateOverRich": {
+      "formHeadline": "Ready to raise your ceiling?",
+      "formSubheadline": "Claim your complimentary 20-minute session.",
+      "themeColor": "#8A5BB8",
+      "heroFont": "space-grotesk",
+      "customerHost": "redeem",
+      "otpChannel": "whatsapp",
+      "sgPrOnly": false,
+      "excludeAdvisors": true,
+      "dncCheckAtSubmit": true,
+      "visibleFields": {
+        "education_level": true,
+        "monthly_income": true,
+        "dob": false,
+        "postal_code": false
+      },
+      "requiredFields": {},
+      "quiz": {
+        "enabled": true,
+        "quizId": "protection-personality",
+        "version": 2,
+        "scoring": {
+          "method": "profile-sum",
+          "tiebreak": "prepared-first",
+          "profileOrder": [
+            "the-rock",
+            "the-strategist",
+            "the-dreamer",
+            "the-free-spirit"
+          ],
+          "readiness": {
+            "enabled": true,
+            "label": "Your Protection Readiness",
+            "rankFactor": {
+              "the-rock": 1,
+              "the-strategist": 0.66,
+              "the-dreamer": 0.33,
+              "the-free-spirit": 0
+            }
+          },
+          "leadScore": {
+            "enabled": true,
+            "tagPoints": {
+              "exposed": 3,
+              "uncertain": 2,
+              "covered": 1,
+              "confident": 0,
+              "family-dependents": 3,
+              "couple": 2,
+              "single": 1,
+              "single-free": 1,
+              "life-income": 2,
+              "savings-retirement": 2,
+              "nurture-warm": 1,
+              "nurture-cold": 0
+            },
+            "bands": [
+              {
+                "gte": 6,
+                "label": "Hot",
+                "badge": "🔥"
+              },
+              {
+                "gte": 3,
+                "label": "Warm",
+                "badge": "🌤️"
+              },
+              {
+                "label": "Cool",
+                "badge": "❄️"
+              }
+            ]
+          }
+        },
+        "steps": [
+          {
+            "id": "step1",
+            "questions": [
+              {
+                "id": "q1_weekend",
+                "prompt": "Pick your ideal weekend",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "cosy",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "mix",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "adventure",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "night",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step2",
+            "questions": [
+              {
+                "id": "q2_payday",
+                "prompt": "Payday hits. First move?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "save",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "split",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "bills",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "treat",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step3",
+            "questions": [
+              {
+                "id": "q3_circle",
+                "prompt": "Who's in your circle right now?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "family",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "family-dependents"
+                  },
+                  {
+                    "id": "partner",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "couple"
+                  },
+                  {
+                    "id": "solo",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "single"
+                  },
+                  {
+                    "id": "free",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "single-free"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step4",
+            "questions": [
+              {
+                "id": "q4_worry",
+                "prompt": "The 'what if' that nags you most?",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "family_ok",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "life-income"
+                  },
+                  {
+                    "id": "saving",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "savings-retirement"
+                  },
+                  {
+                    "id": "eventually",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "nurture-warm"
+                  },
+                  {
+                    "id": "avoid",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "nurture-cold"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step5",
+            "questions": [
+              {
+                "id": "q5_protected",
+                "prompt": "How protected do you feel right now?",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "solid",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "confident"
+                  },
+                  {
+                    "id": "basics",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "covered"
+                  },
+                  {
+                    "id": "patchy",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "uncertain"
+                  },
+                  {
+                    "id": "exposed",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "exposed"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step6",
+            "questions": [
+              {
+                "id": "q6_bill",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "fund",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "sting",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "credit",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "later",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "resultProfiles": [
+          {
+            "id": "the-rock",
+            "title": "The Rock",
+            "agentAngle": "optimise / legacy / wealth transfer"
+          },
+          {
+            "id": "the-strategist",
+            "title": "The Strategist",
+            "agentAngle": "savings / retirement top-up"
+          },
+          {
+            "id": "the-dreamer",
+            "title": "The Big Dreamer",
+            "agentAngle": "starter health + CI, then savings"
+          },
+          {
+            "id": "the-free-spirit",
+            "title": "The Free Spirit",
+            "agentAngle": "affordable starter protection"
+          }
+        ]
+      },
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "quizCampaign::role=none::stored=create": {
+      "formHeadline": "Ready to raise your ceiling?",
+      "formSubheadline": "Claim your complimentary 20-minute session.",
+      "themeColor": "#8A5BB8",
+      "heroFont": "space-grotesk",
+      "customerHost": "redeem",
+      "otpChannel": "whatsapp",
+      "sgPrOnly": false,
+      "excludeAdvisors": true,
+      "dncCheckAtSubmit": true,
+      "visibleFields": {
+        "education_level": true,
+        "monthly_income": true,
+        "dob": false,
+        "postal_code": false
+      },
+      "requiredFields": {},
+      "quiz": {
+        "enabled": true,
+        "quizId": "protection-personality",
+        "version": 2,
+        "scoring": {
+          "method": "profile-sum",
+          "tiebreak": "prepared-first",
+          "profileOrder": [
+            "the-rock",
+            "the-strategist",
+            "the-dreamer",
+            "the-free-spirit"
+          ],
+          "readiness": {
+            "enabled": true,
+            "label": "Your Protection Readiness",
+            "rankFactor": {
+              "the-rock": 1,
+              "the-strategist": 0.66,
+              "the-dreamer": 0.33,
+              "the-free-spirit": 0
+            }
+          },
+          "leadScore": {
+            "enabled": true,
+            "tagPoints": {
+              "exposed": 3,
+              "uncertain": 2,
+              "covered": 1,
+              "confident": 0,
+              "family-dependents": 3,
+              "couple": 2,
+              "single": 1,
+              "single-free": 1,
+              "life-income": 2,
+              "savings-retirement": 2,
+              "nurture-warm": 1,
+              "nurture-cold": 0
+            },
+            "bands": [
+              {
+                "gte": 6,
+                "label": "Hot",
+                "badge": "🔥"
+              },
+              {
+                "gte": 3,
+                "label": "Warm",
+                "badge": "🌤️"
+              },
+              {
+                "label": "Cool",
+                "badge": "❄️"
+              }
+            ]
+          }
+        },
+        "steps": [
+          {
+            "id": "step1",
+            "questions": [
+              {
+                "id": "q1_weekend",
+                "prompt": "Pick your ideal weekend",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "cosy",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "mix",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "adventure",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "night",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step2",
+            "questions": [
+              {
+                "id": "q2_payday",
+                "prompt": "Payday hits. First move?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "save",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "split",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "bills",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "treat",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step3",
+            "questions": [
+              {
+                "id": "q3_circle",
+                "prompt": "Who's in your circle right now?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "family",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "family-dependents"
+                  },
+                  {
+                    "id": "partner",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "couple"
+                  },
+                  {
+                    "id": "solo",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "single"
+                  },
+                  {
+                    "id": "free",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "single-free"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step4",
+            "questions": [
+              {
+                "id": "q4_worry",
+                "prompt": "The 'what if' that nags you most?",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "family_ok",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "life-income"
+                  },
+                  {
+                    "id": "saving",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "savings-retirement"
+                  },
+                  {
+                    "id": "eventually",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "nurture-warm"
+                  },
+                  {
+                    "id": "avoid",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "nurture-cold"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step5",
+            "questions": [
+              {
+                "id": "q5_protected",
+                "prompt": "How protected do you feel right now?",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "solid",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "confident"
+                  },
+                  {
+                    "id": "basics",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "covered"
+                  },
+                  {
+                    "id": "patchy",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "uncertain"
+                  },
+                  {
+                    "id": "exposed",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "exposed"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step6",
+            "questions": [
+              {
+                "id": "q6_bill",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "fund",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "sting",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "credit",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "later",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "resultProfiles": [
+          {
+            "id": "the-rock",
+            "title": "The Rock",
+            "agentAngle": "optimise / legacy / wealth transfer"
+          },
+          {
+            "id": "the-strategist",
+            "title": "The Strategist",
+            "agentAngle": "savings / retirement top-up"
+          },
+          {
+            "id": "the-dreamer",
+            "title": "The Big Dreamer",
+            "agentAngle": "starter health + CI, then savings"
+          },
+          {
+            "id": "the-free-spirit",
+            "title": "The Free Spirit",
+            "agentAngle": "affordable starter protection"
+          }
+        ]
+      }
+    },
+    "quizCampaign::role=none::stored=updateOverRich": {
+      "formHeadline": "Ready to raise your ceiling?",
+      "formSubheadline": "Claim your complimentary 20-minute session.",
+      "themeColor": "#8A5BB8",
+      "heroFont": "space-grotesk",
+      "customerHost": "redeem",
+      "otpChannel": "whatsapp",
+      "sgPrOnly": false,
+      "excludeAdvisors": true,
+      "dncCheckAtSubmit": true,
+      "visibleFields": {
+        "education_level": true,
+        "monthly_income": true,
+        "dob": false,
+        "postal_code": false
+      },
+      "requiredFields": {},
+      "quiz": {
+        "enabled": true,
+        "quizId": "protection-personality",
+        "version": 2,
+        "scoring": {
+          "method": "profile-sum",
+          "tiebreak": "prepared-first",
+          "profileOrder": [
+            "the-rock",
+            "the-strategist",
+            "the-dreamer",
+            "the-free-spirit"
+          ],
+          "readiness": {
+            "enabled": true,
+            "label": "Your Protection Readiness",
+            "rankFactor": {
+              "the-rock": 1,
+              "the-strategist": 0.66,
+              "the-dreamer": 0.33,
+              "the-free-spirit": 0
+            }
+          },
+          "leadScore": {
+            "enabled": true,
+            "tagPoints": {
+              "exposed": 3,
+              "uncertain": 2,
+              "covered": 1,
+              "confident": 0,
+              "family-dependents": 3,
+              "couple": 2,
+              "single": 1,
+              "single-free": 1,
+              "life-income": 2,
+              "savings-retirement": 2,
+              "nurture-warm": 1,
+              "nurture-cold": 0
+            },
+            "bands": [
+              {
+                "gte": 6,
+                "label": "Hot",
+                "badge": "🔥"
+              },
+              {
+                "gte": 3,
+                "label": "Warm",
+                "badge": "🌤️"
+              },
+              {
+                "label": "Cool",
+                "badge": "❄️"
+              }
+            ]
+          }
+        },
+        "steps": [
+          {
+            "id": "step1",
+            "questions": [
+              {
+                "id": "q1_weekend",
+                "prompt": "Pick your ideal weekend",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "cosy",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "mix",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "adventure",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "night",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step2",
+            "questions": [
+              {
+                "id": "q2_payday",
+                "prompt": "Payday hits. First move?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "save",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "split",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "bills",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "treat",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step3",
+            "questions": [
+              {
+                "id": "q3_circle",
+                "prompt": "Who's in your circle right now?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "family",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "family-dependents"
+                  },
+                  {
+                    "id": "partner",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "couple"
+                  },
+                  {
+                    "id": "solo",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "single"
+                  },
+                  {
+                    "id": "free",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "single-free"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step4",
+            "questions": [
+              {
+                "id": "q4_worry",
+                "prompt": "The 'what if' that nags you most?",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "family_ok",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "life-income"
+                  },
+                  {
+                    "id": "saving",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "savings-retirement"
+                  },
+                  {
+                    "id": "eventually",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "nurture-warm"
+                  },
+                  {
+                    "id": "avoid",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "nurture-cold"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step5",
+            "questions": [
+              {
+                "id": "q5_protected",
+                "prompt": "How protected do you feel right now?",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "solid",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "confident"
+                  },
+                  {
+                    "id": "basics",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "covered"
+                  },
+                  {
+                    "id": "patchy",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "uncertain"
+                  },
+                  {
+                    "id": "exposed",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "exposed"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step6",
+            "questions": [
+              {
+                "id": "q6_bill",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "fund",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "sting",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "credit",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "later",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "resultProfiles": [
+          {
+            "id": "the-rock",
+            "title": "The Rock",
+            "agentAngle": "optimise / legacy / wealth transfer"
+          },
+          {
+            "id": "the-strategist",
+            "title": "The Strategist",
+            "agentAngle": "savings / retirement top-up"
+          },
+          {
+            "id": "the-dreamer",
+            "title": "The Big Dreamer",
+            "agentAngle": "starter health + CI, then savings"
+          },
+          {
+            "id": "the-free-spirit",
+            "title": "The Free Spirit",
+            "agentAngle": "affordable starter protection"
+          }
+        ]
+      },
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "quizCampaign::public": {
+      "themeColor": "#8A5BB8",
+      "heroFont": "space-grotesk",
+      "formHeadline": "Ready to raise your ceiling?",
+      "formSubheadline": "Claim your complimentary 20-minute session.",
+      "customerHost": "redeem",
+      "visibleFields": {
+        "education_level": true,
+        "monthly_income": true,
+        "dob": false,
+        "postal_code": false
+      },
+      "requiredFields": {},
+      "sgPrOnly": false,
+      "excludeAdvisors": true,
+      "dncCheckAtSubmit": true,
+      "otpChannel": "whatsapp",
+      "quiz": {
+        "enabled": true,
+        "quizId": "protection-personality",
+        "version": 2,
+        "scoring": {
+          "method": "profile-sum",
+          "tiebreak": "prepared-first",
+          "profileOrder": [
+            "the-rock",
+            "the-strategist",
+            "the-dreamer",
+            "the-free-spirit"
+          ],
+          "readiness": {
+            "enabled": true,
+            "label": "Your Protection Readiness",
+            "rankFactor": {
+              "the-rock": 1,
+              "the-strategist": 0.66,
+              "the-dreamer": 0.33,
+              "the-free-spirit": 0
+            }
+          },
+          "leadScore": {
+            "enabled": true,
+            "tagPoints": {
+              "exposed": 3,
+              "uncertain": 2,
+              "covered": 1,
+              "confident": 0,
+              "family-dependents": 3,
+              "couple": 2,
+              "single": 1,
+              "single-free": 1,
+              "life-income": 2,
+              "savings-retirement": 2,
+              "nurture-warm": 1,
+              "nurture-cold": 0
+            },
+            "bands": [
+              {
+                "gte": 6,
+                "label": "Hot",
+                "badge": "🔥"
+              },
+              {
+                "gte": 3,
+                "label": "Warm",
+                "badge": "🌤️"
+              },
+              {
+                "label": "Cool",
+                "badge": "❄️"
+              }
+            ]
+          }
+        },
+        "steps": [
+          {
+            "id": "step1",
+            "questions": [
+              {
+                "id": "q1_weekend",
+                "prompt": "Pick your ideal weekend",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "cosy",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "mix",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "adventure",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "night",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step2",
+            "questions": [
+              {
+                "id": "q2_payday",
+                "prompt": "Payday hits. First move?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "save",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "split",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "bills",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "treat",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step3",
+            "questions": [
+              {
+                "id": "q3_circle",
+                "prompt": "Who's in your circle right now?",
+                "weight": 2,
+                "options": [
+                  {
+                    "id": "family",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "family-dependents"
+                  },
+                  {
+                    "id": "partner",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "couple"
+                  },
+                  {
+                    "id": "solo",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "single"
+                  },
+                  {
+                    "id": "free",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "single-free"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step4",
+            "questions": [
+              {
+                "id": "q4_worry",
+                "prompt": "The 'what if' that nags you most?",
+                "weight": 1,
+                "options": [
+                  {
+                    "id": "family_ok",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "life-income"
+                  },
+                  {
+                    "id": "saving",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "savings-retirement"
+                  },
+                  {
+                    "id": "eventually",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "nurture-warm"
+                  },
+                  {
+                    "id": "avoid",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "nurture-cold"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step5",
+            "questions": [
+              {
+                "id": "q5_protected",
+                "prompt": "How protected do you feel right now?",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "solid",
+                    "scores": {
+                      "the-rock": 1
+                    },
+                    "tag": "confident"
+                  },
+                  {
+                    "id": "basics",
+                    "scores": {
+                      "the-strategist": 1
+                    },
+                    "tag": "covered"
+                  },
+                  {
+                    "id": "patchy",
+                    "scores": {
+                      "the-dreamer": 1
+                    },
+                    "tag": "uncertain"
+                  },
+                  {
+                    "id": "exposed",
+                    "scores": {
+                      "the-free-spirit": 1
+                    },
+                    "tag": "exposed"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "step6",
+            "questions": [
+              {
+                "id": "q6_bill",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "weight": 3,
+                "options": [
+                  {
+                    "id": "fund",
+                    "scores": {
+                      "the-rock": 1
+                    }
+                  },
+                  {
+                    "id": "sting",
+                    "scores": {
+                      "the-strategist": 1
+                    }
+                  },
+                  {
+                    "id": "credit",
+                    "scores": {
+                      "the-dreamer": 1
+                    }
+                  },
+                  {
+                    "id": "later",
+                    "scores": {
+                      "the-free-spirit": 1
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "resultProfiles": [
+          {
+            "id": "the-rock",
+            "title": "The Rock",
+            "agentAngle": "optimise / legacy / wealth transfer"
+          },
+          {
+            "id": "the-strategist",
+            "title": "The Strategist",
+            "agentAngle": "savings / retirement top-up"
+          },
+          {
+            "id": "the-dreamer",
+            "title": "The Big Dreamer",
+            "agentAngle": "starter health + CI, then savings"
+          },
+          {
+            "id": "the-free-spirit",
+            "title": "The Free Spirit",
+            "agentAngle": "affordable starter protection"
+          }
+        ]
+      }
+    },
+    "adminRichDoc::role=admin::stored=create": {
+      "formHeadline": "Win a 4D3N Tokyo getaway for two",
+      "themeColor": "#232529",
+      "heroFont": "playfair",
+      "customerHost": "redeem",
+      "mediaType": "video",
+      "videoUrl": "/uploads/campaign-assets/tokyo-hero.mp4",
+      "imageUrl": "/uploads/campaign-assets/tokyo-fallback.jpg",
+      "termsContent": "<h4>Draw Terms</h4><p>Winner drawn 31 Aug 2026.</p>",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true,
+      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "offer_type": "reward",
+      "mode": "online",
+      "age_range": {
+        "min": 21,
+        "max": 65
+      },
+      "school_levels": [
+        "primary",
+        "seconda"
+      ],
+      "dsa_related": false,
+      "showCapacity": true,
+      "availability": {
+        "days": [],
+        "slots": [
+          "10:00",
+          "14:00"
+        ]
+      },
+      "inclusions": [
+        "Return flights for two",
+        "3 nights hotel (4-star)"
+      ],
+      "image_label": "Tokyo skyline at dusk",
+      "activation": {
+        "required": true,
+        "type": "consult",
+        "duration_mins": 20,
+        "summary": "Short activation call"
+      },
+      "sponsor": {
+        "kind": "agency",
+        "disclosure": "Sponsored by MKTR Travel Partners."
+      },
+      "value_line": "Grand prize worth S$3,800",
+      "content_blocks": {
+        "data_use": "Used for draw administration only."
+      }
+    },
+    "adminRichDoc::role=admin::stored=updateOverRich": {
+      "formHeadline": "Win a 4D3N Tokyo getaway for two",
+      "themeColor": "#232529",
+      "heroFont": "playfair",
+      "customerHost": "redeem",
+      "mediaType": "video",
+      "videoUrl": "/uploads/campaign-assets/tokyo-hero.mp4",
+      "imageUrl": "/uploads/campaign-assets/tokyo-fallback.jpg",
+      "termsContent": "<h4>Draw Terms</h4><p>Winner drawn 31 Aug 2026.</p>",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true,
+      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "offer_type": "reward",
+      "mode": "online",
+      "age_range": {
+        "min": 21,
+        "max": 65
+      },
+      "school_levels": [
+        "primary",
+        "seconda"
+      ],
+      "dsa_related": false,
+      "showCapacity": true,
+      "availability": {
+        "days": [],
+        "slots": [
+          "10:00",
+          "14:00"
+        ]
+      },
+      "inclusions": [
+        "Return flights for two",
+        "3 nights hotel (4-star)"
+      ],
+      "image_label": "Tokyo skyline at dusk",
+      "activation": {
+        "required": true,
+        "type": "consult",
+        "duration_mins": 20,
+        "summary": "Short activation call"
+      },
+      "sponsor": {
+        "kind": "agency",
+        "disclosure": "Sponsored by MKTR Travel Partners."
+      },
+      "value_line": "Grand prize worth S$3,800",
+      "content_blocks": {
+        "data_use": "Used for draw administration only."
+      }
+    },
+    "adminRichDoc::role=agent::stored=create": {
+      "formHeadline": "Win a 4D3N Tokyo getaway for two",
+      "themeColor": "#232529",
+      "heroFont": "playfair",
+      "customerHost": "redeem",
+      "mediaType": "video",
+      "videoUrl": "/uploads/campaign-assets/tokyo-hero.mp4",
+      "imageUrl": "/uploads/campaign-assets/tokyo-fallback.jpg",
+      "termsContent": "<h4>Draw Terms</h4><p>Winner drawn 31 Aug 2026.</p>",
+      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "offer_type": "reward",
+      "mode": "online",
+      "age_range": {
+        "min": 21,
+        "max": 65
+      },
+      "school_levels": [
+        "primary",
+        "seconda"
+      ],
+      "dsa_related": false,
+      "showCapacity": true,
+      "availability": {
+        "days": [],
+        "slots": [
+          "10:00",
+          "14:00"
+        ]
+      },
+      "inclusions": [
+        "Return flights for two",
+        "3 nights hotel (4-star)"
+      ],
+      "image_label": "Tokyo skyline at dusk",
+      "activation": {
+        "required": true,
+        "type": "consult",
+        "duration_mins": 20,
+        "summary": "Short activation call"
+      },
+      "sponsor": {
+        "kind": "agency",
+        "disclosure": "Sponsored by MKTR Travel Partners."
+      },
+      "value_line": "Grand prize worth S$3,800",
+      "content_blocks": {
+        "data_use": "Used for draw administration only."
+      }
+    },
+    "adminRichDoc::role=agent::stored=updateOverRich": {
+      "formHeadline": "Win a 4D3N Tokyo getaway for two",
+      "themeColor": "#232529",
+      "heroFont": "playfair",
+      "customerHost": "redeem",
+      "mediaType": "video",
+      "videoUrl": "/uploads/campaign-assets/tokyo-hero.mp4",
+      "imageUrl": "/uploads/campaign-assets/tokyo-fallback.jpg",
+      "termsContent": "<h4>Draw Terms</h4><p>Winner drawn 31 Aug 2026.</p>",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true,
+      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "offer_type": "reward",
+      "mode": "online",
+      "age_range": {
+        "min": 21,
+        "max": 65
+      },
+      "school_levels": [
+        "primary",
+        "seconda"
+      ],
+      "dsa_related": false,
+      "showCapacity": true,
+      "availability": {
+        "days": [],
+        "slots": [
+          "10:00",
+          "14:00"
+        ]
+      },
+      "inclusions": [
+        "Return flights for two",
+        "3 nights hotel (4-star)"
+      ],
+      "image_label": "Tokyo skyline at dusk",
+      "activation": {
+        "required": true,
+        "type": "consult",
+        "duration_mins": 20,
+        "summary": "Short activation call"
+      },
+      "sponsor": {
+        "kind": "agency",
+        "disclosure": "Sponsored by MKTR Travel Partners."
+      },
+      "value_line": "Grand prize worth S$3,800",
+      "content_blocks": {
+        "data_use": "Used for draw administration only."
+      }
+    },
+    "adminRichDoc::role=none::stored=create": {
+      "formHeadline": "Win a 4D3N Tokyo getaway for two",
+      "themeColor": "#232529",
+      "heroFont": "playfair",
+      "customerHost": "redeem",
+      "mediaType": "video",
+      "videoUrl": "/uploads/campaign-assets/tokyo-hero.mp4",
+      "imageUrl": "/uploads/campaign-assets/tokyo-fallback.jpg",
+      "termsContent": "<h4>Draw Terms</h4><p>Winner drawn 31 Aug 2026.</p>",
+      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "offer_type": "reward",
+      "mode": "online",
+      "age_range": {
+        "min": 21,
+        "max": 65
+      },
+      "school_levels": [
+        "primary",
+        "seconda"
+      ],
+      "dsa_related": false,
+      "showCapacity": true,
+      "availability": {
+        "days": [],
+        "slots": [
+          "10:00",
+          "14:00"
+        ]
+      },
+      "inclusions": [
+        "Return flights for two",
+        "3 nights hotel (4-star)"
+      ],
+      "image_label": "Tokyo skyline at dusk",
+      "activation": {
+        "required": true,
+        "type": "consult",
+        "duration_mins": 20,
+        "summary": "Short activation call"
+      },
+      "sponsor": {
+        "kind": "agency",
+        "disclosure": "Sponsored by MKTR Travel Partners."
+      },
+      "value_line": "Grand prize worth S$3,800",
+      "content_blocks": {
+        "data_use": "Used for draw administration only."
+      }
+    },
+    "adminRichDoc::role=none::stored=updateOverRich": {
+      "formHeadline": "Win a 4D3N Tokyo getaway for two",
+      "themeColor": "#232529",
+      "heroFont": "playfair",
+      "customerHost": "redeem",
+      "mediaType": "video",
+      "videoUrl": "/uploads/campaign-assets/tokyo-hero.mp4",
+      "imageUrl": "/uploads/campaign-assets/tokyo-fallback.jpg",
+      "termsContent": "<h4>Draw Terms</h4><p>Winner drawn 31 Aug 2026.</p>",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true,
+      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "offer_type": "reward",
+      "mode": "online",
+      "age_range": {
+        "min": 21,
+        "max": 65
+      },
+      "school_levels": [
+        "primary",
+        "seconda"
+      ],
+      "dsa_related": false,
+      "showCapacity": true,
+      "availability": {
+        "days": [],
+        "slots": [
+          "10:00",
+          "14:00"
+        ]
+      },
+      "inclusions": [
+        "Return flights for two",
+        "3 nights hotel (4-star)"
+      ],
+      "image_label": "Tokyo skyline at dusk",
+      "activation": {
+        "required": true,
+        "type": "consult",
+        "duration_mins": 20,
+        "summary": "Short activation call"
+      },
+      "sponsor": {
+        "kind": "agency",
+        "disclosure": "Sponsored by MKTR Travel Partners."
+      },
+      "value_line": "Grand prize worth S$3,800",
+      "content_blocks": {
+        "data_use": "Used for draw administration only."
+      }
+    },
+    "adminRichDoc::public": {
+      "themeColor": "#232529",
+      "heroFont": "playfair",
+      "imageUrl": "/uploads/campaign-assets/tokyo-fallback.jpg",
+      "videoUrl": "/uploads/campaign-assets/tokyo-hero.mp4",
+      "mediaType": "video",
+      "formHeadline": "Win a 4D3N Tokyo getaway for two",
+      "termsContent": "<h4>Draw Terms</h4><p>Winner drawn 31 Aug 2026.</p>",
+      "customerHost": "redeem",
+      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "category": "family & lifestyle",
+      "offer_type": "reward",
+      "mode": "online",
+      "qr_entry": "offer",
+      "age_range": {
+        "min": 21,
+        "max": 65
+      },
+      "school_levels": [
+        "primary",
+        "seconda"
+      ],
+      "dsa_related": false,
+      "showCapacity": true,
+      "availability": {
+        "days": [
+          "sat",
+          "sun"
+        ],
+        "slots": [
+          "10:00",
+          "14:00"
+        ]
+      },
+      "inclusions": [
+        "Return flights for two",
+        "3 nights hotel (4-star)"
+      ],
+      "image_label": "Tokyo skyline at dusk",
+      "activation": {
+        "required": true,
+        "type": "consult",
+        "duration_mins": 20,
+        "summary": "Short activation call"
+      },
+      "sponsor": {
+        "kind": "agency",
+        "disclosure": "Sponsored by MKTR Travel Partners."
+      },
+      "value_line": "Grand prize worth S$3,800",
+      "content_blocks": {
+        "data_use": "Used for draw administration only."
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      }
+    },
+    "legacyFlatOrder::role=admin::stored=create": {
+      "formHeadline": "Legacy campaign",
+      "fieldOrder": [
+        "name",
+        "phone",
+        "email",
+        "dob",
+        "postal_code"
+      ],
+      "visibleFields": {
+        "dob": true
+      },
+      "requiredFields": {
+        "dob": "optional",
+        "postal_code": "yes"
+      },
+      "themeColor": "#3B82F6",
+      "customerHost": "redeem"
+    },
+    "legacyFlatOrder::role=admin::stored=updateOverRich": {
+      "formHeadline": "Legacy campaign",
+      "fieldOrder": [
+        "name",
+        "phone",
+        "email",
+        "dob",
+        "postal_code"
+      ],
+      "visibleFields": {
+        "dob": true
+      },
+      "requiredFields": {
+        "dob": "optional",
+        "postal_code": "yes"
+      },
+      "themeColor": "#3B82F6",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "legacyFlatOrder::role=agent::stored=create": {
+      "formHeadline": "Legacy campaign",
+      "fieldOrder": [
+        "name",
+        "phone",
+        "email",
+        "dob",
+        "postal_code"
+      ],
+      "visibleFields": {
+        "dob": true
+      },
+      "requiredFields": {
+        "dob": "optional",
+        "postal_code": "yes"
+      },
+      "themeColor": "#3B82F6",
+      "customerHost": "redeem"
+    },
+    "legacyFlatOrder::role=agent::stored=updateOverRich": {
+      "formHeadline": "Legacy campaign",
+      "fieldOrder": [
+        "name",
+        "phone",
+        "email",
+        "dob",
+        "postal_code"
+      ],
+      "visibleFields": {
+        "dob": true
+      },
+      "requiredFields": {
+        "dob": "optional",
+        "postal_code": "yes"
+      },
+      "themeColor": "#3B82F6",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "legacyFlatOrder::role=none::stored=create": {
+      "formHeadline": "Legacy campaign",
+      "fieldOrder": [
+        "name",
+        "phone",
+        "email",
+        "dob",
+        "postal_code"
+      ],
+      "visibleFields": {
+        "dob": true
+      },
+      "requiredFields": {
+        "dob": "optional",
+        "postal_code": "yes"
+      },
+      "themeColor": "#3B82F6",
+      "customerHost": "redeem"
+    },
+    "legacyFlatOrder::role=none::stored=updateOverRich": {
+      "formHeadline": "Legacy campaign",
+      "fieldOrder": [
+        "name",
+        "phone",
+        "email",
+        "dob",
+        "postal_code"
+      ],
+      "visibleFields": {
+        "dob": true
+      },
+      "requiredFields": {
+        "dob": "optional",
+        "postal_code": "yes"
+      },
+      "themeColor": "#3B82F6",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "legacyFlatOrder::public": {
+      "themeColor": "#3B82F6",
+      "formHeadline": "Legacy campaign",
+      "fieldOrder": [
+        "name",
+        "phone",
+        "email",
+        "dob",
+        "postal_code"
+      ],
+      "visibleFields": {
+        "dob": true
+      },
+      "requiredFields": {
+        "dob": "optional",
+        "postal_code": "yes"
+      }
+    },
+    "anomalousOrder::role=admin::stored=create": {
+      "fieldOrder": [
+        "name",
+        {
+          "id": "r1",
+          "columns": [
+            "phone",
+            "dob"
+          ]
+        },
+        {
+          "id": "r2",
+          "columns": []
+        },
+        "name",
+        {
+          "id": "r3",
+          "columns": [
+            "mystery_field"
+          ]
+        },
+        {
+          "id": "r4",
+          "columns": [
+            "postal_code"
+          ]
+        }
+      ],
+      "visibleFields": {
+        "education_level": true
+      },
+      "requiredFields": {
+        "education_level": true
+      },
+      "customerHost": "redeem"
+    },
+    "anomalousOrder::role=admin::stored=updateOverRich": {
+      "fieldOrder": [
+        "name",
+        {
+          "id": "r1",
+          "columns": [
+            "phone",
+            "dob"
+          ]
+        },
+        {
+          "id": "r2",
+          "columns": []
+        },
+        "name",
+        {
+          "id": "r3",
+          "columns": [
+            "mystery_field"
+          ]
+        },
+        {
+          "id": "r4",
+          "columns": [
+            "postal_code"
+          ]
+        }
+      ],
+      "visibleFields": {
+        "education_level": true
+      },
+      "requiredFields": {
+        "education_level": true
+      },
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "anomalousOrder::role=agent::stored=create": {
+      "fieldOrder": [
+        "name",
+        {
+          "id": "r1",
+          "columns": [
+            "phone",
+            "dob"
+          ]
+        },
+        {
+          "id": "r2",
+          "columns": []
+        },
+        "name",
+        {
+          "id": "r3",
+          "columns": [
+            "mystery_field"
+          ]
+        },
+        {
+          "id": "r4",
+          "columns": [
+            "postal_code"
+          ]
+        }
+      ],
+      "visibleFields": {
+        "education_level": true
+      },
+      "requiredFields": {
+        "education_level": true
+      },
+      "customerHost": "redeem"
+    },
+    "anomalousOrder::role=agent::stored=updateOverRich": {
+      "fieldOrder": [
+        "name",
+        {
+          "id": "r1",
+          "columns": [
+            "phone",
+            "dob"
+          ]
+        },
+        {
+          "id": "r2",
+          "columns": []
+        },
+        "name",
+        {
+          "id": "r3",
+          "columns": [
+            "mystery_field"
+          ]
+        },
+        {
+          "id": "r4",
+          "columns": [
+            "postal_code"
+          ]
+        }
+      ],
+      "visibleFields": {
+        "education_level": true
+      },
+      "requiredFields": {
+        "education_level": true
+      },
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "anomalousOrder::role=none::stored=create": {
+      "fieldOrder": [
+        "name",
+        {
+          "id": "r1",
+          "columns": [
+            "phone",
+            "dob"
+          ]
+        },
+        {
+          "id": "r2",
+          "columns": []
+        },
+        "name",
+        {
+          "id": "r3",
+          "columns": [
+            "mystery_field"
+          ]
+        },
+        {
+          "id": "r4",
+          "columns": [
+            "postal_code"
+          ]
+        }
+      ],
+      "visibleFields": {
+        "education_level": true
+      },
+      "requiredFields": {
+        "education_level": true
+      },
+      "customerHost": "redeem"
+    },
+    "anomalousOrder::role=none::stored=updateOverRich": {
+      "fieldOrder": [
+        "name",
+        {
+          "id": "r1",
+          "columns": [
+            "phone",
+            "dob"
+          ]
+        },
+        {
+          "id": "r2",
+          "columns": []
+        },
+        "name",
+        {
+          "id": "r3",
+          "columns": [
+            "mystery_field"
+          ]
+        },
+        {
+          "id": "r4",
+          "columns": [
+            "postal_code"
+          ]
+        }
+      ],
+      "visibleFields": {
+        "education_level": true
+      },
+      "requiredFields": {
+        "education_level": true
+      },
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "anomalousOrder::public": {
+      "fieldOrder": [
+        "name",
+        {
+          "id": "r1",
+          "columns": [
+            "phone",
+            "dob"
+          ]
+        },
+        {
+          "id": "r2",
+          "columns": []
+        },
+        "name",
+        {
+          "id": "r3",
+          "columns": [
+            "mystery_field"
+          ]
+        },
+        {
+          "id": "r4",
+          "columns": [
+            "postal_code"
+          ]
+        }
+      ],
+      "visibleFields": {
+        "education_level": true
+      },
+      "requiredFields": {
+        "education_level": true
+      }
+    },
+    "youtubeDoc::role=admin::stored=create": {
+      "mediaType": "video",
+      "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "heroCtaLabel": "Watch and win",
+      "formHeadline": "Video campaign",
+      "customerHost": "redeem"
+    },
+    "youtubeDoc::role=admin::stored=updateOverRich": {
+      "mediaType": "video",
+      "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "heroCtaLabel": "Watch and win",
+      "formHeadline": "Video campaign",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "youtubeDoc::role=agent::stored=create": {
+      "mediaType": "video",
+      "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "heroCtaLabel": "Watch and win",
+      "formHeadline": "Video campaign",
+      "customerHost": "redeem"
+    },
+    "youtubeDoc::role=agent::stored=updateOverRich": {
+      "mediaType": "video",
+      "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "heroCtaLabel": "Watch and win",
+      "formHeadline": "Video campaign",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "youtubeDoc::role=none::stored=create": {
+      "mediaType": "video",
+      "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "heroCtaLabel": "Watch and win",
+      "formHeadline": "Video campaign",
+      "customerHost": "redeem"
+    },
+    "youtubeDoc::role=none::stored=updateOverRich": {
+      "mediaType": "video",
+      "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "heroCtaLabel": "Watch and win",
+      "formHeadline": "Video campaign",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "youtubeDoc::public": {
+      "videoUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "mediaType": "video",
+      "heroCtaLabel": "Watch and win",
+      "formHeadline": "Video campaign"
+    },
+    "youtubeShortDoc::role=admin::stored=create": {
+      "mediaType": "video",
+      "videoUrl": "https://youtu.be/dQw4w9WgXcQ",
+      "customerHost": "redeem"
+    },
+    "youtubeShortDoc::role=admin::stored=updateOverRich": {
+      "mediaType": "video",
+      "videoUrl": "https://youtu.be/dQw4w9WgXcQ",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "youtubeShortDoc::role=agent::stored=create": {
+      "mediaType": "video",
+      "videoUrl": "https://youtu.be/dQw4w9WgXcQ",
+      "customerHost": "redeem"
+    },
+    "youtubeShortDoc::role=agent::stored=updateOverRich": {
+      "mediaType": "video",
+      "videoUrl": "https://youtu.be/dQw4w9WgXcQ",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "youtubeShortDoc::role=none::stored=create": {
+      "mediaType": "video",
+      "videoUrl": "https://youtu.be/dQw4w9WgXcQ",
+      "customerHost": "redeem"
+    },
+    "youtubeShortDoc::role=none::stored=updateOverRich": {
+      "mediaType": "video",
+      "videoUrl": "https://youtu.be/dQw4w9WgXcQ",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "youtubeShortDoc::public": {
+      "videoUrl": "https://youtu.be/dQw4w9WgXcQ",
+      "mediaType": "video"
+    },
+    "youtubeShortsUrlDoc::role=admin::stored=create": {
+      "mediaType": "video",
+      "videoUrl": "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+      "customerHost": "redeem"
+    },
+    "youtubeShortsUrlDoc::role=admin::stored=updateOverRich": {
+      "mediaType": "video",
+      "videoUrl": "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "youtubeShortsUrlDoc::role=agent::stored=create": {
+      "mediaType": "video",
+      "videoUrl": "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+      "customerHost": "redeem"
+    },
+    "youtubeShortsUrlDoc::role=agent::stored=updateOverRich": {
+      "mediaType": "video",
+      "videoUrl": "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "youtubeShortsUrlDoc::role=none::stored=create": {
+      "mediaType": "video",
+      "videoUrl": "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+      "customerHost": "redeem"
+    },
+    "youtubeShortsUrlDoc::role=none::stored=updateOverRich": {
+      "mediaType": "video",
+      "videoUrl": "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "youtubeShortsUrlDoc::public": {
+      "videoUrl": "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+      "mediaType": "video"
+    },
+    "staleMediaDoc::role=admin::stored=create": {
+      "mediaType": "none",
+      "imageUrl": "/uploads/campaign-assets/old-hero.jpg",
+      "videoUrl": "/uploads/campaign-assets/old-hero.mp4",
+      "heroCtaLabel": "Ghost CTA",
+      "customerHost": "redeem"
+    },
+    "staleMediaDoc::role=admin::stored=updateOverRich": {
+      "mediaType": "none",
+      "imageUrl": "/uploads/campaign-assets/old-hero.jpg",
+      "videoUrl": "/uploads/campaign-assets/old-hero.mp4",
+      "heroCtaLabel": "Ghost CTA",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "staleMediaDoc::role=agent::stored=create": {
+      "mediaType": "none",
+      "imageUrl": "/uploads/campaign-assets/old-hero.jpg",
+      "videoUrl": "/uploads/campaign-assets/old-hero.mp4",
+      "heroCtaLabel": "Ghost CTA",
+      "customerHost": "redeem"
+    },
+    "staleMediaDoc::role=agent::stored=updateOverRich": {
+      "mediaType": "none",
+      "imageUrl": "/uploads/campaign-assets/old-hero.jpg",
+      "videoUrl": "/uploads/campaign-assets/old-hero.mp4",
+      "heroCtaLabel": "Ghost CTA",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "staleMediaDoc::role=none::stored=create": {
+      "mediaType": "none",
+      "imageUrl": "/uploads/campaign-assets/old-hero.jpg",
+      "videoUrl": "/uploads/campaign-assets/old-hero.mp4",
+      "heroCtaLabel": "Ghost CTA",
+      "customerHost": "redeem"
+    },
+    "staleMediaDoc::role=none::stored=updateOverRich": {
+      "mediaType": "none",
+      "imageUrl": "/uploads/campaign-assets/old-hero.jpg",
+      "videoUrl": "/uploads/campaign-assets/old-hero.mp4",
+      "heroCtaLabel": "Ghost CTA",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "staleMediaDoc::public": {
+      "imageUrl": "/uploads/campaign-assets/old-hero.jpg",
+      "videoUrl": "/uploads/campaign-assets/old-hero.mp4",
+      "mediaType": "none",
+      "heroCtaLabel": "Ghost CTA"
+    },
+    "deadStyleKeysDoc::role=admin::stored=create": {
+      "formHeadline": "Styled relic",
+      "backgroundStyle": "gradient",
+      "alignment": "center",
+      "spacing": "roomy",
+      "headlineSize": "xl",
+      "someFutureKey": {
+        "nested": true
+      },
+      "customerHost": "redeem"
+    },
+    "deadStyleKeysDoc::role=admin::stored=updateOverRich": {
+      "formHeadline": "Styled relic",
+      "backgroundStyle": "gradient",
+      "alignment": "center",
+      "spacing": "roomy",
+      "headlineSize": "xl",
+      "someFutureKey": {
+        "nested": true
+      },
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "deadStyleKeysDoc::role=agent::stored=create": {
+      "formHeadline": "Styled relic",
+      "backgroundStyle": "gradient",
+      "alignment": "center",
+      "spacing": "roomy",
+      "headlineSize": "xl",
+      "someFutureKey": {
+        "nested": true
+      },
+      "customerHost": "redeem"
+    },
+    "deadStyleKeysDoc::role=agent::stored=updateOverRich": {
+      "formHeadline": "Styled relic",
+      "backgroundStyle": "gradient",
+      "alignment": "center",
+      "spacing": "roomy",
+      "headlineSize": "xl",
+      "someFutureKey": {
+        "nested": true
+      },
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "deadStyleKeysDoc::role=none::stored=create": {
+      "formHeadline": "Styled relic",
+      "backgroundStyle": "gradient",
+      "alignment": "center",
+      "spacing": "roomy",
+      "headlineSize": "xl",
+      "someFutureKey": {
+        "nested": true
+      },
+      "customerHost": "redeem"
+    },
+    "deadStyleKeysDoc::role=none::stored=updateOverRich": {
+      "formHeadline": "Styled relic",
+      "backgroundStyle": "gradient",
+      "alignment": "center",
+      "spacing": "roomy",
+      "headlineSize": "xl",
+      "someFutureKey": {
+        "nested": true
+      },
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "deadStyleKeysDoc::public": {
+      "formHeadline": "Styled relic"
+    },
+    "guidedReviewDoc::role=admin::stored=create": {
+      "guidedReview": {
+        "templateId": "financial_readiness",
+        "hero": {
+          "headline": "Know where your money stands."
+        },
+        "trust": {
+          "partner": "Example Advisory Pte. Ltd."
+        }
+      },
+      "quiz": {
+        "enabled": true,
+        "mode": "qualification",
+        "quizId": "gr-derived",
+        "version": 1
+      },
+      "sgPrOnly": true,
+      "themeColor": "#0E7C6B",
+      "customerHost": "redeem"
+    },
+    "guidedReviewDoc::role=admin::stored=updateOverRich": {
+      "guidedReview": {
+        "templateId": "financial_readiness",
+        "hero": {
+          "headline": "Know where your money stands."
+        },
+        "trust": {
+          "partner": "Example Advisory Pte. Ltd."
+        }
+      },
+      "quiz": {
+        "enabled": true,
+        "mode": "qualification",
+        "quizId": "gr-derived",
+        "version": 1
+      },
+      "sgPrOnly": true,
+      "themeColor": "#0E7C6B",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "guidedReviewDoc::role=agent::stored=create": {
+      "guidedReview": {
+        "templateId": "financial_readiness",
+        "hero": {
+          "headline": "Know where your money stands."
+        },
+        "trust": {
+          "partner": "Example Advisory Pte. Ltd."
+        }
+      },
+      "quiz": {
+        "enabled": true,
+        "mode": "qualification",
+        "quizId": "gr-derived",
+        "version": 1
+      },
+      "sgPrOnly": true,
+      "themeColor": "#0E7C6B",
+      "customerHost": "redeem"
+    },
+    "guidedReviewDoc::role=agent::stored=updateOverRich": {
+      "guidedReview": {
+        "templateId": "financial_readiness",
+        "hero": {
+          "headline": "Know where your money stands."
+        },
+        "trust": {
+          "partner": "Example Advisory Pte. Ltd."
+        }
+      },
+      "quiz": {
+        "enabled": true,
+        "mode": "qualification",
+        "quizId": "gr-derived",
+        "version": 1
+      },
+      "sgPrOnly": true,
+      "themeColor": "#0E7C6B",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "guidedReviewDoc::role=none::stored=create": {
+      "guidedReview": {
+        "templateId": "financial_readiness",
+        "hero": {
+          "headline": "Know where your money stands."
+        },
+        "trust": {
+          "partner": "Example Advisory Pte. Ltd."
+        }
+      },
+      "quiz": {
+        "enabled": true,
+        "mode": "qualification",
+        "quizId": "gr-derived",
+        "version": 1
+      },
+      "sgPrOnly": true,
+      "themeColor": "#0E7C6B",
+      "customerHost": "redeem"
+    },
+    "guidedReviewDoc::role=none::stored=updateOverRich": {
+      "guidedReview": {
+        "templateId": "financial_readiness",
+        "hero": {
+          "headline": "Know where your money stands."
+        },
+        "trust": {
+          "partner": "Example Advisory Pte. Ltd."
+        }
+      },
+      "quiz": {
+        "enabled": true,
+        "mode": "qualification",
+        "quizId": "gr-derived",
+        "version": 1
+      },
+      "sgPrOnly": true,
+      "themeColor": "#0E7C6B",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "guidedReviewDoc::public": {
+      "themeColor": "#0E7C6B",
+      "sgPrOnly": true,
+      "quiz": {
+        "enabled": true,
+        "mode": "qualification",
+        "quizId": "gr-derived",
+        "version": 1
+      },
+      "guidedReview": {
+        "templateId": "financial_readiness",
+        "hero": {
+          "headline": "Know where your money stands."
+        },
+        "trust": {
+          "partner": "Example Advisory Pte. Ltd."
+        }
+      }
+    },
+    "minimalDoc::role=admin::stored=create": {
+      "customerHost": "redeem"
+    },
+    "minimalDoc::role=admin::stored=updateOverRich": {
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "minimalDoc::role=agent::stored=create": {
+      "customerHost": "redeem"
+    },
+    "minimalDoc::role=agent::stored=updateOverRich": {
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "minimalDoc::role=none::stored=create": {
+      "customerHost": "redeem"
+    },
+    "minimalDoc::role=none::stored=updateOverRich": {
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "minimalDoc::public": {},
+    "overLimitDoc::role=admin::stored=create": {
+      "formHeadline": "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH",
+      "formWidth": 900,
+      "themeColor": "not-a-hex",
+      "heroFont": "comic-sans",
+      "ctaText": "",
+      "customerHost": "redeem"
+    },
+    "overLimitDoc::role=admin::stored=updateOverRich": {
+      "formHeadline": "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH",
+      "formWidth": 900,
+      "themeColor": "not-a-hex",
+      "heroFont": "comic-sans",
+      "ctaText": "",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "overLimitDoc::role=agent::stored=create": {
+      "formHeadline": "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH",
+      "formWidth": 900,
+      "themeColor": "not-a-hex",
+      "heroFont": "comic-sans",
+      "ctaText": "",
+      "customerHost": "redeem"
+    },
+    "overLimitDoc::role=agent::stored=updateOverRich": {
+      "formHeadline": "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH",
+      "formWidth": 900,
+      "themeColor": "not-a-hex",
+      "heroFont": "comic-sans",
+      "ctaText": "",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "overLimitDoc::role=none::stored=create": {
+      "formHeadline": "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH",
+      "formWidth": 900,
+      "themeColor": "not-a-hex",
+      "heroFont": "comic-sans",
+      "ctaText": "",
+      "customerHost": "redeem"
+    },
+    "overLimitDoc::role=none::stored=updateOverRich": {
+      "formHeadline": "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH",
+      "formWidth": 900,
+      "themeColor": "not-a-hex",
+      "heroFont": "comic-sans",
+      "ctaText": "",
+      "customerHost": "redeem",
+      "featuredDrop": {
+        "enabled": true,
+        "title": "Tokyo Getaway Lucky Draw",
+        "valueLabel": "S$3.8k",
+        "emoji": "🧳",
+        "cap": 2000,
+        "endsAt": "2026-08-15"
+      },
+      "luckyDraw": {
+        "enabled": true,
+        "prize": "4D3N Tokyo getaway for two",
+        "closesAt": "2026-08-30",
+        "boostClosesAt": "2026-08-15",
+        "multiplier": 10,
+        "winners": 1
+      },
+      "marketplaceListed": true
+    },
+    "overLimitDoc::public": {
+      "themeColor": "not-a-hex",
+      "heroFont": "comic-sans",
+      "ctaText": "",
+      "formHeadline": "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH",
+      "formWidth": 900
+    }
+  }
+}
