@@ -119,7 +119,7 @@ function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8r
  const [lastSavedTime, setLastSavedTime] = useState(null);
  // Save-failure surfacing (Studio PR 3): the old catch swallowed EVERY error
  // into console.error — a silent dead-end. Errors now render inline in the
- // save bar (no toast here: /AdminCampaignDesigner's parent already toasts a
+ // save bar (no toast here: the workspace parent already toasts a
  // generic failure once, and doubling it up would conflict). A 409
  // DESIGN_CONFIG_VERSION_CONFLICT means the doc became Studio-owned (v2)
  // while this editor was open — swap to the read-only notice.

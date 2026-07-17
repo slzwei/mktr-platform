@@ -79,7 +79,9 @@ For each campaign, in order (drafts first, then ONE active + soak, then the rest
   the snapshot's `termsContent`; an empty-terms snapshot 422s with
   `DRAW_TERMS_REQUIRED` — that guard is correct). Disable the draw via ops
   first if the intent is full removal.
-- **Flags**: both revert one-click, BUT flag-off is NOT a rollback for
+- **Flags**: only the backend `DESIGN_CONFIG_V2_WRITES_ENABLED` remains
+  revertible (the frontend flag was removed in the teardown PR), and
+  reverting it is NOT a rollback for
   already-migrated campaigns — they keep rendering v2 (version-driven) and the
   classic editor shows them read-only. Roll campaigns back individually first
   if a full retreat is needed.

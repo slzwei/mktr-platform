@@ -11,6 +11,7 @@ import { ArrowLeft, Eye, Copy, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import DesignEditor from '@/components/campaigns/DesignEditor';
 import OpenInStudioCard from '@/components/studio/OpenInStudioCard';
+import QuizAnalyticsCard from '@/components/campaigns/QuizAnalyticsCard';
 import { studioSupportsCampaign } from '@/components/studio/studioFlag';
 import CampaignQRManager from '@/components/qrcodes/CampaignQRManager';
 import CampaignDetailsTab from '@/components/campaigns/workspace/CampaignDetailsTab';
@@ -216,6 +217,14 @@ export default function AdminCampaignWorkspace() {
             edits + its unload guard). */}
         {!isCreate && campaign && (
           <div className={activeTab === 'design' ? 'h-full' : 'hidden'}>
+            {/* Quiz-results strip (relocated from the deleted standalone
+                designer page — teardown PR): self-hides until the campaign
+                has quiz submissions. quiz sits at the doc top level in BOTH
+                design_config versions, so this read is version-safe. */}
+            <QuizAnalyticsCard
+              campaignId={campaign.id}
+              profiles={campaign.design_config?.quiz?.resultProfiles}
+            />
             {studioSupportsCampaign(campaign) ? (
               <OpenInStudioCard campaignId={campaign.id} />
             ) : (

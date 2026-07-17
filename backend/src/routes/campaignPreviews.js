@@ -1,6 +1,7 @@
 import express from 'express';
 import { authenticateToken, requireAgentOrAdmin } from '../middleware/auth.js';
 import * as ctrl from '../controllers/campaignPreviewController.js';
+import { uuidParamGuard } from '../middleware/uuidParam.js';
 
 export const meta = {
   mounts: [
@@ -11,6 +12,10 @@ export const meta = {
 };
 
 const router = express.Router();
+
+// Malformed :id → clean 404 (teardown PR; shared guard). /slug/:slug is a
+// separate param name and stays unguarded (slugs are not uuids).
+router.param('id', uuidParamGuard('Campaign'));
 
 // Create or refresh preview snapshot for a campaign (auth required)
 router.post('/:id/preview', authenticateToken, requireAgentOrAdmin, ctrl.createOrRefreshPreview);

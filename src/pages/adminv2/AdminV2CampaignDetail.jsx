@@ -53,7 +53,7 @@ export default function AdminV2CampaignDetail() {
     ? (attention.data?.zeroCommitCampaigns || []).some((z) => z.id === c.id)
     : false; // attention unavailable → no banner rather than a possibly-false one
   const editHref = WORKSPACE_ON ? `/admin/campaigns/${c.id}/workspace?tab=details` : `/admin/campaigns/${c.id}/edit`;
-  const designHref = WORKSPACE_ON ? `/admin/campaigns/${c.id}/workspace?tab=design` : `/AdminCampaignDesigner?campaign_id=${c.id}`;
+  const designHref = `/admin/campaigns/${c.id}/workspace?tab=design`;
 
   return (
     <div>

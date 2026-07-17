@@ -193,7 +193,7 @@ export default function AdminCampaigns() {
  <span className="ml-2">{copiedId === c.id ? 'Copied!' : 'Copy Link'}</span>
  </DropdownMenuItem>
  <DropdownMenuItem asChild>
- <Link to={import.meta.env.VITE_CAMPAIGN_WORKSPACE_ENABLED === 'true' ? `/admin/campaigns/${c.id}/workspace?tab=design` : `/AdminCampaignDesigner?campaign_id=${c.id}`} className="flex items-center">
+ <Link to={`/admin/campaigns/${c.id}/workspace?tab=design`} className="flex items-center">
  <Palette className="w-4 h-4"/>
  <span className="ml-2">Design</span>
  </Link>
