@@ -179,6 +179,13 @@ export function classifyDesignConfigVersion(doc) {
 
 export const isV2 = (doc) => classifyDesignConfigVersion(doc) === 'v2';
 
+/** Cross-version marketplace publication flag — for surfaces that read the raw
+ * doc directly (admin lists/dashboard) rather than a server-rebuilt DTO. */
+export function getMarketplaceListedFromDoc(doc) {
+  if (!isPlainObject(doc)) return undefined;
+  return isV2(doc) ? doc.distribution?.marketplace?.listed : doc.marketplaceListed;
+}
+
 // ───────────────────────── field model migration ─────────────────────────
 
 /** Required-flag canonicalization (ledger L1). */
@@ -275,11 +282,19 @@ export function nearestPresetForAccent(hex) {
 
 // ───────────────────────── marketplace migration ─────────────────────────
 
+
+/** v1 qr_entry values ↔ v2 qrLanding values (the enums differ, not just the key:
+ * v1 'direct'|'detail' ↔ v2 'form'|'offer' per the Phase 5 handoff). Unknown
+ * values pass through verbatim (the save clamp validates). */
+const QR_V1_TO_V2 = { direct: 'form', detail: 'offer' };
+const QR_V2_TO_V1 = { form: 'direct', offer: 'detail' };
+
 function marketplaceFromV1(dc) {
   const out = {};
   for (const [v1Key, v2Key] of Object.entries(MARKETPLACE_V1_TO_V2)) {
     if (dc[v1Key] !== undefined) out[v2Key] = clone(dc[v1Key]);
   }
+  if (typeof out.qrLanding === 'string') out.qrLanding = QR_V1_TO_V2[out.qrLanding] || out.qrLanding;
   if (isPlainObject(dc.age_range)) {
     if (dc.age_range.min !== undefined) out.audienceAgeMin = dc.age_range.min;
     if (dc.age_range.max !== undefined) out.audienceAgeMax = dc.age_range.max;
@@ -309,6 +324,7 @@ export function marketplaceToV1(mk) {
   for (const [v1Key, v2Key] of Object.entries(MARKETPLACE_V1_TO_V2)) {
     if (mk[v2Key] !== undefined) out[v1Key] = clone(mk[v2Key]);
   }
+  if (typeof out.qr_entry === 'string') out.qr_entry = QR_V2_TO_V1[out.qr_entry] || out.qr_entry;
   if (mk.audienceAgeMin !== undefined || mk.audienceAgeMax !== undefined) {
     out.age_range = {
       ...(mk.audienceAgeMin !== undefined ? { min: mk.audienceAgeMin } : {}),

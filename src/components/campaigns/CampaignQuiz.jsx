@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
-import { TOKENS, RADIUS, resolveImageUrl } from './LeadCaptureLayout';
+import { useEffect, useState, useMemo } from 'react';
+import { resolveImageUrl } from './LeadCaptureLayout';
+import { useCampaignTheme } from '@/components/campaignPage/themeContext';
 import { scoreQuiz } from '@/lib/quizScoring';
 
 /**
@@ -25,6 +26,7 @@ const SANS = 'Albert Sans, system-ui, sans-serif';
 const SERIF = 'Fraunces, serif';
 
 export default function CampaignQuiz({ quiz, themeColor, previewMode = false, onComplete, onReveal }) {
+  const { tokens: TOKENS, radius: RADIUS, onAccent } = useCampaignTheme();
   const accent = themeColor || TOKENS.accent;
   const questions = useMemo(
     () => (quiz?.steps || []).flatMap((s) => s.questions || []),
@@ -238,7 +240,7 @@ export default function CampaignQuiz({ quiz, themeColor, previewMode = false, on
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: '#fff',
+                  color: onAccent,
                   fontSize: 12,
                 }}
               >
@@ -259,6 +261,7 @@ export default function CampaignQuiz({ quiz, themeColor, previewMode = false, on
 }
 
 function PillButton({ accent, onClick, children }) {
+  const { tokens: TOKENS, radius: RADIUS, onAccent } = useCampaignTheme();
   return (
     <button
       type="button"
@@ -269,7 +272,7 @@ function PillButton({ accent, onClick, children }) {
         paddingRight: 30,
         borderRadius: RADIUS.pill,
         backgroundColor: accent || TOKENS.accent,
-        color: '#ffffff',
+        color: onAccent,
         border: 'none',
         fontFamily: SANS,
         fontWeight: 600,
@@ -290,9 +293,16 @@ function PillButton({ accent, onClick, children }) {
  * { quizId, version, answers, result } so the live page can thread answers into
  * the prospect submit; previews pass a no-op (or omit it).
  */
-export function QuizGate({ quiz, themeColor, previewMode = false, onComplete, onReveal, children }) {
+export function QuizGate({ quiz, themeColor, previewMode = false, onComplete, onReveal, onStageChange, children }) {
   const enabled = !!(quiz && quiz.enabled && Array.isArray(quiz.steps) && quiz.steps.length > 0);
   const [done, setDone] = useState(false);
+
+  // Optional stage signal for template shells (Campaign Studio v2 renderer:
+  // Spotlight reveals its intro copy once the quiz hands over to the form).
+  // No-op for every v1 mount that doesn't pass it.
+  useEffect(() => {
+    onStageChange?.(enabled && !done ? 'quiz' : 'form');
+  }, [enabled, done, onStageChange]);
 
   if (!enabled || done) return children;
 

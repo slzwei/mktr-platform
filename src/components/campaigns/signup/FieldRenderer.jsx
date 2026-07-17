@@ -1,5 +1,5 @@
 import { Lock } from 'lucide-react';
-import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
+import { useCampaignTheme } from '@/components/campaignPage/themeContext';
 import { readableTextOn } from '@/lib/contrast';
 
 // Greyed, non-editable field treatment used while the DNC consent gate is open.
@@ -25,7 +25,11 @@ const LOCKED_FIELD_CSS = `
  * modal itself is rendered once at the form level — see CampaignSignupForm.
  */
 
-const inputBaseStyle = {
+// Style factories — tokens come from CampaignThemeContext (default = the frozen
+// warm-cream constants, so v1 mounts are byte-identical). The FieldRenderer
+// component binds these to the historical local names, so call sites below are
+// untouched.
+const makeInputBaseStyle = (TOKENS, RADIUS) => ({
   width: '100%',
   height: 52,
   paddingLeft: 22,
@@ -33,25 +37,26 @@ const inputBaseStyle = {
   fontSize: 16, // 16px to prevent iOS auto-zoom on focus
   fontFamily: 'Albert Sans, system-ui, sans-serif',
   color: TOKENS.ink,
-  backgroundColor: '#FFFCF6',
+  backgroundColor: TOKENS.inputBg || '#FFFCF6',
   border: `1px solid ${TOKENS.hairline}`,
-  borderRadius: RADIUS.pill,
+  borderRadius: RADIUS.input,
   outline: 'none',
   transition: 'border-color 200ms ease, box-shadow 200ms ease',
   WebkitAppearance: 'none',
-};
+});
 
-const focusRingStyle = (themeColor) => ({
+const makeFocusRingStyle = (TOKENS) => (themeColor) => ({
   borderColor: themeColor || TOKENS.accent,
   boxShadow: `0 0 0 3px ${(themeColor || TOKENS.accent) + '22'}`,
 });
 
-const errorRingStyle = {
+const makeErrorRingStyle = (TOKENS) => ({
   borderColor: TOKENS.required,
   boxShadow: `0 0 0 3px ${TOKENS.required}22`,
-};
+});
 
 function Label({ htmlFor, required, optional, children }) {
+  const { tokens: TOKENS } = useCampaignTheme();
   return (
     <label
       htmlFor={htmlFor}
@@ -79,6 +84,7 @@ function Label({ htmlFor, required, optional, children }) {
 }
 
 function ErrorText({ children }) {
+  const { tokens: TOKENS } = useCampaignTheme();
   return (
     <div
       style={{
@@ -95,6 +101,7 @@ function ErrorText({ children }) {
 }
 
 function HintText({ children }) {
+  const { tokens: TOKENS } = useCampaignTheme();
   return (
     <div
       style={{
@@ -135,6 +142,10 @@ export default function FieldRenderer({
   // DNC consent gate until the prospect consents.
   locked,
 }) {
+  const { tokens: TOKENS, radius: RADIUS } = useCampaignTheme();
+  const inputBaseStyle = makeInputBaseStyle(TOKENS, RADIUS);
+  const focusRingStyle = makeFocusRingStyle(TOKENS);
+  const errorRingStyle = makeErrorRingStyle(TOKENS);
   // name / email / phone are always visible. Phone is the lead pipeline's
   // identity/dedup key (phone+OTP), so it can never be hidden via config.
   const isVisible =
@@ -456,6 +467,7 @@ export default function FieldRenderer({
 }
 
 function SelectChevron() {
+  const { tokens: TOKENS } = useCampaignTheme();
   return (
     <svg
       width="14"

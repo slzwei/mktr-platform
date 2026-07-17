@@ -2,7 +2,7 @@
   "__provenance": {
     "capturedAt": "pre-v2 implementation",
     "baseCommit": "7b5f0dd",
-    "note": "Output of clampDesignConfig/buildPublicDesignConfig BEFORE any design_config-v2 code. Do not regenerate casually."
+    "note": "Output of clampDesignConfig/buildPublicDesignConfig BEFORE any design_config-v2 code. Do not regenerate casually. Re-captured 2026-07-17 (PR 2) after fixture-data correction only (qr_entry offer->detail, days capitalized); v1 clamp behavior verified base-identical immediately before re-capture."
   },
   "results": {
     "editorialBaseline::role=admin::stored=create": {
@@ -152,7 +152,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -313,7 +313,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -474,7 +474,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -620,16 +620,16 @@
               {
                 "gte": 6,
                 "label": "Hot",
-                "badge": "🔥"
+                "badge": "\ud83d\udd25"
               },
               {
                 "gte": 3,
                 "label": "Warm",
-                "badge": "🌤️"
+                "badge": "\ud83c\udf24\ufe0f"
               },
               {
                 "label": "Cool",
-                "badge": "❄️"
+                "badge": "\u2744\ufe0f"
               }
             ]
           }
@@ -832,7 +832,7 @@
             "questions": [
               {
                 "id": "q6_bill",
-                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You\u2026",
                 "weight": 3,
                 "options": [
                   {
@@ -948,16 +948,16 @@
               {
                 "gte": 6,
                 "label": "Hot",
-                "badge": "🔥"
+                "badge": "\ud83d\udd25"
               },
               {
                 "gte": 3,
                 "label": "Warm",
-                "badge": "🌤️"
+                "badge": "\ud83c\udf24\ufe0f"
               },
               {
                 "label": "Cool",
-                "badge": "❄️"
+                "badge": "\u2744\ufe0f"
               }
             ]
           }
@@ -1160,7 +1160,7 @@
             "questions": [
               {
                 "id": "q6_bill",
-                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You\u2026",
                 "weight": 3,
                 "options": [
                   {
@@ -1219,7 +1219,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -1293,16 +1293,16 @@
               {
                 "gte": 6,
                 "label": "Hot",
-                "badge": "🔥"
+                "badge": "\ud83d\udd25"
               },
               {
                 "gte": 3,
                 "label": "Warm",
-                "badge": "🌤️"
+                "badge": "\ud83c\udf24\ufe0f"
               },
               {
                 "label": "Cool",
-                "badge": "❄️"
+                "badge": "\u2744\ufe0f"
               }
             ]
           }
@@ -1505,7 +1505,7 @@
             "questions": [
               {
                 "id": "q6_bill",
-                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You\u2026",
                 "weight": 3,
                 "options": [
                   {
@@ -1621,16 +1621,16 @@
               {
                 "gte": 6,
                 "label": "Hot",
-                "badge": "🔥"
+                "badge": "\ud83d\udd25"
               },
               {
                 "gte": 3,
                 "label": "Warm",
-                "badge": "🌤️"
+                "badge": "\ud83c\udf24\ufe0f"
               },
               {
                 "label": "Cool",
-                "badge": "❄️"
+                "badge": "\u2744\ufe0f"
               }
             ]
           }
@@ -1833,7 +1833,7 @@
             "questions": [
               {
                 "id": "q6_bill",
-                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You\u2026",
                 "weight": 3,
                 "options": [
                   {
@@ -1892,7 +1892,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -1966,16 +1966,16 @@
               {
                 "gte": 6,
                 "label": "Hot",
-                "badge": "🔥"
+                "badge": "\ud83d\udd25"
               },
               {
                 "gte": 3,
                 "label": "Warm",
-                "badge": "🌤️"
+                "badge": "\ud83c\udf24\ufe0f"
               },
               {
                 "label": "Cool",
-                "badge": "❄️"
+                "badge": "\u2744\ufe0f"
               }
             ]
           }
@@ -2178,7 +2178,7 @@
             "questions": [
               {
                 "id": "q6_bill",
-                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You\u2026",
                 "weight": 3,
                 "options": [
                   {
@@ -2294,16 +2294,16 @@
               {
                 "gte": 6,
                 "label": "Hot",
-                "badge": "🔥"
+                "badge": "\ud83d\udd25"
               },
               {
                 "gte": 3,
                 "label": "Warm",
-                "badge": "🌤️"
+                "badge": "\ud83c\udf24\ufe0f"
               },
               {
                 "label": "Cool",
-                "badge": "❄️"
+                "badge": "\u2744\ufe0f"
               }
             ]
           }
@@ -2506,7 +2506,7 @@
             "questions": [
               {
                 "id": "q6_bill",
-                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You\u2026",
                 "weight": 3,
                 "options": [
                   {
@@ -2565,7 +2565,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -2639,16 +2639,16 @@
               {
                 "gte": 6,
                 "label": "Hot",
-                "badge": "🔥"
+                "badge": "\ud83d\udd25"
               },
               {
                 "gte": 3,
                 "label": "Warm",
-                "badge": "🌤️"
+                "badge": "\ud83c\udf24\ufe0f"
               },
               {
                 "label": "Cool",
-                "badge": "❄️"
+                "badge": "\u2744\ufe0f"
               }
             ]
           }
@@ -2851,7 +2851,7 @@
             "questions": [
               {
                 "id": "q6_bill",
-                "prompt": "A surprise $5,000 bill lands tomorrow. You…",
+                "prompt": "A surprise $5,000 bill lands tomorrow. You\u2026",
                 "weight": 3,
                 "options": [
                   {
@@ -2920,7 +2920,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -2933,9 +2933,10 @@
         "winners": 1
       },
       "marketplaceListed": true,
-      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "name": "Tokyo Getaway Lucky Draw \u2014 4D3N for two",
       "offer_type": "reward",
       "mode": "online",
+      "qr_entry": "detail",
       "age_range": {
         "min": 21,
         "max": 65
@@ -2947,7 +2948,10 @@
       "dsa_related": false,
       "showCapacity": true,
       "availability": {
-        "days": [],
+        "days": [
+          "Sat",
+          "Sun"
+        ],
         "slots": [
           "10:00",
           "14:00"
@@ -2986,7 +2990,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -2999,9 +3003,10 @@
         "winners": 1
       },
       "marketplaceListed": true,
-      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "name": "Tokyo Getaway Lucky Draw \u2014 4D3N for two",
       "offer_type": "reward",
       "mode": "online",
+      "qr_entry": "detail",
       "age_range": {
         "min": 21,
         "max": 65
@@ -3013,7 +3018,10 @@
       "dsa_related": false,
       "showCapacity": true,
       "availability": {
-        "days": [],
+        "days": [
+          "Sat",
+          "Sun"
+        ],
         "slots": [
           "10:00",
           "14:00"
@@ -3048,9 +3056,10 @@
       "videoUrl": "/uploads/campaign-assets/tokyo-hero.mp4",
       "imageUrl": "/uploads/campaign-assets/tokyo-fallback.jpg",
       "termsContent": "<h4>Draw Terms</h4><p>Winner drawn 31 Aug 2026.</p>",
-      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "name": "Tokyo Getaway Lucky Draw \u2014 4D3N for two",
       "offer_type": "reward",
       "mode": "online",
+      "qr_entry": "detail",
       "age_range": {
         "min": 21,
         "max": 65
@@ -3062,7 +3071,10 @@
       "dsa_related": false,
       "showCapacity": true,
       "availability": {
-        "days": [],
+        "days": [
+          "Sat",
+          "Sun"
+        ],
         "slots": [
           "10:00",
           "14:00"
@@ -3101,7 +3113,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3114,9 +3126,10 @@
         "winners": 1
       },
       "marketplaceListed": true,
-      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "name": "Tokyo Getaway Lucky Draw \u2014 4D3N for two",
       "offer_type": "reward",
       "mode": "online",
+      "qr_entry": "detail",
       "age_range": {
         "min": 21,
         "max": 65
@@ -3128,7 +3141,10 @@
       "dsa_related": false,
       "showCapacity": true,
       "availability": {
-        "days": [],
+        "days": [
+          "Sat",
+          "Sun"
+        ],
         "slots": [
           "10:00",
           "14:00"
@@ -3163,9 +3179,10 @@
       "videoUrl": "/uploads/campaign-assets/tokyo-hero.mp4",
       "imageUrl": "/uploads/campaign-assets/tokyo-fallback.jpg",
       "termsContent": "<h4>Draw Terms</h4><p>Winner drawn 31 Aug 2026.</p>",
-      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "name": "Tokyo Getaway Lucky Draw \u2014 4D3N for two",
       "offer_type": "reward",
       "mode": "online",
+      "qr_entry": "detail",
       "age_range": {
         "min": 21,
         "max": 65
@@ -3177,7 +3194,10 @@
       "dsa_related": false,
       "showCapacity": true,
       "availability": {
-        "days": [],
+        "days": [
+          "Sat",
+          "Sun"
+        ],
         "slots": [
           "10:00",
           "14:00"
@@ -3216,7 +3236,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3229,9 +3249,10 @@
         "winners": 1
       },
       "marketplaceListed": true,
-      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "name": "Tokyo Getaway Lucky Draw \u2014 4D3N for two",
       "offer_type": "reward",
       "mode": "online",
+      "qr_entry": "detail",
       "age_range": {
         "min": 21,
         "max": 65
@@ -3243,7 +3264,10 @@
       "dsa_related": false,
       "showCapacity": true,
       "availability": {
-        "days": [],
+        "days": [
+          "Sat",
+          "Sun"
+        ],
         "slots": [
           "10:00",
           "14:00"
@@ -3278,11 +3302,11 @@
       "formHeadline": "Win a 4D3N Tokyo getaway for two",
       "termsContent": "<h4>Draw Terms</h4><p>Winner drawn 31 Aug 2026.</p>",
       "customerHost": "redeem",
-      "name": "Tokyo Getaway Lucky Draw — 4D3N for two",
+      "name": "Tokyo Getaway Lucky Draw \u2014 4D3N for two",
       "category": "family & lifestyle",
       "offer_type": "reward",
       "mode": "online",
-      "qr_entry": "offer",
+      "qr_entry": "detail",
       "age_range": {
         "min": 21,
         "max": 65
@@ -3295,8 +3319,8 @@
       "showCapacity": true,
       "availability": {
         "days": [
-          "sat",
-          "sun"
+          "Sat",
+          "Sun"
         ],
         "slots": [
           "10:00",
@@ -3372,7 +3396,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3427,7 +3451,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3482,7 +3506,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3589,7 +3613,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3678,7 +3702,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3767,7 +3791,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3833,7 +3857,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3864,7 +3888,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3895,7 +3919,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3928,7 +3952,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3955,7 +3979,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -3982,7 +4006,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4013,7 +4037,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4040,7 +4064,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4067,7 +4091,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4102,7 +4126,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4133,7 +4157,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4164,7 +4188,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4209,7 +4233,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4248,7 +4272,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4287,7 +4311,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4347,7 +4371,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4404,7 +4428,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4461,7 +4485,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4503,7 +4527,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4526,7 +4550,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4549,7 +4573,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4583,7 +4607,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4616,7 +4640,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },
@@ -4649,7 +4673,7 @@
         "enabled": true,
         "title": "Tokyo Getaway Lucky Draw",
         "valueLabel": "S$3.8k",
-        "emoji": "🧳",
+        "emoji": "\ud83e\uddf3",
         "cap": 2000,
         "endsAt": "2026-08-15"
       },

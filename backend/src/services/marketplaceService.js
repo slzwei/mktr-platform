@@ -30,7 +30,11 @@ import {
   normalizeMarketplaceContent, MARKETPLACE_CAMPAIGN_TYPES,
 } from '../utils/marketplaceContent.js';
 import { publicLuckyDraw } from '../utils/publicDesignConfig.js';
-import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
+import {
+  getStoredHostChoice,
+  getStoredMarketplaceListed,
+  readLegacyViewSafe,
+} from '../utils/designConfigV2Clamp.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { getMarketplaceCacheState, setMarketplaceCacheState } from './marketplaceCache.js';
 import { logger } from '../utils/logger.js';
@@ -157,7 +161,10 @@ export async function composeOps(campaignId, { now = new Date() } = {}) {
  * fields only (internal activation/terms ids stripped).
  */
 export function buildPublicDesignConfig(raw) {
-  const dc = raw || {};
+  // Version-aware: flatten a v2 doc to the v1 shape every read below expects
+  // (fail-safe = empty view → campaign renders as unlisted/contentless rather
+  // than leaking a raw unknown-shape doc).
+  const dc = readLegacyViewSafe(raw || {}, {});
   const out = normalizeMarketplaceContent(dc);
 
   // Flow/production keys the consumer flow renders from — passthrough of
@@ -201,8 +208,10 @@ export function passesStaticGate(campaign) {
   if (!campaign.slug) return false;
   if (campaign.is_active !== true || campaign.status !== 'active') return false;
   const dc = campaign.design_config || {};
-  if (dc.marketplaceListed !== true) return false;
-  if (normalizeCustomerHostChoice(dc.customerHost) !== 'redeem') return false;
+  // Version-aware publication flag + host (v2: distribution.marketplace.listed
+  // / distribution.host — accessors never throw).
+  if (getStoredMarketplaceListed(dc) !== true) return false;
+  if (getStoredHostChoice(dc) !== 'redeem') return false;
   const type = campaign.type || 'lead_generation';
   if (!MARKETPLACE_CAMPAIGN_TYPES.includes(type)) return false;
   return true;
@@ -318,8 +327,8 @@ export async function previewMarketplaceCampaign(campaignId, { now = new Date(),
     listed: passesStaticGate(campaign) && !!ops,
     slug: !!campaign.slug,
     active: campaign.is_active === true && campaign.status === 'active',
-    marketplaceListed: campaign.design_config?.marketplaceListed === true,
-    redeemHost: normalizeCustomerHostChoice(campaign.design_config?.customerHost) === 'redeem',
+    marketplaceListed: getStoredMarketplaceListed(campaign.design_config) === true,
+    redeemHost: getStoredHostChoice(campaign.design_config) === 'redeem',
     supportedType: MARKETPLACE_CAMPAIGN_TYPES.includes(campaign.type || 'lead_generation'),
     opsResolvable: !!ops,
   };

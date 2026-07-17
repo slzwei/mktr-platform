@@ -34,6 +34,7 @@ import {
   MARKETPLACE_V1_TO_V2,
   marketplaceToV1,
   PRESET_IDS,
+  readLegacyView,
   TEMPLATE_IDS,
   TEMPLATE_PARAM_DEFAULTS,
   THEME_BACKGROUNDS,
@@ -60,6 +61,22 @@ export function designConfigV2WritesEnabled() {
 }
 
 export { classifyDesignConfigVersion };
+
+/**
+ * Legacy-shaped (v1-flat) view of an any-version doc, for backend READERS.
+ * Never throws: `readLegacyView` throws on unsupported version tags (which the
+ * write gate makes unstorable), so this belt-and-braces wrapper returns the
+ * caller's FAIL-SAFE view instead — each site picks the default that keeps it
+ * on its safe branch (e.g. DNC readers pass `{ dncCheckAtSubmit: true }` so a
+ * surprise shape can never silently skip a compliance check).
+ */
+export function readLegacyViewSafe(doc, fallback = {}) {
+  try {
+    return readLegacyView(doc);
+  } catch {
+    return fallback;
+  }
+}
 
 // ───────────────── cross-version stored-state accessors ─────────────────
 // The save path must read stored policy state from the STORED document's own

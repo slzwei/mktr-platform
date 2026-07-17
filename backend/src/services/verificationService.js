@@ -5,6 +5,7 @@ import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { markPhoneVerified } from './verifiedPhoneStore.js';
+import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
 
 // AWS SNS SMS config. The region + sender ID must match our SSIR-registered
 // identity in AWS, or Singapore telcos relabel the sender as "Likely-SCAM".
@@ -128,7 +129,10 @@ export async function sendVerificationCode({ phone, countryCode = '+65', campaig
   let channel = 'sms';
   if (campaignId) {
     const campaign = await Campaign.findByPk(campaignId);
-    if (campaign?.design_config?.otpChannel === 'whatsapp') {
+    // Version-aware: v2 docs store the channel at form.verification —
+    // readLegacyViewSafe flattens either version; fail-safe default is SMS.
+    const design = readLegacyViewSafe(campaign?.design_config, { otpChannel: 'sms' });
+    if (design.otpChannel === 'whatsapp') {
       channel = 'whatsapp';
     }
   }

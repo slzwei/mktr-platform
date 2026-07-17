@@ -165,3 +165,28 @@ describe('checkDncForForm — fail-open', () => {
     expect(deps.checkNumbers).not.toHaveBeenCalled();
   });
 });
+
+describe('design_config v2 (Campaign Studio) — form.gates.dncCheck drives the opt-in', () => {
+  const v2Doc = (dncCheck) => ({
+    version: 2,
+    form: { gates: { dncCheck }, fields: [] },
+    distribution: { host: 'redeem' },
+  });
+
+  it('v2 doc with gates.dncCheck=true reaches the DNC API', async () => {
+    const deps = mkDeps({
+      Campaign: { findByPk: jest.fn().mockResolvedValue({ id: 'c1', design_config: v2Doc(true) }) },
+    });
+    await svc.checkDncForForm(input, deps);
+    expect(deps.checkNumbers).toHaveBeenCalled();
+  });
+
+  it('v2 doc with gates.dncCheck=false stays inert (no spend)', async () => {
+    const deps = mkDeps({
+      Campaign: { findByPk: jest.fn().mockResolvedValue({ id: 'c1', design_config: v2Doc(false) }) },
+    });
+    const out = await svc.checkDncForForm(input, deps);
+    expect(out).toEqual({ registered: false });
+    expect(deps.checkNumbers).not.toHaveBeenCalled();
+  });
+});

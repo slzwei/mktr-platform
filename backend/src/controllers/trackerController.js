@@ -4,6 +4,7 @@ import { publicHostFromRequest, cookieDomainForPublicHost } from '../utils/publi
 import { frontendBaseForHost } from '../utils/frontendBase.js';
 import { Campaign } from '../models/index.js';
 import { passesStaticGate } from '../services/marketplaceService.js';
+import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
 
 /**
  * qr_entry branch (docs/plans/redeem-marketplace-v2.md Phase 5): a marketplace
@@ -23,7 +24,8 @@ async function marketplaceDetailPath(qrTag, publicHost) {
       attributes: ['id', 'slug', 'type', 'status', 'is_active', 'design_config'],
     });
     if (!campaign || !passesStaticGate(campaign)) return null;
-    if (campaign.design_config?.qr_entry !== 'detail') return null;
+    // Version-aware (v2: distribution.marketplace.qrLanding); fail-safe = form landing.
+    if (readLegacyViewSafe(campaign.design_config, {}).qr_entry !== 'detail') return null;
     return `/offers/${campaign.slug}`;
   } catch {
     return null; // attribution must never break over a marketplace lookup

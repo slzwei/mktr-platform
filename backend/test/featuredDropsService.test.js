@@ -162,3 +162,34 @@ describe('getFeaturedDrops', () => {
     await expect(getFeaturedDrops({ now: NOW })).rejects.toThrow('db down');
   });
 });
+
+// ── design_config v2 (Campaign Studio) — the drop lives at distribution.featuredDrop ──
+describe('getFeaturedDrops — v2 documents', () => {
+  const v2Campaign = (id, drop, name = `Campaign ${id}`) => ({
+    id,
+    name,
+    design_config: { version: 2, distribution: { host: 'redeem', featuredDrop: drop } },
+  });
+
+  test('reads the v2 nested path (homepage tile survives migration)', async () => {
+    findAllMock.mockResolvedValue([
+      v2Campaign('v2a', { enabled: true, valueLabel: 'S$10', emoji: '🛒' }, 'Migrated Drop'),
+      v2Campaign('v2b', { enabled: false }),
+    ]);
+    const drops = await getFeaturedDrops({ now: NOW });
+    expect(drops.map((d) => d.id)).toEqual(['v2a']);
+    expect(drops[0].title).toBe('Migrated Drop');
+  });
+
+  test('a smuggled top-level featuredDrop on a v2 doc is IGNORED (v2 path is authoritative)', async () => {
+    findAllMock.mockResolvedValue([
+      {
+        id: 'v2c',
+        name: 'Smuggler',
+        design_config: { version: 2, featuredDrop: { enabled: true }, distribution: { host: 'redeem' } },
+      },
+    ]);
+    const drops = await getFeaturedDrops({ now: NOW });
+    expect(drops).toEqual([]);
+  });
+});

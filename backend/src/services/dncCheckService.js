@@ -3,6 +3,7 @@ import { Campaign } from '../models/index.js';
 import { logger } from '../utils/logger.js';
 import { formatDncNumber, checkNumbers as dncCheckNumbers, dncReady, dncConfig } from './dncService.js';
 import { isPhoneRecentlyVerified } from './verifiedPhoneStore.js';
+import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
 
 /**
  * dncCheckService — the backend behind the lead-capture form's DNC consent gate
@@ -91,7 +92,11 @@ export async function checkDncForForm({ phone, countryCode = '+65', campaignId }
     // Gate 2: the campaign must have opted into the submit-time DNC check.
     if (!campaignId) return { registered: false };
     const campaign = await CampaignModel.findByPk(campaignId, { attributes: ['id', 'design_config'] });
-    if (campaign?.design_config?.dncCheckAtSubmit !== true) return { registered: false };
+    // Version-aware: v2 docs store the opt-in at form.gates.dncCheck. The
+    // fail-safe view treats the check as ENABLED — a surprise doc shape must
+    // never silently skip a compliance check.
+    const design = readLegacyViewSafe(campaign?.design_config, { dncCheckAtSubmit: true });
+    if (design.dncCheckAtSubmit !== true) return { registered: false };
 
     // Gate 3: Singapore number only (the DNC register covers SG numbers).
     const fullPhone = `${countryCode || '+65'}${phone || ''}`;

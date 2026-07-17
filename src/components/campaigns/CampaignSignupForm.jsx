@@ -5,7 +5,7 @@ import FieldRenderer from '@/components/campaigns/signup/FieldRenderer';
 import OTPVerification from '@/components/campaigns/signup/OTPVerification';
 import DncConsentGate from '@/components/campaigns/signup/DncConsentGate';
 import MarketingConsentDialog from '@/components/legal/MarketingConsentDialog';
-import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
+import { useCampaignTheme } from '@/components/campaignPage/themeContext';
 import { heroFontStack } from '@/lib/heroFonts';
 import { formatDateInput, getAgeValidationError, getAgeRestrictionHint, displayPhone } from '@/components/campaigns/signup/dateUtils';
 
@@ -32,7 +32,11 @@ export default function CampaignSignupForm({
   termsContent,
   ctaLabel,
   previewMode = false,
+  // v2 (Campaign Studio) content.advertiserName — the DNC gate's advertiser
+  // display; defaults to the campaign name exactly as v1 behaves.
+  advertiserName,
 }) {
+  const { tokens: TOKENS, radius: RADIUS, onAccent } = useCampaignTheme();
   const accent = themeColor || TOKENS.accent;
   const visibleFields = campaign?.design_config?.visibleFields || {};
   const requiredFields = campaign?.design_config?.requiredFields || {};
@@ -398,7 +402,7 @@ export default function CampaignSignupForm({
           <FieldRenderer fieldId="phone" {...fieldRendererProps} />
           {dncGateOpen && (
             <DncConsentGate
-              advertiser={campaign?.name}
+              advertiser={advertiserName || campaign?.name}
               consented={dncConsent}
               onGiveConsent={() => setDncConsent(true)}
               onRevoke={() => setDncConsent(false)}
@@ -519,7 +523,7 @@ export default function CampaignSignupForm({
                   height: 56,
                   borderRadius: RADIUS.pill,
                   backgroundColor: accent,
-                  color: '#ffffff',
+                  color: onAccent,
                   border: 'none',
                   cursor: 'pointer',
                   fontFamily: 'Albert Sans, system-ui, sans-serif',
@@ -656,7 +660,7 @@ export default function CampaignSignupForm({
                   height: 56,
                   borderRadius: RADIUS.pill,
                   backgroundColor: accent,
-                  color: '#ffffff',
+                  color: onAccent,
                   border: 'none',
                   cursor: 'pointer',
                   fontFamily: 'Albert Sans, system-ui, sans-serif',
@@ -735,7 +739,7 @@ export default function CampaignSignupForm({
                 height: 18,
                 borderRadius: '50%',
                 backgroundColor: accent,
-                color: '#ffffff',
+                color: onAccent,
                 fontSize: 11,
                 flexShrink: 0,
               }}
@@ -943,7 +947,7 @@ export default function CampaignSignupForm({
             paddingRight: 36,
             borderRadius: RADIUS.pill,
             backgroundColor: submitDisabled ? TOKENS.hairline : accent,
-            color: '#ffffff',
+            color: onAccent,
             border: 'none',
             cursor: submitDisabled ? 'not-allowed' : 'pointer',
             fontFamily: 'Albert Sans, system-ui, sans-serif',
@@ -982,6 +986,7 @@ export default function CampaignSignupForm({
 }
 
 function ConsentCheckbox({ id, checked, onChange, children, accent, required }) {
+  const { tokens: TOKENS, radius: RADIUS } = useCampaignTheme();
   return (
     <label
       htmlFor={id}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
+import { useCampaignTheme } from '@/components/campaignPage/themeContext';
 import { readableTextOn } from '@/lib/contrast';
 
 /**
@@ -39,6 +39,7 @@ export default function OTPVerification({
   onVerified,
   channel = 'sms', // 'sms' | 'whatsapp'
 }) {
+  const { tokens: TOKENS, radius: RADIUS } = useCampaignTheme();
   const accent = themeColor || TOKENS.accent;
   const reduce =
     typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;

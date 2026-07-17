@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { TOKENS, RADIUS } from '@/components/campaigns/LeadCaptureLayout';
+import { useCampaignTheme } from '@/components/campaignPage/themeContext';
 import { brand } from '@/lib/brand';
 
 /**
@@ -16,6 +16,7 @@ import { brand } from '@/lib/brand';
  * dialog and fires the callback so the parent can mark consent as given.
  */
 export default function MarketingConsentDialog({ open, onOpenChange, content, themeColor, onAgree }) {
+  const { tokens: TOKENS, radius: RADIUS, onAccent } = useCampaignTheme();
   const sanitized = useMemo(() => (content ? DOMPurify.sanitize(content) : null), [content]);
   const accent = themeColor || TOKENS.accent;
 
@@ -123,7 +124,7 @@ export default function MarketingConsentDialog({ open, onOpenChange, content, th
                 paddingRight: 28,
                 borderRadius: RADIUS.pill,
                 backgroundColor: accent,
-                color: '#ffffff',
+                color: onAccent,
                 border: 'none',
                 cursor: 'pointer',
                 fontFamily: 'Albert Sans, system-ui, sans-serif',
@@ -145,6 +146,7 @@ export default function MarketingConsentDialog({ open, onOpenChange, content, th
 }
 
 function DefaultConsentCopy() {
+  const { tokens: TOKENS, radius: RADIUS } = useCampaignTheme();
   // Legal data controller stays MKTR PTE. LTD. per D3. Consumer-facing brand
   // references swap with the active build's brand (Redeem on redeem.sg).
   const partnersTerm = brand.partnersTerm;
@@ -202,6 +204,7 @@ function DefaultConsentCopy() {
 }
 
 function Section({ title, children }) {
+  const { tokens: TOKENS, radius: RADIUS } = useCampaignTheme();
   return (
     <div style={{ marginTop: 20 }}>
       <p style={{ fontWeight: 700, color: TOKENS.ink, margin: 0, marginBottom: 6 }}>{title}</p>
