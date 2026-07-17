@@ -22,10 +22,12 @@ import { upgradeDesignConfig, isV2 } from '@/lib/designConfigV2';
  * wholesale (clean); if the operator kept typing we keep their doc, adopt the
  * server doc as baseline only, and stay dirty.
  *
- * Draw invariant (Codex F9): the server's lucky-draw 422s carry no error code,
- * so the common cases are blocked CLIENT-side before the PUT (enabled draw
- * needs non-empty terms AND a valid closesAt — mirrors ensureDrawTermsVersion);
- * an escaped 422 is surfaced verbatim with a best-effort section hint.
+ * Draw invariant (Codex F9, typed in PR 5): the common cases are blocked
+ * CLIENT-side before the PUT (enabled draw needs non-empty terms AND a valid
+ * closesAt — mirrors ensureDrawTermsVersion); server draw 422s now carry
+ * typed codes (DRAW_TERMS_REQUIRED / DRAW_CLOSES_AT_REQUIRED /
+ * DRAW_CLOSES_AT_LOCKED) matched first, with the message-regex heuristic kept
+ * as a deploy-skew fallback until the teardown PR.
  */
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -77,8 +79,22 @@ function classifySaveError(err) {
   if (err?.status === 409 && code === 'DESIGN_CONFIG_VERSION_CONFLICT') {
     return { kind: 'version-conflict', message: err.message };
   }
+  // PR 5: typed draw codes first. DRAW_CLOSES_AT_LOCKED also lands here — the
+  // date field is the thing to fix (revert it or void/recreate via ops).
+  if (
+    err?.status === 422 &&
+    (code === 'DRAW_TERMS_REQUIRED' || code === 'DRAW_CLOSES_AT_REQUIRED' || code === 'DRAW_CLOSES_AT_LOCKED')
+  ) {
+    return {
+      kind: 'draw-invariant',
+      section: 'form',
+      field: code === 'DRAW_TERMS_REQUIRED' ? 'terms' : 'closesAt',
+      message: err.message,
+    };
+  }
   if (err?.status === 422 && /terms|closesAt|lucky[- ]?draw/i.test(err?.message || '')) {
-    // Untyped server 422 (no data.code on the draw invariants) — heuristic hint.
+    // Deploy-skew fallback (an old backend emits code-less draw 422s) — retire
+    // in the teardown PR.
     return { kind: 'draw-invariant', section: 'form', message: err.message };
   }
   return { kind: 'error', message: err?.message || 'Save failed. Please try again.' };

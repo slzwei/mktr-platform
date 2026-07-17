@@ -112,6 +112,14 @@ describe('buildPublicDesignConfig — v2 documents', () => {
     futureTopLevel: { fine: true },
   };
 
+  test('PR 5: marketplace.endsAt is never exposed even when a raw doc carries it (whitelist removal)', () => {
+    const doc = structuredClone(v2Doc);
+    doc.distribution.marketplace.endsAt = '2026-12-31';
+    const out = buildPublicDesignConfig(doc);
+    expect(out.distribution.marketplace.endsAt).toBeUndefined();
+    expect(out.distribution.marketplace.title).toBe('Voucher'); // siblings intact
+  });
+
   test('every public v2 key survives; version + host mirror present', () => {
     const out = buildPublicDesignConfig(v2Doc);
     expect(out.version).toBe(2);

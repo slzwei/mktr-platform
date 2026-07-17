@@ -1,10 +1,11 @@
 import crypto from 'crypto';
 import { Op } from 'sequelize';
-import { Campaign, QrTag, Prospect, Commission, Device, CampaignMediaItem, CampaignAgentAssignment, DrawTermsVersion, sequelize } from '../models/index.js';
+import { Campaign, QrTag, Prospect, Commission, Device, CampaignMediaItem, CampaignAgentAssignment, DrawTermsVersion, Draw, sequelize } from '../models/index.js';
 import { getTenantId } from '../middleware/tenant.js';
 import { storageService } from './storage.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
+import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
 import { applyLuckyDrawPolicy } from '../utils/luckyDraw.js';
 import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/marketplaceContent.js';
@@ -109,25 +110,53 @@ export function clampDesignConfig(incoming, storedConfig, role) {
  * Idempotent: unchanged content re-resolves to the existing version row.
  * Exported for tests; `d` is a DI seam (defaults to the real model).
  */
-export async function ensureDrawTermsVersion(designConfig, campaignId, userId, d = { DrawTermsVersion }) {
+export async function ensureDrawTermsVersion(designConfig, campaignId, userId, d = { DrawTermsVersion, Draw }) {
   const ld = designConfig?.luckyDraw;
   if (!ld || ld.enabled !== true) return designConfig;
   // An enabled draw without a close date would accept public entries forever
   // while createDraw refuses the config — never persistable (normalization
   // already dropped any malformed date, so absence here means absence/invalid).
+  // PR 5: draw 422s carry typed codes (write-gate precedent) so the Studio can
+  // classify without message-sniffing.
   if (!ld.closesAt) {
-    throw new AppError(
+    const err = new AppError(
       'Lucky-draw campaigns need a valid luckyDraw.closesAt (YYYY-MM-DD) before they can be enabled.',
       422
     );
+    err.data = { code: 'DRAW_CLOSES_AT_REQUIRED' };
+    throw err;
+  }
+  // PR 5 (Codex plan F3): while a LIVE draw record exists, the doc close date
+  // is LOCKED to the record's cutoff. Entry acceptance follows the DOC while
+  // the pool freeze follows the RECORD — letting the doc drift would accept
+  // entrants the frozen pool silently excludes. Intentional changes go
+  // through ops (void + recreate the draw), never a designer save.
+  const DrawModel = d.Draw ?? Draw;
+  const liveDraw = await DrawModel.findOne({
+    where: { campaignId, status: ['open', 'frozen', 'sealed', 'drawn'] },
+    attributes: ['id', 'closesAt'],
+  });
+  if (liveDraw) {
+    const docEndMs = sgtDayEndExclusiveMs(ld.closesAt);
+    const recordMs = new Date(liveDraw.closesAt).getTime();
+    if (docEndMs !== null && Number.isFinite(recordMs) && docEndMs !== recordMs) {
+      const err = new AppError(
+        'The draw close date is locked while a live draw record exists — void and recreate the draw (Redeem Ops → Draws) to change it.',
+        422
+      );
+      err.data = { code: 'DRAW_CLOSES_AT_LOCKED' };
+      throw err;
+    }
   }
   // Version-aware terms read: v1 termsContent / v2 form.terms.html.
   const content = getStoredTermsHtml(designConfig).trim();
   if (!content) {
-    throw new AppError(
+    const err = new AppError(
       'Lucky-draw campaigns need Terms & Conditions content (designer → Terms & Conditions) before they can be enabled.',
       422
     );
+    err.data = { code: 'DRAW_TERMS_REQUIRED' };
+    throw err;
   }
   const contentSha256 = crypto.createHash('sha256').update(content).digest('hex');
   let row = await d.DrawTermsVersion.findOne({
@@ -381,17 +410,21 @@ export async function createCampaign(body, user) {
   // design_config save re-runs ensureDrawTermsVersion idempotently.)
   if (campaignData.design_config?.luckyDraw?.enabled === true) {
     if (!campaignData.design_config.luckyDraw.closesAt) {
-      throw new AppError(
+      const err = new AppError(
         'Lucky-draw campaigns need a valid luckyDraw.closesAt (YYYY-MM-DD) before they can be enabled.',
         422
       );
+      err.data = { code: 'DRAW_CLOSES_AT_REQUIRED' };
+      throw err;
     }
     const terms = getStoredTermsHtml(campaignData.design_config).trim();
     if (!terms) {
-      throw new AppError(
+      const err = new AppError(
         'Lucky-draw campaigns need Terms & Conditions content (designer → Terms & Conditions) before they can be enabled.',
         422
       );
+      err.data = { code: 'DRAW_TERMS_REQUIRED' };
+      throw err;
     }
   }
 
@@ -484,7 +517,23 @@ export async function updateCampaign(id, body, req) {
     // A Studio-saved (v2) document must never be overwritten by an untagged
     // v1 save — the v1 clamp would wholesale-replace the nested doc. The old
     // designer gets a read-only guard in the Studio PR; this is its server twin.
+    //
+    // PR 5 escape hatch: an ADMIN restoring a pre-migration v1 snapshot passes
+    // `confirmDesignRollback: true` explicitly (the rollout runbook's rollback
+    // path). It flows through the normal v1 clamp + draw invariants + cache
+    // invalidation below — never a raw write.
+    const isDesignRollback =
+      body.confirmDesignRollback === true &&
+      req.user?.role === 'admin' &&
+      classifyDesignConfigVersion(campaign.design_config) === 'v2' &&
+      classifyDesignConfigVersion(design_config) === 'legacy';
+    if (isDesignRollback) {
+      console.warn(
+        `[design-rollback] admin ${req.user?.id} restored a v1 design_config over the stored v2 doc on campaign ${campaign.id}`
+      );
+    }
     if (
+      !isDesignRollback &&
       classifyDesignConfigVersion(campaign.design_config) === 'v2' &&
       classifyDesignConfigVersion(design_config) === 'legacy'
     ) {
