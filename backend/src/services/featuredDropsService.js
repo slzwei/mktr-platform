@@ -12,6 +12,7 @@
 import { Op } from 'sequelize';
 import { Campaign, Prospect } from '../models/index.js';
 import { normalizeFeaturedDrop } from '../utils/featuredDrop.js';
+import { getStoredFeaturedDrop } from '../utils/designConfigV2Clamp.js';
 import { customerHostOrigin } from '../utils/customerHost.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { logger } from '../utils/logger.js';
@@ -38,8 +39,9 @@ async function fetchDrops(now) {
   const flagged = [];
   for (const c of campaigns) {
     // Re-normalize on read: defense in depth against rows written outside
-    // campaignService (seeds, manual SQL, old code paths).
-    const fd = normalizeFeaturedDrop(c.design_config?.featuredDrop);
+    // campaignService (seeds, manual SQL, old code paths). Version-aware:
+    // v2 docs keep the drop at distribution.featuredDrop.
+    const fd = normalizeFeaturedDrop(getStoredFeaturedDrop(c.design_config));
     if (!fd || fd.enabled !== true) continue;
     const endMs = fd.endsAt ? sgtDayEndExclusiveMs(fd.endsAt) : null;
     if (endMs !== null && now >= endMs + GONE_RETENTION_MS) continue;

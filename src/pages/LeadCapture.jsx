@@ -12,6 +12,8 @@ import { apiClient } from '@/api/client';
 import LeadCaptureLayout, { TOKENS, RADIUS } from '../components/campaigns/LeadCaptureLayout';
 import { deriveLeadCaptureContent } from '../components/campaigns/leadCaptureContent';
 import GuidedReviewPage, { GuidedReviewSuccess } from '../components/campaigns/guided-review/GuidedReviewPage';
+import CampaignPageRenderer from '../components/campaignPage/CampaignPageRenderer';
+import { isV2, resolveTheme } from '@/lib/designConfigV2';
 import {
   shouldTrack,
   generateEventId,
@@ -52,6 +54,9 @@ export default function LeadCapture() {
   const [campaign, setCampaign] = useState(null);
   const [qrTag, setQrTag] = useState(null);
   const [error, setError] = useState(null);
+  // v2 (Campaign Studio) inactive campaigns keep the campaign in state so the
+  // new renderer owns the blocked page; v1 uses the legacy full-page error.
+  const [inactive, setInactive] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [referralMarked, setReferralMarked] = useState(false);
@@ -246,6 +251,13 @@ export default function LeadCapture() {
         }
 
         if (!preview && (!fetched || fetched.is_active === false)) {
+          // v2 docs: keep the campaign so CampaignPageRenderer owns the blocked
+          // page (single owner); v1 keeps the legacy full-page ErrorState.
+          if (fetched && isV2(fetched.design_config)) {
+            setCampaign(fetched);
+            setInactive(true);
+            return;
+          }
           setError('This campaign is no longer active.');
           return;
         }
@@ -544,6 +556,60 @@ export default function LeadCapture() {
         >
           {captureExperience}
         </GuidedReviewPage>
+        {shareDialog}
+      </>
+    );
+  }
+
+  // ── design_config v2 (Campaign Studio) dispatch ──────────────────────────
+  // v2 docs render through the new template renderer; v1 docs fall through to
+  // the untouched LeadCaptureLayout below. Page ORCHESTRATION is unchanged —
+  // handleSubmit / quiz reveal / share dialog are the same. Outcome screens
+  // (success / duplicate / error) keep their v1 behavior on the v2 theme
+  // background (themed outcome screens ride the deferred widget-redesign PR).
+  if (isV2(campaign?.design_config)) {
+    if (submitted || error) {
+      const vt = resolveTheme(campaign.design_config.theme || {});
+      return (
+        <div
+          style={{
+            minHeight: '100vh',
+            background: vt.bg,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            padding: 16,
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 480,
+              width: '100%',
+              margin: '0 auto',
+              boxSizing: 'border-box',
+              background: vt.card,
+              border: `1px solid ${vt.line}`,
+              borderRadius: vt.r.card,
+              padding: '28px 24px 32px',
+            }}
+          >
+            {submitted ? <SuccessState onShare={() => setShareOpen(true)} /> : captureExperience}
+          </div>
+          {shareDialog}
+        </div>
+      );
+    }
+    return (
+      <>
+        <CampaignPageRenderer
+          campaign={campaign}
+          inactive={inactive}
+          referrerName={referrerName}
+          onSubmit={handleSubmit}
+          onQuizReveal={handleQuizReveal}
+          onQuizComplete={setQuizResult}
+        />
         {shareDialog}
       </>
     );

@@ -5,6 +5,8 @@ import CampaignSignupForm from"../CampaignSignupForm";
 import { QuizGate } from"../CampaignQuiz";
 import { deriveLeadCaptureContent } from"../leadCaptureContent";
 import { customerPublicUrl, resolveCustomerHost } from"@/lib/brand";
+import CampaignPageRenderer from"@/components/campaignPage/CampaignPageRenderer";
+import { isV2 } from"@/lib/designConfigV2";
 
 /**
  * Faithful, read-only campaign preview.
@@ -74,6 +76,12 @@ export default function PreviewFrame({ currentDesign, campaign }) {
  remaining height and scrolls; no fixed height, so the footer is
  never clipped by the parent container. */}
  <div className="light av2-theme-reset flex-1 min-h-0 overflow-y-auto" data-theme="light">
+ {isV2(currentDesign) ? (
+   // design_config v2 (Campaign Studio): render the in-progress doc through
+   // the new template renderer (the classic editor can't produce a v2 doc
+   // today — this future-proofs the Studio mount).
+   <CampaignPageRenderer campaign={previewCampaign} previewMode onSubmit={() => {}} />
+ ) : (
  <LeadCaptureLayout
  design={currentDesign}
  maxWidth={currentDesign.formWidth}
@@ -100,6 +108,7 @@ export default function PreviewFrame({ currentDesign, campaign }) {
  </QuizGate>
  </div>
  </LeadCaptureLayout>
+ )}
  </div>
  </div>
  </div>

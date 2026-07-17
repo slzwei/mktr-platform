@@ -7,6 +7,7 @@
  * nothing is hardcoded.
  */
 import { useEffect, useState } from 'react';
+import { getMarketplaceListedFromDoc } from '@/lib/designConfigV2';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -326,7 +327,7 @@ function Leaderboard({ period }) {
             if (c.status === 'paused') badges.push({ label: 'Paused', bg: 'var(--warn-soft)', fg: 'var(--warn)' });
             if (zeroCommitIds.has(c.id)) badges.push({ label: '▲ 0 commitments', bg: 'var(--bad-soft)', fg: 'var(--bad)' });
             else if (c.committedValueCents > 0) badges.push({ label: `${fmtSGD(c.committedValueCents)} committed`, bg: 'var(--accent-soft)', fg: 'var(--accent-text)' });
-            if (c.design_config?.marketplaceListed === true) badges.push({ label: 'Marketplace', bg: 'var(--accent-soft)', fg: 'var(--accent-text)' });
+            if (getMarketplaceListedFromDoc(c.design_config) === true) badges.push({ label: 'Marketplace', bg: 'var(--accent-soft)', fg: 'var(--accent-text)' });
             const count = c.leadsThisPeriod || 0;
             return (
               <Link key={c.id} to={`/admin/campaigns/${c.id}`} style={{ display: 'block', padding: '10px 16px', borderBottom: '1px solid var(--line)', color: 'var(--ink)', textDecoration: 'none' }} className="av2-boardrow">

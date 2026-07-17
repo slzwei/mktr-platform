@@ -6,6 +6,7 @@
  * observes and navigates, it does not fork the editing surface.
  */
 import { useMemo } from 'react';
+import { getMarketplaceListedFromDoc } from '@/lib/designConfigV2';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCampaignLeaderboard, useAttention } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtSGD, fmtDate, daysUntil } from '@/lib/adminV2/format';
@@ -129,7 +130,7 @@ export default function AdminV2Campaigns() {
                 {attention.isSuccess && zeroCommitIds.has(c.id) && <Chip tone="bad" glyph="▲">0 commitments</Chip>}
                 {c.committedRemaining > 0 && <Chip tone="accent">{fmtNumber(c.committedRemaining)} committed · {fmtSGD(c.committedValueCents)}</Chip>}
                 {drawDays !== null && drawDays > 0 && <Chip tone="warn">Draw closes {drawDays}d</Chip>}
-                {c.design_config?.marketplaceListed === true && <Chip tone="accent">Marketplace</Chip>}
+                {getMarketplaceListedFromDoc(c.design_config) === true && <Chip tone="accent">Marketplace</Chip>}
               </span>
               <span className="av2-mono" style={{ width: 90, flex: 'none', fontSize: 12, fontWeight: 600, textAlign: 'right' }}>{fmtNumber(c.leadsThisPeriod || 0)}</span>
               <span className="av2-mono" style={{ width: 80, flex: 'none', fontSize: 11, color: 'var(--ink-3)', textAlign: 'right' }}>{fmtNumber(c.leadsTotal ?? c.prospectCount ?? 0)}</span>

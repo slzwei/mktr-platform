@@ -261,3 +261,45 @@ describe('previewMarketplaceCampaign (authenticated designer preview)', () => {
     expect(Object.getOwnPropertySymbols(where).length).toBe(0);
   });
 });
+
+// ── design_config v2 (Campaign Studio) — publication flag + content are nested ──
+describe('v2 documents', () => {
+  const v2Design = (over = {}) => ({
+    version: 2,
+    content: { headline: 'Get started' },
+    form: {
+      verification: 'whatsapp',
+      gates: { sgPr: true, advisorExclusion: false, dncCheck: true },
+      terms: { template: 'default', html: '<p>T</p>' },
+      fields: [],
+    },
+    distribution: {
+      host: 'redeem',
+      marketplace: { listed: true, title: 'Migrated Offer', category: 'dining', valueLine: 'S$10 off', qrLanding: 'offer' },
+    },
+    ...over,
+  });
+
+  test('passesStaticGate honors distribution.marketplace.listed + distribution.host', () => {
+    expect(passesStaticGate(listedCampaign({ design_config: v2Design() }))).toBe(true);
+    const unlisted = v2Design();
+    delete unlisted.distribution.marketplace.listed;
+    expect(passesStaticGate(listedCampaign({ design_config: unlisted }))).toBe(false);
+    const mktrHost = v2Design();
+    mktrHost.distribution.host = 'mktr';
+    expect(passesStaticGate(listedCampaign({ design_config: mktrHost }))).toBe(false);
+  });
+
+  test('buildPublicDesignConfig flattens a v2 doc to the v1 shape the flow consumes', () => {
+    const out = buildPublicDesignConfig(v2Design());
+    expect(out.name).toBe('Migrated Offer');
+    expect(out.category).toBe('dining');
+    expect(out.value_line).toBe('S$10 off');
+    expect(out.qr_entry).toBe('detail');
+    expect(out.otpChannel).toBe('whatsapp');
+    expect(out.sgPrOnly).toBe(true);
+    expect(out.dncCheckAtSubmit).toBe(true);
+    expect(out.termsContent).toBe('<p>T</p>');
+    expect(out.marketplaceListed).toBeUndefined(); // publication flag stays non-public
+  });
+});

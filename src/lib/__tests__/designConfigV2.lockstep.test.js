@@ -22,7 +22,7 @@ const FUNCTION_EXPORTS = [
   'classifyDesignConfigVersion', 'isV2', 'upgradeDesignConfig',
   'downgradeDesignConfig', 'readLegacyView', 'resolveTheme', 'defaultFields',
   'fieldsFromV1', 'fieldsToV1', 'marketplaceToV1', 'nearestPresetForAccent',
-  'onColor', 'youTubeIdFrom',
+  'onColor', 'youTubeIdFrom', 'getMarketplaceListedFromDoc',
 ];
 
 describe('designConfigV2 twins — constant drift', () => {
@@ -54,6 +54,19 @@ describe('designConfigV2 twins — behavioral parity over the fixture corpus', (
     ];
     for (const s of shapes) {
       expect(mirror.classifyDesignConfigVersion(s)).toBe(backend.classifyDesignConfigVersion(s));
+    }
+  });
+
+  it('getMarketplaceListedFromDoc agrees across versions', () => {
+    const shapes = [
+      { marketplaceListed: true },
+      { marketplaceListed: false },
+      { version: 2, distribution: { marketplace: { listed: true } } },
+      { version: 2, distribution: {} },
+      {}, null, undefined,
+    ];
+    for (const s of shapes) {
+      expect(mirror.getMarketplaceListedFromDoc(s)).toBe(backend.getMarketplaceListedFromDoc(s));
     }
   });
 });

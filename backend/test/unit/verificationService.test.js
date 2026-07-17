@@ -179,3 +179,17 @@ describe('verificationService (unit)', () => {
     });
   });
 });
+
+describe('design_config v2 (Campaign Studio)', () => {
+  it('uses WhatsApp when a v2 doc stores form.verification = whatsapp', async () => {
+    Campaign.findByPk.mockResolvedValue({
+      id: 'camp-v2',
+      design_config: { version: 2, form: { verification: 'whatsapp', gates: {}, fields: [] }, distribution: { host: 'redeem' } },
+    });
+
+    const result = await sendVerificationCode({ phone: '91234567', countryCode: '+65', campaignId: 'camp-v2' });
+
+    expect(result.status).toBe('pending');
+    expect(logger.info).toHaveBeenCalledWith('Sending OTP', { channel: 'WHATSAPP' });
+  });
+});

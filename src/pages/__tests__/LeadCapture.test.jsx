@@ -53,6 +53,7 @@ vi.mock('@/components/ui/TypingLoader', () => ({
 
 import LeadCapture from '../LeadCapture';
 import { apiClient } from '@/api/client';
+import { upgradeDesignConfig } from '@/lib/designConfigV2';
 
 const mockCampaign = {
  id: 'camp-1',
@@ -418,5 +419,68 @@ describe('LeadCapture', () => {
  expect(call).toBeTruthy();
  expect(call[1].consent_dnc).toBeUndefined();
  });
+ });
+});
+
+
+// design_config v2 (Campaign Studio) dispatch — the page renders through the new
+// template renderer while ALL orchestration (resolution, submit outcomes,
+// analytics, share) stays with LeadCapture. Proven by: the renderer mounts, and
+// a submit still POSTs /prospects (the Lead-analytics conversion moment).
+describe('LeadCapture — v2 dispatch keeps orchestration intact', () => {
+ const v2Campaign = {
+ id: 'camp-v2',
+ name: 'V2 Campaign',
+ is_active: true,
+ design_config: upgradeDesignConfig({
+   formHeadline: 'V2 Headline',
+   themeColor: '#D17029',
+   // no gates → the mocked form's Submit is reachable immediately
+ }),
+ };
+
+ beforeEach(() => {
+ vi.clearAllMocks();
+ apiClient.post.mockResolvedValue({ success: true });
+ apiClient.get.mockImplementation((url) => {
+ if (url === '/qrcodes/session') return Promise.resolve({ success: false });
+ if (url.startsWith('/previews/public/')) return Promise.resolve({ success: true, data: { campaign: v2Campaign } });
+ return Promise.resolve({});
+ });
+ });
+
+ it('mounts the v2 renderer (not the v1 layout) and still POSTs /prospects on submit', async () => {
+ render(
+ <MemoryRouter initialEntries={['/LeadCapture?campaign_id=camp-v2']}>
+ <LeadCapture />
+ </MemoryRouter>
+ );
+ // The new renderer mounts; the v1 LeadCaptureLayout wrapper does NOT.
+ await waitFor(() => expect(document.querySelector('[data-campaign-page-template]')).toBeTruthy());
+ expect(screen.queryByTestId('lead-capture-layout')).not.toBeInTheDocument();
+
+ // The reused (mocked) funnel form is inside the template; submit → orchestration.
+ const user = userEvent.setup();
+ await user.click(screen.getByText('Submit'));
+ await waitFor(() => {
+ const call = apiClient.post.mock.calls.find((c) => c[0] === '/prospects');
+ expect(call).toBeTruthy();
+ expect(call[1].campaignId).toBe('camp-v2');
+ });
+ });
+
+ it('renders the v2 blocked page for an inactive v2 campaign', async () => {
+ apiClient.get.mockImplementation((url) => {
+ if (url === '/qrcodes/session') return Promise.resolve({ success: false });
+ if (url.startsWith('/previews/public/')) return Promise.resolve({ success: true, data: { campaign: { ...v2Campaign, is_active: false } } });
+ return Promise.resolve({});
+ });
+ render(
+ <MemoryRouter initialEntries={['/LeadCapture?campaign_id=camp-v2']}>
+ <LeadCapture />
+ </MemoryRouter>
+ );
+ await waitFor(() => expect(screen.getByText('This campaign is no longer active.')).toBeInTheDocument());
+ expect(document.querySelector('[data-campaign-page-blocked="inactive"]')).toBeTruthy();
  });
 });

@@ -62,6 +62,7 @@ import {
 } from './prospectHelpers.js';
 import { fetchLeadActivitiesFromSupabase, mergeProspectTimeline } from './webLeadTimelineService.js';
 import { scoreQuiz } from './quizScoringService.js';
+import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -382,6 +383,10 @@ export function makeProspectService(overrides = {}) {
       incoming.campaignId ? m.Campaign.findByPk(incoming.campaignId) : null,
       incoming.qrTagId ? m.QrTag.findByPk(incoming.qrTagId) : null,
     ]);
+    // Version-aware flat view of the campaign's design_config for every read
+    // below (v2 docs nest these keys). Fail-safe: DNC treated as ENABLED so a
+    // surprise doc shape can never skip the compliance gate.
+    const sourceDesign = readLegacyViewSafe(sourceCampaign?.design_config, { dncCheckAtSubmit: true });
 
     // Campaign on/off gate: a paused/draft/completed/archived campaign stops accepting
     // public signups, so its referral + lead-capture links stop working at the source (the
@@ -521,7 +526,7 @@ export function makeProspectService(overrides = {}) {
     // Lyfe lead.created webhook — child_name is a minor's first name, so the
     // campaign's data_use copy must disclose it (plan decision 9).
     if (marketplaceRaw && typeof marketplaceRaw === 'object') {
-      const dcfg = sourceCampaign?.design_config || {};
+      const dcfg = sourceDesign;
       const cleanText = (v) => {
         if (typeof v !== 'string') return undefined;
         const t = v.trim().replace(/[<>]/g, '').slice(0, 120);
@@ -556,7 +561,7 @@ export function makeProspectService(overrides = {}) {
     // Per-campaign gate: only campaigns that opted in (design_config.dncCheckAtSubmit) ever
     // hit the paid DNC API — scopes credit spend (and the public create endpoint's exposure)
     // to opted-in campaigns. The global enforcement mode (block/flag) still applies on top.
-    const dncMode = sourceCampaign?.design_config?.dncCheckAtSubmit === true ? d.dncEnforcement() : 'off';
+    const dncMode = sourceDesign.dncCheckAtSubmit === true ? d.dncEnforcement() : 'off';
     const dncNumber = dncMode !== 'off' && incoming.phone ? d.formatDncNumber(incoming.phone) : null;
     const dncBlockApplies = dncMode === 'block' && !!dncNumber;
     const dncFlagApplies = dncMode === 'flag' && !!dncNumber;

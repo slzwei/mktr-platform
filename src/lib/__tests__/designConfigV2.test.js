@@ -194,7 +194,7 @@ describe('upgrade — passthrough + canonicalization ledger', () => {
       audienceAgeMax: 65,
       imageAlt: adminRichDoc.image_label,
       valueLine: adminRichDoc.value_line,
-      days: ['sat', 'sun'],
+      days: ['Sat', 'Sun'],
       slots: ['10:00', '14:00'],
       activation: { required: true, type: 'consult', durationMins: 20, summary: 'Short activation call' },
       sponsor: { disclosed: true, kind: 'agency', disclosure: adminRichDoc.sponsor.disclosure },
@@ -206,7 +206,7 @@ describe('upgrade — passthrough + canonicalization ledger', () => {
     expect(v1.name).toBe(adminRichDoc.name);
     expect(v1.offer_type).toBe('reward');
     expect(v1.age_range).toEqual({ min: 21, max: 65 });
-    expect(v1.availability).toEqual({ days: ['sat', 'sun'], slots: ['10:00', '14:00'] });
+    expect(v1.availability).toEqual({ days: ['Sat', 'Sun'], slots: ['10:00', '14:00'] });
     expect(v1.activation).toEqual(adminRichDoc.activation);
     expect(v1.sponsor).toEqual(adminRichDoc.sponsor);
     expect(v1.content_blocks).toEqual(adminRichDoc.content_blocks);

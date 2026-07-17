@@ -8,18 +8,24 @@ vi.mock('@/api/client', () => ({
 }));
 
 // Capture the content slots LeadCaptureLayout receives.
-vi.mock('@/components/campaigns/LeadCaptureLayout', () => ({
-  default: ({ wordmark, regulatoryFooter, brand, children }) => (
-    <div
-      data-testid="layout"
-      data-wordmark={wordmark || ''}
-      data-regulatory={regulatoryFooter || ''}
-      data-brand={brand || ''}
-    >
-      {children}
-    </div>
-  ),
-}));
+// Keep the real TOKENS/RADIUS exports (the v2 theme context reads them) while
+// stubbing the default layout component.
+vi.mock('@/components/campaigns/LeadCaptureLayout', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    default: ({ wordmark, regulatoryFooter, brand, children }) => (
+      <div
+        data-testid="layout"
+        data-wordmark={wordmark || ''}
+        data-regulatory={regulatoryFooter || ''}
+        data-brand={brand || ''}
+      >
+        {children}
+      </div>
+    ),
+  };
+});
 
 // Stub the form; expose previewMode and let the test fire onSubmit.
 vi.mock('@/components/campaigns/CampaignSignupForm', () => ({
@@ -58,7 +64,11 @@ describe('PublicPreview (/p/:slug)', () => {
   it('renders with the same derived content slots as the live page', async () => {
     renderPreview();
     const layout = await screen.findByTestId('layout');
-    expect(layout.getAttribute('data-wordmark')).toBe('acme.sg');
+    // Wordmark is the customer host (redeem.sg default), NEVER derived from the
+    // campaign name — matches deriveLeadCaptureContent + the live page exactly
+    // (see leadCaptureContent.test.js). The old 'acme.sg' expectation encoded
+    // the removed name-derived behavior.
+    expect(layout.getAttribute('data-wordmark')).toBe('redeem.sg');
     expect(layout.getAttribute('data-regulatory')).toBe(brand.defaultRegulatory);
     expect(layout.getAttribute('data-brand')).toBe(brand.defaultPoweredBy);
   });

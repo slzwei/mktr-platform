@@ -12,6 +12,7 @@ import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { destinationForAgent, externalIdForDestination, buildLeadHeldPayload, dncPayloadBlock } from './prospectHelpers.js';
 import { dncEnforcement, formatDncNumber, checkAndRecord as dncCheckAndRecord } from './dncService.js';
 import { gateHeldDncLead } from './dncGate.js';
+import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
 
 const IDEMPOTENCY_SCOPE = 'retell:call';
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -260,7 +261,9 @@ export function makeRetellService(overrides = {}) {
     // NOTE: scrubs prospect.phone (= to_number), the number an agent calls back. If Retell calls
     // are inbound, the consumer is from_number — confirm the mapping (design §8.8).
     // Per-campaign gate — only campaigns opted into design_config.dncCheckAtSubmit hit the API.
-    const dncMode = campaign?.design_config?.dncCheckAtSubmit === true ? d.dncEnforcement() : 'off';
+    // Version-aware (v2: form.gates.dncCheck); fail-safe view treats the check as ENABLED.
+    const campaignDesign = readLegacyViewSafe(campaign?.design_config, { dncCheckAtSubmit: true });
+    const dncMode = campaignDesign.dncCheckAtSubmit === true ? d.dncEnforcement() : 'off';
     const dncNumber = dncMode !== 'off' && to_number ? d.formatDncNumber(to_number) : null;
     const dncBlockApplies = dncMode === 'block' && !!dncNumber;
     const dncFlagApplies = dncMode === 'flag' && !!dncNumber;

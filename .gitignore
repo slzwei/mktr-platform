@@ -37,3 +37,5 @@ coverage/
 # Claude Code runtime artifacts (commands/ is tracked; lock files are transient)
 .claude/*.lock
 
+
+dist-parity/

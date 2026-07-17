@@ -128,3 +128,51 @@ describe('marketplace metadata intake', () => {
     expect(created[0].sourceMetadata?.marketplace).toBeUndefined();
   });
 });
+
+// design_config v2 (Campaign Studio): intake options live at
+// distribution.marketplace.{schoolLevels,days,slots} — the sourceDesign
+// legacy view must flatten them so validation keeps working.
+describe('marketplace metadata intake — v2 documents', () => {
+  const v2Campaign = {
+    id: 'camp-1',
+    status: 'active',
+    design_config: {
+      version: 2,
+      form: { gates: {}, fields: [] },
+      distribution: {
+        host: 'redeem',
+        marketplace: {
+          schoolLevels: ['P3', 'P4'],
+          days: ['Sat', 'Sun'],
+          slots: ['10:00', '14:00'],
+        },
+      },
+    },
+  };
+
+  test('v2 nested options validate the intake exactly like v1 flat ones', async () => {
+    const { svc, created } = buildService({ campaign: v2Campaign });
+    await svc.createProspect(
+      {
+        ...baseBody,
+        marketplace: { child_school_level: 'P4', preferred_timing: 'Sat 10:00' },
+      },
+      null,
+      ctx
+    );
+    expect(created[0].sourceMetadata.marketplace).toEqual({
+      child_school_level: 'P4',
+      preferred_timing: 'Sat 10:00',
+    });
+  });
+
+  test('v2: out-of-config values still drop', async () => {
+    const { svc, created } = buildService({ campaign: v2Campaign });
+    await svc.createProspect(
+      { ...baseBody, marketplace: { child_school_level: 'P6', preferred_timing: 'Mon 09:00' } },
+      null,
+      ctx
+    );
+    expect(created[0].sourceMetadata?.marketplace).toBeUndefined();
+  });
+});
