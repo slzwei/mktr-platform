@@ -21,7 +21,7 @@
  *      accepted value. Zero real provider traffic.
  *
  * Usage (repo root):
- *   VITE_BRAND=mktr VITE_API_URL=/api VITE_CAMPAIGN_STUDIO_ENABLED=true \
+ *   VITE_BRAND=mktr VITE_API_URL=/api \
  *     VITE_ADMIN_V2_ENABLED=true npx vite build --outDir dist-studio-smoke
  *   npx vite preview --outDir dist-studio-smoke --port 4321 --strictPort &
  *   node scripts/studioSmoke.mjs 4321 /tmp/studio-smoke

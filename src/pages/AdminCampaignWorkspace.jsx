@@ -11,7 +11,7 @@ import { ArrowLeft, Eye, Copy, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import DesignEditor from '@/components/campaigns/DesignEditor';
 import OpenInStudioCard from '@/components/studio/OpenInStudioCard';
-import { CAMPAIGN_STUDIO_ENABLED, studioSupportsCampaign } from '@/components/studio/studioFlag';
+import { studioSupportsCampaign } from '@/components/studio/studioFlag';
 import CampaignQRManager from '@/components/qrcodes/CampaignQRManager';
 import CampaignDetailsTab from '@/components/campaigns/workspace/CampaignDetailsTab';
 import CampaignDeliveryPoolTab from '@/components/campaigns/workspace/CampaignDeliveryPoolTab';
@@ -210,12 +210,13 @@ export default function AdminCampaignWorkspace() {
           </div>
         )}
 
-        {/* Design stays mounted (CSS-hidden) so DesignEditor keeps unsaved edits + its unload guard across tab switches.
-            With Campaign Studio on (Studio PR 3), the tab becomes an entry point instead —
-            except guided_review, whose designer stays here (out of Studio scope). */}
+        {/* Design tab = the Campaign Studio entry point (permanent since the
+            teardown PR) — except guided_review, whose classic designer stays
+            mounted here (CSS-hidden across tab switches so it keeps unsaved
+            edits + its unload guard). */}
         {!isCreate && campaign && (
           <div className={activeTab === 'design' ? 'h-full' : 'hidden'}>
-            {CAMPAIGN_STUDIO_ENABLED && studioSupportsCampaign(campaign) ? (
+            {studioSupportsCampaign(campaign) ? (
               <OpenInStudioCard campaignId={campaign.id} />
             ) : (
               <DesignEditor

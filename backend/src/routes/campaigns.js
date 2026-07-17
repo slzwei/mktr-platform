@@ -12,6 +12,19 @@ export const meta = {
 
 const router = express.Router();
 
+// Malformed :id params 404 cleanly instead of leaking a Postgres uuid-cast
+// 500 (teardown PR — the "Database Error" panel paper cut). Literal routes
+// (featured-drops, slug-availability) are declared before /:id and never hit
+// this. Exported for the DB-free unit test.
+export const UUID_PARAM_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function campaignIdParamGuard(req, res, next, id) {
+  if (!UUID_PARAM_RE.test(String(id))) {
+    return res.status(404).json({ success: false, message: 'Campaign not found' });
+  }
+  return next();
+}
+router.param('id', campaignIdParamGuard);
+
 /**
  * @openapi
  * /campaigns/featured-drops:

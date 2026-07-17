@@ -1,5 +1,15 @@
 # Campaign Studio — rollout runbook (PR 5)
 
+> **Status (teardown PR):** the rollout executed 2026-07-17/18 — both flags
+> were flipped live and campaigns migrate per the loop below. The teardown PR
+> then made the Studio PERMANENT: `VITE_CAMPAIGN_STUDIO_ENABLED` no longer
+> exists (the route is always registered; the env var is a no-op), the
+> standalone `/AdminCampaignDesigner` page is retired (old links redirect to
+> the workspace Design tab), and the classic editor survives ONLY as the
+> guided_review designer. The backend `DESIGN_CONFIG_V2_WRITES_ENABLED` gate
+> REMAINS as the server-side emergency brake. The migration loop + rollback
+> below stay valid for any campaign still on v1.
+
 > The charter (implementation prompt, PR 5): *enable Studio for admins → migrate
 > one low-stakes campaign → screenshot-diff → soak → migrate the rest → retire
 > the old DesignEditor in a follow-up teardown PR.* This file is that checklist,

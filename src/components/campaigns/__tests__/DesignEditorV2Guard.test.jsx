@@ -34,8 +34,8 @@ describe('DesignEditor — v2 guard (Studio PR 3 cutover)', () => {
     expect(screen.getByText('This design was saved by Campaign Studio')).toBeInTheDocument();
     // None of the classic panels mount (they would destroy the v2 doc on save).
     expect(screen.queryByRole('button', { name: /Save Design/ })).not.toBeInTheDocument();
-    // Flag is off in tests → honest hint instead of a dead link.
-    expect(screen.getByText(/not enabled on this build/)).toBeInTheDocument();
+    // Teardown PR: the Studio is permanent — the notice always links to it.
+    expect(screen.getByRole('link', { name: /Open Campaign Studio/ })).toBeInTheDocument();
   });
 
   it('v1 docs keep the classic editor exactly as before', () => {
