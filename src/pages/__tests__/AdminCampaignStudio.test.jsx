@@ -59,7 +59,9 @@ describe('AdminCampaignStudio', () => {
     for (const label of ['Page', 'Form', 'Quiz', 'Theme', 'Distribution']) {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     }
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    // PR 5 (F6): a clean STORED-V1 doc keeps Save enabled — that no-edit save
+    // is the migration moment the status line advertises.
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
     expect(screen.getByTestId('studio-save-status')).toHaveTextContent(
       'first save upgrades this campaign to the Studio format'
     );

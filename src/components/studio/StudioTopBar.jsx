@@ -159,7 +159,9 @@ export default function StudioTopBar({
           type="button"
           className="av2-btn av2-btn--primary av2-btn--sm"
           onClick={onSave}
-          disabled={!dirty || saving}
+          // PR 5 (Codex F6): a CLEAN stored-v1 doc must still be saveable —
+          // that no-edit save IS the migration moment ("first save upgrades…").
+          disabled={(!dirty && !isStoredV1) || saving}
           title="⌘S / Ctrl+S"
         >
           {saving ? 'Saving…' : 'Save'}

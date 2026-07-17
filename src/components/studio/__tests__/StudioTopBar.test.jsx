@@ -58,6 +58,17 @@ describe('StudioTopBar', () => {
     expect(screen.getByText(/DRAW · CLOSES 30 OCT/)).toBeInTheDocument();
   });
 
+  it('PR 5 (F6): a CLEAN stored-v1 doc keeps Save enabled — the no-edit save IS the migration', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    render(<StudioTopBar {...baseProps} isStoredV1 dirty={false} onSave={onSave} />);
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeEnabled();
+    await user.click(save);
+    expect(onSave).toHaveBeenCalled();
+    expect(screen.getByTestId('studio-save-status')).toHaveTextContent('first save upgrades this campaign');
+  });
+
   it('surfaces the save error message in the status slot', () => {
     render(
       <StudioTopBar

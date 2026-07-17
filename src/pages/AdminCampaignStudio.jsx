@@ -380,7 +380,9 @@ export default function AdminCampaignStudio() {
               onDismissMediaHint={ai.dismissMediaHint}
             />
           )}
-          {doc && section === 'form' && <FormPanel doc={doc} setPath={setPath} mut={mut} />}
+          {doc && section === 'form' && (
+            <FormPanel doc={doc} setPath={setPath} mut={mut} whatsappOtpConfigured={serverReadiness?.whatsappOtpConfigured} />
+          )}
           {doc && section === 'quiz' && <StudioQuizPanel doc={doc} campaign={campaign} setPath={setPath} />}
           {doc && section === 'theme' && <ThemePanel doc={doc} setPath={setPath} mut={mut} />}
           {doc && section === 'dist' && (

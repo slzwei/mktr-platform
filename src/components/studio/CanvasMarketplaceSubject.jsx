@@ -1,6 +1,6 @@
 import OfferCard from '@/pages/marketplace/OfferCard';
 import { marketplaceToV1 } from '@/lib/designConfigV2';
-import { GATE_LABELS } from './studioReadiness';
+import { GATE_LABELS, drawCloseMismatchWithLive, sgtYmdFromInstant } from './studioReadiness';
 import '@/pages/marketplace/marketplace.css';
 
 /**
@@ -26,9 +26,11 @@ export default function CanvasMarketplaceSubject({ campaign, doc, preview, previ
     ops: preview?.ops || null,
   };
   const gate = preview?.gate || null;
+  // PR 5: instant-correct comparison — the record carries an ISO cutoff
+  // instant, the doc a YMD; the old raw inequality warned on every open draw.
   const liveDrawCloses = preview?.ops?.draw?.closesAt;
   const mismatch =
-    doc?.luckyDraw?.enabled === true && liveDrawCloses && doc?.luckyDraw?.closesAt && liveDrawCloses !== doc.luckyDraw.closesAt;
+    doc?.luckyDraw?.enabled === true && drawCloseMismatchWithLive(doc?.luckyDraw?.closesAt, liveDrawCloses);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '24px 16px', width: '100%', boxSizing: 'border-box' }} data-testid="marketplace-subject">
@@ -50,7 +52,8 @@ export default function CanvasMarketplaceSubject({ campaign, doc, preview, previ
 
       {mismatch ? (
         <div style={{ fontSize: 11, background: '#FBE9E7', color: '#8F2F28', borderRadius: 8, padding: '7px 10px', maxWidth: 320 }}>
-          ⚠ The doc draw close date ({doc.luckyDraw.closesAt}) disagrees with the live draw record ({liveDrawCloses}).
+          ⚠ The doc draw close date ({doc.luckyDraw.closesAt}) disagrees with the live draw record (
+          {sgtYmdFromInstant(liveDrawCloses) || liveDrawCloses}).
         </div>
       ) : null}
 

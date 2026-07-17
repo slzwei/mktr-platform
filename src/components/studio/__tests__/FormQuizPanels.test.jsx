@@ -12,12 +12,12 @@ import { fieldsToV1 } from '@/lib/designConfigV2';
 
 let latestDoc = null;
 
-function Harness({ v1, Panel, campaignType = 'lead_generation' }) {
+function Harness({ v1, Panel, campaignType = 'lead_generation', panelProps = {} }) {
   const campaign = { id: 'c1', name: 'FairPrice Voucher', type: campaignType, design_config: v1 };
   const s = useStudioDoc(campaign);
   latestDoc = s.doc;
   if (!s.doc) return null;
-  return <Panel doc={s.doc} campaign={campaign} setPath={s.setPath} mut={s.mut} />;
+  return <Panel doc={s.doc} campaign={campaign} setPath={s.setPath} mut={s.mut} {...panelProps} />;
 }
 
 beforeEach(() => {
@@ -75,6 +75,21 @@ describe('FormPanel — fields editor mechanics (mock parity)', () => {
     render(<Harness v1={{}} Panel={FormPanel} />);
     await user.click(screen.getByRole('button', { name: 'WhatsApp OTP' }));
     expect(latestDoc.form.verification).toBe('whatsapp');
+    expect(screen.getByText(/needs configured Meta credentials/)).toBeInTheDocument();
+  });
+
+  it('PR 5: a server-VERIFIED WhatsApp config swaps the warning for the confirmation note', async () => {
+    const user = userEvent.setup();
+    render(<Harness v1={{}} Panel={FormPanel} panelProps={{ whatsappOtpConfigured: true }} />);
+    await user.click(screen.getByRole('button', { name: 'WhatsApp OTP' }));
+    expect(screen.queryByText(/needs configured Meta credentials/)).toBeNull();
+    expect(screen.getByText(/WhatsApp credentials are configured on the server/)).toBeInTheDocument();
+  });
+
+  it('PR 5: an explicit server FALSE keeps the warning (fail-noisy, like unknown)', async () => {
+    const user = userEvent.setup();
+    render(<Harness v1={{}} Panel={FormPanel} panelProps={{ whatsappOtpConfigured: false }} />);
+    await user.click(screen.getByRole('button', { name: 'WhatsApp OTP' }));
     expect(screen.getByText(/needs configured Meta credentials/)).toBeInTheDocument();
   });
 
