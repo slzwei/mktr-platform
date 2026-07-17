@@ -39,13 +39,16 @@ describe('CanvasPageSubject — harness-owned outcome states (LeadCapture orches
     renderSubject('duplicate');
     expect(screen.getByText('Already Registered')).toBeInTheDocument();
     expect(screen.getByText('Redirecting in 5s…')).toBeInTheDocument();
-    expect(screen.getByText('You have already signed up for this campaign.')).toBeInTheDocument();
+    // The EXACT live fallback string (LeadCapture handleSubmit catch).
+    expect(
+      screen.getByText("You have already signed up for this campaign. We'll open the share options in 5 seconds.")
+    ).toBeInTheDocument();
   });
 
   it('error: the generic production fallback copy', () => {
     renderSubject('error');
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
-    expect(screen.getByText('Submission failed.')).toBeInTheDocument();
+    expect(screen.getByText('An error occurred. Please try again later.')).toBeInTheDocument();
   });
 
   it('referred: maps to the renderer referrerName badge (not a funnel fixture)', () => {

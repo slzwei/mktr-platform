@@ -57,6 +57,25 @@ describe('DeviceFrame — own React root inside a true-viewport iframe', () => {
           const styles = [...(frameDoc(container)?.head.querySelectorAll('style') || [])];
           expect(styles.some((s) => s.textContent.includes('.late-injected-style'))).toBe(true);
         });
+
+        // Vite HMR MUTATES existing style text in place (Codex diff #10) —
+        // the tracked clone must follow.
+        act(() => {
+          late.textContent = '.late-injected-style { color: green; }';
+        });
+        await waitFor(() => {
+          const styles = [...(frameDoc(container)?.head.querySelectorAll('style') || [])];
+          expect(styles.some((s) => s.textContent.includes('color: green'))).toBe(true);
+        });
+
+        // And a REMOVED source drops its clone from the frame.
+        act(() => {
+          late.remove();
+        });
+        await waitFor(() => {
+          const styles = [...(frameDoc(container)?.head.querySelectorAll('style') || [])];
+          expect(styles.some((s) => s.textContent.includes('.late-injected-style'))).toBe(false);
+        });
       } finally {
         late.remove();
       }

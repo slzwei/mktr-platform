@@ -27,14 +27,30 @@ import { PortalContainerProvider } from '@/lib/portalContainerContext';
  *    React forbids synchronous root unmount during a parent commit).
  */
 
-function copyHeadStyles(parentDoc, frameDoc, tracked) {
+/** Full reconcile (Codex diff-review #10): copy NEW parent style nodes, sync
+ * the TEXT of tracked <style> nodes (Vite HMR mutates them in place), and
+ * drop clones whose source left the parent head. */
+function syncHeadStyles(parentDoc, frameDoc, tracked) {
   const nodes = parentDoc.head.querySelectorAll('style, link[rel="stylesheet"]');
+  const live = new Set(nodes);
   nodes.forEach((node) => {
-    if (tracked.has(node)) return;
-    const clone = node.cloneNode(true);
-    frameDoc.head.appendChild(clone);
-    tracked.set(node, clone);
+    const clone = tracked.get(node);
+    if (!clone) {
+      const fresh = node.cloneNode(true);
+      frameDoc.head.appendChild(fresh);
+      tracked.set(node, fresh);
+      return;
+    }
+    if (node.tagName === 'STYLE' && clone.textContent !== node.textContent) {
+      clone.textContent = node.textContent;
+    }
   });
+  for (const [source, clone] of tracked) {
+    if (!live.has(source)) {
+      clone.remove();
+      tracked.delete(source);
+    }
+  }
 }
 
 export default function DeviceFrame({ width, height = 800, scale = 1, ariaLabel = 'Device preview', children }) {
@@ -77,9 +93,11 @@ export default function DeviceFrame({ width, height = 800, scale = 1, ariaLabel 
       mount.setAttribute('data-device-frame-root', 'true');
       frameDoc.body.appendChild(mount);
       mountRef.current = mount;
-      copyHeadStyles(document, frameDoc, trackedRef.current);
-      const observer = new MutationObserver(() => copyHeadStyles(document, frameDoc, trackedRef.current));
-      observer.observe(document.head, { childList: true });
+      syncHeadStyles(document, frameDoc, trackedRef.current);
+      const observer = new MutationObserver(() => syncHeadStyles(document, frameDoc, trackedRef.current));
+      // subtree + characterData: Vite HMR MUTATES existing <style> text in place
+      // rather than always swapping nodes (Codex diff-review #10).
+      observer.observe(document.head, { childList: true, subtree: true, characterData: true });
       observerRef.current = observer;
       rootRef.current = createRoot(mount);
       renderNow();

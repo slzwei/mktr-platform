@@ -59,15 +59,33 @@ describe('useStudioGuards', () => {
     expect(result.current.guard).toBe(null);
   });
 
-  it('leaveViaHistory skips the re-pushed sentinel with go(-2) and bypasses the guard', () => {
+  it('leaveViaHistory skips the re-pushed sentinel with go(-2) and bypasses the guard ONCE (Codex diff #2)', () => {
     const goSpy = vi.spyOn(window.history, 'go').mockImplementation(() => {});
     const { result } = renderHook(() => useStudioGuards({ dirty: true }));
     act(() => result.current.leaveViaHistory());
     expect(goSpy).toHaveBeenCalledWith(-2);
-    // The bypass flag suppresses the guard on the resulting popstate
+    // The bypass flag suppresses the guard on the resulting popstate…
     act(() => {
       window.dispatchEvent(new PopStateEvent('popstate'));
     });
     expect(result.current.guard).toBe(null);
+    // …and is CONSUMED: a later Back while still dirty is guarded again.
+    act(() => {
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(result.current.guard).toEqual({ kind: 'back-browser' });
+  });
+
+  it('re-arms the sentinel per campaign (a switch under the same route earns the new campaign its own entry)', () => {
+    const pushSpy = vi.spyOn(window.history, 'pushState');
+    const { rerender } = renderHook(({ dirty, campaignId }) => useStudioGuards({ dirty, campaignId }), {
+      initialProps: { dirty: true, campaignId: 'A' },
+    });
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+    // Clean save on A, then switch to B and dirty it: B pushes its OWN sentinel.
+    rerender({ dirty: false, campaignId: 'A' });
+    rerender({ dirty: false, campaignId: 'B' });
+    rerender({ dirty: true, campaignId: 'B' });
+    expect(pushSpy).toHaveBeenCalledTimes(2);
   });
 });

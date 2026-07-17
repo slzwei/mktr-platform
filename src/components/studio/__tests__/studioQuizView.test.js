@@ -144,6 +144,27 @@ describe('studioQuizView — profile referential integrity (Codex F7)', () => {
     expect(['rock', 'p2']).toContain(result.profileId);
   });
 
+  it('renameProfileId REFUSES a collision with an existing id (no silent persona merge — Codex diff #8)', () => {
+    const next = renameProfileId(MULTI_STEP_QUIZ, 'p1', 'p2');
+    expect(next).toEqual(MULTI_STEP_QUIZ); // no-op clone
+    expect(next.resultProfiles.map((p) => p.id)).toEqual(['p1', 'p2']);
+    expect(next.steps[0].questions[1].options[0].scores).toEqual({ p1: 2, p2: 1 });
+  });
+
+  it('generated ids never collide with ids already stored in the quiz', () => {
+    let quiz = structuredClone(MULTI_STEP_QUIZ);
+    const seen = new Set(['p1', 'p2', 's1', 's2', 'q1', 'q2', 'q3', 'a', 'b', 'c', 'd']);
+    for (let i = 0; i < 5; i += 1) {
+      quiz = addProfile(addQuestion(quiz));
+    }
+    for (const p of quiz.resultProfiles) {
+      expect(seen.has(p.id) && !['p1', 'p2'].includes(p.id)).toBe(false);
+      seen.add(p.id);
+    }
+    const allIds = quiz.steps.flatMap((s) => [s.id, ...s.questions.flatMap((q) => [q.id, ...q.options.map((o) => o.id)])]);
+    expect(new Set(allIds).size).toBe(allIds.length); // all unique
+  });
+
   it('addProfile registers the new id in profileOrder', () => {
     const next = addProfile(MULTI_STEP_QUIZ);
     const newId = next.resultProfiles[2].id;

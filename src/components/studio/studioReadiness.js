@@ -1,5 +1,6 @@
 import { resolveTheme } from '@/lib/designConfigV2';
 import { colorContrastRatio } from '@/lib/contrast';
+import { isValidYmd } from './useStudioDoc';
 
 /**
  * Studio readiness (PR 3) — the merged pill (Codex F8): the EXISTING server
@@ -16,8 +17,6 @@ import { colorContrastRatio } from '@/lib/contrast';
  * endsAt (the clamp drops that key — a known schema inconsistency noted for
  * PR 5).
  */
-
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const todayYmdSgt = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date());
@@ -48,8 +47,7 @@ export function computeDesignChecks({ campaign, doc, marketplacePreview }) {
   if (doc.luckyDraw?.enabled === true) {
     const terms = typeof doc.form?.terms?.html === 'string' ? doc.form.terms.html.trim() : '';
     if (!terms) out.push({ sev: 'block', sec: 'form', msg: 'Lucky draw requires non-empty campaign T&Cs (server invariant).' });
-    const closesAt = doc.luckyDraw?.closesAt;
-    if (typeof closesAt !== 'string' || !YMD_RE.test(closesAt)) {
+    if (!isValidYmd(doc.luckyDraw?.closesAt)) {
       out.push({ sev: 'block', sec: 'form', msg: 'Lucky draw needs a valid close date on the draw record (server invariant).' });
     }
   }
@@ -69,7 +67,7 @@ export function computeDesignChecks({ campaign, doc, marketplacePreview }) {
     out.push({ sev: 'warn', sec: 'dist', msg: 'The doc draw close date disagrees with the live draw record.' });
   }
   const fd = doc.distribution?.featuredDrop;
-  if (fd?.enabled === true && typeof fd.endsAt === 'string' && YMD_RE.test(fd.endsAt) && fd.endsAt < todayYmdSgt()) {
+  if (fd?.enabled === true && isValidYmd(fd.endsAt) && fd.endsAt < todayYmdSgt()) {
     out.push({ sev: 'info', sec: 'dist', msg: 'Featured-drop homepage end date is in the past — the tile shows as gone.' });
   }
   const gate = marketplacePreview?.gate;
@@ -81,10 +79,24 @@ export function computeDesignChecks({ campaign, doc, marketplacePreview }) {
 
 const SERVER_LEVEL_TO_SEV = { critical: 'block', warning: 'warn', info: 'info' };
 
-/** Merge server delivery readiness + client design checks into the pill model. */
-export function computeStudioReadiness({ campaign, doc, serverReadiness, marketplacePreview }) {
+/**
+ * Merge server delivery readiness + client design checks into the pill model.
+ * `serverStatus` is the readiness QUERY status — READY ✓ requires an actual
+ * successful server response (Codex diff-review #5): while it is loading the
+ * pill says CHECKING…, and on failure a delivery-unknown warning item keeps
+ * the pill off green.
+ */
+export function computeStudioReadiness({ campaign, doc, serverReadiness, serverStatus = 'success', marketplacePreview }) {
   const design = computeDesignChecks({ campaign, doc, marketplacePreview });
   const delivery = [];
+  if (serverStatus === 'error') {
+    delivery.push({
+      sev: 'warn',
+      sec: null,
+      msg: 'Delivery readiness unavailable — the server check failed. Reload before trusting a green light.',
+      source: 'delivery',
+    });
+  }
   if (serverReadiness && serverReadiness.applicable !== false) {
     for (const issue of serverReadiness.issues || []) {
       delivery.push({
@@ -98,12 +110,16 @@ export function computeStudioReadiness({ campaign, doc, serverReadiness, marketp
   const items = [...delivery, ...design.map((d) => ({ ...d, source: 'design' }))];
   const blocks = items.filter((i) => i.sev === 'block').length;
   const notApplicable = serverReadiness?.applicable === false;
+  const pending = serverStatus === 'pending';
 
   let label;
   let tone;
   if (blocks > 0) {
     label = `▲ ${items.length} TO REVIEW`;
     tone = 'bad';
+  } else if (pending) {
+    label = items.length > 0 ? `▲ ${items.length} · CHECKING…` : 'CHECKING…';
+    tone = 'warn';
   } else if (items.length > 0) {
     label = `▲ ${items.length}`;
     tone = 'warn';

@@ -36,11 +36,20 @@ export function getPath(obj, path) {
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Calendar-true YYYY-MM-DD (Codex diff-review #7 — the server validates real
+ * dates, so `2026-02-31` must fail HERE, not only at the PUT). */
+export function isValidYmd(value) {
+  if (typeof value !== 'string' || !YMD_RE.test(value)) return false;
+  const [y, m, d] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+}
+
 /** Client mirror of the server draw invariant (campaignService.ensureDrawTermsVersion). */
 export function drawInvariantProblem(doc) {
   if (!doc || doc.luckyDraw?.enabled !== true) return null;
   const closesAt = doc.luckyDraw?.closesAt;
-  if (typeof closesAt !== 'string' || !YMD_RE.test(closesAt)) {
+  if (!isValidYmd(closesAt)) {
     return {
       field: 'closesAt',
       message: 'Save blocked: a lucky-draw campaign needs a valid draw close date (set by ops on the draw record).',

@@ -56,11 +56,18 @@ export default function AdminCampaignStudio() {
   const [slugError, setSlugError] = useState(null);
   const slugDirty = slugDraft !== null && slugDraft !== (campaign?.slug || '');
 
-  const { data: serverReadiness } = useServerReadiness(campaign?.id);
+  const { data: serverReadiness, status: readinessStatus } = useServerReadiness(campaign?.id);
   const { data: marketplacePreview, status: previewStatus } = useMarketplacePreview(campaign?.id);
   const readiness = useMemo(
-    () => computeStudioReadiness({ campaign, doc, serverReadiness, marketplacePreview }),
-    [campaign, doc, serverReadiness, marketplacePreview]
+    () =>
+      computeStudioReadiness({
+        campaign,
+        doc,
+        serverReadiness,
+        serverStatus: readinessStatus,
+        marketplacePreview,
+      }),
+    [campaign, doc, serverReadiness, readinessStatus, marketplacePreview]
   );
 
   // Funnel-state jumper (CP3): jump id + a reset counter — together they key
@@ -72,7 +79,10 @@ export default function AdminCampaignStudio() {
   // Unified dirty (Codex F10): the doc AND any unsaved slug draft drive every
   // guard — a pending slug is as losable as pending copy.
   const anyDirty = dirty || slugDirty;
-  const { guard, guardedRun, leaveViaHistory, closeGuard } = useStudioGuards({ dirty: anyDirty });
+  const { guard, guardedRun, leaveViaHistory, closeGuard } = useStudioGuards({
+    dirty: anyDirty,
+    campaignId: campaign?.id,
+  });
 
   // Codex F11a: an edit can make the active jump unavailable (e.g. the SG/PR
   // gate toggled off while previewing it) — leave it instead of rendering a
@@ -98,10 +108,14 @@ export default function AdminCampaignStudio() {
     if (jump && jumpStateById(jump)?.group === 'Quiz') setResetKey((k) => k + 1);
   }, [quizSig, jump]);
 
-  // Campaign switch: fresh preview state (the canvas itself remounts via key).
+  // Campaign switch: fresh preview state (the canvas itself remounts via key)
+  // AND campaign-scoped drafts — a slug typed for A must never ride into B
+  // (Codex diff-review #3).
   useEffect(() => {
     setJump(null);
     setResetKey(0);
+    setSlugDraft(null);
+    setSlugError(null);
   }, [campaign?.id]);
 
   const switcherCampaigns = useMemo(() => {
@@ -115,14 +129,22 @@ export default function AdminCampaignStudio() {
   const savedHostChoice = resolveCustomerHost(baseline?.distribution?.host);
   const savedHostName = savedHostChoice === 'mktr' ? 'mktr.sg' : 'redeem.sg';
 
-  // Save = the whole doc + any pending, format-valid slug draft (one PUT —
-  // slug is its own field on the same endpoint; nothing pending is dropped).
+  // Save = the whole doc + any pending slug draft (one PUT — slug is its own
+  // field on the same endpoint). An INVALID pending slug blocks the save
+  // instead of being silently dropped, and the draft only clears if it still
+  // equals what was sent (the input stays editable in flight) — Codex #3.
   const SLUG_RE = /^[a-z0-9-]{3,80}$/;
   const handleSave = useCallback(async () => {
-    const slugRide = slugDirty && (slugDraft === '' || SLUG_RE.test(slugDraft)) ? { slug: slugDraft || null } : {};
+    if (slugDirty && !(slugDraft === '' || SLUG_RE.test(slugDraft))) {
+      setSlugError('Fix the slug before saving — 3–80 chars: a–z, 0–9, dashes.');
+      setSection('dist');
+      return { ok: false, reason: 'slug-invalid' };
+    }
+    const slugRide = slugDirty ? { slug: slugDraft || null } : {};
+    const sentSlug = slugDraft;
     const res = await save(slugRide);
     if (res.ok) {
-      if ('slug' in slugRide) setSlugDraft(null);
+      if ('slug' in slugRide) setSlugDraft((cur) => (cur === sentSlug ? null : cur));
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'detail', id] });
       queryClient.invalidateQueries({ queryKey: ['studio', 'readiness', id] });
       queryClient.invalidateQueries({ queryKey: ['studio', 'marketplace-preview', id] });
@@ -139,9 +161,10 @@ export default function AdminCampaignStudio() {
     if (!slugDirty) return;
     setSlugSaving(true);
     setSlugError(null);
+    const sentSlug = slugDraft;
     try {
-      await Campaign.update(id, { slug: slugDraft || null });
-      setSlugDraft(null);
+      await Campaign.update(id, { slug: sentSlug || null });
+      setSlugDraft((cur) => (cur === sentSlug ? null : cur));
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'detail', id] });
       queryClient.invalidateQueries({ queryKey: ['studio', 'marketplace-preview', id] });
       toast.success('Slug saved');
@@ -165,30 +188,40 @@ export default function AdminCampaignStudio() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const doCopyLink = useCallback(async () => {
-    const url = customerLeadCaptureUrl(id, {}, savedHostChoice);
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.success('Lead capture link copied');
-    } catch {
-      toast.error('Could not copy link');
-    }
-  }, [id, savedHostChoice]);
-
-  const doSharePreview = useCallback(async () => {
-    try {
-      const res = await apiClient.post(`/campaigns/${id}/preview`, {});
-      const urlPath = res?.data?.url || (res?.data?.slug ? `/p/${res.data.slug}` : null);
-      if (!urlPath) {
-        toast.error('Failed to generate preview link');
-        return;
+  // Copy/share accept an explicit host override: after a guarded "Save &
+  // copy/mint", the parked closure would otherwise still see the PRE-save
+  // baseline host (Codex diff-review #4) — the guard passes the host from the
+  // save RESPONSE instead.
+  const doCopyLink = useCallback(
+    async ({ hostChoice } = {}) => {
+      const url = customerLeadCaptureUrl(id, {}, hostChoice || savedHostChoice);
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success('Lead capture link copied');
+      } catch {
+        toast.error('Could not copy link');
       }
-      window.open(customerPublicUrl(urlPath, savedHostChoice), '_blank');
-    } catch (e) {
-      console.error('Failed to create preview:', e);
-      toast.error('Failed to create preview');
-    }
-  }, [id, savedHostChoice]);
+    },
+    [id, savedHostChoice]
+  );
+
+  const doSharePreview = useCallback(
+    async ({ hostChoice } = {}) => {
+      try {
+        const res = await apiClient.post(`/campaigns/${id}/preview`, {});
+        const urlPath = res?.data?.url || (res?.data?.slug ? `/p/${res.data.slug}` : null);
+        if (!urlPath) {
+          toast.error('Failed to generate preview link');
+          return;
+        }
+        window.open(customerPublicUrl(urlPath, hostChoice || savedHostChoice), '_blank');
+      } catch (e) {
+        console.error('Failed to create preview:', e);
+        toast.error('Failed to create preview');
+      }
+    },
+    [id, savedHostChoice]
+  );
 
   const goWorkspace = useCallback(() => {
     navigate(`/admin/campaigns/${id}/workspace`);
@@ -199,8 +232,15 @@ export default function AdminCampaignStudio() {
     const res = await saveRef.current();
     closeGuard();
     if (!res.ok || !parked) return; // save error stays visible in the top bar
-    if (parked.kind === 'back-browser') leaveViaHistory();
-    else parked.action?.();
+    if (parked.kind === 'back-browser') {
+      leaveViaHistory();
+      return;
+    }
+    // Codex #4: the just-saved doc (server response) is the host truth for a
+    // parked copy/share — the closure's baseline-derived host is pre-save.
+    const savedDoc = res.campaign?.design_config;
+    const hostChoice = resolveCustomerHost(savedDoc?.distribution?.host ?? savedDoc?.customerHost);
+    parked.action?.({ hostChoice });
   }, [guard, closeGuard, leaveViaHistory]);
 
   const handleGuardDiscard = useCallback(() => {

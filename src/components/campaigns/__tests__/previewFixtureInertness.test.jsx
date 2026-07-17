@@ -140,6 +140,49 @@ describe('CampaignSignupForm — previewFixture is INERT in live mode', () => {
   });
 });
 
+describe('preview→live MODE FLIP on the same mount (Codex diff #1)', () => {
+  it('the renderer remounts the funnel when previewMode flips, killing all fixture state', async () => {
+    const { default: CampaignPageRenderer } = await import('@/components/campaignPage/CampaignPageRenderer');
+    const { upgradeDesignConfig } = await import('@/lib/designConfigV2');
+    const onSubmit = vi.fn();
+    const campaign = {
+      id: 'c1',
+      name: 'FairPrice Voucher',
+      status: 'active',
+      design_config: upgradeDesignConfig({ formHeadline: 'Hi', sgPrOnly: true, customerHost: 'redeem' }),
+    };
+    // Preview with the fullest funnel fixture: gates skipped, phone verified.
+    const { rerender } = render(
+      <CampaignPageRenderer campaign={campaign} previewMode jump="otp-verified" onSubmit={onSubmit} />
+    );
+    expect(screen.getByText('Verified')).toBeInTheDocument();
+    expect(screen.queryByText('Are you a Singapore Citizen or Permanent Resident?')).not.toBeInTheDocument();
+
+    // Same MOUNT flips to live: the keyed funnel remounts — every seeded state
+    // dies; the first regulated step is back and nothing is verified.
+    rerender(<CampaignPageRenderer campaign={campaign} previewMode={false} jump={null} onSubmit={onSubmit} />);
+    expect(screen.getByText('Are you a Singapore Citizen or Permanent Resident?')).toBeInTheDocument();
+    expect(screen.queryByText('Verified')).not.toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('a live renderer NEVER resolves jump fixtures (jump without previewMode is inert beyond blocked states)', async () => {
+    const { default: CampaignPageRenderer } = await import('@/components/campaignPage/CampaignPageRenderer');
+    const { upgradeDesignConfig } = await import('@/lib/designConfigV2');
+    const campaign = {
+      id: 'c1',
+      name: 'FairPrice Voucher',
+      status: 'active',
+      design_config: upgradeDesignConfig({ formHeadline: 'Hi', sgPrOnly: true, customerHost: 'redeem' }),
+    };
+    render(<CampaignPageRenderer campaign={campaign} jump="otp-verified" onSubmit={vi.fn()} />);
+    // Not verified, not skipped — the live page shows the first gate.
+    expect(screen.getByText('Are you a Singapore Citizen or Permanent Resident?')).toBeInTheDocument();
+    expect(screen.queryByText('Verified')).not.toBeInTheDocument();
+  });
+});
+
 describe('QuizGate / CampaignQuiz — previewFixture is INERT in live mode', () => {
   it('QuizGate ignores done:true in live mode (quiz still gates the form)', () => {
     render(

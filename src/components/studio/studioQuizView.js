@@ -22,7 +22,29 @@
 const clone = (q) => structuredClone(q);
 
 let uidCounter = 0;
-const uid = (prefix) => `${prefix}-${Date.now().toString(36)}${(uidCounter += 1)}`;
+const rawUid = (prefix) => `${prefix}-${Date.now().toString(36)}${(uidCounter += 1)}`;
+
+/** Every id already present anywhere in the quiz (steps, questions, options,
+ * profiles) — generated ids must never collide with stored ones. */
+function existingIds(quiz) {
+  const ids = new Set();
+  for (const p of quiz?.resultProfiles || []) if (p?.id) ids.add(p.id);
+  for (const s of quiz?.steps || []) {
+    if (s?.id) ids.add(s.id);
+    for (const q of s.questions || []) {
+      if (q?.id) ids.add(q.id);
+      for (const o of q.options || []) if (o?.id) ids.add(o.id);
+    }
+  }
+  return ids;
+}
+
+function uid(prefix, quiz) {
+  const taken = existingIds(quiz);
+  let id = rawUid(prefix);
+  while (taken.has(id)) id = rawUid(prefix);
+  return id;
+}
 
 /** Flattened editing view: one row per question with its stable locator. */
 export function flattenQuestions(quiz) {
@@ -57,16 +79,16 @@ export function addQuestion(quiz) {
   const next = clone(quiz);
   next.steps = next.steps || [];
   const question = {
-    id: uid('q'),
+    id: uid('q', next),
     prompt: '',
     type: 'single',
     weight: 1,
     options: [
-      { id: uid('opt'), label: '', scores: {} },
-      { id: uid('opt'), label: '', scores: {} },
+      { id: uid('opt', next), label: '', scores: {} },
+      { id: uid('opt', next), label: '', scores: {} },
     ],
   };
-  if (next.steps.length === 0) next.steps.push({ id: uid('step'), questions: [question] });
+  if (next.steps.length === 0) next.steps.push({ id: uid('step', next), questions: [question] });
   else next.steps[next.steps.length - 1].questions.push(question);
   return next;
 }
@@ -83,7 +105,7 @@ export function addOption(quiz, stepIndex, questionIndex) {
   const q = next.steps?.[stepIndex]?.questions?.[questionIndex];
   if (q) {
     q.options = q.options || [];
-    q.options.push({ id: uid('opt'), label: '', scores: {} });
+    q.options.push({ id: uid('opt', next), label: '', scores: {} });
   }
   return next;
 }
@@ -112,7 +134,7 @@ export function setOptionProfile(quiz, stepIndex, questionIndex, optionIndex, pr
 
 export function addProfile(quiz) {
   const next = clone(quiz);
-  const id = uid('profile');
+  const id = uid('profile', next);
   next.resultProfiles = next.resultProfiles || [];
   next.resultProfiles.push({ id, title: '', description: '', themeColor: '#D17029', ctaLabel: 'Continue', agentAngle: '' });
   next.scoring = next.scoring || {};
@@ -167,6 +189,9 @@ export function updateProfile(quiz, profileId, patch) {
  * option scores map. Not exposed in the Studio UI; kept for integrity work. */
 export function renameProfileId(quiz, oldId, newId) {
   if (!newId || oldId === newId) return clone(quiz);
+  // Collision guard (Codex diff-review #8): renaming ONTO an existing profile
+  // id would silently merge two personas' scores — refuse, no-op.
+  if ((quiz?.resultProfiles || []).some((p) => p.id === newId)) return clone(quiz);
   const next = clone(quiz);
   const p = (next.resultProfiles || []).find((x) => x.id === oldId);
   if (!p) return next;

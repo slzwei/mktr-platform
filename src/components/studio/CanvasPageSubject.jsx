@@ -8,12 +8,12 @@ import { customerLeadCaptureUrl, resolveCustomerHost } from '@/lib/brand';
 
 const noop = () => {};
 
-// Representative production copy for the outcome fixtures. The duplicate copy
-// mirrors the live 409 message shape; the generic error is the production
-// fallback constant. The countdown is intentionally FROZEN (no redirect timer
-// exists in the harness — this is a preview, not a capture).
-const DUPLICATE_MESSAGE = 'You have already signed up for this campaign.';
-const GENERIC_ERROR_MESSAGE = 'Submission failed.';
+// The EXACT client fallback strings LeadCapture sets for these outcomes
+// (LeadCapture.jsx handleSubmit catch — Codex diff-review #9). The countdown
+// is intentionally FROZEN (no redirect timer exists in the harness — this is
+// a preview, not a capture).
+const DUPLICATE_MESSAGE = "You have already signed up for this campaign. We'll open the share options in 5 seconds.";
+const GENERIC_ERROR_MESSAGE = 'An error occurred. Please try again later.';
 
 /**
  * Parent-owned outcome states (success / duplicate / error) — in production

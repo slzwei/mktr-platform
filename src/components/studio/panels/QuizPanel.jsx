@@ -60,7 +60,7 @@ export default function StudioQuizPanel({ doc, campaign, setPath }) {
   const confirmRemoveProfile = (p) => {
     const refs = profileReferenceCounts(quiz, p.id);
     const detail = `${refs.optionScores} option score${refs.optionScores === 1 ? '' : 's'}, ${refs.rankFactor ? 'a readiness rank factor, ' : ''}${refs.profileOrder ? 'the tie-break order' : ''}`;
-     
+
     if (window.confirm(`Remove “${p.title || p.id}”? This also removes its references (${detail}).`)) {
       setQuiz(removeProfile(quiz, p.id));
     }

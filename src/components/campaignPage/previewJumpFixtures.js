@@ -63,7 +63,10 @@ const FORM_FIXTURES = {
   'dnc-notice': { ...OTP_READY, otpState: 'verified', dncStatus: 'on_dnc', dncConsent: false },
   'dnc-consented': { ...OTP_READY, otpState: 'verified', dncStatus: 'on_dnc', dncConsent: true },
   'tnc-dialog': { ...OTP_READY, consentOpen: true },
-  submitting: { ...OTP_READY, otpState: 'verified', consentTerms: true, loading: 'submitting' },
+  // dncStatus 'clear' mirrors the real pre-submit state: on a DNC-enabled
+  // campaign the verified transition runs the check BEFORE submit is possible
+  // (Codex diff-review #9); harmless when the gate is off.
+  submitting: { ...OTP_READY, otpState: 'verified', dncStatus: 'clear', consentTerms: true, loading: 'submitting' },
 };
 
 /** Deterministic quiz walkthrough: first option of every question. */

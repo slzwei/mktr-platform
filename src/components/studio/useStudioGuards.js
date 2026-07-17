@@ -18,13 +18,23 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  *     copy link, share preview) route through the guard modal while dirty.
  *
  * `dirty` here is the UNIFIED flag (document dirty OR unsaved slug draft).
+ * `campaignId` scopes the machinery: switching campaigns re-arms the sentinel
+ * (each campaign's dirty session earns its own entry, with its own URL) and
+ * clears any pending bypass (Codex diff-review #2).
  */
-export default function useStudioGuards({ dirty }) {
+export default function useStudioGuards({ dirty, campaignId }) {
   const [guard, setGuard] = useState(null); // { kind, action? } | null
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
   const bypassRef = useRef(false);
   const sentinelRef = useRef(false);
+
+  // Campaign switch (same component instance under the parameterized route):
+  // re-arm the sentinel for the new campaign's URL and drop any stale bypass.
+  useEffect(() => {
+    sentinelRef.current = false;
+    bypassRef.current = false;
+  }, [campaignId]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -40,19 +50,25 @@ export default function useStudioGuards({ dirty }) {
   useEffect(() => {
     if (!dirty) return undefined;
     if (!sentinelRef.current) {
-      // One sentinel per Studio visit — repeated dirty↔clean cycles must not
-      // stack entries (each would cost the user an extra Back press).
+      // One sentinel per campaign per Studio visit — repeated dirty↔clean
+      // cycles must not stack entries (each would cost an extra Back press).
       window.history.pushState({ __studioGuard: true }, '');
       sentinelRef.current = true;
     }
     const onPop = () => {
-      if (bypassRef.current || !dirtyRef.current) return;
+      if (bypassRef.current) {
+        // One-shot: consume the bypass so a LATER dirty cycle on a still-alive
+        // component is guarded again (the latch was Codex diff-review #2).
+        bypassRef.current = false;
+        return;
+      }
+      if (!dirtyRef.current) return;
       window.history.pushState({ __studioGuard: true }, '');
       setGuard({ kind: 'back-browser' });
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, [dirty]);
+  }, [dirty, campaignId]);
 
   /** Run `action` now, or park it behind the guard modal while dirty. */
   const guardedRun = useCallback((kind, action) => {

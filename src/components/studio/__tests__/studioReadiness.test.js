@@ -81,6 +81,23 @@ describe('computeStudioReadiness — merged pill (Codex F8)', () => {
     expect(na.label).toBe('READY · N/A');
   });
 
+  it('NEVER claims READY while the server check is pending or failed (Codex diff #5)', () => {
+    const pending = computeStudioReadiness({ campaign: CAMPAIGN, doc: docWith({}), serverReadiness: undefined, serverStatus: 'pending' });
+    expect(pending.label).toBe('CHECKING…');
+    expect(pending.tone).toBe('warn');
+
+    const failed = computeStudioReadiness({ campaign: CAMPAIGN, doc: docWith({}), serverReadiness: null, serverStatus: 'error' });
+    expect(failed.label).toBe('▲ 1');
+    expect(failed.items[0]).toMatchObject({ source: 'delivery', sev: 'warn' });
+    expect(failed.items[0].msg).toMatch(/Delivery readiness unavailable/);
+  });
+
+  it('calendar-impossible draw dates are blocked, not just shape-checked (Codex diff #7)', () => {
+    const doc = docWith({ termsContent: '<p>t</p>' }, { luckyDraw: { enabled: true, closesAt: '2026-02-31' } });
+    const items = computeDesignChecks({ campaign: CAMPAIGN, doc });
+    expect(items).toContainEqual(expect.objectContaining({ sev: 'block', msg: expect.stringMatching(/valid close date/) }));
+  });
+
   it('design warns without blocks → amber count; sectionFlags feed the rail dots', () => {
     const r = computeStudioReadiness({
       campaign: CAMPAIGN,

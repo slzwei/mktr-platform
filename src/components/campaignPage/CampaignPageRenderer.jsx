@@ -252,7 +252,14 @@ export default function CampaignPageRenderer({
   });
   const funnel = (
     <CampaignThemeProvider value={adapted.funnelTheme}>
+      {/* Keyed on previewMode (Codex diff-review #1): fixture state lives in
+          lazy useState initializers, so a hypothetical preview→live rerender
+          of the SAME mount must REMOUNT the funnel — otherwise seeded state
+          would survive into a live capture. Every current call site passes a
+          static previewMode; this makes the component contract safe even for
+          a future one that doesn't. */}
       <QuizGate
+        key={previewMode ? 'funnel-preview' : 'funnel-live'}
         quiz={adapted.legacy.quiz}
         themeColor={t.accent}
         previewMode={previewMode}
