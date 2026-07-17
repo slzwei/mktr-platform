@@ -127,7 +127,10 @@ export default function useStudioDoc(campaign) {
     [mut]
   );
 
-  const save = useCallback(async () => {
+  // `extra` merges into the PUT body — the guard modal's "Save & continue"
+  // passes { slug } when a slug draft is pending so nothing is silently lost
+  // (slug is a campaign column; same endpoint, own field).
+  const save = useCallback(async (extra = {}) => {
     if (!doc || !campaign?.id || saving) return { ok: false, reason: 'busy' };
     const drawProblem = drawInvariantProblem(doc);
     if (drawProblem) {
@@ -138,7 +141,7 @@ export default function useStudioDoc(campaign) {
     setSaveError(null);
     const snapshot = doc;
     try {
-      const updated = await Campaign.update(campaign.id, { design_config: snapshot });
+      const updated = await Campaign.update(campaign.id, { design_config: snapshot, ...extra });
       const serverDoc = updated?.design_config;
       const adopted = serverDoc && typeof serverDoc === 'object' ? serverDoc : snapshot;
       setBaseline(clone(adopted));

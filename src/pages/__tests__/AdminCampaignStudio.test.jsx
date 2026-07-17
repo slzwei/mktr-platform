@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mockUseCampaign = vi.fn();
 const mockUseCampaignLookup = vi.fn();
@@ -10,7 +11,7 @@ vi.mock('@/hooks/queries/useCampaignsQuery', () => ({
   useCampaign: (...args) => mockUseCampaign(...args),
   useCampaignLookup: (...args) => mockUseCampaignLookup(...args),
 }));
-vi.mock('@/api/client', () => ({ apiClient: { post: vi.fn() } }));
+vi.mock('@/api/client', () => ({ apiClient: { post: vi.fn(), get: vi.fn().mockResolvedValue({ data: {} }) } }));
 vi.mock('@/api/integrations', () => ({ UploadFile: vi.fn() })); // PagePanel's upload seam
 vi.mock('@/api/entities', () => ({ Campaign: { update: vi.fn() } }));
 vi.mock('@/lib/queryClient', () => ({ queryClient: { invalidateQueries: vi.fn() } }));
@@ -30,13 +31,18 @@ const LEAD_CAMPAIGN = {
 function renderStudio(campaign = LEAD_CAMPAIGN) {
   mockUseCampaign.mockReturnValue({ data: campaign, isLoading: false });
   mockUseCampaignLookup.mockReturnValue({ data: [campaign] });
+  // The Studio's advisory data hooks (readiness / marketplace preview) use
+  // react-query directly — give them a real client with silent failures.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter initialEntries={[`/admin/campaigns/${campaign.id}/studio`]}>
-      <Routes>
-        <Route path="/admin/campaigns/:id/studio" element={<AdminCampaignStudio />} />
-        <Route path="/admin/campaigns/:id/workspace" element={<div>WORKSPACE-PAGE</div>} />
-      </Routes>
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`/admin/campaigns/${campaign.id}/studio`]}>
+        <Routes>
+          <Route path="/admin/campaigns/:id/studio" element={<AdminCampaignStudio />} />
+          <Route path="/admin/campaigns/:id/workspace" element={<div>WORKSPACE-PAGE</div>} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
   );
 }
 
