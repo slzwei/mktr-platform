@@ -116,13 +116,16 @@ export function makeInventoryService(overrides = {}) {
   function recordIssued({ offerId, activationId, entitlementId, actorType = 'system', transaction }) {
     return guardedMove({
       offerId, quantity: 1, transaction,
+      // status = 'active' (PR C): a paused/ended offer must not issue even in
+      // the race window after the service's pre-check passed (TOCTOU).
       guardSql: `UPDATE reward_offers
                     SET "issuedQuantity" = "issuedQuantity" + 1, "updatedAt" = NOW()
                   WHERE id = :offerId
+                    AND status = 'active'
                     AND "allocatedQuantity" - "issuedQuantity" >= 1
                   RETURNING id, "issuedQuantity"`,
       ledger: { type: 'issued', activationId, entitlementId, actorType },
-      failMessage: 'Activation allocation exhausted',
+      failMessage: 'Reward offer is not active or its allocation is exhausted',
     });
   }
 

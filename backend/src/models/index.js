@@ -341,7 +341,7 @@ export const {
   OutreachTask, ProspectingPool, ProspectingPoolMember, RewardOffer,
   RewardTermsVersion, DrawTermsVersion, Draw, DrawEntry, DrawAttempt,
   DrawBoostReview, RewardOfferLocation, RewardInventoryEvent,
-  PartnerOnboardingItem, Activation, RewardEntitlement, Redemption,
+  PartnerOnboardingItem, Activation, ActivationIssuanceSkip, RewardEntitlement, Redemption,
   RedemptionEvent, RedeemOpsCategory, DiscoveryTerritory, DiscoveryDailyUsage,
   DiscoveryRun, DiscoveryCandidate,
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,

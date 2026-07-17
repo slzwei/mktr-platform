@@ -82,6 +82,10 @@ export default function ActivationDetail() {
   const a = data.activation;
   const campaign = data.campaign;
   const acquisition = metricsQuery.data?.acquisition;
+  // Server-enforced linkage guard (PR C): live activations cannot change their
+  // campaign link — relinking/unlinking one silently starves the funnel.
+  const isLive = ['preparing', 'active', 'paused'].includes(a.status);
+  const issuanceSkips = data.issuanceSkips24h || [];
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-5">
@@ -114,6 +118,31 @@ export default function ActivationDetail() {
         <RoStatTile label="Redeemed" value={a.redeemedCount} />
       </div>
 
+      {issuanceSkips.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Skipped issuance — last 24h</CardTitle>
+            <CardDescription>
+              Sign-ups that did NOT earn a reward, by reason. A growing count here means the
+              funnel is starved (allocation, offer status, activation link) or being farmed.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {issuanceSkips.map((s) => (
+                <span
+                  key={s.reason}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs"
+                  style={{ color: '#B45309' }}
+                >
+                  ⚠ {prettyEnum(s.reason)} <strong>×{s.count}</strong>
+                </span>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -139,11 +168,20 @@ export default function ActivationDetail() {
                       <ExternalLink className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" /> Open in MKTR
                     </a>
                   </Button>
-                  {canLink && (
+                  {canLink && !isLive && (
                     <Button size="sm" variant="ghost" onClick={() => linkMutation.mutate(null)}>Unlink</Button>
                   )}
                 </div>
+                {canLink && isLive && (
+                  <p className="text-xs m-0" style={{ color: 'var(--ro-text-3)' }}>
+                    Complete or cancel the activation to change its campaign link — unlinking a live activation stops issuance.
+                  </p>
+                )}
               </div>
+            ) : canLink && isLive ? (
+              <p className="text-sm text-muted-foreground">
+                No campaign linked — issuance is stopped. Complete or cancel the activation first, then link the campaign on a fresh activation.
+              </p>
             ) : canLink ? (
               <div className="space-y-2">
                 <Input
