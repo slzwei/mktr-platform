@@ -4,6 +4,7 @@ import Joi from 'joi';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
 import * as aiController from '../controllers/aiController.js';
+import { TEMPLATE_IDS } from '../utils/designConfigV2.js';
 
 export const meta = { path: '/api/admin/ai' };
 
@@ -15,7 +16,18 @@ const aiGenerationLimiter = rateLimit({
   max: process.env.NODE_ENV === 'test' ? 10000 : 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: 'Too many AI requests. Try again in a minute.' },
+  // Studio PR 4: the 429 body carries retryAfterSec (under data — the api
+  // client exposes only body.data on errors) so the Studio panel can count
+  // down. Shared budget across every AI generation route, per CO-1.
+  handler: (req, res) => {
+    const resetTime = req.rateLimit?.resetTime instanceof Date ? req.rateLimit.resetTime.getTime() : null;
+    const retryAfterSec = resetTime ? Math.max(1, Math.ceil((resetTime - Date.now()) / 1000)) : 60;
+    res.status(429).json({
+      success: false,
+      message: 'Too many AI requests. Try again in a minute.',
+      data: { retryAfterSec },
+    });
+  },
 });
 
 const settingsSchema = Joi.object({
@@ -38,9 +50,28 @@ const briefSchema = Joi.object({
   mustInclude: Joi.string().trim().allow('').max(3000).default(''),
 });
 
+// Campaign Studio copy assist (Studio PR 4, spec §05/CO-1). No provider field:
+// the provider comes from admin AI Settings. Joi failures are 400s (house
+// validate middleware); the semantic scope-not-allowed check is a service 422.
+const copyDraftSchema = Joi.object({
+  campaignId: Joi.string().uuid().required(),
+  templateId: Joi.string().valid(...TEMPLATE_IDS).required(),
+  mode: Joi.string().valid('copy', 'full').required(),
+  scope: Joi.string().trim().max(80).allow(null).optional(),
+  regen: Joi.number().integer().min(0).max(50).default(0),
+  brief: Joi.object({
+    topic: Joi.string().trim().min(3).max(1000).required(),
+    audience: Joi.string().trim().allow('').max(1000).default(''),
+    objective: Joi.string().trim().allow('').max(1000).default(''),
+    mustInclude: Joi.string().trim().allow('').max(3000).default(''),
+    tone: Joi.string().valid('Friendly', 'Formal', 'Urgent', 'Playful').default('Friendly'),
+  }).required(),
+});
+
 router.get('/settings', aiController.getSettings);
 router.put('/settings', validate(settingsSchema, { stripUnknown: true }), aiController.updateSettings);
 router.post('/providers/:provider/test', aiGenerationLimiter, aiController.testProvider);
 router.post('/guided-review/draft', aiGenerationLimiter, validate(briefSchema, { stripUnknown: true }), aiController.generateGuidedReview);
+router.post('/copy-draft', aiGenerationLimiter, validate(copyDraftSchema, { stripUnknown: true }), aiController.generateCampaignCopy);
 
 export default router;
