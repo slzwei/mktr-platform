@@ -18,6 +18,7 @@ import { fmtNumber, fmtSGD, fmtRelative, fmtAgoShort, daysUntil } from '@/lib/ad
 import { HELD_REASON_LABELS } from '@/lib/adminV2/constants';
 import { prospectsToCsv, downloadCsv } from '@/lib/adminV2/csv';
 import { Card, PeriodSwitch, Skeleton, ErrorState } from '@/components/adminv2/primitives';
+import { SeriesLineChart } from '@/components/adminv2/charts';
 
 const SEVERITY_STYLE = {
   incident: { bg: 'var(--bad-soft)', fg: 'var(--bad)' },
@@ -148,15 +149,8 @@ function LeadFlow({ period }) {
   const s = { days: [], today: 0, avgPerDay: 0, ...(series.data || {}) };
   const days = s.days.length ? s.days : [{ date: '', count: 0 }];
 
-  // Line + area geometry (600×140 viewBox, exact math from the design source).
+  // Chart scale and the header's "peak N/day" share one source of truth.
   const max = Math.max(4, ...days.map((d) => d.count));
-  const W = 600; const TOP = 10; const BOT = 128; const H = 140;
-  const n = days.length;
-  const pts = days.map((d, i) => [n === 1 ? W : (i / (n - 1)) * W, BOT - (d.count / max) * (BOT - TOP)]);
-  const sparkLine = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
-  const sparkArea = `${sparkLine} L${W} ${H} L0 ${H} Z`;
-  const [endX, endY] = pts[pts.length - 1];
-  const avgY = BOT - (Math.min(s.avgPerDay, max) / max) * (BOT - TOP);
 
   let delta;
   if (s.avgPerDay >= 0.5) {
@@ -195,12 +189,7 @@ function LeadFlow({ period }) {
           <span style={{ fontSize: 11.5, fontWeight: 700, borderRadius: 6, padding: '3px 8px', background: delta.bg, color: delta.fg }}>{delta.label}</span>
           <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>leads today (since 00:00 SGT)</span>
         </div>
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 118, display: 'block' }} aria-hidden="true">
-          <path d={sparkArea} fill="var(--accent-soft)" />
-          <line x1="0" x2={W} y1={avgY.toFixed(1)} y2={avgY.toFixed(1)} stroke="var(--ink-3)" strokeWidth="1" strokeDasharray="3 6" />
-          <path d={sparkLine} fill="none" stroke="var(--accent)" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
-          <circle className="av2-chart-dot" cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="4.5" fill="var(--accent)" style={{ animation: 'av2-livepulse 2.4s ease-in-out infinite' }} />
-        </svg>
+        <SeriesLineChart days={days} max={max} avgPerDay={s.avgPerDay} />
         <div className="av2-mono" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--ink-3)' }}>
           <span>{dayLabel(days[0].date)}</span><span>┄ avg {s.avgPerDay}/day</span><span>today</span>
         </div>

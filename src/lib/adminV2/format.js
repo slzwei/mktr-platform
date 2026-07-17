@@ -41,6 +41,16 @@ export function fmtDate(value) {
   return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric', timeZone: SGT });
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** ISO day bucket "2026-07-17" → "Fri 17 Jul" (UTC math — day strings must not drift by tz). */
+export function fmtDay(isoDate) {
+  const [y, m, d] = String(isoDate || '').split('-').map(Number);
+  if (!y || !m || !d) return '';
+  return `${DOW[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d} ${MONTHS[m - 1]}`;
+}
+
 /** Rough relative time for stream rows ("4m ago", "2h ago", "3d ago"). */
 export function fmtRelative(value, now = Date.now()) {
   if (!value) return '—';

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { composeAttentionRows, composeHealthStrip, SEVERITY_ORDER } from '../attention.js';
 import { prospectsToCsv } from '../csv.js';
-import { fmtSGD, fmtSGDExact, fmtDateTime, fmtRelative, daysUntil, fmtNumber } from '../format.js';
+import { fmtSGD, fmtSGDExact, fmtDateTime, fmtRelative, daysUntil, fmtNumber, fmtDay } from '../format.js';
 import { HELD_REASON_LABELS, STATUS_LABELS, STATUS_CHIP_CLASS, SOURCE_LABELS, LEAD_STATUSES, LEAD_SOURCES } from '../constants.js';
 
 describe('constants — vocabulary completeness', () => {
@@ -191,5 +191,12 @@ describe('formatters', () => {
   it('fmtNumber handles nullish', () => {
     expect(fmtNumber(1024)).toBe('1,024');
     expect(fmtNumber(undefined)).toBe('—');
+  });
+
+  it('fmtDay formats ISO day buckets without tz drift', () => {
+    expect(fmtDay('2026-07-17')).toBe('Fri 17 Jul');
+    expect(fmtDay('2026-01-01')).toBe('Thu 1 Jan');
+    expect(fmtDay('')).toBe('');
+    expect(fmtDay(undefined)).toBe('');
   });
 });

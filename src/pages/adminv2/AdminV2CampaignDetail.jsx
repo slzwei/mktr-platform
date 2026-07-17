@@ -11,6 +11,7 @@ import { useCampaignSummary, useAttention } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtSGD, fmtDate, fmtDateTime, fmtRelative, daysUntil } from '@/lib/adminV2/format';
 import { STATUS_LABELS, STATUS_CHIP_CLASS, HELD_REASON_LABELS } from '@/lib/adminV2/constants';
 import { Card, Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
+import { SeriesBarChart } from '@/components/adminv2/charts';
 
 const WORKSPACE_ON = import.meta.env.VITE_CAMPAIGN_WORKSPACE_ENABLED === 'true';
 
@@ -53,7 +54,6 @@ export default function AdminV2CampaignDetail() {
     : false; // attention unavailable → no banner rather than a possibly-false one
   const editHref = WORKSPACE_ON ? `/admin/campaigns/${c.id}/workspace?tab=details` : `/admin/campaigns/${c.id}/edit`;
   const designHref = WORKSPACE_ON ? `/admin/campaigns/${c.id}/workspace?tab=design` : `/AdminCampaignDesigner?campaign_id=${c.id}`;
-  const maxDay = Math.max(1, ...(series?.days || []).map((d) => d.count));
 
   return (
     <div>
@@ -96,13 +96,7 @@ export default function AdminV2CampaignDetail() {
         {/* Lead series */}
         <Card span={7} title="Leads over time" meta="daily · SGT · last 30d">
           <div style={{ padding: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 140 }}>
-              {(series?.days || []).map((d) => (
-                <div key={d.date} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }} title={`${d.date}: ${d.count}`}>
-                  <div style={{ height: `${Math.max(2, (d.count / maxDay) * 100)}%`, borderRadius: 2, background: d.isToday ? 'var(--accent)' : 'var(--accent-soft)' }} />
-                </div>
-              ))}
-            </div>
+            <SeriesBarChart days={series?.days || []} />
           </div>
         </Card>
 
