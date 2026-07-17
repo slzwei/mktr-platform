@@ -7,7 +7,7 @@
  * Internal agents render "—" for wallet fields (null from the API — they have
  * no wallets in v1) and sort after the external roster.
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAgentsRoster } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtSGD, fmtSGDExact, fmtRelative } from '@/lib/adminV2/format';
@@ -117,20 +117,36 @@ export default function AdminV2Agents() {
   const setPeriod = (p) => patch({ period: p === '30d' ? null : p });
   const setStatus = (v) => patch({ status: v === 'active' ? null : v });
   const setWFilter = (v) => patch({ w: v || null });
-  // Debounce the search into the URL (functional — never clobbers other params).
+  // Live view of the params for timers created in older renders — RR v7's
+  // setSearchParams (functional form included) closes over its render's
+  // params and always navigates, so a stale timer would rewind the URL.
+  const paramsRef = useRef(searchParams);
+  paramsRef.current = searchParams;
+
+  // Debounce the search into the URL, reading LIVE params at fire time and
+  // skipping navigation entirely when q is already in sync.
   useEffect(() => {
     const t = setTimeout(() => {
-      setSearchParams((prev) => {
-        if ((prev.get('q') || '') === search) return prev;
-        const next = new URLSearchParams(prev);
-        if (search) next.set('q', search);
-        else next.delete('q');
-        return next;
-      }, { replace: true });
+      const prev = paramsRef.current;
+      if ((prev.get('q') || '') === search) return;
+      const next = new URLSearchParams(prev);
+      if (search) next.set('q', search);
+      else next.delete('q');
+      setSearchParams(next, { replace: true });
     }, 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
+
+  // ?q can change while mounted (⌘K palette pick, back/forward) — resync the
+  // input unless the operator is mid-typing. The roster query already follows
+  // urlSearch; without this the box would show stale text.
+  useEffect(() => {
+    if (document.activeElement?.getAttribute('aria-label') !== 'Search agents' && urlSearch !== search) {
+      setSearch(urlSearch);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlSearch]);
   const roster = useAgentsRoster({ period, search: urlSearch, status });
   const rows = roster.data?.rows || [];
 

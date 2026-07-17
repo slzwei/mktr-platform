@@ -2,13 +2,17 @@
  * Switchboard shell — chrome laid out 1:1 with the design source
  * (claude.ai/design 57e68763 "MKTR Admin.dc.html"): fixed 228px sidebar
  * (M logo tile, mono group labels, glyphless nav, Redeem Ops footer card) and
- * a 64px canvas topbar (search → Prospects, SGT clock, theme toggle, bell,
- * avatar menu). [data-theme] dark swap persisted to localStorage. Wraps every
- * v2 admin screen; legacy pages keep their own shell until their PR lands.
+ * a 64px canvas topbar (⌘K global-search palette, SGT clock, theme toggle,
+ * attention bell, avatar menu). [data-theme] dark swap persisted to
+ * localStorage. Wraps every v2 admin screen; legacy pages keep their own
+ * shell until their PR lands.
  */
 import { useEffect, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import { NAV } from '@/lib/adminV2/nav';
+import GlobalSearch from './GlobalSearch';
+import NotificationsBell from './NotificationsBell';
 import '@/styles/adminV2.css';
 
 const THEME_KEY = 'mktr_admin_v2_theme';
@@ -16,33 +20,6 @@ const THEME_KEY = 'mktr_admin_v2_theme';
 // Same flag that registers the /redeem-ops routes (src/pages/index.jsx) — a
 // build without it must not render a dead link in the sidebar footer.
 const REDEEM_OPS_ENABLED = import.meta.env.VITE_REDEEM_OPS_ENABLED === 'true';
-
-// Mock IA order — Agents/Groups ahead of Campaigns (design source sidebar).
-const NAV = [
-  {
-    label: 'Overview',
-    items: [{ to: '/AdminDashboard', label: 'Dashboard' }],
-  },
-  {
-    label: 'Lead Generation',
-    items: [
-      { to: '/AdminProspects', label: 'Prospects' },
-      { to: '/AdminAgents', label: 'Agents' },
-      { to: '/AdminAgentGroups', label: 'Agent Groups' },
-      { to: '/AdminCampaigns', label: 'Campaigns' },
-      { to: '/AdminWallets', label: 'Wallets & Commitments' },
-      { to: '/AdminQRCodes', label: 'QR Codes' },
-      { to: '/AdminShortLinks', label: 'Short Links' },
-    ],
-  },
-  {
-    label: 'System',
-    items: [
-      { to: '/AdminUsers', label: 'Users' },
-      { to: '/AdminAISettings', label: 'AI Settings' },
-    ],
-  },
-];
 
 export function useAdminV2Theme() {
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'light');
@@ -78,19 +55,14 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
     return () => clearInterval(t);
   }, []);
 
-  // ⌘K / Ctrl+K jumps to the searchable Prospects table (the global-search
-  // affordance from the design — a dedicated palette is a later pass).
+  // ⌘K lives in <GlobalSearch/>; the shell only closes its own avatar menu.
   useEffect(() => {
     const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        navigate('/AdminProspects');
-      }
       if (e.key === 'Escape') setMenuOpen(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [navigate]);
+  }, []);
 
   const handleSignOut = async () => {
     try {
@@ -153,23 +125,7 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
               background: 'var(--canvas)', borderBottom: '1px solid var(--line)',
             }}
           >
-            <button
-              type="button"
-              onClick={() => navigate('/AdminProspects')}
-              title="Search leads — opens Prospects (⌘K)"
-              style={{
-                flex: '0 1 320px', height: 40, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px',
-                background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10,
-                boxSizing: 'border-box', cursor: 'pointer', fontFamily: 'var(--font-ui)',
-              }}
-            >
-              <svg viewBox="0 0 24 24" style={{ width: 15, height: 15, flex: 'none' }} aria-hidden="true">
-                <path d="M10.5 3a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15Z" fill="none" stroke="var(--ink-3)" strokeWidth="2" />
-                <path d="M16.2 16.2 21 21" fill="none" stroke="var(--ink-3)" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-              <span style={{ flex: 1, fontSize: 13, color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textAlign: 'left' }}>Search leads, campaigns, agents</span>
-              <span className="av2-mono" style={{ fontSize: 10, color: 'var(--ink-3)', border: '1px solid var(--line-strong)', borderRadius: 5, padding: '1px 5px' }}>⌘K</span>
-            </button>
+            <GlobalSearch />
             <span style={{ flex: 1 }} />
             <span className="av2-mono" style={{ fontSize: 12, color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 7 }}>
               <span className="av2-pulse" aria-hidden="true" />
@@ -198,20 +154,7 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
               )}
               <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink-2)' }}>{theme === 'light' ? 'Light' : 'Dark'}</span>
             </button>
-            <button
-              type="button"
-              title="Notifications — coming soon"
-              aria-label="Notifications (coming soon)"
-              style={{
-                width: 40, height: 40, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'var(--surface)', border: '1px solid var(--line-strong)', borderRadius: 10, cursor: 'default',
-              }}
-            >
-              <svg viewBox="0 0 24 24" style={{ width: 16, height: 16 }} aria-hidden="true">
-                <path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6Z" fill="none" stroke="var(--ink-2)" strokeWidth="2" strokeLinejoin="round" />
-                <path d="M10 19a2 2 0 0 0 4 0" fill="none" stroke="var(--ink-2)" strokeWidth="2" />
-              </svg>
-            </button>
+            <NotificationsBell />
             <div style={{ position: 'relative' }}>
               <button
                 type="button"
