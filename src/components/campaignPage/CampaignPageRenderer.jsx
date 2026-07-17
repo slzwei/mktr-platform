@@ -35,15 +35,25 @@ export function isDrawClosed(luckyDraw, now = Date.now()) {
   return Number.isFinite(end) && now > end;
 }
 
-function useIsMobile(breakpoint = 640) {
+function useIsMobile(nodeRef, breakpoint = 640) {
+  // Initial value is a best guess from the parent-realm window (always correct
+  // on live mounts). The effect re-measures from the rendered node's OWN
+  // window (`ownerDocument.defaultView`) so the JS `mobile` branch is truthful
+  // inside the Studio DeviceFrame iframe too (Studio PR 3) — on live pages
+  // defaultView === window, so behavior is unchanged.
   const [mobile, setMobile] = useState(
     typeof window !== 'undefined' ? window.innerWidth < breakpoint : false
   );
   useEffect(() => {
-    const onResize = () => setMobile(window.innerWidth < breakpoint);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [breakpoint]);
+    const view =
+      nodeRef.current?.ownerDocument?.defaultView ||
+      (typeof window !== 'undefined' ? window : null);
+    if (!view) return undefined;
+    const measure = () => setMobile(view.innerWidth < breakpoint);
+    measure();
+    view.addEventListener('resize', measure);
+    return () => view.removeEventListener('resize', measure);
+  }, [nodeRef, breakpoint]);
   return mobile;
 }
 
@@ -213,7 +223,8 @@ export default function CampaignPageRenderer({
     [adapted.theme]
   );
   const content = useMemo(() => deriveCampaignPageContent(doc), [doc]);
-  const mobile = useIsMobile();
+  const rootRef = useRef(null);
+  const mobile = useIsMobile(rootRef);
   const [stage, setStage] = useState('quiz');
   const formAnchorRef = useRef(null);
   const scrollToForm = useCallback(() => {
@@ -250,7 +261,7 @@ export default function CampaignPageRenderer({
   const params = doc.template?.params?.[templateId] || {};
 
   return (
-    <div data-campaign-page-template={templateId} data-campaign-page-ready="true">
+    <div ref={rootRef} data-campaign-page-template={templateId} data-campaign-page-ready="true">
       <Template
         t={t}
         content={content}

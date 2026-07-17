@@ -5,6 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import X from "lucide-react/icons/x"
 
 import { cn } from "@/lib/utils"
+import { usePortalContainer } from "@/lib/portalContainerContext"
 
 const Dialog = DialogPrimitive.Root
 
@@ -25,8 +26,13 @@ const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
-const DialogContent = React.forwardRef(({ className, children, hideClose, ...props }, ref) => (
- <DialogPortal>
+const DialogContent = React.forwardRef(({ className, children, hideClose, ...props }, ref) => {
+ // Containment override for trees rendered inside the Studio DeviceFrame
+ // iframe; undefined (the default everywhere else) keeps Radix's own
+ // document.body portal, byte-identical to before.
+ const portalContainer = usePortalContainer()
+ return (
+ <DialogPortal container={portalContainer}>
  <DialogOverlay />
  <DialogPrimitive.Content
  ref={ref}
@@ -45,7 +51,8 @@ const DialogContent = React.forwardRef(({ className, children, hideClose, ...pro
  )}
  </DialogPrimitive.Content>
  </DialogPortal>
-))
+ )
+})
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({

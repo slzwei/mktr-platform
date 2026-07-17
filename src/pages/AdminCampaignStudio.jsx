@@ -9,6 +9,7 @@ import useStudioDoc from '@/components/studio/useStudioDoc';
 import useStudioGuards from '@/components/studio/useStudioGuards';
 import StudioTopBar from '@/components/studio/StudioTopBar';
 import StudioRail from '@/components/studio/StudioRail';
+import StudioCanvas from '@/components/studio/StudioCanvas';
 import StudioJsonView from '@/components/studio/StudioJsonView';
 import StudioGuardModal from '@/components/studio/StudioGuardModal';
 import { studioPath, studioSupportsCampaign } from '@/components/studio/studioFlag';
@@ -204,21 +205,11 @@ export default function AdminCampaignStudio() {
           {section === 'dist' && <PanelStub label="Distribution" />}
         </section>
 
-        <main
-          aria-label="Canvas"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: '#15171C',
-          }}
-        >
-          <span style={{ font: "500 10.5px ui-monospace, 'SF Mono', Menlo, monospace", color: 'rgba(255,255,255,.35)' }}>
-            canvas — true-viewport device preview lands in the next checkpoint
-          </span>
-        </main>
+        {doc ? (
+          <StudioCanvas campaign={campaign} doc={doc} />
+        ) : (
+          <main aria-label="Canvas" style={{ flex: 1, minWidth: 0, background: '#15171C' }} />
+        )}
       </div>
 
       <StudioJsonView open={jsonOpen} doc={doc} onClose={() => setJsonOpen(false)} />
