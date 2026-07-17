@@ -29,9 +29,16 @@ describe('DesignEditor — save failure keeps the dirty state', () => {
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
 
-    // Dirty state must survive a failed save; the false "Saved" must not appear.
-    await waitFor(() => expect(screen.getByText('Unsaved changes')).toBeInTheDocument());
+    // Dirty state must survive a failed save; the false "Saved" must not
+    // appear. Since Studio PR 3 the failure is SURFACED inline (the old code
+    // swallowed it into console.error) — the status slot shows the error, and
+    // the save button keeps its unsaved-dot pulse.
+    await waitFor(() => expect(screen.getByTestId('design-save-error')).toHaveTextContent('save failed'));
     expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+    // A subsequent successful save still clears the dirty state.
+    onSave.mockResolvedValue(undefined);
+    await user.click(screen.getByRole('button', { name: /Save Design/i }));
+    await waitFor(() => expect(screen.getByText('Saved')).toBeInTheDocument());
   });
 
   it('clears the dirty state and shows "Saved" when onSave resolves', async () => {

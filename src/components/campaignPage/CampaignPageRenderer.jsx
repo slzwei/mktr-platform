@@ -25,6 +25,7 @@ import { QuizGate } from '@/components/campaigns/CampaignQuiz';
 import CampaignSignupForm from '@/components/campaigns/CampaignSignupForm';
 import { CampaignThemeProvider } from './themeContext';
 import { adaptCampaignForFunnel, deriveFunnelProps } from './funnelAdapter';
+import { resolveJumpFixtures } from './previewJumpFixtures';
 import { TEMPLATES } from './templates';
 
 /** SGT day-end draw cutoff — mirrors marketplace content.js offerUnavailability
@@ -35,15 +36,25 @@ export function isDrawClosed(luckyDraw, now = Date.now()) {
   return Number.isFinite(end) && now > end;
 }
 
-function useIsMobile(breakpoint = 640) {
+function useIsMobile(nodeRef, breakpoint = 640) {
+  // Initial value is a best guess from the parent-realm window (always correct
+  // on live mounts). The effect re-measures from the rendered node's OWN
+  // window (`ownerDocument.defaultView`) so the JS `mobile` branch is truthful
+  // inside the Studio DeviceFrame iframe too (Studio PR 3) — on live pages
+  // defaultView === window, so behavior is unchanged.
   const [mobile, setMobile] = useState(
     typeof window !== 'undefined' ? window.innerWidth < breakpoint : false
   );
   useEffect(() => {
-    const onResize = () => setMobile(window.innerWidth < breakpoint);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [breakpoint]);
+    const view =
+      nodeRef.current?.ownerDocument?.defaultView ||
+      (typeof window !== 'undefined' ? window : null);
+    if (!view) return undefined;
+    const measure = () => setMobile(view.innerWidth < breakpoint);
+    measure();
+    view.addEventListener('resize', measure);
+    return () => view.removeEventListener('resize', measure);
+  }, [nodeRef, breakpoint]);
   return mobile;
 }
 
@@ -213,7 +224,8 @@ export default function CampaignPageRenderer({
     [adapted.theme]
   );
   const content = useMemo(() => deriveCampaignPageContent(doc), [doc]);
-  const mobile = useIsMobile();
+  const rootRef = useRef(null);
+  const mobile = useIsMobile(rootRef);
   const [stage, setStage] = useState('quiz');
   const formAnchorRef = useRef(null);
   const scrollToForm = useCallback(() => {
@@ -229,13 +241,29 @@ export default function CampaignPageRenderer({
     return <BlockedPage t={t} content={content} reason={blocked} luckyDraw={doc.luckyDraw} />;
   }
 
-  const funnelProps = deriveFunnelProps(adapted, { onSubmit, previewMode });
+  // Studio jump fixtures (PR 3): resolved ONLY in previewMode against the
+  // current doc; the Studio remounts this whole renderer per jump/reset, so
+  // fixtures act purely as initial state. Live mounts (jump=null) skip this.
+  const jumpFixtures = previewMode ? resolveJumpFixtures(jump, doc) : null;
+  const funnelProps = deriveFunnelProps(adapted, {
+    onSubmit,
+    previewMode,
+    previewFixture: jumpFixtures?.form,
+  });
   const funnel = (
     <CampaignThemeProvider value={adapted.funnelTheme}>
+      {/* Keyed on previewMode (Codex diff-review #1): fixture state lives in
+          lazy useState initializers, so a hypothetical preview→live rerender
+          of the SAME mount must REMOUNT the funnel — otherwise seeded state
+          would survive into a live capture. Every current call site passes a
+          static previewMode; this makes the component contract safe even for
+          a future one that doesn't. */}
       <QuizGate
+        key={previewMode ? 'funnel-preview' : 'funnel-live'}
         quiz={adapted.legacy.quiz}
         themeColor={t.accent}
         previewMode={previewMode}
+        previewFixture={jumpFixtures?.quiz}
         onReveal={onQuizReveal}
         onComplete={onQuizComplete}
         onStageChange={setStage}
@@ -250,7 +278,7 @@ export default function CampaignPageRenderer({
   const params = doc.template?.params?.[templateId] || {};
 
   return (
-    <div data-campaign-page-template={templateId} data-campaign-page-ready="true">
+    <div ref={rootRef} data-campaign-page-template={templateId} data-campaign-page-ready="true">
       <Template
         t={t}
         content={content}

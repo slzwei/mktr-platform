@@ -11,6 +11,7 @@ import {
   NotFoundForBrand,
   IS_REDEEM_BUILD,
 } from '@/components/auth/BrandRouteGuards';
+import { CAMPAIGN_STUDIO_ENABLED } from '@/components/studio/studioFlag';
 
 const LeadCapture = lazy(() => import('./LeadCapture'));
 const LeadCaptureDemo = lazy(() => import('./LeadCaptureDemo'));
@@ -84,6 +85,10 @@ const AdminUsers = lazy(() => import('./AdminUsers'));
 const AdminFleet = lazy(() => import('./AdminFleet'));
 const AdminCampaignDesigner = lazy(() => import('./AdminCampaignDesigner'));
 const AdminCampaignWorkspace = lazy(() => import('./AdminCampaignWorkspace'));
+// Campaign Studio (Studio PR 3) — full-viewport design_config v2 editor, dark
+// until VITE_CAMPAIGN_STUDIO_ENABLED=true is baked into the build (and the
+// backend DESIGN_CONFIG_V2_WRITES_ENABLED gate flips independently, PR 5).
+const AdminCampaignStudio = lazy(() => import('./AdminCampaignStudio'));
 const AdminCommissions = lazy(() => import('./AdminCommissions'));
 const AdminShortLinks = lazy(() => import('./AdminShortLinks'));
 const AdminLeadPackages = lazy(() => import('./AdminLeadPackages'));
@@ -425,6 +430,17 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
+ {/* Campaign Studio — chromeless full-viewport takeover (own top bar + exit),
+ like /provision/:code. Route registered only while the flag is on. */}
+ {CAMPAIGN_STUDIO_ENABLED && (
+ <Route
+ path="/admin/campaigns/:id/studio" element={
+ <ProtectedRoute requiredRole="admin">
+ <AdminCampaignStudio />
+ </ProtectedRoute>
+ }
+ />
+ )}
  <Route
  path="/AdminQRCodes" element={
  <ProtectedRoute requiredRole="admin">

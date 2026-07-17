@@ -19,6 +19,9 @@ import MarketplacePanel from"./editor/MarketplacePanel";
 import PreviewFrame from"./editor/PreviewFrame";
 import { genId } from"./editor/constants";
 import GuidedReviewDesigner from"./guided-review/GuidedReviewDesigner";
+import { Link } from"react-router-dom";
+import { isV2 } from"@/lib/designConfigV2";
+import { CAMPAIGN_STUDIO_ENABLED, studioPath } from"@/components/studio/studioFlag";
 
 // Normalize legacy flat fieldOrder arrays to row structure
 const normalizeFieldOrder = (order) => {
@@ -114,6 +117,14 @@ function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8r
  const [saving, setSaving] = useState(false);
  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
  const [lastSavedTime, setLastSavedTime] = useState(null);
+ // Save-failure surfacing (Studio PR 3): the old catch swallowed EVERY error
+ // into console.error — a silent dead-end. Errors now render inline in the
+ // save bar (no toast here: /AdminCampaignDesigner's parent already toasts a
+ // generic failure once, and doubling it up would conflict). A 409
+ // DESIGN_CONFIG_VERSION_CONFLICT means the doc became Studio-owned (v2)
+ // while this editor was open — swap to the read-only notice.
+ const [saveError, setSaveError] = useState(null);
+ const [v2Conflict, setV2Conflict] = useState(false);
 
  // Unsaved changes guard
  useEffect(() => {
@@ -134,12 +145,19 @@ function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8r
 
  const handleManualSave = async () => {
  setSaving(true);
+ setSaveError(null);
  try {
  await onSave(currentDesign);
  setHasUnsavedChanges(false);
  setLastSavedTime(Date.now());
  } catch (error) {
  console.error('Error saving design:', error);
+ // apiClient errors carry err.status / err.data (never err.response).
+ if (error?.status === 409 && error?.data?.code === 'DESIGN_CONFIG_VERSION_CONFLICT') {
+ setV2Conflict(true);
+ } else {
+ setSaveError(error?.message || 'Failed to save. Please try again.');
+ }
  } finally {
  setSaving(false);
  }
@@ -161,6 +179,11 @@ function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8r
  return null;
  }
  };
+
+ // The doc became Studio-owned mid-session (save 409'd) — stop editing it.
+ if (v2Conflict) {
+ return <StudioV2Notice campaignId={campaign?.id} />;
+ }
 
  return (
  <div className={`flex ${heightClass} gap-0`}>
@@ -207,6 +230,8 @@ function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8r
  <div className="mt-1.5 text-center">
  {saving ? (
  <p className="text-xs text-primary">Saving changes...</p>
+ ) : saveError ? (
+ <p className="text-xs text-destructive" data-testid="design-save-error">{saveError}</p>
  ) : hasUnsavedChanges ? (
  <p className="text-xs text-warning">Unsaved changes</p>
  ) : lastSavedTime ? (
@@ -234,9 +259,48 @@ function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8r
  );
 }
 
+/**
+ * Read-only guard for design_config v2 documents (Studio PR 3): the classic
+ * panels edit flat v1 keys and would DESTROY a nested v2 doc on save — the
+ * backend already 409s that write (DESIGN_CONFIG_VERSION_CONFLICT); this is
+ * the honest client face of the same rule, covering both mounts (workspace
+ * Design tab and the legacy /AdminCampaignDesigner page).
+ */
+export function StudioV2Notice({ campaignId }) {
+ return (
+ <div className="h-full flex items-center justify-center p-6" data-testid="studio-v2-notice">
+ <div className="max-w-md text-center space-y-3 p-8 rounded-2xl border border-border bg-card">
+ <div className="text-3xl" aria-hidden="true">🎛️</div>
+ <h3 className="text-lg font-semibold">This design was saved by Campaign Studio</h3>
+ <p className="text-sm text-muted-foreground">
+ It uses the v2 design document, which the classic designer cannot edit
+ (saving here would destroy it — the server refuses that write). Open it
+ in the Studio to keep editing.
+ </p>
+ {CAMPAIGN_STUDIO_ENABLED ? (
+ <Link
+ to={studioPath(campaignId)}
+ className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+ >
+ Open Campaign Studio →
+ </Link>
+ ) : (
+ <p className="text-xs text-muted-foreground">
+ Campaign Studio is not enabled on this build (VITE_CAMPAIGN_STUDIO_ENABLED).
+ </p>
+ )}
+ </div>
+ </div>
+ );
+}
+
 export default function DesignEditor(props) {
  if (props.campaign?.type === 'guided_review') {
  return <GuidedReviewDesigner {...props} />;
+ }
+ // v2 docs are Studio-owned — never mount the classic panels over one.
+ if (isV2(props.campaign?.design_config)) {
+ return <StudioV2Notice campaignId={props.campaign?.id} />;
  }
  return <ClassicDesignEditor {...props} />;
 }

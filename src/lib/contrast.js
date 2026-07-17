@@ -34,3 +34,15 @@ export function readableTextOn(bgHex, dark = '#3D1F0B', light = '#ffffff') {
   const whiteL = luminance(light) ?? 1;
   return contrastRatio(bg, whiteL) >= WHITE_FLOOR ? light : dark;
 }
+
+/**
+ * WCAG contrast ratio between two hex colors (Studio PR 3 — additive export
+ * for the Theme panel's accent-legibility check). Returns null when either
+ * color is not a valid hex.
+ */
+export function colorContrastRatio(hexA, hexB) {
+  const a = luminance(hexA);
+  const b = luminance(hexB);
+  if (a == null || b == null) return null;
+  return contrastRatio(a, b);
+}

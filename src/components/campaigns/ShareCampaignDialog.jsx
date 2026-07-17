@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import CheckCircle from 'lucide-react/icons/check-circle';
 import X from 'lucide-react/icons/x';
@@ -41,15 +41,16 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
  })();
  }, [open, longShareUrl, campaignId, prospectId, serverShareUrl]);
 
- // Lock body scroll when open
+ // Lock body scroll when open — on the dialog's OWN document (ownerDocument
+ // === document on live pages; inside the Studio DeviceFrame iframe this locks
+ // the frame, not the Studio chrome). Studio PR 3.
+ const sheetRef = useRef(null);
  useEffect(() => {
- if (open) {
- document.body.style.overflow = 'hidden';
- } else {
- document.body.style.overflow = '';
- }
+ if (!open) return undefined;
+ const doc = sheetRef.current?.ownerDocument || document;
+ doc.body.style.overflow = 'hidden';
  return () => {
- document.body.style.overflow = '';
+ doc.body.style.overflow = '';
  };
  }, [open]);
 
@@ -63,7 +64,7 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
  };
 
  return (
- <div role="dialog" aria-modal="true" aria-label="Share campaign" className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+ <div ref={sheetRef} role="dialog" aria-modal="true" aria-label="Share campaign" className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
  {/* Backdrop */}
  <button type="button" aria-label="Close share dialog" className="absolute inset-0 bg-foreground/60 cursor-default" onClick={close} />
 

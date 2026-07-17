@@ -36,7 +36,7 @@ export function adaptCampaignForFunnel(campaign) {
 }
 
 /** The shared CampaignSignupForm prop derivation (v1 defaults preserved). */
-export function deriveFunnelProps(adapted, { onSubmit, previewMode = false } = {}) {
+export function deriveFunnelProps(adapted, { onSubmit, previewMode = false, previewFixture = null } = {}) {
   const { legacy, campaign, doc, isV2Doc } = adapted;
   return {
     themeColor: legacy.themeColor,
@@ -49,5 +49,8 @@ export function deriveFunnelProps(adapted, { onSubmit, previewMode = false } = {
     ctaLabel: legacy.ctaText || 'Submit Now',
     previewMode,
     advertiserName: isV2Doc ? (doc.content?.advertiserName || campaign?.name) : undefined,
+    // Studio jump fixture (preview-only; the form gates consumption on
+    // previewMode itself — this is just plumbing).
+    ...(previewFixture ? { previewFixture } : {}),
   };
 }
