@@ -515,6 +515,35 @@ describe('useStudioAi — full mode (CO-1 looks)', () => {
     expect(result.current.ai.proposal.prev.doc).toBe(originalPrev);
   });
 
+  it('a superseded look-regen clears ITS card spinner (round 2 #1 — Generate looks mid-regen)', async () => {
+    const { result } = renderAi();
+    await looksReady(result);
+
+    // regenLook(0) hangs; Edit brief → a fresh generateLooks supersedes it
+    let hang;
+    apiClient.post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          hang = resolve;
+        })
+    );
+    act(() => {
+      result.current.ai.regenLook(0);
+    });
+    expect(result.current.ai.regeningLook).toBe(0);
+
+    apiClient.post.mockResolvedValueOnce(okLooks([LOOK]));
+    await act(async () => {
+      await result.current.ai.generateLooks();
+    });
+    // the aborted regen settles; its finally must clear card 0's spinner
+    await act(async () => {
+      hang({ success: true, data: { proposals: [LOOK] } });
+    });
+    expect(result.current.ai.regeningLook).toBeNull();
+    expect(result.current.ai.phase).toBe('looks'); // fresh gallery, card usable
+  });
+
   it('campaign switch clears looks, proposal and hint', async () => {
     const { result, rerender } = renderAi();
     await looksReady(result);

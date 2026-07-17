@@ -144,11 +144,13 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     // Newest-request-wins (Codex diff #2): starting a request aborts any
     // in-flight one AND bumps the fence, so a slower older response can never
     // land after (or over) a newer one — the same token also fences campaign
-    // switches (the reset effect bumps it too).
+    // switches (the reset effect bumps it too). Any abandoned 429 cooldown is
+    // cleared with it (round 2 #4 — a frozen countdown must not linger).
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
     generationRef.current += 1;
+    setRetryIn(0);
     return { generation: generationRef.current, signal: ac.signal };
   }, []);
 
@@ -388,7 +390,10 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
         if (generation !== generationRef.current) return;
         fail(err);
       } finally {
-        if (generation === generationRef.current) setRegeningLook(null);
+        // Clear MY card's spinner even when superseded (a per-field ✦ can
+        // abort this flight; a token-gated clear would leave the card stuck
+        // disabled) — but never wipe a NEWER card's spinner.
+        setRegeningLook((cur) => (cur === index ? null : cur));
       }
     },
     [campaign?.id, templateId, briefOrName, startRequest, noteCall, fail]

@@ -287,7 +287,7 @@ describe('helpers', () => {
     expect(stripUrlish('ftp://files/x')).not.toContain('ftp');
   });
 
-  it('stripUrlish catches the widened forms (Codex diff #6)', () => {
+  it('stripUrlish catches the widened forms (Codex diff rounds 1+2)', () => {
     // relative asset paths, bare filenames, data URIs, IPv4 hosts, subdomained
     // and non-core TLDs — none may survive into an art-direction note
     expect(stripUrlish('use /uploads/hero.jpg as reference')).not.toContain('hero.jpg');
@@ -298,8 +298,19 @@ describe('helpers', () => {
     expect(stripUrlish('host 192.168.1.10/x serves it')).not.toContain('192.168');
     expect(stripUrlish('see asset.example.my/hero for it')).not.toContain('example.my');
     expect(stripUrlish('cdn.shop.site/thing')).not.toContain('site');
+    // round-2 survivors: TLD-list-proof dotted-host+path, extensionless
+    // absolute paths, query paths, cid:, extra media extensions
+    expect(stripUrlish('see example.photography/hero shots')).not.toContain('photography');
+    expect(stripUrlish('or example.asia/hero works')).not.toContain('asia');
+    expect(stripUrlish('grab /uploads/hero from the box')).not.toContain('uploads');
+    expect(stripUrlish('call /asset?id=1 for it')).not.toContain('asset?id');
+    expect(stripUrlish('the hero.tiff scan')).not.toContain('tiff');
+    expect(stripUrlish('embed cid:hero@assets here')).not.toContain('cid:');
     // prose that LOOKS slashy or colon-y must survive
     expect(stripUrlish('16:9 crop, warm/cool tones, shot at f/1.8')).toBe('16:9 crop, warm/cool tones, shot at f/1.8');
+    // round-2 false positive fixed: slash+dot prose without a REAL extension
+    expect(stripUrlish('one/wide.angle composition')).toBe('one/wide.angle composition');
+    expect(stripUrlish('v1.2.3 look, 4.5s exposure, no. 5 of 10')).toBe('v1.2.3 look, 4.5s exposure, no. 5 of 10');
   });
 
   it('contrastRatioHex matches WCAG expectations', () => {

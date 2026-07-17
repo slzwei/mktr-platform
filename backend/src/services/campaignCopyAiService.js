@@ -105,23 +105,32 @@ export function buildCampaignContext(campaign) {
 
 // ─────────────────────────── sanitizers ───────────────────────────
 
-// Art-direction notes must never smuggle assets/links (Codex diff #6 widened
-// the net): scheme URIs (with or without //, incl. data:/javascript:),
-// protocol-relative, www., markdown links, bare common-TLD domains, IPv4
-// hosts, path-like tokens with a file extension (/uploads/hero.jpg,
-// assets/img.png), and bare media filenames (hero.jpg). Prose stays intact:
-// "16:9", "f/1.8" and "warm/cool" match none of these.
+// Art-direction notes must never smuggle assets/links (Codex diff rounds 1+2
+// widened then structured the net). This is a BEST-EFFORT semantic guard, not
+// a security boundary: the note renders only in the admin Studio as advice,
+// is never written to the doc, and `media.src` is not even in the DTO — so a
+// residual bare domain (unbounded TLD space) costs nothing. Caught forms:
+// scheme URIs (with or without //, incl. data:/javascript:/cid:), protocol-
+// relative, www., markdown links, common-TLD domains, ANY dotted host
+// followed by a path (example.photography/hero), IPv4 hosts, absolute
+// multi-segment paths (/uploads/hero), leading-slash query paths
+// (/asset?id=1), and tokens ending in a known media/doc extension. Prose
+// stays intact: "16:9", "f/1.8", "warm/cool", "one/wide.angle" match none —
+// the extension rule is a concrete list, never "any short suffix".
+const MEDIA_EXT = 'png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|heic|pdf|tiff?|bmp|psd|dng|raw|eps|ico|mp3|wav';
 const URL_RE = new RegExp(
   [
     /\b[a-z][a-z0-9+.-]*:\/\/\S+/, // scheme://…
-    /\b(?:data|javascript|vbscript|blob|file|ftp|sftp|ssh|mailto|tel|intent|chrome|about):\S+/, // risky schemes, no // needed
+    /\b(?:data|javascript|vbscript|blob|file|ftp|sftp|ssh|mailto|tel|intent|chrome|about|cid|mid|urn):\S+/, // risky schemes, no // needed
     /(?<=^|\s)\/\/\S+/, // protocol-relative
     /\bwww\.\S+/,
     /\[[^\]]*\]\([^)]*\)/, // markdown link
-    /\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|io|co|sg|ai|app|dev|me|info|biz|xyz|my|us|uk|in|tv|ly|to|cc|gg|site|online|store|shop|link|page|club|top|fun|space|icu)\b\S*/, // bare domains incl. subdomains
+    /\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|io|co|sg|ai|app|dev|me|info|biz|xyz|my|us|uk|in|tv|ly|to|cc|gg|site|online|store|shop|link|page|club|top|fun|space|icu)\b\S*/, // common-TLD domains incl. subdomains
+    /\b[\w-]+(?:\.[\w-]+)+\/\S+/, // ANY dotted host followed by a path — TLD-list-proof
     /\b\d{1,3}(?:\.\d{1,3}){3}\b\S*/, // IPv4 hosts
-    /(?<=^|\s)\/?[\w.-]*\/\S*\.[a-z]{2,5}\b\S*/, // path tokens ending in a file extension
-    /\b[\w-]+\.(?:png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|heic|pdf)\b/, // bare media filenames
+    /(?<=^|\s)\/[\w.-]+\/\S*/, // absolute multi-segment paths
+    /(?<=^|\s)\/\S*\?\S*/, // leading-slash paths with a query string
+    new RegExp(String.raw`(?<=^|\s)[\w./-]*\.(?:${MEDIA_EXT})\b\S*`), // media/doc filenames, bare or pathed
   ]
     .map((r) => r.source)
     .join('|'),
