@@ -756,9 +756,22 @@ export async function duplicateCampaign(id, body, req) {
     }
     return copy;
   })();
+  // A versioned (v2 Studio) duplicate goes through the SAME write gate as
+  // create/update — the never-clone transform above is not a substitute for it.
+  // Renderer dispatch is version-driven, not flag-gated, so a v2 doc minted here
+  // would be immediately customer-facing: while DESIGN_CONFIG_V2_WRITES_ENABLED
+  // is off this throws 422 (a duplicate must never propagate v2 rows behind the
+  // flag), and when on it re-clamps at the v2 paths. Legacy (v1) duplicates keep
+  // their verbatim transform above — clamping them would drop the disabled
+  // featuredDrop for non-admins (applyFeaturedDropPolicy returns stored), a
+  // behavior change the v1 clamp golden does not cover.
+  const dupDesignFinal =
+    dupDesign && typeof dupDesign === 'object' && classifyDesignConfigVersion(dupDesign) !== 'legacy'
+      ? clampDesignConfig(dupDesign, undefined, req.user?.role)
+      : dupDesign;
   const copy = await Campaign.create({
     ...rest,
-    design_config: dupDesign,
+    design_config: dupDesignFinal,
     id: undefined,
     name: body.name || `${original.name} (Copy)`,
     status: 'draft',

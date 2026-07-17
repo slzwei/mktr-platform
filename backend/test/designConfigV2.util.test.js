@@ -247,7 +247,8 @@ describe('campaignService guards', () => {
     ).rejects.toMatchObject({ statusCode: 409, data: { code: 'DESIGN_CONFIG_VERSION_CONFLICT' } });
   });
 
-  it('duplicateCampaign strips v2 publication state at the v2 paths', async () => {
+  it('duplicateCampaign strips v2 publication state at the v2 paths (flag on)', async () => {
+    flagOn(); // a versioned duplicate is only allowed to persist while the gate is open
     const original = {
       toJSON: () => ({
         id: 'c2', name: 'Rich', status: 'active', design_config: structuredClone(v2Rich),
@@ -267,6 +268,44 @@ describe('campaignService guards', () => {
     expect(created.design_config.distribution.marketplace.listed).toBeUndefined();
     expect(created.design_config.version).toBe(2);
     expect(created.slug).toBeNull();
+  });
+
+  it('duplicateCampaign of a v2 campaign is REJECTED while the flag is off (no ungated v2 mint)', async () => {
+    // Regression: duplicate must not be a back door around the write gate.
+    // A v2 doc can outlive a flag-on window (rollout then rollback); cloning it
+    // while the flag is off would propagate v2 rows the cleanup can't freeze,
+    // and the renderer dispatch (version-driven) would serve them immediately.
+    const original = {
+      toJSON: () => ({
+        id: 'c2', name: 'Rich', status: 'active', design_config: structuredClone(v2Rich),
+        slug: 'rich', firstActivatedAt: new Date(),
+      }),
+    };
+    models.Campaign.findOne.mockResolvedValue(original);
+    models.Campaign.create.mockResolvedValue({ id: 'c3', toJSON: () => ({ id: 'c3' }) });
+    await expect(
+      duplicateCampaign('c2', {}, { user: { id: 'u1', role: 'agent' } })
+    ).rejects.toMatchObject({ statusCode: 422, data: { code: 'DESIGN_CONFIG_VERSION_UNSUPPORTED' } });
+    expect(models.Campaign.create).not.toHaveBeenCalled();
+  });
+
+  it('duplicateCampaign of a legacy (v1) campaign is never gated (flag off)', async () => {
+    // The fix is surgical: only versioned duplicates hit the gate. A v1 clone
+    // still persists verbatim (its disabled featuredDrop preserved, not dropped).
+    const original = {
+      toJSON: () => ({
+        id: 'c2', name: 'V1', status: 'active',
+        design_config: structuredClone(adminRichDoc), // untagged v1 doc
+        slug: 'v1', firstActivatedAt: new Date(),
+      }),
+    };
+    models.Campaign.findOne.mockResolvedValue(original);
+    models.Campaign.create.mockImplementation(async (data) => ({ id: 'c3', ...data, toJSON: () => ({ id: 'c3' }) }));
+    await duplicateCampaign('c2', {}, { user: { id: 'u1', role: 'agent' } });
+    const created = models.Campaign.create.mock.calls[0][0];
+    expect(created.design_config.version).toBeUndefined();
+    expect(created.design_config.marketplaceListed).toBeUndefined(); // never-clone
+    expect(created.design_config.featuredDrop.enabled).toBe(false); // preserved, disabled
   });
 
   it('ensureDrawTermsVersion pins terms from form.terms.html on a v2 doc', async () => {
