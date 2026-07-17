@@ -130,7 +130,15 @@ jumper catalog in `studio-data.js`. Wire version dispatch into
 Editorial+WarmCream vs production (use the repo `verify` skill), plus
 vitest coverage for gate order, outcome states, and analytics moments.
 
-**PR 3 — the Studio editor.**
+**PR 3 — the Studio editor.** *(BUILT 2026-07-17 on `feat/campaign-studio` —
+7 checkpoints; ships dark behind `VITE_CAMPAIGN_STUDIO_ENABLED` with the
+backend write gate still off. Deltas from this spec, per the Codex-reviewed
+plan: readiness pill MERGES the existing server readiness endpoint with the
+client doc checks; no `marketplace.endsAt` input (the v2 clamp drops the key —
+schema/whitelist inconsistency deferred to PR 5); draw-terms 422s are
+classified client-side by message (server codes deferred to PR 5); browser
+Back is guarded via a popstate sentinel; the jumper catalog is 21 states (the
+mock's "22" was a miscount).)*
 `/admin/campaigns/:id/studio` (or workspace-tab takeover) behind
 `VITE_CAMPAIGN_STUDIO_ENABLED`: top bar (campaign switcher, status/draw/
 readiness chips, Copy link + Share preview with "Save first?" guards, save
