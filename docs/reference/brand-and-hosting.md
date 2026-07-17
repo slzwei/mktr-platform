@@ -88,6 +88,6 @@ Nameservers at Cloudflare (`chance.ns.cloudflare.com`, `liv.ns.cloudflare.com`) 
 |---|---|---|
 | `mktr-platform` static site | `srv-d2s3che3jp1c738qlgjg` | mktr.sg |
 | `redeem-frontend` static site | `srv-d88qhph9rddc738nk0d0` | redeem.sg |
-| `redeem-ops-frontend` static site | (4th static site, `VITE_SURFACE=ops`) | ops.redeem.sg |
+| `redeem-ops-frontend` static site | `srv-d97i34q8qa3s73epa51g` (`VITE_SURFACE=ops`) | ops.redeem.sg |
 | `mktr-backend-jo6r` | `srv-d2s9p0emcj7s73acd9lg` | api.mktr.sg |
 | `mktr-db` (Postgres) | `dpg-d2s2h7nfte5s739gnl7g-a` | — |
