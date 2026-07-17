@@ -146,10 +146,14 @@ export function computeStudioReadiness({ campaign, doc, serverReadiness, serverS
   // PR 5: retire the speculative WhatsApp-creds design warning once the
   // server answers — either the env is verified fine (boolean in the
   // payload), or the server's own authoritative warning is already listed.
-  // Server unavailable → the static warning stays (fail-noisy).
+  // GATED on a SUCCESSFUL current response (Codex diff #6): TanStack Query
+  // keeps stale data through a failed refetch, and a cached true must not
+  // keep clearing the warning while the server is unreachable. Server
+  // unavailable → the static warning stays (fail-noisy).
   const serverAnsweredWhatsapp =
-    serverReadiness?.whatsappOtpConfigured === true ||
-    delivery.some((d) => d.code === 'otp_whatsapp_unconfigured');
+    serverStatus === 'success' &&
+    (serverReadiness?.whatsappOtpConfigured === true ||
+      delivery.some((d) => d.code === 'otp_whatsapp_unconfigured'));
   if (serverAnsweredWhatsapp) {
     design = design.filter((d) => d.key !== 'whatsapp-creds');
   }

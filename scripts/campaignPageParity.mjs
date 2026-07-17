@@ -50,7 +50,7 @@ import { upgradeDesignConfig } from '../src/lib/designConfigV2.js';
 // Backend twin — model-free util graph, safe to import from a script. This is
 // the SERVER's clamp, so the v2 side of the diff is exactly what a Studio
 // save would persist.
-import { clampDesignConfigV2 } from '../backend/src/utils/designConfigV2Clamp.js';
+import { clampDesignConfigV2, classifyDesignConfigVersion } from '../backend/src/utils/designConfigV2Clamp.js';
 
 const argv = process.argv.slice(2);
 const flags = {};
@@ -100,8 +100,11 @@ async function shoot(browser, snapshot, width, file, { requireReady = false } = 
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto(`${BASE}/p/parity-slug`, { waitUntil: 'networkidle' });
     if (requireReady) {
-      // The migration hard gate: the (v2) renderer must actually mount.
-      await page.waitForSelector('[data-campaign-page-ready="true"]', { timeout: 15000 });
+      // The migration hard gate: the (v2) renderer must reach an explicit
+      // terminal state — the mounted page OR a deliberate blocked state
+      // (e.g. a past-close draw renders data-campaign-page-blocked="draw",
+      // which is CORRECT rendering, not a failure — Codex diff #2).
+      await page.waitForSelector('[data-campaign-page-ready="true"], [data-campaign-page-blocked]', { timeout: 15000 });
     }
     await page.waitForFunction(() => document.fonts && document.fonts.status === 'loaded', { timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(400);
@@ -172,7 +175,19 @@ async function pixelDiff(browser, fileA, fileB) {
       // captures HARD-require the page-ready marker; the pixel numbers are
       // review evidence (the signed-off form-section canonicalizations make a
       // strict pixel gate meaningless).
-      const v1Doc = JSON.parse(readFileSync(V1_DOC_PATH, 'utf8'));
+      let v1Doc = JSON.parse(readFileSync(V1_DOC_PATH, 'utf8'));
+      // Snapshot hygiene (Codex diff #1): a double-encoded column dump parses
+      // to a STRING — unwrap once; anything that still isn't a plain legacy
+      // object would render a default page and forge the gate evidence.
+      if (typeof v1Doc === 'string') v1Doc = JSON.parse(v1Doc);
+      if (!v1Doc || typeof v1Doc !== 'object' || Array.isArray(v1Doc)) {
+        console.error('--v1-doc must contain a design_config OBJECT (got ' + (Array.isArray(v1Doc) ? 'array' : typeof v1Doc) + ')');
+        process.exit(1);
+      }
+      if (classifyDesignConfigVersion(v1Doc) !== 'legacy') {
+        console.error('--v1-doc is already version-tagged — this mode compares a STORED V1 doc against its prospective v2 upgrade. Nothing to migrate.');
+        process.exit(1);
+      }
       const v2Doc = clampDesignConfigV2(upgradeDesignConfig(v1Doc), v1Doc, 'admin');
       writeFileSync(path.join(OUT, `${DOC_NAME}-v2-doc.json`), JSON.stringify(v2Doc, null, 2));
       for (const [label, width] of Object.entries(WIDTHS)) {

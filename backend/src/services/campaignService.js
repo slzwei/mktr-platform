@@ -513,6 +513,7 @@ export async function updateCampaign(id, body, req) {
       updateData.slug = incomingSlug;
     }
   }
+  let designRollbackApplied = false;
   if (design_config !== undefined) {
     // A Studio-saved (v2) document must never be overwritten by an untagged
     // v1 save — the v1 clamp would wholesale-replace the nested doc. The old
@@ -521,17 +522,15 @@ export async function updateCampaign(id, body, req) {
     // PR 5 escape hatch: an ADMIN restoring a pre-migration v1 snapshot passes
     // `confirmDesignRollback: true` explicitly (the rollout runbook's rollback
     // path). It flows through the normal v1 clamp + draw invariants + cache
-    // invalidation below — never a raw write.
+    // invalidation below — never a raw write. NOTE the admin-policy merge
+    // semantics apply: a snapshot that OMITS an admin subtree (luckyDraw /
+    // featuredDrop) preserves the STORED one — disable a post-migration draw
+    // via ops first if the intent is full removal.
     const isDesignRollback =
       body.confirmDesignRollback === true &&
       req.user?.role === 'admin' &&
       classifyDesignConfigVersion(campaign.design_config) === 'v2' &&
       classifyDesignConfigVersion(design_config) === 'legacy';
-    if (isDesignRollback) {
-      console.warn(
-        `[design-rollback] admin ${req.user?.id} restored a v1 design_config over the stored v2 doc on campaign ${campaign.id}`
-      );
-    }
     if (
       !isDesignRollback &&
       classifyDesignConfigVersion(campaign.design_config) === 'v2' &&
@@ -552,6 +551,7 @@ export async function updateCampaign(id, body, req) {
     // termsContent edits on saves that didn't touch luckyDraw itself — the
     // clamp preserved the stored luckyDraw, and unchanged content is a no-op).
     updateData.design_config = await ensureDrawTermsVersion(updateData.design_config, campaign.id, req.user?.id);
+    designRollbackApplied = isDesignRollback;
   }
   if (commission_amount_driver !== undefined) updateData.commission_amount_driver = commission_amount_driver;
   if (commission_amount_fleet !== undefined) updateData.commission_amount_fleet = commission_amount_fleet;
@@ -571,6 +571,13 @@ export async function updateCampaign(id, body, req) {
       throw new AppError('That marketplace slug is already taken by another campaign.', 409);
     }
     throw err;
+  }
+  // Audit AFTER the row actually changed (Codex diff #4) — a clamp/draw-422 or
+  // DB failure above must never leave a success-looking rollback entry.
+  if (designRollbackApplied) {
+    console.warn(
+      `[design-rollback] admin ${req.user?.id} restored a v1 design_config over the stored v2 doc on campaign ${campaign.id}`
+    );
   }
   invalidateMarketplaceCache();
 

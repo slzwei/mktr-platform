@@ -60,9 +60,15 @@ For each campaign, in order (drafts first, then ONE active + soak, then the rest
   ```
   Plain saves of a v1 doc over a stored v2 doc are 409-blocked by design
   (`DESIGN_CONFIG_VERSION_CONFLICT` protects against the classic editor); the
-  flag is admin-only, audit-logged, and flows through the normal v1 clamp +
-  draw invariants + marketplace-cache invalidation. Do NOT restore via raw SQL
-  — it skips those side effects.
+  flag is admin-only, audit-logged (after the write succeeds), and flows
+  through the normal v1 clamp + draw invariants + marketplace-cache
+  invalidation. Do NOT restore via raw SQL — it skips those side effects.
+  **Merge semantics**: the admin policy applies — a snapshot that OMITS an
+  admin subtree (`luckyDraw` / `featuredDrop`) PRESERVES the stored one, so a
+  draw enabled after migration survives the rollback (its terms re-pin from
+  the snapshot's `termsContent`; an empty-terms snapshot 422s with
+  `DRAW_TERMS_REQUIRED` — that guard is correct). Disable the draw via ops
+  first if the intent is full removal.
 - **Flags**: both revert one-click, BUT flag-off is NOT a rollback for
   already-migrated campaigns — they keep rendering v2 (version-driven) and the
   classic editor shows them read-only. Roll campaigns back individually first

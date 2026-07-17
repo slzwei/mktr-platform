@@ -381,7 +381,14 @@ export default function AdminCampaignStudio() {
             />
           )}
           {doc && section === 'form' && (
-            <FormPanel doc={doc} setPath={setPath} mut={mut} whatsappOtpConfigured={serverReadiness?.whatsappOtpConfigured} />
+            <FormPanel
+              doc={doc}
+              setPath={setPath}
+              mut={mut}
+              // Success-gated (Codex diff #6): stale cached data through a
+              // failed refetch must not claim "verified".
+              whatsappOtpConfigured={readinessStatus === 'success' ? serverReadiness?.whatsappOtpConfigured : undefined}
+            />
           )}
           {doc && section === 'quiz' && <StudioQuizPanel doc={doc} campaign={campaign} setPath={setPath} />}
           {doc && section === 'theme' && <ThemePanel doc={doc} setPath={setPath} mut={mut} />}

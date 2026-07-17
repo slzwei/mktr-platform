@@ -269,6 +269,34 @@ describe('campaignService guards', () => {
     expect(saved.formHeadline).toBe('restored v1 snapshot');
   });
 
+  it('PR 5 rollback: admin-policy merge semantics — a snapshot OMITTING luckyDraw preserves the stored draw (terms re-pinned from the snapshot)', async () => {
+    const update = jest.fn(async () => {});
+    const storedWithDraw = {
+      ...structuredClone(v2Rich),
+      luckyDraw: { enabled: true, closesAt: '2026-08-31', prize: 'Tokyo', multiplier: 10 },
+    };
+    models.Campaign.findOne.mockResolvedValue({
+      id: 'c1',
+      design_config: storedWithDraw,
+      slug: null,
+      firstActivatedAt: null,
+      update,
+      toJSON: () => ({ id: 'c1' }),
+    });
+    await updateCampaign(
+      'c1',
+      {
+        design_config: { formHeadline: 'restored', termsContent: '<p>Snapshot rules</p>' },
+        confirmDesignRollback: true,
+      },
+      { user: { id: 'u1', role: 'admin' } }
+    );
+    const saved = update.mock.calls[0][0].design_config;
+    expect(saved.version).toBeUndefined();
+    expect(saved.luckyDraw).toMatchObject({ enabled: true, closesAt: '2026-08-31' }); // stored draw survives
+    expect(saved.luckyDraw.termsVersionId).toBeTruthy(); // re-pinned from the snapshot's terms
+  });
+
   it('PR 5 rollback: the flag does NOTHING for a non-admin (409 stands)', async () => {
     models.Campaign.findOne.mockResolvedValue({
       id: 'c1',

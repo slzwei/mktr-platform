@@ -169,6 +169,18 @@ describe('PR 5 — server code mapping + WhatsApp dedupe + draw-date math', () =
     expect(r.items.some((i) => i.source === 'design' && i.sec === 'form')).toBe(true);
   });
 
+  it('STALE cached data through a FAILED refetch never clears the warning (Codex diff #6)', () => {
+    // TanStack Query keeps the last successful data when a refetch errors —
+    // the retire condition must be gated on a CURRENT success.
+    const r = computeStudioReadiness({
+      campaign: CAMPAIGN,
+      doc: docWith({ otpChannel: 'whatsapp' }),
+      serverReadiness: { applicable: true, ready: true, issues: [], whatsappOtpConfigured: true },
+      serverStatus: 'error',
+    });
+    expect(r.items.some((i) => i.source === 'design' && i.sec === 'form')).toBe(true);
+  });
+
   it('drawCloseMismatchWithLive: instant-correct — same SGT day agrees, different day mismatches, junk never warns', () => {
     // 2026-10-30 SGT ends at 2026-10-30T16:00:00.000Z (UTC+8, exclusive next-day start)
     expect(drawCloseMismatchWithLive('2026-10-30', '2026-10-30T16:00:00.000Z')).toBe(false);

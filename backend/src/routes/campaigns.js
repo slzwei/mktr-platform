@@ -101,8 +101,11 @@ router.delete('/:id', authenticateToken, requireAgentOrAdmin, campaignController
 // Get campaign analytics
 router.get('/:id/analytics', authenticateToken, campaignController.getCampaignAnalytics);
 
-// Get campaign go-live readiness (assignable agent pool + webhook + quiz config)
-router.get('/:id/readiness', authenticateToken, campaignController.getCampaignReadiness);
+// Get campaign go-live readiness (assignable agent pool + webhook + quiz config).
+// Admin-only since PR 5: the payload now carries infra env-presence booleans
+// (OTP creds) and every in-repo consumer (Studio, launch tab, legacy designer
+// banner) is an admin surface anyway.
+router.get('/:id/readiness', authenticateToken, requireAdmin, campaignController.getCampaignReadiness);
 
 // Get quiz results analytics (profile + lead-score mix over submitted leads)
 router.get('/:id/quiz-analytics', authenticateToken, campaignController.getCampaignQuizAnalytics);
