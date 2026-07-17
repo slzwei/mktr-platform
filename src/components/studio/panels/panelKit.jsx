@@ -72,24 +72,55 @@ const inputStyle = {
   fontSize: 12.5,
 };
 
-export function TextField({ id, label, bind, placeholder }) {
+/** Optional per-field AI affordance (Studio PR 4) — a tiny ✦ beside the
+ * counter; renders only when the field is given an `onSuggest`. */
+function SuggestButton({ onSuggest, label }) {
+  if (!onSuggest) return null;
+  return (
+    <button
+      type="button"
+      onClick={onSuggest}
+      aria-label={`AI suggest — ${label}`}
+      title="Write it for me"
+      style={{
+        border: 'none',
+        background: 'none',
+        cursor: 'pointer',
+        padding: '0 2px',
+        fontSize: 11,
+        lineHeight: 1,
+        color: 'var(--accent, #4059C8)',
+      }}
+    >
+      ✦
+    </button>
+  );
+}
+
+export function TextField({ id, label, bind, placeholder, onSuggest }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <FieldLabel htmlFor={id}>{label}</FieldLabel>
-        {bind.counter}
+        <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5 }}>
+          <SuggestButton onSuggest={onSuggest} label={label} />
+          {bind.counter}
+        </span>
       </div>
       <input id={id} type="text" style={inputStyle} value={bind.value} onChange={bind.onChange} placeholder={placeholder} />
     </div>
   );
 }
 
-export function TextAreaField({ id, label, bind, rows = 4, placeholder }) {
+export function TextAreaField({ id, label, bind, rows = 4, placeholder, onSuggest }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <FieldLabel htmlFor={id}>{label}</FieldLabel>
-        {bind.counter}
+        <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5 }}>
+          <SuggestButton onSuggest={onSuggest} label={label} />
+          {bind.counter}
+        </span>
       </div>
       <textarea
         id={id}

@@ -25,6 +25,8 @@ import { useServerReadiness, useMarketplacePreview } from '@/components/studio/u
 import { computeStudioReadiness } from '@/components/studio/studioReadiness';
 import StudioJsonView from '@/components/studio/StudioJsonView';
 import StudioGuardModal from '@/components/studio/StudioGuardModal';
+import useStudioAi from '@/components/studio/useStudioAi';
+import StudioAiPanel from '@/components/studio/StudioAiPanel';
 import { studioPath, studioSupportsCampaign } from '@/components/studio/studioFlag';
 import '@/styles/adminV2.css';
 
@@ -44,7 +46,7 @@ export default function AdminCampaignStudio() {
   const { data: campaign, isLoading } = useCampaign(id);
   const { data: allCampaigns } = useCampaignLookup();
 
-  const { doc, baseline, dirty, saving, savedAt, saveError, mut, setPath, save, isStoredV1 } = useStudioDoc(campaign);
+  const { doc, baseline, dirty, saving, savedAt, saveError, mut, setPath, replaceDoc, save, isStoredV1 } = useStudioDoc(campaign);
 
   const [section, setSection] = useState('page');
   const [jsonOpen, setJsonOpen] = useState(false);
@@ -75,6 +77,9 @@ export default function AdminCampaignStudio() {
   // edits re-render live without losing funnel state.
   const [jump, setJump] = useState(null);
   const [resetKey, setResetKey] = useState(0);
+  // Canvas subject lifted here (PR 4, F12) — picking an AI look must land the
+  // operator on the page subject.
+  const [subject, setSubject] = useState('page');
 
   // Unified dirty (Codex F10): the doc AND any unsaved slug draft drive every
   // guard — a pending slug is as losable as pending copy.
@@ -83,6 +88,18 @@ export default function AdminCampaignStudio() {
     dirty: anyDirty,
     campaignId: campaign?.id,
   });
+
+  // "✦ Write it for me" (Studio PR 4) — copy suggestions + CO-1 look
+  // proposals; fully campaign-scoped (the hook resets + aborts on switch).
+  // Picking a look forces a coherent page-subject remount (F12).
+  const onPickLook = useCallback(() => {
+    setSubject('page');
+    setJump(null);
+    setResetKey((k) => k + 1);
+  }, []);
+  const ai = useStudioAi({ campaign, doc, setPath, replaceDoc, onPickLook });
+  const aiRef = useRef(ai);
+  aiRef.current = ai;
 
   // Codex F11a: an edit can make the active jump unavailable (e.g. the SG/PR
   // gate toggled off while previewing it) — leave it instead of rendering a
@@ -114,6 +131,7 @@ export default function AdminCampaignStudio() {
   useEffect(() => {
     setJump(null);
     setResetKey(0);
+    setSubject('page');
     setSlugDraft(null);
     setSlugError(null);
   }, [campaign?.id]);
@@ -135,6 +153,12 @@ export default function AdminCampaignStudio() {
   // equals what was sent (the input stays editable in flight) — Codex #3.
   const SLUG_RE = /^[a-z0-9-]{3,80}$/;
   const handleSave = useCallback(async () => {
+    // F9: EVERY save entry (toolbar, ⌘S, guard "Save & continue") converges
+    // here — an unadopted AI look proposal must resolve before persisting.
+    if (aiRef.current.proposal && !aiRef.current.proposal.adopted) {
+      toast.error('Adopt or discard the AI look before saving.');
+      return { ok: false, reason: 'proposal-unadopted' };
+    }
     if (slugDirty && !(slugDraft === '' || SLUG_RE.test(slugDraft))) {
       setSlugError('Fix the slug before saving — 3–80 chars: a–z, 0–9, dashes.');
       setSection('dist');
@@ -142,8 +166,12 @@ export default function AdminCampaignStudio() {
     }
     const slugRide = slugDirty ? { slug: slugDraft || null } : {};
     const sentSlug = slugDraft;
+    // Codex diff #3: commit only the proposal THIS save carried — a look
+    // picked while the PUT is in flight must survive with its gate intact.
+    const proposalAtStart = aiRef.current.proposal;
     const res = await save(slugRide);
     if (res.ok) {
+      aiRef.current.notifySaved(proposalAtStart); // commit point — that look is no longer revertable
       if ('slug' in slugRide) setSlugDraft((cur) => (cur === sentSlug ? null : cur));
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'detail', id] });
       queryClient.invalidateQueries({ queryKey: ['studio', 'readiness', id] });
@@ -311,6 +339,7 @@ export default function AdminCampaignStudio() {
         onBack={() => guardedRun('back', goWorkspace)}
         onCopyLink={() => guardedRun('copy', doCopyLink)}
         onSharePreview={() => guardedRun('share', doSharePreview)}
+        onRevertLook={ai.proposal ? ai.revertLook : null}
       />
       <div style={{ position: 'absolute', left: 320, top: '100%' }}>
         <StudioReadinessPopover
@@ -328,6 +357,7 @@ export default function AdminCampaignStudio() {
           onSection={setSection}
           sectionFlags={readiness.sectionFlags}
           onOpenJson={() => setJsonOpen(true)}
+          onAi={doc ? () => ai.setOpen(true) : null}
         />
 
         <section
@@ -340,7 +370,16 @@ export default function AdminCampaignStudio() {
             borderRight: '1px solid var(--line, #E3E6EB)',
           }}
         >
-          {doc && section === 'page' && <PagePanel doc={doc} setPath={setPath} mut={mut} />}
+          {doc && section === 'page' && (
+            <PagePanel
+              doc={doc}
+              setPath={setPath}
+              mut={mut}
+              onSuggest={ai.suggestField}
+              mediaHint={ai.mediaHint}
+              onDismissMediaHint={ai.dismissMediaHint}
+            />
+          )}
           {doc && section === 'form' && <FormPanel doc={doc} setPath={setPath} mut={mut} />}
           {doc && section === 'quiz' && <StudioQuizPanel doc={doc} campaign={campaign} setPath={setPath} />}
           {doc && section === 'theme' && <ThemePanel doc={doc} setPath={setPath} mut={mut} />}
@@ -370,6 +409,38 @@ export default function AdminCampaignStudio() {
             doc={doc}
             jump={jump}
             jumpRenderKey={`${jump || 'default'}:${resetKey}`}
+            subject={subject}
+            onSubject={setSubject}
+            banner={
+              ai.proposal ? (
+                <div
+                  data-testid="studio-proposal-banner"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '6px 14px',
+                    background: '#2E3350',
+                    color: '#DCE2FF',
+                    font: "600 10.5px ui-monospace, 'SF Mono', Menlo, monospace",
+                    letterSpacing: '.05em',
+                  }}
+                >
+                  <span>
+                    AI PROPOSAL — UNCOMMITTED · {ai.proposal.look.name}
+                    {ai.proposal.adopted ? ' · ADOPTED (save to commit)' : ''}
+                  </span>
+                  <span style={{ flex: 1 }} />
+                  <button
+                    type="button"
+                    onClick={ai.revertLook}
+                    style={{ border: 'none', background: 'none', color: '#B9C4FF', cursor: 'pointer', font: 'inherit' }}
+                  >
+                    ↩ Revert
+                  </button>
+                </div>
+              ) : null
+            }
             jumperSlot={
               <FunnelJumper
                 doc={doc}
@@ -402,6 +473,7 @@ export default function AdminCampaignStudio() {
         )}
       </div>
 
+      <StudioAiPanel ai={ai} campaign={campaign} doc={doc} />
       <StudioJsonView open={jsonOpen} doc={doc} onClose={() => setJsonOpen(false)} />
       <StudioGuardModal
         guard={guard}

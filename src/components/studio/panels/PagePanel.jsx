@@ -23,7 +23,12 @@ const TEMPLATE_NAMES = {
   journey: 'Journey',
 };
 
-export default function PagePanel({ doc, setPath, mut }) {
+export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHint = null, onDismissMediaHint = null }) {
+  // Per-field ✦ (Studio PR 4) — the five Page identity fields open the AI
+  // panel scoped to that path; absent onSuggest (tests, future reuse) renders
+  // no affordance. `mediaHint` is a picked look's {kind, note} art-direction
+  // chip — advice only, never a doc write (F7).
+  const suggest = (path, label) => (onSuggest ? () => onSuggest(path, label) : undefined);
   const bind = makeBind(doc, setPath);
   const imageInputRef = useRef(null);
   const videoInputRef = useRef(null);
@@ -219,14 +224,29 @@ export default function PagePanel({ doc, setPath, mut }) {
 
       <PanelSection title="IDENTITY & STORY">
         <TextField id="studio-wordmark" label="Brand wordmark" bind={bind('content.wordmark', 40)} placeholder="redeem.sg" />
-        <TextField id="studio-headline" label="Form headline" bind={bind('content.headline', 80)} placeholder="Get Started" />
-        <TextAreaField id="studio-subheadline" label="Sub-headline" bind={bind('content.subheadline', 150)} rows={2} />
-        <TextAreaField id="studio-story" label="Hero story" bind={bind('content.story', 1200)} rows={6} />
-        <TextField id="studio-emphasis" label="Emphasis line" bind={bind('content.emphasis', 160)} />
-        <TextField id="studio-submit-label" label="Submit button label" bind={bind('content.submitLabel', 40)} placeholder="Submit Now" />
+        <TextField id="studio-headline" label="Form headline" bind={bind('content.headline', 80)} placeholder="Get Started" onSuggest={suggest('content.headline', 'Form headline')} />
+        <TextAreaField id="studio-subheadline" label="Sub-headline" bind={bind('content.subheadline', 150)} rows={2} onSuggest={suggest('content.subheadline', 'Sub-headline')} />
+        <TextAreaField id="studio-story" label="Hero story" bind={bind('content.story', 1200)} rows={6} onSuggest={suggest('content.story', 'Hero story')} />
+        <TextField id="studio-emphasis" label="Emphasis line" bind={bind('content.emphasis', 160)} onSuggest={suggest('content.emphasis', 'Emphasis line')} />
+        <TextField id="studio-submit-label" label="Submit button label" bind={bind('content.submitLabel', 40)} placeholder="Submit Now" onSuggest={suggest('content.submitLabel', 'Submit button label')} />
       </PanelSection>
 
       <PanelSection title="HERO MEDIA">
+        {mediaHint?.note ? (
+          <div
+            data-testid="studio-media-hint"
+            style={{ display: 'flex', alignItems: 'flex-start', gap: 6, background: '#F8EED8', color: '#8A5B07', borderRadius: 8, padding: '7px 10px', fontSize: 11, lineHeight: 1.5 }}
+          >
+            <span style={{ flex: 1 }}>
+              ✦ Art direction from the AI look{mediaHint.kind && mediaHint.kind !== 'none' ? ` (${mediaHint.kind})` : ''}: {mediaHint.note}
+            </span>
+            {onDismissMediaHint ? (
+              <button type="button" onClick={onDismissMediaHint} aria-label="Dismiss art direction" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'inherit', fontSize: 11, lineHeight: 1 }}>
+                ✕
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <Seg
           ariaLabel="Media kind"
           options={[

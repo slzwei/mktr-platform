@@ -38,9 +38,23 @@ function segStyle(active) {
   };
 }
 
-export default function StudioCanvas({ campaign, doc, jump = null, jumpRenderKey = 'default:0', jumperSlot = null, subjectSlots = {} }) {
+export default function StudioCanvas({
+  campaign,
+  doc,
+  jump = null,
+  jumpRenderKey = 'default:0',
+  jumperSlot = null,
+  subjectSlots = {},
+  // Subject lifted to the page (Studio PR 4, F12) — pickLook must force the
+  // page subject; uncontrolled fallback keeps older mounts/tests working.
+  subject: subjectProp,
+  onSubject,
+  banner = null,
+}) {
   const [device, setDevice] = useState('mobile');
-  const [subject, setSubject] = useState('page');
+  const [subjectState, setSubjectState] = useState('page');
+  const subject = subjectProp ?? subjectState;
+  const setSubject = onSubject ?? setSubjectState;
   const stageRef = useRef(null);
   const [stageSize, setStageSize] = useState({ w: 900, h: 700 });
 
@@ -111,6 +125,9 @@ export default function StudioCanvas({ campaign, doc, jump = null, jumpRenderKey
         <div style={{ flex: 1 }} />
         {subject === 'page' ? jumperSlot : null}
       </div>
+
+      {/* AI proposal banner (PR 4) — canvas chrome, visible across ALL subjects. */}
+      {banner}
 
       <div
         ref={stageRef}

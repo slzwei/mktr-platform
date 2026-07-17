@@ -45,6 +45,7 @@ export default function StudioTopBar({
   onBack,
   onCopyLink,
   onSharePreview,
+  onRevertLook = null, // PR 4 — present while ANY AI look proposal exists (incl. adopted)
 }) {
   const statusTone = STATUS_TONES[campaign?.status] || STATUS_TONES.draft;
   const drawCloses = drawInfo?.enabled === true ? formatDrawDate(drawInfo.closesAt) : '';
@@ -126,6 +127,18 @@ export default function StudioTopBar({
       ) : null}
 
       <div style={{ flex: 1 }} />
+
+      {onRevertLook ? (
+        <button
+          type="button"
+          className="av2-btn av2-btn--ghost av2-btn--sm"
+          onClick={onRevertLook}
+          style={{ color: '#8A5B07' }}
+          title="Restore the design from before the AI look"
+        >
+          ↩ Revert look
+        </button>
+      ) : null}
 
       <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" onClick={onCopyLink}>
         Copy link

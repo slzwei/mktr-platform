@@ -18,6 +18,8 @@ vi.mock('@/lib/queryClient', () => ({ queryClient: { invalidateQueries: vi.fn() 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { toast } from 'sonner';
+import { apiClient } from '@/api/client';
+import { Campaign } from '@/api/entities';
 import AdminCampaignStudio from '../AdminCampaignStudio';
 
 const LEAD_CAMPAIGN = {
@@ -89,5 +91,48 @@ describe('AdminCampaignStudio', () => {
     const dialog = screen.getByRole('dialog', { name: 'Design document (read-only)' });
     expect(dialog).toBeInTheDocument();
     expect(dialog.textContent).toContain('"version": 2');
+  });
+
+  it('F9: an unadopted AI look blocks the save; adopting unblocks it and saving commits (banner gone)', async () => {
+    const LOOK = {
+      name: 'Dusk Poster',
+      rationale: 'High-contrast hero.',
+      template: { id: 'poster', params: { overlay: 'dusk' } },
+      theme: { preset: 'ink-slate', accent: null },
+      media: { kind: 'image', note: 'Warm hawker-centre scene' },
+      draft: [{ path: 'content.headline', label: 'Form headline', section: 'page', value: 'Look headline' }],
+    };
+    const user = userEvent.setup();
+    apiClient.post.mockImplementation((url) =>
+      url === '/admin/ai/copy-draft'
+        ? Promise.resolve({ success: true, data: { proposals: [LOOK] } })
+        : Promise.resolve({ data: {} })
+    );
+    Campaign.update.mockImplementation(async (id, body) => ({ ...LEAD_CAMPAIGN, ...body }));
+    renderStudio();
+
+    // Full-mode generate → pick the look (whole-doc swap, banner + revert appear)
+    await user.click(screen.getByRole('button', { name: '✦ Write it for me' }));
+    await user.click(screen.getByRole('button', { name: 'Design the whole page' }));
+    await user.type(screen.getByPlaceholderText(/FairPrice voucher giveaway/), 'Voucher blast');
+    await user.click(screen.getByRole('button', { name: 'Generate looks' }));
+    await user.click(await screen.findByRole('button', { name: 'Use this look' }));
+
+    expect(screen.getByTestId('studio-proposal-banner')).toHaveTextContent('AI PROPOSAL — UNCOMMITTED · Dusk Poster');
+    expect(screen.getByRole('button', { name: '↩ Revert look' })).toBeInTheDocument();
+
+    // Unadopted → the toolbar save is blocked (⌘S and guard saves converge on the same handler)
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(toast.error).toHaveBeenCalledWith('Adopt or discard the AI look before saving.');
+    expect(Campaign.update).not.toHaveBeenCalled();
+
+    // Adopt → save persists the look doc and commits (banner + revert gone)
+    await user.click(screen.getByRole('button', { name: 'Adopt this look' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(Campaign.update).toHaveBeenCalledTimes(1));
+    expect(Campaign.update.mock.calls[0][1].design_config.template.id).toBe('poster');
+    expect(Campaign.update.mock.calls[0][1].design_config.content.headline).toBe('Look headline');
+    await waitFor(() => expect(screen.queryByTestId('studio-proposal-banner')).toBeNull());
+    expect(screen.queryByRole('button', { name: '↩ Revert look' })).toBeNull();
   });
 });
