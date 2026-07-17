@@ -14,6 +14,8 @@ import FunnelJumper from '@/components/studio/FunnelJumper';
 import { jumpStateById, quizStructureSignature } from '@/components/studio/studioJumpStates';
 import PagePanel from '@/components/studio/panels/PagePanel';
 import ThemePanel from '@/components/studio/panels/ThemePanel';
+import FormPanel from '@/components/studio/panels/FormPanel';
+import StudioQuizPanel from '@/components/studio/panels/QuizPanel';
 import StudioJsonView from '@/components/studio/StudioJsonView';
 import StudioGuardModal from '@/components/studio/StudioGuardModal';
 import { studioPath, studioSupportsCampaign } from '@/components/studio/studioFlag';
@@ -239,8 +241,8 @@ export default function AdminCampaignStudio() {
           }}
         >
           {doc && section === 'page' && <PagePanel doc={doc} setPath={setPath} mut={mut} />}
-          {section === 'form' && <PanelStub label="Form" />}
-          {section === 'quiz' && <PanelStub label="Quiz" />}
+          {doc && section === 'form' && <FormPanel doc={doc} setPath={setPath} mut={mut} />}
+          {doc && section === 'quiz' && <StudioQuizPanel doc={doc} campaign={campaign} setPath={setPath} />}
           {doc && section === 'theme' && <ThemePanel doc={doc} setPath={setPath} mut={mut} />}
           {section === 'dist' && <PanelStub label="Distribution" />}
         </section>

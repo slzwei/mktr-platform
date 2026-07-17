@@ -24,7 +24,7 @@ import { genId } from "./constants";
 
 // The validated "Protection Personality" quiz (v2). "Load starter" drops this in
 // so admins begin from the tested quiz and tweak copy, rather than building blind.
-const STARTER_QUIZ = {
+export const STARTER_QUIZ = {
   enabled: true,
   quizId: "protection-personality",
   version: 2,
@@ -110,7 +110,7 @@ const STARTER_QUIZ = {
   ],
 };
 
-const BLANK_QUIZ = {
+export const BLANK_QUIZ = {
   enabled: true,
   quizId: "",
   version: 1,
