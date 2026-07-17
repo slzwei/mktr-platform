@@ -25,7 +25,7 @@ import { scoreQuiz } from '@/lib/quizScoring';
 const SANS = 'Albert Sans, system-ui, sans-serif';
 const SERIF = 'Fraunces, serif';
 
-export default function CampaignQuiz({ quiz, themeColor, previewMode = false, onComplete, onReveal }) {
+export default function CampaignQuiz({ quiz, themeColor, previewMode = false, onComplete, onReveal, previewFixture }) {
   const { tokens: TOKENS, radius: RADIUS, onAccent } = useCampaignTheme();
   const accent = themeColor || TOKENS.accent;
   const questions = useMemo(
@@ -35,11 +35,17 @@ export default function CampaignQuiz({ quiz, themeColor, previewMode = false, on
   const profiles = quiz?.resultProfiles || [];
   const basePath = quiz?.media?.basePath || '';
 
-  const [phase, setPhase] = useState('intro'); // 'intro' | 'question' | 'result'
-  const [stepIdx, setStepIdx] = useState(0);
-  const [answers, setAnswers] = useState([]); // [{ qid, value }]
+  // Studio jump fixture (previewJumpFixtures.js) — initializers only, gated on
+  // previewMode === true; live mounts never pass it and ignore it if they did.
+  // Seeding the result phase does NOT call onReveal: the CompleteRegistration
+  // moment stays a real user transition, never a preview artifact.
+  const fx = previewMode === true && previewFixture ? previewFixture : null;
+
+  const [phase, setPhase] = useState(fx?.phase ?? 'intro'); // 'intro' | 'question' | 'result'
+  const [stepIdx, setStepIdx] = useState(fx?.stepIdx ?? 0);
+  const [answers, setAnswers] = useState(fx?.answers ?? []); // [{ qid, value }]
   const [selecting, setSelecting] = useState(null); // optId being tapped (highlight)
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState(fx?.result ?? null);
 
   const optionImage = (opt) => (opt?.image ? resolveImageUrl(`${basePath}${opt.image}`) : null);
 
@@ -293,9 +299,10 @@ function PillButton({ accent, onClick, children }) {
  * { quizId, version, answers, result } so the live page can thread answers into
  * the prospect submit; previews pass a no-op (or omit it).
  */
-export function QuizGate({ quiz, themeColor, previewMode = false, onComplete, onReveal, onStageChange, children }) {
+export function QuizGate({ quiz, themeColor, previewMode = false, onComplete, onReveal, onStageChange, previewFixture, children }) {
   const enabled = !!(quiz && quiz.enabled && Array.isArray(quiz.steps) && quiz.steps.length > 0);
-  const [done, setDone] = useState(false);
+  // Studio jump fixture — previewMode-gated initializer only (see CampaignQuiz).
+  const [done, setDone] = useState(previewMode === true && previewFixture ? previewFixture.done === true : false);
 
   // Optional stage signal for template shells (Campaign Studio v2 renderer:
   // Spotlight reveals its intro copy once the quiz hands over to the form).
@@ -311,6 +318,7 @@ export function QuizGate({ quiz, themeColor, previewMode = false, onComplete, on
       quiz={quiz}
       themeColor={themeColor}
       previewMode={previewMode}
+      previewFixture={previewFixture}
       onReveal={onReveal}
       onComplete={(r) => {
         setDone(true);

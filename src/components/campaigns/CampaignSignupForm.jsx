@@ -35,6 +35,10 @@ export default function CampaignSignupForm({
   // v2 (Campaign Studio) content.advertiserName — the DNC gate's advertiser
   // display; defaults to the campaign name exactly as v1 behaves.
   advertiserName,
+  // Studio funnel-state jumper (previewJumpFixtures.js): initial-state fixture
+  // consumed ONLY when previewMode === true. Live mounts never pass it, and a
+  // leaked fixture is inert by construction (every initializer gates itself).
+  previewFixture,
 }) {
   const { tokens: TOKENS, radius: RADIUS, onAccent } = useCampaignTheme();
   const accent = themeColor || TOKENS.accent;
@@ -47,7 +51,13 @@ export default function CampaignSignupForm({
   const excludeAdvisors = campaign?.design_config?.excludeAdvisors === true;
   const dncCheckAtSubmit = campaign?.design_config?.dncCheckAtSubmit === true;
 
-  const [formData, setFormData] = useState({
+  // Preview-only jump fixture (Studio PR 3): gated PER-INITIALIZER on
+  // previewMode === true, so a fixture reaching a live mount changes nothing.
+  // Fixtures deliberately cannot seed `otp` — a 6-digit code would auto-verify
+  // on mount (OTPVerification), which live would mean a real /verify/check.
+  const fx = previewMode === true && previewFixture ? previewFixture : null;
+
+  const [formData, setFormData] = useState(() => ({
     name: '',
     email: '',
     phone: '',
@@ -55,23 +65,24 @@ export default function CampaignSignupForm({
     date_of_birth: '',
     education_level: '',
     monthly_income: '',
-  });
+    ...(fx?.formData || {}),
+  }));
   const [otp, setOtp] = useState('');
-  const [otpState, setOtpState] = useState('idle');
+  const [otpState, setOtpState] = useState(fx?.otpState ?? 'idle');
   // DNC consent gate (inert unless dncCheckAtSubmit). 'unknown' | 'checking' | 'on_dnc' | 'clear'.
-  const [dncStatus, setDncStatus] = useState('unknown');
-  const [dncConsent, setDncConsent] = useState(false);
-  const [loading, setLoading] = useState(null);
-  const [error, setError] = useState('');
+  const [dncStatus, setDncStatus] = useState(fx?.dncStatus ?? 'unknown');
+  const [dncConsent, setDncConsent] = useState(fx?.dncConsent ?? false);
+  const [loading, setLoading] = useState(fx?.loading ?? null);
+  const [error, setError] = useState(fx?.error ?? '');
   const [previewNotice, setPreviewNotice] = useState('');
   const [ageError, setAgeError] = useState('');
   const [dobIncomplete, setDobIncomplete] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendCooldown, setResendCooldown] = useState(fx?.resendCooldown ?? 0);
   const [showSuccessTick, setShowSuccessTick] = useState(false);
   // SG/PR eligibility gate: null = not answered, 'eligible' = show form, 'no' = blocked.
-  const [eligibility, setEligibility] = useState(null);
+  const [eligibility, setEligibility] = useState(fx?.eligibility ?? null);
   // Financial-consultant exclusion gate: null = not answered, 'public' = show form, 'advisor' = blocked.
-  const [advisorAck, setAdvisorAck] = useState(null);
+  const [advisorAck, setAdvisorAck] = useState(fx?.advisorAck ?? null);
 
   // Three PDPA consent checkboxes — campaign T&C is required (opt-in); contact
   // consent defaults to ticked (opt-out, documented in /PersonalDataPolicy:
@@ -80,10 +91,10 @@ export default function CampaignSignupForm({
   // (un-ticked) checkbox — its own granular consent so it never rides on the
   // CAPI/contact toggle. It gates sharing the lead with an external buyer-agent
   // (the consentMetadata.external evidence; absence => internal-only delivery).
-  const [consentContact, setConsentContact] = useState(true);
-  const [consentTerms, setConsentTerms] = useState(false);
-  const [consentThirdParty, setConsentThirdParty] = useState(false);
-  const [consentOpen, setConsentOpen] = useState(false);
+  const [consentContact, setConsentContact] = useState(fx?.consentContact ?? true);
+  const [consentTerms, setConsentTerms] = useState(fx?.consentTerms ?? false);
+  const [consentThirdParty, setConsentThirdParty] = useState(fx?.consentThirdParty ?? false);
+  const [consentOpen, setConsentOpen] = useState(fx?.consentOpen ?? false);
 
   const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   const getFullPhoneNumber = () => `+65${formData.phone}`;

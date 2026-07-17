@@ -38,7 +38,7 @@ function segStyle(active) {
   };
 }
 
-export default function StudioCanvas({ campaign, doc, jump = null, jumperSlot = null, subjectSlots = {} }) {
+export default function StudioCanvas({ campaign, doc, jump = null, jumpRenderKey = 'default:0', jumperSlot = null, subjectSlots = {} }) {
   const [device, setDevice] = useState('mobile');
   const [subject, setSubject] = useState('page');
   const stageRef = useRef(null);
@@ -128,7 +128,10 @@ export default function StudioCanvas({ campaign, doc, jump = null, jumperSlot = 
         {subject === 'page' ? (
           <>
             <DeviceFrame width={frameW} height={FRAME_H} scale={scale} ariaLabel="Campaign page preview">
-              <CanvasPageSubject campaign={campaign} doc={doc} jump={jump} />
+              {/* Keyed on jump + resetKey: every jump/reset is a coherent REMOUNT
+                  (fixtures are initial state); doc edits re-render WITHOUT
+                  remounting so in-progress funnel state survives typing. */}
+              <CanvasPageSubject key={jumpRenderKey} campaign={campaign} doc={doc} jump={jump} />
             </DeviceFrame>
             <div style={{ padding: '8px 0 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
               <div style={{ font: "500 10.5px ui-monospace, 'SF Mono', Menlo, monospace", color: 'rgba(255,255,255,.5)' }}>

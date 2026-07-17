@@ -25,6 +25,7 @@ import { QuizGate } from '@/components/campaigns/CampaignQuiz';
 import CampaignSignupForm from '@/components/campaigns/CampaignSignupForm';
 import { CampaignThemeProvider } from './themeContext';
 import { adaptCampaignForFunnel, deriveFunnelProps } from './funnelAdapter';
+import { resolveJumpFixtures } from './previewJumpFixtures';
 import { TEMPLATES } from './templates';
 
 /** SGT day-end draw cutoff — mirrors marketplace content.js offerUnavailability
@@ -240,13 +241,22 @@ export default function CampaignPageRenderer({
     return <BlockedPage t={t} content={content} reason={blocked} luckyDraw={doc.luckyDraw} />;
   }
 
-  const funnelProps = deriveFunnelProps(adapted, { onSubmit, previewMode });
+  // Studio jump fixtures (PR 3): resolved ONLY in previewMode against the
+  // current doc; the Studio remounts this whole renderer per jump/reset, so
+  // fixtures act purely as initial state. Live mounts (jump=null) skip this.
+  const jumpFixtures = previewMode ? resolveJumpFixtures(jump, doc) : null;
+  const funnelProps = deriveFunnelProps(adapted, {
+    onSubmit,
+    previewMode,
+    previewFixture: jumpFixtures?.form,
+  });
   const funnel = (
     <CampaignThemeProvider value={adapted.funnelTheme}>
       <QuizGate
         quiz={adapted.legacy.quiz}
         themeColor={t.accent}
         previewMode={previewMode}
+        previewFixture={jumpFixtures?.quiz}
         onReveal={onQuizReveal}
         onComplete={onQuizComplete}
         onStageChange={setStage}

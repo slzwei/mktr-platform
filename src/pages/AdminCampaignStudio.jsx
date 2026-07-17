@@ -10,6 +10,8 @@ import useStudioGuards from '@/components/studio/useStudioGuards';
 import StudioTopBar from '@/components/studio/StudioTopBar';
 import StudioRail from '@/components/studio/StudioRail';
 import StudioCanvas from '@/components/studio/StudioCanvas';
+import FunnelJumper from '@/components/studio/FunnelJumper';
+import { jumpStateById, quizStructureSignature } from '@/components/studio/studioJumpStates';
 import StudioJsonView from '@/components/studio/StudioJsonView';
 import StudioGuardModal from '@/components/studio/StudioGuardModal';
 import { studioPath, studioSupportsCampaign } from '@/components/studio/studioFlag';
@@ -44,7 +46,43 @@ export default function AdminCampaignStudio() {
   const [section, setSection] = useState('page');
   const [jsonOpen, setJsonOpen] = useState(false);
 
+  // Funnel-state jumper (CP3): jump id + a reset counter — together they key
+  // the canvas subject, so every jump/reset is a coherent remount while doc
+  // edits re-render live without losing funnel state.
+  const [jump, setJump] = useState(null);
+  const [resetKey, setResetKey] = useState(0);
+
   const { guard, guardedRun, leaveViaHistory, closeGuard } = useStudioGuards({ dirty });
+
+  // Codex F11a: an edit can make the active jump unavailable (e.g. the SG/PR
+  // gate toggled off while previewing it) — leave it instead of rendering a
+  // contradictory state.
+  useEffect(() => {
+    if (!doc || !jump) return;
+    const reason = jumpStateById(jump)?.available?.(doc, campaign);
+    if (reason) {
+      setJump(null);
+      setResetKey((k) => k + 1);
+      toast(`Preview state reset — ${reason}`);
+    }
+  }, [doc, jump, campaign]);
+
+  // Codex F11b: STRUCTURAL quiz edits (steps/questions/profiles/mode) while a
+  // Quiz-group jump is active remount the funnel so fixtures recompute against
+  // the new shape; copy/theme edits never remount.
+  const quizSig = useMemo(() => (doc ? quizStructureSignature(doc) : 'none'), [doc]);
+  const prevQuizSigRef = useRef(quizSig);
+  useEffect(() => {
+    if (prevQuizSigRef.current === quizSig) return;
+    prevQuizSigRef.current = quizSig;
+    if (jump && jumpStateById(jump)?.group === 'Quiz') setResetKey((k) => k + 1);
+  }, [quizSig, jump]);
+
+  // Campaign switch: fresh preview state (the canvas itself remounts via key).
+  useEffect(() => {
+    setJump(null);
+    setResetKey(0);
+  }, [campaign?.id]);
 
   const switcherCampaigns = useMemo(() => {
     const list = (allCampaigns || []).filter(
@@ -206,7 +244,28 @@ export default function AdminCampaignStudio() {
         </section>
 
         {doc ? (
-          <StudioCanvas campaign={campaign} doc={doc} />
+          <StudioCanvas
+            key={campaign.id}
+            campaign={campaign}
+            doc={doc}
+            jump={jump}
+            jumpRenderKey={`${jump || 'default'}:${resetKey}`}
+            jumperSlot={
+              <FunnelJumper
+                doc={doc}
+                campaign={campaign}
+                jump={jump}
+                onPick={(id) => {
+                  setJump(id === 'default' ? null : id);
+                  setResetKey((k) => k + 1);
+                }}
+                onReset={() => {
+                  setJump(null);
+                  setResetKey((k) => k + 1);
+                }}
+              />
+            }
+          />
         ) : (
           <main aria-label="Canvas" style={{ flex: 1, minWidth: 0, background: '#15171C' }} />
         )}
