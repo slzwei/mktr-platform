@@ -287,6 +287,21 @@ describe('helpers', () => {
     expect(stripUrlish('ftp://files/x')).not.toContain('ftp');
   });
 
+  it('stripUrlish catches the widened forms (Codex diff #6)', () => {
+    // relative asset paths, bare filenames, data URIs, IPv4 hosts, subdomained
+    // and non-core TLDs — none may survive into an art-direction note
+    expect(stripUrlish('use /uploads/hero.jpg as reference')).not.toContain('hero.jpg');
+    expect(stripUrlish('reuse assets/img.png here')).not.toContain('img.png');
+    expect(stripUrlish('the file hero.jpg works')).not.toContain('hero.jpg');
+    expect(stripUrlish('data:image/png;base64,AAAA inline')).not.toContain('data:');
+    expect(stripUrlish('javascript:alert(1) click')).not.toContain('javascript');
+    expect(stripUrlish('host 192.168.1.10/x serves it')).not.toContain('192.168');
+    expect(stripUrlish('see asset.example.my/hero for it')).not.toContain('example.my');
+    expect(stripUrlish('cdn.shop.site/thing')).not.toContain('site');
+    // prose that LOOKS slashy or colon-y must survive
+    expect(stripUrlish('16:9 crop, warm/cool tones, shot at f/1.8')).toBe('16:9 crop, warm/cool tones, shot at f/1.8');
+  });
+
   it('contrastRatioHex matches WCAG expectations', () => {
     expect(contrastRatioHex('#000000', '#FFFFFF')).toBeCloseTo(21, 0);
     expect(contrastRatioHex('#FFFAF0', '#FFFAF0')).toBeCloseTo(1, 1);

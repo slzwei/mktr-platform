@@ -91,18 +91,16 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     return () => abortRef.current?.abort(); // unmount / next campaign
   }, [campaign?.id]);
 
-  // 429 countdown → back to the brief when it expires.
+  // 429 countdown → back to the brief when it expires. The phase transition
+  // lives OUT here, not inside the setRetryIn updater — updaters must stay
+  // pure (Strict Mode double-invokes them).
   useEffect(() => {
-    if (phase !== 'rate' || retryIn <= 0) return undefined;
-    const t = setTimeout(() => {
-      setRetryIn((s) => {
-        if (s <= 1) {
-          setPhase('brief');
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
+    if (phase !== 'rate') return undefined;
+    if (retryIn <= 0) {
+      setPhase('brief');
+      return undefined;
+    }
+    const t = setTimeout(() => setRetryIn((s) => s - 1), 1000);
     return () => clearTimeout(t);
   }, [phase, retryIn]);
 
@@ -143,8 +141,14 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
   }, []);
 
   const startRequest = useCallback(() => {
+    // Newest-request-wins (Codex diff #2): starting a request aborts any
+    // in-flight one AND bumps the fence, so a slower older response can never
+    // land after (or over) a newer one — the same token also fences campaign
+    // switches (the reset effect bumps it too).
+    abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
+    generationRef.current += 1;
     return { generation: generationRef.current, signal: ac.signal };
   }, []);
 
@@ -273,16 +277,17 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
         if (!fresh) return;
         const cur = sugsRef.current[index];
         if (!cur || cur.path !== row.path) return;
-        if (cur.state === 'applied' && currentValueAt(docRef.current, cur.path) === cur.value) {
-          // untouched applied row: swap the doc value atomically, stay applied
+        // Action-time re-gate BEFORE the applied-branch write (Codex diff #1):
+        // disabling a surface doesn't clear its stored value, so an applied
+        // untouched row on a now-disabled path must fall back to open+reason —
+        // never a silent write.
+        const reason = rowDisabledReason(docRef.current, cur.path);
+        if (!reason && cur.state === 'applied' && currentValueAt(docRef.current, cur.path) === cur.value) {
+          // untouched applied row on a live surface: swap the doc value, stay applied
           setPath(cur.path, fresh.value);
           patchRow(index, { value: fresh.value });
         } else {
-          patchRow(index, {
-            value: fresh.value,
-            state: 'open',
-            disabledReason: rowDisabledReason(docRef.current, cur.path),
-          });
+          patchRow(index, { value: fresh.value, state: 'open', disabledReason: reason });
         }
       } catch (err) {
         if (generation !== generationRef.current) return;
@@ -453,9 +458,12 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     }
   }, [revertLook]);
 
-  /** Save success = the commit point — the proposal is no longer revertable. */
-  const notifySaved = useCallback(() => {
-    setProposal(null);
+  /** Save success = the commit point — the proposal is no longer revertable.
+   * The caller passes the proposal AS OF SAVE START (Codex diff #3): a look
+   * picked while that PUT was in flight is NOT what the save committed, so it
+   * must keep its banner, revert action and adoption gate. */
+  const notifySaved = useCallback((committedProposal) => {
+    setProposal((p) => (p === committedProposal ? null : p));
   }, []);
 
   const dismissMediaHint = useCallback(() => setMediaHint(null), []);

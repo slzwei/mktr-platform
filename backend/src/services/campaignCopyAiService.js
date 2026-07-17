@@ -105,9 +105,28 @@ export function buildCampaignContext(campaign) {
 
 // ─────────────────────────── sanitizers ───────────────────────────
 
-// Art-direction notes must never smuggle assets/links: scheme URIs,
-// protocol-relative, www., markdown links, and bare common-TLD domains.
-const URL_RE = /(?:\b[a-z][a-z0-9+.-]*:\/\/\S+|(?<=^|\s)\/\/\S+|\bwww\.\S+|\[[^\]]*\]\([^)]*\)|\b[\w-]+\.(?:com|net|org|io|co|sg|ai|app|dev|me|info|biz|xyz)\b\S*)/gi;
+// Art-direction notes must never smuggle assets/links (Codex diff #6 widened
+// the net): scheme URIs (with or without //, incl. data:/javascript:),
+// protocol-relative, www., markdown links, bare common-TLD domains, IPv4
+// hosts, path-like tokens with a file extension (/uploads/hero.jpg,
+// assets/img.png), and bare media filenames (hero.jpg). Prose stays intact:
+// "16:9", "f/1.8" and "warm/cool" match none of these.
+const URL_RE = new RegExp(
+  [
+    /\b[a-z][a-z0-9+.-]*:\/\/\S+/, // scheme://…
+    /\b(?:data|javascript|vbscript|blob|file|ftp|sftp|ssh|mailto|tel|intent|chrome|about):\S+/, // risky schemes, no // needed
+    /(?<=^|\s)\/\/\S+/, // protocol-relative
+    /\bwww\.\S+/,
+    /\[[^\]]*\]\([^)]*\)/, // markdown link
+    /\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|io|co|sg|ai|app|dev|me|info|biz|xyz|my|us|uk|in|tv|ly|to|cc|gg|site|online|store|shop|link|page|club|top|fun|space|icu)\b\S*/, // bare domains incl. subdomains
+    /\b\d{1,3}(?:\.\d{1,3}){3}\b\S*/, // IPv4 hosts
+    /(?<=^|\s)\/?[\w.-]*\/\S*\.[a-z]{2,5}\b\S*/, // path tokens ending in a file extension
+    /\b[\w-]+\.(?:png|jpe?g|gif|webp|avif|svg|mp4|webm|mov|m4v|heic|pdf)\b/, // bare media filenames
+  ]
+    .map((r) => r.source)
+    .join('|'),
+  'gi'
+);
 
 export function stripUrlish(value) {
   return String(value || '')

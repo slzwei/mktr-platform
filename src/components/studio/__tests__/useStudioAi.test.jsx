@@ -190,6 +190,61 @@ describe('useStudioAi — generate (copy mode)', () => {
     expect(result.current.docApi.doc.content.headline).toBe('Operator edit');
     expect(result.current.ai.sugs[0]).toMatchObject({ state: 'open', value: 'Regenerated v2' });
   });
+
+  it('regen of an applied row on a NOW-DISABLED surface never writes the doc (Codex diff #1)', async () => {
+    const { result } = renderAi();
+    await generateReady(result);
+
+    // Enable the drop, accept its title, then disable the drop again — the
+    // stored title value remains, so the applied-untouched branch would have
+    // silently overwritten it without the re-gate.
+    act(() => result.current.docApi.setPath('distribution.featuredDrop.enabled', true));
+    act(() => result.current.ai.acceptRow(1));
+    expect(result.current.docApi.doc.distribution.featuredDrop.title).toBe('AI drop title');
+    act(() => result.current.docApi.setPath('distribution.featuredDrop.enabled', false));
+
+    apiClient.post.mockResolvedValueOnce(ok([{ ...DRAFT[1], value: 'Regenerated drop title' }]));
+    await act(async () => {
+      await result.current.ai.regenRow(1);
+    });
+
+    expect(result.current.docApi.doc.distribution.featuredDrop.title).toBe('AI drop title'); // untouched
+    expect(result.current.ai.sugs[1]).toMatchObject({ state: 'open', value: 'Regenerated drop title' });
+    expect(result.current.ai.sugs[1].disabledReason).toMatch(/featured drop is off/i);
+  });
+
+  it('newest request wins: a second generate aborts the first, whose late response never lands (Codex diff #2)', async () => {
+    const resolvers = [];
+    const captured = [];
+    apiClient.post.mockImplementation((url, body, options) => {
+      captured.push(options);
+      return new Promise((resolve) => {
+        resolvers.push(resolve);
+      });
+    });
+
+    const { result } = renderAi();
+    act(() => result.current.ai.setBrief(FULL_BRIEF));
+    act(() => {
+      result.current.ai.generate();
+    });
+    act(() => {
+      result.current.ai.generate();
+    });
+    expect(captured[0].signal.aborted).toBe(true); // first flight aborted by the second
+    expect(captured[1].signal.aborted).toBe(false);
+
+    // newer resolves first…
+    await act(async () => {
+      resolvers[1]({ success: true, data: { draft: [{ ...DRAFT[0], value: 'From request 2' }] } });
+    });
+    expect(result.current.ai.sugs[0].value).toBe('From request 2');
+    // …the older, slower response is fenced out
+    await act(async () => {
+      resolvers[0]({ success: true, data: { draft: [{ ...DRAFT[0], value: 'From request 1' }] } });
+    });
+    expect(result.current.ai.sugs[0].value).toBe('From request 2');
+  });
 });
 
 describe('useStudioAi — per-field ✦ + budget', () => {
@@ -393,15 +448,31 @@ describe('useStudioAi — full mode (CO-1 looks)', () => {
     expect(result.current.ai.sugs).toEqual([]);
   });
 
-  it('notifySaved is the commit point — proposal cleared, doc untouched', async () => {
+  it('notifySaved commits ONLY the proposal the save started with (Codex diff #3)', async () => {
     const { result } = renderAi();
     await looksReady(result);
     act(() => result.current.ai.pickLook(0));
     act(() => result.current.ai.adoptLook());
 
-    act(() => result.current.ai.notifySaved());
+    const committed = result.current.ai.proposal;
+    act(() => result.current.ai.notifySaved(committed));
     expect(result.current.ai.proposal).toBeNull();
     expect(result.current.docApi.doc.template.id).toBe('poster');
+  });
+
+  it('a save that started BEFORE a pick never clears the newer proposal (Codex diff #3)', async () => {
+    const { result } = renderAi();
+    await looksReady(result);
+
+    // Save snapshot taken with NO proposal (null), then a look is picked while
+    // the PUT is in flight — the late success must not strip its gate.
+    const proposalAtSaveStart = result.current.ai.proposal; // null
+    act(() => result.current.ai.pickLook(0));
+    const picked = result.current.ai.proposal;
+    expect(picked).not.toBeNull();
+
+    act(() => result.current.ai.notifySaved(proposalAtSaveStart));
+    expect(result.current.ai.proposal).toBe(picked); // survives, still unadopted
   });
 
   it('picking ANOTHER look mid-proposal retains the ORIGINAL prev (F9)', async () => {

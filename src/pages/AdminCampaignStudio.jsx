@@ -166,9 +166,12 @@ export default function AdminCampaignStudio() {
     }
     const slugRide = slugDirty ? { slug: slugDraft || null } : {};
     const sentSlug = slugDraft;
+    // Codex diff #3: commit only the proposal THIS save carried — a look
+    // picked while the PUT is in flight must survive with its gate intact.
+    const proposalAtStart = aiRef.current.proposal;
     const res = await save(slugRide);
     if (res.ok) {
-      aiRef.current.notifySaved(); // commit point — the look is no longer revertable
+      aiRef.current.notifySaved(proposalAtStart); // commit point — that look is no longer revertable
       if ('slug' in slugRide) setSlugDraft((cur) => (cur === sentSlug ? null : cur));
       queryClient.invalidateQueries({ queryKey: ['campaigns', 'detail', id] });
       queryClient.invalidateQueries({ queryKey: ['studio', 'readiness', id] });
