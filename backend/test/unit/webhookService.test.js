@@ -52,7 +52,9 @@ function buildMocks() {
 
   const mockFetch = jest.fn();
 
-  return { mockSubscriber, mockDelivery, WebhookSubscriber, WebhookDelivery, logger, mockFetch };
+  const Sentry = { captureMessage: jest.fn(), captureException: jest.fn() };
+
+  return { mockSubscriber, mockDelivery, WebhookSubscriber, WebhookDelivery, logger, mockFetch, Sentry };
 }
 
 // ── Tests ──
@@ -69,6 +71,7 @@ describe('webhookService (unit)', () => {
       WebhookDelivery: mocks.WebhookDelivery,
       logger: mocks.logger,
       fetch: mocks.mockFetch,
+      Sentry: mocks.Sentry,
     });
   });
 
@@ -364,6 +367,14 @@ describe('webhookService (unit)', () => {
         expect.stringContaining('auto-disabled'),
         expect.objectContaining({ subscriberId: 'sub-1' })
       );
+      // OBS-01: the kill switch must also raise an error-level Sentry alert.
+      expect(mocks.Sentry.captureMessage).toHaveBeenCalledWith(
+        expect.stringContaining('auto-disabled'),
+        expect.objectContaining({
+          level: 'error',
+          tags: expect.objectContaining({ event: 'subscriber_auto_disabled' }),
+        })
+      );
     });
 
     it('does NOT disable when a recent success breaks the failure streak', async () => {
@@ -396,6 +407,29 @@ describe('webhookService (unit)', () => {
 
       // update(enabled: false) should NOT have been called
       expect(subscriberWithUpdate.update).not.toHaveBeenCalledWith({ enabled: false });
+    });
+  });
+
+  describe('OBS-01 dropped-delivery alert', () => {
+    it('alerts (warning) when a delivery is dropped because the queue is full', () => {
+      // fetch never resolves → the 3 concurrent slots stay busy and the queue fills.
+      mocks.mockFetch.mockReturnValue(new Promise(() => {}));
+
+      // 3 active + 100 queued (MAX_QUEUE_DEPTH) + 1 that must be dropped.
+      const pairs = Array.from({ length: 104 }, (_, i) => ({
+        delivery: { ...mocks.mockDelivery, deliveryId: `d-${i}`, update: jest.fn().mockResolvedValue(true) },
+        subscriber: mocks.mockSubscriber,
+      }));
+
+      service.flushDeliveries(pairs);
+
+      expect(mocks.Sentry.captureMessage).toHaveBeenCalledWith(
+        expect.stringContaining('dropped'),
+        expect.objectContaining({
+          level: 'warning',
+          tags: expect.objectContaining({ event: 'delivery_dropped' }),
+        })
+      );
     });
   });
 

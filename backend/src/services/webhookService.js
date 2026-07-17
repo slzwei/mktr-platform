@@ -3,6 +3,7 @@ import { Op } from 'sequelize';
 import { WebhookSubscriber, WebhookDelivery, sequelize } from '../models/index.js';
 import { logger } from '../utils/logger.js';
 import { signWebhookAttempt, signatureVersionForSubscriber } from './webhookSigning.js';
+import { Sentry } from '../utils/sentryInit.js';
 
 const AUTO_DISABLE_THRESHOLD = 50;
 
@@ -12,6 +13,10 @@ const defaultDeps = {
   WebhookDelivery,
   logger,
   fetch: globalThis.fetch,
+  // OBS-01: alert on the two silent failure modes that stop lead delivery
+  // without a trace (subscriber auto-disable, dropped deliveries). Injected so
+  // tests can assert the alert; a no-op when SENTRY_DSN is unset.
+  Sentry,
 };
 
 // --- Factory ---
@@ -34,6 +39,18 @@ export function makeWebhookService(overrides = {}) {
         subscriberName: subscriber.name,
         queueDepth: deliveryQueue.length,
         totalDropped: droppedDeliveries,
+      });
+      // OBS-01: a dropped delivery is a lead that never reaches its destination.
+      // Surface it (Sentry groups repeats; totalDropped shows the magnitude).
+      d.Sentry?.captureMessage('[Webhook] delivery dropped — queue full (potential lead loss)', {
+        level: 'warning',
+        tags: { area: 'webhook', event: 'delivery_dropped' },
+        extra: {
+          deliveryId: delivery.deliveryId,
+          subscriberName: subscriber.name,
+          queueDepth: deliveryQueue.length,
+          totalDropped: droppedDeliveries,
+        },
       });
       return Promise.resolve();
     }
@@ -347,6 +364,19 @@ export function makeWebhookService(overrides = {}) {
         subscriberId: subscriber.id,
         subscriberName: subscriber.name,
         consecutiveFailures: AUTO_DISABLE_THRESHOLD
+      });
+      // OBS-01: this is the unmonitored kill switch — lead delivery to this
+      // destination has now STOPPED until an operator re-enables it. Error-level
+      // so a receiver misconfig during a rollout can't become silent lead loss.
+      d.Sentry?.captureMessage('[Webhook] subscriber auto-disabled — lead delivery STOPPED', {
+        level: 'error',
+        tags: { area: 'webhook', event: 'subscriber_auto_disabled' },
+        extra: {
+          subscriberId: subscriber.id,
+          subscriberName: subscriber.name,
+          destination: subscriber.metadata?.destination ?? null,
+          consecutiveFailures: AUTO_DISABLE_THRESHOLD,
+        },
       });
     } catch (err) {
       d.logger.error('[Webhook] checkAutoDisable error', {
