@@ -12,6 +12,8 @@ import StudioRail from '@/components/studio/StudioRail';
 import StudioCanvas from '@/components/studio/StudioCanvas';
 import FunnelJumper from '@/components/studio/FunnelJumper';
 import { jumpStateById, quizStructureSignature } from '@/components/studio/studioJumpStates';
+import PagePanel from '@/components/studio/panels/PagePanel';
+import ThemePanel from '@/components/studio/panels/ThemePanel';
 import StudioJsonView from '@/components/studio/StudioJsonView';
 import StudioGuardModal from '@/components/studio/StudioGuardModal';
 import { studioPath, studioSupportsCampaign } from '@/components/studio/studioFlag';
@@ -41,7 +43,7 @@ export default function AdminCampaignStudio() {
   const { data: campaign, isLoading } = useCampaign(id);
   const { data: allCampaigns } = useCampaignLookup();
 
-  const { doc, baseline, dirty, saving, savedAt, saveError, save, isStoredV1 } = useStudioDoc(campaign);
+  const { doc, baseline, dirty, saving, savedAt, saveError, mut, setPath, save, isStoredV1 } = useStudioDoc(campaign);
 
   const [section, setSection] = useState('page');
   const [jsonOpen, setJsonOpen] = useState(false);
@@ -236,10 +238,10 @@ export default function AdminCampaignStudio() {
             borderRight: '1px solid var(--line, #E3E6EB)',
           }}
         >
-          {section === 'page' && <PanelStub label="Page" />}
+          {doc && section === 'page' && <PagePanel doc={doc} setPath={setPath} mut={mut} />}
           {section === 'form' && <PanelStub label="Form" />}
           {section === 'quiz' && <PanelStub label="Quiz" />}
-          {section === 'theme' && <PanelStub label="Theme" />}
+          {doc && section === 'theme' && <ThemePanel doc={doc} setPath={setPath} mut={mut} />}
           {section === 'dist' && <PanelStub label="Distribution" />}
         </section>
 

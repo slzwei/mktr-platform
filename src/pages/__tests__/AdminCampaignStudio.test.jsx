@@ -11,6 +11,7 @@ vi.mock('@/hooks/queries/useCampaignsQuery', () => ({
   useCampaignLookup: (...args) => mockUseCampaignLookup(...args),
 }));
 vi.mock('@/api/client', () => ({ apiClient: { post: vi.fn() } }));
+vi.mock('@/api/integrations', () => ({ UploadFile: vi.fn() })); // PagePanel's upload seam
 vi.mock('@/api/entities', () => ({ Campaign: { update: vi.fn() } }));
 vi.mock('@/lib/queryClient', () => ({ queryClient: { invalidateQueries: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));

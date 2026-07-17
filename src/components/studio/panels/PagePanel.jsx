@@ -1,0 +1,287 @@
+import { useRef, useState } from 'react';
+import { toast } from 'sonner';
+import { UploadFile } from '@/api/integrations';
+import { MAX_UPLOAD_SIZE_MB } from '@/lib/uploadLimits';
+import { TEMPLATE_IDS, youTubeIdFrom, resolveTheme } from '@/lib/designConfigV2';
+import { makeBind, PanelSection, TextField, TextAreaField, Seg, ToggleRow, WarnNote, FieldLabel } from './panelKit';
+
+/**
+ * Page panel (Studio PR 3) — template gallery + per-template params (exactly
+ * the clamp's enums), identity & story, hero media, footer. §03 rows:
+ * headline/subheadline, wordmark, story+emphasis, media (none/image/video/
+ * YouTube + uploads + honest video copy), hero CTA (+ no-media warning),
+ * submit label, footers. Hero FONT lives in Theme (relocated — it is a theme
+ * token); form width is an editorial template param.
+ */
+
+const TEMPLATE_NAMES = {
+  editorial: 'Editorial',
+  poster: 'Poster',
+  split: 'Split',
+  spotlight: 'Spotlight',
+  express: 'Express',
+  journey: 'Journey',
+};
+
+export default function PagePanel({ doc, setPath, mut }) {
+  const bind = makeBind(doc, setPath);
+  const imageInputRef = useRef(null);
+  const videoInputRef = useRef(null);
+  const [uploading, setUploading] = useState(null); // 'image' | 'video' | null
+
+  const templateId = doc.template?.id || 'editorial';
+  const params = doc.template?.params?.[templateId] || {};
+  const media = doc.content?.media || { kind: 'none', src: '', alt: '' };
+  const t = resolveTheme(doc.theme || {});
+
+  // Patch media while PRESERVING the legacy shadow (media.legacy carries the
+  // v1 image/video URLs for exact downgrade — the Studio must never drop it).
+  const setMedia = (patch) => {
+    mut((d) => {
+      d.content = d.content || {};
+      d.content.media = { kind: 'none', src: '', alt: '', ...(d.content.media || {}), ...patch };
+    });
+  };
+
+  const handleUpload = async (event, kind) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(kind);
+    try {
+      const result = await UploadFile(file, kind === 'image' ? 'image' : 'campaign_media');
+      const relativeUrl = result?.file?.url || '';
+      if (relativeUrl) setMedia({ kind: kind === 'image' ? 'image' : 'video', src: relativeUrl });
+    } catch (error) {
+      toast.error(
+        error?.message === 'File too large'
+          ? `${kind === 'image' ? 'Image' : 'Video'} is too large — maximum ${MAX_UPLOAD_SIZE_MB}MB.`
+          : error?.message || `Failed to upload ${kind}. Please try again.`
+      );
+    }
+    setUploading(null);
+    if (imageInputRef.current) imageInputRef.current.value = '';
+    if (videoInputRef.current) videoInputRef.current.value = '';
+  };
+
+  const ytId = media.kind === 'youtube' || media.kind === 'video' ? youTubeIdFrom(media.src) : null;
+
+  return (
+    <div data-testid="panel-page">
+      <PanelSection title="TEMPLATE" first>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {TEMPLATE_IDS.map((id) => {
+            const active = templateId === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setPath('template.id', id)}
+                aria-pressed={active}
+                style={{
+                  border: `1.5px solid ${active ? 'var(--accent, #4059C8)' : 'var(--line, #E3E6EB)'}`,
+                  borderRadius: 10,
+                  padding: 7,
+                  background: 'var(--surface, #fff)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: 'block',
+                    height: 44,
+                    borderRadius: 6,
+                    background: t.bg,
+                    position: 'relative',
+                    overflow: 'hidden',
+                    marginBottom: 6,
+                  }}
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      inset: id === 'poster' ? 0 : id === 'split' ? '0 52% 0 0' : '12% 8% 55% 8%',
+                      background: id === 'express' ? 'transparent' : t.dark ? 'rgba(255,255,255,.14)' : 'rgba(0,0,0,.08)',
+                      borderRadius: 4,
+                    }}
+                  />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      bottom: 6,
+                      left: id === 'split' ? '54%' : '8%',
+                      width: 26,
+                      height: 5,
+                      borderRadius: 999,
+                      background: t.accent,
+                    }}
+                  />
+                </span>
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--ink, #171A20)' }}>
+                  {active ? '● ' : ''}
+                  {TEMPLATE_NAMES[id]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p style={{ margin: 0, fontSize: 10.5, color: 'var(--ink-3, #9BA0AB)' }}>
+          Switching templates keeps every setting — each template remembers its own params.
+        </p>
+      </PanelSection>
+
+      <PanelSection title={`${TEMPLATE_NAMES[templateId].toUpperCase()} SETTINGS`}>
+        {templateId === 'editorial' && (
+          <div>
+            <FieldLabel htmlFor="studio-form-width">Form width · {params.formWidth || 480}px</FieldLabel>
+            <input
+              id="studio-form-width"
+              type="range"
+              min={300}
+              max={600}
+              step={10}
+              value={params.formWidth || 480}
+              onChange={(e) => setPath('template.params.editorial.formWidth', Number(e.target.value))}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
+        {templateId === 'poster' && (
+          <Seg
+            label="Hero overlay"
+            options={[{ value: 'dusk', label: 'Dusk' }, { value: 'plain', label: 'Plain' }]}
+            value={params.overlay || 'dusk'}
+            onChange={(v) => setPath('template.params.poster.overlay', v)}
+          />
+        )}
+        {templateId === 'split' && (
+          <>
+            <Seg
+              label="Media side"
+              options={[{ value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }]}
+              value={params.mediaSide || 'left'}
+              onChange={(v) => setPath('template.params.split.mediaSide', v)}
+            />
+            <Seg
+              label="Media fit"
+              options={[{ value: 'cover', label: 'Cover' }, { value: 'contain', label: 'Contain' }]}
+              value={params.mediaFit || 'cover'}
+              onChange={(v) => setPath('template.params.split.mediaFit', v)}
+            />
+          </>
+        )}
+        {templateId === 'spotlight' && (
+          <>
+            <Seg
+              label="Intro style"
+              options={[{ value: 'immersive', label: 'Immersive' }, { value: 'card', label: 'Card' }]}
+              value={params.introStyle || 'immersive'}
+              onChange={(v) => setPath('template.params.spotlight.introStyle', v)}
+            />
+            <Seg
+              label="Reveal art"
+              options={[{ value: 'meter', label: 'Meter' }, { value: 'plain', label: 'Plain' }]}
+              value={params.revealArt || 'meter'}
+              onChange={(v) => setPath('template.params.spotlight.revealArt', v)}
+            />
+          </>
+        )}
+        {templateId === 'express' && (
+          <>
+            <TextField id="studio-trustline" label="Trust line" bind={bind('template.params.express.trustLine', 80)} placeholder="e.g. Trusted by 12,000 Singaporeans" />
+            <ToggleRow
+              id="studio-storyfold"
+              label="Fold the story"
+              hint="Collapse the story behind a tap"
+              checked={params.storyFold === true}
+              onChange={(v) => setPath('template.params.express.storyFold', v)}
+            />
+          </>
+        )}
+        {templateId === 'journey' && (
+          <>
+            <Seg
+              label="Section rhythm"
+              options={[{ value: 'alternate', label: 'Alternate' }, { value: 'stacked', label: 'Stacked' }]}
+              value={params.sectionRhythm || 'alternate'}
+              onChange={(v) => setPath('template.params.journey.sectionRhythm', v)}
+            />
+            <ToggleRow
+              id="studio-stickycta"
+              label="Sticky bottom CTA"
+              checked={params.stickyCta !== false}
+              onChange={(v) => setPath('template.params.journey.stickyCta', v)}
+            />
+          </>
+        )}
+      </PanelSection>
+
+      <PanelSection title="IDENTITY & STORY">
+        <TextField id="studio-wordmark" label="Brand wordmark" bind={bind('content.wordmark', 40)} placeholder="redeem.sg" />
+        <TextField id="studio-headline" label="Form headline" bind={bind('content.headline', 80)} placeholder="Get Started" />
+        <TextAreaField id="studio-subheadline" label="Sub-headline" bind={bind('content.subheadline', 150)} rows={2} />
+        <TextAreaField id="studio-story" label="Hero story" bind={bind('content.story', 1200)} rows={6} />
+        <TextField id="studio-emphasis" label="Emphasis line" bind={bind('content.emphasis', 160)} />
+        <TextField id="studio-submit-label" label="Submit button label" bind={bind('content.submitLabel', 40)} placeholder="Submit Now" />
+      </PanelSection>
+
+      <PanelSection title="HERO MEDIA">
+        <Seg
+          ariaLabel="Media kind"
+          options={[
+            { value: 'none', label: 'None' },
+            { value: 'image', label: 'Image' },
+            { value: 'video', label: 'Video' },
+            { value: 'youtube', label: 'YouTube' },
+          ]}
+          value={media.kind || 'none'}
+          onChange={(v) => setMedia({ kind: v, ...(v === 'none' ? { src: '' } : {}) })}
+        />
+        {media.kind === 'image' && (
+          <>
+            <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => handleUpload(e, 'image')} data-testid="studio-image-input" />
+            <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" onClick={() => imageInputRef.current?.click()} disabled={uploading === 'image'}>
+              {uploading === 'image' ? 'Uploading…' : media.src ? 'Replace image' : 'Upload image'}
+            </button>
+            {media.src ? <div style={{ fontSize: 10.5, color: 'var(--ink-3)', wordBreak: 'break-all' }}>{media.src}</div> : null}
+            <TextField id="studio-media-alt" label="Alt text" bind={bind('content.media.alt', 120)} />
+          </>
+        )}
+        {media.kind === 'video' && (
+          <>
+            <input ref={videoInputRef} type="file" accept="video/*" style={{ display: 'none' }} onChange={(e) => handleUpload(e, 'video')} data-testid="studio-video-input" />
+            <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" onClick={() => videoInputRef.current?.click()} disabled={uploading === 'video'}>
+              {uploading === 'video' ? 'Uploading…' : media.src ? 'Replace video' : 'Upload video'}
+            </button>
+            <WarnNote tone="info">
+              Up to {MAX_UPLOAD_SIZE_MB}MB. Audio is removed — campaign pages autoplay muted.
+            </WarnNote>
+            {media.src ? <div style={{ fontSize: 10.5, color: 'var(--ink-3)', wordBreak: 'break-all' }}>{media.src}</div> : null}
+          </>
+        )}
+        {media.kind === 'youtube' && (
+          <>
+            <TextField id="studio-youtube-url" label="YouTube URL" bind={{ value: media.src || '', onChange: (e) => setMedia({ src: e.target.value }), counter: null }} placeholder="https://www.youtube.com/watch?v=…" />
+            {media.src ? (
+              ytId ? (
+                <WarnNote tone="info">✓ Recognized YouTube video ({ytId}) — embeds muted + looping.</WarnNote>
+              ) : (
+                <WarnNote>Not a recognizable YouTube URL — the page will treat this as a plain video file.</WarnNote>
+              )
+            ) : null}
+          </>
+        )}
+        <TextField id="studio-hero-cta" label="Hero button label" bind={bind('content.heroCtaLabel', 40)} placeholder="Claim yours →" />
+        {(doc.content?.heroCtaLabel || '').trim() && (media.kind || 'none') === 'none' ? (
+          <WarnNote>Hero button label is set but there is no media — it will not render.</WarnNote>
+        ) : null}
+      </PanelSection>
+
+      <PanelSection title="FOOTER">
+        <TextAreaField id="studio-regulatory" label="Regulatory footer" bind={bind('content.footer.regulatory', 1000)} rows={4} />
+        <TextField id="studio-brand-footer" label="Brand line" bind={bind('content.footer.brand', 80)} />
+      </PanelSection>
+    </div>
+  );
+}
