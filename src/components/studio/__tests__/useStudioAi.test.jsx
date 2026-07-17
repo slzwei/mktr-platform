@@ -45,14 +45,20 @@ const DRAFT = [
 
 const ok = (draft = DRAFT) => ({ success: true, data: { draft } });
 
-function useHarness(campaign) {
+function useHarness(campaign, onPickLook) {
   const docApi = useStudioDoc(campaign);
-  const ai = useStudioAi({ campaign, doc: docApi.doc, setPath: docApi.setPath });
+  const ai = useStudioAi({
+    campaign,
+    doc: docApi.doc,
+    setPath: docApi.setPath,
+    replaceDoc: docApi.replaceDoc,
+    onPickLook,
+  });
   return { docApi, ai };
 }
 
-function renderAi(campaign = v2Campaign()) {
-  return renderHook(({ c }) => useHarness(c), { initialProps: { c: campaign } });
+function renderAi(campaign = v2Campaign(), onPickLook) {
+  return renderHook(({ c }) => useHarness(c, onPickLook), { initialProps: { c: campaign } });
 }
 
 const FULL_BRIEF = { topic: 'FairPrice voucher giveaway', audience: '', objective: '', mustInclude: '', tone: 'Friendly' };
@@ -277,6 +283,177 @@ describe('useStudioAi — errors, rate limit, campaign scoping', () => {
     });
     expect(result.current.ai.phase).toBe('brief'); // reset won — stale response ignored
     expect(result.current.ai.sugs).toEqual([]);
+  });
+});
+
+const LOOK = {
+  name: 'Dusk Poster',
+  rationale: 'High-contrast hero.',
+  template: { id: 'poster', params: { overlay: 'dusk' } },
+  theme: { preset: 'ink-slate', accent: null },
+  media: { kind: 'image', note: 'Warm hawker-centre scene' },
+  draft: [{ path: 'content.headline', label: 'Form headline', section: 'page', value: 'Look headline' }],
+};
+const SPOTLIGHT_LOOK = { ...LOOK, name: 'Quiz Tease', template: { id: 'spotlight', params: {} } };
+
+const okLooks = (proposals = [LOOK]) => ({ success: true, data: { proposals } });
+
+async function looksReady(result, proposals = [LOOK]) {
+  apiClient.post.mockResolvedValueOnce(okLooks(proposals));
+  act(() => result.current.ai.setBrief(FULL_BRIEF));
+  await act(async () => {
+    await result.current.ai.generateLooks();
+  });
+}
+
+describe('useStudioAi — full mode (CO-1 looks)', () => {
+  it('generateLooks: ONE call with mode full → looks phase', async () => {
+    const { result } = renderAi();
+    await looksReady(result);
+    expect(result.current.ai.phase).toBe('looks');
+    expect(result.current.ai.looks).toHaveLength(1);
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
+    expect(apiClient.post.mock.calls[0][1]).toMatchObject({ mode: 'full', scope: null, regen: 0 });
+  });
+
+  it('pickLook swaps the WHOLE doc, sets the proposal + media hint, fires the F12 side effects', async () => {
+    const onPick = vi.fn();
+    const { result } = renderAi(v2Campaign(), onPick);
+    await looksReady(result);
+
+    act(() => result.current.ai.pickLook(0));
+
+    expect(result.current.docApi.doc.template.id).toBe('poster');
+    expect(result.current.docApi.doc.content.headline).toBe('Look headline');
+    expect(result.current.docApi.doc.content.media.kind).toBe('none'); // F7 — media untouched
+    expect(result.current.docApi.dirty).toBe(true);
+    expect(result.current.ai.phase).toBe('proposal');
+    expect(result.current.ai.proposal.adopted).toBe(false);
+    expect(result.current.ai.proposal.prev.doc.template.id).toBe('editorial');
+    expect(result.current.ai.mediaHint).toEqual({ kind: 'image', note: 'Warm hawker-centre scene' });
+    expect(onPick).toHaveBeenCalled();
+  });
+
+  it('keep toggles rebuild from prev.doc; all-three-kept restores it byte-for-byte (dirty self-corrects)', async () => {
+    const { result } = renderAi();
+    await looksReady(result);
+    act(() => result.current.ai.pickLook(0));
+
+    act(() => result.current.ai.toggleKeep('template'));
+    expect(result.current.docApi.doc.template.id).toBe('editorial'); // template kept
+    expect(result.current.docApi.doc.content.headline).toBe('Look headline'); // copy still on
+
+    act(() => result.current.ai.toggleKeep('theme'));
+    act(() => result.current.ai.toggleKeep('copy'));
+    expect(result.current.docApi.doc).toEqual(result.current.ai.proposal.prev.doc);
+    expect(result.current.docApi.dirty).toBe(false); // derived — F8
+  });
+
+  it('adopt with all-three-kept is a no-op discard (F9)', async () => {
+    const { result } = renderAi();
+    await looksReady(result);
+    act(() => result.current.ai.pickLook(0));
+    act(() => result.current.ai.toggleKeep('template'));
+    act(() => result.current.ai.toggleKeep('theme'));
+    act(() => result.current.ai.toggleKeep('copy'));
+
+    act(() => result.current.ai.adoptLook());
+    expect(result.current.ai.proposal).toBeNull();
+    expect(result.current.docApi.doc.template.id).toBe('editorial');
+    expect(result.current.ai.phase).toBe('looks');
+  });
+
+  it('adopt turns the landed copy into an APPLIED review list (old = pre-look) — keep-mine restores', async () => {
+    const { result } = renderAi();
+    await looksReady(result);
+    act(() => result.current.ai.pickLook(0));
+    act(() => result.current.ai.adoptLook());
+
+    expect(result.current.ai.proposal.adopted).toBe(true);
+    expect(result.current.ai.phase).toBe('ready');
+    expect(result.current.ai.sugs).toHaveLength(1);
+    expect(result.current.ai.sugs[0]).toMatchObject({ state: 'applied', old: 'Old headline', value: 'Look headline' });
+
+    act(() => result.current.ai.keepRow(0));
+    expect(result.current.docApi.doc.content.headline).toBe('Old headline');
+    expect(result.current.docApi.doc.template.id).toBe('poster'); // the look itself stays adopted
+  });
+
+  it('revertLook restores the pre-proposal doc even AFTER adopt (until save commits)', async () => {
+    const { result } = renderAi();
+    await looksReady(result);
+    act(() => result.current.ai.pickLook(0));
+    act(() => result.current.ai.adoptLook());
+
+    act(() => result.current.ai.revertLook());
+    expect(result.current.docApi.doc).toEqual(result.current.docApi.baseline);
+    expect(result.current.docApi.dirty).toBe(false);
+    expect(result.current.ai.proposal).toBeNull();
+    expect(result.current.ai.mediaHint).toBeNull();
+    expect(result.current.ai.sugs).toEqual([]);
+  });
+
+  it('notifySaved is the commit point — proposal cleared, doc untouched', async () => {
+    const { result } = renderAi();
+    await looksReady(result);
+    act(() => result.current.ai.pickLook(0));
+    act(() => result.current.ai.adoptLook());
+
+    act(() => result.current.ai.notifySaved());
+    expect(result.current.ai.proposal).toBeNull();
+    expect(result.current.docApi.doc.template.id).toBe('poster');
+  });
+
+  it('picking ANOTHER look mid-proposal retains the ORIGINAL prev (F9)', async () => {
+    const second = { ...LOOK, name: 'Second', template: { id: 'split', params: {} } };
+    const { result } = renderAi();
+    await looksReady(result, [LOOK, second]);
+
+    act(() => result.current.ai.pickLook(0));
+    const originalPrev = result.current.ai.proposal.prev.doc;
+    act(() => result.current.ai.pickLook(1));
+
+    expect(result.current.docApi.doc.template.id).toBe('split');
+    expect(result.current.ai.proposal.prev.doc).toBe(originalPrev); // same object — never rebased
+    act(() => result.current.ai.revertLook());
+    expect(result.current.docApi.doc.template.id).toBe('editorial');
+  });
+
+  it('a spotlight look cannot be picked while the unsaved quiz is off (F6)', async () => {
+    const { result } = renderAi();
+    await looksReady(result, [SPOTLIGHT_LOOK]);
+    act(() => result.current.ai.pickLook(0));
+    expect(result.current.ai.proposal).toBeNull();
+    expect(result.current.docApi.doc.template.id).toBe('editorial');
+  });
+
+  it('per-card regen replaces that look in place and leaves an active proposal prev alone', async () => {
+    const { result } = renderAi();
+    await looksReady(result);
+    act(() => result.current.ai.pickLook(0));
+    const originalPrev = result.current.ai.proposal.prev.doc;
+
+    const fresh = { ...LOOK, name: 'Fresh Look' };
+    apiClient.post.mockResolvedValueOnce(okLooks([fresh]));
+    await act(async () => {
+      await result.current.ai.regenLook(0);
+    });
+
+    expect(result.current.ai.looks[0].name).toBe('Fresh Look');
+    expect(apiClient.post.mock.calls[1][1]).toMatchObject({ mode: 'full', regen: 1 });
+    expect(result.current.ai.proposal.prev.doc).toBe(originalPrev);
+  });
+
+  it('campaign switch clears looks, proposal and hint', async () => {
+    const { result, rerender } = renderAi();
+    await looksReady(result);
+    act(() => result.current.ai.pickLook(0));
+
+    rerender({ c: v2Campaign('c2') });
+    expect(result.current.ai.looks).toEqual([]);
+    expect(result.current.ai.proposal).toBeNull();
+    expect(result.current.ai.mediaHint).toBeNull();
+    expect(result.current.ai.phase).toBe('brief');
   });
 });
 

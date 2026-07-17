@@ -1,23 +1,57 @@
+import { useMemo } from 'react';
 import { AI_TONES } from './useStudioAi';
+import { buildLookDoc, lookBlockedReason } from './studioLooks';
+import DeviceFrame from './DeviceFrame';
+import CanvasPageSubject from './CanvasPageSubject';
 
 /**
  * "✦ Write it for me" — the Studio AI panel (PR 4), the mock's 392px right
- * slide-in. Copy mode ships in this checkpoint (brief → loading → per-field
- * review with struck-through old values → apply-all); the full-mode (CO-1
- * looks) views arrive with the next checkpoint — its toggle is present but
- * disabled until then.
+ * slide-in. Views: brief (mode toggle + tone chips), loading skeletons,
+ * copy review (struck-through old values, accept / keep-mine / ↻, sticky
+ * apply-all), looks gallery (LIVE mini-previews — the real renderer inside a
+ * DeviceFrame, fed each look's composed doc), proposal (keep-my-template/
+ * theme/copy + Adopt/Discard), error retry, 429 countdown.
  */
 
 const mono = "500 10px ui-monospace, 'SF Mono', Menlo, monospace";
 
-export default function StudioAiPanel({ ai, fullModeReady = false }) {
+const TEMPLATE_NAMES = {
+  editorial: 'Editorial',
+  poster: 'Poster',
+  split: 'Split',
+  spotlight: 'Spotlight',
+  express: 'Express',
+  journey: 'Journey',
+};
+
+/** Mini device preview — true 390-wide viewport scaled down, inert. */
+function LookPreview({ campaign, lookDoc }) {
+  return (
+    <div style={{ pointerEvents: 'none', flexShrink: 0 }} aria-hidden="true">
+      <DeviceFrame width={390} height={620} scale={0.34} ariaLabel="Look preview">
+        <CanvasPageSubject campaign={campaign} doc={lookDoc} jump={null} />
+      </DeviceFrame>
+    </div>
+  );
+}
+
+export default function StudioAiPanel({ ai, campaign, doc }) {
+  const { mode, setMode, phase, brief, setBrief, sugs, scope, looks, proposal, error, retryIn, budget } = ai;
+
+  // Looks always compose against the PRE-proposal doc mid-proposal (the
+  // mock's rule: regenerating looks starts from the previous design).
+  const lookBase = proposal ? proposal.prev.doc : doc;
+  const lookDocs = useMemo(
+    () => (looks || []).map((look) => (lookBase ? buildLookDoc(lookBase, look, {}) : null)),
+    [looks, lookBase]
+  );
+
   if (!ai.open) return null;
-  const {
-    mode, setMode, phase, brief, setBrief, sugs, scope, error, retryIn, budget,
-  } = ai;
 
   const budgetColor = budget.used >= 8 ? '#B97D10' : '#9BA0AB';
   const genDisabled = !brief.topic.trim();
+  const spotlightExcluded = doc ? lookBlockedReason(doc, { template: { id: 'spotlight' } }) : null;
+  const retry = mode === 'full' ? ai.generateLooks : ai.generate;
 
   return (
     <aside
@@ -61,10 +95,8 @@ export default function StudioAiPanel({ ai, fullModeReady = false }) {
               </button>
               <button
                 type="button"
-                onClick={() => fullModeReady && setMode('full')}
-                disabled={!fullModeReady}
-                title={fullModeReady ? undefined : 'Lands in the next checkpoint of this PR'}
-                style={{ flex: 1, cursor: fullModeReady ? 'pointer' : 'not-allowed', border: 'none', borderRadius: 5, padding: '6px 0', fontSize: 11, fontWeight: 600, background: mode === 'full' ? '#fff' : 'transparent', color: mode === 'full' ? 'var(--ink)' : 'var(--ink-3)', opacity: fullModeReady ? 1 : 0.55 }}
+                onClick={() => setMode('full')}
+                style={{ flex: 1, cursor: 'pointer', border: 'none', borderRadius: 5, padding: '6px 0', fontSize: 11, fontWeight: 600, background: mode === 'full' ? '#fff' : 'transparent', color: mode === 'full' ? 'var(--ink)' : 'var(--ink-2)' }}
               >
                 Design the whole page
               </button>
@@ -110,7 +142,7 @@ export default function StudioAiPanel({ ai, fullModeReady = false }) {
             </div>
             <button
               type="button"
-              onClick={ai.generate}
+              onClick={retry}
               disabled={genDisabled}
               className="av2-btn av2-btn--primary"
               style={{ justifyContent: 'center', opacity: genDisabled ? 0.5 : 1 }}
@@ -132,8 +164,8 @@ export default function StudioAiPanel({ ai, fullModeReady = false }) {
                   ? `Drafting a suggestion for ${scope.label}…`
                   : 'Drafting against your current template…'}
             </div>
-            {[1, 2, 3, 4, 5].map((k) => (
-              <div key={k} className="av2-skeleton" style={{ height: 52, borderRadius: 8 }} />
+            {(phase === 'looksLoading' ? [1, 2, 3] : [1, 2, 3, 4, 5]).map((k) => (
+              <div key={k} className="av2-skeleton" style={{ height: phase === 'looksLoading' ? 120 : 52, borderRadius: 8 }} />
             ))}
           </div>
         )}
@@ -142,7 +174,7 @@ export default function StudioAiPanel({ ai, fullModeReady = false }) {
           <div style={{ background: '#FBE9E7', color: '#8F2F28', borderRadius: 9, padding: '12px 13px', fontSize: 12.5, lineHeight: 1.5 }}>
             {error}
             <div style={{ marginTop: 9 }}>
-              <button type="button" onClick={ai.generate} className="av2-btn av2-btn--danger av2-btn--sm">
+              <button type="button" onClick={retry} className="av2-btn av2-btn--danger av2-btn--sm">
                 Try again
               </button>
             </div>
@@ -159,7 +191,11 @@ export default function StudioAiPanel({ ai, fullModeReady = false }) {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: 'var(--ink-2, #7A8090)' }}>
-                {scope ? `Scoped suggestion — ${scope.label}` : `${sugs.length} fields drafted — nothing applied yet`}
+                {proposal?.adopted
+                  ? `Look adopted — review each field (save commits it)`
+                  : scope
+                    ? `Scoped suggestion — ${scope.label}`
+                    : `${sugs.length} fields drafted — nothing applied yet`}
               </span>
               <button type="button" onClick={ai.backToBrief} style={{ cursor: 'pointer', border: 'none', background: 'none', color: 'var(--accent, #4059C8)', fontSize: 11 }}>
                 Edit brief
@@ -206,6 +242,96 @@ export default function StudioAiPanel({ ai, fullModeReady = false }) {
               </button>
             </div>
           </>
+        )}
+
+        {phase === 'looks' && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: 'var(--ink-2, #7A8090)' }}>
+                {looks.length ? `${looks.length} look${looks.length > 1 ? 's' : ''} — nothing applied yet` : 'No usable looks came back.'}
+              </span>
+              <button type="button" onClick={ai.backToBrief} style={{ cursor: 'pointer', border: 'none', background: 'none', color: 'var(--accent, #4059C8)', fontSize: 11 }}>
+                Edit brief
+              </button>
+            </div>
+            {looks.map((look, i) => {
+              const blocked = doc ? lookBlockedReason(doc, look) : null;
+              const busy = ai.regeningLook === i;
+              return (
+                <div key={`${look.name}-${i}`} data-testid={`ai-look-${i}`} style={{ background: 'var(--surface-2, #F7F8FA)', border: '1px solid var(--line, #E3E6EB)', borderRadius: 10, padding: 10, display: 'flex', gap: 10 }}>
+                  {lookDocs[i] ? <LookPreview campaign={campaign} lookDoc={lookDocs[i]} /> : null}
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div>
+                      <div style={{ fontSize: 12.5, fontWeight: 700 }}>{look.name}</div>
+                      <div style={{ font: mono, color: 'var(--ink-3, #9BA0AB)', marginTop: 2 }}>
+                        {(TEMPLATE_NAMES[look.template?.id] || look.template?.id || '').toUpperCase()}
+                        {look.theme?.preset ? ` · ${look.theme.preset}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--ink-2, #5B616E)' }}>{look.rationale}</div>
+                    {look.media?.note ? (
+                      <div style={{ fontSize: 10.5, lineHeight: 1.45, color: '#8A5B07' }}>✦ Art direction: {look.media.note}</div>
+                    ) : null}
+                    {blocked ? <div style={{ fontSize: 10.5, color: '#8A5B07' }}>{blocked}</div> : null}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 'auto' }}>
+                      <button type="button" className="av2-btn av2-btn--primary av2-btn--sm" disabled={!!blocked || busy} onClick={() => ai.pickLook(i)}>
+                        Use this look
+                      </button>
+                      <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" title="Regenerate this look" disabled={busy} onClick={() => ai.regenLook(i)}>
+                        {busy ? '…' : '↻'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {spotlightExcluded && looks.length ? (
+              <div style={{ fontSize: 10, color: 'var(--ink-3, #9BA0AB)' }}>
+                Spotlight looks are excluded while the quiz is off.
+              </div>
+            ) : null}
+          </>
+        )}
+
+        {phase === 'proposal' && proposal && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ background: 'var(--accent-soft, #ECEFFA)', border: '1px solid var(--accent, #4059C8)', borderRadius: 10, padding: '10px 12px' }}>
+              <div style={{ font: mono, color: 'var(--accent, #2E3F94)' }}>PROPOSAL — UNCOMMITTED</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginTop: 3 }}>{proposal.look.name}</div>
+              <div style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--ink-2, #5B616E)', marginTop: 4 }}>{proposal.look.rationale}</div>
+              {proposal.look.media?.note ? (
+                <div style={{ fontSize: 10.5, lineHeight: 1.45, color: '#8A5B07', marginTop: 5 }}>
+                  ✦ Art direction (never auto-applied): {proposal.look.media.note}
+                </div>
+              ) : null}
+            </div>
+
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--ink-2, #5B616E)' }}>
+              The canvas is showing this look. Keep parts of yours:
+            </div>
+            {[
+              ['template', `Keep my template (${TEMPLATE_NAMES[proposal.prev.doc?.template?.id] || proposal.prev.doc?.template?.id || 'Editorial'})`],
+              ['theme', `Keep my theme (${proposal.prev.doc?.theme?.preset || 'preset'})`],
+              ['copy', 'Keep my copy'],
+            ].map(([key, label]) => (
+              <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                <input type="checkbox" checked={proposal.keep[key]} onChange={() => ai.toggleKeep(key)} />
+                {label}
+              </label>
+            ))}
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <button type="button" className="av2-btn av2-btn--primary" style={{ flex: 1, justifyContent: 'center' }} onClick={ai.adoptLook}>
+                Adopt this look
+              </button>
+              <button type="button" className="av2-btn av2-btn--ghost" onClick={ai.revertLook}>
+                Discard
+              </button>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--ink-3, #9BA0AB)' }}>
+              Adopting keeps it editable; nothing persists until you save. Discard restores your previous design.
+            </div>
+          </div>
         )}
       </div>
     </aside>

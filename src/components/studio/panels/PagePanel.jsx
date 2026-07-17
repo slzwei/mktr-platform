@@ -23,10 +23,11 @@ const TEMPLATE_NAMES = {
   journey: 'Journey',
 };
 
-export default function PagePanel({ doc, setPath, mut, onSuggest = null }) {
+export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHint = null, onDismissMediaHint = null }) {
   // Per-field ✦ (Studio PR 4) — the five Page identity fields open the AI
   // panel scoped to that path; absent onSuggest (tests, future reuse) renders
-  // no affordance.
+  // no affordance. `mediaHint` is a picked look's {kind, note} art-direction
+  // chip — advice only, never a doc write (F7).
   const suggest = (path, label) => (onSuggest ? () => onSuggest(path, label) : undefined);
   const bind = makeBind(doc, setPath);
   const imageInputRef = useRef(null);
@@ -231,6 +232,21 @@ export default function PagePanel({ doc, setPath, mut, onSuggest = null }) {
       </PanelSection>
 
       <PanelSection title="HERO MEDIA">
+        {mediaHint?.note ? (
+          <div
+            data-testid="studio-media-hint"
+            style={{ display: 'flex', alignItems: 'flex-start', gap: 6, background: '#F8EED8', color: '#8A5B07', borderRadius: 8, padding: '7px 10px', fontSize: 11, lineHeight: 1.5 }}
+          >
+            <span style={{ flex: 1 }}>
+              ✦ Art direction from the AI look{mediaHint.kind && mediaHint.kind !== 'none' ? ` (${mediaHint.kind})` : ''}: {mediaHint.note}
+            </span>
+            {onDismissMediaHint ? (
+              <button type="button" onClick={onDismissMediaHint} aria-label="Dismiss art direction" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'inherit', fontSize: 11, lineHeight: 1 }}>
+                ✕
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <Seg
           ariaLabel="Media kind"
           options={[

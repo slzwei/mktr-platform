@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { requestCopyDraft, rowDisabledReason, currentValueAt } from './studioAiApi';
+import { requestCopyDraft } from './studioAiApi';
+import { rowDisabledReason, currentValueAt, buildLookDoc, lookBlockedReason, adoptedCopyRows } from './studioLooks';
 
 /**
  * Studio AI assist state machine (PR 4) — the mock's semantics with the
@@ -14,27 +15,36 @@ import { requestCopyDraft, rowDisabledReason, currentValueAt } from './studioAiA
  *    edits always win); per-field ↻ regenerates scoped (regens[path]+1) and
  *    updates the doc only if the row was applied AND untouched, else the new
  *    value arrives as `open`.
+ *  - full mode (CO-1): ≤3 complete looks in ONE provider call. Picking a look
+ *    swaps the WHOLE doc (replaceDoc) built from the PRE-proposal doc; keep
+ *    toggles rebuild from `prev.doc`; Adopt turns the look's copy into an
+ *    `applied` review list (old = pre-look values); Discard / ↩ Revert look
+ *    restores `prev.doc`; a successful save commits (clears the proposal).
+ *    Regenerating — looks or fields — mid-proposal keeps the ORIGINAL prev
+ *    (F9). Dirty stays DERIVED from doc-vs-baseline throughout (F8).
  *  - campaign scoping: EVERYTHING resets on campaign change, in-flight
- *    requests are ignored via a generation token (a 45s response for
- *    campaign A must never land in campaign B).
+ *    requests abort (AbortController) and stale responses are fenced by a
+ *    generation token (F10).
  *  - budget meter: client-side sliding-minute ESTIMATE (server window is
  *    authoritative; its 429 retryAfterSec drives the countdown).
- *
- * Full mode (CO-1 looks/proposals) plugs into this hook in the next
- * checkpoint; the mode toggle exists now, disabled.
  */
 
 export const AI_TONES = ['Friendly', 'Formal', 'Urgent', 'Playful'];
 
 const EMPTY_BRIEF = { topic: '', audience: '', objective: '', mustInclude: '', tone: 'Friendly' };
+const clone = (v) => JSON.parse(JSON.stringify(v));
 
-export default function useStudioAi({ campaign, doc, setPath }) {
+export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPickLook }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState('copy');
   const [phase, setPhase] = useState('brief');
   const [brief, setBrief] = useState(EMPTY_BRIEF);
   const [sugs, setSugs] = useState([]);
   const [scope, setScope] = useState(null); // {path, label} | null
+  const [looks, setLooks] = useState([]);
+  const [proposal, setProposal] = useState(null); // {prev:{doc}, look, keep, adopted}
+  const [mediaHint, setMediaHint] = useState(null); // {kind, note} | null
+  const [regeningLook, setRegeningLook] = useState(null); // index | null
   const [error, setError] = useState('');
   const [retryIn, setRetryIn] = useState(0);
   const [budgetTick, setBudgetTick] = useState(0);
@@ -45,10 +55,16 @@ export default function useStudioAi({ campaign, doc, setPath }) {
   const abortRef = useRef(null);
   const docRef = useRef(doc);
   docRef.current = doc;
-  // Mirror of `sugs` for event handlers — doc writes (setPath) must happen in
-  // the handler, never inside a setSugs updater (updaters run at render time).
+  // Mirrors for event handlers — doc writes (setPath/replaceDoc) must happen
+  // in the handler, never inside a state updater (updaters run at render time).
   const sugsRef = useRef(sugs);
   sugsRef.current = sugs;
+  const looksRef = useRef(looks);
+  looksRef.current = looks;
+  const proposalRef = useRef(proposal);
+  proposalRef.current = proposal;
+  const onPickLookRef = useRef(onPickLook);
+  onPickLookRef.current = onPickLook;
 
   const patchRow = useCallback((index, patch) => {
     setSugs((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -65,6 +81,10 @@ export default function useStudioAi({ campaign, doc, setPath }) {
     setBrief(EMPTY_BRIEF);
     setSugs([]);
     setScope(null);
+    setLooks([]);
+    setProposal(null);
+    setMediaHint(null);
+    setRegeningLook(null);
     setError('');
     setRetryIn(0);
     regensRef.current = {};
@@ -128,6 +148,11 @@ export default function useStudioAi({ campaign, doc, setPath }) {
     return { generation: generationRef.current, signal: ac.signal };
   }, []);
 
+  const briefOrName = useCallback(
+    () => (brief.topic.trim() ? brief : { ...brief, topic: campaign?.name || '' }),
+    [brief, campaign?.name]
+  );
+
   /** Generate (copy mode) — whole allowed set, or re-run after error. */
   const generate = useCallback(async () => {
     if (!brief.topic.trim() || !campaign?.id) return;
@@ -162,7 +187,7 @@ export default function useStudioAi({ campaign, doc, setPath }) {
     async (path, label) => {
       if (!campaign?.id) return;
       const { generation, signal } = startRequest();
-      const usedBrief = brief.topic.trim() ? brief : { ...brief, topic: campaign?.name || '' };
+      const usedBrief = briefOrName();
       setBrief(usedBrief);
       setOpen(true);
       setMode('copy');
@@ -190,7 +215,7 @@ export default function useStudioAi({ campaign, doc, setPath }) {
         fail(err);
       }
     },
-    [brief, campaign?.id, campaign?.name, templateId, startRequest, noteCall, toRows, fail]
+    [campaign?.id, templateId, briefOrName, startRequest, noteCall, toRows, fail]
   );
 
   /** Accept one row — action-time re-gate, then write. */
@@ -225,7 +250,7 @@ export default function useStudioAi({ campaign, doc, setPath }) {
   /** Scoped per-row regenerate (regens[path]+1), replace in place. */
   const regenRow = useCallback(
     async (index) => {
-      const row = sugs[index];
+      const row = sugsRef.current[index];
       if (!row || !campaign?.id) return;
       const { generation, signal } = startRequest();
       const n = (regensRef.current[row.path] || 0) + 1;
@@ -238,7 +263,7 @@ export default function useStudioAi({ campaign, doc, setPath }) {
             mode: 'copy',
             scope: row.path,
             regen: n,
-            brief: brief.topic.trim() ? brief : { ...brief, topic: campaign?.name || '' },
+            brief: briefOrName(),
           },
           { signal }
         );
@@ -264,7 +289,7 @@ export default function useStudioAi({ campaign, doc, setPath }) {
         fail(err);
       }
     },
-    [sugs, campaign?.id, campaign?.name, templateId, brief, startRequest, noteCall, fail, setPath, patchRow]
+    [campaign?.id, templateId, briefOrName, startRequest, noteCall, fail, setPath, patchRow]
   );
 
   /** Apply every remaining OPEN row (each re-gated). Copy writes can't change
@@ -292,6 +317,149 @@ export default function useStudioAi({ campaign, doc, setPath }) {
     setPhase('brief');
   }, []);
 
+  // ---- Full mode (CO-1 looks) ----
+
+  /** The doc looks compose against — mid-proposal, always the PRE-proposal doc. */
+  const lookBaseDoc = useCallback(
+    () => (proposalRef.current ? proposalRef.current.prev.doc : docRef.current),
+    []
+  );
+
+  /** Generate ≤3 complete looks — one budget call. */
+  const generateLooks = useCallback(async () => {
+    if (!brief.topic.trim() || !campaign?.id) return;
+    const { generation, signal } = startRequest();
+    setPhase('looksLoading');
+    setError('');
+    noteCall();
+    try {
+      const data = await requestCopyDraft(
+        {
+          campaignId: campaign.id,
+          templateId,
+          mode: 'full',
+          scope: null,
+          regen: 0,
+          brief,
+        },
+        { signal }
+      );
+      if (generation !== generationRef.current) return;
+      setLooks(Array.isArray(data.proposals) ? data.proposals : []);
+      setPhase('looks');
+    } catch (err) {
+      if (generation !== generationRef.current) return;
+      fail(err);
+    }
+  }, [brief, campaign?.id, templateId, startRequest, noteCall, fail]);
+
+  /** Per-card ↻ — regenerate ONE look in place (gallery only). Mid-proposal
+   * the ORIGINAL prev is retained (the proposal object is untouched, F9). */
+  const regenLook = useCallback(
+    async (index) => {
+      if (!campaign?.id) return;
+      const { generation, signal } = startRequest();
+      const key = `look:${index}`;
+      const n = (regensRef.current[key] || 0) + 1;
+      setRegeningLook(index);
+      noteCall();
+      try {
+        const data = await requestCopyDraft(
+          {
+            campaignId: campaign.id,
+            templateId,
+            mode: 'full',
+            scope: null,
+            regen: n,
+            brief: briefOrName(),
+          },
+          { signal }
+        );
+        if (generation !== generationRef.current) return;
+        regensRef.current[key] = n;
+        const fresh = data.proposals?.[0];
+        if (fresh) setLooks((prev) => prev.map((look, i) => (i === index ? fresh : look)));
+      } catch (err) {
+        if (generation !== generationRef.current) return;
+        fail(err);
+      } finally {
+        if (generation === generationRef.current) setRegeningLook(null);
+      }
+    },
+    [campaign?.id, templateId, briefOrName, startRequest, noteCall, fail]
+  );
+
+  /** Use this look — whole-doc swap built from the pre-proposal doc. */
+  const pickLook = useCallback(
+    (index) => {
+      const look = looksRef.current[index];
+      if (!look || !replaceDoc) return;
+      const baseDoc = proposalRef.current ? proposalRef.current.prev.doc : clone(docRef.current);
+      if (lookBlockedReason(docRef.current, look)) return; // belt — the button is disabled with the reason
+      const keep = { template: false, theme: false, copy: false };
+      replaceDoc(buildLookDoc(baseDoc, look, keep));
+      setProposal({ prev: { doc: baseDoc }, look, keep, adopted: false });
+      setMediaHint(look.media?.note ? { kind: look.media.kind || 'none', note: look.media.note } : null);
+      setSugs([]);
+      setScope(null);
+      setPhase('proposal');
+      onPickLookRef.current?.(); // F12: subject → page, jump cleared, funnel remount
+    },
+    [replaceDoc]
+  );
+
+  /** Keep-my-template/theme/copy — rebuild the doc from prev with the toggle. */
+  const toggleKeep = useCallback(
+    (key) => {
+      const p = proposalRef.current;
+      if (!p || p.adopted) return;
+      const keep = { ...p.keep, [key]: !p.keep[key] };
+      replaceDoc(buildLookDoc(p.prev.doc, p.look, keep));
+      setProposal({ ...p, keep });
+    },
+    [replaceDoc]
+  );
+
+  /** Discard / ↩ Revert look — restore the pre-proposal doc (works before AND
+   * after adopt, until a save commits). */
+  const revertLook = useCallback(() => {
+    const p = proposalRef.current;
+    if (!p || !replaceDoc) return;
+    replaceDoc(p.prev.doc);
+    setProposal(null);
+    setMediaHint(null);
+    setSugs([]);
+    setScope(null);
+    setPhase(looksRef.current.length ? 'looks' : 'brief');
+  }, [replaceDoc]);
+
+  /** Adopt — all-three-kept is a no-op discard (F9); otherwise the look's
+   * landed copy becomes an `applied` review list (old = pre-look values). */
+  const adoptLook = useCallback(() => {
+    const p = proposalRef.current;
+    if (!p || p.adopted) return;
+    if (p.keep.template && p.keep.theme && p.keep.copy) {
+      revertLook();
+      return;
+    }
+    setProposal({ ...p, adopted: true });
+    if (!p.keep.copy) {
+      setSugs(adoptedCopyRows(p.look, p.prev.doc, docRef.current));
+      setScope(null);
+      setPhase('ready');
+    } else {
+      setSugs([]);
+      setPhase('brief');
+    }
+  }, [revertLook]);
+
+  /** Save success = the commit point — the proposal is no longer revertable. */
+  const notifySaved = useCallback(() => {
+    setProposal(null);
+  }, []);
+
+  const dismissMediaHint = useCallback(() => setMediaHint(null), []);
+
   return {
     open,
     setOpen,
@@ -302,6 +470,10 @@ export default function useStudioAi({ campaign, doc, setPath }) {
     setBrief,
     sugs,
     scope,
+    looks,
+    proposal,
+    mediaHint,
+    regeningLook,
     error,
     retryIn,
     budget,
@@ -313,5 +485,14 @@ export default function useStudioAi({ campaign, doc, setPath }) {
     applyAll,
     discard,
     backToBrief,
+    generateLooks,
+    regenLook,
+    pickLook,
+    toggleKeep,
+    adoptLook,
+    revertLook,
+    notifySaved,
+    dismissMediaHint,
+    lookBaseDoc,
   };
 }

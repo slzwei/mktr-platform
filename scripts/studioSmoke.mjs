@@ -15,7 +15,10 @@
  *      panel survives a headline edit — F11);
  *   5. Save PUTs the WHOLE v2 doc (version 2, quiz passthrough, edited copy)
  *      and the top bar reports "Saved · live on redeem.sg";
- *   6. zero capture-side network (no /prospects, /verify, /dnc calls).
+ *   6. zero capture-side network (no /prospects, /verify, /dnc calls);
+ *   7. AI copy assist (PR 4): canned /admin/ai/copy-draft intercept → Generate
+ *      → Accept updates the live frame → the next save PUT carries the
+ *      accepted value. Zero real provider traffic.
  *
  * Usage (repo root):
  *   VITE_BRAND=mktr VITE_API_URL=/api VITE_CAMPAIGN_STUDIO_ENABLED=true \
@@ -91,6 +94,7 @@ async function main() {
 
   let savedBody = null;
   const forbidden = [];
+  const aiCalls = [];
 
   await page.addInitScript(
     ({ admin }) => {
@@ -108,6 +112,20 @@ async function main() {
       return route.fulfill({ status: 500, body: '{}' });
     }
     if (url.includes('/auth/profile')) return route.fulfill(ok({ user: ADMIN }));
+    if (url.includes('/admin/ai/copy-draft')) {
+      aiCalls.push(route.request().postDataJSON());
+      return route.fulfill(
+        ok({
+          // story is visible in the hero at the RESTING funnel state (the
+          // sgPrOnly fixture rests on the gate, so the form headline is not) —
+          // the accepted row must be assertable inside the frame.
+          draft: [
+            { path: 'content.story', label: 'Hero story', section: 'page', value: 'AI smoke story line for the hero.' },
+            { path: 'content.submitLabel', label: 'Submit button label', section: 'page', value: 'Claim my voucher' },
+          ],
+        })
+      );
+    }
     if (url.includes('/campaigns/slug-availability')) return route.fulfill(ok({ valid: true, available: true }));
     if (url.includes('/campaigns/c-smoke/readiness')) return route.fulfill(ok({ readiness: READINESS }));
     if (url.includes('/campaigns/c-smoke/marketplace-preview')) return route.fulfill(ok({ campaign: MK_PREVIEW }));
@@ -158,7 +176,7 @@ async function main() {
 
   console.log('4. Live doc edits do NOT remount the jumped funnel (F11)');
   await page.getByRole('button', { name: 'Page', exact: true }).click();
-  const headline = page.getByLabel('Form headline');
+  const headline = page.getByLabel('Form headline', { exact: true }); // the field, not its ✦ suggest button
   await headline.fill('Fresh smoke headline');
   await frame.getByText(/Enter the 6-digit code sent via/).waitFor({ timeout: 5000 });
   assert(true, 'OTP state survived the headline edit');
@@ -173,6 +191,24 @@ async function main() {
 
   console.log('6. Zero capture-side network');
   assert(forbidden.length === 0, `no /prospects|/verify|/dnc|/shortlinks calls (got: ${forbidden.join(', ') || 'none'})`);
+
+  console.log('7. AI copy assist — canned draft → Accept → live frame + save PUT');
+  await page.getByRole('button', { name: 'Reset preview state' }).click(); // back to the resting page
+  await page.getByRole('button', { name: '✦ Write it for me' }).click();
+  await page.getByPlaceholder(/FairPrice voucher giveaway/).fill('$10 voucher giveaway for new members');
+  await page.getByRole('button', { name: 'Generate suggestions' }).click();
+  await page.getByText('2 fields drafted — nothing applied yet').waitFor({ timeout: 10000 });
+  assert(aiCalls.length === 1 && aiCalls[0].mode === 'copy' && aiCalls[0].campaignId === 'c-smoke', 'one copy-draft call with the campaign scope');
+  await page.getByTestId('ai-sug-content.story').getByRole('button', { name: 'Accept' }).click();
+  await frame.getByText(/AI smoke story line/).waitFor({ timeout: 10000 });
+  assert(true, 'accepted value rendered live inside the device frame');
+  await page.screenshot({ path: `${OUT}/studio-ai-accept.png` });
+  await page.getByRole('button', { name: 'Close AI panel' }).click();
+  savedBody = null;
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByText('Saved · live on redeem.sg').waitFor({ timeout: 10000 });
+  assert(savedBody?.design_config?.content?.story === 'AI smoke story line for the hero.', 'accepted AI copy rode the save PUT');
+  assert(savedBody.design_config.content.submitLabel !== 'Claim my voucher', 'un-accepted row did NOT ride the PUT');
 
   await browser.close();
   console.log(`\nSMOKE PASS — screenshots in ${OUT}`);
