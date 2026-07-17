@@ -6,6 +6,7 @@
  * editing surface.
  */
 import { Link, useParams } from 'react-router-dom';
+import { getMarketplaceListedFromDoc } from '@/lib/designConfigV2';
 import { useCampaignSummary, useAttention } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtSGD, fmtDate, fmtDateTime, fmtRelative, daysUntil } from '@/lib/adminV2/format';
 import { STATUS_LABELS, STATUS_CHIP_CLASS, HELD_REASON_LABELS } from '@/lib/adminV2/constants';
@@ -67,7 +68,7 @@ export default function AdminV2CampaignDetail() {
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
         <Chip tone={c.status === 'active' ? 'ok' : c.status === 'paused' ? 'warn' : ''}>{c.status}</Chip>
-        {c.design_config?.marketplaceListed === true && <Chip tone="accent">Marketplace{c.slug ? ` · /${c.slug}` : ''}</Chip>}
+        {getMarketplaceListedFromDoc(c.design_config) === true && <Chip tone="accent">Marketplace{c.slug ? ` · /${c.slug}` : ''}</Chip>}
         {draw?.enabled && <Chip tone="warn">Lucky draw{drawDays !== null && drawDays > 0 ? ` · closes ${drawDays}d` : ' · closed'}</Chip>}
         {zeroCommit && <Chip tone="bad" glyph="▲">0 open commitments — new leads will quarantine</Chip>}
       </div>

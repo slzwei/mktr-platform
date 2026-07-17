@@ -9,6 +9,8 @@ import ShareCampaignDialog from '@/components/campaigns/ShareCampaignDialog';
 import LeadCaptureLayout from '@/components/campaigns/LeadCaptureLayout';
 import { deriveLeadCaptureContent } from '@/components/campaigns/leadCaptureContent';
 import GuidedReviewPage from '@/components/campaigns/guided-review/GuidedReviewPage';
+import CampaignPageRenderer from '@/components/campaignPage/CampaignPageRenderer';
+import { isV2 } from '@/lib/designConfigV2';
 
 export default function PublicPreview() {
  const { slug } = useParams();
@@ -83,13 +85,16 @@ export default function PublicPreview() {
  );
  }
 
+ // Defaults MATCH the live /LeadCapture page (formHeadline 'Get Started', no
+ // synthetic accent) so preview and production can't diverge — the old
+ // 'Sign Up Now' / '#3B82F6' fallbacks were a preview-only drift.
  const previewForm = (
  <div ref={formRef}>
- <QuizGate quiz={design.quiz} themeColor={design.themeColor || '#3B82F6'} previewMode>
+ <QuizGate quiz={design.quiz} themeColor={design.themeColor} previewMode>
  <CampaignSignupForm
  previewMode
- themeColor={design.themeColor || '#3B82F6'}
- formHeadline={design.formHeadline || 'Sign Up Now'}
+ themeColor={design.themeColor}
+ formHeadline={design.formHeadline || 'Get Started'}
  formSubheadline={design.formSubheadline}
  campaignId={snapshot?.id}
  onSubmit={handleSubmit}
@@ -122,6 +127,22 @@ export default function PublicPreview() {
  >
  {previewForm}
  </GuidedReviewPage>
+ {shareDialog}
+ </>
+ );
+ }
+
+ // design_config v2 (Campaign Studio): the shareable preview renders through
+ // the new template renderer, in previewMode (stubbed network, no prospect).
+ if (isV2(design)) {
+ return (
+ <>
+ <Title title={`Preview • ${snapshot?.name || 'Campaign'}`} />
+ <CampaignPageRenderer
+ campaign={{ ...snapshot, design_config: design }}
+ previewMode
+ onSubmit={handleSubmit}
+ />
  {shareDialog}
  </>
  );
