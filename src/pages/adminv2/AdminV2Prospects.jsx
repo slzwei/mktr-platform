@@ -5,7 +5,7 @@
  * the bulk bar drives the REAL bulk endpoints (assign / return-to-held /
  * delete) plus a client-side CSV export.
  */
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -150,19 +150,25 @@ export default function AdminV2Prospects() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const queryClient = useQueryClient();
 
-  // Debounced search → URL (which drives the query). The timer applies its
-  // change FUNCTIONALLY over the latest params, so a filter clicked during the
-  // 350ms window is never clobbered by the stale closure.
+  // Live view of the params for timers created in older renders. RR v7's
+  // setSearchParams closes over ITS render's params (even the functional
+  // form receives that stale snapshot and always navigates), so a 350ms-old
+  // updater would rewind the URL — clobbering filters clicked inside the
+  // window and resurrecting consumed params like `lead`.
+  const paramsRef = useRef(searchParams);
+  paramsRef.current = searchParams;
+
+  // Debounced search → URL (which drives the query). Reads the LIVE params at
+  // fire time and skips navigation entirely when q is already in sync.
   useEffect(() => {
     const t = setTimeout(() => {
-      setSearchParams((prev) => {
-        if ((prev.get('q') || '') === searchDraft) return prev;
-        const next = new URLSearchParams(prev);
-        if (searchDraft) next.set('q', searchDraft);
-        else next.delete('q');
-        next.delete('page');
-        return next;
-      }, { replace: true });
+      const prev = paramsRef.current;
+      if ((prev.get('q') || '') === searchDraft) return;
+      const next = new URLSearchParams(prev);
+      if (searchDraft) next.set('q', searchDraft);
+      else next.delete('q');
+      next.delete('page');
+      setSearchParams(next, { replace: true });
     }, 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,6 +212,22 @@ export default function AdminV2Prospects() {
 
   // Selection is per-page; changing the result set clears it.
   useEffect(() => { setSelected(new Set()); }, [queryParams]);
+
+  // Palette deep-link: /AdminProspects?q=…&lead=<id> auto-opens that lead's
+  // drawer once the row set arrives, then consumes the param (found or not —
+  // a stale id must not re-trigger on every later fetch). Guard on isFetching,
+  // not isLoading: when the palette navigates while this page is already
+  // mounted, only isFetching flips — isLoading is first-load-only in RQ v5,
+  // and matching against the previous filter's rows would eat the param.
+  // On error, keep the param so a retry can still open the drawer.
+  const leadParam = searchParams.get('lead');
+  useEffect(() => {
+    if (!leadParam || prospects.isFetching || prospects.isError) return;
+    const hit = rows.find((r) => r.id === leadParam);
+    if (hit) setDrawer(hit);
+    patch({ lead: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadParam, prospects.isFetching, prospects.isError]);
 
   const toggleList = (key, value) => {
     const current = new Set(filters[key]);
