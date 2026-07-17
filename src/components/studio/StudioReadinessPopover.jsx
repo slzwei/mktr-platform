@@ -1,10 +1,42 @@
 /**
- * Readiness popover (Studio PR 3) — the merged list behind the top-bar pill:
- * DELIVERY items from the server readiness endpoint (agent pool, webhook —
- * not doc-fixable, so no rail deep-link) and DESIGN items from the client
- * checks (each deep-links to its rail section).
+ * Readiness popover (Studio PR 3, extended PR 5) — the merged list behind the
+ * top-bar pill: DELIVERY items from the server readiness endpoint and DESIGN
+ * items from the client checks. Since PR 5, ANY item with a section mapping
+ * deep-links into the rail — including server items (OTP config → Form);
+ * unmapped items (agent pool, webhook, draw records) stay inert.
  */
 const DOT = { block: '#B4443C', warn: '#C77E1B', info: '#9BA0AB' };
+
+function ReadinessRow({ item, onGoSection, onClose }) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (item.sec) {
+          onGoSection(item.sec);
+          onClose();
+        }
+      }}
+      style={{
+        display: 'flex',
+        gap: 8,
+        width: '100%',
+        textAlign: 'left',
+        padding: '6px 6px',
+        fontSize: 12,
+        color: 'var(--ink-2)',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: 7,
+        cursor: item.sec ? 'pointer' : 'default',
+      }}
+    >
+      <span style={{ color: DOT[item.sev], fontSize: 9, lineHeight: '16px' }}>●</span>
+      <span style={{ flex: 1, lineHeight: 1.45 }}>{item.msg}</span>
+      {item.sec ? <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>→</span> : null}
+    </button>
+  );
+}
 
 export default function StudioReadinessPopover({ open, items, onGoSection, onClose }) {
   if (!open) return null;
@@ -41,10 +73,7 @@ export default function StudioReadinessPopover({ open, items, onGoSection, onClo
                 DELIVERY (SERVER)
               </div>
               {delivery.map((item, i) => (
-                <div key={`d${i}`} style={{ display: 'flex', gap: 8, padding: '6px 6px', fontSize: 12, color: 'var(--ink-2)' }}>
-                  <span style={{ color: DOT[item.sev], fontSize: 9, lineHeight: '16px' }}>●</span>
-                  <span style={{ flex: 1, lineHeight: 1.45 }}>{item.msg}</span>
-                </div>
+                <ReadinessRow key={`d${i}`} item={item} onGoSection={onGoSection} onClose={onClose} />
               ))}
             </>
           )}
@@ -54,33 +83,7 @@ export default function StudioReadinessPopover({ open, items, onGoSection, onClo
                 DESIGN (THIS DOCUMENT)
               </div>
               {design.map((item, i) => (
-                <button
-                  key={`g${i}`}
-                  type="button"
-                  onClick={() => {
-                    if (item.sec) {
-                      onGoSection(item.sec);
-                      onClose();
-                    }
-                  }}
-                  style={{
-                    display: 'flex',
-                    gap: 8,
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '6px 6px',
-                    fontSize: 12,
-                    color: 'var(--ink-2)',
-                    background: 'transparent',
-                    border: 'none',
-                    borderRadius: 7,
-                    cursor: item.sec ? 'pointer' : 'default',
-                  }}
-                >
-                  <span style={{ color: DOT[item.sev], fontSize: 9, lineHeight: '16px' }}>●</span>
-                  <span style={{ flex: 1, lineHeight: 1.45 }}>{item.msg}</span>
-                  {item.sec ? <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>→</span> : null}
-                </button>
+                <ReadinessRow key={`g${i}`} item={item} onGoSection={onGoSection} onClose={onClose} />
               ))}
             </>
           )}

@@ -62,6 +62,14 @@ describe('clampDesignConfigV2 over Studio-authored docs', () => {
     expect(out.customerHost).toBe('redeem'); // derived mirror
   });
 
+  it('PR 5: the clamp DROPS marketplace.endsAt (expiry is ops-derived — pins the schema decision)', () => {
+    const doc = studioDoc();
+    doc.distribution.marketplace.endsAt = '2026-12-31';
+    const out = clampDesignConfigV2(doc, undefined, 'admin');
+    expect(out.distribution.marketplace.endsAt).toBeUndefined();
+    expect(out.distribution.marketplace.title).toBe('Listing');
+  });
+
   it('non-admin saves preserve the STORED admin subtrees (a Studio round-trip cannot smuggle them)', () => {
     const stored = clampDesignConfigV2(studioDoc(), undefined, 'admin');
     const attempt = structuredClone(stored);

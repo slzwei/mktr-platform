@@ -190,6 +190,24 @@ describe('useStudioDoc — save', () => {
     expect(result.current.dirty).toBe(true);
   });
 
+  it.each([
+    ['DRAW_TERMS_REQUIRED', 'terms'],
+    ['DRAW_CLOSES_AT_REQUIRED', 'closesAt'],
+    ['DRAW_CLOSES_AT_LOCKED', 'closesAt'],
+  ])('PR 5: classifies a TYPED server draw 422 (%s) with its field', async (code, field) => {
+    const err = new Error('server draw message');
+    err.status = 422;
+    err.data = { code };
+    Campaign.update.mockRejectedValue(err);
+    const { result } = renderHook(() => useStudioDoc(v2Campaign()));
+    act(() => result.current.setPath('content.headline', 'x'));
+    let res;
+    await act(async () => {
+      res = await result.current.save();
+    });
+    expect(res.classified).toMatchObject({ kind: 'draw-invariant', section: 'form', field });
+  });
+
   it('classifies an untyped server draw 422 by message heuristic (F9)', async () => {
     const err = new Error('Lucky-draw campaigns need Terms & Conditions content before they can be enabled.');
     err.status = 422;

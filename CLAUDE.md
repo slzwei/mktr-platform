@@ -15,7 +15,7 @@ calls) and delivers them to insurance agents via the Lyfe mobile app:
 | Two-brand routing-guard route lists, URL-helper contracts, prod env tables, DNS, Render IDs | `docs/reference/brand-and-hosting.md` |
 | **Redeem Ops** (partner CRM, tasks, rewards, Discover, cadences) — `ops.redeem.sg` | `src/pages/redeemops/CLAUDE.md` + `docs/redeem-ops/` |
 | Meta tracking / redeemed-audience deep design | `docs/plans/meta-tracking-implementation.md`, `docs/plans/meta-redeemed-audience-sync.md` |
-| **Campaign Studio revamp** (design_config v2 twins + migration + write gate `DESIGN_CONFIG_V2_WRITES_ENABLED` default OFF; v2 renderer `src/components/campaignPage/` reuses the funnel via `CampaignThemeContext`, version dispatch at the 3 LeadCapture/preview mounts, `readLegacyViewSafe` adapters at backend readers) | `docs/plans/campaign-studio-implementation-prompt.md` + twins `src/lib/designConfigV2.js` ↔ `backend/src/utils/designConfigV2.js` (+ `designConfigV2Clamp.js`) |
+| **Campaign Studio revamp** (PRs 0–5 built: design_config v2 twins + write gate `DESIGN_CONFIG_V2_WRITES_ENABLED`, v2 renderer `src/components/campaignPage/` reusing the funnel, Studio editor + AI assist behind `VITE_CAMPAIGN_STUDIO_ENABLED`, server readiness extensions; **rollout runbook = flag flips + per-campaign migration + rollback**) | `docs/reference/campaign-studio-rollout.md` (rollout) · `docs/plans/campaign-studio-implementation-prompt.md` (build history) · twins `src/lib/designConfigV2.js` ↔ `backend/src/utils/designConfigV2.js` (+ `designConfigV2Clamp.js`) |
 
 Cross-system (Supabase schema, edge functions, roles) → parent `../CLAUDE.md`.
 

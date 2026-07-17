@@ -80,6 +80,7 @@ jest.unstable_mockModule('../../src/models/index.js', () => ({
   CampaignMediaItem,
   CampaignAgentAssignment,
   // Draw-terms versioning dep (lucky draw) — inert stub, not exercised here.
+  Draw: { findOne: async () => null }, // PR 5: closesAt-lock seam
   DrawTermsVersion: {
     findOne: async () => null,
     max: async () => null,

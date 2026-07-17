@@ -3,23 +3,55 @@ import { colorContrastRatio } from '@/lib/contrast';
 import { isValidYmd } from './useStudioDoc';
 
 /**
- * Studio readiness (PR 3) — the merged pill (Codex F8): the EXISTING server
- * readiness endpoint (delivery truth: agent pool, webhook, phone gaps —
- * exactly what CampaignReadinessBanner surfaces in the legacy designer) plus
- * the Studio's client-side DESIGN checks over the unsaved doc. A green
- * "READY ✓" therefore means both delivery and design are clean — never just
- * the document. Server-verifiable EXTENSIONS of the endpoint stay PR 5.
+ * Studio readiness (PR 3, extended PR 5) — the merged pill: the server
+ * readiness endpoint (delivery truth: agent pool, webhook, phone gaps, and —
+ * since PR 5 — the server-verifiable OTP send-path + lucky-draw coherence
+ * checks) plus the Studio's client-side DESIGN checks over the unsaved doc.
+ * A green "READY ✓" means both delivery and design are clean.
  *
- * Design checks mirror server invariants where they exist
- * (ensureDrawTermsVersion) and renderer behavior where they don't; the
- * draw-date mismatch compares the doc against the LIVE draw record from the
- * marketplace preview DTO (`ops.draw`), never against in-doc marketplace
- * endsAt (the clamp drops that key — a known schema inconsistency noted for
- * PR 5).
+ * PR 5 notes: server issues with a section mapping deep-link into the rail
+ * like design items; the old client draw-date "mismatch" check compared a doc
+ * YMD against the record's ISO instant (always unequal → permanent false
+ * warning) and is replaced by the server's authoritative
+ * `draw_close_date_mismatch` — the canvas banner uses
+ * `drawCloseMismatchWithLive` for a CORRECT local comparison. The
+ * marketplace.endsAt schema inconsistency is resolved (key removed from the
+ * public whitelist; expiry is ops-derived).
  */
 
 const todayYmdSgt = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date());
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** CORRECT doc-vs-record comparison: the doc holds an inclusive SGT calendar
+ * day (YYYY-MM-DD); the record holds the EXCLUSIVE next-day-start instant
+ * (created from the same day via the backend's sgtDayEndExclusiveMs). SGT has
+ * no DST, so the day boundary is a fixed offset. Returns true only on a REAL
+ * mismatch — unparseable inputs never warn. */
+export function drawCloseMismatchWithLive(docYmd, liveInstant) {
+  if (typeof docYmd !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(docYmd)) return false;
+  const docEnd = Date.parse(`${docYmd}T00:00:00+08:00`) + DAY_MS;
+  const live = Date.parse(liveInstant || '');
+  return Number.isFinite(docEnd) && Number.isFinite(live) && docEnd !== live;
+}
+
+/** Display an exclusive cutoff instant as its inclusive SGT day (minus 1ms). */
+export function sgtYmdFromInstant(instant) {
+  const t = Date.parse(instant || '');
+  if (!Number.isFinite(t)) return null;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date(t - 1));
+}
+
+/** Server readiness codes that ARE doc/Studio-adjacent enough to deep-link.
+ * Draw codes stay unmapped — the Distribution panel has no draw controls
+ * (draw records are ops-owned). Pool/webhook codes are not doc-fixable. */
+export const SERVER_CODE_TO_SECTION = {
+  otp_send_unconfigured: 'form',
+  otp_whatsapp_unconfigured: 'form',
+  otp_sms_fallback_unconfigured: 'form',
+  quiz_not_enabled: 'quiz',
+};
 
 export const GATE_LABELS = {
   slug: 'Slug set',
@@ -55,17 +87,18 @@ export function computeDesignChecks({ campaign, doc, marketplacePreview }) {
     out.push({ sev: 'warn', sec: 'page', msg: 'Hero button label is set but there is no media — it will not render.' });
   }
   if (doc.form?.verification === 'whatsapp') {
-    out.push({ sev: 'warn', sec: 'form', msg: 'WhatsApp verification needs configured credentials; sends fall back to SMS without them.' });
+    // Speculative (env is server-side) — computeStudioReadiness retires this
+    // when the server readiness payload answers authoritatively (PR 5).
+    out.push({ key: 'whatsapp-creds', sev: 'warn', sec: 'form', msg: 'WhatsApp verification needs configured credentials; sends fall back to SMS without them.' });
   }
   const t = resolveTheme(doc.theme || {});
   const ratio = colorContrastRatio(t.accent, t.card);
   if (ratio !== null && ratio < 2) {
     out.push({ sev: 'warn', sec: 'theme', msg: `Accent is hard to see on the card background — contrast ${ratio.toFixed(1)}:1.` });
   }
-  const liveDrawCloses = marketplacePreview?.ops?.draw?.closesAt;
-  if (doc.luckyDraw?.enabled === true && liveDrawCloses && doc.luckyDraw?.closesAt && liveDrawCloses !== doc.luckyDraw.closesAt) {
-    out.push({ sev: 'warn', sec: 'dist', msg: 'The doc draw close date disagrees with the live draw record.' });
-  }
+  // (The old client draw-date mismatch check lived here — removed in PR 5:
+  // it compared a YMD against an ISO instant, warning on every open draw.
+  // The server's draw_close_date_mismatch is the authoritative replacement.)
   const fd = doc.distribution?.featuredDrop;
   if (fd?.enabled === true && isValidYmd(fd.endsAt) && fd.endsAt < todayYmdSgt()) {
     out.push({ sev: 'info', sec: 'dist', msg: 'Featured-drop homepage end date is in the past — the tile shows as gone.' });
@@ -87,7 +120,7 @@ const SERVER_LEVEL_TO_SEV = { critical: 'block', warning: 'warn', info: 'info' }
  * the pill off green.
  */
 export function computeStudioReadiness({ campaign, doc, serverReadiness, serverStatus = 'success', marketplacePreview }) {
-  const design = computeDesignChecks({ campaign, doc, marketplacePreview });
+  let design = computeDesignChecks({ campaign, doc, marketplacePreview });
   const delivery = [];
   if (serverStatus === 'error') {
     delivery.push({
@@ -101,11 +134,28 @@ export function computeStudioReadiness({ campaign, doc, serverReadiness, serverS
     for (const issue of serverReadiness.issues || []) {
       delivery.push({
         sev: SERVER_LEVEL_TO_SEV[issue.level] || 'info',
-        sec: null, // delivery items live outside the doc — no rail deep-link
+        // PR 5: doc-adjacent server codes deep-link into the rail; anything
+        // unmapped (pool, webhook, draw records) stays link-less.
+        sec: SERVER_CODE_TO_SECTION[issue.code] || null,
+        code: issue.code,
         msg: issue.message,
         source: 'delivery',
       });
     }
+  }
+  // PR 5: retire the speculative WhatsApp-creds design warning once the
+  // server answers — either the env is verified fine (boolean in the
+  // payload), or the server's own authoritative warning is already listed.
+  // GATED on a SUCCESSFUL current response (Codex diff #6): TanStack Query
+  // keeps stale data through a failed refetch, and a cached true must not
+  // keep clearing the warning while the server is unreachable. Server
+  // unavailable → the static warning stays (fail-noisy).
+  const serverAnsweredWhatsapp =
+    serverStatus === 'success' &&
+    (serverReadiness?.whatsappOtpConfigured === true ||
+      delivery.some((d) => d.code === 'otp_whatsapp_unconfigured'));
+  if (serverAnsweredWhatsapp) {
+    design = design.filter((d) => d.key !== 'whatsapp-creds');
   }
   const items = [...delivery, ...design.map((d) => ({ ...d, source: 'design' }))];
   const blocks = items.filter((i) => i.sev === 'block').length;

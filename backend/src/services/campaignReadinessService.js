@@ -33,6 +33,16 @@
  * @param {number}  facts.assignableAgents      active agents with credits for this campaign
  * @param {number}  facts.agentsMissingPhone    of those, how many lack a phone
  * @param {boolean} facts.webhookEnabled         WEBHOOK_ENABLED === 'true'
+ * @param {string}  facts.verificationChannel    effective OTP channel ('sms'|'whatsapp') — mirrors the send path
+ * @param {boolean} facts.smsOtpConfigured       AWS SNS creds present (the SMS send path)
+ * @param {boolean} facts.whatsappOtpConfigured  Meta WA creds present (the WhatsApp send path)
+ * @param {boolean} facts.drawEnabled            stored doc luckyDraw.enabled (version-aware)
+ * @param {boolean} facts.hasDrawRecord          ANY draw record exists (live or completed)
+ * @param {boolean} facts.hasLiveDraw            a LIVE (open|frozen|sealed|drawn) record exists
+ * @param {boolean} facts.drawIntakeOpen         doc closesAt is today-or-future (entries still accepted)
+ * @param {boolean} facts.drawCloseMismatch      LIVE record cutoff ≠ doc closesAt (instant-exact)
+ * @param {string}  facts.docDrawClosesAt        display YMD (doc)
+ * @param {string}  facts.drawRecordClosesAt     display YMD (record, SGT)
  * @returns {{ applicable: boolean, ready: boolean, issues: Array<{level,code,message}> }}
  */
 export function computeReadiness(facts) {
@@ -49,6 +59,19 @@ export function computeReadiness(facts) {
     assignableAgents = 0,
     agentsMissingPhone = 0,
     webhookEnabled = false,
+    // OTP facts default ALARM-SAFE (like webhookEnabled): absent facts read as
+    // "cannot send", never as "fine".
+    verificationChannel = 'sms',
+    smsOtpConfigured = false,
+    whatsappOtpConfigured = false,
+    // Draw facts default SILENT — they only mean anything for draw campaigns.
+    drawEnabled = false,
+    hasDrawRecord = false,
+    hasLiveDraw = false,
+    drawIntakeOpen = false,
+    drawCloseMismatch = false,
+    docDrawClosesAt = null,
+    drawRecordClosesAt = null,
   } = facts || {};
 
   // Brand-awareness (PHV tablet) campaigns don't capture leads → readiness N/A.
@@ -125,6 +148,56 @@ export function computeReadiness(facts) {
     });
   }
 
+  // OTP send-path checks (PR 5 — server env facts the Studio literally labels
+  // "not client-verifiable"). The send path: the SELECTED channel is primary;
+  // WhatsApp degrades to SMS only when the Meta call throws
+  // (verificationService). So the CRITICAL case is "the selected channel
+  // cannot deliver at all"; partial gaps are warnings.
+  const whatsappSelected = verificationChannel === 'whatsapp';
+  const otpDeliverable = whatsappSelected ? whatsappOtpConfigured || smsOtpConfigured : smsOtpConfigured;
+  if (!otpDeliverable) {
+    issues.push({
+      level: 'critical',
+      code: 'otp_send_unconfigured',
+      message: whatsappSelected
+        ? 'No OTP channel is configured on this server — WhatsApp (META_WA_PHONE_NUMBER_ID / META_WA_ACCESS_TOKEN) and the SMS fallback (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) are both missing. Phone verification will fail and no leads can be submitted.'
+        : 'SMS OTP cannot be sent — AWS credentials (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) are not set on this server. Phone verification will fail and no leads can be submitted.',
+    });
+  } else if (whatsappSelected && !whatsappOtpConfigured) {
+    issues.push({
+      level: 'warning',
+      code: 'otp_whatsapp_unconfigured',
+      message:
+        'This campaign verifies by WhatsApp but the server has no Meta WhatsApp credentials (META_WA_PHONE_NUMBER_ID / META_WA_ACCESS_TOKEN). Every code will fall back to SMS.',
+    });
+  } else if (whatsappSelected && !smsOtpConfigured) {
+    issues.push({
+      level: 'warning',
+      code: 'otp_sms_fallback_unconfigured',
+      message:
+        'WhatsApp OTP is configured, but the SMS fallback is not (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY missing) — a WhatsApp outage or template rejection would block verification.',
+    });
+  }
+
+  // Lucky-draw coherence (PR 5 — the Draw table is server-only truth).
+  // WARNINGS by design: leads still deliver either way; these are fairness/ops
+  // risks, and they must not newly block launch-state activation.
+  if (drawEnabled && !hasDrawRecord && drawIntakeOpen) {
+    issues.push({
+      level: 'warning',
+      code: 'draw_record_missing',
+      message:
+        'The lucky draw is enabled but no draw record exists. Entries are being accepted, but ops cannot freeze the pool or pick a winner until a draw is created (Redeem Ops → Draws).',
+    });
+  }
+  if (drawEnabled && hasLiveDraw && drawCloseMismatch) {
+    issues.push({
+      level: 'warning',
+      code: 'draw_close_date_mismatch',
+      message: `The design's draw close date (${docDrawClosesAt || 'unset'}) disagrees with the live draw record's entry cutoff (${drawRecordClosesAt || 'unknown'}). Entry acceptance follows the design date; the pool freeze follows the record — align them before launch.`,
+    });
+  }
+
   // INFO — not yet live.
   if (!isActive) {
     issues.push({
@@ -138,12 +211,26 @@ export function computeReadiness(facts) {
   return { applicable: true, ready, issues };
 }
 
+// Model-free static imports — the pure export above must stay import-light
+// (utils only, no model graph).
+import { readLegacyViewSafe, getStoredLuckyDraw } from '../utils/designConfigV2Clamp.js';
+import { normalizeLuckyDraw } from '../utils/luckyDraw.js';
+import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
+
+/** Display YMD (SGT) for a draw record's exclusive cutoff instant — minus 1ms
+ * lands on the inclusive last entry day. */
+const sgtYmdFromExclusiveInstant = (instant) => {
+  const t = new Date(instant).getTime();
+  if (!Number.isFinite(t)) return null;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date(t - 1));
+};
+
 /**
  * Load the facts for a campaign and evaluate readiness.
  * Read-only. Lazy-imports models so the pure export above stays import-light.
  */
 export async function loadCampaignReadiness(campaignId) {
-  const { Campaign, LeadPackage, LeadPackageAssignment, User } = await import('../models/index.js');
+  const { Campaign, LeadPackage, LeadPackageAssignment, User, Draw } = await import('../models/index.js');
   const { Op } = await import('sequelize');
 
   const campaign = await Campaign.findByPk(campaignId, {
@@ -179,6 +266,8 @@ export async function loadCampaignReadiness(campaignId) {
     agentsMissingPhone = agents.filter((a) => !a.phone || String(a.phone).trim() === '').length;
   }
 
+  // v2-safe as-is: quiz + guidedReview are top-level verbatim-passthrough keys
+  // in BOTH doc versions (loss-ledger L5), so these raw reads need no adapter.
   const design = campaign.design_config || {};
   const guidedReview = design.guidedReview;
   const guidedReviewQuestions = Array.isArray(guidedReview?.questions?.items)
@@ -199,6 +288,45 @@ export async function loadCampaignReadiness(campaignId) {
   const webhookEnabled = process.env.WEBHOOK_ENABLED === 'true';
   const isActive = campaign.is_active !== false;
 
+  // OTP send-path facts (PR 5). Channel byte-mirrors verificationService's
+  // resolution; cred booleans are explicitly coerced — raw env strings must
+  // never enter the facts/payload.
+  const verificationChannel =
+    readLegacyViewSafe(design, { otpChannel: 'sms' }).otpChannel === 'whatsapp' ? 'whatsapp' : 'sms';
+  const smsOtpConfigured = Boolean(process.env.AWS_ACCESS_KEY_ID) && Boolean(process.env.AWS_SECRET_ACCESS_KEY);
+  const whatsappOtpConfigured =
+    Boolean(process.env.META_WA_PHONE_NUMBER_ID) && Boolean(process.env.META_WA_ACCESS_TOKEN);
+
+  // Lucky-draw facts (PR 5) — one indexed query, draw campaigns only. If a
+  // LIVE record exists it is necessarily the newest (new records start 'open'
+  // and the partial-unique index forbids a second live one), so newest-first
+  // findOne answers both "any record?" and "live record?".
+  const ld = normalizeLuckyDraw(getStoredLuckyDraw(design));
+  const drawEnabled = ld?.enabled === true;
+  let hasDrawRecord = false;
+  let hasLiveDraw = false;
+  let drawIntakeOpen = false;
+  let drawCloseMismatch = false;
+  let docDrawClosesAt = null;
+  let drawRecordClosesAt = null;
+  if (drawEnabled) {
+    const record = await Draw.findOne({
+      where: { campaignId },
+      order: [['createdAt', 'DESC']],
+      attributes: ['id', 'status', 'closesAt'],
+    });
+    hasDrawRecord = !!record;
+    hasLiveDraw = !!record && ['open', 'frozen', 'sealed', 'drawn'].includes(record.status);
+    const docEndMs = ld?.closesAt ? sgtDayEndExclusiveMs(ld.closesAt) : null;
+    docDrawClosesAt = ld?.closesAt || null;
+    drawIntakeOpen = docEndMs !== null && docEndMs > Date.now();
+    if (hasLiveDraw && docEndMs !== null) {
+      const recordMs = new Date(record.closesAt).getTime();
+      drawCloseMismatch = Number.isFinite(recordMs) && recordMs !== docEndMs;
+      drawRecordClosesAt = sgtYmdFromExclusiveInstant(record.closesAt);
+    }
+  }
+
   const evaluation = computeReadiness({
     type: campaign.type,
     isActive,
@@ -215,6 +343,16 @@ export async function loadCampaignReadiness(campaignId) {
     assignableAgents,
     agentsMissingPhone,
     webhookEnabled,
+    verificationChannel,
+    smsOtpConfigured,
+    whatsappOtpConfigured,
+    drawEnabled,
+    hasDrawRecord,
+    hasLiveDraw,
+    drawIntakeOpen,
+    drawCloseMismatch,
+    docDrawClosesAt,
+    drawRecordClosesAt,
   });
 
   return {
@@ -226,6 +364,12 @@ export async function loadCampaignReadiness(campaignId) {
     assignableAgents,
     agentsMissingPhone,
     webhookEnabled,
+    // PR 5 booleans (never raw env values) — whatsappOtpConfigured lets the
+    // Studio retire its speculative "creds are server env" static warning.
+    verificationChannel,
+    smsOtpConfigured,
+    whatsappOtpConfigured,
+    hasLiveDraw,
     ...evaluation,
   };
 }

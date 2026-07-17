@@ -70,8 +70,11 @@ const V2_PUBLIC_MARKETPLACE_KEYS = [
   'title', 'category', 'offerType', 'mode', 'imageAlt', 'valueLine', 'inclusions',
   'showCapacity', 'audienceAgeMin', 'audienceAgeMax', 'schoolLevels', 'dsaRelated',
   'days', 'slots', 'activation', 'sponsor', 'dataUse', 'cancellation', 'faq',
-  'qrLanding', 'endsAt',
+  'qrLanding',
   // NOT 'listed' — publication state stays internal, like v1's marketplaceListed.
+  // NOT 'endsAt' (removed PR 5) — the clamp never persists it and consumer
+  // expiry is ops-derived (activation window / offer validity), so the key was
+  // an unreachable schema/whitelist inconsistency.
 ];
 
 function buildPublicDesignConfigV2(dc) {

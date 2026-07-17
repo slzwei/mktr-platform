@@ -116,7 +116,8 @@ describe('Canvas subjects', () => {
     const preview = {
       slug: 'fairprice',
       design_config: {},
-      ops: { partner: { locations: [] }, draw: { closesAt: '2026-11-05' } },
+      // Real record shape (PR 5): an ISO cutoff INSTANT for a DIFFERENT day.
+      ops: { partner: { locations: [] }, draw: { closesAt: '2026-11-05T16:00:00.000Z' } },
       gate: { slug: true, active: true },
     };
     render(
@@ -126,8 +127,28 @@ describe('Canvas subjects', () => {
     );
     expect(screen.getByTestId('marketplace-subject')).toBeInTheDocument();
     expect(screen.getByText(/FairPrice Voucher Listing/)).toBeInTheDocument(); // unsaved title on the REAL card
-    expect(screen.getByText(/disagrees with the live draw record/)).toBeInTheDocument();
+    const banner = screen.getByText(/disagrees with the live draw record/);
+    expect(banner.textContent).toContain('2026-11-05'); // record shown as its SGT day, not raw ISO
+    expect(banner.textContent).not.toContain('T16:00');
     expect(screen.getByTestId('marketplace-gates')).toBeInTheDocument();
     expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('marketplace subject: NO mismatch banner when the record instant is the SAME SGT day (PR 5 misfire fix)', () => {
+    const doc = upgradeDesignConfig({ name: 'X', category: 'dining', mode: 'physical' });
+    doc.luckyDraw = { enabled: true, closesAt: '2026-10-30' };
+    const preview = {
+      slug: 'x',
+      design_config: {},
+      // 2026-10-30 SGT ends exactly at 2026-10-30T16:00:00.000Z — agreement.
+      ops: { partner: { locations: [] }, draw: { closesAt: '2026-10-30T16:00:00.000Z' } },
+      gate: { slug: true, active: true },
+    };
+    render(
+      <MemoryRouter>
+        <CanvasMarketplaceSubject campaign={{ id: 'c1', name: 'X', slug: 'x' }} doc={doc} preview={preview} previewStatus="success" />
+      </MemoryRouter>
+    );
+    expect(screen.queryByText(/disagrees with the live draw record/)).toBeNull();
   });
 });

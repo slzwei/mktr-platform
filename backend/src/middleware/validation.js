@@ -133,7 +133,10 @@ export const schemas = {
     // Wallet commit price (cents) — service enforces the admin-only clamp.
     leadPriceCents: Joi.number().integer().min(1).max(100000000).optional().allow(null),
     // Marketplace URL handle — service enforces charset + post-activation lock.
-    slug: Joi.string().max(80).optional().allow(null, '')
+    slug: Joi.string().max(80).optional().allow(null, ''),
+    // PR 5 rollout escape hatch: admin-only explicit v1-snapshot restore over a
+    // stored v2 doc (service enforces role + logs; see the rollout runbook).
+    confirmDesignRollback: Joi.boolean().optional()
   }).min(1),
 
   // Car schemas

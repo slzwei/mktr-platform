@@ -24,6 +24,7 @@ jest.unstable_mockModule('../src/models/index.js', () => ({
   Campaign: {}, QrTag: {}, Prospect: {}, Commission: {}, Device: {},
   CampaignMediaItem: {}, CampaignAgentAssignment: {},
   sequelize: { transaction: jest.fn() },
+  Draw: { findOne: async () => null }, // PR 5: closesAt-lock seam
   DrawTermsVersion: {
     findOne: async () => null,
     max: async () => null,

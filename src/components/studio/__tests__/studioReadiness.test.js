@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeStudioReadiness, computeDesignChecks } from '../studioReadiness';
+import { computeStudioReadiness, computeDesignChecks, drawCloseMismatchWithLive, sgtYmdFromInstant } from '../studioReadiness';
 import { upgradeDesignConfig } from '@/lib/designConfigV2';
 
 const docWith = (v1 = {}, extras = {}) => ({ ...upgradeDesignConfig(v1), ...extras });
@@ -38,11 +38,12 @@ describe('computeDesignChecks — the client design mirror', () => {
     expect(items.every((i) => i.sev === 'warn')).toBe(true);
   });
 
-  it('draw-date mismatch checks the LIVE draw record from ops (never in-doc marketplace endsAt)', () => {
+  it('PR 5: the old client draw-date-mismatch item is GONE (it compared YMD vs ISO instant — always true)', () => {
     const doc = docWith({}, { luckyDraw: { enabled: true, closesAt: '2026-10-30' }, form: docWith({ termsContent: 'x' }).form });
-    const preview = { ops: { draw: { closesAt: '2026-11-05' } } };
+    // Real record shape: an ISO cutoff INSTANT for the same calendar day.
+    const preview = { ops: { draw: { closesAt: '2026-10-30T16:00:00.000Z' } } };
     const items = computeDesignChecks({ campaign: CAMPAIGN, doc, marketplacePreview: preview });
-    expect(items).toContainEqual(expect.objectContaining({ sev: 'warn', sec: 'dist' }));
+    expect(items.filter((i) => i.sec === 'dist')).toHaveLength(0);
   });
 
   it('listed + incomplete server gate → info', () => {
@@ -107,5 +108,90 @@ describe('computeStudioReadiness — merged pill (Codex F8)', () => {
     expect(r.tone).toBe('warn');
     expect(r.label).toBe('▲ 1');
     expect(r.sectionFlags).toEqual({ form: true });
+  });
+});
+
+describe('PR 5 — server code mapping + WhatsApp dedupe + draw-date math', () => {
+  it('mapped server codes deep-link (sec + code) and light the rail dots; unknown codes stay inert', () => {
+    const r = computeStudioReadiness({
+      campaign: CAMPAIGN,
+      doc: docWith({}),
+      serverReadiness: {
+        applicable: true,
+        ready: false,
+        issues: [
+          { level: 'critical', code: 'otp_send_unconfigured', message: 'SMS OTP cannot be sent.' },
+          { level: 'warning', code: 'draw_record_missing', message: 'No draw record.' },
+          { level: 'warning', code: 'some_future_code', message: 'Unknown thing.' },
+        ],
+      },
+    });
+    const otp = r.items.find((i) => i.code === 'otp_send_unconfigured');
+    expect(otp).toMatchObject({ source: 'delivery', sev: 'block', sec: 'form' });
+    expect(r.items.find((i) => i.code === 'draw_record_missing').sec).toBeNull(); // no draw controls in the rail
+    expect(r.items.find((i) => i.code === 'some_future_code').sec).toBeNull(); // regression guard
+    expect(r.sectionFlags.form).toBe(true);
+  });
+
+  it('retires the speculative WhatsApp design warning when the server VERIFIES the creds', () => {
+    const r = computeStudioReadiness({
+      campaign: CAMPAIGN,
+      doc: docWith({ otpChannel: 'whatsapp' }),
+      serverReadiness: { applicable: true, ready: true, issues: [], whatsappOtpConfigured: true },
+    });
+    expect(r.items).toHaveLength(0);
+    expect(r.label).toBe('READY ✓');
+  });
+
+  it("retires the speculative warning when the server's own authoritative warning is listed (no double entry)", () => {
+    const r = computeStudioReadiness({
+      campaign: CAMPAIGN,
+      doc: docWith({ otpChannel: 'whatsapp' }),
+      serverReadiness: {
+        applicable: true,
+        ready: true,
+        whatsappOtpConfigured: false,
+        issues: [{ level: 'warning', code: 'otp_whatsapp_unconfigured', message: 'Falls back to SMS.' }],
+      },
+    });
+    const whatsappItems = r.items.filter((i) => /whatsapp|creds|credentials|SMS/i.test(i.msg));
+    expect(whatsappItems).toHaveLength(1);
+    expect(whatsappItems[0].source).toBe('delivery');
+  });
+
+  it('keeps the static warning while the server has NOT answered (fail-noisy)', () => {
+    const r = computeStudioReadiness({
+      campaign: CAMPAIGN,
+      doc: docWith({ otpChannel: 'whatsapp' }),
+      serverReadiness: null,
+      serverStatus: 'error',
+    });
+    expect(r.items.some((i) => i.source === 'design' && i.sec === 'form')).toBe(true);
+  });
+
+  it('STALE cached data through a FAILED refetch never clears the warning (Codex diff #6)', () => {
+    // TanStack Query keeps the last successful data when a refetch errors —
+    // the retire condition must be gated on a CURRENT success.
+    const r = computeStudioReadiness({
+      campaign: CAMPAIGN,
+      doc: docWith({ otpChannel: 'whatsapp' }),
+      serverReadiness: { applicable: true, ready: true, issues: [], whatsappOtpConfigured: true },
+      serverStatus: 'error',
+    });
+    expect(r.items.some((i) => i.source === 'design' && i.sec === 'form')).toBe(true);
+  });
+
+  it('drawCloseMismatchWithLive: instant-correct — same SGT day agrees, different day mismatches, junk never warns', () => {
+    // 2026-10-30 SGT ends at 2026-10-30T16:00:00.000Z (UTC+8, exclusive next-day start)
+    expect(drawCloseMismatchWithLive('2026-10-30', '2026-10-30T16:00:00.000Z')).toBe(false);
+    expect(drawCloseMismatchWithLive('2026-10-30', '2026-11-05T16:00:00.000Z')).toBe(true);
+    expect(drawCloseMismatchWithLive(undefined, '2026-10-30T16:00:00.000Z')).toBe(false);
+    expect(drawCloseMismatchWithLive('2026-10-30', undefined)).toBe(false);
+    expect(drawCloseMismatchWithLive('not-a-date', 'also-not')).toBe(false);
+  });
+
+  it('sgtYmdFromInstant renders the INCLUSIVE last entry day', () => {
+    expect(sgtYmdFromInstant('2026-10-30T16:00:00.000Z')).toBe('2026-10-30');
+    expect(sgtYmdFromInstant('garbage')).toBeNull();
   });
 });

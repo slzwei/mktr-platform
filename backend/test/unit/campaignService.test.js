@@ -83,6 +83,7 @@ jest.unstable_mockModule('../../src/models/index.js', () => ({
   CampaignMediaItem, CampaignAgentAssignment, sequelize,
   // Draw-terms versioning dep (lucky draw) — inert stub; drawTermsVersioning.test.js
   // covers the real logic through the DI seam.
+  Draw: { findOne: async () => null }, // PR 5: closesAt-lock seam
   DrawTermsVersion: {
     findOne: async () => null,
     max: async () => null,

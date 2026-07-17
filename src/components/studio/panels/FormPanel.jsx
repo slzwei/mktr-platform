@@ -24,7 +24,10 @@ const FIELD_DEFS = {
 let pairCounter = 0;
 const pairId = () => `row-${Date.now().toString(36)}${(pairCounter += 1)}`;
 
-export default function FormPanel({ doc, setPath, mut }) {
+// `whatsappOtpConfigured` (PR 5): the server readiness payload's env fact.
+// true → creds verified, the speculative warning is noise; false/undefined →
+// keep warning (fail-noisy while unknown).
+export default function FormPanel({ doc, setPath, mut, whatsappOtpConfigured }) {
   const bind = makeBind(doc, setPath);
   const fields = doc.form?.fields || [];
   const gates = doc.form?.gates || {};
@@ -172,8 +175,11 @@ export default function FormPanel({ doc, setPath, mut }) {
           value={verification}
           onChange={(v) => setPath('form.verification', v)}
         />
-        {verification === 'whatsapp' ? (
+        {verification === 'whatsapp' && whatsappOtpConfigured !== true ? (
           <WarnNote>WhatsApp verification needs configured Meta credentials (server env); without them sends fall back to SMS.</WarnNote>
+        ) : null}
+        {verification === 'whatsapp' && whatsappOtpConfigured === true ? (
+          <WarnNote tone="info">✓ WhatsApp credentials are configured on the server.</WarnNote>
         ) : null}
       </PanelSection>
 
