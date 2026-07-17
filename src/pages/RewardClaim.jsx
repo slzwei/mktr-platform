@@ -36,7 +36,7 @@ export default function RewardClaim() {
     );
   }
 
-  const { state, reward, firstName, expiresAt, pass, voucher } = data;
+  const { state, reward, firstName, expiresAt, pass, voucher, bookingUrl } = data;
   const expiry = expiresAt ? new Date(expiresAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
 
   return (
@@ -79,6 +79,16 @@ export default function RewardClaim() {
             )}
             {voucher?.tokenHint && (
               <p className="text-sm">or quote code <span className="font-semibold tracking-wider">{voucher.tokenHint}</span></p>
+            )}
+            {bookingUrl && (
+              <a
+                href={bookingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
+              >
+                Book your session
+              </a>
             )}
             {reward?.locations?.length > 0 && (
               <div className="text-xs text-muted-foreground space-y-0.5">

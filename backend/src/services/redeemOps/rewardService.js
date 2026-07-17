@@ -71,6 +71,15 @@ export function makeRewardService(overrides = {}) {
     validateEnumFields(body);
     const partner = await d.PartnerOrganisation.findByPk(body.partnerOrganisationId);
     if (!partner || partner.mergedIntoId) throw new AppError('Partner not found', 404);
+    // Offers exist only for CLOSED deals (trial-reward PR D — the funnel doc
+    // claimed this; only mergePartners enforced it). Mirrors the Partnered
+    // entry-gate language (assertPartneredEntryRequirements).
+    if (partner.pipelineStage !== 'PARTNERED') {
+      throw new AppError(
+        'To create an offer, mark the business as Partnered first (a close needs a contact with a phone or email).',
+        422
+      );
+    }
 
     const committed = Number.isInteger(body.committedQuantity) && body.committedQuantity > 0
       ? body.committedQuantity : 0;

@@ -109,6 +109,10 @@ router.get('/:token', claimLimiter, asyncHandler(async (req, res) => {
         ...base,
         state: 'unlocked',
         voucher: { tokenHint: entitlement.tokenHint, qrDataUrl },
+        // Funnel guardrail #3: the voucher must tell the prospect how to book
+        // (trial-reward PR D — the field was selected but never returned).
+        // Unlocked-state only: the pass page must not push booking pre-review.
+        bookingUrl: offer?.externalBookingUrl || null,
       },
     });
   }

@@ -8,10 +8,11 @@
  * form inside the 10-min OTP window and drain an activation's allocation
  * (N prospect rows → N reservations).
  *
- * Numbering note: 074 is deliberately absent until PR D renames
- * 066-cadence-draft-visibility → 074. The migration runner tracks by
- * FILENAME (runMigrations.js), so out-of-numeric-order execution is fine —
- * do not "fix" the gap.
+ * Numbering note (updated in PR D): the 074 slot this note originally
+ * reserved was independently claimed by 074-redeem-ops-category-filter-words
+ * (PR #169) while the hardening series was in flight; the cadence-draft
+ * rename landed as 077 instead. The runner tracks by FILENAME
+ * (runMigrations.js), so numeric order never mattered.
  *
  * No backfill: reward_entitlements is empty in prod at ship time.
  */

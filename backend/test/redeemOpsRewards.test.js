@@ -7,9 +7,7 @@ process.env.REDEEM_OPS_ENABLED = 'true';
 
 import request from 'supertest';
 import { getApp, closeDb, createTestUser, createTestCampaign } from './helpers.js';
-import {
-  PartnerOrganisation, RewardOffer, RewardInventoryEvent, PartnerOnboardingItem,
-  Activation, Campaign, sequelize,
+import { RewardOffer, RewardInventoryEvent, PartnerOnboardingItem, Campaign,
 } from '../src/models/index.js';
 import { makeInventoryService } from '../src/services/redeemOps/inventoryService.js';
 
@@ -29,12 +27,29 @@ afterAll(async () => {
 
 const auth = (t) => ({ Authorization: `Bearer ${t}` });
 
-async function makePartner(name) {
+/**
+ * Offers exist only for CLOSED deals (PR D gate), so the default fixture does
+ * the full close: create → claim → add a reachable contact (the PR #116 entry
+ * requirement) → stage PARTNERED. Pass { partnered: false } for a raw lead.
+ */
+async function makePartner(name, { partnered = true } = {}) {
   const res = await request(app)
     .post('/api/redeem-ops/partners')
     .set(auth(admin.token))
     .send({ tradingName: name });
-  return res.body.data.partner;
+  const partner = res.body.data.partner;
+  if (!partnered) return partner;
+  await request(app).post(`/api/redeem-ops/partners/${partner.id}/claim`).set(auth(admin.token));
+  await request(app)
+    .post(`/api/redeem-ops/partners/${partner.id}/contacts`)
+    .set(auth(admin.token))
+    .send({ name: 'Deal Signer', mobile: '+6598765432' });
+  const staged = await request(app)
+    .patch(`/api/redeem-ops/partners/${partner.id}/stage`)
+    .set(auth(admin.token))
+    .send({ toStage: 'PARTNERED', reason: 'closed for fixtures' });
+  if (staged.status !== 200) throw new Error(`fixture close failed: ${staged.status} ${JSON.stringify(staged.body)}`);
+  return partner;
 }
 
 async function makeOffer(partnerId, committed = 100, title = 'Free Express Manicure') {
@@ -48,6 +63,16 @@ async function makeOffer(partnerId, committed = 100, title = 'Free Express Manic
 describe('reward offers + ledger', () => {
   let partner;
   beforeAll(async () => { partner = await makePartner('Nail Bliss Test Studio'); });
+
+  test('offers are refused for non-Partnered businesses (typed 422 — PR D gate)', async () => {
+    const lead = await makePartner('Still A Lead Nails', { partnered: false });
+    const res = await request(app)
+      .post('/api/redeem-ops/rewards')
+      .set(auth(admin.token))
+      .send({ partnerOrganisationId: lead.id, title: 'Too Early', committedQuantity: 10 });
+    expect(res.status).toBe(422);
+    expect(res.body.message).toContain('Partnered');
+  });
 
   test('creation writes the opening committed ledger entry; exec cannot create', async () => {
     const denied = await request(app)
@@ -113,8 +138,13 @@ describe('reward offers + ledger', () => {
 
 describe('onboarding checklist', () => {
   test('seeded on PARTNERED transition (via forced stage change)', async () => {
-    const partner = await makePartner('Onboard Me Fitness');
+    const partner = await makePartner('Onboard Me Fitness', { partnered: false });
     await request(app).post(`/api/redeem-ops/partners/${partner.id}/claim`).set(auth(admin.token));
+    // PR #116 entry gate: a close records who agreed — contact first.
+    await request(app)
+      .post(`/api/redeem-ops/partners/${partner.id}/contacts`)
+      .set(auth(admin.token))
+      .send({ name: 'Spot Signer', mobile: '+6591112222' });
     const res = await request(app)
       .patch(`/api/redeem-ops/partners/${partner.id}/stage`)
       .set(auth(admin.token))

@@ -60,6 +60,13 @@ function verifyLyfeHmac(req) {
 const router = express.Router();
 
 router.post('/entitlement-unlock', asyncHandler(async (req, res) => {
+  // Fail LOUD on a missing secret (parity with verifyExternalHmac): a 401
+  // here is indistinguishable from a bad signature and sends the integrator
+  // debugging the wrong side (trial-reward PR D, audit finding 6d).
+  if (!process.env.LYFE_LEAD_OUTCOME_SECRET) {
+    logger.error('[lyfe-entitlement-unlock] LYFE_LEAD_OUTCOME_SECRET not configured');
+    return res.status(500).json({ success: false, message: 'Server misconfigured' });
+  }
   if (!verifyLyfeHmac(req)) {
     return res.status(401).json({ success: false, message: 'Invalid signature' });
   }
