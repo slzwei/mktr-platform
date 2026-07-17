@@ -124,4 +124,18 @@ describe('lyfe unlock — server-derived via (through real HMAC)', () => {
     expect(res.status).toBe(401);
     expect(unlockMock).not.toHaveBeenCalled();
   });
+
+  it('a MISSING secret fails loud with 500 — never a 401 that reads as a bad signature (PR D)', async () => {
+    delete process.env.LYFE_LEAD_OUTCOME_SECRET;
+    const bodyString = JSON.stringify({ agentLyfeId: 'l-1', prospectId: 'pros-9' });
+    const res = await request(lyfeApp())
+      .post('/entitlement-unlock')
+      .set('content-type', 'application/json')
+      .set('x-webhook-timestamp', new Date().toISOString())
+      .set('x-webhook-signature', 'sha256=deadbeef')
+      .send(bodyString);
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('Server misconfigured');
+    expect(unlockMock).not.toHaveBeenCalled();
+  });
 });

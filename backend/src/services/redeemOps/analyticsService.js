@@ -1,5 +1,5 @@
-import { QueryTypes } from 'sequelize';
-import { sequelize, RewardOffer, Activation } from '../../models/index.js';
+import { Op, QueryTypes } from 'sequelize';
+import { sequelize, RewardOffer, Activation, RewardEntitlement } from '../../models/index.js';
 import { makeCampaignProjection } from './campaignProjection.js';
 
 /**
@@ -9,7 +9,7 @@ import { makeCampaignProjection } from './campaignProjection.js';
  * and nothing is invented where instrumentation doesn't exist.
  */
 export function makeAnalyticsService(overrides = {}) {
-  const d = { sequelize, RewardOffer, Activation, campaigns: makeCampaignProjection(), ...overrides };
+  const d = { sequelize, RewardOffer, Activation, RewardEntitlement, campaigns: makeCampaignProjection(), ...overrides };
 
   /** Per-team-member outreach performance. `ownerUserId` limits to one member (exec self-view). */
   async function outreachPerformance({ ownerUserId = null } = {}) {
@@ -107,6 +107,26 @@ export function makeAnalyticsService(overrides = {}) {
       order: [['createdAt', 'DESC']],
       limit: 50,
     });
+
+    // Per-activation entitlement STATUS counts (trial-reward PR D) — the doc
+    // promised eligible→issued→redeemed/expired visibility; counters alone
+    // can't show where prospects fall out. One grouped query for the page.
+    const ids = activations.map((a) => a.id);
+    const statusRows = ids.length
+      ? await d.RewardEntitlement.findAll({
+          attributes: ['activationId', 'status', [d.sequelize.fn('COUNT', d.sequelize.col('id')), 'count']],
+          where: { activationId: { [Op.in]: ids } },
+          group: ['activationId', 'status'],
+          raw: true,
+        })
+      : [];
+    const entitlementsByActivation = new Map();
+    for (const r of statusRows) {
+      const m = entitlementsByActivation.get(r.activationId) || {};
+      m[r.status] = Number(r.count);
+      entitlementsByActivation.set(r.activationId, m);
+    }
+
     const funnels = [];
     for (const a of activations) {
       let acquisition = null;
@@ -125,6 +145,10 @@ export function makeAnalyticsService(overrides = {}) {
           allocated: a.allocatedQuantity,
           issued: a.issuedCount,
           redeemed: a.redeemedCount,
+        },
+        entitlements: {
+          eligible: 0, issued: 0, redeemed: 0, expired: 0, cancelled: 0,
+          ...(entitlementsByActivation.get(a.id) || {}),
         },
       });
     }

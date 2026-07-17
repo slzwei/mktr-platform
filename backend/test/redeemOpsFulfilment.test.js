@@ -55,6 +55,7 @@ beforeAll(async () => {
     partnerOrganisationId: partner.id, title: 'Free Express Manicure',
     committedQuantity: 10, allocatedQuantity: 5, status: 'active',
     claimExpiryDays: 30, redemptionExpiryDays: 90, createdBy: admin.user.id,
+    externalBookingUrl: 'https://booking.example.com/trial',
   });
   activation = await Activation.create({
     partnerOrganisationId: partner.id, rewardOfferId: offer.id, campaignId: campaign.id,
@@ -227,11 +228,15 @@ describe('public consumer claim endpoint', () => {
     expect(locked.status).toBe(200);
     expect(locked.body.data.state).toBe('reserved');
     expect(locked.body.data.pass.qrDataUrl).toContain('data:image/png');
+    // Pre-review the pass must NOT push booking (guardrail: step 1 of 2).
+    expect(locked.body.data.bookingUrl).toBeUndefined();
 
     await entitlements.unlockEntitlement({ presentationToken: r.presentationToken }, agentA.user);
     const unlocked = await request(app).get(`/api/reward-claim/${r.presentationToken}`);
     expect(unlocked.body.data.state).toBe('unlocked');
     expect(unlocked.body.data.voucher.qrDataUrl).toContain('data:image/png');
+    // Guardrail #3 (PR D): the voucher tells the prospect how to book.
+    expect(unlocked.body.data.bookingUrl).toBe('https://booking.example.com/trial');
   });
 });
 
