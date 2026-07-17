@@ -1,9 +1,9 @@
 /**
  * Studio left rail (Studio PR 3) — the five section entries from the mock
  * (Page / Form / Quiz / Theme / Distribution), readiness flags per section
- * (wired in CP6 via `sectionFlags`), and the read-only JSON trigger at the
- * bottom. The AI entry point is PR 4 — `extraSlot` is its seam; nothing renders
- * here until that PR fills it.
+ * (wired in CP6 via `sectionFlags`), the "✦ Write it for me" AI entry point
+ * (Studio PR 4 — renders only when `onAi` is provided), and the read-only
+ * JSON trigger at the bottom.
  */
 export const STUDIO_SECTIONS = [
   ['page', 'Page'],
@@ -13,7 +13,7 @@ export const STUDIO_SECTIONS = [
   ['dist', 'Distribution'],
 ];
 
-export default function StudioRail({ section, onSection, sectionFlags = {}, onOpenJson, extraSlot = null }) {
+export default function StudioRail({ section, onSection, sectionFlags = {}, onOpenJson, onAi = null }) {
   return (
     <nav
       aria-label="Studio sections"
@@ -62,7 +62,28 @@ export default function StudioRail({ section, onSection, sectionFlags = {}, onOp
         })}
       </div>
       <div style={{ flex: 1 }} />
-      {extraSlot}
+      {onAi ? (
+        <button
+          type="button"
+          onClick={onAi}
+          style={{
+            display: 'block',
+            width: '100%',
+            marginBottom: 6,
+            padding: '9px 10px',
+            borderRadius: 9,
+            border: '1px solid var(--accent, #4059C8)',
+            background: 'var(--accent-soft, #ECEFFA)',
+            color: 'var(--accent, #2E3F94)',
+            cursor: 'pointer',
+            textAlign: 'left',
+            fontSize: 12.5,
+            fontWeight: 600,
+          }}
+        >
+          ✦ Write it for me
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={onOpenJson}

@@ -25,6 +25,8 @@ import { useServerReadiness, useMarketplacePreview } from '@/components/studio/u
 import { computeStudioReadiness } from '@/components/studio/studioReadiness';
 import StudioJsonView from '@/components/studio/StudioJsonView';
 import StudioGuardModal from '@/components/studio/StudioGuardModal';
+import useStudioAi from '@/components/studio/useStudioAi';
+import StudioAiPanel from '@/components/studio/StudioAiPanel';
 import { studioPath, studioSupportsCampaign } from '@/components/studio/studioFlag';
 import '@/styles/adminV2.css';
 
@@ -83,6 +85,10 @@ export default function AdminCampaignStudio() {
     dirty: anyDirty,
     campaignId: campaign?.id,
   });
+
+  // "✦ Write it for me" (Studio PR 4) — copy suggestions review/apply; fully
+  // campaign-scoped (the hook resets + aborts on switch).
+  const ai = useStudioAi({ campaign, doc, setPath });
 
   // Codex F11a: an edit can make the active jump unavailable (e.g. the SG/PR
   // gate toggled off while previewing it) — leave it instead of rendering a
@@ -328,6 +334,7 @@ export default function AdminCampaignStudio() {
           onSection={setSection}
           sectionFlags={readiness.sectionFlags}
           onOpenJson={() => setJsonOpen(true)}
+          onAi={doc ? () => ai.setOpen(true) : null}
         />
 
         <section
@@ -340,7 +347,7 @@ export default function AdminCampaignStudio() {
             borderRight: '1px solid var(--line, #E3E6EB)',
           }}
         >
-          {doc && section === 'page' && <PagePanel doc={doc} setPath={setPath} mut={mut} />}
+          {doc && section === 'page' && <PagePanel doc={doc} setPath={setPath} mut={mut} onSuggest={ai.suggestField} />}
           {doc && section === 'form' && <FormPanel doc={doc} setPath={setPath} mut={mut} />}
           {doc && section === 'quiz' && <StudioQuizPanel doc={doc} campaign={campaign} setPath={setPath} />}
           {doc && section === 'theme' && <ThemePanel doc={doc} setPath={setPath} mut={mut} />}
@@ -402,6 +409,7 @@ export default function AdminCampaignStudio() {
         )}
       </div>
 
+      <StudioAiPanel ai={ai} />
       <StudioJsonView open={jsonOpen} doc={doc} onClose={() => setJsonOpen(false)} />
       <StudioGuardModal
         guard={guard}

@@ -23,7 +23,11 @@ const TEMPLATE_NAMES = {
   journey: 'Journey',
 };
 
-export default function PagePanel({ doc, setPath, mut }) {
+export default function PagePanel({ doc, setPath, mut, onSuggest = null }) {
+  // Per-field ✦ (Studio PR 4) — the five Page identity fields open the AI
+  // panel scoped to that path; absent onSuggest (tests, future reuse) renders
+  // no affordance.
+  const suggest = (path, label) => (onSuggest ? () => onSuggest(path, label) : undefined);
   const bind = makeBind(doc, setPath);
   const imageInputRef = useRef(null);
   const videoInputRef = useRef(null);
@@ -219,11 +223,11 @@ export default function PagePanel({ doc, setPath, mut }) {
 
       <PanelSection title="IDENTITY & STORY">
         <TextField id="studio-wordmark" label="Brand wordmark" bind={bind('content.wordmark', 40)} placeholder="redeem.sg" />
-        <TextField id="studio-headline" label="Form headline" bind={bind('content.headline', 80)} placeholder="Get Started" />
-        <TextAreaField id="studio-subheadline" label="Sub-headline" bind={bind('content.subheadline', 150)} rows={2} />
-        <TextAreaField id="studio-story" label="Hero story" bind={bind('content.story', 1200)} rows={6} />
-        <TextField id="studio-emphasis" label="Emphasis line" bind={bind('content.emphasis', 160)} />
-        <TextField id="studio-submit-label" label="Submit button label" bind={bind('content.submitLabel', 40)} placeholder="Submit Now" />
+        <TextField id="studio-headline" label="Form headline" bind={bind('content.headline', 80)} placeholder="Get Started" onSuggest={suggest('content.headline', 'Form headline')} />
+        <TextAreaField id="studio-subheadline" label="Sub-headline" bind={bind('content.subheadline', 150)} rows={2} onSuggest={suggest('content.subheadline', 'Sub-headline')} />
+        <TextAreaField id="studio-story" label="Hero story" bind={bind('content.story', 1200)} rows={6} onSuggest={suggest('content.story', 'Hero story')} />
+        <TextField id="studio-emphasis" label="Emphasis line" bind={bind('content.emphasis', 160)} onSuggest={suggest('content.emphasis', 'Emphasis line')} />
+        <TextField id="studio-submit-label" label="Submit button label" bind={bind('content.submitLabel', 40)} placeholder="Submit Now" onSuggest={suggest('content.submitLabel', 'Submit button label')} />
       </PanelSection>
 
       <PanelSection title="HERO MEDIA">

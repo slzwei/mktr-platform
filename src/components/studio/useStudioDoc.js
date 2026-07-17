@@ -120,6 +120,14 @@ export default function useStudioDoc(campaign) {
     });
   }, []);
 
+  /** Atomic whole-doc swap (Studio PR 4 — AI look proposals apply/revert whole
+   * documents; dirty stays DERIVED from doc-vs-baseline, so restoring a
+   * previous doc self-corrects it). */
+  const replaceDoc = useCallback((next) => {
+    if (!next || typeof next !== 'object') return;
+    setDoc(clone(next));
+  }, []);
+
   const setPath = useCallback(
     (path, value) => {
       mut((draft) => {
@@ -181,6 +189,7 @@ export default function useStudioDoc(campaign) {
     clearSaveError,
     mut,
     setPath,
+    replaceDoc,
     save,
     // True when the STORED campaign doc is still v1 — the first Studio save is
     // the migration moment (surfaced in the save cluster copy).
