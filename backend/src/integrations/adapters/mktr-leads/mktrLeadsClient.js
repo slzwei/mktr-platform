@@ -116,6 +116,14 @@ const SELECT_COLUMNS = 'mktr_user_id,full_name,email,phone,role,is_active,agency
  * two-phase deletion would then hard-delete the local row after the grace
  * window, cascading away its lead-package assignments. Only rows truly absent
  * from this list (account deleted / promoted to admin) may be retired.
+ *
+ * `is_test_data=false` IS filtered at source (like Lyfe's users feed). A QA/staging
+ * agent flagged at provisioning never enters this feed, so it is never mirrored and
+ * can never receive a paid lead — and because it was never established locally, its
+ * absence is a non-import, not a retirement (contrast is_active above). Flipping an
+ * already-synced real agent to is_test_data=true would retire it; don't — the flag
+ * is for agents that are test from creation. Column added 2026-07-17
+ * (`20260717000000_agents_is_test_data.sql`); default false ⇒ today a no-op.
  */
 export async function fetchAgents() {
   const cacheKey = 'agents';
@@ -127,7 +135,7 @@ export async function fetchAgents() {
   let rows;
   try {
     rows = await breaker.fire(
-      `${url}/rest/v1/agents?role=in.(agent,manager)&select=${SELECT_COLUMNS}&order=full_name`,
+      `${url}/rest/v1/agents?role=in.(agent,manager)&is_test_data=eq.false&select=${SELECT_COLUMNS}&order=full_name`,
       authHeaders(key)
     );
   } catch (err) {
@@ -155,7 +163,7 @@ export async function fetchAgentById(externalId) {
   let rows;
   try {
     rows = await breaker.fire(
-      `${url}/rest/v1/agents?mktr_user_id=eq.${encodeURIComponent(externalId)}&select=${SELECT_COLUMNS}`,
+      `${url}/rest/v1/agents?mktr_user_id=eq.${encodeURIComponent(externalId)}&is_test_data=eq.false&select=${SELECT_COLUMNS}`,
       authHeaders(key)
     );
   } catch (err) {
