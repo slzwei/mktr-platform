@@ -43,6 +43,9 @@ export default function RedemptionsPage() {
   const [verified, setVerified] = useState(null);
   // { entitlement, mode: 'email'|'link', phase: 'confirm'|'result', result }
   const [shareDialog, setShareDialog] = useState(null);
+  // { entitlement } — voids the reward; requires a reason (audited server-side).
+  const [cancelDialog, setCancelDialog] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
 
   const historyQuery = useQuery({
     queryKey: ['redeem-ops', 'redemptions'],
@@ -83,6 +86,17 @@ export default function RedemptionsPage() {
       }
     },
     onError: (err) => toast.error('Could not re-mint', { description: err.message }),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: ({ id, reason }) => redeemOpsApi.cancelEntitlement(id, { reason }),
+    onSuccess: () => {
+      toast.success('Reward cancelled — inventory returned, the phone can earn a new one');
+      setCancelDialog(null);
+      setCancelReason('');
+      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'entitlements'] });
+    },
+    onError: (err) => toast.error('Cancel failed', { description: err.message }),
   });
 
   const verifyMutation = useMutation({
@@ -210,6 +224,25 @@ export default function RedemptionsPage() {
                   Unlock
                 </Button>
               ) : null;
+              // Cancel voids the reward (QR dies, inventory returns, phone slot
+              // frees). Same capability the server requires for the cancel route.
+              const cancelButton = canIssueManual && ['eligible', 'issued'].includes(e.status) ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  disabled={cancelMutation.isPending}
+                  onClick={() => { setCancelReason(''); setCancelDialog({ entitlement: e }); }}
+                >
+                  Cancel
+                </Button>
+              ) : null;
+              const rowActions = (
+                <>
+                  {unlockButton}
+                  {cancelButton}
+                </>
+              );
               return (
                 <div key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5 border-t border-border first:border-t-0">
                   <div className="min-w-0 flex-1 basis-52">
@@ -259,9 +292,9 @@ export default function RedemptionsPage() {
                       >
                         Copy link
                       </Button>
-                      {unlockButton}
+                      {rowActions}
                     </span>
-                  ) : unlockButton}
+                  ) : rowActions}
                 </div>
               );
             })}
@@ -401,6 +434,56 @@ export default function RedemptionsPage() {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel — voids the reward. Destructive + reason-gated (audited). */}
+      <Dialog
+        open={!!cancelDialog}
+        onOpenChange={(open) => {
+          // Don't let Escape / overlay / X dismiss mid-flight: the PATCH is
+          // irreversible, and a dialog that vanishes while it's still running
+          // reads as "aborted" when it actually completed (Codex review).
+          if (!open && !cancelMutation.isPending) { setCancelDialog(null); setCancelReason(''); }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Cancel this {cancelDialog?.entitlement?.status === 'issued' ? 'voucher' : 'reservation'}?
+            </DialogTitle>
+            <DialogDescription>
+              {[cancelDialog?.entitlement?.prospect?.firstName, cancelDialog?.entitlement?.prospect?.lastName]
+                .filter(Boolean).join(' ') || 'The customer'}
+              {"'s "}
+              {cancelDialog?.entitlement?.status === 'issued' ? 'voucher QR/code' : 'reservation pass'}
+              {' stops working immediately, the reward returns to the activation pool, and this'}
+              {' phone number can earn a new reward. This cannot be undone.'}
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={cancelReason}
+            onChange={(ev) => setCancelReason(ev.target.value)}
+            placeholder="Reason (required) — e.g. duplicate, testing, customer request"
+            aria-label="Reason for cancelling this reward"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={cancelMutation.isPending}
+              onClick={() => { setCancelDialog(null); setCancelReason(''); }}
+            >
+              Keep it
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!cancelReason.trim() || cancelMutation.isPending}
+              onClick={() => cancelMutation.mutate({ id: cancelDialog.entitlement.id, reason: cancelReason.trim() })}
+            >
+              {cancelMutation.isPending ? 'Cancelling…' : 'Cancel reward'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
