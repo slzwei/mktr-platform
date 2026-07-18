@@ -780,7 +780,13 @@ export function makeEntitlementService(overrides = {}) {
           ...(query.search ? { where: prospectWhere, required: true } : {}),
         },
         { model: d.RewardOffer, as: 'rewardOffer', attributes: ['id', 'title'] },
-        { model: d.Activation, as: 'activation', attributes: ['id', 'campaignNameSnapshot'] },
+        {
+          model: d.Activation,
+          as: 'activation',
+          attributes: ['id', 'campaignNameSnapshot'],
+          // Partner name captions each campaign stack on the console.
+          include: [{ model: d.PartnerOrganisation, as: 'partner', attributes: ['id', 'tradingName', 'legalName'] }],
+        },
       ],
       order: [['createdAt', 'DESC']],
       limit, offset: (page - 1) * limit,

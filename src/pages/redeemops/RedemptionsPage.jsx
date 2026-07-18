@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
@@ -11,9 +11,13 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import ScanLine from 'lucide-react/icons/scan-line';
+import ChevronDown from 'lucide-react/icons/chevron-down';
 import { RoMobileCard, RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
 import QrScannerDialog from '@/components/redeemops/QrScannerDialog';
 
@@ -51,6 +55,33 @@ function deliveryStatus(e) {
   return null;
 }
 
+/* Deterministic accent per campaign — the stack header dot and the Recent
+   redemptions dot stay in sync because both hash the activation id. */
+const CAMPAIGN_ACCENTS = ['#0364D3', '#6A3FD1', '#8F6400', '#177239', '#BD3A2E', '#0E7490'];
+function campaignAccent(key) {
+  let hash = 0;
+  const s = String(key || '');
+  for (let i = 0; i < s.length; i += 1) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  return CAMPAIGN_ACCENTS[hash % CAMPAIGN_ACCENTS.length];
+}
+
+/* cancelled/expired collapse behind a per-stack "Show closed" link. */
+const CLOSED_STATUSES = ['cancelled', 'expired'];
+const STATUS_FILTERS = ['eligible', 'issued', 'redeemed', 'expired', 'cancelled'];
+// "Reserved" is the ops wording for the locked eligible state.
+const statusLabel = (s) => (s === 'eligible' ? 'Reserved' : prettyEnum(s));
+const statusTone = (s) => (s === 'eligible' ? 'reserved' : s);
+
+function CampaignDot({ id, size = 8 }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="rounded-full flex-none inline-block"
+      style={{ width: size, height: size, background: campaignAccent(id) }}
+    />
+  );
+}
+
 export default function RedemptionsPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
@@ -67,15 +98,22 @@ export default function RedemptionsPage() {
   // presentationToken pending an explicit "Activate" confirm after a pass scan.
   const [activateToken, setActivateToken] = useState(null);
   const pasteRef = useRef(null);
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const [closedShown, setClosedShown] = useState(() => new Set());
 
   const historyQuery = useQuery({
     queryKey: ['redeem-ops', 'redemptions'],
     queryFn: () => redeemOpsApi.listRedemptions(),
   });
   const [resSearch, setResSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const entitlementsQuery = useQuery({
-    queryKey: ['redeem-ops', 'entitlements', resSearch],
-    queryFn: () => redeemOpsApi.listEntitlements({ limit: 15, ...(resSearch.trim() ? { search: resSearch.trim() } : {}) }),
+    queryKey: ['redeem-ops', 'entitlements', resSearch, statusFilter],
+    queryFn: () => redeemOpsApi.listEntitlements({
+      limit: 100,
+      ...(resSearch.trim() ? { search: resSearch.trim() } : {}),
+      ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+    }),
   });
 
   const unlockMutation = useMutation({
@@ -150,6 +188,58 @@ export default function RedemptionsPage() {
   });
 
   const redemptions = historyQuery.data?.redemptions || [];
+  const entitlements = useMemo(
+    () => entitlementsQuery.data?.entitlements || [],
+    [entitlementsQuery.data]
+  );
+  const pagination = entitlementsQuery.data?.pagination;
+
+  // Campaign stacks: group rows by activation, newest-first by first appearance
+  // (the API already sorts by createdAt DESC).
+  const groups = useMemo(() => {
+    const byId = new Map();
+    for (const e of entitlements) {
+      const key = e.activation?.id || 'none';
+      if (!byId.has(key)) {
+        byId.set(key, {
+          key,
+          name: e.activation?.campaignNameSnapshot || 'No campaign',
+          partner: e.activation?.partner?.tradingName || e.activation?.partner?.legalName || '',
+          open: [],
+          closed: [],
+        });
+      }
+      const g = byId.get(key);
+      (CLOSED_STATUSES.includes(e.status) ? g.closed : g.open).push(e);
+    }
+    return [...byId.values()].map((g) => ({
+      ...g,
+      counts: {
+        reserved: g.open.filter((e) => e.status === 'eligible').length,
+        issued: g.open.filter((e) => e.status === 'issued').length,
+        redeemed: g.open.filter((e) => e.status === 'redeemed').length,
+        closed: g.closed.length,
+      },
+      deliveryIssues: g.open.filter((e) => e.delivery?.email && !e.delivery.email.ok).length,
+      // Same condition as the old per-row badge: undeliverable NOW, regardless
+      // of receipts — an email cleared after a send must keep warning.
+      noEmail: g.open.filter(
+        (e) => e.emailDeliverable === false && ['eligible', 'issued'].includes(e.status)
+      ).length,
+    }));
+  }, [entitlements]);
+
+  // Filtering to a closed status must SHOW those rows — hiding the only
+  // matching rows behind the per-stack link would render empty stacks.
+  const closedFilterActive = CLOSED_STATUSES.includes(statusFilter);
+
+  const toggleIn = (setter) => (key) => setter((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const toggleCollapsed = toggleIn(setCollapsed);
+  const toggleClosedShown = toggleIn(setClosedShown);
 
   // A scanned QR is either a pass link (→ activate) or a voucher token (→ verify).
   const handleScanDetect = useCallback((raw) => {
@@ -180,6 +270,95 @@ export default function RedemptionsPage() {
   };
 
   const dialogIsVoucher = shareDialog?.entitlement?.status === 'issued';
+
+  const renderRow = (e, { closed = false } = {}) => {
+    const delivery = deliveryStatus(e);
+    const deliveryColor = delivery?.tone === 'warn'
+      ? '#B45309'
+      : ['issued', 'redeemed'].includes(e.status) ? 'var(--ro-text-2)' : 'var(--ro-text-3)';
+    const holderName = [e.prospect?.firstName, e.prospect?.lastName].filter(Boolean).join(' ') || 'Customer';
+    // Visible labels are compact per the design; aria-labels keep the
+    // credential (pass vs voucher) + holder so repeated rows stay
+    // distinguishable in a screen-reader button list.
+    const credentialNoun = e.status === 'issued' ? 'voucher' : 'pass';
+    const canShare = !closed && canIssueManual && ['eligible', 'issued'].includes(e.status);
+    const unlockButton = !closed && isAdmin && e.status === 'eligible' && e.prospect?.id ? (
+      <Button
+        size="sm"
+        variant="outline"
+        aria-label={`Unlock — ${holderName}`}
+        disabled={unlockMutation.isPending}
+        onClick={() => unlockMutation.mutate({ prospectId: e.prospect.id })}
+      >
+        Unlock
+      </Button>
+    ) : null;
+    // Cancel voids the reward (QR dies, inventory returns, phone slot frees).
+    // Same capability the server requires for the cancel route.
+    const cancelButton = canShare ? (
+      <Button
+        size="sm"
+        variant="ghost"
+        className="text-destructive hover:text-destructive"
+        aria-label={`Cancel reward — ${holderName}`}
+        disabled={cancelMutation.isPending}
+        onClick={() => { setCancelReason(''); setCancelDialog({ entitlement: e }); }}
+      >
+        Cancel
+      </Button>
+    ) : null;
+    return (
+      <div
+        key={e.id}
+        className={`grid items-center gap-x-3 gap-y-1 py-2.5 border-t border-border md:grid-cols-[minmax(200px,1.4fr)_minmax(160px,1fr)_92px_230px]${closed ? ' opacity-[0.62]' : ''}`}
+      >
+        <div className="min-w-0">
+          <p className="text-sm font-semibold m-0 truncate">
+            {holderName}
+            <span className="font-normal" style={{ color: 'var(--ro-text-3)' }}>
+              {e.prospect?.phone ? ` · ${e.prospect.phone}` : ''}
+            </span>
+          </p>
+          <p className="text-xs m-0 truncate" style={{ color: 'var(--ro-text-2)' }}>
+            {e.rewardOffer?.title || '—'}
+            {e.tokenHint ? ` · code …${e.tokenHint}` : ''}
+          </p>
+        </div>
+        <span className="text-xs truncate" style={{ color: deliveryColor }}>
+          {delivery ? `${delivery.tone === 'warn' ? '⚠ ' : ''}${delivery.text}` : ''}
+        </span>
+        <span className="min-w-0">
+          <RoTag tone={statusTone(e.status)} size="sm">{statusLabel(e.status)}</RoTag>
+        </span>
+        <span className="flex flex-wrap items-center gap-1.5 md:justify-end">
+          {canShare && e.emailDeliverable !== false && (
+            <Button
+              size="sm"
+              variant="outline"
+              aria-label={`Resend ${credentialNoun} — ${holderName}`}
+              disabled={resendMutation.isPending}
+              onClick={() => setShareDialog({ entitlement: e, mode: 'email', phase: 'confirm' })}
+            >
+              Resend
+            </Button>
+          )}
+          {canShare && (
+            <Button
+              size="sm"
+              variant="outline"
+              aria-label={`Copy link — ${holderName}`}
+              disabled={resendMutation.isPending}
+              onClick={() => setShareDialog({ entitlement: e, mode: 'link', phase: 'confirm' })}
+            >
+              Copy link
+            </Button>
+          )}
+          {unlockButton}
+          {cancelButton}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-5">
@@ -255,114 +434,119 @@ export default function RedemptionsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Reservations &amp; vouchers</CardTitle>
-          <CardDescription>
-            Every captured lead's reward, from locked reservation to redeemed voucher — with
-            whether the customer actually received it.
-            {isAdmin ? ' As admin you can unlock a reservation manually (audited) — normally the assigned consultant does this at the meeting.' : ''}
-          </CardDescription>
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="flex-1 min-w-60 space-y-1.5">
+              <CardTitle className="text-base">Reservations &amp; vouchers</CardTitle>
+              <CardDescription>
+                Every captured lead's reward, grouped by campaign — each stack carries its own counts.
+                {isAdmin ? ' As admin you can unlock a reservation manually (audited) — normally the assigned consultant does this at the meeting.' : ''}
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 flex-none">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="h-8 w-[140px] rounded-full text-[13px] font-semibold" aria-label="Filter by status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {STATUS_FILTERS.map((s) => (
+                    <SelectItem key={s} value={s}>{statusLabel(s)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <input
+                className="ro-search w-56"
+                placeholder="Search holder name or phone"
+                value={resSearch}
+                onChange={(e) => setResSearch(e.target.value)}
+              />
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
-          <input
-            className="ro-search w-full max-w-xs mb-3"
-            placeholder="Search holder name or phone"
-            value={resSearch}
-            onChange={(e) => setResSearch(e.target.value)}
-          />
-          <div className="space-y-0">
-            {(entitlementsQuery.data?.entitlements || []).map((e) => {
-              const delivery = deliveryStatus(e);
-              const canShare = canIssueManual && ['eligible', 'issued'].includes(e.status);
-              const unlockButton = isAdmin && e.status === 'eligible' && e.prospect?.id ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={unlockMutation.isPending}
-                  onClick={() => unlockMutation.mutate({ prospectId: e.prospect.id })}
+          {groups.map((g) => {
+            const isCollapsed = collapsed.has(g.key);
+            const showClosed = closedFilterActive || closedShown.has(g.key);
+            const countParts = [
+              g.counts.reserved && [g.counts.reserved, 'reserved'],
+              g.counts.issued && [g.counts.issued, 'issued'],
+              g.counts.redeemed && [g.counts.redeemed, 'redeemed'],
+              g.counts.closed && [g.counts.closed, 'closed'],
+            ].filter(Boolean);
+            return (
+              <div key={g.key}>
+                <button
+                  type="button"
+                  aria-expanded={!isCollapsed}
+                  onClick={() => toggleCollapsed(g.key)}
+                  className="w-full flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-[10px] px-3.5 py-2.5 mt-3.5 text-left cursor-pointer"
+                  style={{ background: 'var(--ro-subtle)' }}
                 >
-                  Unlock
-                </Button>
-              ) : null;
-              // Cancel voids the reward (QR dies, inventory returns, phone slot
-              // frees). Same capability the server requires for the cancel route.
-              const cancelButton = canIssueManual && ['eligible', 'issued'].includes(e.status) ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive hover:text-destructive"
-                  disabled={cancelMutation.isPending}
-                  onClick={() => { setCancelReason(''); setCancelDialog({ entitlement: e }); }}
-                >
-                  Cancel
-                </Button>
-              ) : null;
-              const rowActions = (
-                <>
-                  {unlockButton}
-                  {cancelButton}
-                </>
-              );
-              return (
-                <div key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5 border-t border-border first:border-t-0">
-                  <div className="min-w-0 flex-1 basis-52">
-                    <p className="text-sm font-semibold m-0 truncate">
-                      {[e.prospect?.firstName, e.prospect?.lastName].filter(Boolean).join(' ') || 'Customer'}
-                      <span className="font-normal" style={{ color: 'var(--ro-text-3)' }}>
-                        {e.prospect?.phone ? ` · ${e.prospect.phone}` : ''}
+                  <CampaignDot id={g.key} />
+                  <span className="text-[13.5px] font-bold whitespace-nowrap">{g.name}</span>
+                  {g.partner && (
+                    <span className="text-[12.5px] truncate" style={{ color: 'var(--ro-text-2)' }}>{g.partner}</span>
+                  )}
+                  {g.deliveryIssues > 0 && (
+                    <RoTag tone="medium" size="sm">
+                      ⚠ {g.deliveryIssues} delivery issue{g.deliveryIssues > 1 ? 's' : ''}
+                    </RoTag>
+                  )}
+                  {g.noEmail > 0 && (
+                    <RoTag tone="medium" size="sm">⚠ {g.noEmail} no email</RoTag>
+                  )}
+                  <span className="flex-1" />
+                  <span
+                    className="text-xs whitespace-nowrap"
+                    style={{ color: 'var(--ro-text-2)', fontVariantNumeric: 'tabular-nums' }}
+                  >
+                    {countParts.map(([n, label], i) => (
+                      <span key={label}>
+                        {i > 0 ? ' · ' : ''}
+                        <b style={{ color: '#0D1619' }}>{n}</b> {label}
                       </span>
-                    </p>
-                    <p className="text-xs m-0 truncate" style={{ color: 'var(--ro-text-2)' }}>
-                      {e.rewardOffer?.title || '—'}
-                      {e.activation?.campaignNameSnapshot ? ` · ${e.activation.campaignNameSnapshot}` : ''}
-                      {e.tokenHint ? ` · code …${e.tokenHint}` : ''}
-                    </p>
-                    {delivery && (
-                      <p
-                        className="text-[11px] m-0 truncate"
-                        style={{ color: delivery.tone === 'warn' ? '#B45309' : 'var(--ro-text-3)' }}
-                      >
-                        {delivery.tone === 'warn' ? '⚠ ' : ''}{delivery.text}
-                      </p>
+                    ))}
+                  </span>
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={`w-[15px] h-[15px] flex-none transition-transform${isCollapsed ? ' -rotate-90' : ''}`}
+                    style={{ color: 'var(--ro-text-2)' }}
+                  />
+                </button>
+                {!isCollapsed && (
+                  <div className="flex flex-col pl-3 md:pl-[22px]">
+                    {g.open.map((e) => renderRow(e))}
+                    {showClosed && g.closed.map((e) => renderRow(e, { closed: true }))}
+                    {!closedFilterActive && g.closed.length > 0 && (
+                      <div className="pt-2 pb-0.5 border-t border-border">
+                        <button
+                          type="button"
+                          className="text-[12.5px] font-semibold bg-transparent border-0 p-0 cursor-pointer hover:underline"
+                          style={{ color: 'var(--ro-azure, #037AFF)' }}
+                          onClick={() => toggleClosedShown(g.key)}
+                        >
+                          {showClosed
+                            ? `Hide ${g.counts.closed} closed`
+                            : `Show ${g.counts.closed} closed (cancelled / expired)`}
+                        </button>
+                      </div>
                     )}
                   </div>
-                  <span className="flex items-center gap-1.5 flex-none">
-                    {e.emailDeliverable === false && ['eligible', 'issued'].includes(e.status) && (
-                      <RoTag tone="medium" size="sm">No email</RoTag>
-                    )}
-                    <RoTag tone={e.status} size="sm">{prettyEnum(e.status)}</RoTag>
-                  </span>
-                  {canShare ? (
-                    <span className="flex items-center gap-1.5 flex-none">
-                      {e.emailDeliverable !== false && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={resendMutation.isPending}
-                          onClick={() => setShareDialog({ entitlement: e, mode: 'email', phase: 'confirm' })}
-                        >
-                          {e.status === 'issued' ? 'Resend voucher' : 'Resend pass'}
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={resendMutation.isPending}
-                        onClick={() => setShareDialog({ entitlement: e, mode: 'link', phase: 'confirm' })}
-                      >
-                        Copy link
-                      </Button>
-                      {rowActions}
-                    </span>
-                  ) : rowActions}
-                </div>
-              );
-            })}
-            {!entitlementsQuery.isLoading && (entitlementsQuery.data?.entitlements || []).length === 0 && (
-              <p className="text-sm text-center py-6 m-0" style={{ color: 'var(--ro-text-2)' }}>
-                No reservations yet — they appear when customers sign up on an active activation's campaign.
-              </p>
-            )}
-          </div>
+                )}
+              </div>
+            );
+          })}
+          {!entitlementsQuery.isLoading && entitlements.length === 0 && (
+            <p className="text-sm text-center py-6 m-0" style={{ color: 'var(--ro-text-2)' }}>
+              No reservations yet — they appear when customers sign up on an active activation's campaign.
+            </p>
+          )}
+          {pagination && pagination.total > entitlements.length && (
+            <p className="text-xs text-center pt-4 m-0" style={{ color: 'var(--ro-text-3)' }}>
+              Showing the latest {entitlements.length} of {pagination.total} — stack counts cover only
+              these rows; search or filter to narrow.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -377,6 +561,12 @@ export default function RedemptionsPage() {
                 <span className="flex items-start gap-2">
                   <span className="min-w-0 flex-1">
                     <span className="block font-semibold text-[14px] leading-tight">{r.rewardOffer?.title || '—'}</span>
+                    {r.activation && (
+                      <span className="flex items-center gap-1.5 text-xs truncate mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
+                        <CampaignDot id={r.activation.id} size={7} />
+                        {r.activation.campaignNameSnapshot || '—'}
+                      </span>
+                    )}
                     <span className="block text-xs truncate mt-0.5" style={{ color: 'var(--ro-text-2)' }}>
                       {r.partner?.tradingName || r.partner?.legalName || '—'}
                     </span>
@@ -401,6 +591,7 @@ export default function RedemptionsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Reward</TableHead>
+                  <TableHead>Campaign</TableHead>
                   <TableHead>Partner</TableHead>
                   <TableHead>When</TableHead>
                   <TableHead>By</TableHead>
@@ -411,8 +602,20 @@ export default function RedemptionsPage() {
                 {redemptions.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.rewardOffer?.title || '—'}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {r.activation ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <CampaignDot id={r.activation.id} size={7} />
+                          {r.activation.campaignNameSnapshot || '—'}
+                        </span>
+                      ) : '—'}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{r.partner?.tradingName || r.partner?.legalName || '—'}</TableCell>
-                    <TableCell className="text-muted-foreground">{new Date(r.redeemedAt).toLocaleString()}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {new Date(r.redeemedAt).toLocaleString('en-SG', {
+                        day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+                      })}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{r.actor?.fullName || r.actorType}</TableCell>
                     <TableCell>
                       <RoTag tone={r.status === 'completed' ? 'completed' : 'void'} size="sm">{prettyEnum(r.status)}</RoTag>
@@ -421,7 +624,7 @@ export default function RedemptionsPage() {
                 ))}
                 {!historyQuery.isLoading && redemptions.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground py-10">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-10">
                       No redemptions yet.
                     </TableCell>
                   </TableRow>

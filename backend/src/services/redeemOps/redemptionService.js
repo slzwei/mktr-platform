@@ -215,6 +215,7 @@ export function makeRedemptionService(overrides = {}) {
       where,
       include: [
         { model: d.RewardOffer, as: 'rewardOffer', attributes: ['id', 'title'] },
+        { model: d.Activation, as: 'activation', attributes: ['id', 'campaignNameSnapshot'] },
         { model: d.PartnerOrganisation, as: 'partner', attributes: ['id', 'tradingName', 'legalName'] },
         { model: d.User, as: 'actor', attributes: ['id', 'fullName'] },
       ],
