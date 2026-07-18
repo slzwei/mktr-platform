@@ -54,4 +54,16 @@ export function validateEnv() {
   if (Boolean(waId) !== Boolean(waToken)) {
     console.warn('⚠️ WhatsApp OTP partially configured — both META_WA_PHONE_NUMBER_ID and META_WA_ACCESS_TOKEN are required. WhatsApp sends will fail and fall back to SMS until both are set.');
   }
+
+  // Redeem-Ops consumer WhatsApp delivery (trial-reward PR E) ships dark —
+  // REDEEM_OPS_WHATSAPP_ENABLED defaults false. Warn only when the flag is ON
+  // but the dedicated Redeem WABA creds are missing: every reward send would
+  // fail (truthfully receipted as notify_failed, but still silence for the
+  // customer). Template names have code defaults (reward_pass/reward_voucher).
+  if (String(process.env.REDEEM_OPS_WHATSAPP_ENABLED || '').toLowerCase() === 'true') {
+    const missingRewardWa = ['WHATSAPP_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'].filter((k) => !process.env[k]);
+    if (missingRewardWa.length > 0) {
+      console.warn(`⚠️ REDEEM_OPS_WHATSAPP_ENABLED=true but ${missingRewardWa.join(', ')} not set — reward WhatsApp sends will all fail (notify_failed receipts).`);
+    }
+  }
 }
