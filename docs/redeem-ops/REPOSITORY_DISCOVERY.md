@@ -71,8 +71,8 @@ mktr-platform/
 └── package.json                  # SPA deps/scripts (backend has its own package.json)
 ```
 
-Root-level `*_PLAN.md` / `CODEX_REVIEW_*.md` files are working design documents, matching the
-`docs/plans/` convention.
+Historical `*_PLAN.md` / `CODEX_REVIEW_*.md` design documents live in `docs/plans/` and
+`docs/codex-reviews/` (rehomed from the repo root 2026-07-18).
 
 ## 3. Frontend
 

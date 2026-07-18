@@ -14,7 +14,7 @@
  * pair.
  *
  * @see ../integrations/PlatformAdapter.js for the contract.
- * @see AGENT_INTEGRATION_PLAN.md for the multi-phase plan.
+ * @see docs/plans/AGENT_INTEGRATION_PLAN.md for the multi-phase plan.
  */
 
 import { Op } from 'sequelize';

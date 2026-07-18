@@ -33,7 +33,7 @@
  * state behind the adapter. The local `users.lyfeId` column is intentionally
  * retained until Phase 3 introduces a generic `external_agents` table.
  *
- * See AGENT_INTEGRATION_PLAN.md (root of mktr-platform) for the full plan.
+ * See docs/plans/AGENT_INTEGRATION_PLAN.md for the full plan.
  */
 
 /**

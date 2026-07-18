@@ -207,7 +207,7 @@ export async function resolveAssignedAgentId(ctx) {
  *
  *   returns { kind: 'internal', internalAgentId, via } | { kind: 'external', externalAgentId, via }
  *
- * NOTE (external-activation parity, tracked in MKTR_LEADS_ACTIVATION_PLAN.md): the QR tier
+ * NOTE (external-activation parity, tracked in docs/plans/MKTR_LEADS_ACTIVATION_PLAN.md): the QR tier
  * here only covers direct assignedAgentId/ownerUserId — NOT QR round-robin groups or the
  * legacy assignedAgentPhone fallback that createProspect's QR-override block handles. Since
  * createProspect skips that block for external-eligible leads, QR round-robin/phone routing

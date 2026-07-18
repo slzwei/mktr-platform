@@ -1,6 +1,6 @@
 # Quiz Content — "What's Your Money Personality?" (→ Protection Personality)
 
-**Quiz ID:** `protection-personality` · **Version:** 2 · **Scoring:** `profile-sum` · **For:** MKTR Quiz Campaign (see `MKTR_QUIZ_CAMPAIGN_PLAN.md`)
+**Quiz ID:** `protection-personality` · **Version:** 2 · **Scoring:** `profile-sum` · **For:** MKTR Quiz Campaign (see `docs/plans/MKTR_QUIZ_CAMPAIGN_PLAN.md`)
 **Status:** Draft for sign-off · **Validated:** persona distribution + lead-score bands simulated across all answer combinations (2026-05-31)
 
 A fun, fast, Singapore-flavoured personality quiz for cold IG/TikTok traffic. Hooks on a **broad "money personality"** angle (high scroll-stop / start-rate), then **pivots to a protection readiness result** at the reveal (the offer). Quietly captures real lead signal — life stage, coverage confidence, top worry, financial resilience — into a per-lead **tag set + lead score** so the agent opens with the right story. Mirrors the Great Eastern persona mechanic without copying its assets/wording.
