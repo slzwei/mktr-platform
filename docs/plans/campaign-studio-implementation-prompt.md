@@ -193,6 +193,18 @@ gallery live-rendered via the real renderer, "Use this look" → uncommitted
 proposal + keep-my-template/theme/copy toggles + Adopt + top-bar
 "↩ Revert look" until save; media suggestion chip on the Hero control.
 
+> **Amendment 2026-07-18 — AI full coverage** (scope + rationale:
+> `docs/plans/studio-ai-full-coverage-plan.md`): copy mode now fills EVERY
+> fillable Studio slot in one call — widened string whitelist (26 paths;
+> drop/marketplace copy draftable BEFORE its publication switch is on),
+> marketplace enum PICKS (category/offerType/mode/qrLanding, values imported
+> from marketplaceContent.js), the inclusions LIST, and advisory
+> RECOMMENDATIONS for the publication decisions (listing/drop switches, host,
+> slug — grounded in the 7-key gate; never auto-applied, never in apply-all;
+> slug is prefill-only). Looks stay page-scoped. Still never writable:
+> consents, terms, regulatory footer, form fields/gates/verification,
+> luckyDraw, media sources, the publication switches themselves.
+
 **PR 5 — readiness additions + rollout.**
 Extend `campaignReadinessService` with the Studio checks that are
 server-verifiable; docs updates (CLAUDE.md pointer + docs/reference note);
