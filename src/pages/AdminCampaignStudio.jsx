@@ -100,11 +100,23 @@ export default function AdminCampaignStudio() {
     setJump(null);
     setResetKey((k) => k + 1);
   }, []);
-  const onSlugPrefill = useCallback((value) => {
-    setSlugDraft(value);
-    setSlugError(null);
-    setSection('dist');
-  }, []);
+  // Action-time re-check (Codex #198-3): the recommendation was generated
+  // against an older campaign state — if a slug has been saved (or locked by
+  // activation) since, the card is stale and must veto, not feed a doomed
+  // value into the disabled input / the next global save.
+  const onSlugPrefill = useCallback(
+    (value) => {
+      if (campaign?.slug) {
+        toast.error('This campaign already has a slug — the AI suggestion no longer applies.');
+        return false;
+      }
+      setSlugDraft(value);
+      setSlugError(null);
+      setSection('dist');
+      return true;
+    },
+    [campaign?.slug]
+  );
   const ai = useStudioAi({ campaign, doc, setPath, replaceDoc, onPickLook, onSlugPrefill, onJumpSection: setSection });
   const aiRef = useRef(ai);
   aiRef.current = ai;

@@ -267,6 +267,37 @@ describe('StudioAiPanel — full-coverage review (sections, picks, lists, recomm
     expect(screen.getByText('✓ APPLIED TO DRAFT')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Apply to draft' })).toBeNull();
   });
+
+  it('customerHost cards always carry the trusted blast-radius warning (Codex #197-3)', () => {
+    const hostRec = [{ topic: 'customerHost', label: 'Customer domain', advice: 'Use redeem.sg.', suggestedValue: 'redeem', state: 'open' }];
+    render(<StudioAiPanel ai={fakeAi({ phase: 'ready', sugs: [PAGE_ROW], recs: hostRec })} />);
+    expect(screen.getByText(/chrome, pixels, regulatory copy and the confirmation-email/i)).toBeInTheDocument();
+    expect(screen.getByText(/written for the current domain's voice/i)).toBeInTheDocument();
+  });
+
+  it('a receipt-time gated row re-enables from the LIVE doc (Codex #198-5)', () => {
+    const gatedQuizRow = {
+      path: 'quiz.intro.headline',
+      label: 'Quiz intro headline',
+      section: 'Quiz',
+      value: 'AI quiz intro',
+      old: '',
+      state: 'open',
+      disabledReason: 'The quiz is disabled or has no questions', // receipt-time
+    };
+    const quizOnDoc = {
+      ...BASE_DOC,
+      quiz: { enabled: true, steps: [{ questions: [{ id: 'q1' }] }] },
+    };
+    // surface enabled since receipt → Accept must be live again
+    render(<StudioAiPanel ai={fakeAi({ phase: 'ready', sugs: [gatedQuizRow] })} campaign={{ id: 'c1' }} doc={quizOnDoc} />);
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeEnabled();
+    expect(screen.queryByText('The quiz is disabled or has no questions')).toBeNull();
+
+    // still off → stays blocked
+    render(<StudioAiPanel ai={fakeAi({ phase: 'ready', sugs: [gatedQuizRow] })} campaign={{ id: 'c1' }} doc={BASE_DOC} />);
+    expect(screen.getAllByRole('button', { name: 'Accept' })[1]).toBeDisabled();
+  });
 });
 
 describe('StudioAiPanel — looks gallery + proposal (CO-1)', () => {

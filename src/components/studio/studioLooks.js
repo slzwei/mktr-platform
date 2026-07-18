@@ -72,6 +72,15 @@ export function rowCurrentValue(doc, row) {
   return currentValueAt(doc, row?.path || '');
 }
 
+/** True when the row's path holds NO value in the doc — rowCurrentValue
+ * normalizes absence to ''/[], which keep-mine must not write back (Codex
+ * #198-1: restoring ''/[] onto an absent key leaves the doc forever dirty
+ * against baseline; restoring `undefined` keeps the getter behavior AND
+ * JSON-serializes away, so dirty self-corrects). */
+export function rowValueAbsent(doc, row) {
+  return getAtPath(doc, row?.path || '') === undefined;
+}
+
 /** Structural equality across row value types (string | string[]). */
 export function rowValuesEqual(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -144,6 +153,7 @@ export function adoptedCopyRows(look, prevDoc, lookDoc) {
     .map((row) => ({
       ...row,
       old: currentValueAt(prevDoc, row.path),
+      oldAbsent: getAtPath(prevDoc, row.path) === undefined,
       state: 'applied',
       disabledReason: null,
     }));

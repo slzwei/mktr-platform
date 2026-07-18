@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { AI_TONES } from './useStudioAi';
-import { buildLookDoc, lookBlockedReason } from './studioLooks';
+import { buildLookDoc, lookBlockedReason, rowDisabledReason } from './studioLooks';
 import DeviceFrame from './DeviceFrame';
 import CanvasPageSubject from './CanvasPageSubject';
 import { CATEGORY_OPTIONS } from './marketplaceOptions';
@@ -73,15 +73,20 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
 
   // Review rows grouped by section, in order of first appearance (the server
   // already sorts rows by whitelist order, which is section-contiguous).
+  // The RENDERED gate re-derives from the live unsaved doc every render
+  // (Codex #198-5): the row's stored disabledReason is receipt-time only —
+  // an operator enabling the surface (quiz on, image back) must re-enable
+  // Accept without a regen. The hook still re-gates at action time.
   const rowSections = useMemo(() => {
     const map = new Map();
     (sugs || []).forEach((row, index) => {
       const key = row.section || 'Other';
       if (!map.has(key)) map.set(key, []);
-      map.get(key).push({ row, index });
+      const liveReason = row.state === 'open' && doc ? rowDisabledReason(doc, row.path) : row.disabledReason;
+      map.get(key).push({ row, index, liveReason });
     });
     return [...map.entries()];
-  }, [sugs]);
+  }, [sugs, doc]);
 
   if (!ai.open) return null;
 
@@ -253,7 +258,7 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
                     <span style={{ font: mono, letterSpacing: '.08em', color: 'var(--ink-3, #9BA0AB)' }}>
                       {section.toUpperCase()} · {entries.length}
                     </span>
-                    {entries.some(({ row }) => row.state === 'open' && !row.disabledReason) ? (
+                    {entries.some(({ row, liveReason }) => row.state === 'open' && !liveReason) ? (
                       <button
                         type="button"
                         onClick={() => ai.applySection(section)}
@@ -264,8 +269,8 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
                     ) : null}
                   </div>
                 ) : null}
-                {entries.map(({ row, index }) => {
-                  const blocked = !!row.disabledReason;
+                {entries.map(({ row, index, liveReason }) => {
+                  const blocked = !!liveReason;
                   const stateLabel = row.state === 'applied' ? '✓ APPLIED' : row.state === 'kept' ? 'KEPT YOURS' : blocked ? 'UNAVAILABLE' : '';
                   const oldEmpty = Array.isArray(row.old) ? row.old.length === 0 : !row.old;
                   return (
@@ -279,7 +284,7 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
                       {oldEmpty ? null : <ValueLines value={row.old} struck />}
                       <ValueLines value={row.kind === 'pick' ? displayValue(row) : row.value} />
                       {blocked ? (
-                        <div style={{ fontSize: 10.5, color: '#8A5B07', marginBottom: 8 }}>{row.disabledReason}</div>
+                        <div style={{ fontSize: 10.5, color: '#8A5B07', marginBottom: 8 }}>{liveReason}</div>
                       ) : null}
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button type="button" className="av2-btn av2-btn--primary av2-btn--sm" disabled={row.state !== 'open' || blocked} onClick={() => ai.acceptRow(index)}>
@@ -314,6 +319,14 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
                       ) : null}
                     </div>
                     <div style={{ fontSize: 12, lineHeight: 1.55, marginBottom: rec.suggestedValue ? 4 : 8 }}>{rec.advice}</div>
+                    {rec.topic === 'customerHost' ? (
+                      // Trusted, server-independent blast-radius warning (Codex
+                      // #197-3) — model advice can never omit it away.
+                      <div style={{ fontSize: 10.5, lineHeight: 1.5, color: '#8A5B07', marginBottom: 6 }}>
+                        Switching the domain changes page chrome, pixels, regulatory copy and the confirmation-email
+                        brand — and the drafted copy was written for the current domain's voice.
+                      </div>
+                    ) : null}
                     {rec.suggestedValue ? (
                       <div style={{ font: mono, color: 'var(--ink-2, #5B616E)', marginBottom: 8 }}>suggested: {rec.suggestedValue}</div>
                     ) : null}

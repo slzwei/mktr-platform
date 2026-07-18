@@ -3,6 +3,7 @@ import { requestCopyDraft } from './studioAiApi';
 import {
   rowDisabledReason,
   rowCurrentValue,
+  rowValueAbsent,
   rowValuesEqual,
   buildLookDoc,
   lookBlockedReason,
@@ -171,6 +172,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     return merged.map((row) => ({
       ...row,
       old: rowCurrentValue(current, row),
+      oldAbsent: rowValueAbsent(current, row),
       state: 'open',
       disabledReason: rowDisabledReason(current, row.path),
     }));
@@ -289,13 +291,17 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     [setPath, patchRow]
   );
 
-  /** Keep-mine — restores old ONLY if the doc still holds the AI value. */
+  /** Keep-mine — restores old ONLY if the doc still holds the AI value.
+   * An originally-ABSENT value restores as `undefined`, not the normalized
+   * ''/[] (Codex #198-1): getters treat both as empty, but ''/[] would leave
+   * the doc dirty against baseline forever — undefined JSON-serializes away,
+   * so the dirty flag (JSON-compare) self-corrects. */
   const keepRow = useCallback(
     (index) => {
       const row = sugsRef.current[index];
       if (!row || row.state === 'kept') return;
       if (row.state === 'applied' && rowValuesEqual(rowCurrentValue(docRef.current, row), row.value)) {
-        setPath(row.path, row.old);
+        setPath(row.path, row.oldAbsent ? undefined : row.old);
       }
       patchRow(index, { state: 'kept' });
     },
@@ -374,7 +380,11 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
 
   /** Explicit per-card apply for a recommendation with a suggestedValue —
    * writes the UNSAVED doc (or prefills the slug draft); nothing persists
-   * until the operator saves, and the server publication gate still rules. */
+   * until the operator saves, and the server publication gate still rules.
+   * The slug callback may VETO by returning false (Codex #198-3: the card was
+   * generated against an older campaign state — if a slug has been saved or
+   * locked since, prefilling would feed a doomed value into a disabled
+   * input); a vetoed card stays open. */
   const applyRec = useCallback(
     (index) => {
       const rec = recsRef.current[index];
@@ -389,9 +399,10 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
         case 'customerHost':
           setPath('distribution.host', rec.suggestedValue);
           break;
-        case 'slug':
-          onSlugPrefillRef.current?.(rec.suggestedValue);
+        case 'slug': {
+          if (onSlugPrefillRef.current?.(rec.suggestedValue) === false) return;
           break;
+        }
         default:
           return; // advice-only topics have nothing to apply
       }
@@ -427,11 +438,14 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     []
   );
 
-  /** Generate ≤3 complete looks — one budget call. */
+  /** Generate ≤3 complete looks — one budget call. Copy-mode recommendation
+   * cards are invalidated here (Codex #198-4): looks never produce recs, and
+   * stale cards must not resurface under an adopted look's review list. */
   const generateLooks = useCallback(async () => {
     if (!brief.topic.trim() || !campaign?.id) return;
     const { generation, signal } = startRequest();
     setPhase('looksLoading');
+    setRecs([]);
     setError('');
     noteCall();
     try {
@@ -506,6 +520,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       setProposal({ prev: { doc: baseDoc }, look, keep, adopted: false });
       setMediaHint(look.media?.note ? { kind: look.media.kind || 'none', note: look.media.note } : null);
       setSugs([]);
+      setRecs([]); // belt for #198-4 — a picked look owns the ready view next
       setScope(null);
       setPhase('proposal');
       onPickLookRef.current?.(); // F12: subject → page, jump cleared, funnel remount

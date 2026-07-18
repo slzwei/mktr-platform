@@ -296,7 +296,7 @@ describe('useStudioAi — full-coverage rows (picks + inclusions) and recommenda
     expect(result.current.ai.recs[0].state).toBe('open');
   });
 
-  it('accept writes picks (enum) and lists (array); keep-mine restores the array old', async () => {
+  it('accept writes picks (enum) and lists (array); keep-mine on an ABSENT original restores absence, not \'\'/[] (Codex #198-1)', async () => {
     const { result } = renderAi();
     await generateReady(result, okFull());
 
@@ -307,8 +307,28 @@ describe('useStudioAi — full-coverage rows (picks + inclusions) and recommenda
     expect(result.current.docApi.doc.distribution.marketplace.inclusions).toEqual(['1 night stay', 'Daily photo updates']);
 
     act(() => result.current.ai.keepRow(3));
-    expect(result.current.docApi.doc.distribution.marketplace.inclusions).toEqual([]);
+    act(() => result.current.ai.keepRow(2));
+    // both fields were absent before accept — restore must NOT leave ''/[]
+    expect(result.current.docApi.doc.distribution.marketplace.inclusions).toBeUndefined();
+    expect(result.current.docApi.doc.distribution.marketplace.category).toBeUndefined();
     expect(result.current.ai.sugs[3].state).toBe('kept');
+    // and the dirty flag self-corrects: the JSON doc equals baseline again
+    expect(JSON.stringify(result.current.docApi.doc)).not.toContain('"category"');
+    expect(result.current.docApi.dirty).toBe(false);
+  });
+
+  it('keep-mine still restores a PRESENT original verbatim', async () => {
+    const campaign = v2Campaign('c1', {
+      distribution: { host: 'redeem', featuredDrop: { enabled: false }, marketplace: { listed: false, category: 'wellness' } },
+    });
+    const { result } = renderAi(campaign);
+    await generateReady(result, okFull());
+
+    act(() => result.current.ai.acceptRow(2));
+    expect(result.current.docApi.doc.distribution.marketplace.category).toBe('family_lifestyle');
+    act(() => result.current.ai.keepRow(2));
+    expect(result.current.docApi.doc.distribution.marketplace.category).toBe('wellness');
+    expect(result.current.docApi.dirty).toBe(false);
   });
 
   it('apply-all applies rows but NEVER recommendations (advisory contract)', async () => {
@@ -333,7 +353,7 @@ describe('useStudioAi — full-coverage rows (picks + inclusions) and recommenda
   });
 
   it('applyRec: toggles write the unsaved doc, slug prefills via onSlugPrefill, advice-only no-ops', async () => {
-    const onSlugPrefill = vi.fn();
+    const onSlugPrefill = vi.fn(() => true);
     const { result } = renderAi(v2Campaign(), undefined, { onSlugPrefill });
     await generateReady(result, okFull());
 
@@ -347,6 +367,34 @@ describe('useStudioAi — full-coverage rows (picks + inclusions) and recommenda
 
     act(() => result.current.ai.applyRec(2)); // advice-only (null suggestedValue)
     expect(result.current.ai.recs[2].state).toBe('open');
+  });
+
+  it('a VETOED slug prefill (callback returns false) leaves the card open (Codex #198-3)', async () => {
+    const onSlugPrefill = vi.fn(() => false); // page-side re-check: slug exists/locked now
+    const { result } = renderAi(v2Campaign(), undefined, { onSlugPrefill });
+    await generateReady(result, okFull());
+
+    act(() => result.current.ai.applyRec(1));
+    expect(onSlugPrefill).toHaveBeenCalledWith('pet-hotel-trial');
+    expect(result.current.ai.recs[1].state).toBe('open'); // not marked applied
+  });
+
+  it('entering looks mode invalidates copy-mode recommendation cards (Codex #198-4)', async () => {
+    const { result } = renderAi();
+    await generateReady(result, okFull());
+    expect(result.current.ai.recs).toHaveLength(3);
+
+    apiClient.post.mockResolvedValueOnce({ success: true, data: { proposals: [LOOK] } });
+    await act(async () => {
+      await result.current.ai.generateLooks();
+    });
+    expect(result.current.ai.recs).toEqual([]);
+
+    // and an adopted look's ready view carries NO stale advisory cards
+    act(() => result.current.ai.pickLook(0));
+    act(() => result.current.ai.adoptLook());
+    expect(result.current.ai.phase).toBe('ready');
+    expect(result.current.ai.recs).toEqual([]);
   });
 
   it('jumpRec deep-links the mapped rail section', async () => {
