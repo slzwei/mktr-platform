@@ -11,7 +11,12 @@ import {
   NotFoundForBrand,
   IS_REDEEM_BUILD,
 } from '@/components/auth/BrandRouteGuards';
-import { CAMPAIGN_STUDIO_ENABLED } from '@/components/studio/studioFlag';
+// Legacy /AdminCampaignDesigner?campaign_id=… → the workspace Design tab
+// (teardown PR — the standalone designer page is retired).
+function LegacyDesignerRedirect() {
+  const id = new URLSearchParams(window.location.search).get('campaign_id');
+  return <Navigate to={id ? `/admin/campaigns/${id}/workspace?tab=design` : '/AdminCampaigns'} replace />;
+}
 
 const LeadCapture = lazy(() => import('./LeadCapture'));
 const LeadCaptureDemo = lazy(() => import('./LeadCaptureDemo'));
@@ -83,11 +88,9 @@ const AdminAgents = lazy(() => import('./AdminAgents'));
 const AdminAgentDetail = lazy(() => import('./AdminAgentDetail'));
 const AdminUsers = lazy(() => import('./AdminUsers'));
 const AdminFleet = lazy(() => import('./AdminFleet'));
-const AdminCampaignDesigner = lazy(() => import('./AdminCampaignDesigner'));
 const AdminCampaignWorkspace = lazy(() => import('./AdminCampaignWorkspace'));
-// Campaign Studio (Studio PR 3) — full-viewport design_config v2 editor, dark
-// until VITE_CAMPAIGN_STUDIO_ENABLED=true is baked into the build (and the
-// backend DESIGN_CONFIG_V2_WRITES_ENABLED gate flips independently, PR 5).
+// Campaign Studio — the permanent full-viewport design_config v2 editor
+// (rollout completed; the classic standalone designer is retired).
 const AdminCampaignStudio = lazy(() => import('./AdminCampaignStudio'));
 const AdminCommissions = lazy(() => import('./AdminCommissions'));
 const AdminShortLinks = lazy(() => import('./AdminShortLinks'));
@@ -431,8 +434,7 @@ function PagesContent() {
  }
  />
  {/* Campaign Studio — chromeless full-viewport takeover (own top bar + exit),
- like /provision/:code. Route registered only while the flag is on. */}
- {CAMPAIGN_STUDIO_ENABLED && (
+ like /provision/:code. The permanent design surface since the teardown PR. */}
  <Route
  path="/admin/campaigns/:id/studio" element={
  <ProtectedRoute requiredRole="admin">
@@ -440,7 +442,6 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
- )}
  <Route
  path="/AdminQRCodes" element={
  <ProtectedRoute requiredRole="admin">
@@ -519,18 +520,13 @@ function PagesContent() {
  </ProtectedRoute>
  }
  />
+ {/* Legacy designer URL (teardown PR): the page is gone — old links land on
+ the workspace Design tab (guided_review keeps its classic editor there;
+ everything else gets the Open-in-Studio entry). */}
  <Route
  path="/AdminCampaignDesigner" element={
  <ProtectedRoute requiredRole="admin">
- {ADMIN_V2 ? (
- <AdminV2Shell fullBleed legacyBridge>
- <AdminCampaignDesigner />
- </AdminV2Shell>
- ) : (
- <DashboardLayout>
- <AdminCampaignDesigner />
- </DashboardLayout>
- )}
+ <LegacyDesignerRedirect />
  </ProtectedRoute>
  }
  />

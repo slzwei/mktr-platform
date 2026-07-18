@@ -21,7 +21,7 @@ import { genId } from"./editor/constants";
 import GuidedReviewDesigner from"./guided-review/GuidedReviewDesigner";
 import { Link } from"react-router-dom";
 import { isV2 } from"@/lib/designConfigV2";
-import { CAMPAIGN_STUDIO_ENABLED, studioPath } from"@/components/studio/studioFlag";
+import { studioPath } from "@/components/studio/studioFlag";
 
 // Normalize legacy flat fieldOrder arrays to row structure
 const normalizeFieldOrder = (order) => {
@@ -119,7 +119,7 @@ function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8r
  const [lastSavedTime, setLastSavedTime] = useState(null);
  // Save-failure surfacing (Studio PR 3): the old catch swallowed EVERY error
  // into console.error — a silent dead-end. Errors now render inline in the
- // save bar (no toast here: /AdminCampaignDesigner's parent already toasts a
+ // save bar (no toast here: the workspace parent already toasts a
  // generic failure once, and doubling it up would conflict). A 409
  // DESIGN_CONFIG_VERSION_CONFLICT means the doc became Studio-owned (v2)
  // while this editor was open — swap to the read-only notice.
@@ -277,18 +277,12 @@ export function StudioV2Notice({ campaignId }) {
  (saving here would destroy it — the server refuses that write). Open it
  in the Studio to keep editing.
  </p>
- {CAMPAIGN_STUDIO_ENABLED ? (
  <Link
  to={studioPath(campaignId)}
  className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
  >
  Open Campaign Studio →
  </Link>
- ) : (
- <p className="text-xs text-muted-foreground">
- Campaign Studio is not enabled on this build (VITE_CAMPAIGN_STUDIO_ENABLED).
- </p>
- )}
  </div>
  </div>
  );

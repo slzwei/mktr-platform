@@ -1,6 +1,7 @@
 import express from 'express';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import * as campaignController from '../controllers/campaignController.js';
+import { uuidParamGuard } from '../middleware/uuidParam.js';
 
 // Campaign Launch Workspace APIs. Mounted under /api/admin/campaigns so
 // internalRouteHostGuard (which blocks the /api/admin prefix) keeps these
@@ -9,6 +10,9 @@ import * as campaignController from '../controllers/campaignController.js';
 export const meta = { path: '/api/admin/campaigns' };
 
 const router = express.Router();
+
+// Malformed :id → clean 404 (teardown PR; shared guard).
+router.param('id', uuidParamGuard('Campaign'));
 
 // Campaign-first delivery pool: funded agents + remaining credits + held count.
 router.get('/:id/delivery-pool', authenticateToken, requireAdmin, campaignController.getDeliveryPool);

@@ -208,7 +208,7 @@ describe('useStudioDoc — save', () => {
     expect(res.classified).toMatchObject({ kind: 'draw-invariant', section: 'form', field });
   });
 
-  it('classifies an untyped server draw 422 by message heuristic (F9)', async () => {
+  it('an untyped 422 falls through to the generic error kind (teardown PR — the message-regex fallback is gone)', async () => {
     const err = new Error('Lucky-draw campaigns need Terms & Conditions content before they can be enabled.');
     err.status = 422;
     Campaign.update.mockRejectedValue(err);
@@ -218,8 +218,8 @@ describe('useStudioDoc — save', () => {
     await act(async () => {
       res = await result.current.save();
     });
-    expect(res.classified?.kind).toBe('draw-invariant');
-    expect(res.classified?.section).toBe('form');
+    expect(res.classified?.kind).toBe('error');
+    expect(res.classified?.message).toMatch(/Terms & Conditions/);
   });
 
   it('keeps the doc dirty on a network failure', async () => {

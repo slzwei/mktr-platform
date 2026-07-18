@@ -2,10 +2,9 @@ import { Link } from 'react-router-dom';
 import { studioPath } from './studioFlag';
 
 /**
- * Workspace Design-tab replacement while VITE_CAMPAIGN_STUDIO_ENABLED is on
- * (Studio PR 3). The classic DesignEditor stays mounted for guided_review
- * campaigns (their designer is out of Studio scope) and everywhere while the
- * flag is off.
+ * The workspace Design-tab entry point (permanent since the teardown PR).
+ * The classic DesignEditor stays mounted only for guided_review campaigns
+ * (their designer is out of Studio scope).
  */
 export default function OpenInStudioCard({ campaignId }) {
   return (

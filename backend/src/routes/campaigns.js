@@ -2,6 +2,7 @@ import express from 'express';
 import { authenticateToken, requireAgentOrAdmin, requireAdmin } from '../middleware/auth.js';
 import { validate, schemas } from '../middleware/validation.js';
 import * as campaignController from '../controllers/campaignController.js';
+import { uuidParamGuard } from '../middleware/uuidParam.js';
 
 export const meta = {
   mounts: [
@@ -11,6 +12,9 @@ export const meta = {
 };
 
 const router = express.Router();
+
+// Malformed :id → clean 404 (teardown PR; shared guard — see middleware/uuidParam.js).
+router.param('id', uuidParamGuard('Campaign'));
 
 /**
  * @openapi

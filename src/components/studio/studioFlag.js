@@ -1,14 +1,10 @@
 /**
- * Campaign Studio rollout flag (Studio PR 3 — docs/plans/campaign-studio-implementation-prompt.md).
- *
- * Module-scope, baked at build time like ADMIN_V2 / CADENCES_ENABLED. While OFF
- * the /admin/campaigns/:id/studio route is not registered and the workspace
- * Design tab keeps mounting the classic DesignEditor. Flipping it ON is a
- * deliberate rollout step (PR 5) — and even then the backend refuses to persist
- * a v2 document until DESIGN_CONFIG_V2_WRITES_ENABLED flips server-side, so the
- * Studio UI alone can never mint a customer-facing v2 doc.
+ * Campaign Studio routing helpers. The Studio is the PERMANENT design surface
+ * since the teardown PR (rollout completed 2026-07) — the old
+ * VITE_CAMPAIGN_STUDIO_ENABLED rollout flag is gone and the route is always
+ * registered. The backend write gate (DESIGN_CONFIG_V2_WRITES_ENABLED) remains
+ * as the server-side emergency brake.
  */
-export const CAMPAIGN_STUDIO_ENABLED = import.meta.env.VITE_CAMPAIGN_STUDIO_ENABLED === 'true';
 
 /** Campaign types the Studio can edit. Guided-review keeps its own designer. */
 export function studioSupportsCampaign(campaign) {

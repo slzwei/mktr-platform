@@ -32,8 +32,8 @@ import '@/styles/adminV2.css';
 
 /**
  * Campaign Studio (PR 3) — the full-viewport editor that authors design_config
- * v2. Route: /admin/campaigns/:id/studio, registered only while
- * VITE_CAMPAIGN_STUDIO_ENABLED is on (src/pages/index.jsx). Direction 1B
+ * v2. Route: /admin/campaigns/:id/studio — always registered (the permanent
+ * design surface since the teardown PR). Direction 1B
  * "Control Room": light chrome on the admin-v2 tokens, dark canvas stage.
  *
  * The page OWNS orchestration (doc lifecycle, guards, copy/share honesty);
