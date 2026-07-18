@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiClient } from '@/api/client';
 import { GATE_LABELS } from '../studioReadiness';
-import { makeBind, PanelSection, TextField, TextAreaField, Seg, ToggleRow, WarnNote, FieldLabel } from './panelKit';
+import { CATEGORY_OPTIONS, OFFER_TYPES, MODES } from '../marketplaceOptions';
+import { makeBind, PanelSection, TextField, TextAreaField, Seg, ToggleRow, WarnNote, FieldLabel, SuggestButton } from './panelKit';
 
 /**
  * Distribution panel (Studio PR 3) — customer domain, featured drop
@@ -10,24 +11,14 @@ import { makeBind, PanelSection, TextField, TextAreaField, Seg, ToggleRow, WarnN
  * save path (a campaign column, never in the doc; permanent lock once an
  * activated campaign has one — production rule: null→value stays allowed).
  *
+ * Full-coverage amendment: the marketplace copy fields carry the per-field ✦
+ * (same affordance as the Page identity fields) — distribution details are
+ * AI-draftable before the publication switches are on.
+ *
  * §03 STATIC row: schoolLevels · slots · activation · sponsor · FAQ stay
  * documented-but-read-only (server/ops-managed or JSON-only).
  */
 
-const CATEGORY_OPTIONS = [
-  ['art_creativity', 'Art & Creativity'],
-  ['coding_robotics', 'Coding & Robotics'],
-  ['speech_performance', 'Speech & Performance'],
-  ['sports_movement', 'Sports & Movement'],
-  ['music_dance', 'Music & Dance'],
-  ['academic', 'Academic'],
-  ['family_lifestyle', 'Family & Lifestyle'],
-  ['wellness', 'Wellness'],
-  ['dining', 'Dining'],
-  ['financial_education', 'Financial Education'],
-];
-const OFFER_TYPES = ['trial', 'assessment', 'workshop', 'reward', 'consultation'];
-const MODES = ['physical', 'online', 'hybrid'];
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const SLUG_RE = /^[a-z0-9-]{3,80}$/;
 
@@ -53,7 +44,9 @@ export default function DistributionPanel({
   onSlugSave,
   slugSaving,
   slugError,
+  onSuggest = null,
 }) {
+  const suggest = (path, label) => (onSuggest ? () => onSuggest(path, label) : undefined);
   const bind = makeBind(doc, setPath);
   const host = doc.distribution?.host === 'mktr' ? 'mktr' : 'redeem';
   const drop = doc.distribution?.featuredDrop || {};
@@ -135,7 +128,7 @@ export default function DistributionPanel({
         />
         {drop.enabled === true ? (
           <>
-            <TextField id="studio-drop-title" label="Drop title" bind={bind('distribution.featuredDrop.title', 40)} />
+            <TextField id="studio-drop-title" label="Drop title" bind={bind('distribution.featuredDrop.title', 40)} onSuggest={suggest('distribution.featuredDrop.title', 'Drop title')} />
             <div style={{ display: 'flex', gap: 8 }}>
               <div style={{ flex: 1 }}>
                 <TextField id="studio-drop-value" label="Value label" bind={bind('distribution.featuredDrop.valueLabel', 12)} placeholder="$10" />
@@ -192,7 +185,7 @@ export default function DistributionPanel({
         ) : (
           <p style={{ margin: 0, fontSize: 10.5, color: 'var(--ink-3)' }}>Publication gate loads from the server…</p>
         )}
-        <TextField id="studio-mk-title" label="Consumer title" bind={bind('distribution.marketplace.title', 120)} />
+        <TextField id="studio-mk-title" label="Consumer title" bind={bind('distribution.marketplace.title', 120)} onSuggest={suggest('distribution.marketplace.title', 'Consumer title')} />
         <div>
           <FieldLabel htmlFor="studio-mk-category">Category</FieldLabel>
           <select id="studio-mk-category" style={selectStyle} value={mk.category || ''} onChange={(e) => setMk({ category: e.target.value || undefined })}>
@@ -228,9 +221,12 @@ export default function DistributionPanel({
             </select>
           </div>
         </div>
-        <TextField id="studio-mk-value" label="Value line" bind={bind('distribution.marketplace.valueLine', 80)} />
+        <TextField id="studio-mk-value" label="Value line" bind={bind('distribution.marketplace.valueLine', 80)} onSuggest={suggest('distribution.marketplace.valueLine', 'Value line')} />
         <div>
-          <FieldLabel htmlFor="studio-mk-inclusions">Inclusions (one per line, max 8)</FieldLabel>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <FieldLabel htmlFor="studio-mk-inclusions">Inclusions (one per line, max 8)</FieldLabel>
+            <SuggestButton onSuggest={suggest('distribution.marketplace.inclusions', 'Inclusions')} label="Inclusions" />
+          </div>
           <textarea
             id="studio-mk-inclusions"
             rows={4}

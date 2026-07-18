@@ -10,9 +10,9 @@ import useStudioAi from '../useStudioAi';
 import { rowDisabledReason, requestCopyDraft } from '../studioAiApi';
 
 /**
- * Studio AI copy-mode state machine (PR 4 CP2) — composed with the REAL
- * useStudioDoc so accept/keep-mine/regen semantics run against a live doc,
- * with only the HTTP layer mocked.
+ * Studio AI copy-mode state machine (PR 4 CP2 + the full-coverage amendment)
+ * — composed with the REAL useStudioDoc so accept/keep-mine/regen semantics
+ * run against a live doc, with only the HTTP layer mocked.
  */
 
 function v2Campaign(id = 'c1', overrides = {}) {
@@ -38,14 +38,19 @@ function v2Campaign(id = 'c1', overrides = {}) {
   };
 }
 
+const LIVE_QUIZ = { enabled: true, steps: [{ id: 's1', questions: [{ id: 'q1', prompt: 'P', options: [] }] }] };
+
+// Row 0 is unconditional; row 1 (quiz intro) is gated while the quiz is off —
+// the drop-title row that used to play this part is UNGATED since the
+// full-coverage amendment.
 const DRAFT = [
-  { path: 'content.headline', label: 'Form headline', section: 'page', value: 'Fresh AI headline', limit: 80 },
-  { path: 'distribution.featuredDrop.title', label: 'Drop title', section: 'distribution', value: 'AI drop title', limit: 60 },
+  { path: 'content.headline', label: 'Form headline', section: 'Page', value: 'Fresh AI headline', limit: 80 },
+  { path: 'quiz.intro.headline', label: 'Quiz intro headline', section: 'Quiz', value: 'AI quiz intro', limit: 80 },
 ];
 
 const ok = (draft = DRAFT) => ({ success: true, data: { draft } });
 
-function useHarness(campaign, onPickLook) {
+function useHarness(campaign, onPickLook, extra = {}) {
   const docApi = useStudioDoc(campaign);
   const ai = useStudioAi({
     campaign,
@@ -53,18 +58,19 @@ function useHarness(campaign, onPickLook) {
     setPath: docApi.setPath,
     replaceDoc: docApi.replaceDoc,
     onPickLook,
+    ...extra,
   });
   return { docApi, ai };
 }
 
-function renderAi(campaign = v2Campaign(), onPickLook) {
-  return renderHook(({ c }) => useHarness(c, onPickLook), { initialProps: { c: campaign } });
+function renderAi(campaign = v2Campaign(), onPickLook, extra) {
+  return renderHook(({ c }) => useHarness(c, onPickLook, extra), { initialProps: { c: campaign } });
 }
 
 const FULL_BRIEF = { topic: 'FairPrice voucher giveaway', audience: '', objective: '', mustInclude: '', tone: 'Friendly' };
 
-async function generateReady(result, draft = DRAFT) {
-  apiClient.post.mockResolvedValueOnce(ok(draft));
+async function generateReady(result, payload = ok(DRAFT)) {
+  apiClient.post.mockResolvedValueOnce(payload);
   act(() => result.current.ai.setBrief(FULL_BRIEF));
   await act(async () => {
     await result.current.ai.generate();
@@ -93,10 +99,10 @@ describe('useStudioAi — generate (copy mode)', () => {
     await generateReady(result);
 
     expect(result.current.ai.phase).toBe('ready');
-    const [headline, dropTitle] = result.current.ai.sugs;
-    expect(headline).toMatchObject({ state: 'open', old: 'Old headline', disabledReason: null });
-    // featuredDrop is OFF in the doc → the row arrives visibly gated
-    expect(dropTitle.disabledReason).toMatch(/featured drop is off/i);
+    const [headline, quizIntro] = result.current.ai.sugs;
+    expect(headline).toMatchObject({ state: 'open', old: 'Old headline', disabledReason: null, kind: 'copy' });
+    // the quiz is OFF in the doc → the row arrives visibly gated
+    expect(quizIntro.disabledReason).toMatch(/quiz is disabled/i);
 
     const [, body] = apiClient.post.mock.calls[0];
     expect(body).toMatchObject({ campaignId: 'c1', templateId: 'editorial', mode: 'copy', scope: null, regen: 0 });
@@ -133,7 +139,7 @@ describe('useStudioAi — generate (copy mode)', () => {
     await generateReady(result);
 
     act(() => result.current.ai.acceptRow(1));
-    expect(result.current.docApi.doc.distribution.featuredDrop.title).toBeUndefined();
+    expect(result.current.docApi.doc.quiz?.intro?.headline).toBeUndefined();
     expect(result.current.ai.sugs[1].state).toBe('open');
     expect(result.current.ai.sugs[1].disabledReason).toBeTruthy();
   });
@@ -142,9 +148,9 @@ describe('useStudioAi — generate (copy mode)', () => {
     const { result } = renderAi();
     await generateReady(result);
 
-    act(() => result.current.docApi.setPath('distribution.featuredDrop.enabled', true));
+    act(() => result.current.docApi.setPath('quiz', LIVE_QUIZ));
     act(() => result.current.ai.acceptRow(1));
-    expect(result.current.docApi.doc.distribution.featuredDrop.title).toBe('AI drop title');
+    expect(result.current.docApi.doc.quiz.intro.headline).toBe('AI quiz intro');
     expect(result.current.ai.sugs[1].state).toBe('applied');
   });
 
@@ -156,7 +162,7 @@ describe('useStudioAi — generate (copy mode)', () => {
     act(() => result.current.ai.applyAll());
 
     expect(result.current.docApi.doc.content.headline).toBe('Old headline');
-    expect(result.current.docApi.doc.distribution.featuredDrop.title).toBeUndefined(); // gated
+    expect(result.current.docApi.doc.quiz?.intro?.headline).toBeUndefined(); // gated
     expect(result.current.ai.sugs[1].disabledReason).toBeTruthy();
   });
 
@@ -195,22 +201,22 @@ describe('useStudioAi — generate (copy mode)', () => {
     const { result } = renderAi();
     await generateReady(result);
 
-    // Enable the drop, accept its title, then disable the drop again — the
-    // stored title value remains, so the applied-untouched branch would have
+    // Enable the quiz, accept its intro, then disable the quiz again — the
+    // stored intro value remains, so the applied-untouched branch would have
     // silently overwritten it without the re-gate.
-    act(() => result.current.docApi.setPath('distribution.featuredDrop.enabled', true));
+    act(() => result.current.docApi.setPath('quiz', LIVE_QUIZ));
     act(() => result.current.ai.acceptRow(1));
-    expect(result.current.docApi.doc.distribution.featuredDrop.title).toBe('AI drop title');
-    act(() => result.current.docApi.setPath('distribution.featuredDrop.enabled', false));
+    expect(result.current.docApi.doc.quiz.intro.headline).toBe('AI quiz intro');
+    act(() => result.current.docApi.setPath('quiz.enabled', false));
 
-    apiClient.post.mockResolvedValueOnce(ok([{ ...DRAFT[1], value: 'Regenerated drop title' }]));
+    apiClient.post.mockResolvedValueOnce(ok([{ ...DRAFT[1], value: 'Regenerated intro' }]));
     await act(async () => {
       await result.current.ai.regenRow(1);
     });
 
-    expect(result.current.docApi.doc.distribution.featuredDrop.title).toBe('AI drop title'); // untouched
-    expect(result.current.ai.sugs[1]).toMatchObject({ state: 'open', value: 'Regenerated drop title' });
-    expect(result.current.ai.sugs[1].disabledReason).toMatch(/featured drop is off/i);
+    expect(result.current.docApi.doc.quiz.intro.headline).toBe('AI quiz intro'); // untouched
+    expect(result.current.ai.sugs[1]).toMatchObject({ state: 'open', value: 'Regenerated intro' });
+    expect(result.current.ai.sugs[1].disabledReason).toMatch(/quiz is disabled/i);
   });
 
   it('newest request wins: a second generate aborts the first, whose late response never lands (Codex diff #2)', async () => {
@@ -244,6 +250,175 @@ describe('useStudioAi — generate (copy mode)', () => {
       resolvers[0]({ success: true, data: { draft: [{ ...DRAFT[0], value: 'From request 1' }] } });
     });
     expect(result.current.ai.sugs[0].value).toBe('From request 2');
+  });
+});
+
+// ─────────────── full-coverage rows + advisory recommendations ───────────────
+
+const FULL_DATA = {
+  draft: [
+    { path: 'content.headline', label: 'Headline', section: 'Page', value: 'Fresh AI headline' },
+    { path: 'distribution.marketplace.title', label: 'Consumer title', section: 'Distribution', value: 'Free Pet Hotel Trial' },
+  ],
+  picks: [
+    { path: 'distribution.marketplace.category', label: 'Category', section: 'Distribution', value: 'family_lifestyle' },
+  ],
+  inclusions: {
+    path: 'distribution.marketplace.inclusions',
+    label: 'Inclusions',
+    section: 'Distribution',
+    values: ['1 night stay', 'Daily photo updates'],
+  },
+  recommendations: [
+    { topic: 'listMarketplace', label: 'Marketplace listing', advice: 'Flip the listing on once the slug is set.', suggestedValue: 'on' },
+    { topic: 'slug', label: 'URL slug', advice: 'A short slug helps QR and sharing.', suggestedValue: 'pet-hotel-trial' },
+    { topic: 'formGates', label: 'Eligibility gates', advice: 'Consider the SG/PR gate for lead quality.', suggestedValue: null },
+  ],
+};
+
+const okFull = () => ({ success: true, data: JSON.parse(JSON.stringify(FULL_DATA)) });
+
+describe('useStudioAi — full-coverage rows (picks + inclusions) and recommendations', () => {
+  it('merges draft + picks + inclusions into ONE typed review stream; distribution copy is UNGATED with both switches off', async () => {
+    const { result } = renderAi();
+    await generateReady(result, okFull());
+
+    const rows = result.current.ai.sugs;
+    expect(rows.map((r) => r.kind)).toEqual(['copy', 'copy', 'pick', 'list']);
+    const mkTitle = rows[1];
+    expect(mkTitle.disabledReason).toBeNull(); // no publication-switch gate any more
+    const pick = rows[2];
+    expect(pick).toMatchObject({ path: 'distribution.marketplace.category', value: 'family_lifestyle', state: 'open' });
+    const list = rows[3];
+    expect(list.value).toEqual(['1 night stay', 'Daily photo updates']);
+    expect(list.old).toEqual([]); // array-kind old from the unset doc
+    expect(result.current.ai.recs).toHaveLength(3);
+    expect(result.current.ai.recs[0].state).toBe('open');
+  });
+
+  it('accept writes picks (enum) and lists (array); keep-mine restores the array old', async () => {
+    const { result } = renderAi();
+    await generateReady(result, okFull());
+
+    act(() => result.current.ai.acceptRow(2));
+    expect(result.current.docApi.doc.distribution.marketplace.category).toBe('family_lifestyle');
+
+    act(() => result.current.ai.acceptRow(3));
+    expect(result.current.docApi.doc.distribution.marketplace.inclusions).toEqual(['1 night stay', 'Daily photo updates']);
+
+    act(() => result.current.ai.keepRow(3));
+    expect(result.current.docApi.doc.distribution.marketplace.inclusions).toEqual([]);
+    expect(result.current.ai.sugs[3].state).toBe('kept');
+  });
+
+  it('apply-all applies rows but NEVER recommendations (advisory contract)', async () => {
+    const { result } = renderAi();
+    await generateReady(result, okFull());
+
+    act(() => result.current.ai.applyAll());
+    expect(result.current.docApi.doc.distribution.marketplace.category).toBe('family_lifestyle');
+    expect(result.current.docApi.doc.distribution.marketplace.listed).toBe(false); // the rec's toggle untouched
+    expect(result.current.ai.recs.every((r) => r.state === 'open')).toBe(true);
+  });
+
+  it('applySection applies only that section, leaving the rest open', async () => {
+    const { result } = renderAi();
+    await generateReady(result, okFull());
+
+    act(() => result.current.ai.applySection('Distribution'));
+    expect(result.current.docApi.doc.content.headline).toBe('Old headline'); // Page row untouched
+    expect(result.current.ai.sugs[0].state).toBe('open');
+    expect(result.current.docApi.doc.distribution.marketplace.title).toBe('Free Pet Hotel Trial');
+    expect(result.current.ai.sugs[2].state).toBe('applied');
+  });
+
+  it('applyRec: toggles write the unsaved doc, slug prefills via onSlugPrefill, advice-only no-ops', async () => {
+    const onSlugPrefill = vi.fn();
+    const { result } = renderAi(v2Campaign(), undefined, { onSlugPrefill });
+    await generateReady(result, okFull());
+
+    act(() => result.current.ai.applyRec(0));
+    expect(result.current.docApi.doc.distribution.marketplace.listed).toBe(true);
+    expect(result.current.ai.recs[0].state).toBe('applied');
+
+    act(() => result.current.ai.applyRec(1));
+    expect(onSlugPrefill).toHaveBeenCalledWith('pet-hotel-trial');
+    expect(result.current.ai.recs[1].state).toBe('applied');
+
+    act(() => result.current.ai.applyRec(2)); // advice-only (null suggestedValue)
+    expect(result.current.ai.recs[2].state).toBe('open');
+  });
+
+  it('jumpRec deep-links the mapped rail section', async () => {
+    const onJumpSection = vi.fn();
+    const { result } = renderAi(v2Campaign(), undefined, { onJumpSection });
+    await generateReady(result, okFull());
+
+    act(() => result.current.ai.jumpRec(0));
+    expect(onJumpSection).toHaveBeenLastCalledWith('dist');
+    act(() => result.current.ai.jumpRec(2));
+    expect(onJumpSection).toHaveBeenLastCalledWith('form');
+  });
+
+  it('pick rows have no regen (no provider call)', async () => {
+    const { result } = renderAi();
+    await generateReady(result, okFull());
+    const calls = apiClient.post.mock.calls.length;
+    await act(async () => {
+      await result.current.ai.regenRow(2);
+    });
+    expect(apiClient.post.mock.calls.length).toBe(calls);
+  });
+
+  it('regen of the inclusions row swaps the untouched applied array in place', async () => {
+    const { result } = renderAi();
+    await generateReady(result, okFull());
+    act(() => result.current.ai.acceptRow(3));
+
+    apiClient.post.mockResolvedValueOnce({
+      success: true,
+      data: {
+        draft: [],
+        picks: [],
+        inclusions: { ...FULL_DATA.inclusions, values: ['Fresh towels', 'Play area access'] },
+        recommendations: [],
+      },
+    });
+    await act(async () => {
+      await result.current.ai.regenRow(3);
+    });
+
+    expect(result.current.docApi.doc.distribution.marketplace.inclusions).toEqual(['Fresh towels', 'Play area access']);
+    expect(result.current.ai.sugs[3]).toMatchObject({ state: 'applied' });
+    const [, body] = apiClient.post.mock.calls[1];
+    expect(body).toMatchObject({ scope: 'distribution.marketplace.inclusions', regen: 1 });
+  });
+
+  it('a scoped per-field ✦ clears stale recommendation cards; discard clears both', async () => {
+    const { result } = renderAi();
+    await generateReady(result, okFull());
+    expect(result.current.ai.recs).toHaveLength(3);
+
+    apiClient.post.mockResolvedValueOnce(ok([DRAFT[0]]));
+    await act(async () => {
+      await result.current.ai.suggestField('content.headline', 'Form headline');
+    });
+    expect(result.current.ai.recs).toEqual([]);
+
+    await generateReady(result, okFull());
+    act(() => result.current.ai.discard());
+    expect(result.current.ai.sugs).toEqual([]);
+    expect(result.current.ai.recs).toEqual([]);
+  });
+
+  it('campaign switch clears recommendations with everything else (F10)', async () => {
+    const { result, rerender } = renderAi();
+    await generateReady(result, okFull());
+    expect(result.current.ai.recs).toHaveLength(3);
+
+    rerender({ c: v2Campaign('c2') });
+    expect(result.current.ai.recs).toEqual([]);
+    expect(result.current.ai.phase).toBe('brief');
   });
 });
 
@@ -559,25 +734,35 @@ describe('useStudioAi — full mode (CO-1 looks)', () => {
 
 describe('studioAiApi — rowDisabledReason (the conditional whitelist vs the unsaved doc)', () => {
   const base = v2Campaign().design_config;
-  const withQuiz = (enabled, questions) => ({
+  const withQuiz = (enabled, questions, scoring = undefined) => ({
     ...base,
-    quiz: { enabled, steps: questions > 0 ? [{ questions: Array.from({ length: questions }, (_, i) => ({ id: `q${i}` })) }] : [] },
+    quiz: {
+      enabled,
+      steps: questions > 0 ? [{ questions: Array.from({ length: questions }, (_, i) => ({ id: `q${i}` })) }] : [],
+      ...(scoring ? { scoring } : {}),
+    },
   });
 
   it.each([
     ['content.headline', base, null],
     ['content.heroCtaLabel', base, /no hero media/i],
     ['content.heroCtaLabel', { ...base, content: { ...base.content, media: { kind: 'image', src: 'x.jpg' } } }, null],
+    ['content.media.alt', base, /no hero image/i],
+    ['content.media.alt', { ...base, content: { ...base.content, media: { kind: 'video', src: 'x.mp4' } } }, /no hero image/i],
+    ['content.media.alt', { ...base, content: { ...base.content, media: { kind: 'image', src: 'x.jpg' } } }, null],
     ['quiz.intro.headline', base, /quiz is disabled/i],
     ['quiz.intro.headline', withQuiz(true, 0), /quiz is disabled/i],
     ['quiz.intro.ctaLabel', withQuiz(true, 2), null],
-    ['distribution.featuredDrop.title', base, /featured drop is off/i],
-    ['distribution.marketplace.valueLine', base, /marketplace listing is off/i],
-    [
-      'distribution.marketplace.valueLine',
-      { ...base, distribution: { ...base.distribution, marketplace: { listed: true } } },
-      null,
-    ],
+    ['quiz.reveal.gapTemplate', base, /quiz is disabled/i],
+    ['quiz.reveal.valueExchange', withQuiz(true, 2), null],
+    ['quiz.scoring.readiness.label', withQuiz(true, 2), /readiness meter is off/i],
+    ['quiz.scoring.readiness.label', withQuiz(true, 2, { readiness: { enabled: true } }), null],
+    // Full-coverage amendment: distribution copy has NO publication-switch gate
+    ['distribution.featuredDrop.title', base, null],
+    ['distribution.featuredDrop.valueLabel', base, null],
+    ['distribution.marketplace.title', base, null],
+    ['distribution.marketplace.valueLine', base, null],
+    ['distribution.marketplace.inclusions', base, null],
     ['template.params.express.trustLine', base, /express template/i],
     ['template.params.express.trustLine', { ...base, template: { id: 'express', params: {} } }, null],
   ])('%s', (path, doc, expected) => {

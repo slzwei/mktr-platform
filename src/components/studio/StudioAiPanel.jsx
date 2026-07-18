@@ -3,14 +3,18 @@ import { AI_TONES } from './useStudioAi';
 import { buildLookDoc, lookBlockedReason } from './studioLooks';
 import DeviceFrame from './DeviceFrame';
 import CanvasPageSubject from './CanvasPageSubject';
+import { CATEGORY_OPTIONS } from './marketplaceOptions';
 
 /**
- * "✦ Write it for me" — the Studio AI panel (PR 4), the mock's 392px right
- * slide-in. Views: brief (mode toggle + tone chips), loading skeletons,
- * copy review (struck-through old values, accept / keep-mine / ↻, sticky
- * apply-all), looks gallery (LIVE mini-previews — the real renderer inside a
- * DeviceFrame, fed each look's composed doc), proposal (keep-my-template/
- * theme/copy + Adopt/Discard), error retry, 429 countdown.
+ * "✦ Write it for me" — the Studio AI panel (PR 4 + the full-coverage
+ * amendment), the mock's 392px right slide-in. Views: brief (mode toggle +
+ * tone chips), loading skeletons, review (rows grouped by section with
+ * per-section apply; string/pick/list kinds; struck-through old values,
+ * accept / keep-mine / ↻, sticky apply-all) + ADVISORY recommendation cards
+ * (never in apply-all — per-card Apply-to-draft / Go-to-control), looks
+ * gallery (LIVE mini-previews — the real renderer inside a DeviceFrame, fed
+ * each look's composed doc), proposal (keep-my-template/theme/copy +
+ * Adopt/Discard), error retry, 429 countdown.
  */
 
 const mono = "500 10px ui-monospace, 'SF Mono', Menlo, monospace";
@@ -24,6 +28,27 @@ const TEMPLATE_NAMES = {
   journey: 'Journey',
 };
 
+const CATEGORY_LABELS = Object.fromEntries(CATEGORY_OPTIONS);
+
+/** Human display for a row value (pick ids → their panel labels). */
+function displayValue(row) {
+  if (row.kind === 'pick' && row.path?.endsWith('.category')) return CATEGORY_LABELS[row.value] || row.value;
+  return row.value;
+}
+
+/** Multi-line text for a value that may be a string or a bullet list. */
+function ValueLines({ value, struck = false }) {
+  const style = struck
+    ? { fontSize: 11, color: 'var(--ink-3, #9BA0AB)', textDecoration: 'line-through', marginBottom: 3, whiteSpace: 'pre-line' }
+    : { fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-line', marginBottom: 8 };
+  if (Array.isArray(value)) {
+    if (!value.length) return null;
+    return <div style={style}>{value.map((v) => `• ${v}`).join('\n')}</div>;
+  }
+  if (!value) return null;
+  return <div style={style}>{value}</div>;
+}
+
 /** Mini device preview — true 390-wide viewport scaled down, inert. */
 function LookPreview({ campaign, lookDoc }) {
   return (
@@ -36,7 +61,7 @@ function LookPreview({ campaign, lookDoc }) {
 }
 
 export default function StudioAiPanel({ ai, campaign, doc }) {
-  const { mode, setMode, phase, brief, setBrief, sugs, scope, looks, proposal, error, retryIn, budget } = ai;
+  const { mode, setMode, phase, brief, setBrief, sugs, recs = [], scope, looks, proposal, error, retryIn, budget } = ai;
 
   // Looks always compose against the PRE-proposal doc mid-proposal (the
   // mock's rule: regenerating looks starts from the previous design).
@@ -45,6 +70,18 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
     () => (looks || []).map((look) => (lookBase ? buildLookDoc(lookBase, look, {}) : null)),
     [looks, lookBase]
   );
+
+  // Review rows grouped by section, in order of first appearance (the server
+  // already sorts rows by whitelist order, which is section-contiguous).
+  const rowSections = useMemo(() => {
+    const map = new Map();
+    (sugs || []).forEach((row, index) => {
+      const key = row.section || 'Other';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push({ row, index });
+    });
+    return [...map.entries()];
+  }, [sugs]);
 
   if (!ai.open) return null;
 
@@ -91,7 +128,7 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
                 onClick={() => setMode('copy')}
                 style={{ flex: 1, cursor: 'pointer', border: 'none', borderRadius: 5, padding: '6px 0', fontSize: 11, fontWeight: 600, background: mode === 'copy' ? '#fff' : 'transparent', color: mode === 'copy' ? 'var(--ink)' : 'var(--ink-2)' }}
               >
-                Write the copy
+                Fill everything
               </button>
               <button
                 type="button"
@@ -101,10 +138,18 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
                 Design the whole page
               </button>
             </div>
+            {mode === 'copy' && (
+              <div style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--ink-2, #7A8090)' }}>
+                Drafts every fillable detail in one pass — page, form and quiz copy, marketplace metadata, inclusions —
+                plus advisory recommendations for the publication switches, domain and slug. Nothing is applied without
+                your review; publication switches are only ever flipped by you.
+              </div>
+            )}
             {mode === 'full' && (
               <div style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--ink-2, #7A8090)' }}>
                 Proposes template + theme + copy together, as up to 3 complete looks — chosen only from documented
-                schema values. Gates, consents, legal text, fields, verification and distribution are never touched.
+                schema values. Gates, consents, legal text, form fields, verification and publication switches are
+                never touched.
               </div>
             )}
 
@@ -162,7 +207,7 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
                 ? 'Drafting up to 3 complete looks — template + theme + copy, one budget call…'
                 : scope
                   ? `Drafting a suggestion for ${scope.label}…`
-                  : 'Drafting against your current template…'}
+                  : 'Filling every section — copy, marketplace metadata and recommendations, one budget call…'}
             </div>
             {(phase === 'looksLoading' ? [1, 2, 3] : [1, 2, 3, 4, 5]).map((k) => (
               <div key={k} className="av2-skeleton" style={{ height: phase === 'looksLoading' ? 120 : 52, borderRadius: 8 }} />
@@ -201,38 +246,96 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
                 Edit brief
               </button>
             </div>
-            {sugs.map((row, i) => {
-              const blocked = !!row.disabledReason;
-              const stateLabel = row.state === 'applied' ? '✓ APPLIED' : row.state === 'kept' ? 'KEPT YOURS' : blocked ? 'UNAVAILABLE' : '';
-              return (
-                <div key={row.path} data-testid={`ai-sug-${row.path}`} style={{ background: 'var(--surface-2, #F7F8FA)', border: `1px solid ${row.state === 'applied' ? '#BFD9C6' : 'var(--line, #E3E6EB)'}`, borderRadius: 9, padding: '10px 11px', opacity: blocked && row.state === 'open' ? 0.75 : 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                    <span style={{ font: mono, color: 'var(--ink-3, #9BA0AB)' }}>
-                      {row.section.toUpperCase()} · {row.label}
+            {rowSections.map(([section, entries]) => (
+              <div key={section} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                {rowSections.length > 1 ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                    <span style={{ font: mono, letterSpacing: '.08em', color: 'var(--ink-3, #9BA0AB)' }}>
+                      {section.toUpperCase()} · {entries.length}
                     </span>
-                    <span style={{ fontSize: 9.5, fontWeight: 600, color: row.state === 'applied' ? '#1F7A46' : 'var(--ink-3)' }}>{stateLabel}</span>
+                    {entries.some(({ row }) => row.state === 'open' && !row.disabledReason) ? (
+                      <button
+                        type="button"
+                        onClick={() => ai.applySection(section)}
+                        style={{ cursor: 'pointer', border: 'none', background: 'none', color: 'var(--accent, #4059C8)', fontSize: 10.5, fontWeight: 600 }}
+                      >
+                        Apply section
+                      </button>
+                    ) : null}
                   </div>
-                  {row.old ? (
-                    <div style={{ fontSize: 11, color: 'var(--ink-3, #9BA0AB)', textDecoration: 'line-through', marginBottom: 3, whiteSpace: 'pre-line' }}>{row.old}</div>
-                  ) : null}
-                  <div style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-line', marginBottom: 8 }}>{row.value}</div>
-                  {blocked ? (
-                    <div style={{ fontSize: 10.5, color: '#8A5B07', marginBottom: 8 }}>{row.disabledReason}</div>
-                  ) : null}
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button type="button" className="av2-btn av2-btn--primary av2-btn--sm" disabled={row.state !== 'open' || blocked} onClick={() => ai.acceptRow(i)}>
-                      Accept
-                    </button>
-                    <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" disabled={row.state === 'kept'} onClick={() => ai.keepRow(i)}>
-                      Keep mine
-                    </button>
-                    <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" title="Regenerate this field" onClick={() => ai.regenRow(i)} style={{ marginLeft: 'auto' }}>
-                      ↻
-                    </button>
-                  </div>
+                ) : null}
+                {entries.map(({ row, index }) => {
+                  const blocked = !!row.disabledReason;
+                  const stateLabel = row.state === 'applied' ? '✓ APPLIED' : row.state === 'kept' ? 'KEPT YOURS' : blocked ? 'UNAVAILABLE' : '';
+                  const oldEmpty = Array.isArray(row.old) ? row.old.length === 0 : !row.old;
+                  return (
+                    <div key={row.path} data-testid={`ai-sug-${row.path}`} style={{ background: 'var(--surface-2, #F7F8FA)', border: `1px solid ${row.state === 'applied' ? '#BFD9C6' : 'var(--line, #E3E6EB)'}`, borderRadius: 9, padding: '10px 11px', opacity: blocked && row.state === 'open' ? 0.75 : 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                        <span style={{ font: mono, color: 'var(--ink-3, #9BA0AB)' }}>
+                          {row.section.toUpperCase()} · {row.label}
+                        </span>
+                        <span style={{ fontSize: 9.5, fontWeight: 600, color: row.state === 'applied' ? '#1F7A46' : 'var(--ink-3)' }}>{stateLabel}</span>
+                      </div>
+                      {oldEmpty ? null : <ValueLines value={row.old} struck />}
+                      <ValueLines value={row.kind === 'pick' ? displayValue(row) : row.value} />
+                      {blocked ? (
+                        <div style={{ fontSize: 10.5, color: '#8A5B07', marginBottom: 8 }}>{row.disabledReason}</div>
+                      ) : null}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button type="button" className="av2-btn av2-btn--primary av2-btn--sm" disabled={row.state !== 'open' || blocked} onClick={() => ai.acceptRow(index)}>
+                          Accept
+                        </button>
+                        <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" disabled={row.state === 'kept'} onClick={() => ai.keepRow(index)}>
+                          Keep mine
+                        </button>
+                        {row.kind !== 'pick' ? (
+                          <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" title="Regenerate this field" onClick={() => ai.regenRow(index)} style={{ marginLeft: 'auto' }}>
+                            ↻
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+
+            {recs.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }} data-testid="ai-recs">
+                <div style={{ font: mono, letterSpacing: '.08em', color: 'var(--ink-3, #9BA0AB)', marginTop: 2 }}>
+                  RECOMMENDATIONS — ADVISORY
                 </div>
-              );
-            })}
+                {recs.map((rec, index) => (
+                  <div key={rec.topic} data-testid={`ai-rec-${rec.topic}`} style={{ background: '#FBF8EF', border: '1px dashed #D8C9A2', borderRadius: 9, padding: '10px 11px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                      <span style={{ font: mono, color: '#8A5B07' }}>{(rec.label || rec.topic).toUpperCase()}</span>
+                      {rec.state === 'applied' ? (
+                        <span style={{ fontSize: 9.5, fontWeight: 600, color: '#1F7A46' }}>✓ APPLIED TO DRAFT</span>
+                      ) : null}
+                    </div>
+                    <div style={{ fontSize: 12, lineHeight: 1.55, marginBottom: rec.suggestedValue ? 4 : 8 }}>{rec.advice}</div>
+                    {rec.suggestedValue ? (
+                      <div style={{ font: mono, color: 'var(--ink-2, #5B616E)', marginBottom: 8 }}>suggested: {rec.suggestedValue}</div>
+                    ) : null}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {rec.suggestedValue && rec.state !== 'applied' ? (
+                        <button type="button" className="av2-btn av2-btn--primary av2-btn--sm" onClick={() => ai.applyRec(index)}>
+                          Apply to draft
+                        </button>
+                      ) : null}
+                      <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" onClick={() => ai.jumpRec(index)}>
+                        Go to control
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div style={{ fontSize: 10, color: 'var(--ink-3, #9BA0AB)' }}>
+                  Advisory only — never part of “Apply all”. Applying a switch edits the unsaved draft; publication
+                  still passes the server gate after you save.
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 8, position: 'sticky', bottom: 0, background: 'var(--surface, #fff)', padding: '8px 0' }}>
               <button type="button" className="av2-btn av2-btn--primary" style={{ flex: 1, justifyContent: 'center' }} onClick={ai.applyAll}>
                 Apply all remaining

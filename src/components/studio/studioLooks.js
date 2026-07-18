@@ -35,26 +35,46 @@ function quizOn(doc) {
 /** Reasons mirror the server's conditional whitelist, evaluated on the
  * UNSAVED doc. Returns null (allowed) or the human reason it is not. The
  * server gates from the STORED doc; the panel re-checks at receipt AND at
- * apply time (F6 — accepting a drop title while the unsaved drop is disabled
- * would be a latent overwrite). */
+ * apply time (F6). Full-coverage amendment: drop/marketplace copy has NO
+ * publication-switch gate any more — filling those details BEFORE flipping
+ * the switch is the point, and the canvas previews both surfaces. */
 export function rowDisabledReason(doc, path) {
   if (!doc) return 'No document';
   switch (path) {
     case 'content.heroCtaLabel':
       return (doc.content?.media?.kind || 'none') !== 'none' ? null : 'No hero media on the page right now';
+    case 'content.media.alt':
+      return doc.content?.media?.kind === 'image' ? null : 'No hero image on the page right now';
     case 'quiz.intro.headline':
     case 'quiz.intro.subhead':
     case 'quiz.intro.ctaLabel':
+    case 'quiz.reveal.gapTemplate':
+    case 'quiz.reveal.valueExchange':
+    case 'quiz.reveal.ctaSubtext':
       return quizOn(doc) ? null : 'The quiz is disabled or has no questions';
-    case 'distribution.featuredDrop.title':
-      return doc.distribution?.featuredDrop?.enabled === true ? null : 'The featured drop is off';
-    case 'distribution.marketplace.valueLine':
-      return doc.distribution?.marketplace?.listed === true ? null : 'The marketplace listing is off';
+    case 'quiz.scoring.readiness.label':
+      if (!quizOn(doc)) return 'The quiz is disabled or has no questions';
+      return doc.quiz?.scoring?.readiness?.enabled === true ? null : 'The readiness meter is off';
     case 'template.params.express.trustLine':
       return (doc.template?.id || 'editorial') === 'express' ? null : 'Only the Express template shows the trust line';
     default:
-      return null; // unconditional copy paths
+      return null; // unconditional copy paths (incl. all distribution copy)
   }
+}
+
+/** Kind-aware current value for a review row: strings for copy/pick rows,
+ * arrays for the inclusions list row ([] when unset). */
+export function rowCurrentValue(doc, row) {
+  if (row?.kind === 'list') {
+    const v = getAtPath(doc, row.path);
+    return Array.isArray(v) ? v : [];
+  }
+  return currentValueAt(doc, row?.path || '');
+}
+
+/** Structural equality across row value types (string | string[]). */
+export function rowValuesEqual(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /** Why a look can't be picked against the CURRENT doc (re-checked at pick

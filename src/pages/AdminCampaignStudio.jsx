@@ -89,15 +89,23 @@ export default function AdminCampaignStudio() {
     campaignId: campaign?.id,
   });
 
-  // "✦ Write it for me" (Studio PR 4) — copy suggestions + CO-1 look
-  // proposals; fully campaign-scoped (the hook resets + aborts on switch).
-  // Picking a look forces a coherent page-subject remount (F12).
+  // "✦ Write it for me" (Studio PR 4 + full-coverage amendment) — fill-
+  // everything suggestions, advisory recommendations + CO-1 look proposals;
+  // fully campaign-scoped (the hook resets + aborts on switch). Picking a
+  // look forces a coherent page-subject remount (F12). A slug recommendation
+  // only PREFILLS the draft (own save path, post-activation lock) and lands
+  // the operator on the Distribution panel to see it.
   const onPickLook = useCallback(() => {
     setSubject('page');
     setJump(null);
     setResetKey((k) => k + 1);
   }, []);
-  const ai = useStudioAi({ campaign, doc, setPath, replaceDoc, onPickLook });
+  const onSlugPrefill = useCallback((value) => {
+    setSlugDraft(value);
+    setSlugError(null);
+    setSection('dist');
+  }, []);
+  const ai = useStudioAi({ campaign, doc, setPath, replaceDoc, onPickLook, onSlugPrefill, onJumpSection: setSection });
   const aiRef = useRef(ai);
   aiRef.current = ai;
 
@@ -407,6 +415,7 @@ export default function AdminCampaignStudio() {
               onSlugSave={handleSlugSave}
               slugSaving={slugSaving}
               slugError={slugError}
+              onSuggest={ai.suggestField}
             />
           )}
         </section>

@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { requestCopyDraft } from './studioAiApi';
-import { rowDisabledReason, currentValueAt, buildLookDoc, lookBlockedReason, adoptedCopyRows } from './studioLooks';
+import {
+  rowDisabledReason,
+  rowCurrentValue,
+  rowValuesEqual,
+  buildLookDoc,
+  lookBlockedReason,
+  adoptedCopyRows,
+} from './studioLooks';
 
 /**
  * Studio AI assist state machine (PR 4) — the mock's semantics with the
@@ -8,13 +15,22 @@ import { rowDisabledReason, currentValueAt, buildLookDoc, lookBlockedReason, ado
  *
  *  - phases: brief | loading | looksLoading | ready | looks | proposal |
  *    error | rate; Generate is disabled until the brief has a topic.
- *  - copy review rows: {path, label, section, value, old, state} where state ∈
- *    open | applied | kept. Accept re-gates the path against the CURRENT doc
- *    (action-time TOCTOU guard) and writes via setPath; Keep-mine restores
- *    `old` ONLY while the doc still holds the accepted AI value (operator
- *    edits always win); per-field ↻ regenerates scoped (regens[path]+1) and
- *    updates the doc only if the row was applied AND untouched, else the new
- *    value arrives as `open`.
+ *  - review rows: {path, label, section, value, old, state, kind} where state
+ *    ∈ open | applied | kept and kind ∈ copy | pick | list (full-coverage
+ *    amendment: the server merges string draft rows, marketplace enum PICKS
+ *    and the inclusions LIST into one reviewable stream; equality checks are
+ *    kind-aware via rowCurrentValue/rowValuesEqual). Accept re-gates the path
+ *    against the CURRENT doc (action-time TOCTOU guard) and writes via
+ *    setPath; Keep-mine restores `old` ONLY while the doc still holds the
+ *    accepted AI value (operator edits always win); per-field ↻ regenerates
+ *    scoped (regens[path]+1) and updates the doc only if the row was applied
+ *    AND untouched, else the new value arrives as `open`. Pick rows have no ↻
+ *    (an enum re-roll is noise; the server 422s pick scopes anyway).
+ *  - recommendations: advisory {topic, label, advice, suggestedValue, state}
+ *    cards — NEVER part of apply-all. applyRec is an explicit per-card action
+ *    that writes the unsaved doc (publication toggles, host) or prefills the
+ *    slug draft via onSlugPrefill; advice-only cards (null suggestedValue)
+ *    offer only a rail deep-link via onJumpSection.
  *  - full mode (CO-1): ≤3 complete looks in ONE provider call. Picking a look
  *    swaps the WHOLE doc (replaceDoc) built from the PRE-proposal doc; keep
  *    toggles rebuild from `prev.doc`; Adopt turns the look's copy into an
@@ -34,12 +50,24 @@ export const AI_TONES = ['Friendly', 'Formal', 'Urgent', 'Playful'];
 const EMPTY_BRIEF = { topic: '', audience: '', objective: '', mustInclude: '', tone: 'Friendly' };
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
-export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPickLook }) {
+/** Rail section a recommendation topic deep-links to. */
+const REC_SECTIONS = {
+  listMarketplace: 'dist',
+  featureDrop: 'dist',
+  customerHost: 'dist',
+  slug: 'dist',
+  formGates: 'form',
+  formFields: 'form',
+  verification: 'form',
+};
+
+export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPickLook, onSlugPrefill, onJumpSection }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState('copy');
   const [phase, setPhase] = useState('brief');
   const [brief, setBrief] = useState(EMPTY_BRIEF);
   const [sugs, setSugs] = useState([]);
+  const [recs, setRecs] = useState([]); // advisory cards — never in apply-all
   const [scope, setScope] = useState(null); // {path, label} | null
   const [looks, setLooks] = useState([]);
   const [proposal, setProposal] = useState(null); // {prev:{doc}, look, keep, adopted}
@@ -59,15 +87,25 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
   // in the handler, never inside a state updater (updaters run at render time).
   const sugsRef = useRef(sugs);
   sugsRef.current = sugs;
+  const recsRef = useRef(recs);
+  recsRef.current = recs;
   const looksRef = useRef(looks);
   looksRef.current = looks;
   const proposalRef = useRef(proposal);
   proposalRef.current = proposal;
   const onPickLookRef = useRef(onPickLook);
   onPickLookRef.current = onPickLook;
+  const onSlugPrefillRef = useRef(onSlugPrefill);
+  onSlugPrefillRef.current = onSlugPrefill;
+  const onJumpSectionRef = useRef(onJumpSection);
+  onJumpSectionRef.current = onJumpSection;
 
   const patchRow = useCallback((index, patch) => {
     setSugs((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  }, []);
+
+  const patchRec = useCallback((index, patch) => {
+    setRecs((prev) => prev.map((rec, i) => (i === index ? { ...rec, ...patch } : rec)));
   }, []);
 
   // Campaign scoping (Codex F10): full reset + abort in-flight + stale fence.
@@ -80,6 +118,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     setPhase('brief');
     setBrief(EMPTY_BRIEF);
     setSugs([]);
+    setRecs([]);
     setScope(null);
     setLooks([]);
     setProposal(null);
@@ -119,11 +158,19 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
 
   const templateId = doc?.template?.id || 'editorial';
 
-  const toRows = useCallback((draft) => {
+  /** Merge the response's typed sections into ONE review stream: string draft
+   * rows, marketplace enum picks, the inclusions list. Old servers send only
+   * `draft` — every section is optional. */
+  const toRows = useCallback((data) => {
     const current = docRef.current;
-    return (draft || []).map((row) => ({
+    const merged = [
+      ...(data?.draft || []).map((row) => ({ ...row, kind: 'copy' })),
+      ...(data?.picks || []).map((row) => ({ ...row, kind: 'pick' })),
+      ...(data?.inclusions ? [{ ...data.inclusions, kind: 'list', value: data.inclusions.values }] : []),
+    ];
+    return merged.map((row) => ({
       ...row,
-      old: currentValueAt(current, row.path),
+      old: rowCurrentValue(current, row),
       state: 'open',
       disabledReason: rowDisabledReason(current, row.path),
     }));
@@ -180,7 +227,8 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
         { signal }
       );
       if (generation !== generationRef.current) return; // stale campaign
-      setSugs(toRows(data.draft));
+      setSugs(toRows(data));
+      setRecs((data.recommendations || []).map((rec) => ({ ...rec, state: 'open' })));
       setPhase('ready');
     } catch (err) {
       if (generation !== generationRef.current) return;
@@ -214,7 +262,8 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
           { signal }
         );
         if (generation !== generationRef.current) return;
-        setSugs(toRows(data.draft));
+        setSugs(toRows(data));
+        setRecs([]); // scoped view — a full generate rebuilds the advisory cards
         setPhase('ready');
       } catch (err) {
         if (generation !== generationRef.current) return;
@@ -245,7 +294,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     (index) => {
       const row = sugsRef.current[index];
       if (!row || row.state === 'kept') return;
-      if (row.state === 'applied' && currentValueAt(docRef.current, row.path) === row.value) {
+      if (row.state === 'applied' && rowValuesEqual(rowCurrentValue(docRef.current, row), row.value)) {
         setPath(row.path, row.old);
       }
       patchRow(index, { state: 'kept' });
@@ -253,11 +302,12 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     [setPath, patchRow]
   );
 
-  /** Scoped per-row regenerate (regens[path]+1), replace in place. */
+  /** Scoped per-row regenerate (regens[path]+1), replace in place. Pick rows
+   * have no regen (enum re-rolls are noise; the server 422s pick scopes). */
   const regenRow = useCallback(
     async (index) => {
       const row = sugsRef.current[index];
-      if (!row || !campaign?.id) return;
+      if (!row || row.kind === 'pick' || !campaign?.id) return;
       const { generation, signal } = startRequest();
       const n = (regensRef.current[row.path] || 0) + 1;
       noteCall();
@@ -275,7 +325,9 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
         );
         if (generation !== generationRef.current) return;
         regensRef.current[row.path] = n;
-        const fresh = data.draft?.[0];
+        const fresh = row.kind === 'list'
+          ? (data.inclusions ? { value: data.inclusions.values } : null)
+          : data.draft?.[0];
         if (!fresh) return;
         const cur = sugsRef.current[index];
         if (!cur || cur.path !== row.path) return;
@@ -284,7 +336,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
         // untouched row on a now-disabled path must fall back to open+reason —
         // never a silent write.
         const reason = rowDisabledReason(docRef.current, cur.path);
-        if (!reason && cur.state === 'applied' && currentValueAt(docRef.current, cur.path) === cur.value) {
+        if (!reason && cur.state === 'applied' && rowValuesEqual(rowCurrentValue(docRef.current, cur), cur.value)) {
           // untouched applied row on a live surface: swap the doc value, stay applied
           setPath(cur.path, fresh.value);
           patchRow(index, { value: fresh.value });
@@ -299,12 +351,14 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     [campaign?.id, templateId, briefOrName, startRequest, noteCall, fail, setPath, patchRow]
   );
 
-  /** Apply every remaining OPEN row (each re-gated). Copy writes can't change
-   * any gate (gates hang off toggles/enums, never copy paths), so re-gating
-   * against the pre-batch doc is sound. */
-  const applyAll = useCallback(() => {
+  /** Apply every remaining OPEN row (each re-gated), optionally limited to one
+   * section. Recommendations are NEVER part of this — advisory by contract.
+   * Copy writes can't change any gate (gates hang off toggles/enums, never
+   * copy paths), so re-gating against the pre-batch doc is sound. */
+  const applyOpenRows = useCallback((section) => {
     const patches = sugsRef.current.map((row) => {
       if (row.state !== 'open') return null;
+      if (section && row.section !== section) return null;
       const reason = rowDisabledReason(docRef.current, row.path);
       if (reason) return { disabledReason: reason };
       setPath(row.path, row.value);
@@ -313,8 +367,49 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     setSugs((prev) => prev.map((row, i) => (patches[i] ? { ...row, ...patches[i] } : row)));
   }, [setPath]);
 
+  // applyAll stays zero-arg: it is wired straight into onClick, and a DOM
+  // event leaking into the section filter would silently apply nothing.
+  const applyAll = useCallback(() => applyOpenRows(null), [applyOpenRows]);
+  const applySection = useCallback((section) => applyOpenRows(section), [applyOpenRows]);
+
+  /** Explicit per-card apply for a recommendation with a suggestedValue —
+   * writes the UNSAVED doc (or prefills the slug draft); nothing persists
+   * until the operator saves, and the server publication gate still rules. */
+  const applyRec = useCallback(
+    (index) => {
+      const rec = recsRef.current[index];
+      if (!rec || rec.state === 'applied' || !rec.suggestedValue) return;
+      switch (rec.topic) {
+        case 'listMarketplace':
+          setPath('distribution.marketplace.listed', rec.suggestedValue === 'on');
+          break;
+        case 'featureDrop':
+          setPath('distribution.featuredDrop.enabled', rec.suggestedValue === 'on');
+          break;
+        case 'customerHost':
+          setPath('distribution.host', rec.suggestedValue);
+          break;
+        case 'slug':
+          onSlugPrefillRef.current?.(rec.suggestedValue);
+          break;
+        default:
+          return; // advice-only topics have nothing to apply
+      }
+      patchRec(index, { state: 'applied' });
+    },
+    [setPath, patchRec]
+  );
+
+  /** Deep-link the rail to the control a recommendation talks about. */
+  const jumpRec = useCallback((index) => {
+    const rec = recsRef.current[index];
+    if (!rec) return;
+    onJumpSectionRef.current?.(REC_SECTIONS[rec.topic] || 'dist');
+  }, []);
+
   const discard = useCallback(() => {
     setSugs([]);
+    setRecs([]);
     setScope(null);
     setPhase('brief');
   }, []);
@@ -482,6 +577,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     brief,
     setBrief,
     sugs,
+    recs,
     scope,
     looks,
     proposal,
@@ -496,6 +592,9 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     keepRow,
     regenRow,
     applyAll,
+    applySection,
+    applyRec,
+    jumpRec,
     discard,
     backToBrief,
     generateLooks,

@@ -23,7 +23,10 @@ const LOOK = {
   media: { kind: 'image', note: 'Warm hawker-centre scene' },
   draft: [
     { path: 'content.headline', label: 'Form headline', section: 'page', value: 'New headline' },
-    { path: 'distribution.featuredDrop.title', label: 'Drop title', section: 'distribution', value: 'Drop!' },
+    // The gated example: quiz copy while the quiz is off. (Drop/marketplace
+    // copy is UNGATED since the full-coverage amendment, and look drafts are
+    // page-scoped server-side anyway.)
+    { path: 'quiz.intro.headline', label: 'Quiz intro headline', section: 'quiz', value: 'Quiz me!' },
   ],
 };
 
@@ -42,10 +45,10 @@ describe('buildLookDoc', () => {
     expect(doc.theme.font).toBe('schibsted'); // look omitted font → base survives
   });
 
-  it('applies copy rows re-gated against the doc AS BUILT (drop row skipped while the drop is off)', () => {
+  it('applies copy rows re-gated against the doc AS BUILT (quiz row skipped while the quiz is off)', () => {
     const doc = buildLookDoc(base(), LOOK, {});
     expect(doc.content.headline).toBe('New headline');
-    expect(doc.distribution.featuredDrop.title).toBeUndefined();
+    expect(doc.quiz?.intro?.headline).toBeUndefined();
   });
 
   it('express trust line lands only when the look makes express the EFFECTIVE template (F4)', () => {
@@ -93,7 +96,7 @@ describe('adoptedCopyRows', () => {
     const prev = base();
     const lookDoc = buildLookDoc(prev, LOOK, {});
     const rows = adoptedCopyRows(LOOK, prev, lookDoc);
-    expect(rows).toHaveLength(1); // the gated drop-title row never landed
+    expect(rows).toHaveLength(1); // the gated quiz-intro row never landed
     expect(rows[0]).toMatchObject({
       path: 'content.headline',
       value: 'New headline',
@@ -115,9 +118,11 @@ describe('lookBlockedReason', () => {
 });
 
 describe('rowDisabledReason — moved home (re-exported via studioAiApi)', () => {
-  it('still gates the five conditional paths', () => {
+  it('gates the conditional paths; distribution copy is ungated (full-coverage amendment)', () => {
     expect(rowDisabledReason(base(), 'content.headline')).toBeNull();
     expect(rowDisabledReason(base(), 'content.heroCtaLabel')).toMatch(/no hero media/i);
-    expect(rowDisabledReason(base(), 'distribution.featuredDrop.title')).toMatch(/featured drop/i);
+    expect(rowDisabledReason(base(), 'quiz.intro.headline')).toMatch(/quiz is disabled/i);
+    expect(rowDisabledReason(base(), 'distribution.featuredDrop.title')).toBeNull();
+    expect(rowDisabledReason(base(), 'distribution.marketplace.valueLine')).toBeNull();
   });
 });
