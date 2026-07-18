@@ -3,9 +3,12 @@
  * leads?" check for the admin (Phase 3 of the quiz campaign work).
  *
  * The #1 go-live risk: a lead-capture / quiz campaign launched with NO agent
- * lead-package pool routes every lead to the phone-less System Agent, which the
- * Lyfe edge function rejects (422) — leads are silently lost. This surfaces that
- * (and a disabled webhook / phone-less agents) BEFORE ad spend starts.
+ * lead-package pool routes every lead to the phone-less System Agent — leads
+ * are captured but undelivered (recoverable via admin reassign). This surfaces
+ * that (and a disabled webhook / phone-less agents) BEFORE ad spend starts.
+ * Since 2026-07-18 the empty pool is a WARNING, not a blocker — reward-only
+ * and test campaigns launch without a funded pool by design; the hard blocks
+ * are the states where capture itself breaks (webhook off, OTP unconfigured).
  *
  * `computeReadiness` is pure + dependency-free (no model imports) so it unit-tests
  * without a DB and stays decoupled from the (currently in-flux) models layer.
@@ -81,13 +84,16 @@ export function computeReadiness(facts) {
 
   const issues = [];
 
-  // CRITICAL — empty pool → System Agent → lost at Lyfe (422). The whole point.
+  // WARNING — empty pool → leads dead-end on the System Agent (undelivered but
+  // retained in MKTR, admin-recoverable via reassign/held dispatch). Downgraded
+  // from critical 2026-07-18 (Shawn): reward-only and test campaigns legitimately
+  // launch with no funded pool, so this warns loudly but never blocks activation.
   if (assignableAgents === 0) {
     issues.push({
-      level: 'critical',
+      level: 'warning',
       code: 'no_agent_pool',
       message:
-        'No agent has an active lead package for this campaign. Leads will route to the System Agent and will NOT be delivered. Assign a lead package to at least one active agent before launching.',
+        'No agent has an active lead package for this campaign — leads will sit with the System Agent, undelivered, until a package is assigned (they stay in MKTR and can be reassigned later). Fine for reward-only or test campaigns; assign a package before real ad spend.',
     });
   }
 
