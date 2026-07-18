@@ -346,6 +346,13 @@ export const redeemOpsApi = {
     // Full response returned — the toast needs the server's message.
     return apiClient.post(`/redeem-ops/entitlements/${id}/resend-pass`, { channel });
   },
+  async cancelEntitlement(id, { reason } = {}) {
+    // Voids an eligible/issued entitlement: the QR/link dies, inventory is
+    // returned to the activation pool, and the one-live-reward-per-phone slot
+    // is freed. Server requires a non-empty reason (audited).
+    const res = await apiClient.patch(`/redeem-ops/entitlements/${id}/cancel`, { reason });
+    return res.data;
+  },
   async verifyVoucher(token) {
     const res = await apiClient.post('/redeem-ops/redemptions/verify', { token });
     return res.data;
