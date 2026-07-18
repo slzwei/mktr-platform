@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { redeemOpsApi } from '@/api/redeemOps';
@@ -15,6 +15,23 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import ScanLine from 'lucide-react/icons/scan-line';
 import { RoMobileCard, RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
+import QrScannerDialog from '@/components/redeemops/QrScannerDialog';
+
+/**
+ * A scanned reward QR is one of two shapes:
+ *  - a reservation-pass LINK ending in /r/<presentationToken> → activate (unlock)
+ *  - a bare voucher token → verify → redeem
+ * Returns { kind: 'pass'|'voucher', value } or null when it isn't a reward code.
+ */
+function parseRewardQr(raw) {
+  const s = String(raw || '').trim();
+  // Require a known reward host — a foreign `.../r/<token>` URL must not be
+  // treated as an activation pass (Codex review).
+  const passMatch = s.match(/(?:https?:\/\/)?(?:www\.)?(?:redeem|mktr)\.sg\/r\/([A-Za-z0-9_-]{12,128})\/?$/i);
+  if (passMatch) return { kind: 'pass', value: passMatch[1] };
+  if (/^[A-Za-z0-9_-]{12,128}$/.test(s)) return { kind: 'voucher', value: s };
+  return null;
+}
 
 /** Per-row delivery truth from the receipts the backend now records. */
 function deliveryStatus(e) {
@@ -46,6 +63,10 @@ export default function RedemptionsPage() {
   // { entitlement } — voids the reward; requires a reason (audited server-side).
   const [cancelDialog, setCancelDialog] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
+  const [scanOpen, setScanOpen] = useState(false);
+  // presentationToken pending an explicit "Activate" confirm after a pass scan.
+  const [activateToken, setActivateToken] = useState(null);
+  const pasteRef = useRef(null);
 
   const historyQuery = useQuery({
     queryKey: ['redeem-ops', 'redemptions'],
@@ -58,7 +79,8 @@ export default function RedemptionsPage() {
   });
 
   const unlockMutation = useMutation({
-    mutationFn: (prospectId) => redeemOpsApi.unlockEntitlement({ prospectId }),
+    // body is { prospectId } (row button) or { presentationToken } (pass scan).
+    mutationFn: (body) => redeemOpsApi.unlockEntitlement(body),
     onSuccess: (data) => {
       // Truthful toast: only claim an email went out when one was queued.
       toast.success(
@@ -68,6 +90,7 @@ export default function RedemptionsPage() {
             ? 'Voucher unlocked — email with QR sent to the customer'
             : 'Voucher unlocked — no email on file; use Copy link to share the voucher'
       );
+      setActivateToken(null);
       queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'entitlements'] });
     },
     onError: (err) => toast.error('Unlock failed', { description: err.message }),
@@ -100,8 +123,15 @@ export default function RedemptionsPage() {
   });
 
   const verifyMutation = useMutation({
-    mutationFn: () => redeemOpsApi.verifyVoucher(token.trim()),
-    onSuccess: (data) => setVerified(data),
+    // Always pass the token explicitly (the field or a scan) — never read it
+    // through a stale closure.
+    mutationFn: (t) => redeemOpsApi.verifyVoucher(t.trim()),
+    // Bind the result to the token that produced it, and drop a stale response
+    // if the field changed while it was in flight — the irreversible redeem
+    // must act on the reward SHOWN, never on whatever text is in the box now.
+    onSuccess: (data, t) => {
+      if (t.trim() === token.trim()) setVerified({ ...data, token: t.trim() });
+    },
     onError: (err) => {
       setVerified(null);
       toast.error('Verification failed', { description: err.message });
@@ -109,7 +139,8 @@ export default function RedemptionsPage() {
   });
 
   const completeMutation = useMutation({
-    mutationFn: () => redeemOpsApi.completeRedemption(token.trim()),
+    // Redeem the token the verified card is bound to, not the live field.
+    mutationFn: () => redeemOpsApi.completeRedemption((verified?.token ?? token).trim()),
     onSuccess: (data) => {
       toast.success(data?.already ? 'Already redeemed' : 'Redeemed ✔');
       setVerified(null); setToken('');
@@ -119,6 +150,25 @@ export default function RedemptionsPage() {
   });
 
   const redemptions = historyQuery.data?.redemptions || [];
+
+  // A scanned QR is either a pass link (→ activate) or a voucher token (→ verify).
+  const handleScanDetect = useCallback((raw) => {
+    setScanOpen(false);
+    const parsed = parseRewardQr(raw);
+    if (!parsed) { toast.error("That QR isn't a MKTR reward code"); return; }
+    if (parsed.kind === 'pass') {
+      setActivateToken(parsed.value); // opens the Activate confirm dialog
+    } else {
+      setVerified(null);
+      setToken(parsed.value);
+      verifyMutation.mutate(parsed.value); // explicit token — no stale closure
+    }
+  }, [verifyMutation]);
+
+  const focusPaste = useCallback(() => {
+    // Defer so the scanner dialog has finished closing before we steal focus.
+    setTimeout(() => pasteRef.current?.focus(), 0);
+  }, []);
 
   const copyText = async (text, label) => {
     try {
@@ -141,19 +191,28 @@ export default function RedemptionsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <ScanLine className="w-4 h-4" aria-hidden="true" /> Verify a voucher
+            <ScanLine className="w-4 h-4" aria-hidden="true" /> Scan or verify a reward
           </CardTitle>
-          <CardDescription>Paste the scanned QR value or the full voucher code.</CardDescription>
+          <CardDescription>
+            Scan the customer&apos;s QR to activate a reservation or redeem a voucher — or paste the code.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          <Button className="w-full" onClick={() => setScanOpen(true)}>
+            <ScanLine className="w-4 h-4 mr-2" aria-hidden="true" /> Scan QR
+          </Button>
+          <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--ro-text-3)' }}>
+            <span className="h-px flex-1 bg-border" /> or enter the code <span className="h-px flex-1 bg-border" />
+          </div>
           <div className="flex gap-2">
             <Input
+              ref={pasteRef}
               value={token}
               onChange={(e) => { setToken(e.target.value); setVerified(null); }}
               placeholder="Voucher code…"
               className="font-mono"
             />
-            <Button disabled={!token.trim() || verifyMutation.isPending} onClick={() => verifyMutation.mutate()}>
+            <Button disabled={!token.trim() || verifyMutation.isPending} onClick={() => verifyMutation.mutate(token)}>
               {verifyMutation.isPending ? 'Checking…' : 'Verify'}
             </Button>
           </div>
@@ -219,7 +278,7 @@ export default function RedemptionsPage() {
                   size="sm"
                   variant="outline"
                   disabled={unlockMutation.isPending}
-                  onClick={() => unlockMutation.mutate(e.prospect.id)}
+                  onClick={() => unlockMutation.mutate({ prospectId: e.prospect.id })}
                 >
                   Unlock
                 </Button>
@@ -486,6 +545,45 @@ export default function RedemptionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Activate — scanning a reservation pass issues the voucher. Confirm
+          before firing (it sends the voucher + draws from allocation). */}
+      <Dialog
+        open={!!activateToken}
+        onOpenChange={(open) => { if (!open && !unlockMutation.isPending) setActivateToken(null); }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Activate this reward?</DialogTitle>
+            <DialogDescription>
+              This issues the customer&apos;s voucher now and sends it to them, drawing from the
+              campaign&apos;s allocation. You can cancel it afterwards if it was a mistake.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={unlockMutation.isPending}
+              onClick={() => setActivateToken(null)}
+            >
+              Not now
+            </Button>
+            <Button
+              disabled={unlockMutation.isPending}
+              onClick={() => unlockMutation.mutate({ presentationToken: activateToken })}
+            >
+              {unlockMutation.isPending ? 'Activating…' : 'Activate reward'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <QrScannerDialog
+        open={scanOpen}
+        onOpenChange={setScanOpen}
+        onDetect={handleScanDetect}
+        onPasteFallback={focusPaste}
+      />
     </div>
   );
 }
