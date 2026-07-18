@@ -33,6 +33,7 @@ function fakeAi(overrides = {}) {
     brief: { topic: '', audience: '', objective: '', mustInclude: '', tone: 'Friendly' },
     setBrief: vi.fn(),
     sugs: [],
+    recs: [],
     scope: null,
     looks: [],
     proposal: null,
@@ -47,6 +48,9 @@ function fakeAi(overrides = {}) {
     keepRow: vi.fn(),
     regenRow: vi.fn(),
     applyAll: vi.fn(),
+    applySection: vi.fn(),
+    applyRec: vi.fn(),
+    jumpRec: vi.fn(),
     discard: vi.fn(),
     backToBrief: vi.fn(),
     generateLooks: vi.fn(),
@@ -98,6 +102,10 @@ describe('StudioAiPanel', () => {
     const ai = fakeAi();
     render(<StudioAiPanel ai={ai} />);
     expect(screen.getByRole('button', { name: 'Generate suggestions' })).toBeDisabled();
+    // full-coverage amendment: the first tab is "Fill everything" with the
+    // everything explainer (recommendations never auto-apply)
+    expect(screen.getByRole('button', { name: 'Fill everything' })).toBeInTheDocument();
+    expect(screen.getByText(/publication switches are only ever flipped by you/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Design the whole page' }));
     expect(ai.setMode).toHaveBeenCalledWith('full');
     fireEvent.click(screen.getByRole('button', { name: 'Friendly' }));
@@ -110,6 +118,9 @@ describe('StudioAiPanel', () => {
       brief: { topic: 'Voucher giveaway', audience: '', objective: '', mustInclude: '', tone: 'Friendly' },
     });
     render(<StudioAiPanel ai={ai} />);
+    // amended disclaimer: distribution copy now belongs to the other tab, but
+    // looks still never touch switches/fields/verification
+    expect(screen.getByText(/publication switches are\s+never touched/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Generate looks' }));
     expect(ai.generateLooks).toHaveBeenCalled();
     expect(ai.generate).not.toHaveBeenCalled();
@@ -170,6 +181,122 @@ describe('StudioAiPanel', () => {
   it('budget meter renders the estimate', () => {
     render(<StudioAiPanel ai={fakeAi({ budget: { used: 3, max: 10 } })} />);
     expect(screen.getByText(/3\/10 this minute/)).toBeInTheDocument();
+  });
+});
+
+describe('StudioAiPanel — full-coverage review (sections, picks, lists, recommendations)', () => {
+  const PAGE_ROW = { ...ROW, section: 'Page' };
+  const PICK_ROW = {
+    path: 'distribution.marketplace.category',
+    label: 'Category',
+    section: 'Distribution',
+    value: 'family_lifestyle',
+    old: '',
+    state: 'open',
+    disabledReason: null,
+    kind: 'pick',
+  };
+  const LIST_ROW = {
+    path: 'distribution.marketplace.inclusions',
+    label: 'Inclusions',
+    section: 'Distribution',
+    value: ['1 night stay', 'Daily photo updates'],
+    old: [],
+    state: 'open',
+    disabledReason: null,
+    kind: 'list',
+  };
+  const RECS = [
+    { topic: 'listMarketplace', label: 'Marketplace listing', advice: 'Flip it on once the slug is set.', suggestedValue: 'on', state: 'open' },
+    { topic: 'formGates', label: 'Eligibility gates', advice: 'Consider the SG/PR gate.', suggestedValue: null, state: 'open' },
+  ];
+
+  it('groups rows by section with per-section apply; single-section lists render no headers', () => {
+    const ai = fakeAi({ phase: 'ready', sugs: [PAGE_ROW, PICK_ROW, LIST_ROW] });
+    render(<StudioAiPanel ai={ai} />);
+
+    expect(screen.getByText('PAGE · 1')).toBeInTheDocument();
+    expect(screen.getByText('DISTRIBUTION · 2')).toBeInTheDocument();
+    const sectionApplies = screen.getAllByRole('button', { name: 'Apply section' });
+    expect(sectionApplies).toHaveLength(2);
+    fireEvent.click(sectionApplies[1]);
+    expect(ai.applySection).toHaveBeenCalledWith('Distribution');
+
+    const { container } = render(<StudioAiPanel ai={fakeAi({ phase: 'ready', sugs: [PAGE_ROW] })} />);
+    expect(container.textContent).not.toContain('PAGE · 1');
+  });
+
+  it('pick rows show the human category label and have no regenerate button', () => {
+    render(<StudioAiPanel ai={fakeAi({ phase: 'ready', sugs: [PICK_ROW] })} />);
+    expect(screen.getByText('Family & Lifestyle')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '↻' })).toBeNull();
+  });
+
+  it('list rows render bullets; array old renders struck bullets', () => {
+    const withOld = { ...LIST_ROW, old: ['Old inclusion'] };
+    render(<StudioAiPanel ai={fakeAi({ phase: 'ready', sugs: [withOld] })} />);
+    expect(screen.getByText(/• 1 night stay/)).toBeInTheDocument();
+    expect(screen.getByText(/• Old inclusion/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '↻' })).toBeInTheDocument(); // lists DO regen
+  });
+
+  it('recommendation cards are advisory: Apply-to-draft only with a suggestedValue, Go-to-control always', () => {
+    const ai = fakeAi({ phase: 'ready', sugs: [PAGE_ROW], recs: RECS });
+    render(<StudioAiPanel ai={ai} />);
+
+    expect(screen.getByTestId('ai-recs')).toBeInTheDocument();
+    expect(screen.getByText('RECOMMENDATIONS — ADVISORY')).toBeInTheDocument();
+    expect(screen.getByText(/Flip it on once the slug is set/)).toBeInTheDocument();
+    expect(screen.getByText('suggested: on')).toBeInTheDocument();
+
+    // one Apply (the toggle rec) — the advice-only card offers none
+    const applies = screen.getAllByRole('button', { name: 'Apply to draft' });
+    expect(applies).toHaveLength(1);
+    fireEvent.click(applies[0]);
+    expect(ai.applyRec).toHaveBeenCalledWith(0);
+
+    const jumps = screen.getAllByRole('button', { name: 'Go to control' });
+    expect(jumps).toHaveLength(2);
+    fireEvent.click(jumps[1]);
+    expect(ai.jumpRec).toHaveBeenCalledWith(1);
+  });
+
+  it('an applied recommendation shows the applied chip and loses its Apply button', () => {
+    const applied = [{ ...RECS[0], state: 'applied' }];
+    render(<StudioAiPanel ai={fakeAi({ phase: 'ready', sugs: [PAGE_ROW], recs: applied })} />);
+    expect(screen.getByText('✓ APPLIED TO DRAFT')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Apply to draft' })).toBeNull();
+  });
+
+  it('customerHost cards always carry the trusted blast-radius warning (Codex #197-3)', () => {
+    const hostRec = [{ topic: 'customerHost', label: 'Customer domain', advice: 'Use redeem.sg.', suggestedValue: 'redeem', state: 'open' }];
+    render(<StudioAiPanel ai={fakeAi({ phase: 'ready', sugs: [PAGE_ROW], recs: hostRec })} />);
+    expect(screen.getByText(/chrome, pixels, regulatory copy and the confirmation-email/i)).toBeInTheDocument();
+    expect(screen.getByText(/written for the current domain's voice/i)).toBeInTheDocument();
+  });
+
+  it('a receipt-time gated row re-enables from the LIVE doc (Codex #198-5)', () => {
+    const gatedQuizRow = {
+      path: 'quiz.intro.headline',
+      label: 'Quiz intro headline',
+      section: 'Quiz',
+      value: 'AI quiz intro',
+      old: '',
+      state: 'open',
+      disabledReason: 'The quiz is disabled or has no questions', // receipt-time
+    };
+    const quizOnDoc = {
+      ...BASE_DOC,
+      quiz: { enabled: true, steps: [{ questions: [{ id: 'q1' }] }] },
+    };
+    // surface enabled since receipt → Accept must be live again
+    render(<StudioAiPanel ai={fakeAi({ phase: 'ready', sugs: [gatedQuizRow] })} campaign={{ id: 'c1' }} doc={quizOnDoc} />);
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeEnabled();
+    expect(screen.queryByText('The quiz is disabled or has no questions')).toBeNull();
+
+    // still off → stays blocked
+    render(<StudioAiPanel ai={fakeAi({ phase: 'ready', sugs: [gatedQuizRow] })} campaign={{ id: 'c1' }} doc={BASE_DOC} />);
+    expect(screen.getAllByRole('button', { name: 'Accept' })[1]).toBeDisabled();
   });
 });
 

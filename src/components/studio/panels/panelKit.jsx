@@ -73,8 +73,9 @@ const inputStyle = {
 };
 
 /** Optional per-field AI affordance (Studio PR 4) — a tiny ✦ beside the
- * counter; renders only when the field is given an `onSuggest`. */
-function SuggestButton({ onSuggest, label }) {
+ * counter; renders only when the field is given an `onSuggest`. Exported for
+ * panels whose control isn't a panelKit field (e.g. the inclusions textarea). */
+export function SuggestButton({ onSuggest, label }) {
   if (!onSuggest) return null;
   return (
     <button
