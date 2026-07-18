@@ -16,9 +16,9 @@ import Users from 'lucide-react/icons/users';
 import Compass from 'lucide-react/icons/compass';
 import Kanban from 'lucide-react/icons/kanban';
 import ListChecks from 'lucide-react/icons/list-checks';
-import Layers from 'lucide-react/icons/layers';
+import Phone from 'lucide-react/icons/phone';
 import Gift from 'lucide-react/icons/gift';
-import Link2 from 'lucide-react/icons/link-2';
+import Megaphone from 'lucide-react/icons/megaphone';
 import QrCode from 'lucide-react/icons/qr-code';
 import ChartColumn from 'lucide-react/icons/chart-column';
 import UserCog from 'lucide-react/icons/user-cog';
@@ -45,9 +45,11 @@ const NAV = [
     : []),
   { title: 'Pipeline', url: '/redeem-ops/pipeline', icon: Kanban, capability: 'pipeline.view_team' },
   { title: 'Tasks', url: '/redeem-ops/tasks', icon: ListChecks, capability: 'tasks.manage' },
-  { title: 'Assignment Queues', url: '/redeem-ops/pools', icon: Layers, capability: 'pools.claim_next' },
+  // "Call Lists" (pools) + "Campaign Rewards" (activations): ops-facing names
+  // per the Redemptions-Campaign-Stacks design; URLs and internal terms unchanged.
+  { title: 'Call Lists', url: '/redeem-ops/pools', icon: Phone, capability: 'pools.claim_next' },
   { title: 'Rewards', url: '/redeem-ops/rewards', icon: Gift, capability: 'rewards.view' },
-  { title: 'Activations', url: '/redeem-ops/activations', icon: Link2, capability: 'activations.view' },
+  { title: 'Campaign Rewards', url: '/redeem-ops/activations', icon: Megaphone, capability: 'activations.view' },
   { title: 'Redemptions', url: '/redeem-ops/redemptions', icon: QrCode, capability: 'redemptions.verify' },
   { title: 'Analytics', url: '/redeem-ops/analytics', icon: ChartColumn, capability: 'analytics.view_own' },
   { title: 'Team', url: '/redeem-ops/team', icon: UserCog, capability: 'analytics.view_team' },

@@ -157,7 +157,7 @@ export default function PoolsPage() {
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-5">
       <RoPageHeader
-        title="Assignment queues"
+        title="Call Lists"
         sub="Curated prospect lists — hit “Claim next” to pull your next business, no cherry-picking, no collisions."
         actions={canManage && (
           <Button onClick={() => setCreateOpen(true)}>

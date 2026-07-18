@@ -59,7 +59,7 @@ export default function ActivationsPage() {
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-4 md:space-y-5">
       <RoPageHeader
-        title="Activations"
+        title="Campaign Rewards"
         sub="A reward allocated to one MKTR campaign — the campaign itself stays managed on mktr.sg."
         actions={canManage && (
           <Button onClick={() => setCreateOpen(true)}>
