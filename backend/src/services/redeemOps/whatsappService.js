@@ -1,3 +1,4 @@
+import QRCode from 'qrcode';
 import { RewardOffer } from '../../models/index.js';
 import { logger } from '../../utils/logger.js';
 
@@ -7,18 +8,26 @@ import { logger } from '../../utils/logger.js';
  * pass at issue and the voucher at unlock as Meta Cloud API UTILITY templates.
  *
  * Ships DARK: REDEEM_OPS_WHATSAPP_ENABLED (default false) gates every send at
- * call time, so wiring these senders in is a no-op until the flag flips. The
- * templates hardcode the redeem.sg /r/ host and carry ONLY the token as the
- * link variable — the /r/ page renders the live QR (pass while locked, voucher
- * once unlocked), so no media header and nothing in the message goes stale
- * semantically after unlock. Fire-and-forget one-shot like the email senders:
- * resolve a normalized { sent, skipped?, to?, error? }, NEVER throw — the
- * entitlement service writes the truthful per-channel receipt.
+ * call time, so wiring these senders in is a no-op until the flag flips.
  *
- * Templates (submitted for Meta approval as UTILITY, lang 'en'):
+ * Message shape (SG anti-scam posture — people distrust bare links, so the
+ * credential leads with a QR IMAGE HEADER, mirroring the voucher email's
+ * inline QR): header = per-customer QR uploaded to the Graph media API at
+ * send time; body = utility text carrying the redeem.sg/r/ link as the
+ * tap-fallback. The pass QR encodes the claim LINK (a human scanning it lands
+ * on the branded pass page; the consultant scanner strips the prefix); the
+ * voucher QR encodes the RAW token (merchant-scan parity with the email).
+ * WHATSAPP_QR_HEADER=false drops the header component for body-only templates
+ * — the template shape on Meta and this flag must agree or sends fail.
+ *
+ * Fire-and-forget one-shot like the email senders: resolve a normalized
+ * { sent, skipped?, to?, error? }, NEVER throw — the entitlement service
+ * writes the truthful per-channel receipt.
+ *
+ * Templates (submitted for Meta approval as UTILITY, lang 'en', IMAGE header):
  *   reward_pass:    "Hi {{1}}, your {{2}} is reserved. Show this pass to your
  *                    consultant when you meet and they'll activate it on the
- *                    spot: redeem.sg/r/{{3}}"
+ *                    spot: redeem.sg/r/{{3}} Keep this link handy."
  *   reward_voucher: "Hi {{1}}, your {{2}} is activated. Show the QR on this
  *                    page to redeem: redeem.sg/r/{{3}} It's valid until {{4}}."
  */
@@ -38,6 +47,16 @@ const WA_REQUIRES_CONTACT_CONSENT = true;
 
 export function waEnabled() {
   return String(process.env.REDEEM_OPS_WHATSAPP_ENABLED || '').toLowerCase() === 'true';
+}
+
+/** QR image header on/off — must match the approved templates' shape. */
+function qrHeaderEnabled() {
+  return String(process.env.WHATSAPP_QR_HEADER ?? 'true').toLowerCase() !== 'false';
+}
+
+/** Host baked into the templates' body link — the WA channel standardizes on redeem.sg. */
+function claimOrigin() {
+  return process.env.WHATSAPP_CLAIM_ORIGIN || 'https://redeem.sg';
 }
 
 /**
@@ -81,7 +100,7 @@ function cleanParam(value, fallback) {
 }
 
 export function makeWhatsappService(overrides = {}) {
-  const d = { RewardOffer, logger, fetch: (...args) => fetch(...args), ...overrides };
+  const d = { RewardOffer, logger, QRCode, fetch: (...args) => fetch(...args), ...overrides };
 
   async function rewardNameOf(entitlement) {
     try {
@@ -94,8 +113,37 @@ export function makeWhatsappService(overrides = {}) {
     }
   }
 
+  /**
+   * Upload one PNG to the Graph media API → media id for the header
+   * component. Throws on failure — sendTemplate catches and receipts it
+   * (an image-header template cannot be sent without its header, so there
+   * is deliberately no body-only fallback).
+   */
+  async function uploadQrPng(phoneId, token, buffer) {
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', 'image/png');
+    form.append('file', new Blob([buffer], { type: 'image/png' }), 'reward-qr.png');
+    const res = await d.fetch(`https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}/media`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const err = await res.json();
+        detail = err?.error ? `${err.error.code || res.status}: ${err.error.message || ''}` : detail;
+      } catch { /* non-JSON error body — keep the status */ }
+      throw new Error(`media upload failed — ${detail}`);
+    }
+    const json = await res.json();
+    if (!json?.id) throw new Error('media upload returned no id');
+    return json.id;
+  }
+
   /** One template send. Resolves normalized result, never throws. */
-  async function sendTemplate({ prospect, templateName, params }) {
+  async function sendTemplate({ prospect, templateName, params, qrContent }) {
     if (!waEnabled()) return { sent: false, skipped: 'disabled' };
     if (!canWhatsAppProspect(prospect)) return { sent: false, skipped: 'no_whatsapp' };
 
@@ -106,21 +154,30 @@ export function makeWhatsappService(overrides = {}) {
       return { sent: false, to: maskPhone(prospect.phone), error: 'whatsapp not configured' };
     }
 
-    const to = waRecipient(prospect.phone);
-    const body = {
-      messaging_product: 'whatsapp',
-      to,
-      type: 'template',
-      template: {
-        name: templateName,
-        language: { code: process.env.WHATSAPP_TEMPLATE_LANG || 'en' },
-        components: [
-          { type: 'body', parameters: params.map((text) => ({ type: 'text', text })) },
-        ],
-      },
-    };
-
     try {
+      const components = [
+        { type: 'body', parameters: params.map((text) => ({ type: 'text', text })) },
+      ];
+      if (qrHeaderEnabled() && qrContent) {
+        const png = await d.QRCode.toBuffer(qrContent, { width: 512, margin: 2 });
+        const mediaId = await uploadQrPng(phoneId, token, png);
+        components.unshift({
+          type: 'header',
+          parameters: [{ type: 'image', image: { id: mediaId } }],
+        });
+      }
+
+      const body = {
+        messaging_product: 'whatsapp',
+        to: waRecipient(prospect.phone),
+        type: 'template',
+        template: {
+          name: templateName,
+          language: { code: process.env.WHATSAPP_TEMPLATE_LANG || 'en' },
+          components,
+        },
+      };
+
       const res = await d.fetch(`https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}/messages`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -140,12 +197,13 @@ export function makeWhatsappService(overrides = {}) {
     }
   }
 
-  /** Reservation pass at capture (agent_unlock policy). */
+  /** Reservation pass at capture (agent_unlock policy). QR = the claim link. */
   async function sendReservationWhatsApp({ entitlement, prospect, presentationToken }) {
     const rewardName = await rewardNameOf(entitlement);
     return sendTemplate({
       prospect,
       templateName: process.env.WHATSAPP_TEMPLATE_PASS || 'reward_pass',
+      qrContent: `${claimOrigin()}/r/${presentationToken}`,
       params: [
         cleanParam(prospect?.firstName, 'there'),
         cleanParam(rewardName, 'your reward'),
@@ -154,7 +212,7 @@ export function makeWhatsappService(overrides = {}) {
     });
   }
 
-  /** Voucher at unlock. */
+  /** Voucher at unlock. QR = the raw voucher token (merchant-scan parity with the email). */
   async function sendVoucherWhatsApp({ entitlement, prospect, voucherToken }) {
     const rewardName = await rewardNameOf(entitlement);
     const expiry = entitlement.expiresAt
@@ -163,6 +221,7 @@ export function makeWhatsappService(overrides = {}) {
     return sendTemplate({
       prospect,
       templateName: process.env.WHATSAPP_TEMPLATE_VOUCHER || 'reward_voucher',
+      qrContent: voucherToken,
       params: [
         cleanParam(prospect?.firstName, 'there'),
         cleanParam(rewardName, 'your reward'),
