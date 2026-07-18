@@ -363,6 +363,14 @@ export function sanitizeRecommendations(rows, ctx) {
     let suggestedValue = typeof row.suggestedValue === 'string' ? row.suggestedValue.trim() : null;
     if (topic === 'listMarketplace' || topic === 'featureDrop') {
       suggestedValue = suggestedValue === 'on' || suggestedValue === 'off' ? suggestedValue : null;
+      // Codex #197-2: the prompt TELLS the model not to recommend listing an
+      // unsupported campaign type (quiz/guided_review — their funnels bypass
+      // the generic flow), but prompts aren't enforcement. An adversarial
+      // 'on' must degrade to advice-only, or the frontend Apply would store a
+      // latent listed=true that self-publishes if the type ever changes.
+      if (topic === 'listMarketplace' && suggestedValue === 'on' && ctx.marketplaceGate?.supportedType === false) {
+        suggestedValue = null;
+      }
     } else if (topic === 'customerHost') {
       suggestedValue = suggestedValue === 'redeem' || suggestedValue === 'mktr' ? suggestedValue : null;
     } else if (topic === 'slug') {

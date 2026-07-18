@@ -138,6 +138,38 @@ function providerError(provider, status) {
   return new AppError(`${label} could not generate the draft. Try again shortly.`, 502);
 }
 
+// Anthropic structured outputs support a SUBSET of JSON Schema — value
+// constraints OpenAI's strict mode accepts (length/count/numeric bounds,
+// pattern/format, defaults) are rejected there, failing the request before
+// the model runs (Codex review #197-1; latent for every schema here since
+// guided review — only the OpenAI path had been exercised in prod). Every
+// caller re-enforces limits in its own sanitizers, so for Anthropic we strip
+// the unsupported keywords rather than fail. `properties`/`$defs` hold
+// property NAMES, never keywords — strip only inside their values.
+const ANTHROPIC_UNSUPPORTED_KEYWORDS = new Set([
+  'minLength', 'maxLength', 'pattern', 'format',
+  'minItems', 'maxItems', 'minimum', 'maximum',
+  'exclusiveMinimum', 'exclusiveMaximum', 'minProperties', 'maxProperties',
+  'default',
+]);
+
+export function anthropicSafeSchema(schema) {
+  if (Array.isArray(schema)) return schema.map(anthropicSafeSchema);
+  if (!schema || typeof schema !== 'object') return schema;
+  const out = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (ANTHROPIC_UNSUPPORTED_KEYWORDS.has(key)) continue;
+    if ((key === 'properties' || key === '$defs' || key === 'definitions') && value && typeof value === 'object' && !Array.isArray(value)) {
+      const bag = {};
+      for (const [name, sub] of Object.entries(value)) bag[name] = anthropicSafeSchema(sub);
+      out[key] = bag;
+    } else {
+      out[key] = anthropicSafeSchema(value);
+    }
+  }
+  return out;
+}
+
 export async function requestStructuredJson({ provider, apiKey, model, system, user, schema, schemaName, maxOutputTokens = 6000, fetchImpl = fetch }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);
@@ -164,7 +196,7 @@ export async function requestStructuredJson({ provider, apiKey, model, system, u
         max_tokens: maxOutputTokens,
         system,
         messages: [{ role: 'user', content: user }],
-        output_config: { format: { type: 'json_schema', schema } },
+        output_config: { format: { type: 'json_schema', schema: anthropicSafeSchema(schema) } },
       }),
       signal: controller.signal,
     });

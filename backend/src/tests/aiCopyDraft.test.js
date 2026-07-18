@@ -328,6 +328,21 @@ describe('picks + inclusions + recommendations', () => {
     });
   });
 
+  it('an adversarial listMarketplace "on" degrades to advice-only when the campaign type can never publish (Codex #197-2)', () => {
+    const quizCampaign = { ...BARE_CAMPAIGN, type: 'quiz', slug: 'q-slug', is_active: true, status: 'active' };
+    const gated = buildCampaignContext(quizCampaign, computeMarketplaceGate(quizCampaign, null));
+    expect(gated.marketplaceGate.supportedType).toBe(false);
+    const recs = sanitizeRecommendations(
+      [{ topic: 'listMarketplace', advice: 'List it now!', suggestedValue: 'on' }],
+      gated
+    );
+    expect(recs[0].suggestedValue).toBeNull(); // advice survives, the switch does not
+    // 'off' stays actionable, and supported types keep 'on'
+    expect(sanitizeRecommendations([{ topic: 'listMarketplace', advice: 'a', suggestedValue: 'off' }], gated)[0].suggestedValue).toBe('off');
+    const supported = buildCampaignContext(BARE_CAMPAIGN, computeMarketplaceGate(BARE_CAMPAIGN, null));
+    expect(sanitizeRecommendations([{ topic: 'listMarketplace', advice: 'a', suggestedValue: 'on' }], supported)[0].suggestedValue).toBe('on');
+  });
+
   it('slug suggestions only when the campaign has NO slug (existing or locked → null)', () => {
     const fresh = sanitizeRecommendations([{ topic: 'slug', advice: 'a', suggestedValue: 'PET-hotel-trial' }], ctxBare);
     expect(fresh[0].suggestedValue).toBe('pet-hotel-trial'); // lowercased + validated
@@ -515,6 +530,33 @@ describe('transport + prompts + error taxonomy', () => {
     expect(captured.input.find((m) => m.role === 'system').content).toContain('Art-director mode');
     const lookPaths = captured.text.format.schema.properties.proposals.items.properties.draft.items.properties.path.enum;
     expect(lookPaths.some((p) => p.startsWith('distribution.'))).toBe(false);
+  });
+
+  it('Anthropic requests get a constraint-stripped schema (Codex #197-1) and parse the messages response', async () => {
+    let captured;
+    const fetchImpl = jest.fn(async (url, options) => {
+      captured = { url, body: JSON.parse(options.body) };
+      return {
+        ok: true,
+        json: async () => ({ content: [{ type: 'text', text: JSON.stringify({ draft: [{ path: 'content.headline', value: 'Hi' }] }) }] }),
+      };
+    });
+    const res = await generateCampaignCopyDraft(baseBody(), 'admin-1', {
+      findCampaign: async () => RICH_CAMPAIGN,
+      getSettings: async () => ({ ...SETTINGS, provider: 'anthropic', model: 'claude-test' }),
+      getMarketplaceOps: async () => null,
+      fetchImpl,
+    });
+    expect(res.draft).toHaveLength(1);
+    expect(captured.url).toBe('https://api.anthropic.com/v1/messages');
+    const sent = JSON.stringify(captured.body.output_config.format.schema);
+    for (const banned of ['minLength', 'maxLength', 'minItems', 'maxItems', 'pattern', 'minimum', 'maximum']) {
+      expect(sent).not.toContain(`"${banned}"`);
+    }
+    // structure survives the strip — enums/required/properties intact
+    expect(sent).toContain('"marketplaceMeta"');
+    expect(sent).toContain('"enum"');
+    expect(sent).toContain('"required"');
   });
 
   it('provider 429 gains data.retryAfterSec for the panel countdown', async () => {
