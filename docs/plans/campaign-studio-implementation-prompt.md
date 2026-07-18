@@ -1,5 +1,15 @@
 # Campaign Studio implementation — Claude Code session prompt
 
+> **✅ COMPLETE (2026-07-18).** All PRs shipped and deploy-verified — PR 0
+> #180, PR 1 #181, PR 2 #182 (+#183), PR 3 #185, PR 4 #187, PR 5 #192, and
+> the follow-up teardown #194. The rollout executed: both flags flipped, all
+> 12 non-archived campaigns migrated to design_config v2 (live-verified), and
+> the teardown made the Studio the permanent design surface (frontend flag
+> removed; `DESIGN_CONFIG_V2_WRITES_ENABLED` remains as the server emergency
+> brake). This document is the build-history record; the operational doc is
+> `docs/reference/campaign-studio-rollout.md`. The PR-sequencing rules below
+> no longer bind anything.
+
 Paste the block below into a NEW Claude Code session started in
 `~/lyfe-master/mktr-platform`. Written 2026-07-17, after the claude.ai/design
 engagement (5 phases + CO-1) was accepted. The design mock is the visual and
