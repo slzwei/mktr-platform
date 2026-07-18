@@ -147,6 +147,14 @@ describe('unlock at the meeting', () => {
     globalThis.__presentation = issueResult.presentationToken;
   });
 
+  test('the WRONG consultant cannot even REPLAY an unlocked pass (auth precedes the carve-out)', async () => {
+    // Before the reorder, replay skipped the assignment check entirely and
+    // handed a wrong consultant already:true + the token hint.
+    await expect(
+      entitlements.unlockEntitlement({ presentationToken: issueResult.presentationToken }, agentB.user)
+    ).rejects.toMatchObject({ statusCode: 403 });
+  });
+
   test('verify now unmasks holder + shows VALID; post-unlock the presentation token also verifies', async () => {
     const res = await request(app)
       .post('/api/redeem-ops/redemptions/verify')

@@ -27,8 +27,24 @@ const unlockMock = jest.fn();
 jest.unstable_mockModule('../src/services/redeemOps/entitlementWiring.js', () => ({
   makeWiredEntitlementService: () => ({ unlockEntitlement: unlockMock }),
 }));
+// The agent-surface route (lookup/summary + unlock enrichment) statically
+// imports the entitlement graph models and the channel helpers; every named
+// export it touches must exist here or ESM linking fails before any test runs.
 jest.unstable_mockModule('../src/models/index.js', () => ({
   User: { findOne: jest.fn().mockResolvedValue({ id: 'agent-1', role: 'agent' }) },
+  RewardEntitlement: { findOne: jest.fn().mockResolvedValue(null), findByPk: jest.fn().mockResolvedValue(null) },
+  RewardOffer: {},
+  Prospect: {},
+  Activation: {},
+  Campaign: {},
+  Redemption: { findOne: jest.fn().mockResolvedValue(null) },
+}));
+jest.unstable_mockModule('../src/services/redeemOps/fulfilmentNotify.js', () => ({
+  canEmailProspect: () => false,
+}));
+jest.unstable_mockModule('../src/services/redeemOps/whatsappService.js', () => ({
+  waEnabled: () => false,
+  canWhatsAppProspect: () => false,
 }));
 jest.unstable_mockModule('../src/controllers/externalBillingController.js', () => ({
   requireExternalHmac: (_req, _res, next) => next(),

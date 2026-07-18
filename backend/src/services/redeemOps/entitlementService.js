@@ -345,8 +345,11 @@ export function makeEntitlementService(overrides = {}) {
   /**
    * Consultant unlock at the physical meeting (MKTR_INTEGRATION.md §2).
    * `by` = { presentationToken } (scan — proves presence) or { prospectId } (button).
-   * The acting agent must be the lead's assigned consultant (admin override allowed).
-   * Idempotent: an already-unlocked entitlement returns { already: true }.
+   * The acting agent must be the lead's assigned consultant (admin override allowed) —
+   * enforced BEFORE the replay/liveness responses, so an unassigned caller gets a bare
+   * 403 and can never read replay state (token hint) or probe pause status.
+   * Idempotent: an already-unlocked entitlement returns { already: true }, including
+   * when a concurrent unlock wins the conditional transition (double-tap race).
    * `emailQueued` means a FRESH voucher email was scheduled by THIS call —
    * always false on replay (no duplicate mail) and when no usable email exists.
    */
@@ -363,6 +366,19 @@ export function makeEntitlementService(overrides = {}) {
       });
     }
     if (!entitlement) throw new AppError('Entitlement not found', 404);
+
+    // Assigned-consultant binding comes FIRST (admin override audited via
+    // unlockedVia='manual'). Authorization must precede BOTH the replay
+    // carve-out and the liveness gate: an unassigned caller may learn nothing
+    // about the entitlement — not its already-unlocked state (that response
+    // carries the token hint) and not whether its activation is paused.
+    const prospect = entitlement.prospectId ? await d.Prospect.findByPk(entitlement.prospectId) : null;
+    const isAdmin = agentUser.role === 'admin';
+    if (!isAdmin) {
+      if (!prospect || prospect.assignedAgentId !== agentUser.id) {
+        throw new AppError('Only the assigned consultant can unlock this reward', 403);
+      }
+    }
 
     if (['issued', 'redeemed'].includes(entitlement.status)) {
       // Deliberate carve-out: replay stays idempotent even if the activation
@@ -387,19 +403,11 @@ export function makeEntitlementService(overrides = {}) {
       );
     }
 
-    // Assigned-consultant binding (admin override audited via unlockedVia='manual')
-    const prospect = entitlement.prospectId ? await d.Prospect.findByPk(entitlement.prospectId) : null;
-    const isAdmin = agentUser.role === 'admin';
-    if (!isAdmin) {
-      if (!prospect || prospect.assignedAgentId !== agentUser.id) {
-        throw new AppError('Only the assigned consultant can unlock this reward', 403);
-      }
-    }
-
     const offer = await d.RewardOffer.findByPk(entitlement.rewardOfferId);
     const redemptionDays = offer?.redemptionExpiryDays || DEFAULT_REDEMPTION_DAYS;
     const voucher = mintToken();
 
+    let raced = false;
     await d.sequelize.transaction(async (t) => {
       const [count] = await d.RewardEntitlement.update(
         {
@@ -428,13 +436,25 @@ export function makeEntitlementService(overrides = {}) {
         }
       );
       if (count === 0) {
-        throw new AppError('Reservation expired, already unlocked, or its activation is no longer active', 409);
+        raced = true;
+        return;
       }
       await writeEvent(t, {
         entitlementId: entitlement.id, type: 'unlocked',
         actorType: 'agent', actorUserId: agentUser.id, metadata: { via },
       });
     });
+    if (raced) {
+      // The conditional transition lost. A concurrent unlock WINNING is the
+      // idempotent case (the double-tap race) — report it as a replay, not a
+      // scary 409; the caller is already authorized above. Everything else
+      // (expiry passed, activation went non-active at commit time) stays 409.
+      await entitlement.reload();
+      if (['issued', 'redeemed'].includes(entitlement.status)) {
+        return { entitlement, already: true, voucherToken: null, emailQueued: false };
+      }
+      throw new AppError('Reservation expired, already unlocked, or its activation is no longer active', 409);
+    }
 
     await entitlement.reload();
     // Fire-and-forget voucher email (receipt-tracked)
