@@ -116,8 +116,10 @@ export const setLaunchState = asyncHandler(async (req, res) => {
     throw new AppError('state must be "active" or "paused"', 400);
   }
 
-  // Readiness gate on activate: block go-live when the campaign would drop
-  // leads (empty funded pool / webhook off), unless explicitly forced.
+  // Readiness gate on activate: block go-live only when capture itself is
+  // broken (webhook off, OTP unconfigured, guided-review misconfig), unless
+  // explicitly forced. An empty funded pool is a warning, not a blocker
+  // (2026-07-18): leads dead-end on the System Agent but remain recoverable.
   if (state === 'active' && !force) {
     const readiness = await loadCampaignReadiness(req.params.id);
     if (readiness.applicable && !readiness.ready) {

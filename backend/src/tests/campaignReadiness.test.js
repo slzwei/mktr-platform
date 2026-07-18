@@ -31,11 +31,11 @@ describe('campaignReadinessService.computeReadiness', () => {
     expect(r.issues).toHaveLength(0);
   });
 
-  it('flags an empty agent pool as critical (not ready)', () => {
+  it('flags an empty agent pool as a WARNING only — activation stays allowed (2026-07-18)', () => {
     const r = computeReadiness({ ...healthy, assignableAgents: 0 });
-    expect(r.ready).toBe(false);
+    expect(r.ready).toBe(true);
     expect(codes(r)).toContain('no_agent_pool');
-    expect(r.issues.find((i) => i.code === 'no_agent_pool').level).toBe('critical');
+    expect(r.issues.find((i) => i.code === 'no_agent_pool').level).toBe('warning');
   });
 
   it('flags a disabled webhook as critical (not ready)', () => {
