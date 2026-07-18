@@ -9,6 +9,7 @@ import { makeInventoryService } from './inventoryService.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
 import { mintToken, hashToken, tokenHintOf } from './tokens.js';
 import { canEmailProspect, makeFulfilmentNotify } from './fulfilmentNotify.js';
+import { canWhatsAppProspect, waEnabled, waRecipient } from './whatsappService.js';
 
 const DEFAULT_RESERVATION_DAYS = 30;
 const DEFAULT_REDEMPTION_DAYS = 90;
@@ -63,6 +64,8 @@ export function makeEntitlementService(overrides = {}) {
     audit: makeRedeemOpsAuditService(),
     notifyUnlock: null, // injected by entitlementWiring (voucher email) — null-safe
     notifyReservation: null, // injected by entitlementWiring (reservation-pass email) — null-safe
+    notifyUnlockWa: null, // injected by entitlementWiring (voucher WhatsApp, PR E) — null-safe
+    notifyReservationWa: null, // injected by entitlementWiring (reservation-pass WhatsApp, PR E) — null-safe
     builders: null, // share/claim-URL builders; defaults lazily to makeFulfilmentNotify()
     ...overrides,
   };
@@ -118,30 +121,42 @@ export function makeEntitlementService(overrides = {}) {
   }
 
   /**
-   * Post-commit, fire-and-forget email delivery + truthful receipt. Returns
-   * whether a FRESH attempt was scheduled (the `emailQueued` the routes
-   * surface). Receipts: `notified` on accepted hand-off, `notify_failed` on
-   * mailer failure — never on a no-email skip (nothing was attempted).
+   * Post-commit, fire-and-forget delivery + truthful per-channel receipts.
+   * Email and WhatsApp (PR E) are INDEPENDENT legs — one failing/skipping can
+   * never block or fail the other, and each writes its own receipt tagged with
+   * its channel. The boolean return keeps PR A's contract: "a fresh EMAIL
+   * attempt was scheduled" (the `emailQueued` the routes surface) — WhatsApp
+   * never affects it. The WhatsApp sender self-guards flag/consent/phone via
+   * `skipped` results (no receipt on a skip: nothing was attempted), so a
+   * no-email Retell lead still gets its WhatsApp leg — the email guard below
+   * deliberately gates only the email leg.
    */
   function queueDelivery({ entitlement, prospect, kind, presentationToken = null, voucherToken = null }) {
-    const fn = kind === 'voucher' ? d.notifyUnlock : d.notifyReservation;
-    if (typeof fn !== 'function' || !canEmailProspect(prospect)) return false;
     const args = kind === 'voucher'
       ? { entitlement, prospect, voucherToken }
       : { entitlement, prospect, presentationToken };
-    const delivery = Promise.resolve()
-      .then(() => fn(args))
-      .then((r) => {
-        if (r?.skipped) return null;
-        return writeDeliveryReceipt(entitlement.id, kind, r || { sent: false, error: 'no sender result' });
-      })
-      .catch((err) => writeDeliveryReceipt(entitlement.id, kind, { sent: false, error: err?.message }));
-    pendingDeliveries.add(delivery);
-    delivery.finally(() => pendingDeliveries.delete(delivery));
+    const fire = (fn, channel) => {
+      const delivery = Promise.resolve()
+        .then(() => fn(args))
+        .then((r) => {
+          if (r?.skipped) return null;
+          return writeDeliveryReceipt(entitlement.id, kind, r || { sent: false, error: 'no sender result' }, channel);
+        })
+        .catch((err) => writeDeliveryReceipt(entitlement.id, kind, { sent: false, error: err?.message }, channel));
+      pendingDeliveries.add(delivery);
+      delivery.finally(() => pendingDeliveries.delete(delivery));
+    };
+
+    const waFn = kind === 'voucher' ? d.notifyUnlockWa : d.notifyReservationWa;
+    if (typeof waFn === 'function') fire(waFn, 'whatsapp');
+
+    const fn = kind === 'voucher' ? d.notifyUnlock : d.notifyReservation;
+    if (typeof fn !== 'function' || !canEmailProspect(prospect)) return false;
+    fire(fn, 'email');
     return true;
   }
 
-  async function writeDeliveryReceipt(entitlementId, kind, r) {
+  async function writeDeliveryReceipt(entitlementId, kind, r, channel = 'email') {
     try {
       await d.RedemptionEvent.create({
         entitlementId,
@@ -149,13 +164,13 @@ export function makeEntitlementService(overrides = {}) {
         actorType: 'system',
         metadata: {
           kind,
-          channel: 'email',
+          channel,
           to: r.to || null, // already masked by the sender
           ...(r.error ? { error: String(r.error).slice(0, 200) } : {}),
         },
       });
     } catch (err) {
-      d.logger.error('redeem_ops.delivery.receipt_failed', { entitlementId, error: err?.message });
+      d.logger.error('redeem_ops.delivery.receipt_failed', { entitlementId, channel, error: err?.message });
     }
   }
 
@@ -463,9 +478,14 @@ export function makeEntitlementService(overrides = {}) {
    * Re-mints the CURRENT credential (pass while eligible, voucher once issued)
    * as an ATOMIC conditional transition — racing unlock/redeem/expiry loses
    * cleanly with a typed 409 instead of rotating hashes for the wrong state.
-   * channel 'email' re-sends via the notify seam; channel 'link' returns the
-   * branded /r/ url + WhatsApp-paste bundle ONCE (the no-email path).
-   * The OLD credential of that kind stops working — deliberate.
+   * channel 'email' re-sends via the notify seam; channel 'whatsapp' (PR E)
+   * validates WhatsApp deliverability then re-sends via the same seam; channel
+   * 'link' returns the branded /r/ url + WhatsApp-paste bundle ONCE (the
+   * no-email path). Because the token ROTATES, email+whatsapp resends fan out
+   * to every wired channel (the un-picked channel's old link would otherwise
+   * die silently) — the picked channel is what was VALIDATED and is recorded
+   * in the manual_override metadata. The OLD credential of that kind stops
+   * working — deliberate.
    */
   async function resendDelivery(id, user, { channel = 'email' } = {}, requestId = null) {
     const entitlement = await d.RewardEntitlement.findByPk(id);
@@ -481,6 +501,9 @@ export function makeEntitlementService(overrides = {}) {
     const prospect = entitlement.prospectId ? await d.Prospect.findByPk(entitlement.prospectId) : null;
     if (channel === 'email' && !canEmailProspect(prospect)) {
       throw new AppError('No usable email on file — use the copy-link option instead', 409);
+    }
+    if (channel === 'whatsapp' && !(waEnabled() && canWhatsAppProspect(prospect))) {
+      throw new AppError('WhatsApp delivery is not available for this customer — use email or the copy-link option', 409);
     }
 
     // Per-entitlement cooldown: any delivery/rotation for this kind in the
@@ -784,9 +807,16 @@ export function makeEntitlementService(overrides = {}) {
     const masked = rows.map((r) => {
       const j = r.toJSON();
       j.emailDeliverable = canEmailProspect(j.prospect);
+      // Capability only (the list projection carries no sourceMetadata, so the
+      // D2 consent arm can't be evaluated here) — send-time canWhatsAppProspect
+      // stays authoritative. Flag off ⇒ false everywhere, so the console never
+      // offers a channel that can't fire.
+      j.whatsappDeliverable = waEnabled() && Boolean(waRecipient(j.prospect?.phone));
       const em = latestReceipt.get(`${j.id}:email`);
+      const wa = latestReceipt.get(`${j.id}:whatsapp`);
       j.delivery = {
         email: em ? { kind: em.metadata?.kind || null, at: em.createdAt, ok: em.type === 'notified' } : null,
+        whatsapp: wa ? { kind: wa.metadata?.kind || null, at: wa.createdAt, ok: wa.type === 'notified' } : null,
       };
       if (j.prospect) {
         if (j.prospect.phone) j.prospect.phone = `••••${String(j.prospect.phone).slice(-4)}`;
@@ -801,6 +831,7 @@ export function makeEntitlementService(overrides = {}) {
     issueForProspect, unlockEntitlement, issueManual, cancelEntitlement, resendDelivery,
     expireReservations, reconcileMissedLeads, reconcileMissedDeliveries, purgeIssuanceSkips,
     listEntitlements, verificationStampOf,
+    queueDelivery, // exported for tests: the per-channel fan-out contract (PR E)
   };
 }
 
