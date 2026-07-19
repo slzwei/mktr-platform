@@ -206,6 +206,12 @@ const Prospect = sequelize.define('Prospect', {
       key: 'id'
     }
   },
+  consumerId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: { model: 'consumers', key: 'id' },
+    comment: 'Cross-campaign person link (consumer spine, migration 078) — SET NULL on consumer delete; null for call_bot leads and pre-spine rows until reconciled'
+  },
   sessionId: {
     type: DataTypes.STRING(64),
     allowNull: true
@@ -313,6 +319,18 @@ const Prospect = sequelize.define('Prospect', {
     },
     {
       fields: ['nextFollowUpDate']
+    },
+    { fields: ['consumerId'], name: 'idx_prospects_consumer' },
+    // Managed by migration 010 in prod; mirrored here because test boot builds
+    // schema via sync({force:true}) AFTER _migrations already records 010 —
+    // without this mirror, local test DBs silently LOSE the dedupe unique on
+    // every boot after the first (proven by the concurrent-duplicate test in
+    // consumerSpine.test.js: both inserts returned 201).
+    {
+      unique: true,
+      fields: ['campaignId', 'phone'],
+      name: 'prospects_campaign_id_phone',
+      where: { phone: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: '' }] } },
     },
     { fields: ['createdAt'], name: 'idx_prospects_createdat' },
     { fields: ['conversionDate'], name: 'idx_prospects_conversiondate', where: { conversionDate: { [Op.ne]: null } } },

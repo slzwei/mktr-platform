@@ -9,7 +9,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { useProspects, useAgentOptions } from '@/hooks/queries/useAdminV2';
+import { useProspects, useProspectDetail, useAgentOptions } from '@/hooks/queries/useAdminV2';
 import { bulkAssign, bulkReturnToHeld, bulkDelete } from '@/api/adminV2';
 import {
   LEAD_STATUSES, LEAD_SOURCES, STATUS_LABELS, STATUS_CHIP_CLASS,
@@ -82,9 +82,18 @@ function SortHeader({ label, field, sort, onSort, width, align }) {
   );
 }
 
-function LeadDrawer({ prospect, onClose }) {
+function LeadDrawer({ prospect, onClose, onOpenLead }) {
+  // Detail fetch on open (consumer spine): the list row is a thin projection —
+  // the detail endpoint adds the admin enrichments (repeatSignup, timeline,
+  // the `consumer` journey for the Person card) and lets ?lead= deep-links
+  // open leads that aren't on the current page. Row data paints instantly;
+  // the detail enriches when it lands. Hook runs unconditionally (enabled
+  // gate), so the early return below stays hooks-safe.
+  const detail = useProspectDetail(prospect?.id);
   if (!prospect) return null;
-  const p = prospect;
+  const p = detail.data || prospect;
+  const consumer = detail.data?.consumer || null;
+  const otherSignups = consumer ? consumer.signups.filter((s) => s.prospectId !== p.id) : [];
   const utm = p.sourceMetadata?.utm || {};
   const held = !!p.quarantinedAt;
   return (
@@ -92,7 +101,9 @@ function LeadDrawer({ prospect, onClose }) {
       <SheetContent side="right" className="admin-v2" style={{ width: 432, maxWidth: '90vw', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderLeft: '1px solid var(--line)' }}>
         <SheetHeader style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)' }}>
           <SheetTitle style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', fontFamily: 'var(--font-ui)', textAlign: 'left' }}>
-            {p.firstName} {p.lastName}
+            {(p.firstName || p.lastName)
+              ? `${p.firstName || ''} ${p.lastName || ''}`.trim()
+              : (detail.isLoading ? 'Loading…' : 'Lead')}
           </SheetTitle>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <Chip tone={STATUS_CHIP_CLASS[p.leadStatus]?.replace('av2-chip--', '') || ''}>{STATUS_LABELS[p.leadStatus] || p.leadStatus}</Chip>
@@ -103,6 +114,11 @@ function LeadDrawer({ prospect, onClose }) {
           </div>
         </SheetHeader>
         <div style={{ padding: 16, overflowY: 'auto', display: 'grid', gap: 18 }}>
+          {detail.isError && !p.phone && (
+            <div className="av2-kv" style={{ color: 'var(--ink-2)' }}>
+              Couldn&apos;t load this lead — it may have been deleted.
+            </div>
+          )}
           <section>
             <div className="av2-microcaps" style={{ marginBottom: 6 }}>Contact</div>
             <div className="av2-kv"><span>phone</span><span>{p.phone || '—'}</span></div>
@@ -117,6 +133,49 @@ function LeadDrawer({ prospect, onClose }) {
             {p.qrTag && <div className="av2-kv"><span>qr tag</span><span>{p.qrTag.name}</span></div>}
             <div className="av2-kv"><span>campaign</span><span>{p.campaign?.name || '—'}</span></div>
           </section>
+          {consumer && (
+            <section>
+              <div className="av2-microcaps" style={{ marginBottom: 6 }}>Person</div>
+              <div className="av2-kv">
+                <span>signups</span>
+                <span>
+                  {consumer.consumer.signupCount}
+                  {consumer.consumer.verifiedSignupCount !== consumer.consumer.signupCount
+                    ? ` (${consumer.consumer.verifiedSignupCount} verified)` : ''}
+                </span>
+              </div>
+              <div className="av2-kv"><span>first seen</span><span>{fmtDateTime(consumer.consumer.firstSeenAt)}</span></div>
+              {consumer.entitlements.length > 0 && (
+                <div className="av2-kv">
+                  <span>rewards</span>
+                  <span>{consumer.entitlements.length} · {consumer.entitlements.filter((e) => e.redeemedAt).length} redeemed</span>
+                </div>
+              )}
+              {consumer.drawEntries > 0 && (
+                <div className="av2-kv"><span>draw entries</span><span>{consumer.drawEntries}</span></div>
+              )}
+              {otherSignups.length > 0 && (
+                <div style={{ marginTop: 8, display: 'grid', gap: 4 }}>
+                  <div className="av2-microcaps" style={{ color: 'var(--ink-2)' }}>Also in</div>
+                  {otherSignups.map((s) => (
+                    <button
+                      key={s.prospectId}
+                      type="button"
+                      onClick={() => onOpenLead?.(s.prospectId)}
+                      style={{
+                        textAlign: 'left', background: 'none', border: '1px solid var(--line)',
+                        borderRadius: 8, padding: '6px 8px', cursor: 'pointer', color: 'var(--ink)',
+                        fontFamily: 'var(--font-ui)', fontSize: 12,
+                      }}
+                    >
+                      {s.campaign?.name || 'No campaign'} · {fmtRelative(s.createdAt)}
+                      {!s.verified && <span style={{ color: 'var(--ink-2)' }}> · unverified</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
           <section>
             <div className="av2-microcaps" style={{ marginBottom: 6 }}>Routing</div>
             <div className="av2-kv"><span>agent</span><span>{p.assignedAgent ? `${p.assignedAgent.firstName || ''} ${p.assignedAgent.lastName || ''}`.trim() : p.externalAgentId ? 'external buyer' : held ? 'held' : 'unassigned'}</span></div>
@@ -224,7 +283,9 @@ export default function AdminV2Prospects() {
   useEffect(() => {
     if (!leadParam || prospects.isFetching || prospects.isError) return;
     const hit = rows.find((r) => r.id === leadParam);
-    if (hit) setDrawer(hit);
+    // Off-page ids open too: the drawer detail-fetches by id, so palette /
+    // Person-card deep-links work from any filter or page.
+    setDrawer(hit || { id: leadParam });
     patch({ lead: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadParam, prospects.isFetching, prospects.isError]);
@@ -246,7 +307,12 @@ export default function AdminV2Prospects() {
   ];
 
   // ── Bulk actions (live endpoints) ──────────────────────────────────────────
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['adminV2', 'prospects'] });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['adminV2', 'prospects'] });
+    // The drawer's detail cache carries the same lead + the Person journey —
+    // keep it in step with row mutations (assign / return / delete).
+    queryClient.invalidateQueries({ queryKey: ['adminV2', 'prospectDetail'] });
+  };
   const ids = [...selected];
   const agentOptions = useAgentOptions(selected.size > 0);
 
@@ -519,7 +585,11 @@ export default function AdminV2Prospects() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <LeadDrawer prospect={drawer} onClose={() => setDrawer(null)} />
+      <LeadDrawer
+        prospect={drawer}
+        onClose={() => setDrawer(null)}
+        onOpenLead={(id) => setDrawer({ id })}
+      />
     </div>
   );
 }

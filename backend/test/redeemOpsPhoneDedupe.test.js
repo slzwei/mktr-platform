@@ -7,6 +7,14 @@
  * burning allocation for the whole reservation window. `phoneKey` +
  * uq_re_activation_phone (partial: eligible/issued/redeemed) make the DB the
  * authoritative guard; expired/cancelled rows free the slot.
+ *
+ * FIXTURE NOTE (consumer-spine PR A): the prospects (campaignId, phone)
+ * partial unique is now mirrored on the model, so test DBs finally carry it —
+ * same-campaign same-phone prospect rows are impossible here, exactly as in
+ * prod since migration 010. "Second signup" fixtures therefore ride
+ * campaignId:null + an explicit activationId, which is the surviving real
+ * path this entitlement-layer guard exists for (sweep/manual/null-campaign
+ * issuance, historical dupes).
  */
 process.env.REDEEM_OPS_ENABLED = 'true';
 process.env.REDEEM_OPS_ENTITLEMENTS_ENABLED = 'true';
@@ -87,13 +95,13 @@ describe('one live reward per phone per activation', () => {
   test('second signup with the same phone collapses to the FIRST entitlement', async () => {
     const phone = freshPhone();
     const p1 = await makeVerifiedProspect(phone);
-    const p2 = await makeVerifiedProspect(phone); // same human, second form submit
+    const p2 = await makeVerifiedProspect(phone, { campaignId: null }); // same human, second row
 
     const first = await svc.issueForProspect(p1);
     expect(first.reason).toBeNull();
     expect(first.entitlement.phoneKey).toBe(phoneKeyOf(phone));
 
-    const second = await svc.issueForProspect(p2);
+    const second = await svc.issueForProspect(p2, { activationId: activationA.id });
     expect(second.reason).toBe('duplicate_phone');
     expect(second.entitlement.id).toBe(first.entitlement.id); // points at the winner
 
@@ -106,11 +114,11 @@ describe('one live reward per phone per activation', () => {
   test('CONCURRENT same-phone signups → exactly one entitlement (DB index is the guard)', async () => {
     const phone = freshPhone();
     const p1 = await makeVerifiedProspect(phone);
-    const p2 = await makeVerifiedProspect(phone);
+    const p2 = await makeVerifiedProspect(phone, { campaignId: null });
 
     const [a, b] = await Promise.all([
       svc.issueForProspect(p1),
-      svc.issueForProspect(p2),
+      svc.issueForProspect(p2, { activationId: activationA.id }),
     ]);
     const fresh = [a, b].filter((r) => r.reason === null);
     const blocked = [a, b].filter((r) => r.reason === 'duplicate_phone');
@@ -142,8 +150,8 @@ describe('one live reward per phone per activation', () => {
     await svc.expireReservations();
     expect((await RewardEntitlement.findByPk(first.entitlement.id)).status).toBe('expired');
 
-    const p2 = await makeVerifiedProspect(phone);
-    const second = await svc.issueForProspect(p2);
+    const p2 = await makeVerifiedProspect(phone, { campaignId: null });
+    const second = await svc.issueForProspect(p2, { activationId: activationA.id });
     expect(second.reason).toBeNull(); // slot freed
     expect(second.entitlement.id).not.toBe(first.entitlement.id);
   });
@@ -154,8 +162,8 @@ describe('one live reward per phone per activation', () => {
     const first = await svc.issueForProspect(p1);
     await svc.cancelEntitlement(first.entitlement.id, admin.user, 'dedupe test');
 
-    const p2 = await makeVerifiedProspect(phone);
-    const second = await svc.issueForProspect(p2);
+    const p2 = await makeVerifiedProspect(phone, { campaignId: null });
+    const second = await svc.issueForProspect(p2, { activationId: activationA.id });
     expect(second.reason).toBeNull();
   });
 
@@ -167,8 +175,8 @@ describe('one live reward per phone per activation', () => {
     await redemptions.complete(unlock.voucherToken, {}, admin.user);
     expect((await RewardEntitlement.findByPk(first.entitlement.id)).status).toBe('redeemed');
 
-    const p2 = await makeVerifiedProspect(phone);
-    const second = await svc.issueForProspect(p2);
+    const p2 = await makeVerifiedProspect(phone, { campaignId: null });
+    const second = await svc.issueForProspect(p2, { activationId: activationA.id });
     expect(second.reason).toBe('duplicate_phone');
   });
 
@@ -207,7 +215,7 @@ describe('no-phone rules', () => {
     const p1 = await makeVerifiedProspect(phone);
     await svc.issueForProspect(p1);
 
-    const p2 = await makeVerifiedProspect(phone);
+    const p2 = await makeVerifiedProspect(phone, { campaignId: null });
     await expect(
       svc.issueManual({ activationId: activationA.id, prospectId: p2.id }, admin.user)
     ).rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining('duplicate_phone') });

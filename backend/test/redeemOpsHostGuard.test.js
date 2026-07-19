@@ -37,6 +37,13 @@ describe('internalRouteHostGuard — redeem-ops + ops-host policy', () => {
     expect(run('/api/admin/campaigns', 'redeem.sg').statusCode).toBe(403);
   });
 
+  test('consumer spine: /api/consumers is blocked from both customer-facing hosts', () => {
+    // Cross-campaign PII journey — admin surface only (consumer-spine PR A).
+    expect(run('/api/consumers/some-id', 'redeem.sg').statusCode).toBe(403);
+    expect(run('/api/consumers/some-id', 'ops.redeem.sg').statusCode).toBe(403);
+    expect(run('/api/consumers/some-id', 'mktr.sg').nextCalled).toBe(true);
+  });
+
   test('ops.redeem.sg may reach auth, redeem-ops, and notifications', () => {
     expect(run('/api/auth/login', 'ops.redeem.sg').nextCalled).toBe(true);
     expect(run('/api/redeem-ops/team', 'ops.redeem.sg').nextCalled).toBe(true);
