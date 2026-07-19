@@ -28,7 +28,7 @@ const Consumer = sequelize.define('Consumer', {
   },
   phoneHash: {
     type: DataTypes.STRING(64),
-    allowNull: false,
+    allowNull: true, // nulled together with phone on PR-C erasure — no tombstone
     comment: 'sha256 hex of the E.164 phone (same recipe as sourceMetadata.phoneVerifiedFor)'
   },
   firstName: { type: DataTypes.STRING, allowNull: true },

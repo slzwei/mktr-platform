@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'crypto';
-import { sequelize, Consumer, Prospect, RewardEntitlement } from '../models/index.js';
+import { Transaction } from 'sequelize';
+import { sequelize, Consumer, Prospect, RewardEntitlement, DrawEntry } from '../models/index.js';
 import { logger } from '../utils/logger.js';
 import { emailNormKey } from './repeatSignup.js';
 import { normalizePhone } from './prospectHelpers.js';
@@ -18,8 +19,9 @@ import { normalizePhone } from './prospectHelpers.js';
  *  2. call_bot (Retell) rows never link: prospect.phone is the call's
  *     to_number — for inbound calls that is MKTR's own DDI, and linking would
  *     merge strangers onto one consumer (retellService.js DNC note, R1 #4).
- *  3. Counters are ASSIGNED by recompute/reconcile, only ever incremented by
- *     the capture resolver — drift always heals toward the row-derived truth.
+ *  3. Counters and attributes are ASSIGNED by recompute/reconcile from one
+ *     shared projection reducer, only ever incremented by the capture
+ *     resolver — drift always heals toward the row-derived truth.
  */
 
 export const E164_RE = /^\+[1-9]\d{9,14}$/;
@@ -47,10 +49,75 @@ function displayEmailOf(email) {
   return emailNormKey(email) ? String(email).trim() : null;
 }
 
-const defaultDeps = { sequelize, Consumer, Prospect, RewardEntitlement, logger };
+/**
+ * The ONE projection reducer (Codex R2 #2) — recompute and reconcile both
+ * derive a consumer row from its member prospects through this, so the two
+ * rebuild paths can never disagree. Attributes are independent (R2 #1):
+ * newest non-empty VERIFIED value per attribute, else newest non-empty value.
+ * `verified` uses the binding-aware check, never the raw stamp.
+ *
+ * @param {Array} members - prospect rows ASC by (createdAt, id), each with
+ *   firstName/lastName/email/phone/sourceMetadata/createdAt.
+ */
+function buildProjection(members) {
+  let fn = null; let ln = null; let email = null;
+  let vFn = null; let vLn = null; let vEmail = null;
+  let verifiedCount = 0;
+  for (const m of members) {
+    const isVerified = phoneVerificationIsCurrent(m);
+    if (isVerified) verifiedCount += 1;
+    const first = typeof m.firstName === 'string' && m.firstName.trim() ? m.firstName.trim() : null;
+    const last = typeof m.lastName === 'string' && m.lastName.trim() ? m.lastName.trim() : null;
+    const em = displayEmailOf(m.email);
+    if (first) { fn = first; if (isVerified) vFn = first; }
+    if (last) { ln = last; if (isVerified) vLn = last; }
+    if (em) { email = em; if (isVerified) vEmail = em; }
+  }
+  return {
+    first: members[0].createdAt,
+    last: members[members.length - 1].createdAt,
+    n: members.length,
+    v: verifiedCount,
+    fn: vFn ?? fn,
+    ln: vLn ?? ln,
+    email: vEmail ?? email,
+  };
+}
+
+const MEMBER_FIELDS = `id, phone, "firstName", "lastName", email, "createdAt", "sourceMetadata"`;
+
+const defaultDeps = { sequelize, Consumer, Prospect, RewardEntitlement, DrawEntry, logger };
 
 export function makeConsumerService(overrides = {}) {
   const d = { ...defaultDeps, ...overrides };
+
+  /** Assign-upsert one consumer row from a reduced projection. */
+  async function upsertProjection(phone, proj, transaction) {
+    await d.sequelize.query(
+      `INSERT INTO consumers
+         (id, phone, "phoneHash", "firstName", "lastName", email,
+          "firstSeenAt", "lastSeenAt", "signupCount", "verifiedSignupCount",
+          "createdAt", "updatedAt")
+       VALUES (:id, :phone, :phoneHash, :fn, :ln, :email, :first, :last, :n, :v, now(), now())
+       ON CONFLICT (phone) WHERE phone IS NOT NULL DO UPDATE SET
+         "firstSeenAt" = EXCLUDED."firstSeenAt",
+         "lastSeenAt" = EXCLUDED."lastSeenAt",
+         "signupCount" = EXCLUDED."signupCount",
+         "verifiedSignupCount" = EXCLUDED."verifiedSignupCount",
+         "firstName" = EXCLUDED."firstName",
+         "lastName" = EXCLUDED."lastName",
+         email = EXCLUDED.email,
+         "updatedAt" = now()`,
+      {
+        replacements: {
+          id: randomUUID(), phone, phoneHash: phoneHashOf(phone),
+          fn: proj.fn, ln: proj.ln, email: proj.email,
+          first: proj.first, last: proj.last, n: proj.n, v: proj.v,
+        },
+        transaction,
+      }
+    );
+  }
 
   /**
    * Resolve-or-create the consumer for an (already-normalized) E.164 phone,
@@ -58,8 +125,9 @@ export function makeConsumerService(overrides = {}) {
    * raised for the concurrent-capture race. Returns the consumer id, or null
    * (no/invalid phone, or any failure — logged; the reconciler heals).
    *
-   * `verified` = the caller's single OTP-marker read (otpMarkerLive). Names
-   * refresh on verified signups (or fill when empty); email only when real.
+   * `verified` = the caller's single OTP-marker read (otpMarkerLive). Each
+   * attribute refreshes independently on verified signups (or fills when
+   * empty); email only when real.
    */
   async function resolveConsumerForCaptureTx(outerTx, {
     phone, firstName, lastName, email, verified = false, at = new Date(),
@@ -87,7 +155,7 @@ export function makeConsumerService(overrides = {}) {
              "verifiedSignupCount" = consumers."verifiedSignupCount" + :verifiedInc,
              "firstName" = CASE WHEN :firstName IS NOT NULL AND (:verified OR consumers."firstName" IS NULL)
                                 THEN :firstName ELSE consumers."firstName" END,
-             "lastName"  = CASE WHEN :firstName IS NOT NULL AND (:verified OR consumers."firstName" IS NULL)
+             "lastName"  = CASE WHEN :lastName IS NOT NULL AND (:verified OR consumers."lastName" IS NULL)
                                 THEN :lastName ELSE consumers."lastName" END,
              email       = CASE WHEN :email IS NOT NULL AND (:verified OR consumers.email IS NULL)
                                 THEN :email ELSE consumers.email END,
@@ -119,26 +187,25 @@ export function makeConsumerService(overrides = {}) {
 
   /**
    * Deterministic per-phone projection recompute — ASSIGNS the full projection
-   * from prospect rows (never increments) and relinks rows on that phone.
-   * Used after phone/email edits and deletes. Best-effort by design.
+   * from prospect rows via the shared reducer (never increments) and relinks
+   * rows on that phone. Used after phone/email edits and deletes. Best-effort
+   * by design.
    *
    * Known limit: rows whose STORED phone isn't E.164 (Meta keeps the provider
    * raw value in this PR) are counted by the full reconciler (which
-   * JS-normalizes) but not by this per-phone SQL aggregate.
+   * JS-normalizes) but not by this per-phone SQL match.
    */
   async function recomputeConsumersByPhone(phones, { transaction = null } = {}) {
     try {
       const clean = [...new Set((phones || []).filter((p) => typeof p === 'string' && E164_RE.test(p)))];
       for (const phone of clean) {
-        const [aggRows] = await d.sequelize.query(
-          `SELECT MIN("createdAt") AS first, MAX("createdAt") AS last, COUNT(*)::int AS n,
-                  COUNT(*) FILTER (WHERE "sourceMetadata"->>'phoneVerifiedAt' IS NOT NULL)::int AS v
-             FROM prospects
-            WHERE phone = :phone AND "leadSource" <> 'call_bot'`,
+        const [rows] = await d.sequelize.query(
+          `SELECT ${MEMBER_FIELDS} FROM prospects
+            WHERE phone = :phone AND "leadSource" <> 'call_bot'
+            ORDER BY "createdAt" ASC, id ASC`,
           { replacements: { phone }, transaction }
         );
-        const agg = aggRows?.[0];
-        if (!agg || Number(agg.n) === 0) {
+        if (!rows.length) {
           await d.sequelize.query(
             `UPDATE consumers SET "signupCount" = 0, "verifiedSignupCount" = 0, "updatedAt" = now()
               WHERE phone = :phone`,
@@ -146,38 +213,7 @@ export function makeConsumerService(overrides = {}) {
           );
           continue;
         }
-        const [latestRows] = await d.sequelize.query(
-          `SELECT "firstName", "lastName", email FROM prospects
-            WHERE phone = :phone AND "leadSource" <> 'call_bot'
-            ORDER BY "createdAt" DESC, id DESC LIMIT 1`,
-          { replacements: { phone }, transaction }
-        );
-        const latest = latestRows?.[0] || {};
-        await d.sequelize.query(
-          `INSERT INTO consumers
-             (id, phone, "phoneHash", "firstName", "lastName", email,
-              "firstSeenAt", "lastSeenAt", "signupCount", "verifiedSignupCount",
-              "createdAt", "updatedAt")
-           VALUES (:id, :phone, :phoneHash, :fn, :ln, :email, :first, :last, :n, :v, now(), now())
-           ON CONFLICT (phone) WHERE phone IS NOT NULL DO UPDATE SET
-             "firstSeenAt" = EXCLUDED."firstSeenAt",
-             "lastSeenAt" = EXCLUDED."lastSeenAt",
-             "signupCount" = EXCLUDED."signupCount",
-             "verifiedSignupCount" = EXCLUDED."verifiedSignupCount",
-             "firstName" = EXCLUDED."firstName",
-             "lastName" = EXCLUDED."lastName",
-             email = EXCLUDED.email,
-             "updatedAt" = now()`,
-          {
-            replacements: {
-              id: randomUUID(), phone, phoneHash: phoneHashOf(phone),
-              fn: latest.firstName || null, ln: latest.lastName || null,
-              email: displayEmailOf(latest.email),
-              first: agg.first, last: agg.last, n: Number(agg.n), v: Number(agg.v),
-            },
-            transaction,
-          }
-        );
+        await upsertProjection(phone, buildProjection(rows), transaction);
         await d.sequelize.query(
           `UPDATE prospects p SET "consumerId" = c.id
              FROM consumers c
@@ -197,22 +233,25 @@ export function makeConsumerService(overrides = {}) {
   /**
    * Full spine reconcile — migration 079 + scripts/rebuild-consumer-spine.js.
    * JS-normalizes phones with the SAME normalizePhone as capture (raw-stored
-   * Meta rows group correctly), ASSIGNS complete projections, heals wrong and
-   * missing links, unlinks call_bot rows, links entitlements via prospect then
+   * Meta rows group correctly), reduces each group through buildProjection,
+   * ASSIGNS complete projections, heals wrong/missing/stale links, unlinks
+   * call_bot and empty-phone rows, links entitlements via prospect then
    * phoneKey, and zeroes consumers whose phone no longer has rows. Idempotent.
+   *
+   * Runs SERIALIZABLE with retry (Codex R2 #3): the snapshot-then-assign shape
+   * would otherwise let a capture that commits mid-reconcile be overwritten
+   * with a stale count — SSI aborts the reconcile instead, and we retry.
    */
   async function reconcileConsumerSpine({ transaction = null } = {}) {
     const runIn = async (t) => {
       const stats = {
         consumersUpserted: 0, prospectsLinked: 0, callBotUnlinked: 0,
-        entitlementsViaProspect: 0, entitlementsViaPhoneKey: 0,
+        emptyPhoneUnlinked: 0, entitlementsViaProspect: 0, entitlementsViaPhoneKey: 0,
         consumersZeroed: 0, skippedInvalidPhone: 0,
       };
 
       const [rows] = await d.sequelize.query(
-        `SELECT id, phone, "firstName", "lastName", email, "createdAt",
-                ("sourceMetadata"->>'phoneVerifiedAt') IS NOT NULL AS verified
-           FROM prospects
+        `SELECT ${MEMBER_FIELDS} FROM prospects
           WHERE phone IS NOT NULL AND phone <> '' AND "leadSource" <> 'call_bot'
           ORDER BY "createdAt" ASC, id ASC`,
         { transaction: t }
@@ -229,8 +268,7 @@ export function makeConsumerService(overrides = {}) {
 
       const linkPairs = []; // [prospectId, consumerId]
       for (const [phone, members] of groups) {
-        const first = members[0];
-        const latest = members[members.length - 1];
+        const proj = buildProjection(members);
         const [ins] = await d.sequelize.query(
           `INSERT INTO consumers
              (id, phone, "phoneHash", "firstName", "lastName", email,
@@ -250,10 +288,8 @@ export function makeConsumerService(overrides = {}) {
           {
             replacements: {
               id: randomUUID(), phone, phoneHash: phoneHashOf(phone),
-              fn: latest.firstName || null, ln: latest.lastName || null,
-              email: displayEmailOf(latest.email),
-              first: first.createdAt, last: latest.createdAt,
-              n: members.length, v: members.filter((m) => m.verified === true).length,
+              fn: proj.fn, ln: proj.ln, email: proj.email,
+              first: proj.first, last: proj.last, n: proj.n, v: proj.v,
             },
             transaction: t,
           }
@@ -285,6 +321,16 @@ export function makeConsumerService(overrides = {}) {
         { transaction: t }
       );
       stats.callBotUnlinked = cbMeta?.rowCount ?? 0;
+
+      // A phone cleared to null/empty (PUT-to-blank) takes its link with it
+      // (Codex R2 #4). Invalid-but-present phones are NOT touched: those are
+      // capture-linked raw-format rows (Meta) whose links are healed above.
+      const [, epMeta] = await d.sequelize.query(
+        `UPDATE prospects SET "consumerId" = NULL
+          WHERE "consumerId" IS NOT NULL AND (phone IS NULL OR phone = '')`,
+        { transaction: t }
+      );
+      stats.emptyPhoneUnlinked = epMeta?.rowCount ?? 0;
 
       const [, reP] = await d.sequelize.query(
         `UPDATE reward_entitlements re SET "consumerId" = p."consumerId"
@@ -325,7 +371,25 @@ export function makeConsumerService(overrides = {}) {
     };
 
     if (transaction) return runIn(transaction);
-    return d.sequelize.transaction(runIn);
+
+    // SERIALIZABLE + retry: a concurrent capture upsert conflicts with our
+    // read-then-assign; PG aborts one side with 40001 and we re-derive from
+    // the fresh state. Boot/script cadence makes retries cheap and rare.
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await d.sequelize.transaction(
+          { isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE },
+          runIn
+        );
+      } catch (err) {
+        const code = err?.original?.code || err?.parent?.code;
+        if (code !== '40001') throw err;
+        lastErr = err;
+        d.logger.warn('[consumer] reconcile serialization conflict — retrying', { attempt });
+      }
+    }
+    throw lastErr;
   }
 
   /**
@@ -359,6 +423,10 @@ export function makeConsumerService(overrides = {}) {
         order: [['createdAt', 'DESC'], ['id', 'DESC']],
       }),
     ]);
+
+    const drawEntries = signups.length
+      ? await d.DrawEntry.count({ where: { prospectId: signups.map((s) => s.id) } })
+      : 0;
 
     return {
       consumer: {
@@ -397,6 +465,7 @@ export function makeConsumerService(overrides = {}) {
         campaignId: e.activation?.campaignId || null,
         redeemedAt: e.redemption?.redeemedAt || null,
       })),
+      drawEntries,
     };
   }
 

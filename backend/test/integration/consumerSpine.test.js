@@ -1,8 +1,10 @@
+import { jest } from '@jest/globals';
 import request from 'supertest';
 import { getApp, closeDb, createTestUser, createTestCampaign } from '../helpers.js';
 import { sequelize, Consumer, Prospect } from '../../src/models/index.js';
 import { markPhoneVerified } from '../../src/services/verifiedPhoneStore.js';
 import { reconcileConsumerSpine } from '../../src/services/consumerService.js';
+import { makeMetaLeadService } from '../../src/services/metaLeadService.js';
 
 /**
  * Consumer spine — integration (real Postgres; savepoint/ON CONFLICT semantics
@@ -11,6 +13,8 @@ import { reconcileConsumerSpine } from '../../src/services/consumerService.js';
 
 const RUN = Date.now();
 const PHONE_A = '+65911100019';
+// Distinct 8-digit SG mobiles per scenario, collision-free within the run.
+const p8 = (offset) => `9${String(RUN + offset).slice(-7)}`;
 // 8-digit SG numbers (normalizePhone adds +65)
 const phoneA = `9${String(RUN).slice(-7)}`;          // person A, raw 8-digit
 const phoneAE164 = `+65${phoneA}`;
@@ -231,5 +235,139 @@ describe('consumer spine — read surfaces', () => {
     expect(r.status).toBe(200);
     expect(r.body.data.prospect.consumer).toBeTruthy();
     expect(r.body.data.prospect.consumer.consumer.signupCount).toBe(1);
+  });
+});
+
+describe('consumer spine — Codex R2 additions', () => {
+  test('CONCURRENT captures across two campaigns → one consumer, count 2', async () => {
+    const ph = p8(3);
+    const [r1, r2] = await Promise.all([
+      request(app).post('/api/prospects')
+        .send(capturePayload({ campaignId: campaign1.id, phone: ph, email: `cc-a-${RUN}@test.com` })),
+      request(app).post('/api/prospects')
+        .send(capturePayload({ campaignId: campaign2.id, phone: ph, email: `cc-b-${RUN}@test.com` })),
+    ]);
+    expect([r1.status, r2.status]).toEqual([201, 201]);
+    const consumers = await Consumer.findAll({ where: { phone: `+65${ph}` } });
+    expect(consumers).toHaveLength(1);
+    expect(consumers[0].signupCount).toBe(2);
+  });
+
+  test('CONCURRENT duplicates in ONE campaign → exactly one 201 + one structured 409, count 1', async () => {
+    // Outcome contract: whichever side loses (precheck or the unique-index
+    // catch after full rollback), the caller sees the SAME structured 409 and
+    // the winner's consumer counts exactly one signup.
+    const ph = p8(4);
+    const results = await Promise.all([
+      request(app).post('/api/prospects')
+        .send(capturePayload({ campaignId: campaign1.id, phone: ph, email: `dup-a-${RUN}@test.com` })),
+      request(app).post('/api/prospects')
+        .send(capturePayload({ campaignId: campaign1.id, phone: ph, email: `dup-b-${RUN}@test.com` })),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+    const dup = results.find((r) => r.status === 409);
+    expect(JSON.stringify(dup.body)).toContain('alreadyRegistered');
+    const c = await Consumer.findOne({ where: { phone: `+65${ph}` } });
+    expect(c.signupCount).toBe(1);
+    expect(await Prospect.count({ where: { phone: `+65${ph}` } })).toBe(1);
+  });
+
+  test('Meta lead links to the same consumer as a web signup (unverified)', async () => {
+    // NOTE: the Prospect model validates E.164 at create, so Meta phones are
+    // ALWAYS stored E.164 or the create fails (pre-existing behavior — a raw
+    // 8-digit payload was tried here and correctly rejected). Realistic Meta
+    // payloads carry the profile number as +E.164.
+    const ph = p8(5);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({ campaignId: campaign1.id, phone: ph, email: `meta-web-${RUN}@test.com` }))
+      .expect(201);
+
+    const metaSvc = makeMetaLeadService({
+      fetch: jest.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          field_data: [
+            { name: 'full_name', values: ['Meta Person'] },
+            { name: 'phone_number', values: [`+65${ph}`] },
+            { name: 'email', values: [`meta-lead-${RUN}@test.com`] },
+          ],
+        }),
+      })),
+    });
+    process.env.META_PAGE_ACCESS_TOKEN = 'test-token';
+    const res = await metaSvc.processMetaLead(`lg-${RUN}`, 'page-1', null, Math.floor(RUN / 1000));
+    expect(res.status).toBe('created');
+
+    const metaProspect = await Prospect.findByPk(res.prospectId);
+    expect(metaProspect.phone).toBe(`+65${ph}`);
+    const c = await Consumer.findOne({ where: { phone: `+65${ph}` } });
+    expect(c.signupCount).toBe(2); // web + meta
+    expect(metaProspect.consumerId).toBe(c.id);
+    // Meta is never OTP-verified.
+    expect(c.verifiedSignupCount).toBe(0);
+  });
+
+  test('PUT phone to blank clears the number AND the person link', async () => {
+    const ph = p8(6);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({ campaignId: campaign2.id, phone: ph, email: `blank-${RUN}@test.com` }))
+      .expect(201);
+    const { id } = await Prospect.findOne({ where: { phone: `+65${ph}` } });
+    const r = await request(app)
+      .put(`/api/prospects/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ phone: '' });
+    expect(r.status).toBe(200);
+    const p = await Prospect.findByPk(id);
+    expect(p.phone).toBeNull();
+    expect(p.consumerId).toBeNull();
+    const c = await Consumer.findOne({ where: { phone: `+65${ph}` } });
+    expect(c.signupCount).toBe(0);
+  });
+
+  test('PUT phone onto ANOTHER person merges the signup into their consumer', async () => {
+    const phKeep = p8(7);
+    const phMove = p8(8);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({ campaignId: campaign1.id, phone: phKeep, email: `keep-${RUN}@test.com` }))
+      .expect(201);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({ campaignId: campaign2.id, phone: phMove, email: `move-${RUN}@test.com` }))
+      .expect(201);
+    const { id: movedId } = await Prospect.findOne({ where: { phone: `+65${phMove}` } });
+
+    await request(app)
+      .put(`/api/prospects/${movedId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ phone: phKeep })
+      .expect(200);
+
+    const keepC = await Consumer.findOne({ where: { phone: `+65${phKeep}` } });
+    const moveC = await Consumer.findOne({ where: { phone: `+65${phMove}` } });
+    const movedRow = await Prospect.findByPk(movedId);
+    expect(movedRow.consumerId).toBe(keepC.id);
+    expect(keepC.signupCount).toBe(2);
+    expect(moveC.signupCount).toBe(0);
+  });
+
+  test('verified lastName survives a later verified signup that omits it (R2 #1)', async () => {
+    const ph = p8(9);
+    markPhoneVerified(`+65${ph}`);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({
+        campaignId: campaign1.id, phone: ph, firstName: 'First', lastName: 'Keeper',
+        email: `ln-a-${RUN}@test.com`,
+      }))
+      .expect(201);
+    markPhoneVerified(`+65${ph}`);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({
+        campaignId: campaign2.id, phone: ph, firstName: 'Second', lastName: undefined,
+        email: `ln-b-${RUN}@test.com`,
+      }))
+      .expect(201);
+    const c = await Consumer.findOne({ where: { phone: `+65${ph}` } });
+    expect(c.firstName).toBe('Second');
+    expect(c.lastName).toBe('Keeper');
   });
 });

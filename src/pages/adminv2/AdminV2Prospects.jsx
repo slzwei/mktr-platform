@@ -114,6 +114,11 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
           </div>
         </SheetHeader>
         <div style={{ padding: 16, overflowY: 'auto', display: 'grid', gap: 18 }}>
+          {detail.isError && !p.phone && (
+            <div className="av2-kv" style={{ color: 'var(--ink-2)' }}>
+              Couldn&apos;t load this lead — it may have been deleted.
+            </div>
+          )}
           <section>
             <div className="av2-microcaps" style={{ marginBottom: 6 }}>Contact</div>
             <div className="av2-kv"><span>phone</span><span>{p.phone || '—'}</span></div>
@@ -145,6 +150,9 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
                   <span>rewards</span>
                   <span>{consumer.entitlements.length} · {consumer.entitlements.filter((e) => e.redeemedAt).length} redeemed</span>
                 </div>
+              )}
+              {consumer.drawEntries > 0 && (
+                <div className="av2-kv"><span>draw entries</span><span>{consumer.drawEntries}</span></div>
               )}
               {otherSignups.length > 0 && (
                 <div style={{ marginTop: 8, display: 'grid', gap: 4 }}>
@@ -299,7 +307,12 @@ export default function AdminV2Prospects() {
   ];
 
   // ── Bulk actions (live endpoints) ──────────────────────────────────────────
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['adminV2', 'prospects'] });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['adminV2', 'prospects'] });
+    // The drawer's detail cache carries the same lead + the Person journey —
+    // keep it in step with row mutations (assign / return / delete).
+    queryClient.invalidateQueries({ queryKey: ['adminV2', 'prospectDetail'] });
+  };
   const ids = [...selected];
   const agentOptions = useAgentOptions(selected.size > 0);
 

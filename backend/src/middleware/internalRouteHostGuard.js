@@ -20,6 +20,7 @@ import { logger } from '../utils/logger.js';
 const BLOCKED_PATH_PREFIXES = [
   '/api/auth',
   '/api/admin',
+  '/api/consumers',
   '/api/agents',
   '/api/fleet',
   '/api/devices',

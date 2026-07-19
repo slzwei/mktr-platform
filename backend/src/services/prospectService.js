@@ -583,31 +583,35 @@ export function makeProspectService(overrides = {}) {
           phone: incoming.phone,
         },
       });
-      if (existing) {
-        // Already registered: hand back THIS lead's canonical, attributed share link so the
-        // share dialog shows their stable /share/{slug} (not a fresh anonymous ref=1 mint on
-        // every open). Submit is OTP-gated, so the caller has proven they own this phone —
-        // safe to return their referral link. Best-effort: a mint failure must never turn the
-        // clean 409 into a 500 (the SPA can still resolve the link via prospectId).
-        const err = new d.AppError('This phone number has already signed up for this campaign.', 409);
-        err.data = { alreadyRegistered: true, prospectId: existing.id };
-        try {
-          const hostChoice = normalizeCustomerHostChoice(sourceCampaign?.design_config?.customerHost);
-          const origin = customerHostOrigin(hostChoice);
-          const { url } = await d.getOrCreateProspectShareLink({
-            prospectId: existing.id,
-            campaignId: incoming.campaignId,
-            origin,
-          });
-          err.data.shareUrl = `${origin}${url}`;
-        } catch (e) {
-          d.logger.warn('Duplicate-signup share link mint failed (non-blocking)', {
-            prospectId: existing.id,
-            err: e?.message,
-          });
-        }
-        throw err;
+      if (existing) await throwDuplicateSignup(existing);
+    }
+
+    // Already registered: hand back THIS lead's canonical, attributed share link so the
+    // share dialog shows their stable /share/{slug} (not a fresh anonymous ref=1 mint on
+    // every open). Submit is OTP-gated, so the caller has proven they own this phone —
+    // safe to return their referral link. Best-effort: a mint failure must never turn the
+    // clean 409 into a 500 (the SPA can still resolve the link via prospectId).
+    // Hoisted into a helper because BOTH the precheck above and the
+    // concurrent-race catch below must emit the identical structured 409.
+    async function throwDuplicateSignup(existing) {
+      const err = new d.AppError('This phone number has already signed up for this campaign.', 409);
+      err.data = { alreadyRegistered: true, prospectId: existing.id };
+      try {
+        const hostChoice = normalizeCustomerHostChoice(sourceCampaign?.design_config?.customerHost);
+        const origin = customerHostOrigin(hostChoice);
+        const { url } = await d.getOrCreateProspectShareLink({
+          prospectId: existing.id,
+          campaignId: incoming.campaignId,
+          origin,
+        });
+        err.data.shareUrl = `${origin}${url}`;
+      } catch (e) {
+        d.logger.warn('Duplicate-signup share link mint failed (non-blocking)', {
+          prospectId: existing.id,
+          err: e?.message,
+        });
       }
+      throw err;
     }
 
     // Handle Date of Birth -> Age mapping + campaign age gate (defense-in-depth;
@@ -822,7 +826,7 @@ export function makeProspectService(overrides = {}) {
     let dncHeld = false;
     let dncIntendedAgentId = null;
     let dncAlreadyCharged = false;
-    const prospect = await d.sequelize.transaction(async (t) => {
+    const runCreateTx = () => d.sequelize.transaction(async (t) => {
       // The internal quota gate applies ONLY to the internal path. For external
       // leads default to a plain "assign" directive so the shared activity/deduct
       // code below stays correct (external is charged authoritatively, not metered).
@@ -988,6 +992,29 @@ export function makeProspectService(overrides = {}) {
 
       return newProspect;
     });
+
+    let prospect;
+    try {
+      prospect = await runCreateTx();
+    } catch (err) {
+      // Concurrent same-campaign duplicate: both requests passed the precheck;
+      // the unique-index loser lands here AFTER a full rollback (including the
+      // resolver savepoint's signupCount increment). Surface the SAME
+      // structured 409 the precheck emits — errorHandler would otherwise map
+      // the Sequelize ValidationError subclass to a generic 400 (Codex R2 #5).
+      const constraint = err?.original?.constraint || err?.parent?.constraint;
+      if (
+        err?.name === 'SequelizeUniqueConstraintError' &&
+        constraint === 'prospects_campaign_id_phone' &&
+        incoming.phone && incoming.campaignId
+      ) {
+        const winner = await m.Prospect.findOne({
+          where: { campaignId: incoming.campaignId, phone: incoming.phone },
+        });
+        if (winner) await throwDuplicateSignup(winner);
+      }
+      throw err;
+    }
 
     // Reflect the committed outcome (null when quarantined) for the rest of the
     // function — webhook dispatch, agent load, and the returned payload.
@@ -1295,8 +1322,10 @@ export function makeProspectService(overrides = {}) {
     // to the OLD number via phoneVerifiedFor, so it must not survive the edit
     // (entitlement issuance independently re-checks the binding).
     const oldPhone = prospect.phone;
-    if (typeof safeUpdates.phone === 'string' && safeUpdates.phone.trim()) {
-      safeUpdates.phone = normalizePhone(safeUpdates.phone);
+    if (safeUpdates.phone !== undefined && safeUpdates.phone !== null) {
+      const trimmed = String(safeUpdates.phone).trim();
+      // Blank clears the number — and the person link goes with it (R2 #4).
+      safeUpdates.phone = trimmed ? normalizePhone(trimmed) : null;
     }
     const phoneChanged = safeUpdates.phone !== undefined && safeUpdates.phone !== oldPhone;
     const emailChanged = safeUpdates.email !== undefined && safeUpdates.email !== prospect.email;
@@ -1305,6 +1334,12 @@ export function makeProspectService(overrides = {}) {
       delete sm.phoneVerifiedAt;
       delete sm.phoneVerifiedFor;
       safeUpdates.sourceMetadata = sm;
+    }
+    if (phoneChanged && !safeUpdates.phone) {
+      // Phone cleared entirely: no number, no person link (recompute below
+      // only handles E.164 values; the reconciler's empty-phone step is the
+      // backstop).
+      safeUpdates.consumerId = null;
     }
 
     try {

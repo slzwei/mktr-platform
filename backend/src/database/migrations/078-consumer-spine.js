@@ -18,7 +18,7 @@ export async function up(queryInterface) {
   await q(`CREATE TABLE IF NOT EXISTS consumers (
     id UUID PRIMARY KEY,
     phone VARCHAR(20),
-    "phoneHash" VARCHAR(64) NOT NULL,
+    "phoneHash" VARCHAR(64),
     "firstName" VARCHAR(255),
     "lastName" VARCHAR(255),
     email VARCHAR(255),
@@ -45,8 +45,10 @@ export async function up(queryInterface) {
         CHECK (phone IS NULL OR phone ~ '^\\+[1-9][0-9]{9,14}$');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_consumers_phone_hash_hex') THEN
+      -- Nullable: PR C's erasure nulls the hash too (no pseudonymous tombstone
+      -- — PDPC anonymisation posture, Codex R1 #17 / R2 #6).
       ALTER TABLE consumers ADD CONSTRAINT chk_consumers_phone_hash_hex
-        CHECK ("phoneHash" ~ '^[0-9a-f]{64}$');
+        CHECK ("phoneHash" IS NULL OR "phoneHash" ~ '^[0-9a-f]{64}$');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_consumers_counts') THEN
       ALTER TABLE consumers ADD CONSTRAINT chk_consumers_counts

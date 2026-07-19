@@ -242,10 +242,13 @@ export function makeMetaLeadService(overrides = {}) {
       assignedAgentId = quarantined ? null : (decision.assignedAgentId ?? null);
 
       // Consumer spine (plan §2.3): link by NORMALIZED phone as the matching
-      // key only — the stored prospect.phone keeps Meta's raw value in this
-      // PR. Meta identities are UNVERIFIED (no OTP): they link for visibility
-      // but can never mint marketing authority. Savepoint-isolated; any
-      // failure ⇒ null (the reconciler heals).
+      // key. Storage is untouched — and in practice already E.164: the
+      // Prospect model VALIDATES E.164 at create, so a loosely-formatted Meta
+      // phone fails the whole create (pre-existing behavior); normalizePhone
+      // here just guards spaced/local variants for the link. Meta identities
+      // are UNVERIFIED (no OTP): they link for visibility but can never mint
+      // marketing authority. Savepoint-isolated; any failure ⇒ null (the
+      // reconciler heals).
       const consumerId = parsed.phone
         ? await d.resolveConsumerForCaptureTx(t, {
             phone: d.normalizePhone(parsed.phone),
