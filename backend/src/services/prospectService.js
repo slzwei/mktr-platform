@@ -34,6 +34,11 @@ import {
 } from './tiktokEventsService.js';
 import { getOrCreateProspectShareLink } from './shortlinkService.js';
 import { isPhoneRecentlyVerified } from './verifiedPhoneStore.js';
+import {
+  resolveConsumerForCaptureTx,
+  recomputeConsumersByPhone,
+  getConsumerJourney,
+} from './consumerService.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 
@@ -168,6 +173,9 @@ const defaultDeps = {
   sendTikTokCompleteRegistrationEvent,
   getOrCreateProspectShareLink,
   isPhoneRecentlyVerified,
+  resolveConsumerForCaptureTx,
+  recomputeConsumersByPhone,
+  getConsumerJourney,
   onLeadCaptured: (prospect) => (_leadCapturedHook ? _leadCapturedHook(prospect) : null),
   AppError,
   logger,
@@ -849,9 +857,27 @@ export function makeProspectService(overrides = {}) {
       heldReason = quarantined ? decision.quarantineReason : null;
       finalAgentId = quarantined ? null : (decision.assignedAgentId ?? null);
 
+      // Consumer spine (docs/plans/consumer-spine-and-consent-ledger.md §2.3):
+      // resolve-or-create the cross-campaign person for this already-normalized
+      // phone INSIDE A SAVEPOINT — a spine failure rolls back the savepoint
+      // only and capture proceeds with consumerId null (reconciler heals).
+      // Runs AFTER the per-campaign 409 dupe check so duplicates never bump
+      // signupCount. call_bot never links (to_number ambiguity — see
+      // consumerService.js); `verified` is the single OTP-marker read above.
+      const consumerId = incoming.leadSource === 'call_bot'
+        ? null
+        : await d.resolveConsumerForCaptureTx(t, {
+            phone: incoming.phone,
+            firstName: incoming.firstName,
+            lastName: incoming.lastName,
+            email: incoming.email,
+            verified: otpMarkerLive,
+          });
+
       const newProspect = await m.Prospect.create(
         {
           ...incoming,
+          consumerId,
           assignedAgentId: finalAgentId,
           externalAgentId,
           quarantinedAt: quarantined ? new Date() : null,
@@ -1217,13 +1243,20 @@ export function makeProspectService(overrides = {}) {
     // view, and the timeline degrades to ProspectActivity-only on a Supabase miss).
     if (user?.role === 'admin') {
       const wantTimeline = !!process.env.SUPABASE_LEAD_ACTIVITIES_URL;
-      const [repeatSignup, timelineFetch] = await Promise.all([
+      const [repeatSignup, timelineFetch, consumerJourney] = await Promise.all([
         repeatSignupDetail(d.sequelize, { phone: prospect.phone, email: prospect.email }).catch(() => null),
         wantTimeline
           ? fetchLeadActivitiesFromSupabase(prospect.id).catch(() => ({ rows: [], ok: false }))
           : Promise.resolve(null),
+        // Consumer spine: the person's cross-campaign journey (signups +
+        // rewards) for the admin drawer's Person card. Resilient like its
+        // siblings — a miss never breaks the detail view.
+        prospect.consumerId
+          ? d.getConsumerJourney(prospect.consumerId).catch(() => null)
+          : Promise.resolve(null),
       ]);
       if (repeatSignup) prospect.setDataValue('repeatSignup', repeatSignup);
+      if (consumerJourney) prospect.setDataValue('consumer', consumerJourney);
       if (timelineFetch) {
         prospect.setDataValue(
           'timeline',
@@ -1256,7 +1289,42 @@ export function makeProspectService(overrides = {}) {
     const oldAssignedAgent = prospect.assignedAgent;
 
     const safeUpdates = Object.fromEntries(Object.entries(body).filter(([k]) => PROSPECT_UPDATE_FIELDS.includes(k)));
-    await prospect.update(safeUpdates);
+
+    // Identity-integrity on phone edits (plan §2.3, Codex R1 #6): normalize
+    // exactly like capture, and strip the OTP verification stamp — it is bound
+    // to the OLD number via phoneVerifiedFor, so it must not survive the edit
+    // (entitlement issuance independently re-checks the binding).
+    const oldPhone = prospect.phone;
+    if (typeof safeUpdates.phone === 'string' && safeUpdates.phone.trim()) {
+      safeUpdates.phone = normalizePhone(safeUpdates.phone);
+    }
+    const phoneChanged = safeUpdates.phone !== undefined && safeUpdates.phone !== oldPhone;
+    const emailChanged = safeUpdates.email !== undefined && safeUpdates.email !== prospect.email;
+    if (phoneChanged && prospect.sourceMetadata?.phoneVerifiedAt) {
+      const sm = { ...(prospect.sourceMetadata || {}) };
+      delete sm.phoneVerifiedAt;
+      delete sm.phoneVerifiedFor;
+      safeUpdates.sourceMetadata = sm;
+    }
+
+    try {
+      await prospect.update(safeUpdates);
+    } catch (err) {
+      if (err?.name === 'SequelizeUniqueConstraintError') {
+        // (campaignId, phone) partial unique — the edited number already has a
+        // signup in this campaign.
+        throw new d.AppError('Another lead in this campaign already has this phone number.', 409);
+      }
+      throw err;
+    }
+
+    // Consumer-spine projection upkeep: recompute BOTH phones' consumers from
+    // rows (assign, never adjust) — this also relinks this row's consumerId.
+    // Best-effort by design; the reconciler heals any miss.
+    if ((phoneChanged || emailChanged) && prospect.leadSource !== 'call_bot') {
+      await d.recomputeConsumersByPhone([oldPhone, prospect.phone].filter(Boolean));
+      await prospect.reload().catch(() => {});
+    }
 
     // (Reassignment / unassignment is handled exclusively by assignProspect — see the
     // PROSPECT_UPDATE_FIELDS note — so PUT no longer needs unassignment side-effects.)
@@ -1314,6 +1382,8 @@ export function makeProspectService(overrides = {}) {
     // txn auto-commits on resolve / auto-rolls-back (and rethrows) on a throw, so
     // a hard error => delete fails + admin retries, with NO orphan/partial state.
     let deliveryPairs = [];
+    let deletedPhone = null;
+    let deletedSource = null;
     await d.sequelize.transaction(async (t) => {
       const prospect = await m.Prospect.findOne({
         where: { id, ...scopeFilter },
@@ -1323,6 +1393,8 @@ export function makeProspectService(overrides = {}) {
       if (!prospect) {
         throw new d.AppError('Prospect not found or access denied', 404);
       }
+      deletedPhone = prospect.phone;
+      deletedSource = prospect.leadSource;
 
       // Only the mktr-leads receiver handles lead.deleted. Held / unassigned /
       // System-Agent (no assignee) or a non-mktr_leads destination => no mirrored
@@ -1357,6 +1429,12 @@ export function makeProspectService(overrides = {}) {
     });
 
     d.flushDeliveries(deliveryPairs); // post-commit, fire-and-forget
+
+    // Consumer-spine projection upkeep (assign-from-rows; best-effort — the
+    // reconciler heals). call_bot rows never linked, so nothing to recompute.
+    if (deletedPhone && deletedSource !== 'call_bot') {
+      await d.recomputeConsumersByPhone([deletedPhone]);
+    }
   }
 
   /**

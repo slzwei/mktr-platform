@@ -23,6 +23,12 @@ const RewardEntitlement = sequelize.define('RewardEntitlement', {
     references: { model: 'prospects', key: 'id' },
     comment: 'Canonical MKTR lead reference — SET NULL on lead delete; entitlement survives PII removal'
   },
+  consumerId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: { model: 'consumers', key: 'id' },
+    comment: 'Cross-campaign person link (consumer spine, migration 078) — set unconditionally at issuance from the prospect, phoneKey fallback for legacy rows'
+  },
   status: {
     type: DataTypes.STRING(16),
     allowNull: false,
@@ -67,6 +73,7 @@ const RewardEntitlement = sequelize.define('RewardEntitlement', {
     { unique: true, fields: ['tokenHash'], name: 'uq_re_voucher_token', where: { tokenHash: { [Op.ne]: null } } },
     { fields: ['activationId', 'status'], name: 'idx_re_activation_status' },
     { fields: ['prospectId'], name: 'idx_re_prospect' },
+    { fields: ['consumerId'], name: 'idx_re_consumer' },
     { fields: ['expiresAt'], name: 'idx_re_expiry_eligible', where: { status: 'eligible' } }
   ]
 });

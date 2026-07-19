@@ -5,11 +5,21 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   fetchOverview, fetchAttention, fetchSeries, fetchFunnel,
-  fetchProspects, fetchCampaignsList, fetchAgentOptions,
+  fetchProspects, fetchProspectDetail, fetchCampaignsList, fetchAgentOptions,
   fetchAgentsRoster, fetchCampaignSummary, fetchWallets, fetchWalletLedger, fetchAgentGroups,
 } from '@/api/adminV2';
 
 const STALE_MS = 30_000;
+
+/** Full prospect detail for the drawer — includes the consumer-spine journey. */
+export function useProspectDetail(id) {
+  return useQuery({
+    queryKey: ['adminV2', 'prospectDetail', id],
+    queryFn: () => fetchProspectDetail(id),
+    staleTime: STALE_MS,
+    enabled: !!id,
+  });
+}
 
 export function useOverview(period) {
   return useQuery({ queryKey: ['adminV2', 'overview', period], queryFn: () => fetchOverview(period), staleTime: STALE_MS });

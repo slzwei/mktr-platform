@@ -79,6 +79,13 @@ function defineAssociations() {
   // QrScan associations
   QrScan.belongsTo(QrTag, { foreignKey: 'qrTagId', as: 'qrTag', onDelete: 'CASCADE' });
 
+  // Consumer spine (migration 078) — the durable cross-campaign person.
+  // SET NULL both ways: deleting a consumer never cascades into leads/rewards,
+  // and deleting a lead leaves the person's other history intact.
+  const { Consumer } = models;
+  Consumer.hasMany(Prospect, { foreignKey: 'consumerId', as: 'signups', onDelete: 'SET NULL' });
+  Prospect.belongsTo(Consumer, { foreignKey: 'consumerId', as: 'consumer', onDelete: 'SET NULL' });
+
   // Prospect associations
   Prospect.belongsTo(User, { foreignKey: 'assignedAgentId', as: 'assignedAgent', onDelete: 'SET NULL' });
   Prospect.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
@@ -238,6 +245,11 @@ function defineAssociations() {
   RewardEntitlement.belongsTo(Activation, { foreignKey: 'activationId', as: 'activation', onDelete: 'RESTRICT' });
   RewardEntitlement.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect', onDelete: 'SET NULL' });
   RewardEntitlement.belongsTo(User, { foreignKey: 'unlockedByUserId', as: 'unlockedBy', onDelete: 'SET NULL' });
+  // Consumer spine: person-level reward history (journey view). hasOne
+  // redemption mirrors the UNIQUE redemptions.entitlementId.
+  models.Consumer.hasMany(RewardEntitlement, { foreignKey: 'consumerId', as: 'entitlements', onDelete: 'SET NULL' });
+  RewardEntitlement.belongsTo(models.Consumer, { foreignKey: 'consumerId', as: 'consumer', onDelete: 'SET NULL' });
+  RewardEntitlement.hasOne(Redemption, { foreignKey: 'entitlementId', as: 'redemption' });
   Activation.hasMany(RewardEntitlement, { foreignKey: 'activationId', as: 'entitlements', onDelete: 'RESTRICT' });
   Redemption.belongsTo(RewardEntitlement, { foreignKey: 'entitlementId', as: 'entitlement', onDelete: 'RESTRICT' });
   Redemption.belongsTo(RewardOffer, { foreignKey: 'rewardOfferId', as: 'rewardOffer', onDelete: 'RESTRICT' });
@@ -346,7 +358,7 @@ export const {
   DiscoveryRun, DiscoveryCandidate,
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,
   OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression,
-  AiSettings, WalletLedger
+  AiSettings, WalletLedger, Consumer
 } = models;
 
 export { sequelize };

@@ -19,6 +19,20 @@ const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
  * This keeps both old-style (instance) and new-style (class) migrations happy.
  */
 export async function runMigrations() {
+  // Serialize concurrent runners — rolling deploys briefly run old+new
+  // instances together, and this runner has no other coordination. The
+  // advisory lock is session-scoped and auto-released at COMMIT; the wrapping
+  // transaction does nothing else, so each migration still executes its own
+  // statements on other pool connections exactly as before. A second runner
+  // blocks on the lock, then re-reads _migrations and skips everything the
+  // first one applied.
+  await sequelize.transaction(async (lockTx) => {
+    await sequelize.query('SELECT pg_advisory_xact_lock(870778001)', { transaction: lockTx });
+    await runPendingMigrations();
+  });
+}
+
+async function runPendingMigrations() {
   const qi = sequelize.getQueryInterface();
 
   // Build a merged context so migrations can use both

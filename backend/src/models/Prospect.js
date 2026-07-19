@@ -206,6 +206,12 @@ const Prospect = sequelize.define('Prospect', {
       key: 'id'
     }
   },
+  consumerId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: { model: 'consumers', key: 'id' },
+    comment: 'Cross-campaign person link (consumer spine, migration 078) — SET NULL on consumer delete; null for call_bot leads and pre-spine rows until reconciled'
+  },
   sessionId: {
     type: DataTypes.STRING(64),
     allowNull: true
@@ -314,6 +320,7 @@ const Prospect = sequelize.define('Prospect', {
     {
       fields: ['nextFollowUpDate']
     },
+    { fields: ['consumerId'], name: 'idx_prospects_consumer' },
     { fields: ['createdAt'], name: 'idx_prospects_createdat' },
     { fields: ['conversionDate'], name: 'idx_prospects_conversiondate', where: { conversionDate: { [Op.ne]: null } } },
     { fields: ['assignedAgentId', 'leadStatus'], name: 'idx_prospects_agent_status' },

@@ -46,6 +46,16 @@ export async function fetchProspects(params = {}) {
   };
 }
 
+/**
+ * Full prospect detail (drawer): the list row is a thin projection — this adds
+ * the admin enrichments (repeatSignup, timeline, and the consumer-spine
+ * `consumer` journey block) and lets deep-links open off-page leads.
+ */
+export async function fetchProspectDetail(id) {
+  const resp = await apiClient.get(`/prospects/${encodeURIComponent(id)}`);
+  return resp?.data?.prospect ?? null;
+}
+
 /** Campaign leaderboard source — extended admin list (B6). */
 export async function fetchCampaignsList(period) {
   const resp = await apiClient.get(`/campaigns?period=${encodeURIComponent(period)}&limit=100`);

@@ -8,7 +8,8 @@ import { dispatchEvent } from './webhookService.js';
 import { sendLeadAssignmentEmail } from './mailer.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
-import { destinationForAgent, externalIdForDestination, buildLeadHeldPayload } from './prospectHelpers.js';
+import { destinationForAgent, externalIdForDestination, buildLeadHeldPayload, normalizePhone } from './prospectHelpers.js';
+import { resolveConsumerForCaptureTx } from './consumerService.js';
 
 const IDEMPOTENCY_SCOPE = 'meta:lead';
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -31,6 +32,8 @@ const defaultDeps = {
   AppError,
   logger,
   fetch: globalThis.fetch,
+  resolveConsumerForCaptureTx,
+  normalizePhone,
 };
 
 /**
@@ -238,11 +241,27 @@ export function makeMetaLeadService(overrides = {}) {
       quarantined = decision.action === 'quarantine';
       assignedAgentId = quarantined ? null : (decision.assignedAgentId ?? null);
 
+      // Consumer spine (plan §2.3): link by NORMALIZED phone as the matching
+      // key only — the stored prospect.phone keeps Meta's raw value in this
+      // PR. Meta identities are UNVERIFIED (no OTP): they link for visibility
+      // but can never mint marketing authority. Savepoint-isolated; any
+      // failure ⇒ null (the reconciler heals).
+      const consumerId = parsed.phone
+        ? await d.resolveConsumerForCaptureTx(t, {
+            phone: d.normalizePhone(parsed.phone),
+            firstName: parsed.firstName,
+            lastName: parsed.lastName,
+            email: parsed.email,
+            verified: false,
+          })
+        : null;
+
       const prospect = await d.Prospect.create({
         firstName: parsed.firstName,
         lastName: parsed.lastName,
         email: parsed.email,
         phone: parsed.phone,
+        consumerId,
         company: parsed.company,
         jobTitle: parsed.jobTitle,
         leadSource: 'social_media',

@@ -1,8 +1,9 @@
 import { Op } from 'sequelize';
 import {
   RewardEntitlement, RedemptionEvent, Activation, ActivationIssuanceSkip, RewardOffer,
-  PartnerOrganisation, Prospect, User, sequelize,
+  PartnerOrganisation, Prospect, User, Consumer, sequelize,
 } from '../../models/index.js';
+import { phoneVerificationIsCurrent } from '../consumerService.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeInventoryService } from './inventoryService.js';
@@ -59,7 +60,7 @@ export async function flushDeliveries() {
 export function makeEntitlementService(overrides = {}) {
   const d = {
     RewardEntitlement, RedemptionEvent, Activation, ActivationIssuanceSkip, RewardOffer,
-    PartnerOrganisation, Prospect, User, sequelize, logger,
+    PartnerOrganisation, Prospect, User, Consumer, sequelize, logger,
     inventory: makeInventoryService(),
     audit: makeRedeemOpsAuditService(),
     notifyUnlock: null, // injected by entitlementWiring (voucher email) — null-safe
@@ -89,7 +90,10 @@ export function makeEntitlementService(overrides = {}) {
   }
 
   function verificationStampOf(prospect) {
-    return prospect?.sourceMetadata?.phoneVerifiedAt || null;
+    // Bound stamp (plan §2.3, Codex R1 #6): phoneVerifiedFor ties the OTP
+    // evidence to the number it was earned for — a staff phone edit must not
+    // inherit verified status. Legacy stamps without the binding stay valid.
+    return phoneVerificationIsCurrent(prospect) ? prospect.sourceMetadata.phoneVerifiedAt : null;
   }
 
   /**
@@ -273,11 +277,22 @@ export function makeEntitlementService(overrides = {}) {
           offerId: offer.id, activationId: activation.id, transaction: t,
         });
 
+        // Consumer spine: person link at issuance — unconditional (the journey
+        // view depends on it). Prefer the prospect's own link; fall back to the
+        // phoneKey (consumers.phone = '+'+digits) for pre-spine prospects.
+        let entitlementConsumerId = prospect.consumerId || null;
+        if (!entitlementConsumerId && phoneKey) {
+          entitlementConsumerId = (await d.Consumer.findOne({
+            where: { phone: `+${phoneKey}` }, attributes: ['id'], transaction: t,
+          }))?.id || null;
+        }
+
         const created = await d.RewardEntitlement.create(
           {
             rewardOfferId: offer.id,
             activationId: activation.id,
             prospectId: prospect.id,
+            consumerId: entitlementConsumerId,
             status: onCapture ? 'issued' : 'eligible',
             unlockedAt: onCapture ? new Date() : null,
             unlockedVia: onCapture ? 'auto_on_capture' : null,
