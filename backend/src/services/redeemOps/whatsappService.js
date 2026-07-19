@@ -1,6 +1,7 @@
 import QRCode from 'qrcode';
 import { RewardOffer } from '../../models/index.js';
 import { logger } from '../../utils/logger.js';
+import { isSendBlocked } from '../consentService.js';
 
 /**
  * Consumer WhatsApp delivery for reward credentials (trial-reward PR E,
@@ -146,6 +147,15 @@ export function makeWhatsappService(overrides = {}) {
   async function sendTemplate({ prospect, templateName, params, qrContent }) {
     if (!waEnabled()) return { sent: false, skipped: 'disabled' };
     if (!canWhatsAppProspect(prospect)) return { sent: false, skipped: 'no_whatsapp' };
+    // PR B suppression gate: these sends are TRANSACTIONAL (delivering the
+    // reward the person claimed) — only an erasure-reason suppression blocks
+    // them; a marketing unsubscribe does not. Future marketing templates must
+    // gate on consentService.canMarketTo with purpose:'marketing' instead.
+    // isSendBlocked fails OPEN for transactional on lookup errors, so DB-less
+    // unit runs are unaffected.
+    if (await isSendBlocked(prospect, { channel: 'whatsapp', purpose: 'transactional' })) {
+      return { sent: false, skipped: 'suppressed' };
+    }
 
     const token = process.env.WHATSAPP_TOKEN;
     const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;

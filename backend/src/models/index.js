@@ -86,6 +86,17 @@ function defineAssociations() {
   Consumer.hasMany(Prospect, { foreignKey: 'consumerId', as: 'signups', onDelete: 'SET NULL' });
   Prospect.belongsTo(Consumer, { foreignKey: 'consumerId', as: 'consumer', onDelete: 'SET NULL' });
 
+  // Consent ledger + suppressions (PR B) — append-only person-level evidence.
+  // RESTRICT from consumers: consent history must survive everything (erasure
+  // nulls PII on the consumer row, never deletes it).
+  const { ConsentEvent, ConsumerSuppression } = models;
+  Consumer.hasMany(ConsentEvent, { foreignKey: 'consumerId', as: 'consentEvents', onDelete: 'RESTRICT' });
+  ConsentEvent.belongsTo(Consumer, { foreignKey: 'consumerId', as: 'consumer', onDelete: 'RESTRICT' });
+  ConsentEvent.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect', onDelete: 'SET NULL' });
+  ConsentEvent.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
+  Consumer.hasMany(ConsumerSuppression, { foreignKey: 'consumerId', as: 'suppressions', onDelete: 'RESTRICT' });
+  ConsumerSuppression.belongsTo(Consumer, { foreignKey: 'consumerId', as: 'consumer', onDelete: 'RESTRICT' });
+
   // Prospect associations
   Prospect.belongsTo(User, { foreignKey: 'assignedAgentId', as: 'assignedAgent', onDelete: 'SET NULL' });
   Prospect.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
@@ -358,7 +369,7 @@ export const {
   DiscoveryRun, DiscoveryCandidate,
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,
   OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression,
-  AiSettings, WalletLedger, Consumer
+  AiSettings, WalletLedger, Consumer, ConsentEvent, ConsumerSuppression
 } = models;
 
 export { sequelize };

@@ -39,6 +39,7 @@ import {
   recomputeConsumersByPhone,
   getConsumerJourney,
 } from './consumerService.js';
+import { recordCaptureConsentEventsTx } from './consentService.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 
@@ -176,6 +177,7 @@ const defaultDeps = {
   resolveConsumerForCaptureTx,
   recomputeConsumersByPhone,
   getConsumerJourney,
+  recordCaptureConsentEventsTx,
   onLeadCaptured: (prospect) => (_leadCapturedHook ? _leadCapturedHook(prospect) : null),
   AppError,
   logger,
@@ -893,6 +895,24 @@ export function makeProspectService(overrides = {}) {
         },
         { transaction: t }
       );
+
+      // Consent ledger (PR B, plan §3.1): person-level evidence for this
+      // capture — savepoint-isolated + non-blocking like the resolver; every
+      // input also lives on the prospect row, so backfillConsentEvents can
+      // re-derive a missed write. No-op when consumerId is null (call_bot /
+      // unlinked rows carry no person-level evidence until reconciled).
+      await d.recordCaptureConsentEventsTx(t, {
+        consumerId,
+        prospectId: newProspect.id,
+        campaignId: newProspect.campaignId || null,
+        sourceUrl: eventSourceUrl || null,
+        verified: otpMarkerLive,
+        contact: consentContact,
+        terms: consentTerms,
+        externalConsent,
+        dncConsent,
+        drawTerms: incoming.consentMetadata?.drawTerms || null,
+      });
 
       const campaignName = sourceCampaign?.name || 'Unknown Campaign';
       // Source-aware phrase ("via TikTok ad" / "via web form" / "via {name} QR
