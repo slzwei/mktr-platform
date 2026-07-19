@@ -113,6 +113,29 @@ export function makeLeadOutcomeService(overrides = {}) {
     const prospect = await m.Prospect.findByPk(externalId);
     if (!prospect) return { skipped: 'no_prospect' };
 
+    // Send-time consent gate (PR B, Codex R1 #12): a withdrawal AFTER capture
+    // must strip contact identifiers from these DELAYED down-funnel events —
+    // the stored signup boolean alone is stale. On a positive suppression
+    // match we hand the dispatcher a clone with consent_contact:false, so
+    // metaCapiService omits em/ph (fbp/fbc/ip/ua/external_id still ride —
+    // browser/session identifiers, not contact PII). Lookup errors keep the
+    // stored behavior (byte-identical when consent tables are unreachable).
+    let sendProspect = prospect;
+    try {
+      const { isSuppressed } = await import('./consentService.js');
+      const suppressed = await isSuppressed({
+        consumerId: prospect.consumerId, phone: prospect.phone, channel: 'all', purpose: 'marketing',
+      });
+      if (suppressed) {
+        const plain = typeof prospect.get === 'function' ? prospect.get({ plain: true }) : { ...prospect };
+        sendProspect = { ...plain, sourceMetadata: { ...(plain.sourceMetadata || {}), consent_contact: false } };
+      }
+    } catch (err) {
+      logger.warn('[lead-outcome] suppression lookup failed — sending with stored consent', {
+        error: err?.message || String(err),
+      });
+    }
+
     // Per-campaign pixel override (mirrors prospectService submit-time dispatch).
     let pixelIdOverride;
     if (prospect.campaignId) {
@@ -150,7 +173,7 @@ export function makeLeadOutcomeService(overrides = {}) {
         ...(pixelIdOverride ? { pixelIdOverride } : {}),
       };
 
-      const result = await dispatchWithRetry(prospect, ctx, { eventName });
+      const result = await dispatchWithRetry(sendProspect, ctx, { eventName });
 
       if (result?.sent) {
         const capi = { ...(prospect.sourceMetadata?.capi || {}), [markerKey]: new Date().toISOString() };

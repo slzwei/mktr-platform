@@ -81,13 +81,16 @@ export async function selectRedeemers(deps = {}) {
  * Turn prospect rows into hashed multi-key audience rows `[emailHash, phoneHash]`.
  * - Drops synthetic Retell emails (@calls.mktr.sg).
  * - When consent is required, drops rows without consent_contact === true.
+ * - Drops SUPPRESSED people (PR B): matched BY PHONE so rows the consumer
+ *   spine failed to link still suppress — fail-closed, never by FK.
  * - Drops rows with neither a usable email nor phone.
  * - Missing key → empty string (Meta multi-key allows blanks).
  */
-export function buildUserRows(prospects, { requireConsent = true } = {}) {
+export function buildUserRows(prospects, { requireConsent = true, suppressedPhones = null } = {}) {
   const rows = [];
   for (const p of prospects || []) {
     if (requireConsent && p?.sourceMetadata?.consent_contact !== true) continue;
+    if (suppressedPhones && p?.phone && suppressedPhones.has(p.phone)) continue;
     const email =
       p?.email && !String(p.email).toLowerCase().endsWith(SYNTHETIC_EMAIL_SUFFIX)
         ? p.email
@@ -177,10 +180,14 @@ export async function syncRedeemedAudience(deps = {}) {
   const version = graphVersion();
   const mode = (process.env.REDEEMED_AUDIENCE_SYNC_MODE || 'add').toLowerCase();
   const requireConsent = requireConsentEnabled();
+  // Fail-closed by construction: if the suppression lookup throws, the sync
+  // run aborts — we never upload while blind to withdrawals (Codex R1 #12).
+  const { getSuppressedPhoneSet } = await import('./consentService.js');
+  const suppressedPhones = await getSuppressedPhoneSet();
 
   try {
     const prospects = await selectRedeemers(d);
-    const rows = buildUserRows(prospects, { requireConsent });
+    const rows = buildUserRows(prospects, { requireConsent, suppressedPhones });
     logger.info(
       { selected: prospects.length, eligible: rows.length, requireConsent, mode },
       'redeemed_audience.sync.start'

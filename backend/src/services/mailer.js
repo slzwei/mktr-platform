@@ -6,6 +6,7 @@ import { logger } from '../utils/logger.js';
 import { maskEmail } from '../utils/redactTokens.js';
 import { normalizeCustomerHostChoice, customerHostOrigin } from '../utils/customerHost.js';
 import { getOrCreateProspectShareLink } from './shortlinkService.js';
+import { ensureUnsubToken } from './consentService.js';
 
 // Lead-capture confirmation email: the designer's production, table-based HTML email
 // (design_handoff_lead_confirmation_email). Read once at boot from the co-located copy so it
@@ -64,7 +65,7 @@ export function getTransporter() {
 }
 
 
-export async function sendEmail({ to, subject, html, text, context, from, attachments }) {
+export async function sendEmail({ to, subject, html, text, context, from, attachments, headers }) {
   // Resolve from-address by context (lead-capture flows pass context='redeem',
   // admin flows omit it). An explicit `from` arg overrides both.
   const resolvedFrom = from || resolveEmailFrom(context);
@@ -83,7 +84,9 @@ export async function sendEmail({ to, subject, html, text, context, from, attach
     // the Redeem Ops voucher QR ships as an attachment, not a remote URL, so it
     // renders with remote images blocked and the token stays out of image-proxy
     // logs (docs/redeem-ops/MKTR_INTEGRATION.md §2).
-    await transporter.sendMail({ from: resolvedFrom, to, subject, html, text, ...(attachments ? { attachments } : {}) });
+    // `headers` (optional, nodemailer passthrough) carries List-Unsubscribe /
+    // List-Unsubscribe-Post on consumer emails (PR B).
+    await transporter.sendMail({ from: resolvedFrom, to, subject, html, text, ...(attachments ? { attachments } : {}), ...(headers ? { headers } : {}) });
     return { success: true };
   } catch (err) {
     // Surface SES/SMTP rejection details — Nodemailer attaches `code`,
@@ -327,10 +330,41 @@ export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOv
   // derived, so they are HTML-escaped exactly as before; heroLogo is intentional markup and
   // the brand literals and year are controlled, so they pass through raw. The plain-text part
   // is never escaped. Unknown placeholders are left intact so a render check can flag them.
+  // Unsubscribe plumbing (PR B, plan §3.4): consumer-linked leads get a
+  // working List-Unsubscribe header pair + footer link. The deterministic
+  // token means every email rebuilds the same URL, and the URL carries ONLY
+  // the token — never the cross-campaign consumer id. Unlinked rows send
+  // without it (nothing to unsubscribe person-level yet). Mint failure never
+  // blocks the email.
+  let unsubscribeUrl = '';
+  if (prospect.consumerId) {
+    try {
+      const token = await ensureUnsubToken(prospect.consumerId);
+      const apiOrigin = process.env.API_PUBLIC_ORIGIN || 'https://api.mktr.sg';
+      unsubscribeUrl = `${apiOrigin}/api/unsubscribe?t=${token}`;
+    } catch (err) {
+      logger.warn('Unsubscribe link mint failed (email sends without it)', { err: err?.message });
+    }
+  }
+  const unsubscribeLine = unsubscribeUrl
+    ? `<a href="${escapeHtml(unsubscribeUrl)}" style="color:inherit;text-decoration:underline;">Unsubscribe from marketing messages</a>`
+    : '';
+  const unsubscribeTextLine = unsubscribeUrl
+    ? `Unsubscribe from marketing messages: ${unsubscribeUrl}`
+    : '';
+  const unsubHeaders = unsubscribeUrl
+    ? {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      }
+    : undefined;
+
   const fields = {
     firstName,
     campaignName,
     shareUrl: shareUrl || '',
+    unsubscribeLine,
+    unsubscribeTextLine,
     brandName,
     brandWordmark,
     footerEntity,
@@ -358,6 +392,7 @@ export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOv
     html,
     text,
     context: hostChoice,
+    ...(unsubHeaders ? { headers: unsubHeaders } : {}),
   });
 }
 

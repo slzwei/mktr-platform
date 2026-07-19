@@ -26,5 +26,6 @@ The {{brandName}} team
 
 {{brandWordmark}}
 You are receiving this because you submitted a request to {{brandName}}.
+{{unsubscribeTextLine}}
 {{footerEntity}}
 (c) {{year}} {{brandName}}. All rights reserved.
