@@ -66,8 +66,27 @@ function enableWithCreds() {
 }
 
 function makeSvc({ fetch, qr = qrRecorder(), card = cardRecorder(), RewardOffer = offerFake } = {}) {
-  return makeWhatsappService({ RewardOffer, fetch, QRCode: qr, renderQrCard: card, logger: silentLogger });
+  // Inject a no-op sleep so graphFetch's backoff doesn't slow tests.
+  return makeWhatsappService({ RewardOffer, fetch, QRCode: qr, renderQrCard: card, logger: silentLogger, sleep: async () => {} });
 }
+
+/**
+ * Sequenced fetch fake where each response may be a thrown error (network) or
+ * a { ok/status/json } object. Records call urls so retries are observable.
+ */
+function scriptedFetch(script) {
+  const calls = [];
+  const fn = async (url, opts) => {
+    calls.push({ url, opts });
+    const step = script[Math.min(calls.length - 1, script.length - 1)];
+    if (step instanceof Error) throw step;
+    return step;
+  };
+  fn.calls = calls;
+  return fn;
+}
+const mediaCalls = (f) => f.calls.filter((c) => String(c.url).endsWith('/media')).length;
+const msgCalls = (f) => f.calls.filter((c) => String(c.url).endsWith('/messages')).length;
 
 describe('waRecipient — Graph API recipient normalization', () => {
   it('prefixes 65 onto bare 8-digit SG mobiles', () => {
@@ -280,5 +299,61 @@ describe('failure normalization — never throws', () => {
     const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'p' });
     expect(r.sent).toBe(true);
     expect(fetch.calls[1].body.template.components[1].parameters[1].text).toBe('your reward');
+  });
+});
+
+describe('graphFetch retry — transient failures self-heal (prod 2026-07-20 voucher miss)', () => {
+  const send = (svc) => svc.sendVoucherWhatsApp({ entitlement, prospect: consented, voucherToken: 'vtok' });
+
+  it('media upload "fetch failed" once → retries and the send completes', async () => {
+    enableWithCreds();
+    // [media throws, media ok, messages ok]
+    const fetch = scriptedFetch([new TypeError('fetch failed'), uploadOk, sendOk]);
+    const svc = makeSvc({ fetch });
+    const r = await send(svc);
+    expect(r.sent).toBe(true);
+    expect(mediaCalls(fetch)).toBe(2); // one retry
+    expect(msgCalls(fetch)).toBe(1);
+  });
+
+  it('message send "fetch failed" once → retries and the send completes', async () => {
+    enableWithCreds();
+    // [media ok, messages throws, messages ok]
+    const fetch = scriptedFetch([uploadOk, new TypeError('fetch failed'), sendOk]);
+    const svc = makeSvc({ fetch });
+    const r = await send(svc);
+    expect(r.sent).toBe(true);
+    expect(msgCalls(fetch)).toBe(2); // one retry
+  });
+
+  it('persistent network failure → exhausts 3 attempts then notify_failed', async () => {
+    enableWithCreds();
+    const fetch = scriptedFetch([new TypeError('fetch failed')]); // always throws
+    const svc = makeSvc({ fetch });
+    const r = await send(svc);
+    expect(r.sent).toBe(false);
+    expect(r.error).toMatch(/fetch failed/);
+    expect(mediaCalls(fetch)).toBe(3); // attempts cap
+  });
+
+  it('4xx (template rejected) is deterministic → NO retry, single message attempt', async () => {
+    enableWithCreds();
+    const reject4xx = { ok: false, status: 400, json: async () => ({ error: { code: 132001, message: 'template does not exist' } }) };
+    const fetch = scriptedFetch([uploadOk, reject4xx]);
+    const svc = makeSvc({ fetch });
+    const r = await send(svc);
+    expect(r.sent).toBe(false);
+    expect(r.error).toMatch(/Meta API: 132001/);
+    expect(msgCalls(fetch)).toBe(1); // no retry on 4xx
+  });
+
+  it('5xx is transient → retries the message send', async () => {
+    enableWithCreds();
+    const err500 = { ok: false, status: 503, json: async () => ({}) };
+    const fetch = scriptedFetch([uploadOk, err500, sendOk]);
+    const svc = makeSvc({ fetch });
+    const r = await send(svc);
+    expect(r.sent).toBe(true);
+    expect(msgCalls(fetch)).toBe(2);
   });
 });

@@ -143,8 +143,9 @@ export default function RedemptionsPage() {
     mutationFn: ({ id, channel }) => redeemOpsApi.resendEntitlementPass(id, { channel }),
     onSuccess: (res, vars) => {
       queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'entitlements'] });
-      if (vars.channel === 'email') {
-        toast.success(res?.message || 'New pass emailed');
+      if (vars.channel === 'email' || vars.channel === 'whatsapp') {
+        // Both re-queue a fire-and-forget send (no one-time link to show).
+        toast.success(res?.message || (vars.channel === 'whatsapp' ? 'Re-sent on WhatsApp' : 'New pass emailed'));
         setShareDialog(null);
       } else {
         // Show the one-time link bundle — it is not retrievable later.
@@ -373,6 +374,17 @@ export default function RedemptionsPage() {
               onClick={() => setShareDialog({ entitlement: e, mode: 'email', phase: 'confirm' })}
             >
               Resend
+            </Button>
+          )}
+          {canShare && e.whatsappDeliverable && (
+            <Button
+              size="sm"
+              variant="outline"
+              aria-label={`Resend on WhatsApp — ${holderName}`}
+              disabled={resendMutation.isPending}
+              onClick={() => setShareDialog({ entitlement: e, mode: 'whatsapp', phase: 'confirm' })}
+            >
+              WhatsApp
             </Button>
           )}
           {canShare && (
@@ -679,7 +691,9 @@ export default function RedemptionsPage() {
                 <DialogTitle>
                   {shareDialog.mode === 'email'
                     ? (dialogIsVoucher ? 'Resend voucher email?' : 'Resend pass email?')
-                    : 'Create a new share link?'}
+                    : shareDialog.mode === 'whatsapp'
+                      ? (dialogIsVoucher ? 'Resend voucher on WhatsApp?' : 'Resend pass on WhatsApp?')
+                      : 'Create a new share link?'}
                 </DialogTitle>
                 <DialogDescription>
                   This mints a fresh QR/link for{' '}
@@ -698,7 +712,9 @@ export default function RedemptionsPage() {
                 >
                   {resendMutation.isPending
                     ? 'Working…'
-                    : shareDialog.mode === 'email' ? 'Resend email' : 'Create new link'}
+                    : shareDialog.mode === 'email' ? 'Resend email'
+                      : shareDialog.mode === 'whatsapp' ? 'Resend on WhatsApp'
+                        : 'Create new link'}
                 </Button>
               </DialogFooter>
             </>
