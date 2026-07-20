@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import MarketplaceLayout from './MarketplaceLayout';
 import MarketingConsentDialog from '@/components/legal/MarketingConsentDialog';
+import {
+  CONSENT_COPY, CONSENT_COPY_VERSION, CONSENT_BLOCK_HELPER,
+  isSponsoredCampaign, sponsorNameLine,
+} from '@/lib/consentCopy';
 import { apiClient } from '@/api/client';
 import { getMarketplaceCampaign } from '@/api/marketplace';
 import { composeValueLine, fmtDateLong, isDrawCampaign, boostOf, offerUnavailability, UNAVAILABLE_COPY } from './content';
@@ -102,7 +106,12 @@ export default function MarketplaceFlow() {
   const [errors, setErrors] = useState({});
   const [otp, setOtp] = useState({ status: 'idle', code: '', cooldown: 0, error: '' });
   const [dnc, setDnc] = useState({ checked: false, hit: false, consent: false });
-  const [consent, setConsent] = useState({ contact: true, terms: false, third: false });
+  // Mandatory agree-all consent (wording era CONSENT_COPY_VERSION): ONE
+  // un-ticked required tick replaces the old contact/terms/third trio; the
+  // wire flags are derived from it at submit, matching CampaignSignupForm
+  // exactly. Copy renders from src/lib/consentCopy.js (backend-hashed twin —
+  // never inline the words). The DNC step stays a separate consent.
+  const [agreeAll, setAgreeAll] = useState(false);
   const [ack, setAck] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -317,7 +326,7 @@ export default function MarketplaceFlow() {
   };
 
   const submit = async () => {
-    if (!consent.terms || (needAck && !ack) || (dnc.hit && !dnc.consent) || submitting) return;
+    if (!agreeAll || (needAck && !ack) || (dnc.hit && !dnc.consent) || submitting) return;
     setSubmitting(true);
     try {
       const name = form.name.trim();
@@ -339,9 +348,13 @@ export default function MarketplaceFlow() {
         postal_code: form.postal_code,
         education_level: form.education_level,
         monthly_income: form.monthly_income,
-        consent_contact: consent.contact,
-        consent_terms: consent.terms,
-        consent_third_party: consent.third,
+        // Agree-all: submission implies the whole block (same derivation as
+        // CampaignSignupForm) — third-party true iff the sponsored disclosure
+        // clause was shown; consent_copy_version pins the wording era.
+        consent_contact: true,
+        consent_terms: true,
+        consent_third_party: isSponsoredCampaign(dc),
+        consent_copy_version: CONSENT_COPY_VERSION,
         ...(dnc.hit ? { consent_dnc: dnc.consent } : {}),
         leadSource: qrTagId ? 'qr_code' : 'website',
         campaignId: campaign.id,
@@ -445,10 +458,11 @@ export default function MarketplaceFlow() {
   const valueLine = composeValueLine(campaign);
   const otpChannelLabel = dc.otpChannel === 'whatsapp' ? 'WhatsApp' : 'SMS';
   const phoneMasked = form.phone ? `${form.phone.slice(0, 4)} ${form.phone.slice(4)}` : '';
-  const submitReady = consent.terms && (!needAck || ack) && (!dnc.hit || dnc.consent) && !submitting;
+  const sponsoredClause = isSponsoredCampaign(dc);
+  const submitReady = agreeAll && (!needAck || ack) && (!dnc.hit || dnc.consent) && !submitting;
   const missingText = submitting
     ? ''
-    : `${!consent.terms ? 'Campaign terms consent is required. ' : ''}${needAck && !ack ? 'Please acknowledge the activation requirement.' : ''}`;
+    : `${!agreeAll ? `${CONSENT_BLOCK_HELPER} ` : ''}${needAck && !ack ? 'Please acknowledge the activation requirement.' : ''}`;
 
   const orderedFields = flattenFieldOrder(dc.fieldOrder).filter((k) => FIELD_DEFS[k] && isVisible(k));
   const branches = (campaign.ops?.partner?.locations || []).filter((l) => l.name);
@@ -508,7 +522,6 @@ export default function MarketplaceFlow() {
               boost={boost}
               needAck={needAck}
               actSummary={act.summary}
-              consentContact={consent.contact}
               result={result}
               partnerName={partnerName}
               onCopyShare={() => {
@@ -786,7 +799,7 @@ export default function MarketplaceFlow() {
               <div>
                 <h2 className="rm-serif" style={{ margin: 0, fontSize: 23 }}>Almost there</h2>
                 <p style={{ margin: '8px 0 0', fontSize: 13, lineHeight: 1.55, color: 'var(--rm-sub)' }}>
-                  Read once, tick what you agree to. No surprises later.
+                  One agreement covers everything below. No surprises later.
                 </p>
               </div>
               {needAck && (
@@ -808,27 +821,52 @@ export default function MarketplaceFlow() {
                   </button>
                 </div>
               )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <ConsentCheck checked={consent.contact} onToggle={() => setConsent((p) => ({ ...p, contact: !p.contact }))}>
-                  Contact me about this redemption using the details I've provided. <span style={{ color: 'var(--rm-mut)' }}>(Pre-ticked — untick if you'd rather we didn't.)</span>
-                </ConsentCheck>
-                <ConsentCheck checked={consent.terms} onToggle={() => setConsent((p) => ({ ...p, terms: !p.terms }))}>
-                  I agree to this campaign's{' '}
-                  {dc.termsContent ? (
-                    <button className="rm-underline" style={{ color: 'var(--rm-pine)', fontWeight: 600 }} onClick={(e) => { e.stopPropagation(); setTermsOpen(true); }}>
-                      terms &amp; conditions
-                    </button>
-                  ) : (
-                    'terms & conditions'
+              {/* Agree-all block — words from src/lib/consentCopy.js (hashed
+                  twin); one required tick, matching the main funnel exactly. */}
+              <div style={{ background: 'var(--rm-bg)', border: '1px solid var(--rm-line)', borderRadius: 14, padding: '16px 18px' }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{CONSENT_COPY.heading}</div>
+                <p style={{ margin: '6px 0 12px', fontSize: 13, lineHeight: 1.6, color: 'var(--rm-sub)' }}>{CONSENT_COPY.intro}</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13.5, lineHeight: 1.6, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', gap: 9 }}>
+                    <span aria-hidden="true" style={{ color: 'var(--rm-pine)', fontWeight: 700, flexShrink: 0 }}>•</span>
+                    <span>
+                      <strong>{CONSENT_COPY.clauseContactHeadline}</strong> {CONSENT_COPY.clauseContactBody}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 9 }}>
+                    <span aria-hidden="true" style={{ color: 'var(--rm-pine)', fontWeight: 700, flexShrink: 0 }}>•</span>
+                    <span>
+                      <strong>{CONSENT_COPY.clauseTermsHeadline}</strong> {CONSENT_COPY.clauseTermsPrefix}
+                      {dc.termsContent ? (
+                        <button className="rm-underline" style={{ color: 'var(--rm-pine)', fontWeight: 600 }} onClick={() => setTermsOpen(true)}>
+                          {CONSENT_COPY.clauseTermsLinkText}
+                        </button>
+                      ) : (
+                        CONSENT_COPY.clauseTermsLinkText
+                      )}
+                      {CONSENT_COPY.clauseTermsSuffix}
+                    </span>
+                  </div>
+                  {sponsoredClause && (
+                    <div style={{ display: 'flex', gap: 9 }}>
+                      <span aria-hidden="true" style={{ color: 'var(--rm-pine)', fontWeight: 700, flexShrink: 0 }}>•</span>
+                      <span>
+                        <strong>{CONSENT_COPY.clauseThirdPartyHeadline}</strong> {CONSENT_COPY.clauseThirdPartyBody}
+                      </span>
+                    </div>
                   )}
-                  . <span style={{ fontFamily: 'var(--rm-mono)', fontSize: 9.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--rm-err)' }}>Required</span>
-                </ConsentCheck>
-                <ConsentCheck checked={consent.third} onToggle={() => setConsent((p) => ({ ...p, third: !p.third }))}>
-                  Share my contact details with the sponsoring licensed financial-advisory representative for this campaign. <span style={{ color: 'var(--rm-mut)' }}>(Optional — a separate choice from the two above.)</span>
-                </ConsentCheck>
-                {dc.sponsor?.disclosure && (
-                  <div style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--rm-mut)', padding: '0 4px' }}>{dc.sponsor.disclosure}</div>
+                </div>
+                {sponsoredClause && (
+                  <div style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--rm-mut)', margin: '0 0 12px 21px' }}>
+                    {sponsorNameLine(dc)}
+                  </div>
                 )}
+                <div style={{ borderTop: '1px solid var(--rm-line)', paddingTop: 12 }}>
+                  <ConsentCheck checked={agreeAll} onToggle={() => setAgreeAll((p) => !p)}>
+                    <strong>{CONSENT_COPY.checkboxLabel}</strong>{' '}
+                    <span style={{ fontFamily: 'var(--rm-mono)', fontSize: 9.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--rm-err)' }}>Required</span>
+                  </ConsentCheck>
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
                 <button className="rm-link-btn" style={{ color: 'var(--rm-mut)' }} onClick={goBack}>Back</button>
@@ -844,7 +882,7 @@ export default function MarketplaceFlow() {
         </div>
 
         <div className="rm-mono-note" style={{ fontSize: 10, letterSpacing: '0.05em', textAlign: 'center', marginTop: 16 }}>
-          OTP-verified · consent recorded with submission · data used only as stated on the offer
+          OTP-verified · consent recorded with submission · opt out anytime
         </div>
       </div>
 
@@ -879,7 +917,7 @@ function ConsentCheck({ checked, onToggle, children }) {
   );
 }
 
-function Confirmation({ campaign, isDraw, boost, needAck, actSummary, consentContact, result, partnerName, onCopyShare }) {
+function Confirmation({ campaign, isDraw, boost, needAck, actSummary, result, partnerName, onCopyShare }) {
   const dc = campaign.design_config || {};
   return (
     <div className="rm-fadeup" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -900,7 +938,7 @@ function Confirmation({ campaign, isDraw, boost, needAck, actSummary, consentCon
               {boost && (
                 <Step n="2" apricot>
                   <strong>Boost your odds:</strong> complete the activation step before {fmtDateLong(boost.boostClosesAt)} and this entry counts ×{boost.multiplier}.{' '}
-                  {consentContact ? 'The details are in your confirmation email, and the consultant can reach you at your verified number.' : 'The details are in your confirmation email.'}
+                  The details are in your confirmation email, and the consultant can reach you at your verified number.
                 </Step>
               )}
               <Step n={boost ? '3' : '2'} apricot>
@@ -913,7 +951,7 @@ function Confirmation({ campaign, isDraw, boost, needAck, actSummary, consentCon
           ) : (
             <>
               <Step n="1">{partnerName || 'The partner'} will contact you to confirm your slot.</Step>
-              <Step n="2">Expect first contact within one working day{consentContact ? ', at the number you verified' : ''}.</Step>
+              <Step n="2">Expect first contact within one working day, at the number you verified.</Step>
               <Step n="3">A confirmation has also been sent to your email.</Step>
             </>
           )}

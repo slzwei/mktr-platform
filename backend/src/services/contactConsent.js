@@ -9,23 +9,25 @@ import { createHash } from 'crypto';
  * `consent_copy_version` (absent => legacy):
  *
  *  - '2026-07-20' LEGACY (campaign-scoped, default-ticked opt-out): the old
- *    three-checkbox surfaces. Still what MarketplaceFlow shows, so it stays
- *    the default for any capture that doesn't declare a version. Its copy
- *    constant is a paraphrase-era artifact — NOT byte-identical to the old
- *    on-screen wording — kept verbatim so the hash pinned on already-recorded
- *    events stays meaningful. Do not "fix" it; the era is closed.
- *  - '2026-07-21' AGREE-ALL (brand-wide, mandatory): the single mandatory
- *    agreement block (CampaignSignupForm). Submitting is impossible without
+ *    three-checkbox surfaces. The default for any capture that doesn't
+ *    declare a version — after the 2026-07-21 rework that means pre-rework
+ *    cached bundles only (both funnels now send the agree-all label). Its
+ *    copy constant is a paraphrase-era artifact — NOT byte-identical to the
+ *    old on-screen wording — kept verbatim so the hash pinned on already-
+ *    recorded events stays meaningful. Do not "fix" it; the era is closed.
+ *  - '2026-07-21-agree-all-v1' AGREE-ALL (brand-wide, mandatory): the single
+ *    mandatory agreement block on BOTH funnels (CampaignSignupForm +
+ *    MarketplaceFlow), §9.4 FINAL copy. Submitting is impossible without
  *    agreeing, so `granted` is always true in this era. The copy below MUST
- *    stay BYTE-IDENTICAL to CONSENT_COPY.clauseContact in
- *    src/lib/consentCopy.js — enforced by
+ *    stay BYTE-IDENTICAL to the clause in src/lib/consentCopy.js
+ *    (`${clauseContactHeadline} ${clauseContactBody}`) — enforced by
  *    src/lib/__tests__/consentCopy.lockstep.test.js.
  *
- * SCOPE: the '2026-07-21' wording grants contact + marketing about "other
- * Redeem offers" (brand-wide), but ledger events remain CAMPAIGN-scoped —
- * minting campaignId:null GLOBAL grants from this copy is the separate
- * "globalev" deliverable (see consentService rules). `scope` is recorded in
- * event metadata only.
+ * SCOPE: the agree-all wording grants contact + marketing about "other
+ * Redeem offers, rewards and lucky draws" (brand-wide), but ledger events
+ * remain CAMPAIGN-scoped — minting campaignId:null GLOBAL grants from this
+ * copy is the separate "globalev" deliverable (see consentService rules).
+ * `scope` is recorded in event metadata only.
  */
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
@@ -45,10 +47,13 @@ export const CONTACT_CONSENT_COPY_HASH = sha256(CONTACT_CONSENT_COPY);
 /** Channels both eras' wording covers — keep in sync with the on-screen copy. */
 export const CONTACT_CONSENT_CHANNELS = Object.freeze(['phone', 'text', 'email']);
 
-/** AGREE-ALL era (mandatory single-block consent, CampaignSignupForm). */
-export const AGREE_ALL_CONSENT_VERSION = '2026-07-21';
+/** AGREE-ALL era (mandatory single-block consent, both funnels — §9.4 FINAL). */
+export const AGREE_ALL_CONSENT_VERSION = '2026-07-21-agree-all-v1';
 export const AGREE_ALL_CONTACT_COPY =
-  'MKTR PTE. LTD. ("Redeem") may contact me by phone call, text message (including WhatsApp) and email, using the details I provide, about this campaign and about other Redeem offers. I can unsubscribe from marketing at any time.';
+  "Contact from Redeem — this offer and future ones. MKTR Pte. Ltd. (the company behind Redeem) may contact you by phone call, text message (SMS or WhatsApp) or email about your signup and reward, and about other Redeem offers, rewards and lucky draws. You can opt out anytime — every marketing email includes an unsubscribe link, or contact us using the details in our Personal Data Policy. Opting out later won't affect a reward you've already claimed.";
+
+/** Channels the agree-all wording covers — includes WhatsApp, per the copy. */
+export const AGREE_ALL_CONSENT_CHANNELS = Object.freeze(['phone', 'text', 'whatsapp', 'email']);
 
 /**
  * The registry the ledger writes from: version label -> the exact evidence
@@ -65,7 +70,7 @@ export const CONTACT_CONSENT_VERSIONS = Object.freeze({
   [AGREE_ALL_CONSENT_VERSION]: Object.freeze({
     copy: AGREE_ALL_CONTACT_COPY,
     copyHash: sha256(AGREE_ALL_CONTACT_COPY),
-    channels: CONTACT_CONSENT_CHANNELS,
+    channels: AGREE_ALL_CONSENT_CHANNELS,
     scope: 'brand',
   }),
 });

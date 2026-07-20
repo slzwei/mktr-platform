@@ -553,7 +553,7 @@ export default function ContentPanel({ currentDesign, onDesignChange, campaignNa
           <div className="flex items-center justify-between gap-3 py-1">
             <div className="flex flex-col">
               <span className="text-sm text-foreground">Third-party disclosure clause</span>
-              <span className="text-xs text-muted-foreground">Sponsored campaigns: the agree-all consent block includes sharing contact details with the partner advisory representative.</span>
+              <span className="text-xs text-muted-foreground">Shows only on campaigns with a NAMED sponsor configured; this switch is the kill-switch. The agree-all block then includes sharing contact details with that named representative.</span>
             </div>
             <Switch
               aria-label="Third-party disclosure clause"

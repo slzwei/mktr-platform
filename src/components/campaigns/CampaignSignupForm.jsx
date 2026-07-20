@@ -7,7 +7,10 @@ import DncConsentGate from '@/components/campaigns/signup/DncConsentGate';
 import MarketingConsentDialog from '@/components/legal/MarketingConsentDialog';
 import { useCampaignTheme } from '@/components/campaignPage/themeContext';
 import { heroFontStack } from '@/lib/heroFonts';
-import { CONSENT_COPY, CONSENT_COPY_VERSION } from '@/lib/consentCopy';
+import {
+  CONSENT_COPY, CONSENT_COPY_VERSION, CONSENT_BLOCK_HELPER,
+  isSponsoredCampaign, sponsorNameLine,
+} from '@/lib/consentCopy';
 import { formatDateInput, getAgeValidationError, getAgeRestrictionHint, displayPhone } from '@/components/campaigns/signup/dateUtils';
 
 /**
@@ -51,10 +54,12 @@ export default function CampaignSignupForm({
   const sgPrOnly = campaign?.design_config?.sgPrOnly === true;
   const excludeAdvisors = campaign?.design_config?.excludeAdvisors === true;
   const dncCheckAtSubmit = campaign?.design_config?.dncCheckAtSubmit === true;
-  // Sponsored-campaign disclosure clause in the agree-all block. Default ON —
-  // only an explicit false (the Studio/editor toggle) hides the clause and
-  // sends consent_third_party:false (=> no external-delivery evidence).
-  const thirdPartyDisclosure = campaign?.design_config?.thirdPartyDisclosure !== false;
+  // Sponsored-campaign disclosure clause in the agree-all block: renders ONLY
+  // for a campaign with a NAMED sponsor (§9.5-1 — the clause promises the
+  // sponsor is "named on this page") that hasn't turned the
+  // thirdPartyDisclosure kill-switch off. Not shown => consent_third_party
+  // stays false => no external-delivery evidence (fail-closed).
+  const sponsoredClause = isSponsoredCampaign(campaign?.design_config);
 
   // Preview-only jump fixture (Studio PR 3): gated PER-INITIALIZER on
   // previewMode === true, so a fixture reaching a live mount changes nothing.
@@ -284,7 +289,7 @@ export default function CampaignSignupForm({
       return;
     }
     if (!consentAll) {
-      setError('Please agree to the terms above to continue.');
+      setError(CONSENT_BLOCK_HELPER);
       return;
     }
 
@@ -313,12 +318,13 @@ export default function CampaignSignupForm({
       monthly_income: visibleFields.monthly_income === true ? formData.monthly_income : null,
       campaign_id: campaignId,
       // Agree-all: submission implies the whole block, so the booleans are
-      // literals; the third-party grant follows the campaign's clause toggle
-      // (clause not shown => no consent to disclose). consent_copy_version
-      // tells the backend WHICH wording to pin as evidence.
+      // literals; the third-party grant is true iff the sponsored disclosure
+      // clause was actually shown (clause not shown => no consent to
+      // disclose). consent_copy_version tells the backend WHICH wording to
+      // pin as evidence.
       consent_contact: true,
       consent_terms: true,
-      consent_third_party: thirdPartyDisclosure,
+      consent_third_party: sponsoredClause,
       consent_copy_version: CONSENT_COPY_VERSION,
       // DNC consent intent (the server builds the authoritative evidence). Only sent when
       // the gate was actually shown for this lead.
@@ -940,8 +946,12 @@ export default function CampaignSignupForm({
               color: TOKENS.body,
             }}
           >
-            <li>{CONSENT_COPY.clauseContact}</li>
             <li>
+              <strong style={{ color: TOKENS.ink }}>{CONSENT_COPY.clauseContactHeadline}</strong>{' '}
+              {CONSENT_COPY.clauseContactBody}
+            </li>
+            <li>
+              <strong style={{ color: TOKENS.ink }}>{CONSENT_COPY.clauseTermsHeadline}</strong>{' '}
               {CONSENT_COPY.clauseTermsPrefix}
               <button
                 type="button"
@@ -963,8 +973,27 @@ export default function CampaignSignupForm({
               </button>
               {CONSENT_COPY.clauseTermsSuffix}
             </li>
-            {thirdPartyDisclosure && <li>{CONSENT_COPY.clauseThirdParty}</li>}
+            {sponsoredClause && (
+              <li>
+                <strong style={{ color: TOKENS.ink }}>{CONSENT_COPY.clauseThirdPartyHeadline}</strong>{' '}
+                {CONSENT_COPY.clauseThirdPartyBody}
+              </li>
+            )}
           </ul>
+          {sponsoredClause && (
+            <p
+              style={{
+                margin: '0 0 12px',
+                paddingLeft: 20,
+                fontFamily: 'Albert Sans, system-ui, sans-serif',
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: TOKENS.muted,
+              }}
+            >
+              {sponsorNameLine(campaign?.design_config)}
+            </p>
+          )}
           <ConsentCheckbox
             checked={consentAll}
             onChange={setConsentAll}
@@ -1015,10 +1044,6 @@ export default function CampaignSignupForm({
         onOpenChange={setConsentOpen}
         content={termsContent}
         themeColor={accent}
-        onAgree={() => {
-          setConsentAll(true);
-          setConsentOpen(false);
-        }}
       />
     </>
   );

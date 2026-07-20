@@ -440,10 +440,13 @@ describe('CampaignSignupForm — mandatory agree-all consent block', () => {
     renderForm();
     expect(screen.getByText(CONSENT_COPY.heading)).toBeInTheDocument();
     expect(screen.getByText(CONSENT_COPY.intro)).toBeInTheDocument();
-    expect(screen.getByText(CONSENT_COPY.clauseContact)).toBeInTheDocument();
+    // Headline renders bold; the body text rides in the same <li>.
+    const contactHeadline = screen.getByText(CONSENT_COPY.clauseContactHeadline);
+    expect(contactHeadline.closest('li').textContent).toContain(CONSENT_COPY.clauseContactBody);
+    expect(screen.getByText(CONSENT_COPY.clauseTermsHeadline)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: CONSENT_COPY.clauseTermsLinkText })).toBeInTheDocument();
-    // Third-party clause shows by DEFAULT (toggle is default-ON).
-    expect(screen.getByText(CONSENT_COPY.clauseThirdParty)).toBeInTheDocument();
+    // No sponsor configured => the disclosure clause must NOT render (§9.5-1).
+    expect(screen.queryByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeNull();
     expect(screen.getByText(CONSENT_COPY.checkboxLabel)).toBeInTheDocument();
     // Exactly ONE consent checkbox — the legacy trio is gone.
     expect(document.getElementById('consent_all')).toBeTruthy();
@@ -452,14 +455,25 @@ describe('CampaignSignupForm — mandatory agree-all consent block', () => {
     expect(document.getElementById('consent_third_party')).toBeNull();
   });
 
-  it('hides the third-party clause when design_config.thirdPartyDisclosure is false', () => {
-    renderForm({ design: { thirdPartyDisclosure: false } });
-    expect(screen.queryByText(CONSENT_COPY.clauseThirdParty)).toBeNull();
-    // The rest of the block is unaffected.
-    expect(screen.getByText(CONSENT_COPY.clauseContact)).toBeInTheDocument();
+  it('a NAMED sponsor renders the disclosure clause AND the mandatory named line', () => {
+    renderForm({ design: { sponsor: { name: 'Acme FA' } } });
+    expect(screen.getByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeInTheDocument();
+    expect(screen.getByText('Sponsored by Acme FA.')).toBeInTheDocument();
   });
 
-  it('live submit: disabled until agreed, then sends all-true consents + the copy version', async () => {
+  it('a name-less sponsor object falls back to the base block (§9.5-1 fail-closed)', () => {
+    renderForm({ design: { sponsor: { disclosure: 'Sponsored by someone' } } });
+    expect(screen.queryByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeNull();
+    expect(screen.queryByText('Sponsored by someone')).toBeNull();
+  });
+
+  it('thirdPartyDisclosure:false is a kill-switch even with a named sponsor', () => {
+    renderForm({ design: { sponsor: { name: 'Acme FA' }, thirdPartyDisclosure: false } });
+    expect(screen.queryByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeNull();
+    expect(screen.getByText(CONSENT_COPY.clauseContactHeadline)).toBeInTheDocument();
+  });
+
+  it('live submit: disabled until agreed, then derived flags + the copy version (base)', async () => {
     const user = userEvent.setup();
     const { onSubmit } = renderForm();
     await fillAndVerify(user);
@@ -475,15 +489,15 @@ describe('CampaignSignupForm — mandatory agree-all consent block', () => {
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
       consent_contact: true,
       consent_terms: true,
-      consent_third_party: true, // toggle default-ON
+      consent_third_party: false, // no sponsor => clause never shown => no grant
       consent_copy_version: CONSENT_COPY_VERSION,
     });
     expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('consent_dnc'); // gate never shown
   });
 
-  it('live submit with the clause toggled off sends consent_third_party:false', async () => {
+  it('live submit on a sponsored campaign sends consent_third_party:true', async () => {
     const user = userEvent.setup();
-    const { onSubmit } = renderForm({ design: { thirdPartyDisclosure: false } });
+    const { onSubmit } = renderForm({ design: { sponsor: { name: 'Acme FA' } } });
     await fillAndVerify(user);
 
     fireEvent.click(document.getElementById('consent_all'));
@@ -493,19 +507,21 @@ describe('CampaignSignupForm — mandatory agree-all consent block', () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
-      consent_contact: true,
-      consent_terms: true,
-      consent_third_party: false,
+      consent_third_party: true,
       consent_copy_version: CONSENT_COPY_VERSION,
     });
   });
 
-  it('the T&C dialog "Agree" ticks the block (parity with the old required box)', async () => {
+  it('the T&C dialog is READ-ONLY: no "I agree" button, and reading it never ticks the block', async () => {
     const user = userEvent.setup();
     renderForm();
     await user.click(screen.getByRole('button', { name: CONSENT_COPY.clauseTermsLinkText }));
-    await user.click(await screen.findByRole('button', { name: /I Agree/i }));
-    expect(document.getElementById('consent_all').checked).toBe(true);
+    // The dialog covers only the T&Cs; the block covers more — so the only
+    // consent gesture is the block's own tick (copy pack §5 #16).
+    expect(await screen.findByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /I agree/i })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(document.getElementById('consent_all').checked).toBe(false);
   });
 });
 

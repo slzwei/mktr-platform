@@ -81,9 +81,9 @@ export const THIRD_PARTY_CONSENT_VERSION = '2026-06-26';
  * src/lib/consentCopy.js — enforced by
  * src/lib/__tests__/consentCopy.lockstep.test.js.
  */
-export const AGREE_ALL_THIRD_PARTY_VERSION = '2026-07-21';
+export const AGREE_ALL_THIRD_PARTY_VERSION = '2026-07-21-agree-all-v1';
 export const AGREE_ALL_THIRD_PARTY_COPY =
-  'This campaign is sponsored: my contact details will be shared with a partner licensed financial-advisory representative — who may be from a third-party agency — who may contact me about relevant financial products and services.';
+  "Sharing with this campaign's sponsor. This campaign is sponsored: your name, contact details and form responses will be shared with the sponsoring licensed financial advisory representative (named on this page), who may contact you about your reward and relevant financial products and services.";
 
 /** Version labels buildExternalConsentEvidence may stamp (unknown => default). */
 const KNOWN_THIRD_PARTY_VERSIONS = Object.freeze([

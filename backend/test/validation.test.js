@@ -275,7 +275,7 @@ describe('schemas.prospectCreate', () => {
   // consent_copy_version is a strict enum: the ledger maps the label to pinned
   // copy/hash evidence, so an unknown label must 400 rather than mint evidence.
   it('accepts the agree-all consent_copy_version and its absence', () => {
-    expect(valid(schemas.prospectCreate, { ...validBody, consent_copy_version: '2026-07-21' }).ok)
+    expect(valid(schemas.prospectCreate, { ...validBody, consent_copy_version: '2026-07-21-agree-all-v1' }).ok)
       .toBe(true);
     expect(valid(schemas.prospectCreate, validBody).ok).toBe(true);
   });

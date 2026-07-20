@@ -48,7 +48,7 @@ describe('contact consent contract', () => {
 
   test('registry: every era pins a recomputable hash + scope; legacy stays the default', () => {
     for (const [version, era] of Object.entries(CONTACT_CONSENT_VERSIONS)) {
-      expect(version).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(version).toMatch(/^\d{4}-\d{2}-\d{2}(-[a-z0-9-]+)?$/);
       expect(era.copyHash).toBe(createHash('sha256').update(era.copy).digest('hex'));
       expect(['campaign', 'brand']).toContain(era.scope);
       expect(era.channels.length).toBeGreaterThan(0);
