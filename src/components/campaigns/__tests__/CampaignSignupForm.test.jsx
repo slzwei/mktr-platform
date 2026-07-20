@@ -8,6 +8,7 @@ vi.mock('@/api/client', () => ({
 
 import CampaignSignupForm from '@/components/campaigns/CampaignSignupForm';
 import { apiClient } from '@/api/client';
+import { CONSENT_COPY, CONSENT_COPY_VERSION } from '@/lib/consentCopy';
 
 const baseCampaign = (designOverrides = {}) => ({
   id: 'camp-1',
@@ -103,7 +104,7 @@ describe('CampaignSignupForm — previewMode sends no network traffic', () => {
     await waitFor(() => expect(screen.getByText('Verified')).toBeInTheDocument(), { timeout: 2500 });
 
     // Tick the required consent checkbox (hidden input → fireEvent bypasses pointer-events).
-    fireEvent.click(document.getElementById('consent_terms'));
+    fireEvent.click(document.getElementById('consent_all'));
 
     const submit = screen.getByRole('button', { name: 'Submit Now' });
     // The panel now plays a brief success + collapse animation before flipping to
@@ -254,7 +255,7 @@ describe('CampaignSignupForm — SG/PR gate edge cases & integration', () => {
     await user.type(otpInput, '123456');
     await waitFor(() => expect(screen.getByText('Verified')).toBeInTheDocument(), { timeout: 2500 });
 
-    fireEvent.click(document.getElementById('consent_terms'));
+    fireEvent.click(document.getElementById('consent_all'));
     const submit = screen.getByRole('button', { name: 'Submit Now' });
     await waitFor(() => expect(submit).toBeEnabled(), { timeout: 2500 });
     await user.click(submit);
@@ -415,6 +416,96 @@ describe('CampaignSignupForm — always-required labels never render "(optional)
   it('still renders "(optional)" for a genuinely optional field', () => {
     renderForm({ design: { requiredFields: { postal_code: false } } });
     expect(screen.getByText('(optional)')).toBeInTheDocument();
+  });
+});
+
+describe('CampaignSignupForm — mandatory agree-all consent block', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const fillAndVerify = async (user) => {
+    apiClient.post.mockImplementation((url) => {
+      if (url === '/verify/send') return Promise.resolve({ success: true });
+      if (url === '/verify/check') return Promise.resolve({ success: true, data: { verified: true } });
+      return Promise.resolve({ success: true });
+    });
+    await user.type(screen.getByPlaceholderText('John Tan'), 'Jane Tan');
+    await user.type(screen.getByPlaceholderText('you@example.com'), 'jane@example.com');
+    await user.type(screen.getByPlaceholderText('9123 4567'), '91234567');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+    await user.type(await screen.findByPlaceholderText('6-digit code'), '123456');
+    await waitFor(() => expect(screen.getByText('Verified')).toBeInTheDocument(), { timeout: 2500 });
+  };
+
+  it('renders every copy string from the consentCopy module (no inline drift)', () => {
+    renderForm();
+    expect(screen.getByText(CONSENT_COPY.heading)).toBeInTheDocument();
+    expect(screen.getByText(CONSENT_COPY.intro)).toBeInTheDocument();
+    expect(screen.getByText(CONSENT_COPY.clauseContact)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: CONSENT_COPY.clauseTermsLinkText })).toBeInTheDocument();
+    // Third-party clause shows by DEFAULT (toggle is default-ON).
+    expect(screen.getByText(CONSENT_COPY.clauseThirdParty)).toBeInTheDocument();
+    expect(screen.getByText(CONSENT_COPY.checkboxLabel)).toBeInTheDocument();
+    // Exactly ONE consent checkbox — the legacy trio is gone.
+    expect(document.getElementById('consent_all')).toBeTruthy();
+    expect(document.getElementById('consent_terms')).toBeNull();
+    expect(document.getElementById('consent_contact')).toBeNull();
+    expect(document.getElementById('consent_third_party')).toBeNull();
+  });
+
+  it('hides the third-party clause when design_config.thirdPartyDisclosure is false', () => {
+    renderForm({ design: { thirdPartyDisclosure: false } });
+    expect(screen.queryByText(CONSENT_COPY.clauseThirdParty)).toBeNull();
+    // The rest of the block is unaffected.
+    expect(screen.getByText(CONSENT_COPY.clauseContact)).toBeInTheDocument();
+  });
+
+  it('live submit: disabled until agreed, then sends all-true consents + the copy version', async () => {
+    const user = userEvent.setup();
+    const { onSubmit } = renderForm();
+    await fillAndVerify(user);
+
+    const submit = screen.getByRole('button', { name: 'Submit Now' });
+    expect(submit).toBeDisabled(); // verified but not agreed — no submit
+
+    fireEvent.click(document.getElementById('consent_all'));
+    await waitFor(() => expect(submit).toBeEnabled(), { timeout: 2500 });
+    await user.click(submit);
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      consent_contact: true,
+      consent_terms: true,
+      consent_third_party: true, // toggle default-ON
+      consent_copy_version: CONSENT_COPY_VERSION,
+    });
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('consent_dnc'); // gate never shown
+  });
+
+  it('live submit with the clause toggled off sends consent_third_party:false', async () => {
+    const user = userEvent.setup();
+    const { onSubmit } = renderForm({ design: { thirdPartyDisclosure: false } });
+    await fillAndVerify(user);
+
+    fireEvent.click(document.getElementById('consent_all'));
+    const submit = screen.getByRole('button', { name: 'Submit Now' });
+    await waitFor(() => expect(submit).toBeEnabled(), { timeout: 2500 });
+    await user.click(submit);
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      consent_contact: true,
+      consent_terms: true,
+      consent_third_party: false,
+      consent_copy_version: CONSENT_COPY_VERSION,
+    });
+  });
+
+  it('the T&C dialog "Agree" ticks the block (parity with the old required box)', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole('button', { name: CONSENT_COPY.clauseTermsLinkText }));
+    await user.click(await screen.findByRole('button', { name: /I Agree/i }));
+    expect(document.getElementById('consent_all').checked).toBe(true);
   });
 });
 

@@ -213,6 +213,18 @@ export default function FormPanel({ doc, setPath, mut, whatsappOtpConfigured }) 
         />
       </PanelSection>
 
+      <PanelSection title="CONSENT">
+        {/* Top-level design_config key (not form.gates) — default ON, so the
+            inverted read keeps legacy docs sponsored until explicitly untoggled. */}
+        <ToggleRow
+          id="studio-third-party-disclosure"
+          label="Third-party disclosure clause"
+          hint="Sponsored campaigns: the agree-all block includes sharing contact details with the partner advisory rep"
+          checked={doc.thirdPartyDisclosure !== false}
+          onChange={(v) => setPath('thirdPartyDisclosure', v)}
+        />
+      </PanelSection>
+
       <PanelSection title="TERMS & CONDITIONS">
         <Seg
           ariaLabel="Terms template"

@@ -28,7 +28,7 @@ import { scoreQuiz } from '@/lib/quizScoring';
  *
  * Form fixture fields (all optional): eligibility, advisorAck, formData
  * (partial merge), otpState, resendCooldown, error, dncStatus, dncConsent,
- * consentContact, consentTerms, consentThirdParty, consentOpen, loading.
+ * consentAll, consentOpen, loading.
  * Quiz fixture fields: done (QuizGate) · phase, stepIdx, answers, result
  * (CampaignQuiz).
  */
@@ -66,7 +66,7 @@ const FORM_FIXTURES = {
   // dncStatus 'clear' mirrors the real pre-submit state: on a DNC-enabled
   // campaign the verified transition runs the check BEFORE submit is possible
   // (Codex diff-review #9); harmless when the gate is off.
-  submitting: { ...OTP_READY, otpState: 'verified', dncStatus: 'clear', consentTerms: true, loading: 'submitting' },
+  submitting: { ...OTP_READY, otpState: 'verified', dncStatus: 'clear', consentAll: true, loading: 'submitting' },
 };
 
 /** Deterministic quiz walkthrough: first option of every question. */
