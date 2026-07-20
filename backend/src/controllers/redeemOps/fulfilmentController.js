@@ -52,7 +52,7 @@ export const unlockEntitlement = asyncHandler(async (req, res) => {
 
 export const resendPass = asyncHandler(async (req, res) => {
   const body = validateBody(
-    Joi.object({ channel: Joi.string().valid('email', 'whatsapp', 'link').default('email') }),
+    Joi.object({ channel: Joi.string().valid('email', 'whatsapp', 'both', 'link').default('email') }),
     req.body || {}
   );
   const result = await entitlementService.resendDelivery(
@@ -65,7 +65,9 @@ export const resendPass = asyncHandler(async (req, res) => {
     ? `New ${noun} emailed — the previous ${oldCredential} no longer works.`
     : result.channel === 'whatsapp'
       ? `New ${noun} sent to the customer's WhatsApp — the previous ${oldCredential} no longer works.`
-      : `New ${noun} link created — the previous ${oldCredential} no longer works. Share it with the customer yourself.`;
+      : result.channel === 'both'
+        ? `New ${noun} sent to the customer's email and WhatsApp — the previous ${oldCredential} no longer works.`
+        : `New ${noun} link created — the previous ${oldCredential} no longer works. Share it with the customer yourself.`;
   // The link channel returns a LIVE bearer credential in the body — it must
   // never be cached by any intermediary or the browser.
   res.set('Cache-Control', 'no-store');

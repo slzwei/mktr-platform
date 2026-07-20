@@ -62,6 +62,7 @@ const deliverableRow = {
   id: 'e1', status: 'eligible', tokenHint: null,
   prospect: { id: 'p1', firstName: 'Sarah', lastName: 'Tan', phone: '••••1234' },
   emailDeliverable: true,
+  whatsappDeliverable: true,
   delivery: { email: { kind: 'pass', at: '2026-07-16T06:03:00.000Z', ok: true } },
   ...rowBase,
 };
@@ -159,13 +160,33 @@ describe('RedemptionsPage campaign stacks + delivery truth', () => {
       data: { kind: 'pass', channel: 'email', emailQueued: true, entitlement: {} },
     });
     renderPage();
+    // Resend is now a dropdown: open it, pick Email → THEN the confirm dialog.
     await userEvent.click((await screen.findAllByRole('button', { name: /^Resend pass/ }))[0]);
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Email' }));
     expect(api.resendEntitlementPass).not.toHaveBeenCalled();
     expect(screen.getByText(/stops working immediately/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Resend email' }));
     await waitFor(() => expect(api.resendEntitlementPass).toHaveBeenCalledWith('e1', { channel: 'email' }));
     expect(toastMock.success).toHaveBeenCalledWith(expect.stringContaining('no longer works'));
+  });
+
+  it('Resend dropdown offers Both when email + WhatsApp are deliverable → channel:both', async () => {
+    api.resendEntitlementPass.mockResolvedValue({
+      message: "New reservation pass sent to the customer's email and WhatsApp — the previous pass QR/link no longer works.",
+      data: { kind: 'pass', channel: 'both', emailQueued: true, entitlement: {} },
+    });
+    renderPage();
+    await userEvent.click((await screen.findAllByRole('button', { name: /^Resend pass/ }))[0]);
+    // All three channel options are present for a both-deliverable row.
+    expect(await screen.findByRole('menuitem', { name: 'Email' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'WhatsApp' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Both' }));
+    // Still confirm-gated: nothing fires until the dialog is confirmed.
+    expect(api.resendEntitlementPass).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Resend on both' }));
+    await waitFor(() => expect(api.resendEntitlementPass).toHaveBeenCalledWith('e1', { channel: 'both' }));
+    expect(toastMock.success).toHaveBeenCalledWith(expect.stringContaining('email and WhatsApp'));
   });
 
   it('link channel shows the one-time bundle with the WhatsApp deep link', async () => {
