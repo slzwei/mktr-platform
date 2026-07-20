@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react';
 import DOMPurify from 'dompurify';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { useCampaignTheme } from '@/components/campaignPage/themeContext';
-import { DefaultConsentCopy } from '@/components/legal/MarketingConsentDialog';
+import DefaultTermsCopy from '@/components/legal/DefaultTermsCopy';
 import {
   CONSENT_COPY, CONSENT_INLINE, isSponsoredCampaign, sponsorNameLine,
 } from '@/lib/consentCopy';
@@ -146,7 +146,7 @@ export default function ConsentAgreementDialog({
             {sanitized ? (
               <div dangerouslySetInnerHTML={{ __html: sanitized }} />
             ) : (
-              <DefaultConsentCopy />
+              <DefaultTermsCopy />
             )}
           </div>
         </div>
