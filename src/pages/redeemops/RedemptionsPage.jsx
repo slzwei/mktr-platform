@@ -712,12 +712,17 @@ export default function RedemptionsPage() {
                         : 'Create a new share link?'}
                 </DialogTitle>
                 <DialogDescription>
-                  This mints a fresh QR/link for{' '}
+                  This mints a fresh {dialogIsVoucher ? 'voucher code/QR' : 'pass QR/link'} for{' '}
                   {[shareDialog.entitlement?.prospect?.firstName, shareDialog.entitlement?.prospect?.lastName]
                     .filter(Boolean).join(' ') || 'the customer'}
-                  {' — the previous '}
-                  {dialogIsVoucher ? 'voucher code/QR' : 'pass QR/link'}
-                  {' stops working immediately.'}
+                  {'. Every earlier copy — including any already sent by email or WhatsApp — stops working immediately.'}
+                  {(shareDialog.mode === 'email' || shareDialog.mode === 'whatsapp') && (
+                    <>
+                      {' The new one goes out on '}
+                      {shareDialog.mode === 'email' ? 'email' : 'WhatsApp'}
+                      {' only — pick '}<strong>Both</strong>{' to keep it working on both channels.'}
+                    </>
+                  )}
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
