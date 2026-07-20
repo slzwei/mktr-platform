@@ -243,6 +243,13 @@ export const schemas = {
     // client; this flag only records that the person ticked the box. That evidence is what
     // releases an otherwise-held DNC-registered lead (services/dncConsent.hasValidDncConsent).
     consent_dnc: Joi.boolean().optional(),
+    // Which contact-consent wording the form actually displayed. '2026-07-21' =
+    // the mandatory agree-all block (CampaignSignupForm rework); absent = the
+    // legacy three-checkbox copy (MarketplaceFlow + pre-rework cached bundles).
+    // Strict valid() enum, not free string — the consent ledger maps this label
+    // to pinned copy/hash evidence (services/contactConsent.js), and an unknown
+    // label must never mint evidence.
+    consent_copy_version: Joi.string().valid('2026-07-21').optional(),
     // Marketplace flow extras (redeem.sg /flow/:slug — docs/plans/
     // redeem-marketplace-v2.md Phase 4). Whitelisted here (this endpoint runs
     // stripUnknown, so an unlisted key is silently dropped); prospectService

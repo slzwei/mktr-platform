@@ -272,6 +272,21 @@ describe('schemas.prospectCreate', () => {
     expect(error.details[0].path).toEqual(['consent_third_party']);
   });
 
+  // consent_copy_version is a strict enum: the ledger maps the label to pinned
+  // copy/hash evidence, so an unknown label must 400 rather than mint evidence.
+  it('accepts the agree-all consent_copy_version and its absence', () => {
+    expect(valid(schemas.prospectCreate, { ...validBody, consent_copy_version: '2026-07-21' }).ok)
+      .toBe(true);
+    expect(valid(schemas.prospectCreate, validBody).ok).toBe(true);
+  });
+
+  it('rejects unknown or non-string consent_copy_version labels', () => {
+    const bad = valid(schemas.prospectCreate, { ...validBody, consent_copy_version: '2026-01-01' });
+    expect(bad.ok).toBe(false);
+    expect(bad.error.details[0].path).toEqual(['consent_copy_version']);
+    expect(valid(schemas.prospectCreate, { ...validBody, consent_copy_version: true }).ok).toBe(false);
+  });
+
   // Guard: the fix is surgical — whitelist THIS field only. Until the scoped
   // stripUnknown hardening (Layer 2) ships, the schema must still reject genuinely
   // unknown keys so contract drift on other fields keeps failing loudly.

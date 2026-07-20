@@ -4,6 +4,8 @@ import {
   hasValidExternalConsent,
   THIRD_PARTY_CONSENT_VERSION,
   THIRD_PARTY_CONSENT_CHANNELS,
+  AGREE_ALL_THIRD_PARTY_VERSION,
+  AGREE_ALL_THIRD_PARTY_COPY,
 } from '../src/services/externalConsent.js';
 
 describe('buildExternalConsentEvidence', () => {
@@ -56,6 +58,22 @@ describe('buildExternalConsentEvidence', () => {
     const ev = buildExternalConsentEvidence(true);
     expect(ev.channels).toEqual([...THIRD_PARTY_CONSENT_CHANNELS]);
     expect(ev.channels).not.toBe(THIRD_PARTY_CONSENT_CHANNELS);
+  });
+
+  it('stamps a KNOWN wording-era override (agree-all block) and keeps evidence valid', () => {
+    const ev = buildExternalConsentEvidence(true, { version: AGREE_ALL_THIRD_PARTY_VERSION });
+    expect(ev.version).toBe(AGREE_ALL_THIRD_PARTY_VERSION);
+    expect(hasValidExternalConsent({ consentMetadata: { external: ev } })).toBe(true);
+    expect(AGREE_ALL_THIRD_PARTY_COPY.length).toBeGreaterThan(0);
+  });
+
+  it('an unknown/absent version override falls back to the default era', () => {
+    expect(buildExternalConsentEvidence(true, { version: '2026-01-01' }).version)
+      .toBe(THIRD_PARTY_CONSENT_VERSION);
+    expect(buildExternalConsentEvidence(true, { version: 42 }).version)
+      .toBe(THIRD_PARTY_CONSENT_VERSION);
+    expect(buildExternalConsentEvidence(true, {}).version)
+      .toBe(THIRD_PARTY_CONSENT_VERSION);
   });
 });
 

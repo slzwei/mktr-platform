@@ -8,8 +8,12 @@ import {
   backfillConsentEvents, getConsentState, canMarketTo, isSendBlocked,
   ensureUnsubToken, unsubTokenFor,
 } from '../../src/services/consentService.js';
-import { CONTACT_CONSENT_VERSION } from '../../src/services/contactConsent.js';
-import { THIRD_PARTY_CONSENT_VERSION } from '../../src/services/externalConsent.js';
+import {
+  CONTACT_CONSENT_VERSION, CONTACT_CONSENT_VERSIONS, AGREE_ALL_CONSENT_VERSION,
+} from '../../src/services/contactConsent.js';
+import {
+  THIRD_PARTY_CONSENT_VERSION, AGREE_ALL_THIRD_PARTY_VERSION,
+} from '../../src/services/externalConsent.js';
 
 /**
  * Consent ledger — integration (PR B, plan §3). Real Postgres: the ledger's
@@ -119,6 +123,58 @@ describe('capture → ledger events', () => {
       }))
       .expect(201); // no OTP marker → verified:false on the event
     expect(await canMarketTo({ phone: `+65${phU}`, campaignId: campaign1.id })).toBe(false);
+  });
+
+  test('agree-all capture (consent_copy_version) stamps the new era on contact + third_party', async () => {
+    const phA = p8(31);
+    markPhoneVerified(`+65${phA}`);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({
+        campaignId: campaign1.id, phone: phA,
+        consent_contact: true, consent_terms: true, consent_third_party: true,
+        consent_copy_version: AGREE_ALL_CONSENT_VERSION,
+      }))
+      .expect(201);
+
+    const consumer = await Consumer.findOne({ where: { phone: `+65${phA}` } });
+    const events = await ConsentEvent.findAll({ where: { consumerId: consumer.id } });
+    const byKind = Object.fromEntries(events.map((e) => [e.kind, e]));
+
+    const era = CONTACT_CONSENT_VERSIONS[AGREE_ALL_CONSENT_VERSION];
+    expect(byKind.contact.granted).toBe(true);
+    expect(byKind.contact.version).toBe(AGREE_ALL_CONSENT_VERSION);
+    expect(byKind.contact.metadata.copyHash).toBe(era.copyHash);
+    expect(byKind.contact.metadata.scope).toBe('brand');
+    // Brand-wide WORDING, still campaign-scoped EVENT (globalev is separate).
+    expect(byKind.contact.campaignId).toBe(campaign1.id);
+    expect(byKind.third_party.version).toBe(AGREE_ALL_THIRD_PARTY_VERSION);
+
+    // The era label also survives on the prospect for backfill/audit.
+    const prospect = await Prospect.findByPk(byKind.contact.prospectId);
+    expect(prospect.sourceMetadata.consent_copy_version).toBe(AGREE_ALL_CONSENT_VERSION);
+  });
+
+  test('a capture WITHOUT consent_copy_version still stamps the legacy era (marketplace path)', async () => {
+    const phL = p8(32);
+    markPhoneVerified(`+65${phL}`);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({
+        campaignId: campaign2.id, phone: phL,
+        consent_contact: true, consent_terms: true, consent_third_party: true,
+      }))
+      .expect(201);
+
+    const consumer = await Consumer.findOne({ where: { phone: `+65${phL}` } });
+    const contact = await ConsentEvent.findOne({
+      where: { consumerId: consumer.id, kind: 'contact' },
+    });
+    const legacy = CONTACT_CONSENT_VERSIONS[CONTACT_CONSENT_VERSION];
+    expect(contact.version).toBe(CONTACT_CONSENT_VERSION);
+    expect(contact.metadata.copyHash).toBe(legacy.copyHash);
+    const third = await ConsentEvent.findOne({
+      where: { consumerId: consumer.id, kind: 'third_party' },
+    });
+    expect(third.version).toBe(THIRD_PARTY_CONSENT_VERSION);
   });
 });
 
