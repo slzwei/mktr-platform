@@ -5,8 +5,8 @@ import { Consumer, Prospect, ConsentEvent, ConsumerSuppression,
 import { markPhoneVerified } from '../../src/services/verifiedPhoneStore.js';
 import { reconcileConsumerSpine } from '../../src/services/consumerService.js';
 import {
-  backfillConsentEvents, getConsentState, canMarketTo, isSendBlocked,
-  ensureUnsubToken, unsubTokenFor,
+  backfillConsentEvents, backfillGlobalGrants, getConsentState, canMarketTo,
+  isSendBlocked, ensureUnsubToken, unsubTokenFor,
 } from '../../src/services/consentService.js';
 import {
   CONTACT_CONSENT_VERSION, CONTACT_CONSENT_VERSIONS, AGREE_ALL_CONSENT_VERSION,
@@ -138,20 +138,34 @@ describe('capture → ledger events', () => {
 
     const consumer = await Consumer.findOne({ where: { phone: `+65${phA}` } });
     const events = await ConsentEvent.findAll({ where: { consumerId: consumer.id } });
-    const byKind = Object.fromEntries(events.map((e) => [e.kind, e]));
 
+    // Brand-wide wording now mints brand-wide EVIDENCE ("globalev"): the
+    // campaign-scoped grant plus an explicit campaignId:null GLOBAL twin.
     const era = CONTACT_CONSENT_VERSIONS[AGREE_ALL_CONSENT_VERSION];
-    expect(byKind.contact.granted).toBe(true);
-    expect(byKind.contact.version).toBe(AGREE_ALL_CONSENT_VERSION);
-    expect(byKind.contact.metadata.copyHash).toBe(era.copyHash);
-    expect(byKind.contact.metadata.scope).toBe('brand');
-    // Brand-wide WORDING, still campaign-scoped EVENT (globalev is separate).
-    expect(byKind.contact.campaignId).toBe(campaign1.id);
-    expect(byKind.third_party.version).toBe(AGREE_ALL_THIRD_PARTY_VERSION);
+    const contacts = events.filter((e) => e.kind === 'contact');
+    expect(contacts).toHaveLength(2);
+    const scoped = contacts.find((e) => e.campaignId === campaign1.id);
+    const global = contacts.find((e) => e.campaignId === null);
+    for (const row of [scoped, global]) {
+      expect(row).toBeDefined();
+      expect(row.granted).toBe(true);
+      expect(row.verified).toBe(true);
+      expect(row.source).toBe('signup');
+      expect(row.version).toBe(AGREE_ALL_CONSENT_VERSION);
+      expect(row.metadata.copyHash).toBe(era.copyHash);
+      expect(row.metadata.scope).toBe('brand');
+    }
+
+    const thirdParty = events.find((e) => e.kind === 'third_party');
+    expect(thirdParty.version).toBe(AGREE_ALL_THIRD_PARTY_VERSION);
 
     // The era label also survives on the prospect for backfill/audit.
-    const prospect = await Prospect.findByPk(byKind.contact.prospectId);
+    const prospect = await Prospect.findByPk(scoped.prospectId);
     expect(prospect.sourceMetadata.consent_copy_version).toBe(AGREE_ALL_CONSENT_VERSION);
+
+    // The global twin unlocks CROSS-campaign marketing for this person…
+    expect(await canMarketTo({ phone: `+65${phA}`, campaignId: campaign2.id })).toBe(true);
+    expect(await canMarketTo({ phone: `+65${phA}`, campaignId: null })).toBe(true);
   });
 
   test('a capture WITHOUT consent_copy_version still stamps the legacy era (marketplace path)', async () => {
@@ -175,6 +189,130 @@ describe('capture → ledger events', () => {
       where: { consumerId: consumer.id, kind: 'third_party' },
     });
     expect(third.version).toBe(THIRD_PARTY_CONSENT_VERSION);
+
+    // Legacy era mints NO global twin — one scoped row, cross-campaign locked.
+    const contacts = await ConsentEvent.findAll({
+      where: { consumerId: consumer.id, kind: 'contact' },
+    });
+    expect(contacts).toHaveLength(1);
+    expect(await canMarketTo({ phone: `+65${phL}`, campaignId: campaign1.id })).toBe(false);
+    expect(await canMarketTo({ phone: `+65${phL}`, campaignId: null })).toBe(false);
+  });
+});
+
+describe('globalev — pre-082 healing (backfillGlobalGrants)', () => {
+  test('mints ONE global twin per consumer+era from scoped agree-all grants; idempotent', async () => {
+    // Pre-globalev shape, built directly: two campaign-scoped agree-all
+    // grants (the #213/#214 → 082 window wrote these) and no global row.
+    const ph = p8(41);
+    const prospect = await Prospect.create({
+      firstName: 'Window', email: `window-${RUN}@test.com`, phone: `+65${ph}`,
+      leadSource: 'website', campaignId: campaign1.id,
+      sourceMetadata: { consent_contact: true, consent_copy_version: AGREE_ALL_CONSENT_VERSION },
+    });
+    await reconcileConsumerSpine();
+    const consumer = await Consumer.findOne({ where: { phone: `+65${ph}` } });
+    const era = CONTACT_CONSENT_VERSIONS[AGREE_ALL_CONSENT_VERSION];
+    const scopedRow = (campaignId) => ({
+      consumerId: consumer.id, prospectId: prospect.id, campaignId,
+      kind: 'contact', granted: true, verified: true, source: 'signup',
+      channels: [...era.channels], version: AGREE_ALL_CONSENT_VERSION,
+      metadata: { copyHash: era.copyHash, scope: era.scope },
+      occurredAt: new Date('2026-07-21T05:00:00Z'),
+    });
+    await ConsentEvent.create(scopedRow(campaign1.id));
+    await ConsentEvent.create(scopedRow(campaign2.id));
+
+    // Before healing: brand wording on record, but cross-campaign still locked.
+    expect(await canMarketTo({ phone: `+65${ph}`, campaignId: null })).toBe(false);
+
+    const first = await backfillGlobalGrants();
+    expect(first.written).toBe(1); // one twin per (consumer, era), not per grant
+
+    const globals = await ConsentEvent.findAll({
+      where: { consumerId: consumer.id, kind: 'contact', campaignId: null },
+    });
+    expect(globals).toHaveLength(1);
+    expect(globals[0].granted).toBe(true);
+    expect(globals[0].verified).toBe(true);
+    expect(globals[0].source).toBe('backfill'); // derived row, not a fresh act
+    expect(globals[0].version).toBe(AGREE_ALL_CONSENT_VERSION);
+    expect(globals[0].metadata.copyHash).toBe(era.copyHash);
+
+    // …and the gate opens cross-campaign.
+    expect(await canMarketTo({ phone: `+65${ph}`, campaignId: campaign2.id })).toBe(true);
+    expect(await canMarketTo({ phone: `+65${ph}`, campaignId: null })).toBe(true);
+
+    // Idempotent rerun: nothing new.
+    const second = await backfillGlobalGrants();
+    expect(second.written).toBe(0);
+    expect(await ConsentEvent.count({
+      where: { consumerId: consumer.id, kind: 'contact', campaignId: null },
+    })).toBe(1);
+  });
+
+  test('legacy grants are never lifted to global', async () => {
+    const ph = p8(42);
+    const prospect = await Prospect.create({
+      firstName: 'Legacy', email: `legacy-g-${RUN}@test.com`, phone: `+65${ph}`,
+      leadSource: 'website', campaignId: campaign1.id,
+      sourceMetadata: { consent_contact: true },
+    });
+    await reconcileConsumerSpine();
+    const consumer = await Consumer.findOne({ where: { phone: `+65${ph}` } });
+    const legacy = CONTACT_CONSENT_VERSIONS[CONTACT_CONSENT_VERSION];
+    await ConsentEvent.create({
+      consumerId: consumer.id, prospectId: prospect.id, campaignId: campaign1.id,
+      kind: 'contact', granted: true, verified: true, source: 'signup',
+      channels: [...legacy.channels], version: CONTACT_CONSENT_VERSION,
+      metadata: { copyHash: legacy.copyHash, scope: legacy.scope },
+      occurredAt: new Date('2026-07-20T05:00:00Z'),
+    });
+
+    await backfillGlobalGrants();
+    expect(await ConsentEvent.count({
+      where: { consumerId: consumer.id, kind: 'contact', campaignId: null },
+    })).toBe(0);
+    expect(await canMarketTo({ phone: `+65${ph}`, campaignId: campaign2.id })).toBe(false);
+  });
+});
+
+describe('globalev — era-aware per-prospect healing (backfillConsentEvents)', () => {
+  test('an agree-all capture healed from sourceMetadata carries its true era, scoped-only, then 082 lifts it', async () => {
+    // A lost-savepoint shape: the prospect row has everything, the ledger
+    // has nothing (no signup-source events).
+    const ph = p8(43);
+    const healed = await Prospect.create({
+      firstName: 'Healed', email: `healed-${RUN}@test.com`, phone: `+65${ph}`,
+      leadSource: 'website', campaignId: campaign1.id,
+      sourceMetadata: {
+        consent_contact: true, consent_terms: true,
+        consent_copy_version: AGREE_ALL_CONSENT_VERSION,
+      },
+    });
+    await reconcileConsumerSpine();
+    await backfillConsentEvents();
+
+    const era = CONTACT_CONSENT_VERSIONS[AGREE_ALL_CONSENT_VERSION];
+    const rows = await ConsentEvent.findAll({ where: { prospectId: healed.id } });
+    const contact = rows.find((r) => r.kind === 'contact');
+    expect(contact.version).toBe(AGREE_ALL_CONSENT_VERSION);
+    expect(contact.metadata.copyHash).toBe(era.copyHash);
+    expect(contact.metadata.scope).toBe('brand');
+    expect(contact.channels).toContain('whatsapp');
+
+    // Per-prospect healing stays scoped-only (uq_ce_backfill is
+    // (prospectId, kind)) — the global twin comes from backfillGlobalGrants.
+    expect(rows.filter((r) => r.kind === 'contact')).toHaveLength(1);
+    await backfillGlobalGrants();
+    const consumer = await Consumer.findOne({ where: { phone: `+65${ph}` } });
+    const globals = await ConsentEvent.findAll({
+      where: { consumerId: consumer.id, kind: 'contact', campaignId: null },
+    });
+    // The healed prospect already owns the per-prospect backfill contact row,
+    // so its twin collides on uq_ce_backfill and is skipped — fail-closed.
+    expect(globals).toHaveLength(0);
+    expect(await canMarketTo({ phone: `+65${ph}`, campaignId: campaign2.id })).toBe(false);
   });
 });
 

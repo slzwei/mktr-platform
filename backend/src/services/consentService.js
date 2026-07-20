@@ -19,9 +19,13 @@ import {
  *    GLOBAL act that competes on recency (an unsubscribe after a scoped grant
  *    wins; a NEW scoped grant after an unsubscribe re-permits THAT campaign).
  *  - `canMarketTo` is THE mandatory gate for every marketing send/upload:
- *    verified campaign-scoped contact grant ∧ no suppression. There is NO
- *    global variant — today's copy licenses nothing cross-campaign (a global
- *    opt-in surface is a Phase-2 deliverable; do not widen reads instead).
+ *    verified in-scope contact grant ∧ no suppression, latest-wins across the
+ *    campaign scope and explicit GLOBAL (campaignId:null) acts. Global grants
+ *    exist ONLY where the wording licensed them: brand-scope eras (the
+ *    agree-all block, 2026-07-21+) write scoped + global rows at capture
+ *    ("globalev"), and unsubscribe writes global revokes. Legacy-era events
+ *    stay campaign-locked forever — never widen reads instead of writing new
+ *    events.
  *  - Suppression semantics: reason 'erasure' blocks EVERYTHING including
  *    transactional; other reasons block marketing only. Enforcement is
  *    FAIL-CLOSED BY PHONE: rows the spine failed to link still suppress via
@@ -90,6 +94,20 @@ export function makeConsentService(overrides = {}) {
           channels: [...era.channels], version,
           metadata: { copyHash: era.copyHash, scope: era.scope },
         });
+        // GLOBAL grant ("globalev"): a brand-scope era licenses marketing
+        // beyond this campaign, so a granted capture ALSO records an explicit
+        // campaignId:null act — the cross-campaign basis canMarketTo reads
+        // (getConsentState already merges global + scoped latest-wins).
+        // Grants only: the agree-all block has no untick path, and a global
+        // DENIAL would wrongly shadow other campaigns' grants. Skipped when
+        // the capture has no campaign scope (the row above is already global).
+        if (era.scope === 'brand' && contact === true && campaignId) {
+          rows.push({
+            ...base, id: randomUUID(), kind: 'contact', granted: true,
+            campaignId: null, channels: [...era.channels], version,
+            metadata: { copyHash: era.copyHash, scope: era.scope },
+          });
+        }
       }
       if (terms !== undefined) {
         rows.push({
@@ -171,9 +189,19 @@ export function makeConsentService(overrides = {}) {
         occurredAt: p.createdAt,
       };
       if (Object.prototype.hasOwnProperty.call(sm, 'consent_contact')) {
+        // Era-aware healing: agree-all captures stash consent_copy_version in
+        // sourceMetadata (prospectService), so a lost savepoint write
+        // re-derives with its true era stamps; markerless rows keep the
+        // 'legacy-backfill' label. NO global twin here — uq_ce_backfill is
+        // (prospectId, kind), so a second contact row would silently collide;
+        // backfillGlobalGrants() mints those afterwards.
+        const known = isKnownConsentCopyVersion(sm.consent_copy_version);
+        const era = known ? CONTACT_CONSENT_VERSIONS[sm.consent_copy_version] : null;
         events.push({
           ...base, id: randomUUID(), kind: 'contact', granted: sm.consent_contact === true,
-          channels: [...CONTACT_CONSENT_CHANNELS], version: 'legacy-backfill', metadata: null,
+          channels: era ? [...era.channels] : [...CONTACT_CONSENT_CHANNELS],
+          version: known ? sm.consent_copy_version : 'legacy-backfill',
+          metadata: era ? { copyHash: era.copyHash, scope: era.scope } : null,
         });
       }
       if (Object.prototype.hasOwnProperty.call(sm, 'consent_terms')) {
@@ -210,6 +238,69 @@ export function makeConsentService(overrides = {}) {
     // ignoreDuplicates → ON CONFLICT DO NOTHING; the uq_ce_backfill partial
     // unique is the arbiter, so reruns are DB no-ops. bulkCreate's return
     // includes skipped rows, so `written` is measured as a count delta.
+    const before = await d.ConsentEvent.count({ where: { source: 'backfill' }, transaction });
+    await d.ConsentEvent.bulkCreate(events, { transaction, ignoreDuplicates: true });
+    const after = await d.ConsentEvent.count({ where: { source: 'backfill' }, transaction });
+    return { written: after - before, scanned: rows.length };
+  }
+
+  /**
+   * Mint the missing GLOBAL twins for brand-scope-era contact grants
+   * (migration 082 + healing). Two populations need it: captures recorded
+   * between the agree-all funnels shipping (#213/#214) and globalev landing
+   * — brand-scope wording, campaign-scoped row only — and any later capture
+   * whose savepoint write was lost and healed scoped-only by
+   * backfillConsentEvents. For each such grant whose consumer has no global
+   * contact event in the same era, insert the campaignId:null twin with the
+   * scoped row's own evidence (verified/occurredAt/channels/metadata copied;
+   * source:'backfill' — it is a derived row, not a fresh act).
+   *
+   * Idempotent via uq_ce_backfill (prospectId, kind) WHERE source='backfill':
+   * re-runs no-op, and a prospect that already owns a per-prospect backfill
+   * contact row is skipped by the conflict — fail-closed, consistent with
+   * backfillConsentEvents (those consumers regain cross-campaign basis only
+   * by re-consenting).
+   */
+  async function backfillGlobalGrants({ transaction = null } = {}) {
+    const brandVersions = Object.entries(CONTACT_CONSENT_VERSIONS)
+      .filter(([, era]) => era.scope === 'brand')
+      .map(([version]) => version);
+    if (!brandVersions.length) return { written: 0, scanned: 0 };
+
+    const [rows] = await d.sequelize.query(
+      `SELECT ce."consumerId", ce."prospectId", ce."sourceUrl", ce.verified,
+              ce."occurredAt", ce.channels, ce.version, ce.metadata
+         FROM consent_events ce
+        WHERE ce.kind = 'contact' AND ce.granted = true
+          AND ce."campaignId" IS NOT NULL
+          AND ce.version IN (:brandVersions)
+          AND NOT EXISTS (
+            SELECT 1 FROM consent_events g
+             WHERE g."consumerId" = ce."consumerId" AND g.kind = 'contact'
+               AND g."campaignId" IS NULL AND g.version = ce.version
+               AND g.granted = true
+          )`,
+      { transaction, replacements: { brandVersions } }
+    );
+
+    // One twin per (consumer, era) — a person who signed two agree-all
+    // campaigns before 082 needs one global act, not two.
+    const seen = new Set();
+    const events = [];
+    for (const r of rows) {
+      const key = `${r.consumerId}:${r.version}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      events.push({
+        id: randomUUID(), consumerId: r.consumerId, prospectId: r.prospectId,
+        campaignId: null, kind: 'contact', granted: true,
+        channels: r.channels, version: r.version, metadata: r.metadata,
+        source: 'backfill', sourceUrl: r.sourceUrl, verified: r.verified === true,
+        occurredAt: r.occurredAt,
+      });
+    }
+    if (!events.length) return { written: 0, scanned: rows.length };
+
     const before = await d.ConsentEvent.count({ where: { source: 'backfill' }, transaction });
     await d.ConsentEvent.bulkCreate(events, { transaction, ignoreDuplicates: true });
     const after = await d.ConsentEvent.count({ where: { source: 'backfill' }, transaction });
@@ -275,9 +366,13 @@ export function makeConsentService(overrides = {}) {
   }
 
   /**
-   * THE marketing gate (plan §3.1): verified campaign-scoped contact grant ∧
-   * not suppressed. No consumer resolvable → false (fail closed). Every
-   * future marketing send/upload calls this — no exceptions.
+   * THE marketing gate (plan §3.1): verified in-scope contact grant ∧ not
+   * suppressed, latest-wins across the campaign scope and explicit GLOBAL
+   * (campaignId:null) acts — a brand-scope-era capture licenses cross-campaign
+   * checks, while legacy grants only ever satisfy their own campaign. Pass
+   * campaignId:null to ask the pure cross-campaign question. No consumer
+   * resolvable → false (fail closed). Every marketing send/upload calls this
+   * — no exceptions.
    */
   async function canMarketTo({ consumerId = null, phone = null, channel = 'all', campaignId = null }) {
     const consumer = await resolveConsumerRef({ consumerId, phone });
@@ -365,6 +460,7 @@ export function makeConsentService(overrides = {}) {
   return {
     recordCaptureConsentEventsTx,
     backfillConsentEvents,
+    backfillGlobalGrants,
     getConsentState,
     isSuppressed,
     canMarketTo,
@@ -379,6 +475,7 @@ export function makeConsentService(overrides = {}) {
 const _default = makeConsentService();
 export const recordCaptureConsentEventsTx = _default.recordCaptureConsentEventsTx;
 export const backfillConsentEvents = _default.backfillConsentEvents;
+export const backfillGlobalGrants = _default.backfillGlobalGrants;
 export const getConsentState = _default.getConsentState;
 export const isSuppressed = _default.isSuppressed;
 export const canMarketTo = _default.canMarketTo;
