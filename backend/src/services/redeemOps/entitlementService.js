@@ -1,6 +1,6 @@
 import { Op } from 'sequelize';
 import {
-  RewardEntitlement, RedemptionEvent, Activation, ActivationIssuanceSkip, RewardOffer,
+  RewardEntitlement, RedemptionEvent, Redemption, Activation, ActivationIssuanceSkip, RewardOffer,
   PartnerOrganisation, Prospect, User, Consumer, sequelize,
 } from '../../models/index.js';
 import { phoneVerificationIsCurrent } from '../consumerService.js';
@@ -59,7 +59,7 @@ export async function flushDeliveries() {
  */
 export function makeEntitlementService(overrides = {}) {
   const d = {
-    RewardEntitlement, RedemptionEvent, Activation, ActivationIssuanceSkip, RewardOffer,
+    RewardEntitlement, RedemptionEvent, Redemption, Activation, ActivationIssuanceSkip, RewardOffer,
     PartnerOrganisation, Prospect, User, Consumer, sequelize, logger,
     inventory: makeInventoryService(),
     audit: makeRedeemOpsAuditService(),
@@ -815,6 +815,10 @@ export function makeEntitlementService(overrides = {}) {
           ...(query.search ? { where: prospectWhere, required: true } : {}),
         },
         { model: d.RewardOffer, as: 'rewardOffer', attributes: ['id', 'title'] },
+        // The redemption backing a redeemed row — its id is what the Void
+        // action reverses (POST /redemptions/:id/reverse), which flips the
+        // entitlement to cancelled and frees the one-live-reward-per-phone slot.
+        { model: d.Redemption, as: 'redemption', attributes: ['id', 'status', 'redeemedAt'], required: false },
         {
           model: d.Activation,
           as: 'activation',
@@ -863,6 +867,11 @@ export function makeEntitlementService(overrides = {}) {
         if (j.prospect.phone) j.prospect.phone = `••••${String(j.prospect.phone).slice(-4)}`;
         delete j.prospect.email;
       }
+      // Surface the redemption id (+ whether it is already reversed) so the
+      // console can offer Void on redeemed rows without a second fetch.
+      j.redemptionId = j.redemption?.id || null;
+      j.redemptionReversed = j.redemption?.status === 'reversed';
+      delete j.redemption;
       return j;
     });
     return { entitlements: masked, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
