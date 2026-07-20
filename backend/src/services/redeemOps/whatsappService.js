@@ -110,11 +110,45 @@ function cardWordmark() {
   return 'Redeem.';
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export function makeWhatsappService(overrides = {}) {
   const d = {
     RewardOffer, logger, QRCode, renderQrCard: renderQrCardPng,
-    fetch: (...args) => fetch(...args), ...overrides,
+    fetch: (...args) => fetch(...args), sleep, ...overrides,
   };
+
+  /**
+   * Graph API fetch with bounded retry on TRANSIENT failures only — a network
+   * throw ("fetch failed": no response received, so the request very likely
+   * never reached Meta) or a 5xx. 4xx (template/permission/bad-request) is
+   * deterministic and returned as-is for the caller to receipt. This closes
+   * the gap that silently lost a voucher WhatsApp on a single connection blip
+   * while email went through (prod, 2026-07-20): the send was fire-and-forget
+   * with no retry.
+   */
+  async function graphFetch(url, opts, { label, attempts = 3 } = {}) {
+    let lastErr;
+    for (let i = 1; i <= attempts; i += 1) {
+      try {
+        const res = await d.fetch(url, opts);
+        if (res.status >= 500 && i < attempts) {
+          d.logger.warn('redeem_ops.whatsapp.retry_5xx', { label, status: res.status, attempt: i });
+          await d.sleep(300 * i);
+          continue;
+        }
+        return res; // ok or 4xx — caller decides
+      } catch (err) {
+        lastErr = err;
+        if (i < attempts) {
+          d.logger.warn('redeem_ops.whatsapp.retry_network', { label, error: err?.message, attempt: i });
+          await d.sleep(300 * i);
+          continue;
+        }
+      }
+    }
+    throw lastErr;
+  }
 
   async function offerContextOf(entitlement) {
     try {
@@ -142,11 +176,11 @@ export function makeWhatsappService(overrides = {}) {
     form.append('messaging_product', 'whatsapp');
     form.append('type', 'image/png');
     form.append('file', new Blob([buffer], { type: 'image/png' }), 'reward-qr.png');
-    const res = await d.fetch(`https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}/media`, {
+    const res = await graphFetch(`https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}/media`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: form,
-    });
+    }, { label: 'media_upload' });
     if (!res.ok) {
       let detail = `HTTP ${res.status}`;
       try {
@@ -217,11 +251,11 @@ export function makeWhatsappService(overrides = {}) {
         },
       };
 
-      const res = await d.fetch(`https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}/messages`, {
+      const res = await graphFetch(`https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}/messages`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      });
+      }, { label: 'message_send' });
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
         try {
