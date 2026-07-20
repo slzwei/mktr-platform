@@ -81,6 +81,10 @@ function ClassicDesignEditor({ campaign, onSave, heightClass = 'h-[calc(100vh-8r
     sgPrOnly: design.sgPrOnly === true,
     excludeAdvisors: design.excludeAdvisors === true,
     dncCheckAtSubmit: design.dncCheckAtSubmit === true,
+    // Agree-all consent block: sponsored third-party clause toggle. Default ON
+    // (!== false), and MUST be seeded here — this editor saves the whole object,
+    // so an unseeded key would be erased on every save.
+    thirdPartyDisclosure: design.thirdPartyDisclosure !== false,
     // Per-campaign customer host: 'redeem' (default) or 'mktr' — drives the
     // customer-facing brand/domain for this campaign's links + confirmation email.
     customerHost: design.customerHost === 'mktr' ? 'mktr' : 'redeem',

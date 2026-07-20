@@ -7,6 +7,7 @@ import DncConsentGate from '@/components/campaigns/signup/DncConsentGate';
 import MarketingConsentDialog from '@/components/legal/MarketingConsentDialog';
 import { useCampaignTheme } from '@/components/campaignPage/themeContext';
 import { heroFontStack } from '@/lib/heroFonts';
+import { CONSENT_COPY, CONSENT_COPY_VERSION } from '@/lib/consentCopy';
 import { formatDateInput, getAgeValidationError, getAgeRestrictionHint, displayPhone } from '@/components/campaigns/signup/dateUtils';
 
 /**
@@ -50,6 +51,10 @@ export default function CampaignSignupForm({
   const sgPrOnly = campaign?.design_config?.sgPrOnly === true;
   const excludeAdvisors = campaign?.design_config?.excludeAdvisors === true;
   const dncCheckAtSubmit = campaign?.design_config?.dncCheckAtSubmit === true;
+  // Sponsored-campaign disclosure clause in the agree-all block. Default ON —
+  // only an explicit false (the Studio/editor toggle) hides the clause and
+  // sends consent_third_party:false (=> no external-delivery evidence).
+  const thirdPartyDisclosure = campaign?.design_config?.thirdPartyDisclosure !== false;
 
   // Preview-only jump fixture (Studio PR 3): gated PER-INITIALIZER on
   // previewMode === true, so a fixture reaching a live mount changes nothing.
@@ -84,16 +89,14 @@ export default function CampaignSignupForm({
   // Financial-consultant exclusion gate: null = not answered, 'public' = show form, 'advisor' = blocked.
   const [advisorAck, setAdvisorAck] = useState(fx?.advisorAck ?? null);
 
-  // Three PDPA consent checkboxes — campaign T&C is required (opt-in); contact
-  // consent defaults to ticked (opt-out, documented in /PersonalDataPolicy:
-  // untick to suppress hashed em/ph in Meta CAPI payloads and direct-marketing
-  // follow-ups by agents). Third-party-disclosure consent is a SEPARATE, opt-in
-  // (un-ticked) checkbox — its own granular consent so it never rides on the
-  // CAPI/contact toggle. It gates sharing the lead with an external buyer-agent
-  // (the consentMetadata.external evidence; absence => internal-only delivery).
-  const [consentContact, setConsentContact] = useState(fx?.consentContact ?? true);
-  const [consentTerms, setConsentTerms] = useState(fx?.consentTerms ?? false);
-  const [consentThirdParty, setConsentThirdParty] = useState(fx?.consentThirdParty ?? false);
+  // Mandatory agree-all consent (wording era CONSENT_COPY_VERSION): ONE
+  // required checkbox under the clause list — contact+marketing (brand-wide),
+  // campaign T&C, and (when thirdPartyDisclosure) the sponsored third-party
+  // clause. No agree, no submit; the payload therefore sends all consent
+  // booleans as true plus consent_copy_version so the backend pins the exact
+  // wording as evidence. The DNC gate stays a SEPARATE consent (own state,
+  // own consent_dnc field) — it never rides on this checkbox.
+  const [consentAll, setConsentAll] = useState(fx?.consentAll ?? false);
   const [consentOpen, setConsentOpen] = useState(fx?.consentOpen ?? false);
 
   const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -280,8 +283,8 @@ export default function CampaignSignupForm({
       setError('Last drawn salary is required.');
       return;
     }
-    if (!consentTerms) {
-      setError('Please agree to the terms and conditions to continue.');
+    if (!consentAll) {
+      setError('Please agree to the terms above to continue.');
       return;
     }
 
@@ -309,9 +312,14 @@ export default function CampaignSignupForm({
       education_level: visibleFields.education_level === true ? formData.education_level : null,
       monthly_income: visibleFields.monthly_income === true ? formData.monthly_income : null,
       campaign_id: campaignId,
-      consent_contact: consentContact,
-      consent_terms: consentTerms,
-      consent_third_party: consentThirdParty,
+      // Agree-all: submission implies the whole block, so the booleans are
+      // literals; the third-party grant follows the campaign's clause toggle
+      // (clause not shown => no consent to disclose). consent_copy_version
+      // tells the backend WHICH wording to pin as evidence.
+      consent_contact: true,
+      consent_terms: true,
+      consent_third_party: thirdPartyDisclosure,
+      consent_copy_version: CONSENT_COPY_VERSION,
       // DNC consent intent (the server builds the authoritative evidence). Only sent when
       // the gate was actually shown for this lead.
       ...(dncCheckAtSubmit && dncStatus === 'on_dnc' ? { consent_dnc: dncConsent } : {}),
@@ -431,7 +439,7 @@ export default function CampaignSignupForm({
     ageError !== '' ||
     dobIncomplete ||
     !isValidEmail(formData.email) ||
-    !consentTerms ||
+    !consentAll ||
     (dncCheckAtSubmit && dncStatus === 'checking') ||
     gateLocked;
 
@@ -894,57 +902,77 @@ export default function CampaignSignupForm({
           </div>
         )}
 
-        {/* Two consent checkboxes */}
+        {/* Mandatory agree-all consent block (wording era CONSENT_COPY_VERSION;
+            strings live in src/lib/consentCopy.js — never inline-edit copy here).
+            The DNC gate above is a separate consent and stays independent. */}
         <div style={{ marginTop: 8, marginBottom: 24 }}>
-          <ConsentCheckbox
-            checked={consentContact}
-            onChange={setConsentContact}
-            accent={accent}
-            id="consent_contact"
+          <div
+            style={{
+              fontFamily: 'Albert Sans, system-ui, sans-serif',
+              fontWeight: 600,
+              fontSize: 14,
+              color: TOKENS.body,
+              marginBottom: 4,
+            }}
           >
-            By the provision of your contact particulars in this form, you consent to be contacted by such means,
-            including by: (a) phone call and text messages at the phone number provided; and (b) email, if your
-            email address has been furnished, for the purposes identified in this form.
-          </ConsentCheckbox>
-
+            {CONSENT_COPY.heading}
+          </div>
+          <p
+            style={{
+              margin: '0 0 8px',
+              fontFamily: 'Albert Sans, system-ui, sans-serif',
+              fontSize: 13.5,
+              lineHeight: 1.55,
+              color: TOKENS.body,
+            }}
+          >
+            {CONSENT_COPY.intro}
+          </p>
+          <ul
+            style={{
+              margin: '0 0 12px',
+              paddingLeft: 20,
+              display: 'grid',
+              gap: 6,
+              fontFamily: 'Albert Sans, system-ui, sans-serif',
+              fontSize: 13.5,
+              lineHeight: 1.55,
+              color: TOKENS.body,
+            }}
+          >
+            <li>{CONSENT_COPY.clauseContact}</li>
+            <li>
+              {CONSENT_COPY.clauseTermsPrefix}
+              <button
+                type="button"
+                onClick={() => setConsentOpen(true)}
+                style={{
+                  color: TOKENS.body,
+                  fontWeight: 600,
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  textUnderlineOffset: 3,
+                  fontSize: 'inherit',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {CONSENT_COPY.clauseTermsLinkText}
+              </button>
+              {CONSENT_COPY.clauseTermsSuffix}
+            </li>
+            {thirdPartyDisclosure && <li>{CONSENT_COPY.clauseThirdParty}</li>}
+          </ul>
           <ConsentCheckbox
-            checked={consentTerms}
-            onChange={setConsentTerms}
+            checked={consentAll}
+            onChange={setConsentAll}
             accent={accent}
-            id="consent_terms"
+            id="consent_all"
             required
           >
-            By participating in this campaign, you hereby agree to the{' '}
-            <button
-              type="button"
-              onClick={() => setConsentOpen(true)}
-              style={{
-                color: TOKENS.body,
-                fontWeight: 600,
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                textUnderlineOffset: 3,
-                fontSize: 'inherit',
-                fontFamily: 'inherit',
-              }}
-            >
-              terms and conditions
-            </button>
-            . <span style={{ color: TOKENS.required }}>*</span>
-          </ConsentCheckbox>
-
-          <ConsentCheckbox
-            checked={consentThirdParty}
-            onChange={setConsentThirdParty}
-            accent={accent}
-            id="consent_third_party"
-          >
-            I consent to my contact details being disclosed to a partner financial advisory representative
-            — who may be from a third-party agency — so that they may contact me about relevant financial
-            products and services.
+            {CONSENT_COPY.checkboxLabel} <span style={{ color: TOKENS.required }}>*</span>
           </ConsentCheckbox>
         </div>
 
@@ -988,7 +1016,7 @@ export default function CampaignSignupForm({
         content={termsContent}
         themeColor={accent}
         onAgree={() => {
-          setConsentTerms(true);
+          setConsentAll(true);
           setConsentOpen(false);
         }}
       />
