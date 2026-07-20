@@ -94,6 +94,11 @@ export default function RedemptionsPage() {
   // { entitlement } — voids the reward; requires a reason (audited server-side).
   const [cancelDialog, setCancelDialog] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
+  // { entitlement } — voids a REDEEMED reward by reversing its redemption
+  // (terminal) so the one-live-reward-per-phone slot frees. Reason required.
+  const [voidDialog, setVoidDialog] = useState(null);
+  const [voidReason, setVoidReason] = useState('');
+  const canOverrideRedemption = hasCapability(user, 'redemptions.override');
   const [scanOpen, setScanOpen] = useState(false);
   // presentationToken pending an explicit "Activate" confirm after a pass scan.
   const [activateToken, setActivateToken] = useState(null);
@@ -158,6 +163,17 @@ export default function RedemptionsPage() {
       queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'entitlements'] });
     },
     onError: (err) => toast.error('Cancel failed', { description: err.message }),
+  });
+
+  const voidMutation = useMutation({
+    mutationFn: ({ redemptionId, reason }) => redeemOpsApi.reverseRedemption(redemptionId, { reason }),
+    onSuccess: () => {
+      toast.success('Redemption voided — the reward is cancelled and the phone can earn a new one');
+      setVoidDialog(null);
+      setVoidReason('');
+      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'entitlements'] });
+    },
+    onError: (err) => toast.error('Void failed', { description: err.message }),
   });
 
   const verifyMutation = useMutation({
@@ -307,6 +323,23 @@ export default function RedemptionsPage() {
         Cancel
       </Button>
     ) : null;
+    // Void undoes a REDEEMED reward: reverses the redemption (terminal) so the
+    // one-live-reward-per-phone slot frees. Gated on redemptions.override (the
+    // same capability the reverse route requires) and a live, not-yet-reversed
+    // redemption id from the list.
+    const voidButton = e.status === 'redeemed' && canOverrideRedemption
+      && e.redemptionId && !e.redemptionReversed ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-destructive hover:text-destructive"
+          aria-label={`Void redemption — ${holderName}`}
+          disabled={voidMutation.isPending}
+          onClick={() => { setVoidReason(''); setVoidDialog({ entitlement: e }); }}
+        >
+          Void
+        </Button>
+      ) : null;
     return (
       <div
         key={e.id}
@@ -355,6 +388,7 @@ export default function RedemptionsPage() {
           )}
           {unlockButton}
           {cancelButton}
+          {voidButton}
         </span>
       </div>
     );
@@ -744,6 +778,53 @@ export default function RedemptionsPage() {
               onClick={() => cancelMutation.mutate({ id: cancelDialog.entitlement.id, reason: cancelReason.trim() })}
             >
               {cancelMutation.isPending ? 'Cancelling…' : 'Cancel reward'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Void — reverses a REDEEMED redemption. Destructive + reason-gated (audited). */}
+      <Dialog
+        open={!!voidDialog}
+        onOpenChange={(open) => {
+          // Same mid-flight guard as Cancel: the reverse is irreversible, so a
+          // dialog vanishing while the POST runs must not read as "aborted".
+          if (!open && !voidMutation.isPending) { setVoidDialog(null); setVoidReason(''); }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Void this redeemed reward?</DialogTitle>
+            <DialogDescription>
+              {[voidDialog?.entitlement?.prospect?.firstName, voidDialog?.entitlement?.prospect?.lastName]
+                .filter(Boolean).join(' ') || 'The customer'}
+              {"'s reward is already redeemed. Voiding reverses that redemption"}
+              {' and cancels the reward, so this phone number can earn a new one on'}
+              {' this activation. The redemption record is kept and marked reversed'}
+              {' (audited). This cannot be undone.'}
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={voidReason}
+            onChange={(ev) => setVoidReason(ev.target.value)}
+            placeholder="Reason (required) — e.g. testing, mistaken redemption, customer request"
+            aria-label="Reason for voiding this redemption"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={voidMutation.isPending}
+              onClick={() => { setVoidDialog(null); setVoidReason(''); }}
+            >
+              Keep it
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!voidReason.trim() || voidMutation.isPending}
+              onClick={() => voidMutation.mutate({ redemptionId: voidDialog.entitlement.redemptionId, reason: voidReason.trim() })}
+            >
+              {voidMutation.isPending ? 'Voiding…' : 'Void redemption'}
             </Button>
           </DialogFooter>
         </DialogContent>

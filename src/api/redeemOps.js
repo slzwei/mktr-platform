@@ -353,6 +353,14 @@ export const redeemOpsApi = {
     const res = await apiClient.patch(`/redeem-ops/entitlements/${id}/cancel`, { reason });
     return res.data;
   },
+  async reverseRedemption(redemptionId, { reason } = {}) {
+    // Voids a REDEEMED reward: reverses the redemption (terminal) and cancels
+    // the entitlement, which frees the one-live-reward-per-phone slot so the
+    // number can earn a new reward on that activation. Audited; requires the
+    // redemptions.override capability + a non-empty reason.
+    const res = await apiClient.post(`/redeem-ops/redemptions/${redemptionId}/reverse`, { reason });
+    return res.data;
+  },
   async verifyVoucher(token) {
     const res = await apiClient.post('/redeem-ops/redemptions/verify', { token });
     return res.data;
