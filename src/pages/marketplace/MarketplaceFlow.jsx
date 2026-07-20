@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import MarketplaceLayout from './MarketplaceLayout';
-import MarketingConsentDialog from '@/components/legal/MarketingConsentDialog';
+import ConsentAgreementDialog from '@/components/campaigns/signup/ConsentAgreementDialog';
 import {
-  CONSENT_COPY, CONSENT_COPY_VERSION, CONSENT_BLOCK_HELPER,
+  CONSENT_INLINE, CONSENT_COPY_VERSION, CONSENT_BLOCK_HELPER,
   isSponsoredCampaign, sponsorNameLine,
 } from '@/lib/consentCopy';
 import { apiClient } from '@/api/client';
@@ -821,49 +821,27 @@ export default function MarketplaceFlow() {
                   </button>
                 </div>
               )}
-              {/* Agree-all block — words from src/lib/consentCopy.js (hashed
-                  twin); one required tick, matching the main funnel exactly. */}
+              {/* Agree-all — layered presentation matching the main funnel:
+                  one summary sentence (chrome) + the full clause list and
+                  campaign T&Cs in ConsentAgreementDialog; sponsored campaigns
+                  keep the named-sponsor line ON the page. Evidence strings
+                  unchanged (CONSENT_COPY.clause*, rendered in the dialog). */}
               <div style={{ background: 'var(--rm-bg)', border: '1px solid var(--rm-line)', borderRadius: 14, padding: '16px 18px' }}>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>{CONSENT_COPY.heading}</div>
-                <p style={{ margin: '6px 0 12px', fontSize: 13, lineHeight: 1.6, color: 'var(--rm-sub)' }}>{CONSENT_COPY.intro}</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13.5, lineHeight: 1.6, marginBottom: 12 }}>
-                  <div style={{ display: 'flex', gap: 9 }}>
-                    <span aria-hidden="true" style={{ color: 'var(--rm-pine)', fontWeight: 700, flexShrink: 0 }}>•</span>
-                    <span>
-                      <strong>{CONSENT_COPY.clauseContactHeadline}</strong> {CONSENT_COPY.clauseContactBody}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 9 }}>
-                    <span aria-hidden="true" style={{ color: 'var(--rm-pine)', fontWeight: 700, flexShrink: 0 }}>•</span>
-                    <span>
-                      <strong>{CONSENT_COPY.clauseTermsHeadline}</strong> {CONSENT_COPY.clauseTermsPrefix}
-                      {dc.termsContent ? (
-                        <button className="rm-underline" style={{ color: 'var(--rm-pine)', fontWeight: 600 }} onClick={() => setTermsOpen(true)}>
-                          {CONSENT_COPY.clauseTermsLinkText}
-                        </button>
-                      ) : (
-                        CONSENT_COPY.clauseTermsLinkText
-                      )}
-                      {CONSENT_COPY.clauseTermsSuffix}
-                    </span>
-                  </div>
-                  {sponsoredClause && (
-                    <div style={{ display: 'flex', gap: 9 }}>
-                      <span aria-hidden="true" style={{ color: 'var(--rm-pine)', fontWeight: 700, flexShrink: 0 }}>•</span>
-                      <span>
-                        <strong>{CONSENT_COPY.clauseThirdPartyHeadline}</strong> {CONSENT_COPY.clauseThirdPartyBody}
-                      </span>
-                    </div>
-                  )}
-                </div>
+                <p style={{ margin: '0 0 12px', fontSize: 13.5, lineHeight: 1.6 }}>
+                  {sponsoredClause ? CONSENT_INLINE.summarySponsored : CONSENT_INLINE.summaryBase}
+                  <button className="rm-underline" style={{ color: 'var(--rm-pine)', fontWeight: 600 }} onClick={() => setTermsOpen(true)}>
+                    {CONSENT_INLINE.summaryLinkText}
+                  </button>
+                  {CONSENT_INLINE.summarySuffix}
+                </p>
                 {sponsoredClause && (
-                  <div style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--rm-mut)', margin: '0 0 12px 21px' }}>
+                  <div style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--rm-mut)', margin: '0 0 12px' }}>
                     {sponsorNameLine(dc)}
                   </div>
                 )}
                 <div style={{ borderTop: '1px solid var(--rm-line)', paddingTop: 12 }}>
                   <ConsentCheck checked={agreeAll} onToggle={() => setAgreeAll((p) => !p)}>
-                    <strong>{CONSENT_COPY.checkboxLabel}</strong>{' '}
+                    <strong>{CONSENT_INLINE.checkboxLabel}</strong>{' '}
                     <span style={{ fontFamily: 'var(--rm-mono)', fontSize: 9.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--rm-err)' }}>Required</span>
                   </ConsentCheck>
                 </div>
@@ -886,7 +864,18 @@ export default function MarketplaceFlow() {
         </div>
       </div>
 
-      <MarketingConsentDialog open={termsOpen} onOpenChange={setTermsOpen} content={dc.termsContent} />
+      {/* The full agreement (clause list + campaign T&Cs); its "I agree" ticks
+          the block — the dialog shows the entire deal. */}
+      <ConsentAgreementDialog
+        open={termsOpen}
+        onOpenChange={setTermsOpen}
+        designConfig={dc}
+        termsContent={dc.termsContent}
+        onAgree={() => {
+          setAgreeAll(true);
+          setTermsOpen(false);
+        }}
+      />
 
       {toast && (
         <div role="status" style={{ position: 'fixed', bottom: 26, left: '50%', transform: 'translateX(-50%)', zIndex: 90, background: 'var(--rm-ink)', color: '#F6F2E6', fontSize: 13.5, fontWeight: 500, padding: '12px 22px', borderRadius: 999, boxShadow: '0 12px 30px rgba(23,37,31,0.3)' }}>

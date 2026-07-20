@@ -145,7 +145,7 @@ export default function MarketingConsentDialog({ open, onOpenChange, content, th
   );
 }
 
-function DefaultConsentCopy() {
+export function DefaultConsentCopy() {
   const { tokens: TOKENS, radius: RADIUS } = useCampaignTheme();
   // Legal data controller stays MKTR PTE. LTD. per D3. Consumer-facing brand
   // references swap with the active build's brand (Redeem on redeem.sg).

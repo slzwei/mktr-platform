@@ -42,6 +42,30 @@ export const CONSENT_COPY = Object.freeze({
 export const CONSENT_BLOCK_HELPER = "You'll need to agree to the above to submit.";
 
 /**
+ * Layered presentation chrome (2026-07-21 dialog rework): the clause list
+ * lives in ConsentAgreementDialog; the form keeps ONE summary sentence +
+ * "read the full agreement" link + the required checkbox. Everything here is
+ * chrome, NOT hashed — the evidence strings remain CONSENT_COPY.clause*
+ * (byte-locked to the backend, presentation-independent). The summary must
+ * never contradict the clauses; sponsored campaigns use the sponsored variant
+ * AND keep sponsorNameLine visible inline, so "(named on this page)" stays
+ * literally true without opening the dialog.
+ */
+export const CONSENT_INLINE = Object.freeze({
+  summaryBase:
+    "By submitting, you agree to be contacted by Redeem about this offer and future ones, and to this campaign's terms — ",
+  summarySponsored:
+    "By submitting, you agree to be contacted by Redeem about this offer and future ones, to this campaign's terms, and to sharing your details with this campaign's sponsor — ",
+  summaryLinkText: 'read the full agreement',
+  summarySuffix: '.',
+  checkboxLabel: 'I agree to the agreement above.',
+  dialogEyebrow: 'Agreement',
+  sectionAgreeTitle: "What you're agreeing to",
+  sectionTermsTitle: 'Terms & conditions',
+  dialogAgreeCta: 'I agree',
+});
+
+/**
  * Sponsored predicate — the disclosure clause renders iff design_config has a
  * sponsor object WITH A NON-EMPTY NAME (§9.5-1: the clause says the sponsor
  * is "(named on this page)", so a name-less sponsor object falls back to the

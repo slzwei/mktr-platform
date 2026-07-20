@@ -26,7 +26,7 @@ vi.mock('../MarketplaceLayout', () => ({ default: ({ children }) => <div>{childr
 import MarketplaceFlow from '../MarketplaceFlow';
 import { apiClient } from '@/api/client';
 import { getMarketplaceCampaign } from '@/api/marketplace';
-import { CONSENT_COPY_VERSION } from '@/lib/consentCopy';
+import { CONSENT_COPY, CONSENT_INLINE, CONSENT_COPY_VERSION } from '@/lib/consentCopy';
 
 /**
  * mktui behavioral proof: the marketplace consent step IS the agree-all block
@@ -90,7 +90,7 @@ beforeEach(() => {
 });
 
 describe('MarketplaceFlow — agree-all consent step (mktui)', () => {
-  it('base campaign: block renders 2 clauses, submit locked until the single tick, derived flags on the wire', async () => {
+  it('base campaign: layered summary inline, full clauses in the dialog, submit locked until the tick, derived flags on the wire', async () => {
     const user = userEvent.setup();
     getMarketplaceCampaign.mockResolvedValue(baseCampaign());
     mockApi();
@@ -99,18 +99,27 @@ describe('MarketplaceFlow — agree-all consent step (mktui)', () => {
     await driveToConsentStep(user);
     await user.click(screen.getByRole('button', { name: 'Continue' }));
 
-    // The agree-all block, from the shared twin copy.
-    expect(await screen.findByText('One agreement — read once')).toBeInTheDocument();
-    expect(screen.getByText('Contact from Redeem — this offer and future ones.')).toBeInTheDocument();
-    expect(screen.getByText("This campaign's terms.")).toBeInTheDocument();
-    expect(screen.queryByText("Sharing with this campaign's sponsor.")).toBeNull();
+    // Inline residue: base summary + dialog link; clause text NOT on the page.
+    expect(await screen.findByText(new RegExp(CONSENT_INLINE.summaryBase.slice(0, 40)))).toBeInTheDocument();
+    expect(screen.queryByText(CONSENT_COPY.heading)).toBeNull();
+    expect(screen.queryByText(CONSENT_COPY.clauseContactHeadline)).toBeNull();
+    expect(screen.queryByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeNull();
+
+    // The full agreement in the dialog: clause list + T&C section.
+    await user.click(screen.getByRole('button', { name: CONSENT_INLINE.summaryLinkText }));
+    expect(await screen.findByText(CONSENT_COPY.heading)).toBeInTheDocument();
+    expect(screen.getByText(CONSENT_COPY.clauseContactHeadline)).toBeInTheDocument();
+    expect(screen.getByText(CONSENT_COPY.clauseTermsHeadline)).toBeInTheDocument();
+    expect(screen.getByText(CONSENT_INLINE.sectionTermsTitle)).toBeInTheDocument();
+    expect(screen.getByText('The terms.')).toBeInTheDocument(); // campaign termsContent HTML
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     // All-required-to-submit: locked + helper until the tick.
     const confirm = screen.getByRole('button', { name: 'Confirm redemption' });
     expect(confirm).toBeDisabled();
     expect(screen.getByText(/You'll need to agree to the above to submit\./)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('checkbox', { name: /I agree to all of the above\./ }));
+    await user.click(screen.getByRole('checkbox', { name: /I agree to the agreement above\./ }));
     expect(confirm).toBeEnabled();
     await user.click(confirm);
 
@@ -126,7 +135,26 @@ describe('MarketplaceFlow — agree-all consent step (mktui)', () => {
     );
   });
 
-  it('sponsored campaign: disclosure clause + named sponsor line render; third-party flag goes true', async () => {
+  it('dialog "I agree" ticks the block (full agreement shown there) and closes', async () => {
+    const user = userEvent.setup();
+    getMarketplaceCampaign.mockResolvedValue(baseCampaign());
+    mockApi();
+    renderFlow();
+
+    await driveToConsentStep(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByText(new RegExp(CONSENT_INLINE.summaryBase.slice(0, 40)));
+
+    expect(screen.getByRole('checkbox', { name: /I agree to the agreement above\./ }))
+      .toHaveAttribute('aria-checked', 'false');
+    await user.click(screen.getByRole('button', { name: CONSENT_INLINE.summaryLinkText }));
+    await user.click(await screen.findByRole('button', { name: CONSENT_INLINE.dialogAgreeCta }));
+    expect(screen.getByRole('checkbox', { name: /I agree to the agreement above\./ }))
+      .toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('button', { name: 'Confirm redemption' })).toBeEnabled();
+  });
+
+  it('sponsored campaign: sponsored summary + named line INLINE; clause in the dialog; third-party flag true', async () => {
     const user = userEvent.setup();
     getMarketplaceCampaign.mockResolvedValue(baseCampaign({ sponsor: { name: 'Acme FA' } }));
     mockApi();
@@ -135,10 +163,15 @@ describe('MarketplaceFlow — agree-all consent step (mktui)', () => {
     await driveToConsentStep(user);
     await user.click(screen.getByRole('button', { name: 'Continue' }));
 
-    expect(await screen.findByText("Sharing with this campaign's sponsor.")).toBeInTheDocument();
+    // "(named on this page)" holds without opening the dialog.
+    expect(await screen.findByText(new RegExp('sharing your details with this campaign'))).toBeInTheDocument();
     expect(screen.getByText('Sponsored by Acme FA.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('checkbox', { name: /I agree to all of the above\./ }));
+    await user.click(screen.getByRole('button', { name: CONSENT_INLINE.summaryLinkText }));
+    expect(await screen.findByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await user.click(screen.getByRole('checkbox', { name: /I agree to the agreement above\./ }));
     await user.click(screen.getByRole('button', { name: 'Confirm redemption' }));
 
     await screen.findByText('Redemption confirmed');
@@ -155,10 +188,11 @@ describe('MarketplaceFlow — agree-all consent step (mktui)', () => {
     await driveToConsentStep(user);
     await user.click(screen.getByRole('button', { name: 'Continue' }));
 
-    await screen.findByText('One agreement — read once');
-    expect(screen.queryByText("Sharing with this campaign's sponsor.")).toBeNull();
+    await screen.findByText(new RegExp(CONSENT_INLINE.summaryBase.slice(0, 40)));
+    expect(screen.queryByText(new RegExp('sharing your details with this campaign'))).toBeNull();
+    expect(screen.queryByText('Sponsored by someone')).toBeNull();
 
-    await user.click(screen.getByRole('checkbox', { name: /I agree to all of the above\./ }));
+    await user.click(screen.getByRole('checkbox', { name: /I agree to the agreement above\./ }));
     await user.click(screen.getByRole('button', { name: 'Confirm redemption' }));
     await screen.findByText('Redemption confirmed');
     const prospectCall = apiClient.post.mock.calls.find(([url]) => url === '/prospects');
@@ -183,9 +217,9 @@ describe('MarketplaceFlow — agree-all consent step (mktui)', () => {
     await user.click(cont);
 
     // Then the agree-all step, still all-required.
-    expect(await screen.findByText('One agreement — read once')).toBeInTheDocument();
+    expect(await screen.findByText(new RegExp(CONSENT_INLINE.summaryBase.slice(0, 40)))).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Confirm redemption' })).toBeDisabled();
-    await user.click(screen.getByRole('checkbox', { name: /I agree to all of the above\./ }));
+    await user.click(screen.getByRole('checkbox', { name: /I agree to the agreement above\./ }));
     await user.click(screen.getByRole('button', { name: 'Confirm redemption' }));
 
     await screen.findByText('Redemption confirmed');
