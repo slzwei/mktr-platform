@@ -38,7 +38,19 @@
   min-height: 100vh;
 }
 
-.admin-v2[data-theme='dark'] {
+/* Radix portals (dialogs, sheets, dropdowns) mount on <body>, outside the
+   shell subtree, and re-apply .admin-v2 themselves purely as a token scope.
+   Undo the page-shell viewport sizing there or overlays stretch to 100vh. */
+.admin-v2[role='dialog'],
+.admin-v2[role='alertdialog'],
+.admin-v2[role='menu'] {
+  min-height: 0;
+}
+
+/* Second selector: portalled .admin-v2 overlays sit outside the shell's
+   [data-theme] root, so the shell mirrors the theme onto <body>. */
+.admin-v2[data-theme='dark'],
+body[data-theme='dark'] .admin-v2 {
   --canvas: #0F1116;
   --surface: #171A21;
   --surface-2: #1E222B;

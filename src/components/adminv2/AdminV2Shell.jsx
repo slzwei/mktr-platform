@@ -55,6 +55,13 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
     return () => clearInterval(t);
   }, []);
 
+  // Radix portals mount overlay content on <body>, outside this [data-theme]
+  // root — mirror the theme there so portalled .admin-v2 surfaces follow it.
+  useEffect(() => {
+    document.body.setAttribute('data-theme', theme);
+    return () => document.body.removeAttribute('data-theme');
+  }, [theme]);
+
   // ⌘K lives in <GlobalSearch/>; the shell only closes its own avatar menu.
   useEffect(() => {
     const onKey = (e) => {
