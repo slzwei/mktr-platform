@@ -134,8 +134,16 @@ export function makeEntitlementService(overrides = {}) {
    * `skipped` results (no receipt on a skip: nothing was attempted), so a
    * no-email Retell lead still gets its WhatsApp leg — the email guard below
    * deliberately gates only the email leg.
+   *
+   * `channels` selects which legs to fire; it defaults to BOTH so capture,
+   * unlock and the sweep are unchanged. The ops Resend passes a specific set
+   * (email / whatsapp / both) so staff can re-send on exactly the channel(s)
+   * they chose — one token rotation, the same fresh credential on each leg.
    */
-  function queueDelivery({ entitlement, prospect, kind, presentationToken = null, voucherToken = null }) {
+  function queueDelivery({
+    entitlement, prospect, kind, presentationToken = null, voucherToken = null,
+    channels = ['whatsapp', 'email'],
+  }) {
     const args = kind === 'voucher'
       ? { entitlement, prospect, voucherToken }
       : { entitlement, prospect, presentationToken };
@@ -151,9 +159,12 @@ export function makeEntitlementService(overrides = {}) {
       delivery.finally(() => pendingDeliveries.delete(delivery));
     };
 
-    const waFn = kind === 'voucher' ? d.notifyUnlockWa : d.notifyReservationWa;
-    if (typeof waFn === 'function') fire(waFn, 'whatsapp');
+    if (channels.includes('whatsapp')) {
+      const waFn = kind === 'voucher' ? d.notifyUnlockWa : d.notifyReservationWa;
+      if (typeof waFn === 'function') fire(waFn, 'whatsapp');
+    }
 
+    if (!channels.includes('email')) return false;
     const fn = kind === 'voucher' ? d.notifyUnlock : d.notifyReservation;
     if (typeof fn !== 'function' || !canEmailProspect(prospect)) return false;
     fire(fn, 'email');
@@ -534,10 +545,15 @@ export function makeEntitlementService(overrides = {}) {
     }
 
     const prospect = entitlement.prospectId ? await d.Prospect.findByPk(entitlement.prospectId) : null;
-    if (channel === 'email' && !canEmailProspect(prospect)) {
-      throw new AppError('No usable email on file — use the copy-link option instead', 409);
+    // 'both' resends on email AND WhatsApp with one token rotation. Each
+    // requested leg must be deliverable (the ops menu only offers a leg when
+    // its row flag says so, so this is defence-in-depth).
+    const wantEmail = channel === 'email' || channel === 'both';
+    const wantWa = channel === 'whatsapp' || channel === 'both';
+    if (wantEmail && !canEmailProspect(prospect)) {
+      throw new AppError('No usable email on file — use WhatsApp or the copy-link option instead', 409);
     }
-    if (channel === 'whatsapp' && !(waEnabled() && canWhatsAppProspect(prospect))) {
+    if (wantWa && !(waEnabled() && canWhatsAppProspect(prospect))) {
       throw new AppError('WhatsApp delivery is not available for this customer — use email or the copy-link option', 409);
     }
 
@@ -597,6 +613,7 @@ export function makeEntitlementService(overrides = {}) {
       entitlement, prospect, kind,
       presentationToken: kind === 'pass' ? fresh.raw : null,
       voucherToken: kind === 'voucher' ? fresh.raw : null,
+      channels: [wantWa ? 'whatsapp' : null, wantEmail ? 'email' : null].filter(Boolean),
     });
     return { entitlement, kind, channel, emailQueued };
   }

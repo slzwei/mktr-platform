@@ -125,3 +125,44 @@ describe('queueDelivery — per-channel fan-out (PR E)', () => {
     expect(events.map((e) => e.metadata.channel).sort()).toEqual(['email', 'whatsapp']);
   });
 });
+
+describe('queueDelivery — channel selection (ops Resend: Email / WhatsApp / Both)', () => {
+  const bothSenders = (events) => makeSvc({
+    events,
+    email: async () => ({ sent: true, to: 's***@example.com' }),
+    wa: async () => ({ sent: true, to: '••••4567' }),
+  });
+
+  it('defaults to BOTH when channels is omitted (capture/unlock/sweep unchanged)', async () => {
+    const events = [];
+    bothSenders(events).queueDelivery({ entitlement, prospect: emailable, kind: 'voucher', voucherToken: 'v' });
+    await flushDeliveries();
+    expect(events.map((e) => e.metadata.channel).sort()).toEqual(['email', 'whatsapp']);
+  });
+
+  it("channels ['email'] fires ONLY email — no WhatsApp leg", async () => {
+    const events = [];
+    const queued = bothSenders(events)
+      .queueDelivery({ entitlement, prospect: emailable, kind: 'voucher', voucherToken: 'v', channels: ['email'] });
+    expect(queued).toBe(true);
+    await flushDeliveries();
+    expect(events.map((e) => e.metadata.channel)).toEqual(['email']);
+  });
+
+  it("channels ['whatsapp'] fires ONLY WhatsApp — no email leg, emailQueued false", async () => {
+    const events = [];
+    const queued = bothSenders(events)
+      .queueDelivery({ entitlement, prospect: emailable, kind: 'voucher', voucherToken: 'v', channels: ['whatsapp'] });
+    expect(queued).toBe(false); // no fresh EMAIL attempt
+    await flushDeliveries();
+    expect(events.map((e) => e.metadata.channel)).toEqual(['whatsapp']);
+  });
+
+  it("channels ['whatsapp','email'] fires both (the 'Both' resend)", async () => {
+    const events = [];
+    bothSenders(events)
+      .queueDelivery({ entitlement, prospect: emailable, kind: 'voucher', voucherToken: 'v', channels: ['whatsapp', 'email'] });
+    await flushDeliveries();
+    expect(events.map((e) => e.metadata.channel).sort()).toEqual(['email', 'whatsapp']);
+  });
+});

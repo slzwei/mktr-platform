@@ -16,6 +16,9 @@ import {
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import ScanLine from 'lucide-react/icons/scan-line';
 import ChevronDown from 'lucide-react/icons/chevron-down';
 import { RoMobileCard, RoPageHeader, RoTag, prettyEnum } from '@/components/redeemops/ui';
@@ -143,9 +146,11 @@ export default function RedemptionsPage() {
     mutationFn: ({ id, channel }) => redeemOpsApi.resendEntitlementPass(id, { channel }),
     onSuccess: (res, vars) => {
       queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'entitlements'] });
-      if (vars.channel === 'email' || vars.channel === 'whatsapp') {
-        // Both re-queue a fire-and-forget send (no one-time link to show).
-        toast.success(res?.message || (vars.channel === 'whatsapp' ? 'Re-sent on WhatsApp' : 'New pass emailed'));
+      if (vars.channel === 'email' || vars.channel === 'whatsapp' || vars.channel === 'both') {
+        // These re-queue a fire-and-forget send (no one-time link to show).
+        const fallback = vars.channel === 'both' ? 'Re-sent on email + WhatsApp'
+          : vars.channel === 'whatsapp' ? 'Re-sent on WhatsApp' : 'New pass emailed';
+        toast.success(res?.message || fallback);
         setShareDialog(null);
       } else {
         // Show the one-time link bundle — it is not retrievable later.
@@ -365,27 +370,36 @@ export default function RedemptionsPage() {
           <RoTag tone={statusTone(e.status)} size="sm">{statusLabel(e.status)}</RoTag>
         </span>
         <span className="flex flex-wrap items-center gap-1.5 md:justify-end">
-          {canShare && e.emailDeliverable !== false && (
-            <Button
-              size="sm"
-              variant="outline"
-              aria-label={`Resend ${credentialNoun} — ${holderName}`}
-              disabled={resendMutation.isPending}
-              onClick={() => setShareDialog({ entitlement: e, mode: 'email', phase: 'confirm' })}
-            >
-              Resend
-            </Button>
-          )}
-          {canShare && e.whatsappDeliverable && (
-            <Button
-              size="sm"
-              variant="outline"
-              aria-label={`Resend on WhatsApp — ${holderName}`}
-              disabled={resendMutation.isPending}
-              onClick={() => setShareDialog({ entitlement: e, mode: 'whatsapp', phase: 'confirm' })}
-            >
-              WhatsApp
-            </Button>
+          {canShare && (e.emailDeliverable !== false || e.whatsappDeliverable) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  aria-label={`Resend ${credentialNoun} — ${holderName}`}
+                  disabled={resendMutation.isPending}
+                >
+                  Resend <ChevronDown className="ml-1 h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {e.emailDeliverable !== false && (
+                  <DropdownMenuItem onSelect={() => setShareDialog({ entitlement: e, mode: 'email', phase: 'confirm' })}>
+                    Email
+                  </DropdownMenuItem>
+                )}
+                {e.whatsappDeliverable && (
+                  <DropdownMenuItem onSelect={() => setShareDialog({ entitlement: e, mode: 'whatsapp', phase: 'confirm' })}>
+                    WhatsApp
+                  </DropdownMenuItem>
+                )}
+                {e.emailDeliverable !== false && e.whatsappDeliverable && (
+                  <DropdownMenuItem onSelect={() => setShareDialog({ entitlement: e, mode: 'both', phase: 'confirm' })}>
+                    Both
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           {canShare && (
             <Button
@@ -693,7 +707,9 @@ export default function RedemptionsPage() {
                     ? (dialogIsVoucher ? 'Resend voucher email?' : 'Resend pass email?')
                     : shareDialog.mode === 'whatsapp'
                       ? (dialogIsVoucher ? 'Resend voucher on WhatsApp?' : 'Resend pass on WhatsApp?')
-                      : 'Create a new share link?'}
+                      : shareDialog.mode === 'both'
+                        ? (dialogIsVoucher ? 'Resend voucher on email + WhatsApp?' : 'Resend pass on email + WhatsApp?')
+                        : 'Create a new share link?'}
                 </DialogTitle>
                 <DialogDescription>
                   This mints a fresh QR/link for{' '}
@@ -714,7 +730,8 @@ export default function RedemptionsPage() {
                     ? 'Working…'
                     : shareDialog.mode === 'email' ? 'Resend email'
                       : shareDialog.mode === 'whatsapp' ? 'Resend on WhatsApp'
-                        : 'Create new link'}
+                        : shareDialog.mode === 'both' ? 'Resend on both'
+                          : 'Create new link'}
                 </Button>
               </DialogFooter>
             </>
