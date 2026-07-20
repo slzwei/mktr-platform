@@ -51,14 +51,22 @@ function qrRecorder() {
   };
 }
 
+/** DI fake for the Editorial card compositor — records payloads, returns a fake PNG. */
+function cardRecorder() {
+  const calls = [];
+  const fn = async (payload) => { calls.push(payload); return Buffer.from('fake-card-png'); };
+  fn.calls = calls;
+  return fn;
+}
+
 function enableWithCreds() {
   process.env.REDEEM_OPS_WHATSAPP_ENABLED = 'true';
   process.env.WHATSAPP_TOKEN = 'tok-123';
   process.env.WHATSAPP_PHONE_NUMBER_ID = '555000111';
 }
 
-function makeSvc({ fetch, qr = qrRecorder(), RewardOffer = offerFake } = {}) {
-  return makeWhatsappService({ RewardOffer, fetch, QRCode: qr, logger: silentLogger });
+function makeSvc({ fetch, qr = qrRecorder(), card = cardRecorder(), RewardOffer = offerFake } = {}) {
+  return makeWhatsappService({ RewardOffer, fetch, QRCode: qr, renderQrCard: card, logger: silentLogger });
 }
 
 describe('waRecipient — Graph API recipient normalization', () => {
@@ -120,14 +128,23 @@ describe('gates fire before any network call', () => {
 });
 
 describe('QR-header send sequence (default: header ON)', () => {
-  it('reservation: uploads the QR PNG then sends header+body; QR encodes the claim link', async () => {
+  it('reservation: renders the pass card, uploads it, then sends header+body; QR encodes the claim link', async () => {
     enableWithCreds();
     const fetch = fetchRecorder();
     const qr = qrRecorder();
-    const svc = makeSvc({ fetch, qr });
+    const card = cardRecorder();
+    const svc = makeSvc({ fetch, qr, card });
     const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'ptok-raw' });
     expect(r).toEqual({ sent: true, to: '••••4567' });
-    expect(qr.contents).toEqual(['https://redeem.sg/r/ptok-raw']);
+    expect(card.calls.length).toBe(1);
+    expect(card.calls[0]).toMatchObject({
+      state: 'pass',
+      qrContent: 'https://redeem.sg/r/ptok-raw',
+      rewardName: 'S$10 FairPrice voucher',
+      customerFirstName: 'Sarah',
+      wordmark: 'Redeem.',
+    });
+    expect(qr.contents).toEqual([]); // card render succeeded → no bare-QR fallback
     expect(fetch.calls.length).toBe(2);
 
     const upload = fetch.calls[0];
@@ -158,11 +175,15 @@ describe('QR-header send sequence (default: header ON)', () => {
     enableWithCreds();
     process.env.WHATSAPP_TEMPLATE_VOUCHER = 'reward_voucher_v2';
     const fetch = fetchRecorder();
-    const qr = qrRecorder();
-    const svc = makeSvc({ fetch, qr });
+    const card = cardRecorder();
+    const svc = makeSvc({ fetch, card });
     const r = await svc.sendVoucherWhatsApp({ entitlement, prospect: consented, voucherToken: 'vtok-raw' });
     expect(r.sent).toBe(true);
-    expect(qr.contents).toEqual(['vtok-raw']);
+    expect(card.calls[0]).toMatchObject({
+      state: 'voucher',
+      qrContent: 'vtok-raw',
+      shortCode: '-RAW', // no tokenHint on the fake entitlement → last-4 fallback
+    });
     const send = fetch.calls[1];
     expect(send.body.template.name).toBe('reward_voucher_v2');
     const params = send.body.template.components[1].parameters.map((p) => p.text);
@@ -171,13 +192,25 @@ describe('QR-header send sequence (default: header ON)', () => {
     expect(params[3]).toBe('17 Aug 2026');
   });
 
-  it('WHATSAPP_CLAIM_ORIGIN overrides the pass-QR host', async () => {
+  it('WHATSAPP_CLAIM_ORIGIN overrides the pass-QR host (and the card wordmark follows)', async () => {
     enableWithCreds();
     process.env.WHATSAPP_CLAIM_ORIGIN = 'https://mktr.sg';
-    const qr = qrRecorder();
-    const svc = makeSvc({ fetch: fetchRecorder(), qr });
+    const card = cardRecorder();
+    const svc = makeSvc({ fetch: fetchRecorder(), card });
     await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'p' });
-    expect(qr.contents).toEqual(['https://mktr.sg/r/p']);
+    expect(card.calls[0]).toMatchObject({ qrContent: 'https://mktr.sg/r/p', wordmark: 'MKTR.' });
+  });
+
+  it('card renderer failure falls back to the bare QR PNG and still sends', async () => {
+    enableWithCreds();
+    const fetch = fetchRecorder();
+    const qr = qrRecorder();
+    const card = async () => { throw new Error('resvg exploded'); };
+    const svc = makeSvc({ fetch, qr, card });
+    const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'ptok-raw' });
+    expect(r).toEqual({ sent: true, to: '••••4567' });
+    expect(qr.contents).toEqual(['https://redeem.sg/r/ptok-raw']); // bare QR took over
+    expect(fetch.calls.length).toBe(2); // upload + send still happened
   });
 
   it('media upload failure → sent:false, message send never attempted (no body-only fallback)', async () => {
@@ -197,10 +230,12 @@ describe('WHATSAPP_QR_HEADER=false — body-only template shape', () => {
     process.env.WHATSAPP_QR_HEADER = 'false';
     const fetch = fetchRecorder([sendOk]);
     const qr = qrRecorder();
-    const svc = makeSvc({ fetch, qr });
+    const card = cardRecorder();
+    const svc = makeSvc({ fetch, qr, card });
     const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'p' });
     expect(r.sent).toBe(true);
     expect(qr.contents.length).toBe(0);
+    expect(card.calls.length).toBe(0);
     expect(fetch.calls.length).toBe(1);
     expect(fetch.calls[0].url).toContain('/messages');
     expect(fetch.calls[0].body.template.components.length).toBe(1);
