@@ -4,11 +4,11 @@ import { apiClient } from '@/api/client';
 import FieldRenderer from '@/components/campaigns/signup/FieldRenderer';
 import OTPVerification from '@/components/campaigns/signup/OTPVerification';
 import DncConsentGate from '@/components/campaigns/signup/DncConsentGate';
-import MarketingConsentDialog from '@/components/legal/MarketingConsentDialog';
+import ConsentAgreementDialog from '@/components/campaigns/signup/ConsentAgreementDialog';
 import { useCampaignTheme } from '@/components/campaignPage/themeContext';
 import { heroFontStack } from '@/lib/heroFonts';
 import {
-  CONSENT_COPY, CONSENT_COPY_VERSION, CONSENT_BLOCK_HELPER,
+  CONSENT_INLINE, CONSENT_COPY_VERSION, CONSENT_BLOCK_HELPER,
   isSponsoredCampaign, sponsorNameLine,
 } from '@/lib/consentCopy';
 import { formatDateInput, getAgeValidationError, getAgeRestrictionHint, displayPhone } from '@/components/campaigns/signup/dateUtils';
@@ -908,83 +908,47 @@ export default function CampaignSignupForm({
           </div>
         )}
 
-        {/* Mandatory agree-all consent block (wording era CONSENT_COPY_VERSION;
-            strings live in src/lib/consentCopy.js — never inline-edit copy here).
+        {/* Agree-all consent — layered presentation: ONE summary sentence
+            inline (chrome, not hashed) + the full clause list and campaign
+            T&Cs in ConsentAgreementDialog. The evidence strings are unchanged
+            (CONSENT_COPY.clause*, rendered in the dialog); sponsored campaigns
+            keep the named-sponsor line ON the page ("named on this page").
             The DNC gate above is a separate consent and stays independent. */}
         <div style={{ marginTop: 8, marginBottom: 24 }}>
-          <div
-            style={{
-              fontFamily: 'Albert Sans, system-ui, sans-serif',
-              fontWeight: 600,
-              fontSize: 14,
-              color: TOKENS.body,
-              marginBottom: 4,
-            }}
-          >
-            {CONSENT_COPY.heading}
-          </div>
           <p
             style={{
-              margin: '0 0 8px',
+              margin: '0 0 10px',
               fontFamily: 'Albert Sans, system-ui, sans-serif',
               fontSize: 13.5,
               lineHeight: 1.55,
               color: TOKENS.body,
             }}
           >
-            {CONSENT_COPY.intro}
+            {sponsoredClause ? CONSENT_INLINE.summarySponsored : CONSENT_INLINE.summaryBase}
+            <button
+              type="button"
+              onClick={() => setConsentOpen(true)}
+              style={{
+                color: TOKENS.body,
+                fontWeight: 600,
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                textUnderlineOffset: 3,
+                fontSize: 'inherit',
+                fontFamily: 'inherit',
+              }}
+            >
+              {CONSENT_INLINE.summaryLinkText}
+            </button>
+            {CONSENT_INLINE.summarySuffix}
           </p>
-          <ul
-            style={{
-              margin: '0 0 12px',
-              paddingLeft: 20,
-              display: 'grid',
-              gap: 6,
-              fontFamily: 'Albert Sans, system-ui, sans-serif',
-              fontSize: 13.5,
-              lineHeight: 1.55,
-              color: TOKENS.body,
-            }}
-          >
-            <li>
-              <strong style={{ color: TOKENS.ink }}>{CONSENT_COPY.clauseContactHeadline}</strong>{' '}
-              {CONSENT_COPY.clauseContactBody}
-            </li>
-            <li>
-              <strong style={{ color: TOKENS.ink }}>{CONSENT_COPY.clauseTermsHeadline}</strong>{' '}
-              {CONSENT_COPY.clauseTermsPrefix}
-              <button
-                type="button"
-                onClick={() => setConsentOpen(true)}
-                style={{
-                  color: TOKENS.body,
-                  fontWeight: 600,
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                  textDecoration: 'underline',
-                  textUnderlineOffset: 3,
-                  fontSize: 'inherit',
-                  fontFamily: 'inherit',
-                }}
-              >
-                {CONSENT_COPY.clauseTermsLinkText}
-              </button>
-              {CONSENT_COPY.clauseTermsSuffix}
-            </li>
-            {sponsoredClause && (
-              <li>
-                <strong style={{ color: TOKENS.ink }}>{CONSENT_COPY.clauseThirdPartyHeadline}</strong>{' '}
-                {CONSENT_COPY.clauseThirdPartyBody}
-              </li>
-            )}
-          </ul>
           {sponsoredClause && (
             <p
               style={{
-                margin: '0 0 12px',
-                paddingLeft: 20,
+                margin: '0 0 10px',
                 fontFamily: 'Albert Sans, system-ui, sans-serif',
                 fontSize: 12,
                 lineHeight: 1.5,
@@ -1001,7 +965,7 @@ export default function CampaignSignupForm({
             id="consent_all"
             required
           >
-            {CONSENT_COPY.checkboxLabel} <span style={{ color: TOKENS.required }}>*</span>
+            {CONSENT_INLINE.checkboxLabel} <span style={{ color: TOKENS.required }}>*</span>
           </ConsentCheckbox>
         </div>
 
@@ -1038,12 +1002,19 @@ export default function CampaignSignupForm({
       </form>
       </motion.div>
 
-      {/* Marketing consent modal */}
-      <MarketingConsentDialog
+      {/* The full agreement (clause list + campaign T&Cs). Its "I agree" is a
+          real consent gesture — the dialog shows the ENTIRE deal, so agreeing
+          there ticks the block's checkbox. */}
+      <ConsentAgreementDialog
         open={consentOpen}
         onOpenChange={setConsentOpen}
-        content={termsContent}
+        designConfig={campaign?.design_config}
+        termsContent={termsContent}
         themeColor={accent}
+        onAgree={() => {
+          setConsentAll(true);
+          setConsentOpen(false);
+        }}
       />
     </>
   );

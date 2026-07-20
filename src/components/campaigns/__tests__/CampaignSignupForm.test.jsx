@@ -8,7 +8,7 @@ vi.mock('@/api/client', () => ({
 
 import CampaignSignupForm from '@/components/campaigns/CampaignSignupForm';
 import { apiClient } from '@/api/client';
-import { CONSENT_COPY, CONSENT_COPY_VERSION } from '@/lib/consentCopy';
+import { CONSENT_COPY, CONSENT_INLINE, CONSENT_COPY_VERSION } from '@/lib/consentCopy';
 
 const baseCampaign = (designOverrides = {}) => ({
   id: 'camp-1',
@@ -436,41 +436,60 @@ describe('CampaignSignupForm — mandatory agree-all consent block', () => {
     await waitFor(() => expect(screen.getByText('Verified')).toBeInTheDocument(), { timeout: 2500 });
   };
 
-  it('renders every copy string from the consentCopy module (no inline drift)', () => {
+  it('layered inline residue: summary + link + checkbox, clause text only in the dialog', async () => {
+    const user = userEvent.setup();
     renderForm();
-    expect(screen.getByText(CONSENT_COPY.heading)).toBeInTheDocument();
+    // Inline: the base summary sentence, the dialog link, and the checkbox.
+    expect(screen.getByText(new RegExp(CONSENT_INLINE.summaryBase.slice(0, 40)))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: CONSENT_INLINE.summaryLinkText })).toBeInTheDocument();
+    expect(screen.getByText(CONSENT_INLINE.checkboxLabel)).toBeInTheDocument();
+    // Exactly ONE consent checkbox — the legacy trio is gone.
+    expect(document.getElementById('consent_all')).toBeTruthy();
+    expect(document.getElementById('consent_terms')).toBeNull();
+    expect(document.getElementById('consent_contact')).toBeNull();
+    expect(document.getElementById('consent_third_party')).toBeNull();
+    // The full agreement lives in the dialog ONLY.
+    expect(screen.queryByText(CONSENT_COPY.heading)).toBeNull();
+    expect(screen.queryByText(CONSENT_COPY.clauseContactHeadline)).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: CONSENT_INLINE.summaryLinkText }));
+    expect(await screen.findByText(CONSENT_COPY.heading)).toBeInTheDocument();
     expect(screen.getByText(CONSENT_COPY.intro)).toBeInTheDocument();
-    // Headline renders bold; the body text rides in the same <li>.
     const contactHeadline = screen.getByText(CONSENT_COPY.clauseContactHeadline);
     expect(contactHeadline.closest('li').textContent).toContain(CONSENT_COPY.clauseContactBody);
     expect(screen.getByText(CONSENT_COPY.clauseTermsHeadline)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: CONSENT_COPY.clauseTermsLinkText })).toBeInTheDocument();
     // No sponsor configured => the disclosure clause must NOT render (§9.5-1).
     expect(screen.queryByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeNull();
-    expect(screen.getByText(CONSENT_COPY.checkboxLabel)).toBeInTheDocument();
-    // Exactly ONE consent checkbox — the legacy trio is gone.
-    expect(document.getElementById('consent_all')).toBeTruthy();
-    expect(document.getElementById('consent_terms')).toBeNull();
-    expect(document.getElementById('consent_contact')).toBeNull();
-    expect(document.getElementById('consent_third_party')).toBeNull();
+    // Section 2 renders the brand-default T&C fallback when no termsContent.
+    expect(screen.getByText(CONSENT_INLINE.sectionTermsTitle)).toBeInTheDocument();
+    expect(screen.getByText(/Non-Superseding Consent/)).toBeInTheDocument();
   });
 
-  it('a NAMED sponsor renders the disclosure clause AND the mandatory named line', () => {
+  it('a NAMED sponsor: sponsored summary + named line INLINE (no dialog needed), clause in the dialog', async () => {
+    const user = userEvent.setup();
     renderForm({ design: { sponsor: { name: 'Acme FA' } } });
-    expect(screen.getByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeInTheDocument();
+    // "(named on this page)" stays literally true without opening the dialog.
+    expect(screen.getByText(new RegExp('sharing your details with this campaign'))).toBeInTheDocument();
     expect(screen.getByText('Sponsored by Acme FA.')).toBeInTheDocument();
+    expect(screen.queryByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: CONSENT_INLINE.summaryLinkText }));
+    expect(await screen.findByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeInTheDocument();
+    // The named line renders in the dialog too (adjacent to the clause).
+    expect(screen.getAllByText('Sponsored by Acme FA.').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('a name-less sponsor object falls back to the base block (§9.5-1 fail-closed)', () => {
+  it('a name-less sponsor object falls back to the base summary (§9.5-1 fail-closed)', () => {
     renderForm({ design: { sponsor: { disclosure: 'Sponsored by someone' } } });
-    expect(screen.queryByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeNull();
+    expect(screen.queryByText(new RegExp('sharing your details with this campaign'))).toBeNull();
     expect(screen.queryByText('Sponsored by someone')).toBeNull();
   });
 
   it('thirdPartyDisclosure:false is a kill-switch even with a named sponsor', () => {
     renderForm({ design: { sponsor: { name: 'Acme FA' }, thirdPartyDisclosure: false } });
-    expect(screen.queryByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeNull();
-    expect(screen.getByText(CONSENT_COPY.clauseContactHeadline)).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp('sharing your details with this campaign'))).toBeNull();
+    expect(screen.getByText(new RegExp(CONSENT_INLINE.summaryBase.slice(0, 40)))).toBeInTheDocument();
   });
 
   it('live submit: disabled until agreed, then derived flags + the copy version (base)', async () => {
@@ -512,16 +531,20 @@ describe('CampaignSignupForm — mandatory agree-all consent block', () => {
     });
   });
 
-  it('the T&C dialog is READ-ONLY: no "I agree" button, and reading it never ticks the block', async () => {
+  it('dialog "I agree" IS a consent gesture: ticks the block and closes; Cancel does not', async () => {
+    // Supersedes the old read-only-dialog rule (copy pack §5 #16): that rule
+    // existed because the T&C dialog covered only PART of the deal. This
+    // dialog holds the ENTIRE agreement, so agreeing there ticks the block.
     const user = userEvent.setup();
     renderForm();
-    await user.click(screen.getByRole('button', { name: CONSENT_COPY.clauseTermsLinkText }));
-    // The dialog covers only the T&Cs; the block covers more — so the only
-    // consent gesture is the block's own tick (copy pack §5 #16).
-    expect(await screen.findByRole('button', { name: 'Cancel' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /I agree/i })).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getByRole('button', { name: CONSENT_INLINE.summaryLinkText }));
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }));
     expect(document.getElementById('consent_all').checked).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: CONSENT_INLINE.summaryLinkText }));
+    await user.click(await screen.findByRole('button', { name: CONSENT_INLINE.dialogAgreeCta }));
+    expect(document.getElementById('consent_all').checked).toBe(true);
+    await waitFor(() => expect(screen.queryByText(CONSENT_COPY.heading)).toBeNull());
   });
 });
 
