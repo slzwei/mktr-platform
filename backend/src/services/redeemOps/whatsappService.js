@@ -1,6 +1,7 @@
 import QRCode from 'qrcode';
-import { RewardOffer } from '../../models/index.js';
+import { RewardOffer, PartnerOrganisation } from '../../models/index.js';
 import { logger } from '../../utils/logger.js';
+import { renderQrCardPng } from './qrCardRenderer.js';
 import { isSendBlocked } from '../consentService.js';
 
 /**
@@ -100,17 +101,33 @@ function cleanParam(value, fallback) {
   return s;
 }
 
-export function makeWhatsappService(overrides = {}) {
-  const d = { RewardOffer, logger, QRCode, fetch: (...args) => fetch(...args), ...overrides };
+/** Wordmark on the QR card follows the claim origin (mktr.sg override vs redeem.sg default). */
+function cardWordmark() {
+  try {
+    const host = new URL(claimOrigin()).hostname.toLowerCase();
+    if (host === 'mktr.sg' || host.endsWith('.mktr.sg')) return 'MKTR.';
+  } catch { /* unparseable origin → default brand */ }
+  return 'Redeem.';
+}
 
-  async function rewardNameOf(entitlement) {
+export function makeWhatsappService(overrides = {}) {
+  const d = {
+    RewardOffer, logger, QRCode, renderQrCard: renderQrCardPng,
+    fetch: (...args) => fetch(...args), ...overrides,
+  };
+
+  async function offerContextOf(entitlement) {
     try {
       const offer = await d.RewardOffer.findByPk(entitlement.rewardOfferId, {
         attributes: ['id', 'title', 'publicTitle'],
+        include: [{ model: PartnerOrganisation, as: 'partner', attributes: ['tradingName', 'brandName', 'legalName'] }],
       });
-      return offer?.publicTitle || offer?.title || 'your reward';
+      return {
+        rewardName: offer?.publicTitle || offer?.title || 'your reward',
+        partnerName: offer?.partner?.tradingName || offer?.partner?.brandName || offer?.partner?.legalName || null,
+      };
     } catch {
-      return 'your reward';
+      return { rewardName: 'your reward', partnerName: null };
     }
   }
 
@@ -144,7 +161,7 @@ export function makeWhatsappService(overrides = {}) {
   }
 
   /** One template send. Resolves normalized result, never throws. */
-  async function sendTemplate({ prospect, templateName, params, qrContent }) {
+  async function sendTemplate({ prospect, templateName, params, qrContent, card }) {
     if (!waEnabled()) return { sent: false, skipped: 'disabled' };
     if (!canWhatsAppProspect(prospect)) return { sent: false, skipped: 'no_whatsapp' };
     // PR B suppression gate: these sends are TRANSACTIONAL (delivering the
@@ -169,7 +186,19 @@ export function makeWhatsappService(overrides = {}) {
         { type: 'body', parameters: params.map((text) => ({ type: 'text', text })) },
       ];
       if (qrHeaderEnabled() && qrContent) {
-        const png = await d.QRCode.toBuffer(qrContent, { width: 512, margin: 2 });
+        // Editorial voucher card (branded frame around the QR); any renderer
+        // failure degrades to the plain QR — the credential always ships.
+        let png = null;
+        try {
+          png = await d.renderQrCard({
+            ...card, qrContent,
+            customerFirstName: prospect?.firstName,
+            wordmark: cardWordmark(),
+          });
+        } catch (err) {
+          d.logger.warn('redeem_ops.whatsapp.qr_card_fallback', { template: templateName, error: err?.message });
+        }
+        if (!png) png = await d.QRCode.toBuffer(qrContent, { width: 512, margin: 2 });
         const mediaId = await uploadQrPng(phoneId, token, png);
         components.unshift({
           type: 'header',
@@ -209,11 +238,12 @@ export function makeWhatsappService(overrides = {}) {
 
   /** Reservation pass at capture (agent_unlock policy). QR = the claim link. */
   async function sendReservationWhatsApp({ entitlement, prospect, presentationToken }) {
-    const rewardName = await rewardNameOf(entitlement);
+    const { rewardName, partnerName } = await offerContextOf(entitlement);
     return sendTemplate({
       prospect,
       templateName: process.env.WHATSAPP_TEMPLATE_PASS || 'reward_pass',
       qrContent: `${claimOrigin()}/r/${presentationToken}`,
+      card: { state: 'pass', rewardName, partnerName, expiresAt: entitlement.expiresAt },
       params: [
         cleanParam(prospect?.firstName, 'there'),
         cleanParam(rewardName, 'your reward'),
@@ -224,7 +254,7 @@ export function makeWhatsappService(overrides = {}) {
 
   /** Voucher at unlock. QR = the raw voucher token (merchant-scan parity with the email). */
   async function sendVoucherWhatsApp({ entitlement, prospect, voucherToken }) {
-    const rewardName = await rewardNameOf(entitlement);
+    const { rewardName, partnerName } = await offerContextOf(entitlement);
     const expiry = entitlement.expiresAt
       ? new Date(entitlement.expiresAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })
       : 'further notice';
@@ -232,6 +262,10 @@ export function makeWhatsappService(overrides = {}) {
       prospect,
       templateName: process.env.WHATSAPP_TEMPLATE_VOUCHER || 'reward_voucher',
       qrContent: voucherToken,
+      card: {
+        state: 'voucher', rewardName, partnerName, expiresAt: entitlement.expiresAt,
+        shortCode: entitlement.tokenHint || voucherToken.slice(-4).toUpperCase(),
+      },
       params: [
         cleanParam(prospect?.firstName, 'there'),
         cleanParam(rewardName, 'your reward'),

@@ -4,6 +4,7 @@ import { sendEmail } from '../mailer.js';
 import { logger } from '../../utils/logger.js';
 import { maskEmail } from '../../utils/redactTokens.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../../utils/customerHost.js';
+import { renderQrCardPng } from './qrCardRenderer.js';
 
 /**
  * Consumer voucher delivery on unlock (docs/redeem-ops/MKTR_INTEGRATION.md §2).
@@ -28,7 +29,32 @@ export function canEmailProspect(prospect) {
 }
 
 export function makeFulfilmentNotify(overrides = {}) {
-  const d = { RewardOffer, PartnerOrganisation, Campaign, Activation, sendEmail, logger, QRCode, ...overrides };
+  const d = {
+    RewardOffer, PartnerOrganisation, Campaign, Activation, sendEmail, logger, QRCode,
+    renderQrCard: renderQrCardPng, ...overrides,
+  };
+
+  /**
+   * Editorial voucher-card PNG for the email's inline QR; a renderer failure
+   * degrades to the plain QR so delivery itself never rides on the compositor.
+   */
+  async function cardOrBareQr({ state, qrContent, entitlement, prospect, rewardName, partnerName, shortCode, hostChoice }) {
+    try {
+      return await d.renderQrCard({
+        state,
+        qrContent,
+        rewardName,
+        partnerName,
+        customerFirstName: prospect?.firstName,
+        shortCode,
+        expiresAt: entitlement.expiresAt,
+        wordmark: hostChoice === 'mktr' ? 'MKTR.' : 'Redeem.',
+      });
+    } catch (err) {
+      d.logger.warn('redeem_ops.fulfilment.qr_card_fallback', { entitlementId: entitlement.id, error: err?.message });
+      return d.QRCode.toBuffer(qrContent, { width: 320, margin: 1 });
+    }
+  }
 
   async function claimOrigin(activation) {
     // Brand the link by the linked campaign's customer host (redeem default)
@@ -77,14 +103,16 @@ export function makeFulfilmentNotify(overrides = {}) {
     const { activation, rewardName, partnerName } = await loadOfferContext(entitlement);
     const { link, hostChoice } = await buildClaimUrl(activation, presentationToken);
 
-    const qrPng = await d.QRCode.toBuffer(link, { width: 320, margin: 1 });
+    const qrPng = await cardOrBareQr({
+      state: 'pass', qrContent: link, entitlement, prospect, rewardName, partnerName, hostChoice,
+    });
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
         <h2 style="margin:0 0 8px">Your ${escapeHtml(rewardName)} is reserved 🎁</h2>
         <p>Hi ${escapeHtml(prospect.firstName || 'there')},</p>
         <p><strong>${escapeHtml(rewardName)}</strong> from <strong>${escapeHtml(partnerName)}</strong> is reserved for you.
         It unlocks after your complimentary financial review — show this pass to your consultant at the meeting.</p>
-        <p style="text-align:center;margin:20px 0"><img src="cid:reservation-qr" width="220" height="220" alt="Reservation pass QR"/></p>
+        <p style="text-align:center;margin:20px 0"><img src="cid:reservation-qr" width="320" height="320" style="max-width:100%" alt="Reservation pass QR"/></p>
         <p style="text-align:center"><a href="${link}" style="color:#2563eb">View your reservation</a></p>
         <p style="color:#6b7280;font-size:12px">This pass is not a voucher yet — it can only be scanned by your consultant.
         Expires ${entitlement.expiresAt ? new Date(entitlement.expiresAt).toLocaleDateString('en-SG') : 'soon'}.</p>
@@ -106,14 +134,16 @@ export function makeFulfilmentNotify(overrides = {}) {
     const { link, origin, hostChoice } = await buildClaimUrl(activation, voucherToken);
     const shortCode = entitlement.tokenHint || voucherToken.slice(-4).toUpperCase();
 
-    const qrPng = await d.QRCode.toBuffer(voucherToken, { width: 320, margin: 1 });
+    const qrPng = await cardOrBareQr({
+      state: 'voucher', qrContent: voucherToken, entitlement, prospect, rewardName, partnerName, shortCode, hostChoice,
+    });
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
         <h2 style="margin:0 0 8px">Your ${escapeHtml(rewardName)} is unlocked 🎉</h2>
         <p>Hi ${escapeHtml(prospect.firstName || 'there')},</p>
         <p>Show this voucher at <strong>${escapeHtml(partnerName)}</strong> to redeem
         your <strong>${escapeHtml(rewardName)}</strong>.</p>
-        <p style="text-align:center;margin:20px 0"><img src="cid:voucher-qr" width="220" height="220" alt="Voucher QR"/></p>
+        <p style="text-align:center;margin:20px 0"><img src="cid:voucher-qr" width="320" height="320" style="max-width:100%" alt="Voucher QR"/></p>
         <p style="text-align:center;font-size:18px">or quote code <strong>${escapeHtml(shortCode)}</strong></p>
         <p style="text-align:center"><a href="${link}" style="color:#2563eb">View your voucher</a></p>
         <p style="color:#6b7280;font-size:12px">One-time use.
