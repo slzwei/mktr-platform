@@ -74,6 +74,24 @@ export function extractExternalConsent(prospectOrMeta) {
 export const THIRD_PARTY_CONSENT_VERSION = '2026-06-26';
 
 /**
+ * AGREE-ALL era (mandatory single-block consent, CampaignSignupForm since
+ * 2026-07-21): the third-party clause is part of the one required agreement,
+ * shown only when the campaign's `thirdPartyDisclosure` toggle is on. The copy
+ * MUST stay BYTE-IDENTICAL to CONSENT_COPY.clauseThirdParty in
+ * src/lib/consentCopy.js — enforced by
+ * src/lib/__tests__/consentCopy.lockstep.test.js.
+ */
+export const AGREE_ALL_THIRD_PARTY_VERSION = '2026-07-21';
+export const AGREE_ALL_THIRD_PARTY_COPY =
+  'This campaign is sponsored: my contact details will be shared with a partner licensed financial-advisory representative — who may be from a third-party agency — who may contact me about relevant financial products and services.';
+
+/** Version labels buildExternalConsentEvidence may stamp (unknown => default). */
+const KNOWN_THIRD_PARTY_VERSIONS = Object.freeze([
+  THIRD_PARTY_CONSENT_VERSION,
+  AGREE_ALL_THIRD_PARTY_VERSION,
+]);
+
+/**
  * Contact channels the third-party-disclosure consent covers. Recorded on every
  * captured consent so a downstream buyer-agent knows how the person agreed to be
  * reached. Keep in sync with what the privacy policy / consent copy actually says.
@@ -90,12 +108,18 @@ export const THIRD_PARTY_CONSENT_CHANNELS = Object.freeze(['phone', 'whatsapp', 
  * satisfy hasValidExternalConsent().
  *
  * @param {boolean} consented - the consent_third_party flag from the form.
- * @param {{ sourceUrl?: string, at?: string }} [opts] - sourceUrl: capture-page URL
- *   (audit breadcrumb); at: ISO timestamp (missing/unparseable falls back to now).
+ * @param {{ sourceUrl?: string, at?: string, version?: string }} [opts] - sourceUrl:
+ *   capture-page URL (audit breadcrumb); at: ISO timestamp (missing/unparseable
+ *   falls back to now); version: wording-era label from the payload's
+ *   consent_copy_version — stamped only when it's a KNOWN era, else the default.
  * @returns {{version:string,consentedAt:string,channels:string[],sourceUrl?:string}|null}
  */
 export function buildExternalConsentEvidence(consented, opts = {}) {
   if (consented !== true) return null;
+
+  const version = KNOWN_THIRD_PARTY_VERSIONS.includes(opts.version)
+    ? opts.version
+    : THIRD_PARTY_CONSENT_VERSION;
 
   // Use a caller-supplied timestamp only if it actually parses; otherwise fall back to
   // now — so the returned evidence is ALWAYS valid per hasValidExternalConsent().
@@ -107,7 +131,7 @@ export function buildExternalConsentEvidence(consented, opts = {}) {
       : undefined;
 
   return {
-    version: THIRD_PARTY_CONSENT_VERSION,
+    version,
     consentedAt,
     channels: [...THIRD_PARTY_CONSENT_CHANNELS],
     ...(sourceUrl ? { sourceUrl } : {}),

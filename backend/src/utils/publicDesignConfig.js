@@ -25,8 +25,9 @@ const PUBLIC_PASSTHROUGH_KEYS = [
   'brandWordmark', 'brandFooter', 'regulatoryFooter', 'termsContent', 'customerHost',
   // Form contract (flat production keys; fieldOrder is string[] OR row objects)
   'fieldOrder', 'visibleFields', 'requiredFields',
-  // Flow gates + channel
-  'sgPrOnly', 'excludeAdvisors', 'dncCheckAtSubmit', 'otpChannel',
+  // Flow gates + channel (thirdPartyDisclosure: agree-all consent block's
+  // sponsored-campaign clause toggle — default ON, so only `false` matters)
+  'sgPrOnly', 'excludeAdvisors', 'dncCheckAtSubmit', 'otpChannel', 'thirdPartyDisclosure',
   // Funnel variants (public quiz/guided-review campaigns render from these)
   'quiz', 'guidedReview',
   // Marketplace content (clamped on save by normalizeMarketplaceContent)
@@ -119,6 +120,9 @@ function buildPublicDesignConfigV2(dc) {
 
   if (dc.quiz !== undefined) out.quiz = dc.quiz;
   if (dc.guidedReview !== undefined) out.guidedReview = dc.guidedReview;
+  // Agree-all consent block: sponsored-campaign disclosure toggle (top-level in
+  // v1 AND v2 by design — the clamps pass unknown top-level keys through).
+  if (dc.thirdPartyDisclosure !== undefined) out.thirdPartyDisclosure = dc.thirdPartyDisclosure;
 
   const distribution = { host: dc.distribution?.host === 'mktr' ? 'mktr' : 'redeem' };
   const marketplace = pick(dc.distribution?.marketplace, V2_PUBLIC_MARKETPLACE_KEYS);

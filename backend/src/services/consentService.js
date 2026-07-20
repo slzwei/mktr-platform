@@ -6,7 +6,8 @@ import {
 import { logger } from '../utils/logger.js';
 import { phoneVerificationIsCurrent, E164_RE } from './consumerService.js';
 import {
-  CONTACT_CONSENT_VERSION, CONTACT_CONSENT_COPY_HASH, CONTACT_CONSENT_CHANNELS,
+  CONTACT_CONSENT_VERSION, CONTACT_CONSENT_CHANNELS,
+  CONTACT_CONSENT_VERSIONS, isKnownConsentCopyVersion,
 } from './contactConsent.js';
 
 /**
@@ -62,6 +63,7 @@ export function makeConsentService(overrides = {}) {
   async function recordCaptureConsentEventsTx(outerTx, {
     consumerId, prospectId, campaignId = null, sourceUrl = null, verified = false,
     contact,            // boolean | undefined — record BOTH true and explicit false
+    copyVersion,        // contact wording-era label from the payload | undefined => legacy
     terms,              // boolean | undefined — the required campaign T&C tick
     externalConsent,    // consentMetadata.external evidence | null
     dncConsent,         // consentMetadata.dnc evidence | null
@@ -77,10 +79,16 @@ export function makeConsentService(overrides = {}) {
       };
       const rows = [];
       if (contact !== undefined) {
+        // Wording era: the payload's consent_copy_version when it's a known
+        // registry label (agree-all block), else the legacy default — so an
+        // unknown/absent version can never mint mislabeled evidence.
+        const version = isKnownConsentCopyVersion(copyVersion)
+          ? copyVersion : CONTACT_CONSENT_VERSION;
+        const era = CONTACT_CONSENT_VERSIONS[version];
         rows.push({
           ...base, id: randomUUID(), kind: 'contact', granted: contact === true,
-          channels: [...CONTACT_CONSENT_CHANNELS], version: CONTACT_CONSENT_VERSION,
-          metadata: { copyHash: CONTACT_CONSENT_COPY_HASH },
+          channels: [...era.channels], version,
+          metadata: { copyHash: era.copyHash, scope: era.scope },
         });
       }
       if (terms !== undefined) {

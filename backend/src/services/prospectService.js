@@ -219,6 +219,10 @@ export function makeProspectService(overrides = {}) {
     // from the server-side check, never the client). Recorded as consentMetadata.dnc, never
     // a CAPI signal.
     const consentDnc = safeBody.consent_dnc;
+    // Wording-era label from the form ('2026-07-21' agree-all block; absent =
+    // legacy three-checkbox copy). Joi-whitelisted enum; the ledger + external
+    // evidence builders map it to pinned copy/hash (contactConsent.js registry).
+    const consentCopyVersion = safeBody.consent_copy_version;
 
     // Quiz funnel submission (re-scored server-side after the campaign loads),
     // ad attribution (UTM) and referral identity (the sharer's prospect UUID from
@@ -239,6 +243,7 @@ export function makeProspectService(overrides = {}) {
       eventId: _e, fbp: _p, fbc: _c, eventSourceUrl: _u,
       registrationEventId: _re, ttclid: _tc, ttp: _tp,
       consent_contact: _cc, consent_terms: _ct, consent_third_party: _ctp, consent_dnc: _cd,
+      consent_copy_version: _ccv,
       // consentMetadata is SERVER-authoritative — the third-party-consent evidence is
       // built below from consent_third_party. Drop any client-supplied value so external
       // consent can never be forged via the body (defence-in-depth beyond route stripUnknown).
@@ -272,6 +277,7 @@ export function makeProspectService(overrides = {}) {
       ...(ttp ? { ttp } : {}),
       ...(consentContact !== undefined ? { consent_contact: consentContact } : {}),
       ...(consentTerms !== undefined ? { consent_terms: consentTerms } : {}),
+      ...(consentCopyVersion !== undefined ? { consent_copy_version: consentCopyVersion } : {}),
       ...(Object.keys(utm).length > 0 ? { utm } : {}),
     };
     if (Object.keys(capiSourceMetadata).length > 0) {
@@ -288,6 +294,9 @@ export function makeProspectService(overrides = {}) {
     // below (hasValidExternalConsent). Unticked => null => nothing written => never external.
     const externalConsent = d.buildExternalConsentEvidence(consentThirdParty, {
       sourceUrl: eventSourceUrl,
+      // Agree-all submissions pin the disclosure clause's wording era; the
+      // builder whitelists internally, so a legacy/absent label keeps the default.
+      version: consentCopyVersion,
     });
     if (externalConsent) {
       incoming.consentMetadata = { ...(incoming.consentMetadata || {}), external: externalConsent };
@@ -908,6 +917,7 @@ export function makeProspectService(overrides = {}) {
         sourceUrl: eventSourceUrl || null,
         verified: otpMarkerLive,
         contact: consentContact,
+        copyVersion: consentCopyVersion,
         terms: consentTerms,
         externalConsent,
         dncConsent,

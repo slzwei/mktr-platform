@@ -57,7 +57,8 @@ describe('buildPublicDesignConfig', () => {
       'heroCtaLabel', 'ctaText', 'formHeadline', 'formSubheadline', 'formWidth',
       'brandWordmark', 'brandFooter', 'regulatoryFooter', 'termsContent', 'customerHost',
       'fieldOrder', 'visibleFields', 'requiredFields',
-      'sgPrOnly', 'excludeAdvisors', 'dncCheckAtSubmit', 'otpChannel', 'quiz', 'guidedReview',
+      'sgPrOnly', 'excludeAdvisors', 'dncCheckAtSubmit', 'otpChannel', 'thirdPartyDisclosure',
+      'quiz', 'guidedReview',
     ];
     const raw = Object.fromEntries(keys.map((k) => [k, `v-${k}`]));
     const out = buildPublicDesignConfig(raw);
@@ -102,6 +103,7 @@ describe('buildPublicDesignConfig — v2 documents', () => {
       featuredDrop: { enabled: true, title: 'Drop', valueLabel: 'S$10', emoji: '🛒', cap: 100, endsAt: '2026-08-15' },
       marketplace: { listed: true, title: 'Voucher', category: 'dining', valueLine: 'S$10', internalCost: 3.5 },
     },
+    thirdPartyDisclosure: false,
     ai: { brief: { topic: 'secret internal brief' } },
     luckyDraw: {
       enabled: true, prize: 'Tokyo trip', closesAt: '2026-08-30', multiplier: 10,
@@ -138,6 +140,9 @@ describe('buildPublicDesignConfig — v2 documents', () => {
     expect(out.form.terms).toEqual({ template: 'default', html: '<p>T&C</p>' });
     expect(out.quiz).toEqual(v2Doc.quiz);
     expect(out.guidedReview).toEqual(v2Doc.guidedReview);
+    // Agree-all consent block: the OFF state must reach the public form
+    // (default is ON, so only an explicit false ever matters).
+    expect(out.thirdPartyDisclosure).toBe(false);
     expect(out.distribution.host).toBe('redeem');
     expect(out.customerHost).toBe('redeem');
     expect(out.distribution.marketplace).toMatchObject({ title: 'Voucher', category: 'dining', valueLine: 'S$10' });
