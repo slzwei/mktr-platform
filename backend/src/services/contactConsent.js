@@ -24,18 +24,21 @@ import { createHash } from 'crypto';
  *    src/lib/__tests__/consentCopy.lockstep.test.js.
  *
  * SCOPE: the agree-all wording grants contact + marketing about "other
- * Redeem offers, rewards and lucky draws" (brand-wide), but ledger events
- * remain CAMPAIGN-scoped — minting campaignId:null GLOBAL grants from this
- * copy is the separate "globalev" deliverable (see consentService rules).
- * `scope` is recorded in event metadata only.
+ * Redeem offers, rewards and lucky draws" (brand-wide), and since "globalev"
+ * a brand-scope era MINTS that grant explicitly: capture writes the
+ * campaign-scoped contact row PLUS a campaignId:null GLOBAL twin (see
+ * consentService.recordCaptureConsentEventsTx; backfillGlobalGrants heals
+ * the pre-globalev window). `scope` in event metadata mirrors the era —
+ * 'brand' eras are the only ones that ever mint global grants.
  */
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
 
 /**
  * LEGACY contact-consent wording version — the default for captures that send
- * no `consent_copy_version` (MarketplaceFlow, pre-rework cached bundles) and
- * the label `applyUnsubscribe` stamps on global revokes.
+ * no `consent_copy_version` (pre-rework cached bundles; both funnels send the
+ * agree-all label since #213/#214) and the label `applyUnsubscribe` stamps on
+ * global revokes.
  */
 export const CONTACT_CONSENT_VERSION = '2026-07-20';
 
