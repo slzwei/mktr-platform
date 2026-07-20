@@ -23,7 +23,7 @@ vi.mock('@/components/campaigns/CampaignSignupForm', () => ({
  <div data-testid="signup-form">
  <div>{formHeadline}</div>
  <div>{formSubheadline}</div>
- <button onClick={() => onSubmit({ name: 'Test User', email: 'test@test.com', phone: '6591234567', consent_contact: true, consent_terms: true, consent_third_party: true, consent_copy_version: '2026-07-21' })}>
+ <button onClick={() => onSubmit({ name: 'Test User', email: 'test@test.com', phone: '6591234567', consent_contact: true, consent_terms: true, consent_third_party: true, consent_copy_version: '2026-07-21-agree-all-v1' })}>
  Submit
  </button>
  {/* Mirrors the real form when the DNC gate was shown and consented: dataToSubmit
@@ -433,7 +433,7 @@ describe('LeadCapture', () => {
  await waitFor(() => {
  const call = apiClient.post.mock.calls.find((c) => c[0] === '/prospects');
  expect(call).toBeTruthy();
- expect(call[1].consent_copy_version).toBe('2026-07-21');
+ expect(call[1].consent_copy_version).toBe('2026-07-21-agree-all-v1');
  expect(call[1].consent_contact).toBe(true);
  expect(call[1].consent_terms).toBe(true);
  expect(call[1].consent_third_party).toBe(true);

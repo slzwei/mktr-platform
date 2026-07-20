@@ -219,7 +219,7 @@ export default function FormPanel({ doc, setPath, mut, whatsappOtpConfigured }) 
         <ToggleRow
           id="studio-third-party-disclosure"
           label="Third-party disclosure clause"
-          hint="Sponsored campaigns: the agree-all block includes sharing contact details with the partner advisory rep"
+          hint="Shows only when a NAMED sponsor is configured (this switch is the kill-switch); the agree-all block then includes sharing details with that named rep"
           checked={doc.thirdPartyDisclosure !== false}
           onChange={(v) => setPath('thirdPartyDisclosure', v)}
         />

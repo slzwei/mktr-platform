@@ -26,23 +26,27 @@ describe('agree-all consent copy — frontend/backend lock-step', () => {
     expect(CONSENT_COPY_VERSION).toBe(AGREE_ALL_THIRD_PARTY_VERSION);
   });
 
-  it('contact clause is BYTE-IDENTICAL to the ledger-pinned backend copy', () => {
-    expect(AGREE_ALL_CONTACT_COPY).toBe(CONSENT_COPY.clauseContact);
+  it('contact clause (headline + body) is BYTE-IDENTICAL to the ledger-pinned backend copy', () => {
+    const onScreen = `${CONSENT_COPY.clauseContactHeadline} ${CONSENT_COPY.clauseContactBody}`;
+    expect(AGREE_ALL_CONTACT_COPY).toBe(onScreen);
     const era = CONTACT_CONSENT_VERSIONS[AGREE_ALL_CONSENT_VERSION];
-    expect(era.copy).toBe(CONSENT_COPY.clauseContact);
-    expect(era.copyHash).toBe(sha256(CONSENT_COPY.clauseContact));
+    expect(era.copy).toBe(onScreen);
+    expect(era.copyHash).toBe(sha256(onScreen));
     expect(era.scope).toBe('brand');
+    // The copy says "(SMS or WhatsApp)" — the recorded channels must agree.
+    expect([...era.channels]).toEqual(['phone', 'text', 'whatsapp', 'email']);
   });
 
-  it('third-party clause is BYTE-IDENTICAL to the external-evidence backend copy', () => {
-    expect(AGREE_ALL_THIRD_PARTY_COPY).toBe(CONSENT_COPY.clauseThirdParty);
+  it('third-party clause (headline + body) is BYTE-IDENTICAL to the external-evidence backend copy', () => {
+    const onScreen = `${CONSENT_COPY.clauseThirdPartyHeadline} ${CONSENT_COPY.clauseThirdPartyBody}`;
+    expect(AGREE_ALL_THIRD_PARTY_COPY).toBe(onScreen);
   });
 
   it('terms clause reassembles into a complete sentence around the modal link', () => {
     const joined = CONSENT_COPY.clauseTermsPrefix
       + CONSENT_COPY.clauseTermsLinkText
       + CONSENT_COPY.clauseTermsSuffix;
-    expect(joined).toBe("I accept this campaign's terms and conditions.");
+    expect(joined).toBe("You agree to the campaign's terms & conditions.");
   });
 
   it('every user-visible string is frozen and non-empty', () => {
