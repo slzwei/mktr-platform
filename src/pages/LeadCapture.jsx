@@ -309,6 +309,9 @@ export default function LeadCapture() {
         consent_contact: formData.consent_contact,
         consent_terms: formData.consent_terms,
         consent_third_party: formData.consent_third_party,
+        // Wording-era label of the agree-all block the form displayed — the
+        // backend pins the exact consent copy/hash from it (contactConsent.js).
+        consent_copy_version: formData.consent_copy_version,
         // DNC-gate consent intent — CampaignSignupForm includes it ONLY when the
         // gate was shown (undefined otherwise → dropped by JSON.stringify). The
         // server builds the hold-release evidence from it (prospectService →

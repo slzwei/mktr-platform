@@ -550,6 +550,17 @@ export default function ContentPanel({ currentDesign, onDesignChange, campaignNa
               onCheckedChange={(checked) => onDesignChange('dncCheckAtSubmit', checked)}
             />
           </div>
+          <div className="flex items-center justify-between gap-3 py-1">
+            <div className="flex flex-col">
+              <span className="text-sm text-foreground">Third-party disclosure clause</span>
+              <span className="text-xs text-muted-foreground">Sponsored campaigns: the agree-all consent block includes sharing contact details with the partner advisory representative.</span>
+            </div>
+            <Switch
+              aria-label="Third-party disclosure clause"
+              checked={currentDesign.thirdPartyDisclosure !== false}
+              onCheckedChange={(checked) => onDesignChange('thirdPartyDisclosure', checked)}
+            />
+          </div>
         </div>
 
         {/* Terms & Conditions */}
