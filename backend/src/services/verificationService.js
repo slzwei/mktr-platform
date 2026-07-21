@@ -6,6 +6,12 @@ import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { markPhoneVerified } from './verifiedPhoneStore.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
+import {
+  reservePhoneOtpQuota,
+  releasePhoneOtpQuota,
+  reserveGlobalSmsQuota,
+  releaseGlobalSmsQuota,
+} from './smsQuota.js';
 
 // AWS SNS SMS config. The region + sender ID must match our SSIR-registered
 // identity in AWS, or Singapore telcos relabel the sender as "Likely-SCAM".
@@ -16,13 +22,29 @@ import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
 const SMS_REGION = process.env.AWS_REGION || 'ap-southeast-1';
 const SMS_SENDER_ID = process.env.AWS_SNS_SENDER_ID || 'MKTR';
 
+// Least-privilege SNS credentials (SSIR advisory: scope keys, drop unused ones).
+// Prefer a dedicated SNS-only IAM user; mirrors lyfe-app's custom-sms-hook, which
+// already uses the scoped `lyfe-sns-sms` user rather than the shared AWS_* pair
+// that also carries SES. Falls back to AWS_* so the split can be rolled out
+// without an outage — drop the fallback once Render carries SNS_AWS_*.
+//
+// All-or-nothing: a half-set pair would silently mix a new key id with an old
+// secret and fail every publish.
+const snsCredentials =
+  process.env.SNS_AWS_ACCESS_KEY_ID && process.env.SNS_AWS_SECRET_ACCESS_KEY
+    ? {
+        accessKeyId: process.env.SNS_AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.SNS_AWS_SECRET_ACCESS_KEY,
+      }
+    : {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      };
+
 // Initialize SNS Client
 const snsClient = new SNSClient({
   region: SMS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-  }
+  credentials: snsCredentials
 });
 
 // Meta WhatsApp Graph API config (version aligned with metaCapiService.js; all overridable via env)
@@ -90,6 +112,19 @@ const sendWhatsAppOtpMeta = async (phone, code) => {
 
 // Helper to send OTP via SMS (AWS SNS)
 const sendSmsOtp = async (fullPhone, code) => {
+  // Global daily ceiling — the last chokepoint before a message carrying our
+  // SSIR-registered "MKTR" sender ID leaves the building. Sits here rather than
+  // in sendVerificationCode so the WhatsApp→SMS fallback is counted too: that
+  // fallback is a real SMS and spends the same budget.
+  const budget = await reserveGlobalSmsQuota();
+  if (!budget.ok) {
+    logger.error(
+      { count: budget.count, cap: budget.cap },
+      'sms.global_ceiling_exceeded — refusing to publish',
+    );
+    throw new AppError('SMS is temporarily unavailable. Please try again later.', 429);
+  }
+
   const messageAttributes = {
     'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
     // Always attach the registered sender ID (defaults to "MKTR") so SG telcos
@@ -101,8 +136,16 @@ const sendSmsOtp = async (fullPhone, code) => {
     Message: `Your verification code is: ${code}`,
     MessageAttributes: messageAttributes
   });
-  const response = await snsClient.send(command);
-  return response.MessageId;
+
+  try {
+    const response = await snsClient.send(command);
+    return response.MessageId;
+  } catch (err) {
+    // Nothing was delivered — hand the budget back so a provider outage can't
+    // burn down the day's ceiling and lock out real traffic.
+    await releaseGlobalSmsQuota().catch(() => {});
+    throw err;
+  }
 };
 
 /**
@@ -121,6 +164,23 @@ export async function sendVerificationCode({ phone, countryCode = '+65', campaig
   // Double safety check on the formatted string
   if (!fullPhone.startsWith('+65')) {
     throw new AppError('Invalid Singapore phone number format.', 400);
+  }
+
+  // Per-number daily cap (SSIR User Agreement cl. 2.3.2). This endpoint is public
+  // and unauthenticated, so without a per-number ceiling a caller can drive
+  // unlimited messages at one victim's handset — every one of them stamped with
+  // our registered "MKTR" sender ID. Keyed on the NUMBER, not the IP, because the
+  // transport limiter in routes/verify.js is bypassed the moment an attacker
+  // rotates addresses; the victim's number is the thing that cannot be rotated.
+  // Counts both channels: WhatsApp bombing is no more acceptable, and WhatsApp
+  // falls back to SMS anyway.
+  const quota = await reservePhoneOtpQuota(fullPhone);
+  if (!quota.ok) {
+    logger.warn({ count: quota.count, cap: quota.cap }, 'otp.phone_daily_cap_exceeded');
+    throw new AppError(
+      'Too many verification codes requested for this number today. Please try again tomorrow.',
+      429,
+    );
   }
 
   const code = generateCode();
@@ -175,6 +235,12 @@ export async function sendVerificationCode({ phone, countryCode = '+65', campaig
 
     return { status: 'pending', messageId, channel: sentChannel };
   } catch (err) {
+    // Nothing reached the handset — hand the daily allowance back so our own
+    // outage doesn't lock a genuine user out for the rest of the day.
+    await releasePhoneOtpQuota(fullPhone).catch(() => {});
+    // Preserve deliberate status codes (the 429 from the global ceiling gate);
+    // only genuine faults get flattened into a 500.
+    if (err instanceof AppError) throw err;
     logger.error('Failed to send OTP', { channel, error: err?.message || String(err) });
     throw new AppError(`Failed to send code: ${err.message}`, 500);
   }

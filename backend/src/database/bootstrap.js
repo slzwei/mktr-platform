@@ -302,6 +302,23 @@ export async function bootstrapDatabase() {
       setInterval(runDncBackfillSafe, intervalMin * 60 * 1000);
       logger.info(`[DNC] backfill scheduled (${intervalMin}m interval)`);
     }
+
+    // rate_counters hygiene. Expired rows are already inert (bump resets them in
+    // the same statement), but the limiter writes one row per client per 15-min
+    // window and those keys are never revisited — without a sweep the table grows
+    // without bound. Retention is deliberately 2 days so a counter is still
+    // inspectable the morning after an incident.
+    const runRateCounterPurge = async () => {
+      try {
+        const { purgeExpired } = await import('../services/rateCounter.js');
+        const deleted = await purgeExpired();
+        if (deleted > 0) logger.info(`[RateCounters] purged ${deleted} expired row(s)`);
+      } catch (err) {
+        logger.warn('[RateCounters] purge failed (non-fatal)', { error: err?.message });
+      }
+    };
+    setTimeout(runRateCounterPurge, 3 * 60 * 1000);
+    setInterval(runRateCounterPurge, 24 * 60 * 60 * 1000); // daily
   }
 
   logger.info('Database bootstrap complete.');

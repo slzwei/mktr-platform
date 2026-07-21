@@ -17,10 +17,24 @@ const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest
 
 const snsClientSend = jest.fn();
 
+// SMS abuse controls — mocked at the module boundary so this suite stays DB-free
+// (the real smsQuota reaches Postgres). The quota arithmetic itself is covered in
+// test/unit/smsQuota.test.js; here we only assert how the send path reacts to it.
+const reservePhoneOtpQuota = jest.fn();
+const releasePhoneOtpQuota = jest.fn();
+const reserveGlobalSmsQuota = jest.fn();
+const releaseGlobalSmsQuota = jest.fn();
+
 // Set Meta WhatsApp env vars so sendWhatsAppOtpMeta doesn't throw credentials error
 process.env.META_WA_PHONE_NUMBER_ID = 'test-phone-id';
 process.env.META_WA_ACCESS_TOKEN = 'test-access-token';
 
+jest.unstable_mockModule('../../src/services/smsQuota.js', () => ({
+  reservePhoneOtpQuota,
+  releasePhoneOtpQuota,
+  reserveGlobalSmsQuota,
+  releaseGlobalSmsQuota,
+}));
 jest.unstable_mockModule('../../src/models/index.js', () => ({ Campaign, Verification }));
 jest.unstable_mockModule('../../src/middleware/errorHandler.js', () => ({ AppError }));
 jest.unstable_mockModule('../../src/utils/logger.js', () => ({ logger }));
@@ -59,6 +73,10 @@ describe('verificationService (unit)', () => {
     Verification.upsert.mockResolvedValue([mockRecord, true]);
     Verification.findByPk.mockResolvedValue(mockRecord);
     snsClientSend.mockResolvedValue({ MessageId: 'msg-1' });
+    reservePhoneOtpQuota.mockResolvedValue({ ok: true, count: 1, cap: 7 });
+    reserveGlobalSmsQuota.mockResolvedValue({ ok: true, count: 1, cap: 500 });
+    releasePhoneOtpQuota.mockResolvedValue(undefined);
+    releaseGlobalSmsQuota.mockResolvedValue(undefined);
   });
 
   // ── sendVerificationCode ──
@@ -120,6 +138,58 @@ describe('verificationService (unit)', () => {
       const expiresAt = new Date(upsertArg.expiresAt);
       const tenMinFromNow = Date.now() + 10 * 60 * 1000;
       expect(Math.abs(expiresAt.getTime() - tenMinFromNow)).toBeLessThan(5000);
+    });
+
+    // ── SMS abuse controls (SSIR User Agreement cl. 2.3.2) ──
+
+    it('refuses with 429 once the per-number daily cap is spent, before doing any work', async () => {
+      reservePhoneOtpQuota.mockResolvedValue({ ok: false, count: 8, cap: 7 });
+
+      await expect(sendVerificationCode({ phone: '91234567' }))
+        .rejects.toMatchObject({ statusCode: 429 });
+
+      // No code minted, nothing stored, nothing sent under our sender ID.
+      expect(Verification.upsert).not.toHaveBeenCalled();
+      expect(snsClientSend).not.toHaveBeenCalled();
+    });
+
+    it('refuses with 429 when the global daily ceiling is exhausted', async () => {
+      reserveGlobalSmsQuota.mockResolvedValue({ ok: false, count: 501, cap: 500 });
+
+      await expect(sendVerificationCode({ phone: '91234567' }))
+        .rejects.toMatchObject({ statusCode: 429 });
+
+      expect(snsClientSend).not.toHaveBeenCalled();
+    });
+
+    it('charges the WhatsApp→SMS fallback against the global SMS ceiling', async () => {
+      Campaign.findByPk.mockResolvedValue({ id: 'camp-1', design_config: { otpChannel: 'whatsapp' } });
+      fetchMock.mockResolvedValueOnce({
+        ok: false,
+        json: () => Promise.resolve({ error: { message: 'template auth_otp not found' } }),
+      });
+
+      await sendVerificationCode({ phone: '91234567', countryCode: '+65', campaignId: 'camp-1' });
+
+      // The fallback is a real SMS on our sender ID — it must spend real budget.
+      expect(reserveGlobalSmsQuota).toHaveBeenCalledTimes(1);
+    });
+
+    it('hands both allowances back when the SNS publish fails', async () => {
+      snsClientSend.mockRejectedValue(new Error('SNS unavailable'));
+
+      await expect(sendVerificationCode({ phone: '91234567' })).rejects.toThrow();
+
+      // Our outage must not consume a real user's day or the global ceiling.
+      expect(releaseGlobalSmsQuota).toHaveBeenCalled();
+      expect(releasePhoneOtpQuota).toHaveBeenCalled();
+    });
+
+    it('does not spend any allowance on a rejected non-SG number', async () => {
+      await expect(sendVerificationCode({ phone: '1234567', countryCode: '+1' })).rejects.toThrow();
+
+      expect(reservePhoneOtpQuota).not.toHaveBeenCalled();
+      expect(reserveGlobalSmsQuota).not.toHaveBeenCalled();
     });
   });
 
