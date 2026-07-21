@@ -68,6 +68,14 @@ export async function bootstrapDatabase() {
     logger.info('suppression propagation reconciler armed (dark until a subscriber carries lead.suppressed)');
   });
 
+  // Email broadcasts (tracker "emailpush"): flip in-flight broadcasts whose
+  // worker died with the old process to `interrupted`. Resume is a human act
+  // in the admin UI — nothing auto-sends on a deploy/restart.
+  await safeRun('Email broadcast stale sweep', async () => {
+    const { sweepStaleBroadcasts } = await import('../services/emailBroadcastService.js');
+    await sweepStaleBroadcasts();
+  });
+
   // Poll for stale webhook retries every 60 seconds (skip in test mode)
   if (process.env.NODE_ENV !== 'test') {
     setInterval(async () => {
@@ -78,6 +86,18 @@ export async function bootstrapDatabase() {
         logger.warn('[Webhook] periodic recovery failed', { error: err?.message });
       }
     }, 60_000);
+
+    // Email-broadcast stale-sweep backstop (5 min): a worker lost to a deploy
+    // mid-send surfaces as `interrupted` (Resume button) without waiting for
+    // the next boot.
+    setInterval(async () => {
+      try {
+        const { sweepStaleBroadcasts } = await import('../services/emailBroadcastService.js');
+        await sweepStaleBroadcasts();
+      } catch (err) {
+        logger.warn('[EmailBroadcast] stale sweep failed', { error: err?.message });
+      }
+    }, 300_000);
 
     // Suppression-propagation backstop pass every 60 minutes — heals lost
     // triggers, races, and dark-period backlogs (never throws internally).

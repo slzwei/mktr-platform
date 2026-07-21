@@ -101,6 +101,19 @@ function defineAssociations() {
   const { Cohort } = models;
   Cohort.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'SET NULL' });
 
+  // Email broadcast push (tracker "emailpush") — send history must survive:
+  // RESTRICT from cohorts (they soft-archive anyway), SET NULL from campaigns
+  // (campaignService can hard-delete archived campaigns; the frozen
+  // ctaUrl/subject keep the audit), RESTRICT from consumers (erasure keeps a
+  // husk row and the matrix nulls recipient email/error instead).
+  const { EmailBroadcast, EmailBroadcastRecipient } = models;
+  EmailBroadcast.belongsTo(Cohort, { foreignKey: 'cohortId', as: 'cohort', onDelete: 'RESTRICT' });
+  EmailBroadcast.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
+  EmailBroadcast.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'SET NULL' });
+  EmailBroadcast.hasMany(EmailBroadcastRecipient, { foreignKey: 'broadcastId', as: 'recipients', onDelete: 'CASCADE' });
+  EmailBroadcastRecipient.belongsTo(EmailBroadcast, { foreignKey: 'broadcastId', as: 'broadcast', onDelete: 'CASCADE' });
+  EmailBroadcastRecipient.belongsTo(Consumer, { foreignKey: 'consumerId', as: 'consumer', onDelete: 'RESTRICT' });
+
   // Suppression-propagation projection (tracker "propagate") — derived rows,
   // reconciler-owned. CASCADE from prospect/subscriber (a vanished lead or
   // subscriber voids the pair); RESTRICT from consumers like the ledger.
@@ -382,7 +395,7 @@ export const {
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,
   OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression,
   AiSettings, WalletLedger, Consumer, ConsentEvent, ConsumerSuppression,
-  SuppressionPropagation, Cohort
+  SuppressionPropagation, Cohort, EmailBroadcast, EmailBroadcastRecipient
 } = models;
 
 export { sequelize };

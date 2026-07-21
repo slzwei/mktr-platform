@@ -89,6 +89,7 @@ export default function AdminV2CohortDetail() {
         meta={`${summarizeDefinition(c.definition, facets.data).toUpperCase()} · RESOLVED ${c.lastPreviewAt ? fmtRelative(c.lastPreviewAt) : 'NOW'}`}
       >
         <Link to="/AdminCohorts" className="av2-btn av2-btn--sm" style={{ textDecoration: 'none' }}>← All cohorts</Link>
+        <Link to={`/AdminBroadcasts?cohort=${id}`} className="av2-btn av2-btn--sm av2-btn--primary" style={{ textDecoration: 'none' }}>Push email</Link>
         <button type="button" className="av2-btn av2-btn--sm" onClick={() => setEditing(true)}>Edit definition</button>
         <button
           type="button"
