@@ -97,6 +97,10 @@ function defineAssociations() {
   Consumer.hasMany(ConsumerSuppression, { foreignKey: 'consumerId', as: 'suppressions', onDelete: 'RESTRICT' });
   ConsumerSuppression.belongsTo(Consumer, { foreignKey: 'consumerId', as: 'consumer', onDelete: 'RESTRICT' });
 
+  // Saved cohorts (tracker "cohortapi") — definitions only, resolved live.
+  const { Cohort } = models;
+  Cohort.belongsTo(User, { foreignKey: 'createdBy', as: 'creator', onDelete: 'SET NULL' });
+
   // Suppression-propagation projection (tracker "propagate") — derived rows,
   // reconciler-owned. CASCADE from prospect/subscriber (a vanished lead or
   // subscriber voids the pair); RESTRICT from consumers like the ledger.
@@ -378,7 +382,7 @@ export const {
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,
   OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression,
   AiSettings, WalletLedger, Consumer, ConsentEvent, ConsumerSuppression,
-  SuppressionPropagation
+  SuppressionPropagation, Cohort
 } = models;
 
 export { sequelize };
