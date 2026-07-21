@@ -2,7 +2,10 @@ import { jest } from '@jest/globals';
 import '../setup.js';
 import { createHash } from 'crypto';
 import { phoneVerificationIsCurrent, phoneHashOf, E164_RE } from '../../src/services/consumerService.js';
-import { buildLeadCreatedPayload, buildLeadDeletedPayload, buildLeadAssignedPayload } from '../../src/services/prospectHelpers.js';
+import {
+  buildLeadCreatedPayload, buildLeadDeletedPayload, buildLeadAssignedPayload,
+  buildLeadUnassignedPayload, buildLeadHeldPayload, buildLeadSuppressedPayload,
+} from '../../src/services/prospectHelpers.js';
 import { makeEntitlementService } from '../../src/services/redeemOps/entitlementService.js';
 
 const sha = (v) => createHash('sha256').update(v).digest('hex');
@@ -55,6 +58,24 @@ describe('webhook payload contract — consumerId NEVER leaves the system (plan 
   test('lead.assigned carries no consumerId', () => {
     const payload = buildLeadAssignedPayload(prospect, { id: 'a1', phone: '+65', email: 'x@y.z', firstName: 'Ag', lastName: 'Ent' }, { campaign: null }, {});
     expect(JSON.stringify(payload)).not.toContain('consumerId');
+  });
+  // Codex propagate-round #3: the guard was created/assigned/deleted only.
+  test('lead.unassigned carries no consumerId', () => {
+    const payload = buildLeadUnassignedPayload(prospect, 'prev-agent-lyfe-id', {});
+    expect(JSON.stringify(payload)).not.toContain('consumerId');
+  });
+  test('lead.held carries no consumerId', () => {
+    const payload = buildLeadHeldPayload(prospect, { id: 'c1', name: 'C' }, 'no_funded_agent');
+    expect(JSON.stringify(payload)).not.toContain('consumerId');
+  });
+  test('lead.suppressed carries no consumerId AND no direct identifiers', () => {
+    const payload = buildLeadSuppressedPayload(prospect.id, {
+      scope: 'all', reason: 'erasure', occurredAt: new Date('2026-01-01'),
+    });
+    const raw = JSON.stringify(payload);
+    expect(raw).not.toContain('consumerId');
+    expect(raw).not.toContain(prospect.phone);
+    expect(raw).not.toContain(prospect.email);
   });
 });
 

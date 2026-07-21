@@ -5,6 +5,7 @@ import {
 } from '../models/index.js';
 import { logger } from '../utils/logger.js';
 import { phoneVerificationIsCurrent, E164_RE } from './consumerService.js';
+import { reconcileSuppressionPropagation } from './suppressionPropagationService.js';
 import {
   CONTACT_CONSENT_VERSION, CONTACT_CONSENT_CHANNELS,
   CONTACT_CONSENT_VERSIONS, isKnownConsentCopyVersion,
@@ -52,7 +53,10 @@ export function unsubTokenHashOf(token) {
   return createHash('sha256').update(String(token)).digest('hex');
 }
 
-const defaultDeps = { sequelize, Consumer, ConsentEvent, ConsumerSuppression, Prospect, logger };
+const defaultDeps = {
+  sequelize, Consumer, ConsentEvent, ConsumerSuppression, Prospect, logger,
+  reconcileSuppressionPropagation, // tracker "propagate" — post-commit trigger
+};
 
 export function makeConsentService(overrides = {}) {
   const d = { ...defaultDeps, ...overrides };
@@ -437,7 +441,7 @@ export function makeConsentService(overrides = {}) {
 
   /** Idempotent global marketing unsubscribe + ledger evidence. */
   async function applyUnsubscribe(consumer, { source = 'unsubscribe_link' } = {}) {
-    return d.sequelize.transaction(async (t) => {
+    const result = await d.sequelize.transaction(async (t) => {
       const [, created] = await d.ConsumerSuppression.findOrCreate({
         where: { consumerId: consumer.id, channel: 'all' },
         defaults: { id: randomUUID(), reason: 'unsubscribe', source },
@@ -455,6 +459,19 @@ export function makeConsentService(overrides = {}) {
       }
       return { alreadySuppressed: !created };
     });
+    // Post-commit, fire-and-forget: project lead.suppressed pairs for the
+    // person's delivered leads (tracker "propagate"). ALSO on the
+    // already-suppressed path — a re-unsubscribe is a free healing trigger.
+    // A lost trigger costs nothing: the periodic reconcile pass is the
+    // durability, the projection table is the state.
+    if (d.reconcileSuppressionPropagation) {
+      Promise.resolve(d.reconcileSuppressionPropagation({ consumerId: consumer.id })).catch((err) => {
+        d.logger.warn('[consent] suppression propagation trigger failed (periodic pass heals)', {
+          consumerId: consumer.id, error: err?.message || String(err),
+        });
+      });
+    }
+    return result;
   }
 
   return {

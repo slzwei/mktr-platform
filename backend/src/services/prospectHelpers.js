@@ -252,6 +252,33 @@ export function buildLeadDeletedPayload(prospect) {
   };
 }
 
+/**
+ * lead.suppressed v1 (tracker "propagate", docs/reference/webhook-propagation-contract.md):
+ * "stop contacting the person behind this lead; keep the lead."
+ * Data-minimized by contract: lead externalId + suppression facts only —
+ * no consumerId, no phone/name/email. Consumers act on `scope`
+ * ('all' blocks everything incl. transactional; 'marketing' blocks marketing);
+ * `reason` is diagnostic. `occurredAt` is the authoritative transition time
+ * (suppression.createdAt / consumer.erasedAt) — stable across repairs, used
+ * for the consumer's monotonic merge.
+ */
+export function buildLeadSuppressedPayload(prospectId, { scope, reason, channel = 'all', occurredAt }) {
+  return {
+    event: 'lead.suppressed',
+    timestamp: new Date().toISOString(),
+    data: {
+      lead: { externalId: prospectId },
+      suppression: {
+        schemaVersion: 1,
+        scope,
+        reason,
+        channel,
+        occurredAt: occurredAt instanceof Date ? occurredAt.toISOString() : occurredAt,
+      },
+    },
+  };
+}
+
 /** Format a budget object ({ min, max, currency, timeframe }) into one display string, or null. */
 function formatBudget(budget) {
   if (!budget || typeof budget !== 'object') return null;

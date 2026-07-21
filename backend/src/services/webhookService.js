@@ -7,11 +7,49 @@ import { Sentry } from '../utils/sentryInit.js';
 
 const AUTO_DISABLE_THRESHOLD = 50;
 
+/** Events whose payloads embed the full lead PII — the "historically targeted" markers. */
+export const PAYLOAD_EVENT_TYPES = ['lead.created', 'lead.assigned'];
+
+/**
+ * After a flush that targeted leads with payload events, nudge the
+ * suppression reconciler for any lead whose person is spine-linked — this is
+ * how a suppressed person's NEW targeting (later signup, reassignment, held
+ * release) propagates promptly instead of waiting for the hourly pass.
+ * Dynamic import: suppressionPropagationService statically imports this
+ * module, so the reverse edge must stay lazy.
+ */
+async function defaultPropagationCatchup(pairs) {
+  try {
+    const ids = [...new Set(
+      (pairs || [])
+        .filter((p) => PAYLOAD_EVENT_TYPES.includes(p?.delivery?.eventType))
+        .map((p) => p?.delivery?.payload?.data?.lead?.externalId)
+        .filter(Boolean)
+    )];
+    if (!ids.length) return;
+    const [rows] = await sequelize.query(
+      'SELECT DISTINCT "consumerId" FROM prospects WHERE id IN (:ids) AND "consumerId" IS NOT NULL',
+      { replacements: { ids } }
+    );
+    if (!rows.length) return;
+    const { reconcileSuppressionPropagation } = await import('./suppressionPropagationService.js');
+    for (const r of rows) {
+      reconcileSuppressionPropagation({ consumerId: r.consumerId }).catch((err) => {
+        logger.warn('[Webhook] propagation catchup reconcile failed', { error: err?.message || String(err) });
+      });
+    }
+  } catch (err) {
+    logger.warn('[Webhook] propagation catchup failed', { error: err?.message || String(err) });
+  }
+}
+
 // --- Default dependencies ---
 const defaultDeps = {
   WebhookSubscriber,
   WebhookDelivery,
+  sequelize,
   logger,
+  propagationCatchup: defaultPropagationCatchup,
   fetch: globalThis.fetch,
   // OBS-01: alert on the two silent failure modes that stop lead delivery
   // without a trace (subscriber auto-disable, dropped deliveries). Injected so
@@ -168,6 +206,13 @@ export function makeWebhookService(overrides = {}) {
     for (const { delivery, subscriber } of (pairs || [])) {
       enqueueDelivery(delivery, subscriber);
     }
+    // Suppression catch-up (tracker "propagate", Codex diff-round #1): EVERY
+    // payload-carrying delivery flows through this choke point — capture,
+    // assignment (manual/bulk/cross-app), held release, DNC release, sweep.
+    // If the lead's person is suppressed, the new targeting must be projected
+    // promptly (the mktr-leads create-time wa_intro is gated by the tombstone
+    // arriving BEFORE/with the lead). Fire-and-forget; hourly pass heals.
+    d.propagationCatchup(pairs);
   }
 
   /**
@@ -540,9 +585,31 @@ export function makeWebhookService(overrides = {}) {
     );
   }
 
+  /**
+   * Subscribers HISTORICALLY TARGETED with these leads' payload-carrying
+   * events (lead.created/lead.assigned), from delivery history — any status:
+   * a pending/failed row still means the payload was addressed to them, so
+   * erasure/suppression must reach them too (conservative over-notify).
+   * Returns [{ subscriberId, prospectId }]. Extracted from erasureService
+   * (tracker "propagate"); shared by erasure fanout + the suppression
+   * reconciler.
+   */
+  async function historicallyTargetedSubscribers(prospectIds, transaction = null) {
+    if (!prospectIds?.length) return [];
+    const [rows] = await d.sequelize.query(
+      `SELECT DISTINCT wd."subscriberId" AS "subscriberId",
+              (wd.payload::jsonb #>> '{data,lead,externalId}') AS "prospectId"
+         FROM webhook_deliveries wd
+        WHERE wd."eventType" IN (:eventTypes)
+          AND (wd.payload::jsonb #>> '{data,lead,externalId}') IN (:prospectIds)`,
+      { replacements: { eventTypes: PAYLOAD_EVENT_TYPES, prospectIds }, transaction }
+    );
+    return rows;
+  }
+
   return { dispatchEvent, persistEventDeliveries, flushDeliveries, attemptDelivery, retryDelivery, retryAllFailed,
            getDeadLetterQueue, purgeDeadLetters, getDeliveryStats, getQueueStats, recoverPendingRetries,
-           hasDeliverableSubscriber };
+           hasDeliverableSubscriber, historicallyTargetedSubscribers };
 }
 
 // --- Backward-compatible named exports ---
@@ -558,3 +625,4 @@ export const purgeDeadLetters = _default.purgeDeadLetters;
 export const getDeliveryStats = _default.getDeliveryStats;
 export const recoverPendingRetries = _default.recoverPendingRetries;
 export const hasDeliverableSubscriber = _default.hasDeliverableSubscriber;
+export const historicallyTargetedSubscribers = _default.historicallyTargetedSubscribers;

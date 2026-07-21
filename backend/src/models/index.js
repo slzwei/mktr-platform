@@ -97,6 +97,14 @@ function defineAssociations() {
   Consumer.hasMany(ConsumerSuppression, { foreignKey: 'consumerId', as: 'suppressions', onDelete: 'RESTRICT' });
   ConsumerSuppression.belongsTo(Consumer, { foreignKey: 'consumerId', as: 'consumer', onDelete: 'RESTRICT' });
 
+  // Suppression-propagation projection (tracker "propagate") — derived rows,
+  // reconciler-owned. CASCADE from prospect/subscriber (a vanished lead or
+  // subscriber voids the pair); RESTRICT from consumers like the ledger.
+  const { SuppressionPropagation } = models;
+  SuppressionPropagation.belongsTo(Consumer, { foreignKey: 'consumerId', as: 'consumer', onDelete: 'RESTRICT' });
+  SuppressionPropagation.belongsTo(Prospect, { foreignKey: 'prospectId', as: 'prospect', onDelete: 'CASCADE' });
+  SuppressionPropagation.belongsTo(WebhookSubscriber, { foreignKey: 'subscriberId', as: 'subscriber', onDelete: 'CASCADE' });
+
   // Prospect associations
   Prospect.belongsTo(User, { foreignKey: 'assignedAgentId', as: 'assignedAgent', onDelete: 'SET NULL' });
   Prospect.belongsTo(Campaign, { foreignKey: 'campaignId', as: 'campaign', onDelete: 'SET NULL' });
@@ -369,7 +377,8 @@ export const {
   DiscoveryRun, DiscoveryCandidate,
   DiscoveryPlaceMemory, OutreachCadence, OutreachCadenceStep,
   OutreachCadenceTransition, OutreachCadenceEnrollment, OutreachSuppression,
-  AiSettings, WalletLedger, Consumer, ConsentEvent, ConsumerSuppression
+  AiSettings, WalletLedger, Consumer, ConsentEvent, ConsumerSuppression,
+  SuppressionPropagation
 } = models;
 
 export { sequelize };

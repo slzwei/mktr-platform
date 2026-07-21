@@ -1108,6 +1108,9 @@ export function makeProspectService(overrides = {}) {
       ).catch((err) => {
         d.logger.error('[Webhook] dispatch error', { error: err?.message || String(err) });
       });
+      // Suppressed-person new-lead propagation rides webhookService's
+      // flush-time catchup choke point (tracker "propagate") — no per-site
+      // hook needed here.
     }
 
     // Held (no_funded_agent) → ping the mktr-leads admin held queue so a pending

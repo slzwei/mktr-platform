@@ -366,6 +366,8 @@ export function makeMetaLeadService(overrides = {}) {
           campaign: campaign ? { externalId: campaign.id, name: campaign.name } : null
         }
       }), { destination: metaDestination });
+      // Suppressed-person new-lead propagation rides the webhookService
+      // flush-time catchup (tracker "propagate").
 
       // Held → ping the mktr-leads admin held queue so a pending lead is never silent.
       // Explicitly require no_funded_agent (the only reason that lands in that queue) so
