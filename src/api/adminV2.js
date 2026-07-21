@@ -142,3 +142,50 @@ export function bulkReturnToHeld(prospectIds) {
 export function bulkDelete(prospectIds) {
   return apiClient.post('/prospects/bulk/delete', { prospectIds });
 }
+
+// ── Cohorts (tracker "cohortui" — /api/cohorts, cohortapi backend) ───────────
+
+export async function fetchCohorts() {
+  const resp = await apiClient.get('/cohorts');
+  const rows = resp?.data || [];
+  return { rows, total: rows.length };
+}
+
+/** refresh=1 recomputes counts server-side and persists the snapshot. */
+export async function fetchCohort(id, { refresh = false } = {}) {
+  const resp = await apiClient.get(`/cohorts/${id}${refresh ? '?refresh=1' : ''}`);
+  return resp?.data ?? null;
+}
+
+export async function fetchCohortFacets() {
+  const resp = await apiClient.get('/cohorts/facets');
+  return resp?.data ?? null;
+}
+
+/** Stateless preview: definition (+channel) → counts with byReason. */
+export async function previewCohortDefinition(definition, channel) {
+  const resp = await apiClient.post('/cohorts/preview', {
+    definition,
+    ...(channel && channel !== 'all' ? { channel } : {}),
+  });
+  return resp?.data ?? null;
+}
+
+export async function fetchCohortMembers(id, { status = 'all', channel, limit = 50, offset = 0 } = {}) {
+  const qs = new URLSearchParams({ status, limit: String(limit), offset: String(offset) });
+  if (channel && channel !== 'all') qs.set('channel', channel);
+  const resp = await apiClient.get(`/cohorts/${id}/members?${qs.toString()}`);
+  return resp?.data ?? { total: 0, members: [] };
+}
+
+export function createCohort({ name, description, definition }) {
+  return apiClient.post('/cohorts', { name, description, definition });
+}
+
+export function updateCohort(id, patch) {
+  return apiClient.put(`/cohorts/${id}`, patch);
+}
+
+export function archiveCohort(id) {
+  return apiClient.delete(`/cohorts/${id}`);
+}

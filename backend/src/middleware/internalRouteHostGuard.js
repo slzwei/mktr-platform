@@ -21,6 +21,7 @@ const BLOCKED_PATH_PREFIXES = [
   '/api/auth',
   '/api/admin',
   '/api/consumers',
+  '/api/cohorts',
   '/api/agents',
   '/api/fleet',
   '/api/devices',
