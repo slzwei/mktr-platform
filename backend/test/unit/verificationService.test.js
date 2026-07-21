@@ -107,7 +107,7 @@ describe('verificationService (unit)', () => {
       const result = await sendVerificationCode({ phone: '91234567', countryCode: '+65', campaignId: 'camp-1' });
 
       expect(result.status).toBe('pending');
-      expect(logger.info).toHaveBeenCalledWith('Sending OTP', { channel: 'WHATSAPP' });
+      expect(logger.info).toHaveBeenCalledWith({ channel: 'WHATSAPP' }, 'Sending OTP');
     });
 
     it('falls back to SMS when the WhatsApp send fails', async () => {
@@ -128,7 +128,7 @@ describe('verificationService (unit)', () => {
       const result = await sendVerificationCode({ phone: '91234567' });
 
       expect(result.status).toBe('pending');
-      expect(logger.info).toHaveBeenCalledWith('Sending OTP', { channel: 'SMS' });
+      expect(logger.info).toHaveBeenCalledWith({ channel: 'SMS' }, 'Sending OTP');
     });
 
     it('stores code with 10 minute expiry', async () => {
@@ -260,6 +260,6 @@ describe('design_config v2 (Campaign Studio)', () => {
     const result = await sendVerificationCode({ phone: '91234567', countryCode: '+65', campaignId: 'camp-v2' });
 
     expect(result.status).toBe('pending');
-    expect(logger.info).toHaveBeenCalledWith('Sending OTP', { channel: 'WHATSAPP' });
+    expect(logger.info).toHaveBeenCalledWith({ channel: 'WHATSAPP' }, 'Sending OTP');
   });
 });
