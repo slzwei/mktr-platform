@@ -55,13 +55,12 @@ export default function DefaultTermsCopy() {
         </p>
       </Section>
 
-      <Section title="2. How campaigns are funded">
+      <Section title="2. The reward is free to you">
         <p style={{ margin: 0 }}>
-          The businesses and sponsors behind each campaign pay {brand.name} to run it. That is why
-          the reward is provided to you at no charge — you pay {brand.name} nothing. {brand.name}{' '}
+          The reward is provided to you at no charge — you pay {brand.name} nothing. {brand.name}{' '}
           does not engage introducers or referral agents, and no third party is compensated for
-          referring you to {brand.name}. We do advertise on platforms such as Facebook, Instagram
-          and TikTok; section 10 of our Personal Data Policy sets out what those platforms receive.
+          referring you to {brand.name}. We advertise on platforms such as Facebook, Instagram and
+          TikTok; section 10 of our Personal Data Policy sets out what those platforms receive.
         </p>
       </Section>
 
@@ -74,8 +73,9 @@ export default function DefaultTermsCopy() {
           <li>
             <strong style={{ color: TOKENS.ink }}>By a partner business</strong> — an independent
             third party, such as a studio, enrichment centre, clinic or retailer, which provides
-            the trial, session or product described. That business is responsible for the reward
-            it provides and for the conduct of its own services; {brand.name} is not the provider.
+            the trial, session or product described to introduce its own services. That business
+            is responsible for the reward it provides and for the conduct of its own services;{' '}
+            {brand.name} is not the provider.
           </li>
           <li>
             <strong style={{ color: TOKENS.ink }}>By the sponsoring consultant</strong> — where a

@@ -14,13 +14,16 @@ import DefaultTermsCopy from '../DefaultTermsCopy';
  * session), and nobody is paid to send consumers here.
  */
 describe('DefaultTermsCopy — the terms describe the real business model', () => {
-  it('states that sponsors/businesses fund campaigns and that nobody is paid to refer consumers in', () => {
-    render(<DefaultTermsCopy />);
-    expect(screen.getByText(/How campaigns are funded/)).toBeInTheDocument();
+  it('says the reward is free and that nobody is paid to refer consumers in', () => {
+    const { container } = render(<DefaultTermsCopy />);
+    expect(screen.getByText(/The reward is free to you/)).toBeInTheDocument();
     expect(
       screen.getByText(/no third party is compensated for referring you/i)
     ).toBeInTheDocument();
     expect(screen.getByText(/does not engage introducers or referral agents/i)).toBeInTheDocument();
+    // Must NOT claim the reward businesses pay us — only sponsors pay (per lead);
+    // partner businesses provide trials to advertise themselves and may pay nothing.
+    expect(container.textContent).not.toMatch(/businesses and sponsors[^.]*pay/i);
   });
 
   it('describes BOTH reward paths: an independent partner business, or the consultant at the session', () => {
