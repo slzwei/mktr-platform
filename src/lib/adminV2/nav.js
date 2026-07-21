@@ -13,6 +13,7 @@ export const NAV = [
     items: [
       { to: '/AdminProspects', label: 'Prospects' },
       { to: '/AdminCohorts', label: 'Cohorts' },
+      { to: '/AdminBroadcasts', label: 'Email Pushes' },
       { to: '/AdminAgents', label: 'Agents' },
       { to: '/AdminAgentGroups', label: 'Agent Groups' },
       { to: '/AdminCampaigns', label: 'Campaigns' },

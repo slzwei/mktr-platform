@@ -189,3 +189,55 @@ export function updateCohort(id, patch) {
 export function archiveCohort(id) {
   return apiClient.delete(`/cohorts/${id}`);
 }
+
+// ── Email broadcasts (tracker "emailpush" — /api/email-broadcasts) ───────────
+
+export async function fetchEmailBroadcasts() {
+  const resp = await apiClient.get('/email-broadcasts');
+  const rows = resp?.data || [];
+  return { rows, total: rows.length };
+}
+
+/** Detail DTO: row + cohort{definition} + campaign + ctaUrlPreview + liveCounts. */
+export async function fetchEmailBroadcast(id) {
+  const resp = await apiClient.get(`/email-broadcasts/${id}`);
+  return resp?.data ?? null;
+}
+
+export function createEmailBroadcast({ cohortId, campaignId, subject, bodyText, ctaLabel }) {
+  return apiClient.post('/email-broadcasts', {
+    cohortId,
+    campaignId,
+    subject,
+    bodyText,
+    ...(ctaLabel ? { ctaLabel } : {}),
+  });
+}
+
+export function updateEmailBroadcast(id, patch) {
+  return apiClient.put(`/email-broadcasts/${id}`, patch);
+}
+
+export function deleteEmailBroadcast(id) {
+  return apiClient.delete(`/email-broadcasts/${id}`);
+}
+
+/** Kick a draft send; { resume: true } continues an interrupted/stale one. */
+export function sendEmailBroadcast(id, { resume = false } = {}) {
+  return apiClient.post(`/email-broadcasts/${id}/send`, resume ? { resume: true } : {});
+}
+
+export function cancelEmailBroadcast(id) {
+  return apiClient.post(`/email-broadcasts/${id}/cancel`, {});
+}
+
+/** Sends a marked test render to the requesting admin's own email. */
+export function testEmailBroadcast(id) {
+  return apiClient.post(`/email-broadcasts/${id}/test`, {});
+}
+
+export async function fetchEmailBroadcastRecipients(id, { status = 'all', limit = 50, offset = 0 } = {}) {
+  const qs = new URLSearchParams({ status, limit: String(limit), offset: String(offset) });
+  const resp = await apiClient.get(`/email-broadcasts/${id}/recipients?${qs.toString()}`);
+  return resp?.data ?? { total: 0, recipients: [] };
+}

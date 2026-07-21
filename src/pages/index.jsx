@@ -74,6 +74,8 @@ const AdminV2Dashboard = lazy(() => import('./adminv2/AdminV2Dashboard'));
 const AdminV2Prospects = lazy(() => import('./adminv2/AdminV2Prospects'));
 const AdminV2Cohorts = lazy(() => import('./adminv2/AdminV2Cohorts'));
 const AdminV2CohortDetail = lazy(() => import('./adminv2/AdminV2CohortDetail'));
+const AdminV2Broadcasts = lazy(() => import('./adminv2/AdminV2Broadcasts'));
+const AdminV2BroadcastDetail = lazy(() => import('./adminv2/AdminV2BroadcastDetail'));
 const AdminV2Campaigns = lazy(() => import('./adminv2/AdminV2Campaigns'));
 const AdminV2CampaignDetail = lazy(() => import('./adminv2/AdminV2CampaignDetail'));
 const AdminV2Agents = lazy(() => import('./adminv2/AdminV2Agents'));
@@ -365,6 +367,28 @@ function PagesContent() {
  <ProtectedRoute requiredRole="admin">
  <AdminV2Shell>
  <AdminV2CohortDetail />
+ </AdminV2Shell>
+ </ProtectedRoute>
+ }
+ />
+ )}
+ {ADMIN_V2 && (
+ <Route
+ path="/AdminBroadcasts" element={
+ <ProtectedRoute requiredRole="admin">
+ <AdminV2Shell>
+ <AdminV2Broadcasts />
+ </AdminV2Shell>
+ </ProtectedRoute>
+ }
+ />
+ )}
+ {ADMIN_V2 && (
+ <Route
+ path="/admin/broadcasts/:id" element={
+ <ProtectedRoute requiredRole="admin">
+ <AdminV2Shell>
+ <AdminV2BroadcastDetail />
  </AdminV2Shell>
  </ProtectedRoute>
  }

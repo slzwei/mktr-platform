@@ -588,6 +588,17 @@ export function makeErasureService(overrides = {}) {
       );
       report.consentSourceUrlsScrubbed = rowCount(csMeta);
 
+      // 16b. Email-broadcast send-log rows (tracker "emailpush"): the address
+      // and any transport-error text are CONTENT about the person — nulled;
+      // delivery facts (status/reason/sentAt) stay on the retained skeleton
+      // (docs/plans/email-broadcast-push.md §5). Runs on repair too.
+      const [, ebrMeta] = await d.sequelize.query(
+        `UPDATE email_broadcast_recipients SET email = NULL, error = NULL
+          WHERE "consumerId" = :consumerId AND (email IS NOT NULL OR error IS NOT NULL)`,
+        { replacements: { consumerId }, transaction: t }
+      );
+      report.broadcastRecipientsScrubbed = rowCount(ebrMeta);
+
       // 17. The consumer itself: identity + attributes + unsub token all null.
       // phone leaving uq_consumers_phone at commit is what frees the number
       // for a genuinely-new signup.
