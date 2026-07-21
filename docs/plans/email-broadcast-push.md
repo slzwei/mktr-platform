@@ -381,7 +381,20 @@ Frontend (vitest, mocked `@/api/adminV2`): `AdminV2Broadcasts.test.jsx`
 | 24 | MAJOR test gaps | FOLDED §8 (single-process-provable set); fleet-harness items §9 |
 | 25 | MAJOR frozen-files incompatibility | PARTIALLY FOLDED §7: erasureService+bootstrap now in scope; consent/cohort/mailer stay frozen with explicit workarounds |
 
-## 11. Env / rollout / live proof
+## 11. Codex round 2 (gpt-5.6-sol xhigh, on the implementation diff) — disposition
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 | BLOCKER edit/send race (stale pre-CAS row into prepare) | FOLDED: reload after winning the CAS; edits are draft-conditional so the row is immutable from there |
+| 2 | BLOCKER unsub/erasure commit between gate and SMTP | PARTIALLY FOLDED: post-write `repairRowIfErased` guarantees recipient rows never retain an erased person's PII (no manual re-erase needed). The residual ms-window send itself is ACCEPTED (§9): serializing sender/unsubscribe/erasure needs cross-service locks in frozen files; consent held at gate-time ms earlier, erasure repair-pass + suppression are the mop-up |
+| 3 | BLOCKER stale resume lacks ownership fence | FOLDED: `workerLeaseId` minted per start/resume; heartbeat, finalizeCompleted and the crash handler are lease-keyed — a superseded zombie loses its next heartbeat and exits (≤1 in-flight send) |
+| 4 | MAJOR one-in-flight NOT EXISTS write skew | FOLDED: both transitions run under `pg_advisory_xact_lock(870778002)` in a txn — concurrent starts/resumes serialize |
+| 5 | MAJOR address dedupe not durable across crash | FOLDED (right-sized): the REFRESHED address is persisted on the row before transport, so resume's rebuilt set sees what was actually attempted. A durable per-address claim table (Codex's full design) stays out — single-instance, and erasure interplay would need claim-purge machinery |
+| 6 | MAJOR cancel overwritten / rows mislabeled | FOLDED: `completed` only from `sending`+lease (loser lands the cancel); crash handler lands `cancelling→cancelled` before `sending→failed`; direct cancel terminalizes `attempting` as `ambiguous_crash` (never `skipped`); sweep lands stale `cancelling` in `cancelled`, never resumable |
+| 7 | MINOR facets lack `is_active`; no stale-sending Resume in UI | ACCEPTED: facets live in frozen cohortService — the backend's loud 422 covers the picker gap; stale `sending` becomes `interrupted` (Resume button) within ≤5 min via the sweep |
+| 8 | MINOR test gaps vs §8 promises | FOLDED: added erased-at-send, erased-during-SMTP repair, mktr-host branch, cancel-vs-complete landing, zombie-lease heartbeat, stale-cancelling sweep. True multi-process barrier harnesses stay out (§9 single-instance posture) |
+
+## 12. Env / rollout / live proof
 
 - `EMAIL_BROADCAST_RATE_PER_SEC` (default 2, clamp 0.2–10),
   `EMAIL_BROADCAST_MAX_RECIPIENTS` (default 5000, clamp 1–20000); defaults

@@ -36,6 +36,7 @@ export async function up(queryInterface) {
     "skippedCount" INTEGER NOT NULL DEFAULT 0,
     "failedCount" INTEGER NOT NULL DEFAULT 0,
     "workerHeartbeatAt" TIMESTAMP WITH TIME ZONE,
+    "workerLeaseId" UUID,
     "startedAt" TIMESTAMP WITH TIME ZONE,
     "completedAt" TIMESTAMP WITH TIME ZONE,
     "lastError" TEXT,

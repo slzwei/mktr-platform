@@ -50,6 +50,7 @@ const EmailBroadcast = sequelize.define('EmailBroadcast', {
   skippedCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   failedCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   workerHeartbeatAt: { type: DataTypes.DATE, allowNull: true, comment: 'Worker liveness; stale ≥120s ⇒ resumable/boot-sweepable' },
+  workerLeaseId: { type: DataTypes.UUID, allowNull: true, comment: 'Ownership lease minted per start/resume; heartbeats/finalize are keyed to it so superseded workers exit' },
   startedAt: { type: DataTypes.DATE, allowNull: true },
   completedAt: { type: DataTypes.DATE, allowNull: true },
   lastError: { type: DataTypes.TEXT, allowNull: true },

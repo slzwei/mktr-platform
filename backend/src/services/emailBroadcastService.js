@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { QueryTypes } from 'sequelize';
 import {
   sequelize, EmailBroadcast, EmailBroadcastRecipient, Cohort, Campaign, Consumer,
@@ -37,6 +38,10 @@ import { renderBroadcastEmail } from './emailBroadcastTemplate.js';
  */
 
 export const STALE_WORKER_MS = 120_000;
+
+// pg advisory-lock key serializing broadcast state transitions (the
+// runMigrations lock is 870778001; this is the next slot in the family).
+const TRANSITION_LOCK_KEY = 870778002;
 
 const RATE_DEFAULT = 2;
 const MAX_RECIPIENTS_DEFAULT = 5000;
@@ -125,6 +130,19 @@ export function makeEmailBroadcastService(overrides = {}) {
    * `pending` rows only — never re-resolves the audience (§3.3). Returns
    * { broadcast, workerPromise }; callers fire-and-forget, tests await.
    */
+  /** Run a state-transition UPDATE under the broadcast advisory lock — two
+   * concurrent transitions (even on DIFFERENT rows) serialize here, which is
+   * what makes the one-in-flight NOT EXISTS check skew-proof. */
+  async function lockedTransition(sql, replacements) {
+    return d.sequelize.transaction(async (t) => {
+      await d.sequelize.query('SELECT pg_advisory_xact_lock(:key)', {
+        replacements: { key: TRANSITION_LOCK_KEY }, transaction: t,
+      });
+      const [rows] = await d.sequelize.query(sql, { replacements, transaction: t });
+      return rows;
+    });
+  }
+
   async function startBroadcastSend(broadcastId, { resume = false } = {}) {
     if (activeSends.has(broadcastId)) {
       throw new AppError('This broadcast is already sending in this process', 409);
@@ -132,18 +150,25 @@ export function makeEmailBroadcastService(overrides = {}) {
     const broadcast = await d.EmailBroadcast.findByPk(broadcastId);
     if (!broadcast) throw new AppError('Broadcast not found', 404);
 
+    // The worker-ownership lease: every start/resume mints one; heartbeats,
+    // finalization and the crash handler are all keyed to it, so a superseded
+    // (zombie) worker loses its next heartbeat and exits instead of racing.
+    const leaseId = randomUUID();
+
     if (!resume) {
-      // Atomic: win draft→preparing AND assert no other broadcast in flight.
-      const [rows] = await d.sequelize.query(
+      // Atomic under the advisory lock: win draft→preparing AND assert no
+      // other broadcast is in flight (NOT EXISTS alone is write-skewable).
+      const rows = await lockedTransition(
         `UPDATE email_broadcasts
-            SET status = 'preparing', "startedAt" = now(), "workerHeartbeatAt" = now(), "lastError" = NULL, "updatedAt" = now()
+            SET status = 'preparing', "startedAt" = now(), "workerHeartbeatAt" = now(),
+                "workerLeaseId" = :lease, "lastError" = NULL, "updatedAt" = now()
           WHERE id = :id AND status = 'draft'
             AND NOT EXISTS (
               SELECT 1 FROM email_broadcasts b2
                WHERE b2.status IN ('preparing','sending','cancelling') AND b2.id <> :id
             )
           RETURNING id`,
-        { replacements: { id: broadcastId } }
+        { id: broadcastId, lease: leaseId }
       );
       if (rows.length === 0) {
         const inFlight = await d.EmailBroadcast.count({ where: { status: ['preparing', 'sending', 'cancelling'] } });
@@ -152,7 +177,11 @@ export function makeEmailBroadcastService(overrides = {}) {
         throw new AppError('Broadcast could not start', 409);
       }
       try {
-        await prepare(broadcast);
+        // Reload AFTER winning the CAS: edits are draft-conditional, so this
+        // row can no longer change under us — prepare() must never see the
+        // pre-CAS snapshot (a racing edit would split audience vs content).
+        const fresh = await d.EmailBroadcast.findByPk(broadcastId);
+        await prepare(fresh);
       } catch (err) {
         // All-or-back-to-draft: nothing was sent; surface the reason on the row.
         const [reverted] = await d.EmailBroadcast.update(
@@ -175,11 +204,12 @@ export function makeEmailBroadcastService(overrides = {}) {
         throw new AppError('Broadcast has no frozen send context to resume from — cancel it and create a new push', 422);
       }
       // interrupted → sending, or self-heal a `sending` row whose worker died
-      // (stale heartbeat) without waiting for a boot sweep. Same one-in-flight
-      // fence as the draft path.
-      const [rows] = await d.sequelize.query(
+      // (stale heartbeat) without waiting for a boot sweep. Same advisory-lock
+      // + one-in-flight fence as the draft path; the fresh lease dethrones any
+      // zombie worker that later wakes up.
+      const rows = await lockedTransition(
         `UPDATE email_broadcasts
-            SET status = 'sending', "workerHeartbeatAt" = now(), "updatedAt" = now()
+            SET status = 'sending', "workerHeartbeatAt" = now(), "workerLeaseId" = :lease, "updatedAt" = now()
           WHERE id = :id
             AND (status = 'interrupted'
                  OR (status = 'sending' AND ("workerHeartbeatAt" IS NULL OR "workerHeartbeatAt" < now() - interval '120 seconds')))
@@ -188,7 +218,7 @@ export function makeEmailBroadcastService(overrides = {}) {
                WHERE b2.status IN ('preparing','sending','cancelling') AND b2.id <> :id
             )
           RETURNING id`,
-        { replacements: { id: broadcastId } }
+        { id: broadcastId, lease: leaseId }
       );
       if (rows.length === 0) throw new AppError('Broadcast is not resumable (not interrupted/stale, or another broadcast is in flight)', 409);
       // Crash-ambiguous rows are terminal: the mail may or may not have gone
@@ -200,12 +230,15 @@ export function makeEmailBroadcastService(overrides = {}) {
     }
 
     activeSends.add(broadcastId);
-    const workerPromise = runWorker(broadcastId)
+    const workerPromise = runWorker(broadcastId, leaseId)
       .catch(async (err) => {
         d.logger.error('email broadcast worker crashed', { broadcastId, error: err.message });
+        // Crash while cancelling lands cancelled (the stop must stick);
+        // crash while sending (still OUR lease) lands failed.
+        await landCancelledIfCancelling(broadcastId).catch(() => {});
         await d.EmailBroadcast.update(
           { status: 'failed', lastError: err.message || 'worker crashed', completedAt: new Date() },
-          { where: { id: broadcastId, status: ['sending', 'cancelling'] } }
+          { where: { id: broadcastId, status: 'sending', workerLeaseId: leaseId } }
         ).catch(() => {});
       })
       .finally(() => activeSends.delete(broadcastId));
@@ -280,9 +313,9 @@ export function makeEmailBroadcastService(overrides = {}) {
   }
 
   /** The throttled per-recipient loop (§3.3). Reads ONLY the frozen row. */
-  async function runWorker(broadcastId) {
+  async function runWorker(broadcastId, leaseId) {
     const broadcast = await d.EmailBroadcast.findByPk(broadcastId);
-    if (!broadcast || broadcast.status !== 'sending') return;
+    if (!broadcast || broadcast.status !== 'sending' || broadcast.workerLeaseId !== leaseId) return;
 
     const { brandName } = brandForHost(broadcast.hostChoice);
     const brandOrigin = (broadcast.ctaUrl || '').replace(/^https?:\/\//, '').split('/')[0] || null;
@@ -302,16 +335,18 @@ export function makeEmailBroadcastService(overrides = {}) {
     }
 
     for (;;) {
-      // Heartbeat + cancellation in one conditional write: losing it means an
-      // admin cancelled or a sweep/other process took ownership — stop here.
+      // Heartbeat + cancellation + ownership in one conditional write: it is
+      // keyed to OUR lease, so losing it means an admin cancelled, a sweep
+      // fired, or a resume superseded this worker — stop here either way.
       const [hb] = await d.sequelize.query(
         `UPDATE email_broadcasts SET "workerHeartbeatAt" = now(), "updatedAt" = now()
-          WHERE id = :id AND status = 'sending' RETURNING id`,
-        { replacements: { id: broadcastId } }
+          WHERE id = :id AND status = 'sending' AND "workerLeaseId" = :lease RETURNING id`,
+        { replacements: { id: broadcastId, lease: leaseId } }
       );
       if (hb.length === 0) {
         const current = await d.EmailBroadcast.findByPk(broadcastId);
-        if (current?.status === 'cancelling') await finalize(broadcastId, 'cancelled');
+        // Only the cancel path is ours to land; a superseded lease just exits.
+        if (current?.status === 'cancelling') await landCancelledIfCancelling(broadcastId);
         return;
       }
 
@@ -320,7 +355,7 @@ export function makeEmailBroadcastService(overrides = {}) {
         order: [['createdAt', 'ASC'], ['id', 'ASC']],
       });
       if (!row) {
-        await finalize(broadcastId, 'completed');
+        await finalizeCompleted(broadcastId, leaseId);
         return;
       }
 
@@ -335,6 +370,7 @@ export function makeEmailBroadcastService(overrides = {}) {
         await processRecipient(broadcast, row, { attempted, brandName, brandOrigin });
       } catch (err) {
         await row.update({ status: 'failed', reason: 'send_error', error: err.message || 'send failed' });
+        await repairRowIfErased(row.id, row.consumerId);
         d.logger.warn('broadcast recipient failed', { broadcastId, recipientId: row.id, error: err.message });
       }
 
@@ -343,7 +379,10 @@ export function makeEmailBroadcastService(overrides = {}) {
   }
 
   async function processRecipient(broadcast, row, { attempted, brandName, brandOrigin }) {
-    const skip = (reason) => row.update({ status: 'skipped', reason });
+    // Every terminal write self-repairs: a row belonging to an erased person
+    // holds no PII regardless of which path (skip/sent/failed) landed it.
+    const skip = (reason) => row.update({ status: 'skipped', reason })
+      .then(() => repairRowIfErased(row.id, row.consumerId));
 
     // Destination refresh: the claim-time address is a hint, the CURRENT
     // consumer row is the truth (erasure nulls it; newer signups replace it).
@@ -400,6 +439,10 @@ export function makeEmailBroadcastService(overrides = {}) {
 
     const to = String(consumer.email).trim();
     attempted.add(normKey);
+    // Persist the refreshed address BEFORE transport: if we crash mid-SMTP,
+    // a resume rebuilds its dedupe set from rows and must see the address
+    // actually attempted, not the stale claim-time one.
+    await row.update({ email: to });
     const result = await d.sendEmail({
       to,
       subject: broadcast.subject,
@@ -413,49 +456,76 @@ export function makeEmailBroadcastService(overrides = {}) {
       },
     });
     if (result?.success === true) {
-      await row.update({ status: 'sent', email: to, sentAt: new Date(), reason: null });
+      await row.update({ status: 'sent', sentAt: new Date(), reason: null });
     } else {
       // Transporter vanished mid-run — no transport attempt was made. The
       // address stays in `attempted` anyway (under-send over double-send).
       await row.update({ status: 'failed', reason: 'send_error', error: result?.message || 'mailer not configured' });
     }
+    await repairRowIfErased(row.id, row.consumerId);
   }
 
-  /** A cancel that raced the prepare phase has no worker to land it — do it here. */
+  /** An erasure committing between our gate check and our row write would have
+   * its 16b scrub overwritten by us — repair unconditionally after terminal
+   * writes so recipient rows never hold PII of an erased person. */
+  async function repairRowIfErased(rowId, consumerId) {
+    await d.sequelize.query(
+      `UPDATE email_broadcast_recipients r SET email = NULL, error = NULL
+        WHERE r.id = :rowId
+          AND EXISTS (SELECT 1 FROM consumers c WHERE c.id = :consumerId AND c."erasedAt" IS NOT NULL)`,
+      { replacements: { rowId, consumerId } }
+    ).catch(() => {});
+  }
+
+  /** pending → skipped/cancelled; attempting rows keep their ambiguous truth
+   * (they may have reached SMTP) — cancellation must never relabel them. */
+  async function landCancelRows(broadcastId) {
+    await d.EmailBroadcastRecipient.update(
+      { status: 'failed', reason: 'ambiguous_crash' },
+      { where: { broadcastId, status: 'attempting' } }
+    );
+    await d.EmailBroadcastRecipient.update(
+      { status: 'skipped', reason: 'cancelled' },
+      { where: { broadcastId, status: 'pending' } }
+    );
+  }
+
+  /** Land `cancelled` from `cancelling` (used by the worker, a raced prepare,
+   * the crash handler and the sweep — cancels must stick, never be relabeled). */
   async function landCancelledIfCancelling(broadcastId) {
     if (await transition(broadcastId, 'cancelling', 'cancelled', { completedAt: new Date() })) {
-      await d.EmailBroadcastRecipient.update(
-        { status: 'skipped', reason: 'cancelled' },
-        { where: { broadcastId, status: ['pending', 'attempting'] } }
+      await landCancelRows(broadcastId);
+      const counts = await liveCounts(broadcastId);
+      await d.EmailBroadcast.update(
+        { sentCount: counts.sent, skippedCount: counts.skipped, failedCount: counts.failed },
+        { where: { id: broadcastId } }
       );
     }
   }
 
-  /** Recount from rows (authoritative) and land the terminal state. */
-  async function finalize(broadcastId, finalStatus) {
-    if (finalStatus === 'cancelled') {
-      await d.EmailBroadcastRecipient.update(
-        { status: 'skipped', reason: 'cancelled' },
-        { where: { broadcastId, status: 'pending' } }
-      );
-    }
+  /** Empty queue: recount and land `completed` — strictly from `sending` under
+   * OUR lease. Losing that CAS means a cancel raced the last iteration; the
+   * cancel wins and we land it instead. */
+  async function finalizeCompleted(broadcastId, leaseId) {
     const counts = await liveCounts(broadcastId);
-    await d.EmailBroadcast.update(
+    const [won] = await d.EmailBroadcast.update(
       {
-        status: finalStatus,
+        status: 'completed',
         sentCount: counts.sent,
         skippedCount: counts.skipped,
         failedCount: counts.failed,
         completedAt: new Date(),
       },
-      { where: { id: broadcastId, status: ['sending', 'cancelling'] } }
+      { where: { id: broadcastId, status: 'sending', workerLeaseId: leaseId } }
     );
+    if (won === 0) await landCancelledIfCancelling(broadcastId);
   }
 
   /**
    * Emergency stop. preparing/sending → cancelling (the worker lands the
    * final state within one iteration); a dead broadcast (interrupted/failed)
-   * → cancelled directly, remaining pending rows marked.
+   * → cancelled directly, remaining pending rows marked (attempting rows
+   * keep their ambiguous truth).
    */
   async function cancelBroadcast(broadcastId) {
     const broadcast = await d.EmailBroadcast.findByPk(broadcastId);
@@ -464,10 +534,7 @@ export function makeEmailBroadcastService(overrides = {}) {
       return d.EmailBroadcast.findByPk(broadcastId);
     }
     if (await transition(broadcastId, ['interrupted', 'failed'], 'cancelled', { completedAt: new Date() })) {
-      await d.EmailBroadcastRecipient.update(
-        { status: 'skipped', reason: 'cancelled' },
-        { where: { broadcastId, status: ['pending', 'attempting'] } }
-      );
+      await landCancelRows(broadcastId);
       const counts = await liveCounts(broadcastId);
       await d.EmailBroadcast.update(
         { sentCount: counts.sent, skippedCount: counts.skipped, failedCount: counts.failed },
@@ -480,17 +547,24 @@ export function makeEmailBroadcastService(overrides = {}) {
 
   /**
    * Boot sweep (bootstrap.js): any in-flight broadcast whose worker heartbeat
-   * is stale belongs to a dead process → `interrupted`, its crash-ambiguous
-   * rows marked terminal. NO auto-resume — a human presses Resume; nothing
-   * mass-sends just because a deploy restarted the box.
+   * is stale belongs to a dead process. preparing/sending → `interrupted`
+   * (resumable, human decision); a stale `cancelling` lands `cancelled` — an
+   * emergency stop must never be swept back into a resumable state. NO
+   * auto-resume; nothing mass-sends just because a deploy restarted the box.
    */
   async function sweepStaleBroadcasts() {
+    const staleCond = `("workerHeartbeatAt" IS NULL OR "workerHeartbeatAt" < now() - interval '120 seconds')`;
+    const [cancelRows] = await d.sequelize.query(
+      `SELECT id FROM email_broadcasts WHERE status = 'cancelling' AND ${staleCond}`
+    );
+    for (const r of cancelRows) {
+      await landCancelledIfCancelling(r.id);
+    }
     const [rows] = await d.sequelize.query(
       `UPDATE email_broadcasts
           SET status = 'interrupted', "updatedAt" = now(),
               "lastError" = COALESCE("lastError", 'worker lost (deploy/crash) — resume to continue')
-        WHERE status IN ('preparing','sending','cancelling')
-          AND ("workerHeartbeatAt" IS NULL OR "workerHeartbeatAt" < now() - interval '120 seconds')
+        WHERE status IN ('preparing','sending') AND ${staleCond}
         RETURNING id`
     );
     for (const r of rows) {
@@ -499,10 +573,13 @@ export function makeEmailBroadcastService(overrides = {}) {
         { where: { broadcastId: r.id, status: 'attempting' } }
       );
     }
-    if (rows.length > 0) {
-      d.logger.warn('swept stale email broadcasts to interrupted', { count: rows.length, ids: rows.map((r) => r.id) });
+    const swept = rows.length + cancelRows.length;
+    if (swept > 0) {
+      d.logger.warn('swept stale email broadcasts', {
+        interrupted: rows.map((r) => r.id), cancelled: cancelRows.map((r) => r.id),
+      });
     }
-    return rows.length;
+    return swept;
   }
 
   /**

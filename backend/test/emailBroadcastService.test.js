@@ -493,6 +493,118 @@ describe('at-most-once + resume + cancel + fences', () => {
   });
 });
 
+describe('Codex round-2 races (edit/erase/cancel/zombie)', () => {
+  test('erased between claim and send: gate skips, no PII written back', async () => {
+    const erased = await makeConsumer();
+    const cohort = await makeCohort(campA, 'Erased');
+    const b = await makeInterrupted({ cohort, consumers: [erased] });
+    // The erasure core, as 16b + step 17 leave it: suppression row + nulled row.
+    await ConsumerSuppression.create({ consumerId: erased.id, channel: 'all', reason: 'erasure', source: 'erasure' });
+    await erased.update({ email: null, phone: null, firstName: null, lastName: null, unsubTokenHash: null, erasedAt: new Date() });
+
+    const { svc, sendEmail } = makeSvc();
+    const { workerPromise } = await svc.startBroadcastSend(b.id, { resume: true });
+    await workerPromise;
+
+    const [row] = await rowsOf(b);
+    expect(row.status).toBe('skipped');
+    // Destination refresh sees the nulled email before the gate even runs.
+    expect(row.reason).toBe('missing_email');
+    expect(row.email).toBeNull();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  test('erasure committing DURING transport: the terminal write is repaired', async () => {
+    const c = await makeConsumer();
+    const cohort = await makeCohort(campA, 'MidErase');
+    const b = await makeInterrupted({ cohort, consumers: [c] });
+    const sendEmail = jest.fn(async () => {
+      // Erasure lands while the mail is on the wire.
+      await c.update({ email: null, erasedAt: new Date() });
+      return { success: true };
+    });
+    const { svc } = makeSvc({ sendEmail });
+    const { workerPromise } = await svc.startBroadcastSend(b.id, { resume: true });
+    await workerPromise;
+
+    const [row] = await rowsOf(b);
+    expect(row.status).toBe('sent'); // the delivery fact stands…
+    expect(row.email).toBeNull(); // …but the repair removed the PII again
+    expect(row.error).toBeNull();
+  });
+
+  test('mktr-host campaign freezes mktr brand context and CTA origin', async () => {
+    const mktrCamp = await createTestCampaign(admin.user.id, {
+      name: `Mktr Host ${RUN}`, design_config: { customerHost: 'mktr' },
+    });
+    await makeConsumer({ campaign: mktrCamp });
+    const cohort = await makeCohort(mktrCamp, 'MktrHost');
+    const draft = await makeDraft({ cohort, campaign: mktrCamp });
+    const { svc, sendEmail } = makeSvc();
+    const { workerPromise } = await svc.startBroadcastSend(draft.id);
+    await workerPromise;
+
+    const done = await EmailBroadcast.findByPk(draft.id);
+    expect(done.hostChoice).toBe('mktr');
+    expect(done.emailContext).toBe('mktr');
+    expect(done.ctaUrl).toMatch(/^https:\/\/mktr\.sg\/LeadCapture\?/);
+    expect(sendEmail.mock.calls[0][0].context).toBe('mktr');
+  });
+
+  test('cancel racing the LAST iteration wins over completed', async () => {
+    const c = await makeConsumer();
+    const cohort = await makeCohort(campA, 'LastCancel');
+    const b = await makeInterrupted({ cohort, consumers: [c] });
+    const sendEmail = jest.fn(async () => {
+      // Cancel lands while the final mail is in flight: the queue will be
+      // empty next loop, and finalizeCompleted must LOSE to the cancel.
+      await EmailBroadcast.update({ status: 'cancelling' }, { where: { id: b.id, status: 'sending' } });
+      return { success: true };
+    });
+    const { svc } = makeSvc({ sendEmail });
+    const { workerPromise } = await svc.startBroadcastSend(b.id, { resume: true });
+    await workerPromise;
+
+    const done = await EmailBroadcast.findByPk(b.id);
+    expect(done.status).toBe('cancelled');
+    expect(done.sentCount).toBe(1); // the send that was already in flight stands
+  });
+
+  test('a superseded (zombie) lease loses its heartbeat', async () => {
+    const c = await makeConsumer();
+    const cohort = await makeCohort(campA, 'Zombie');
+    const b = await makeInterrupted({ cohort, consumers: [c] });
+    // A resume mints a fresh lease…
+    const { svc } = makeSvc();
+    const { workerPromise } = await svc.startBroadcastSend(b.id, { resume: true });
+    await workerPromise;
+    // …after which the old worker's lease-keyed heartbeat matches nothing.
+    const staleLease = '00000000-0000-4000-8000-00000000dead';
+    const [hb] = await EmailBroadcast.sequelize.query(
+      `UPDATE email_broadcasts SET "workerHeartbeatAt" = now()
+        WHERE id = :id AND status = 'sending' AND "workerLeaseId" = :lease RETURNING id`,
+      { replacements: { id: b.id, lease: staleLease } }
+    );
+    expect(hb).toHaveLength(0);
+  });
+
+  test('a stale cancelling broadcast is swept to cancelled, never back to resumable', async () => {
+    const c1 = await makeConsumer();
+    const cohort = await makeCohort(campA, 'SweepCancel');
+    const b = await makeInterrupted({ cohort, consumers: [c1] });
+    await b.update({ status: 'cancelling', workerHeartbeatAt: new Date(Date.now() - 10 * 60 * 1000) });
+
+    const { svc } = makeSvc();
+    await svc.sweepStaleBroadcasts();
+
+    const after = await EmailBroadcast.findByPk(b.id);
+    expect(after.status).toBe('cancelled');
+    const [row] = await rowsOf(b);
+    expect(row.status).toBe('skipped');
+    expect(row.reason).toBe('cancelled');
+  });
+});
+
 describe('test sends', () => {
   test('goes to the requesting admin only, marked, with an inert unsubscribe', async () => {
     const cohort = await makeCohort(campA, 'Test');
