@@ -95,4 +95,50 @@ describe('clientKey', () => {
   it('falls back when no address is available', () => {
     expect(clientKey({})).toBe('unknown');
   });
+
+  // ── Cloudflare edge handling ──
+  // api.mktr.sg is Cloudflare-fronted, so req.ip is the EDGE address. Keying on
+  // it bucketed unrelated visitors together and let one attacker spread across
+  // edges. Observed in production: every limiter row was keyed 162.158.x.x.
+
+  const cfReq = (edgeIp, cfHeader) => ({ ip: edgeIp, headers: { 'cf-connecting-ip': cfHeader } });
+
+  it('uses the real visitor IP when the request came from a Cloudflare edge', () => {
+    // Exactly the production case: edge 162.158.26.189 (in 162.158.0.0/15).
+    expect(clientKey(cfReq('162.158.26.189', '115.164.36.13'))).toBe('115.164.36.13');
+  });
+
+  it('IGNORES a spoofed CF-Connecting-IP when the request bypassed Cloudflare', () => {
+    // Hitting the Render origin directly. Trusting the header here would let an
+    // attacker mint a fresh bucket per request — worse than the bug being fixed.
+    expect(clientKey(cfReq('203.0.113.9', '1.2.3.4'))).toBe('203.0.113.9');
+  });
+
+  it('separates two visitors arriving through the same Cloudflare edge', () => {
+    const a = clientKey(cfReq('162.158.26.189', '115.164.36.13'));
+    const b = clientKey(cfReq('162.158.26.189', '203.0.113.50'));
+    expect(a).not.toBe(b); // previously these collided into one bucket
+  });
+
+  it('takes only the first hop if the header carries a list', () => {
+    expect(clientKey(cfReq('104.16.0.1', '115.164.36.13, 10.0.0.1'))).toBe('115.164.36.13');
+  });
+
+  it('recognises Cloudflare IPv6 edges too', () => {
+    expect(clientKey(cfReq('2606:4700::1111', '115.164.36.13'))).toBe('115.164.36.13');
+  });
+
+  it('normalises a visitor IPv6 address behind Cloudflare to its /64', () => {
+    expect(clientKey(cfReq('162.158.26.189', '2001:db8:85a3:8d3::9')))
+      .toBe('2001:0db8:85a3:08d3');
+  });
+
+  it('falls back to the edge address when no CF header is present', () => {
+    expect(clientKey({ ip: '162.158.26.189', headers: {} })).toBe('162.158.26.189');
+  });
+
+  it('does not treat a near-miss range as Cloudflare', () => {
+    // 162.160.x is outside 162.158.0.0/15 — must not be trusted.
+    expect(clientKey(cfReq('162.160.0.1', '1.2.3.4'))).toBe('162.160.0.1');
+  });
 });

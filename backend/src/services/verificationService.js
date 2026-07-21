@@ -55,6 +55,19 @@ const WA_TEMPLATE_LANG = process.env.META_WA_TEMPLATE_LANG || 'en_US';
 // Helper to generate 6-digit code using cryptographically secure randomness
 const generateCode = () => crypto.randomInt(100000, 1000000).toString();
 
+/**
+ * Mask a phone number for logging: `+6591234567` → `+65****4567`.
+ *
+ * Application logs are outside the consent ledger and the PDPA erasure matrix —
+ * an erasure request rebuilds the database, not Render's log stream. Keeping raw
+ * numbers out of them means there is nothing there to erase. Mirrors the same
+ * helper in lyfe-app's custom-sms-hook.
+ */
+const maskPhone = (phone) => {
+  const s = String(phone || '');
+  return s.length < 7 ? '***' : `${s.slice(0, 3)}****${s.slice(-4)}`;
+};
+
 // Helper to send WhatsApp via Meta Graph API
 const sendWhatsAppOtpMeta = async (phone, code) => {
   const phoneId = process.env.META_WA_PHONE_NUMBER_ID;
@@ -197,7 +210,11 @@ export async function sendVerificationCode({ phone, countryCode = '+65', campaig
     }
   }
 
-  logger.info('Sending OTP', { channel: channel.toUpperCase() });
+  // pino's signature is (mergingObject, message) — passing the object SECOND
+  // silently drops it, which is why these lines logged a bare "Sending OTP" with
+  // no channel and made a live SMS incident harder to diagnose than it should
+  // have been. Same fix applied to every call below.
+  logger.info({ channel: channel.toUpperCase() }, 'Sending OTP');
 
   try {
     // 1. Save to DB (upsert) - Expires in 10 minutes
@@ -219,18 +236,19 @@ export async function sendVerificationCode({ phone, countryCode = '+65', campaig
       try {
         const waResponse = await sendWhatsAppOtpMeta(fullPhone, code);
         messageId = waResponse.messages?.[0]?.id;
-        logger.info('WhatsApp sent', { phone: fullPhone, messageId });
+        logger.info({ phone: maskPhone(fullPhone), messageId }, 'WhatsApp sent');
       } catch (waErr) {
-        logger.error('WhatsApp OTP failed — falling back to SMS', {
-          error: waErr?.message || String(waErr)
-        });
+        logger.error(
+          { error: waErr?.message || String(waErr) },
+          'WhatsApp OTP failed — falling back to SMS',
+        );
         sentChannel = 'sms';
         messageId = await sendSmsOtp(fullPhone, code);
-        logger.info('SMS sent (WhatsApp fallback)', { phone: fullPhone, messageId });
+        logger.info({ phone: maskPhone(fullPhone), messageId }, 'SMS sent (WhatsApp fallback)');
       }
     } else {
       messageId = await sendSmsOtp(fullPhone, code);
-      logger.info('SMS sent', { phone: fullPhone, messageId });
+      logger.info({ phone: maskPhone(fullPhone), messageId }, 'SMS sent');
     }
 
     return { status: 'pending', messageId, channel: sentChannel };
@@ -241,7 +259,7 @@ export async function sendVerificationCode({ phone, countryCode = '+65', campaig
     // Preserve deliberate status codes (the 429 from the global ceiling gate);
     // only genuine faults get flattened into a 500.
     if (err instanceof AppError) throw err;
-    logger.error('Failed to send OTP', { channel, error: err?.message || String(err) });
+    logger.error({ channel, error: err?.message || String(err) }, 'Failed to send OTP');
     throw new AppError(`Failed to send code: ${err.message}`, 500);
   }
 }
