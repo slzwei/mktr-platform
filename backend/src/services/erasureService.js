@@ -10,7 +10,8 @@ import { emailNormKey } from './repeatSignup.js';
 import { makeInventoryService } from './redeemOps/inventoryService.js';
 import { makeRedeemOpsAuditService } from './redeemOps/auditService.js';
 import { buildLeadDeletedPayload } from './prospectHelpers.js';
-import { flushDeliveries } from './webhookService.js';
+import { flushDeliveries, historicallyTargetedSubscribers } from './webhookService.js';
+import { reconcileSuppressionPropagation } from './suppressionPropagationService.js';
 import { evictVerifiedPhone } from './verifiedPhoneStore.js';
 import { evictDncCheckCache } from './dncCheckService.js';
 
@@ -58,15 +59,13 @@ import { evictDncCheckCache } from './dncCheckService.js';
 /** draw_entries.phoneHash is NOT NULL — erasure writes this obviously-fake sentinel. */
 export const ERASED_PHONE_HASH = '0'.repeat(64);
 
-/** Events whose payloads embed the full lead PII (the "ever received" markers). */
-const RECEIVED_EVENT_TYPES = ['lead.created', 'lead.assigned'];
-
 const digitsOf = (v) => String(v || '').replace(/\D/g, '');
 
 const defaultDeps = {
   sequelize, Consumer, Prospect, RewardEntitlement, RedemptionEvent,
   ConsentEvent, ConsumerSuppression, WebhookSubscriber, WebhookDelivery,
-  logger, flushDeliveries, evictVerifiedPhone, evictDncCheckCache,
+  logger, flushDeliveries, historicallyTargetedSubscribers, reconcileSuppressionPropagation,
+  evictVerifiedPhone, evictDncCheckCache,
   inventory: makeInventoryService(),
   audit: makeRedeemOpsAuditService(),
 };
@@ -188,15 +187,10 @@ export function makeErasureService(overrides = {}) {
         .filter(Boolean))];
 
       if (pids.length) {
-        // 4. Who ever RECEIVED this lead (before payloads are scrubbed).
-        const [recipientRows] = await d.sequelize.query(
-          `SELECT DISTINCT wd."subscriberId" AS id,
-                  (wd.payload::jsonb #>> '{data,lead,externalId}') AS pid
-             FROM webhook_deliveries wd
-            WHERE wd."eventType" IN (:eventTypes)
-              AND (wd.payload::jsonb #>> '{data,lead,externalId}') IN (:pids)`,
-          { replacements: { eventTypes: RECEIVED_EVENT_TYPES, pids }, transaction: t }
-        );
+        // 4. Who was ever TARGETED with this lead's payload (before payloads
+        // are scrubbed) — shared helper (tracker "propagate").
+        const recipientRows = (await d.historicallyTargetedSubscribers(pids, t))
+          .map((r) => ({ id: r.subscriberId, pid: r.prospectId }));
 
         // 5a. A pending delivery still carrying PII must never fire later.
         // (The in-memory instance a flush already queued is fenced too:
@@ -205,7 +199,7 @@ export function makeErasureService(overrides = {}) {
           `UPDATE webhook_deliveries
               SET status = 'failed', "errorMessage" = 'cancelled: person erased', "updatedAt" = now()
             WHERE status = 'pending'
-              AND "eventType" <> 'lead.deleted'
+              AND "eventType" NOT IN ('lead.deleted', 'lead.suppressed')
               AND (payload::jsonb #>> '{data,lead,externalId}') IN (:pids)`,
           { replacements: { pids }, transaction: t }
         );
@@ -213,7 +207,10 @@ export function makeErasureService(overrides = {}) {
 
         // 5b. Scrub every historical payload copy down to its envelope. Runs
         // BEFORE the lead.deleted outbox rows are written; earlier repair-run
-        // outbox rows are excluded by event type.
+        // outbox rows are excluded by event type. lead.suppressed is exempt
+        // like lead.deleted: its payload is PII-free by contract, and
+        // cancelling/scrubbing it would only make the suppression reconciler
+        // re-queue an identical delivery (tracker "propagate").
         const [, scrubMeta] = await d.sequelize.query(
           `UPDATE webhook_deliveries
               SET payload = json_build_object(
@@ -224,7 +221,7 @@ export function makeErasureService(overrides = {}) {
                       'externalId', payload::jsonb #>> '{data,lead,externalId}'))),
                   "responseBody" = NULL,
                   "updatedAt" = now()
-            WHERE "eventType" <> 'lead.deleted'
+            WHERE "eventType" NOT IN ('lead.deleted', 'lead.suppressed')
               AND (payload::jsonb #>> '{data,lead,externalId}') IN (:pids)
               AND (payload::jsonb -> 'erased') IS NULL`,
           { replacements: { pids }, transaction: t }
@@ -652,8 +649,17 @@ export function makeErasureService(overrides = {}) {
     });
 
     // Post-commit: fire the persisted lead.deleted outbox rows + evict the
-    // in-memory phone caches (OTP-verified marker, DNC result cache).
+    // in-memory phone caches (OTP-verified marker, DNC result cache), then
+    // trigger the suppression reconciler — subscribers that handle
+    // lead.suppressed but not lead.deleted learn "stop contact" this way
+    // (fallback rule, tracker "propagate"). Fire-and-forget: the periodic
+    // pass heals a lost trigger.
     d.flushDeliveries(outboxPairs);
+    Promise.resolve(d.reconcileSuppressionPropagation({ consumerId })).catch((err) => {
+      d.logger.warn('[erasure] suppression propagation trigger failed (periodic pass heals)', {
+        consumerId, error: err?.message || String(err),
+      });
+    });
     if (erasedPhone) {
       try {
         d.evictVerifiedPhone(erasedPhone);

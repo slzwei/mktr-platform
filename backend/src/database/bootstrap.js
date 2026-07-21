@@ -58,6 +58,16 @@ export async function bootstrapDatabase() {
     await recoverPendingRetries();
   });
 
+  // Suppression-propagation reconcile (tracker "propagate"): project + queue
+  // lead.suppressed pairs from current state. Runs dark until a subscriber
+  // carries the event (env flags above); the boot pass doubles as the
+  // flag-flip backfill.
+  await safeRun('Suppression propagation reconcile', async () => {
+    const { reconcileSuppressionPropagation } = await import('../services/suppressionPropagationService.js');
+    await reconcileSuppressionPropagation();
+    logger.info('suppression propagation reconciler armed (dark until a subscriber carries lead.suppressed)');
+  });
+
   // Poll for stale webhook retries every 60 seconds (skip in test mode)
   if (process.env.NODE_ENV !== 'test') {
     setInterval(async () => {
@@ -68,6 +78,13 @@ export async function bootstrapDatabase() {
         logger.warn('[Webhook] periodic recovery failed', { error: err?.message });
       }
     }, 60_000);
+
+    // Suppression-propagation backstop pass every 60 minutes — heals lost
+    // triggers, races, and dark-period backlogs (never throws internally).
+    setInterval(async () => {
+      const { reconcileSuppressionPropagation } = await import('../services/suppressionPropagationService.js');
+      await reconcileSuppressionPropagation();
+    }, 3_600_000);
 
     // Purge expired idempotency keys every hour
     setInterval(async () => {
@@ -311,7 +328,7 @@ async function safeRun(label, fn) {
  * are forwarded to the Lyfe Edge Function automatically.
  * Reads URL and secret from env vars; skips silently if not configured.
  */
-async function ensureLyfeWebhookSubscriber() {
+export async function ensureLyfeWebhookSubscriber() {
   const adapter = adapterRegistry.get('lyfe');
   const url = adapter.outboundWebhookUrl?.();
   const secret = adapter.outboundWebhookSecret?.();
@@ -325,7 +342,16 @@ async function ensureLyfeWebhookSubscriber() {
 
   const existing = await WebhookSubscriber.findOne({ where: { name: SUBSCRIBER_NAME } });
 
-  const requiredEvents = ['lead.created', 'lead.assigned', 'lead.unassigned'];
+  // lead.suppressed is env-gated per destination (tracker "propagate"): the
+  // receiver 400s unknown events, and 50 consecutive failures auto-disable the
+  // subscriber — flip ONLY after the consumer's handler is deployed
+  // (docs/reference/webhook-propagation-contract.md runbook). The self-heal
+  // below makes the flag authoritative in both directions on every boot.
+  const requiredEvents = [
+    'lead.created', 'lead.assigned', 'lead.unassigned',
+    ...(String(process.env.LYFE_LEAD_SUPPRESSED_ENABLED || 'false').toLowerCase() === 'true'
+      ? ['lead.suppressed'] : []),
+  ];
 
   if (existing) {
     const needsUpdate = existing.url !== url || existing.secret !== secret || !existing.enabled
@@ -350,7 +376,7 @@ async function ensureLyfeWebhookSubscriber() {
     name: SUBSCRIBER_NAME,
     url,
     secret,
-    events: ['lead.created', 'lead.assigned', 'lead.unassigned'],
+    events: requiredEvents,
     enabled: true,
     description: 'Forward leads to Lyfe mobile app via Supabase Edge Function',
     metadata: { destination: 'lyfe' },
@@ -366,7 +392,7 @@ async function ensureLyfeWebhookSubscriber() {
  * dispatcher delivers ONLY mktr-leads-destined leads here. Env-gated: skips
  * silently if the URL/secret aren't configured (mirrors the Lyfe subscriber).
  */
-async function ensureMktrLeadsWebhookSubscriber() {
+export async function ensureMktrLeadsWebhookSubscriber() {
   const adapter = adapterRegistry.get('mktr_leads');
   const url = adapter.outboundWebhookUrl?.();
   const secret = adapter.outboundWebhookSecret?.();
@@ -380,7 +406,13 @@ async function ensureMktrLeadsWebhookSubscriber() {
   // lead.held → the admin held-queue ping (only the mktr-leads app has that surface;
   // the Lyfe subscriber intentionally does NOT subscribe to it). The events-diff in
   // the update guard below self-heals this onto the existing subscriber on deploy.
-  const requiredEvents = ['lead.created', 'lead.assigned', 'lead.unassigned', 'lead.held', 'lead.deleted'];
+  // lead.suppressed is env-gated (tracker "propagate") — flip ONLY after the
+  // mktr-leads EF handler is deployed; see the Lyfe block above for why.
+  const requiredEvents = [
+    'lead.created', 'lead.assigned', 'lead.unassigned', 'lead.held', 'lead.deleted',
+    ...(String(process.env.MKTR_LEADS_LEAD_SUPPRESSED_ENABLED || 'false').toLowerCase() === 'true'
+      ? ['lead.suppressed'] : []),
+  ];
 
   const existing = await WebhookSubscriber.findOne({ where: { name: SUBSCRIBER_NAME } });
 
