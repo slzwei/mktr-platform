@@ -58,6 +58,19 @@ function setCached(number, registered, now = Date.now()) {
   resultCache.set(cacheKey(number), { registered, expiresAt: now + cacheTtlMs() });
 }
 
+/**
+ * PR C erasure: evict any cached DNC result for this phone (post-commit).
+ * The cache is keyed by the formatDncNumber output, so all plausible key
+ * variants of the erased phone are dropped.
+ */
+export function evictDncCheckCache(phoneish) {
+  const digits = String(phoneish || '').replace(/\D/g, '');
+  if (!digits) return;
+  for (const variant of new Set([String(phoneish), digits, digits.slice(-8), `+${digits}`])) {
+    resultCache.delete(cacheKey(variant));
+  }
+}
+
 /** Test helper — clear the per-number result cache. */
 export function _resetDncCheckCache() {
   resultCache.clear();

@@ -1341,6 +1341,12 @@ export function makeProspectService(overrides = {}) {
       throw new d.AppError('Prospect not found or access denied', 404);
     }
 
+    // PR C: an erased row is a legal skeleton — staff edits must not be able
+    // to re-attach PII to it (a re-signup creates a fresh row instead).
+    if (prospect.sourceMetadata?.erased === true) {
+      throw new d.AppError('This lead was erased (PDPA) and can no longer be edited', 410);
+    }
+
     const oldStatus = prospect.leadStatus;
     const oldAssignedAgentId = prospect.assignedAgentId;
     const oldAssignedAgent = prospect.assignedAgent;

@@ -11,6 +11,7 @@ import { makeRedeemOpsAuditService } from './auditService.js';
 import { mintToken, hashToken, tokenHintOf } from './tokens.js';
 import { canEmailProspect, makeFulfilmentNotify } from './fulfilmentNotify.js';
 import { canWhatsAppProspect, waEnabled, waRecipient } from './whatsappService.js';
+import { isSendBlocked } from '../consentService.js';
 
 const DEFAULT_RESERVATION_DAYS = 30;
 const DEFAULT_REDEMPTION_DAYS = 90;
@@ -68,6 +69,7 @@ export function makeEntitlementService(overrides = {}) {
     notifyUnlockWa: null, // injected by entitlementWiring (voucher WhatsApp, PR E) — null-safe
     notifyReservationWa: null, // injected by entitlementWiring (reservation-pass WhatsApp, PR E) — null-safe
     builders: null, // share/claim-URL builders; defaults lazily to makeFulfilmentNotify()
+    isSendBlocked, // PR C: erasure stop at the send choke point (transactional purpose)
     ...overrides,
   };
   const builders = () => {
@@ -145,11 +147,33 @@ export function makeEntitlementService(overrides = {}) {
     channels = ['whatsapp', 'email'],
   }) {
     const args = kind === 'voucher'
-      ? { entitlement, prospect, voucherToken }
-      : { entitlement, prospect, presentationToken };
+      ? { entitlement, voucherToken }
+      : { entitlement, presentationToken };
     const fire = (fn, channel) => {
       const delivery = Promise.resolve()
-        .then(() => fn(args))
+        .then(async () => {
+          // PR C erasure stop: these sends are queued with a point-in-time
+          // prospect object, and an erasure can land between the queue and the
+          // fire. Reload the row and re-check right before sending — an erased
+          // person's voucher/pass must never leave the building. Post-erasure
+          // the reloaded row also has null email/phone, so the sender's own
+          // guards skip too (defence in depth). isSendBlocked fails OPEN for
+          // transactional purpose: a consent-infra hiccup never strands a
+          // legitimate voucher. Only persisted prospects are re-checked — an
+          // id-less object has no row to reload (and no erasure to observe).
+          let target = prospect;
+          if (prospect?.id) {
+            const fresh = await d.Prospect.findByPk(prospect.id);
+            if (fresh) target = fresh;
+            if (await d.isSendBlocked(target, { channel, purpose: 'transactional' })) {
+              d.logger.info('redeem_ops.delivery.blocked', {
+                entitlementId: entitlement.id, channel, reason: 'suppressed_or_erased',
+              });
+              return { skipped: 'suppressed' };
+            }
+          }
+          return fn({ ...args, prospect: target });
+        })
         .then((r) => {
           if (r?.skipped) return null;
           return writeDeliveryReceipt(entitlement.id, kind, r || { sent: false, error: 'no sender result' }, channel);
@@ -606,7 +630,18 @@ export function makeEntitlementService(overrides = {}) {
     await entitlement.reload();
 
     if (channel === 'link') {
-      const bundle = await builders().buildShareBundle({ entitlement, prospect, kind, rawToken: fresh.raw });
+      // PR C: the share bundle embeds the person's name + raw phone and skips
+      // queueDelivery's erasure fence — re-check on a FRESH row here (the
+      // stale `prospect` was loaded before the token rotation).
+      const freshProspect = entitlement.prospectId
+        ? await d.Prospect.findByPk(entitlement.prospectId)
+        : prospect;
+      if (await d.isSendBlocked(freshProspect || prospect, { channel: 'all', purpose: 'transactional' })) {
+        throw new AppError('This customer was erased (PDPA) — nothing can be shared', 410);
+      }
+      const bundle = await builders().buildShareBundle({
+        entitlement, prospect: freshProspect || prospect, kind, rawToken: fresh.raw,
+      });
       return { entitlement, kind, channel, emailQueued: false, ...bundle };
     }
     const emailQueued = queueDelivery({
