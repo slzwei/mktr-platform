@@ -11,4 +11,7 @@ const router = express.Router();
 // aggregates a person's history across every campaign and must not be.
 router.get('/:id', authenticateToken, requireAdmin, consumerController.getConsumer);
 
+// PDPA person-level erasure (PR C) — admin + explicit body.confirm='ERASE'.
+router.post('/:id/erase', authenticateToken, requireAdmin, consumerController.eraseConsumer);
+
 export default router;

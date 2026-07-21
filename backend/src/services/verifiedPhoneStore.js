@@ -65,9 +65,14 @@ export function isPhoneRecentlyVerified(fullPhone, now = Date.now()) {
   return true;
 }
 
+/** PR C erasure: drop one phone's marker immediately (post-commit eviction). */
+export function evictVerifiedPhone(fullPhone) {
+  if (fullPhone) verifiedPhones.delete(fullPhone);
+}
+
 /** Test helper — clear all markers. */
 export function _resetVerifiedPhones() {
   verifiedPhones.clear();
 }
 
-export default { markPhoneVerified, isPhoneRecentlyVerified, _resetVerifiedPhones };
+export default { markPhoneVerified, isPhoneRecentlyVerified, evictVerifiedPhone, _resetVerifiedPhones };

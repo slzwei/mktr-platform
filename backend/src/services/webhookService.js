@@ -187,6 +187,24 @@ export function makeWebhookService(overrides = {}) {
    * Attempt to deliver a webhook payload to a subscriber.
    */
   async function attemptDelivery(delivery, subscriber) {
+    // PR C erasure fence: an enqueued/retrying delivery is an IN-MEMORY copy —
+    // an erasure that cancelled+scrubbed the row after the enqueue would
+    // otherwise still send the original PII payload. Reload and use the DB
+    // truth for both liveness and body. (Unit fakes without .reload() skip
+    // the fence — they have no row to be erased.)
+    if (typeof delivery.reload === 'function') {
+      try {
+        await delivery.reload();
+      } catch (_) {
+        return; // row deleted under us — nothing to send
+      }
+      if (delivery.status !== 'pending') {
+        d.logger.info('[Webhook] delivery skipped (no longer pending)', {
+          deliveryId: delivery.deliveryId, status: delivery.status,
+        });
+        return;
+      }
+    }
     const rawBody = JSON.stringify(delivery.payload);
     const timestamp = new Date().toISOString();
     const signatureVersion = signatureVersionForSubscriber(subscriber);
