@@ -44,6 +44,11 @@ const DrawEntry = sequelize.define('DrawEntry', {
   updatedAt: false,
   indexes: [
     { fields: ['drawId'], name: 'idx_de_draw' },
+    // Cohort draw-filter joins (migration 084) — mirrored here for
+    // sync()-built test schemas: phoneHash fallback branch + bare
+    // prospectId probe (uq_de_draw_prospect leads on drawId).
+    { fields: ['phoneHash'], name: 'idx_de_phone_hash' },
+    { fields: ['prospectId'], name: 'idx_de_prospect', where: { prospectId: { [Op.ne]: null } } },
     // Partial (erasure sets prospectId NULL) — defined here AND in migration
     // 059 so sync()-built schemas enforce it too.
     {
