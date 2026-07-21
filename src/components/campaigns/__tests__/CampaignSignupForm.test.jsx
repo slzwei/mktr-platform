@@ -463,7 +463,7 @@ describe('CampaignSignupForm — mandatory agree-all consent block', () => {
     expect(screen.queryByText(CONSENT_COPY.clauseThirdPartyHeadline)).toBeNull();
     // Section 2 renders the brand-default T&C fallback when no termsContent.
     expect(screen.getByText(CONSENT_INLINE.sectionTermsTitle)).toBeInTheDocument();
-    expect(screen.getByText(/How campaigns are funded/)).toBeInTheDocument();
+    expect(screen.getByText(/The reward is free to you/)).toBeInTheDocument();
   });
 
   it('a NAMED sponsor: sponsored summary + named line INLINE (no dialog needed), clause in the dialog', async () => {
