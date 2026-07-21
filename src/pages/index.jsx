@@ -72,6 +72,8 @@ const ADMIN_V2 = import.meta.env.VITE_ADMIN_V2_ENABLED === 'true';
 const AdminV2Shell = lazy(() => import('@/components/adminv2/AdminV2Shell'));
 const AdminV2Dashboard = lazy(() => import('./adminv2/AdminV2Dashboard'));
 const AdminV2Prospects = lazy(() => import('./adminv2/AdminV2Prospects'));
+const AdminV2Cohorts = lazy(() => import('./adminv2/AdminV2Cohorts'));
+const AdminV2CohortDetail = lazy(() => import('./adminv2/AdminV2CohortDetail'));
 const AdminV2Campaigns = lazy(() => import('./adminv2/AdminV2Campaigns'));
 const AdminV2CampaignDetail = lazy(() => import('./adminv2/AdminV2CampaignDetail'));
 const AdminV2Agents = lazy(() => import('./adminv2/AdminV2Agents'));
@@ -341,6 +343,28 @@ function PagesContent() {
  <ProtectedRoute requiredRole="admin">
  <AdminV2Shell>
  <AdminV2CampaignDetail />
+ </AdminV2Shell>
+ </ProtectedRoute>
+ }
+ />
+ )}
+ {ADMIN_V2 && (
+ <Route
+ path="/AdminCohorts" element={
+ <ProtectedRoute requiredRole="admin">
+ <AdminV2Shell>
+ <AdminV2Cohorts />
+ </AdminV2Shell>
+ </ProtectedRoute>
+ }
+ />
+ )}
+ {ADMIN_V2 && (
+ <Route
+ path="/admin/cohorts/:id" element={
+ <ProtectedRoute requiredRole="admin">
+ <AdminV2Shell>
+ <AdminV2CohortDetail />
  </AdminV2Shell>
  </ProtectedRoute>
  }

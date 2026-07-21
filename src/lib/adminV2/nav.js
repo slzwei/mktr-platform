@@ -12,6 +12,7 @@ export const NAV = [
     label: 'Lead Generation',
     items: [
       { to: '/AdminProspects', label: 'Prospects' },
+      { to: '/AdminCohorts', label: 'Cohorts' },
       { to: '/AdminAgents', label: 'Agents' },
       { to: '/AdminAgentGroups', label: 'Agent Groups' },
       { to: '/AdminCampaigns', label: 'Campaigns' },
