@@ -87,4 +87,64 @@ describe('generateCampaignDesign', () => {
       generateCampaignDesign({ campaign: { id: 'c1', design_config: {} }, brief: 'voucher push' })
     ).rejects.toBeTruthy();
   });
+
+  it('applies the common FIELDS + TERMS sections beside the look (rowApplyValue shapes)', async () => {
+    apiClient.post.mockResolvedValueOnce({
+      data: {
+        proposals: [POSTER_LOOK],
+        fields: [
+          { id: 'name', visible: true, required: true },
+          { id: 'email', visible: true, required: true },
+          { id: 'phone', visible: true, required: true },
+          { id: 'dob', visible: true, required: true },
+          { id: 'postal', visible: false },
+          { id: 'education', visible: false },
+          { id: 'salary', visible: false },
+        ],
+        terms: { template: 'default', html: '<h3>Terms</h3><p>Drafted legal copy.</p>' },
+      },
+    });
+    const doc = await generateCampaignDesign({ campaign: { id: 'c1', design_config: {} }, brief: 'voucher push' });
+    expect(doc.template.id).toBe('poster'); // look still composed
+    expect(doc.form.terms).toEqual({ template: 'default', html: '<h3>Terms</h3><p>Drafted legal copy.</p>' });
+    expect(doc.form.fields).toHaveLength(7);
+    expect(doc.form.fields[3]).toEqual({ id: 'dob', visible: true, required: true, row: null });
+    expect(doc.form.fields[4]).toEqual({ id: 'postal', visible: false, required: false, row: null });
+  });
+
+  it('draw campaigns compose terms from the deterministic drawTerms FACTS, never LLM text', async () => {
+    apiClient.post.mockResolvedValueOnce({
+      data: {
+        proposals: [{ name: 'Postcard', template: { id: 'postcard', params: {} }, theme: { preset: 'warm-cream' }, draft: [] }],
+        drawTerms: {
+          campaignName: 'iPhone 17 Pro Lucky Draw',
+          prizes: [{ qty: 1, name: 'iPhone 17 Pro' }],
+          closesAt: '2026-08-31',
+          multiplier: 10,
+          minAge: 21,
+          verification: 'sms',
+        },
+      },
+    });
+    const doc = await generateCampaignDesign({
+      campaign: { id: 'c-draw', design_config: { luckyDraw: { enabled: true, prize: 'iPhone 17 Pro', closesAt: '2026-08-31' } } },
+      brief: 'iphone draw',
+    });
+    expect(doc.form.terms.template).toBe('default');
+    expect(doc.form.terms.html).toContain('iPhone 17 Pro Lucky Draw'); // platform template output
+    expect(doc.form.terms.html).toContain('21'); // minAge interpolated
+  });
+
+  it('terms/fields still land when NO look is usable — legal + form beat returning nothing', async () => {
+    apiClient.post.mockResolvedValueOnce({
+      data: {
+        proposals: [SPOTLIGHT_LOOK], // blocked (no quiz)
+        terms: { template: 'default', html: '<p>Drafted terms.</p>' },
+      },
+    });
+    const doc = await generateCampaignDesign({ campaign: { id: 'c1', design_config: {} }, brief: 'voucher push' });
+    expect(doc).not.toBeNull();
+    expect(doc.template.id).toBe('editorial'); // base template untouched — no look adopted
+    expect(doc.form.terms.html).toBe('<p>Drafted terms.</p>');
+  });
 });
