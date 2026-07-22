@@ -95,7 +95,10 @@ describe('AdminCampaignStudio', () => {
     expect(dialog.textContent).toContain('"version": 2');
   });
 
-  it('F9: an unadopted AI look blocks the save; adopting unblocks it and saving commits (banner gone)', async () => {
+  // Heaviest test in the suite (full Studio render x several interactions);
+  // the 11-template picker put it over vitest's 5s default on the slower
+  // CI runner under coverage — explicit headroom, not a behavior change.
+  it('F9: an unadopted AI look blocks the save; adopting unblocks it and saving commits (banner gone)', { timeout: 15000 }, async () => {
     const LOOK = {
       name: 'Dusk Poster',
       rationale: 'High-contrast hero.',
