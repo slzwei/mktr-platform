@@ -5,13 +5,32 @@
  * and design stay on the existing flows (workspace / designer) — this screen
  * observes and navigates, it does not fork the editing surface.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getMarketplaceListedFromDoc } from '@/lib/designConfigV2';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useCampaignLeaderboard, useAttention } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtSGD, fmtDate, daysUntil } from '@/lib/adminV2/format';
 import { Chip, PageHeader, PeriodSwitch, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
 import CampaignTypeSelectionDialog from '@/components/campaigns/CampaignTypeSelectionDialog';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { toast } from 'sonner';
+import { queryClient } from '@/lib/queryClient';
+import * as campaignSvc from '@/services/campaignService';
+
+/**
+ * Bulk row actions (select → act). Eligibility mirrors the server rules:
+ * launch-state flips only between active/paused (a draft is LAUNCHED from its
+ * workspace, never from a bulk bar), archive accepts any non-archived status,
+ * and permanent delete is archived-only (the server 400s otherwise and 409s
+ * on pending commissions — per-row failures surface in the summary toast).
+ */
+const BULK_ACTIONS = [
+  { key: 'pause', label: 'Pause', eligible: (c) => c.status === 'active', run: (id) => campaignSvc.setCampaignLaunchState(id, { state: 'paused' }) },
+  { key: 'activate', label: 'Resume', eligible: (c) => c.status === 'paused', run: (id) => campaignSvc.setCampaignLaunchState(id, { state: 'active' }) },
+  { key: 'archive', label: 'Archive', eligible: (c) => c.status !== 'archived', run: (id) => campaignSvc.archiveCampaign(id) },
+  { key: 'restore', label: 'Restore', eligible: (c) => c.status === 'archived', run: (id) => campaignSvc.restoreCampaign(id) },
+  { key: 'delete', label: 'Delete', destructive: true, eligible: (c) => c.status === 'archived', run: (id) => campaignSvc.permanentDeleteCampaign(id) },
+];
 
 const STATUS_TONE = { active: 'ok', draft: '', paused: 'warn', completed: '', archived: '' };
 const TYPE_LABELS = {
@@ -48,6 +67,9 @@ export default function AdminV2Campaigns() {
   // straight to the workspace, silently defaulting every campaign to
   // lead_generation (the workspace honors ?type=; classic always sent it).
   const [typeSelectOpen, setTypeSelectOpen] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
+  const [confirmAction, setConfirmAction] = useState(null); // BULK_ACTIONS entry | null
+  const [bulkBusy, setBulkBusy] = useState(false);
   const handleCreateCampaign = (type) => {
     setTypeSelectOpen(false);
     navigate(`${newCampaignHref()}?type=${type}`);
@@ -66,6 +88,51 @@ export default function AdminV2Campaigns() {
   }, [campaigns.data, statusFilter]);
 
   const statuses = ['', 'active', 'draft', 'paused', 'archived'];
+
+  // Selection follows the visible list — switching filter/period deselects
+  // anything no longer on screen so "N selected" never counts hidden rows.
+  useEffect(() => {
+    setSelected((prev) => {
+      const visible = new Set(rows.map((c) => c.id));
+      const next = new Set([...prev].filter((id) => visible.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [rows]);
+
+  const toggleSelected = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const allVisibleSelected = rows.length > 0 && rows.every((c) => selected.has(c.id));
+  const toggleAll = () => {
+    setSelected(allVisibleSelected ? new Set() : new Set(rows.map((c) => c.id)));
+  };
+
+  const selectedRows = rows.filter((c) => selected.has(c.id));
+  const eligibleFor = (action) => selectedRows.filter(action.eligible);
+
+  const runBulk = async (action) => {
+    const targets = eligibleFor(action);
+    if (!targets.length) return;
+    setBulkBusy(true);
+    const results = await Promise.allSettled(targets.map((c) => action.run(c.id)));
+    const failed = results
+      .map((r, i) => (r.status === 'rejected' ? { name: targets[i].name, reason: r.reason } : null))
+      .filter(Boolean);
+    const okCount = targets.length - failed.length;
+    if (okCount) toast.success(`${action.label}: ${okCount} campaign${okCount === 1 ? '' : 's'} done`);
+    for (const f of failed) {
+      toast.error(`${action.label} failed — ${f.name}: ${f.reason?.response?.data?.message || f.reason?.message || 'error'}`);
+    }
+    queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+    queryClient.invalidateQueries({ queryKey: ['adminV2'] });
+    setBulkBusy(false);
+    setConfirmAction(null);
+    setSelected(new Set());
+  };
 
   return (
     <div>
@@ -100,8 +167,41 @@ export default function AdminV2Campaigns() {
         ))}
       </div>
 
+      {selected.size > 0 && (
+        <div data-testid="bulk-bar" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10, padding: '8px 12px', border: '1px solid var(--line)', borderRadius: 10, background: 'var(--surface)' }}>
+          <span className="av2-microcaps">{selected.size} selected</span>
+          {BULK_ACTIONS.map((a) => {
+            const n = eligibleFor(a).length;
+            return (
+              <button
+                key={a.key}
+                type="button"
+                className="av2-btn av2-btn--sm"
+                disabled={bulkBusy || n === 0}
+                style={a.destructive && n > 0 ? { color: 'var(--bad)', borderColor: 'var(--bad)' } : undefined}
+                onClick={() => setConfirmAction(a)}
+              >
+                {a.label}{n > 0 && n !== selected.size ? ` (${n})` : ''}
+              </button>
+            );
+          })}
+          <button type="button" className="av2-btn av2-btn--sm" disabled={bulkBusy} onClick={() => setSelected(new Set())} style={{ marginLeft: 'auto' }}>
+            Clear
+          </button>
+        </div>
+      )}
+
       <div className="av2-card" style={{ overflow: 'hidden' }}>
         <div className="av2-thead">
+          <span style={{ width: 26, flex: 'none', display: 'flex', alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              aria-label="Select all visible campaigns"
+              checked={allVisibleSelected}
+              onChange={toggleAll}
+              style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+            />
+          </span>
           <span className="av2-microcaps" style={{ flex: 1.6 }}>Campaign</span>
           <span className="av2-microcaps" style={{ width: 90, flex: 'none' }}>Type</span>
           <span className="av2-microcaps" style={{ flex: 1.4 }}>Signals</span>
@@ -131,6 +231,17 @@ export default function AdminV2Campaigns() {
               onClick={() => navigate(`/admin/campaigns/${c.id}`)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/admin/campaigns/${c.id}`); } }}
             >
+              <span style={{ width: 26, flex: 'none', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${c.name}`}
+                  checked={selected.has(c.id)}
+                  onChange={() => toggleSelected(c.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                />
+              </span>
               <span style={{ flex: 1.6, minWidth: 0 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
@@ -156,6 +267,28 @@ export default function AdminV2Campaigns() {
         open={typeSelectOpen}
         onOpenChange={setTypeSelectOpen}
         onSelect={handleCreateCampaign}
+      />
+      <ConfirmDialog
+        open={confirmAction != null}
+        onOpenChange={(open) => { if (!open && !bulkBusy) setConfirmAction(null); }}
+        title={confirmAction ? `${confirmAction.label} ${eligibleFor(confirmAction).length} campaign${eligibleFor(confirmAction).length === 1 ? '' : 's'}?` : ''}
+        description={confirmAction ? [
+          confirmAction.key === 'delete'
+            ? 'Permanent deletion cannot be undone. Campaigns with pending or approved commissions are refused by the server.'
+            : confirmAction.key === 'archive'
+              ? 'Archived campaigns stop accepting signups and move to the archived filter; restore them anytime.'
+              : confirmAction.key === 'activate'
+                ? 'Resumes paused campaigns. Drafts are never launched from here — use the campaign workspace.'
+                : 'Paused campaigns stop accepting public signups until resumed.',
+          eligibleFor(confirmAction).length !== selected.size
+            ? ` ${selected.size - eligibleFor(confirmAction).length} of the selected campaigns are not eligible and will be skipped.`
+            : '',
+        ].join('') : ''}
+        onConfirm={() => confirmAction && runBulk(confirmAction)}
+        confirmText={confirmAction?.destructive ? 'Delete' : 'Continue'}
+        pending={bulkBusy}
+        pendingText='Working…'
+        destructive={confirmAction?.destructive === true}
       />
     </div>
   );
