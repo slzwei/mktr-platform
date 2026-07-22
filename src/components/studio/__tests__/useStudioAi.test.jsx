@@ -1058,3 +1058,50 @@ describe('useStudioAi — eligibility gates + verification are review-gated WRIT
     expect(result.current.docApi.doc.content.headline).toBe('Fresh AI headline');
   });
 });
+
+describe('useStudioAi — draw T&Cs never contradict the channel in the same response', () => {
+  it('a WhatsApp proposal composes WhatsApp terms (Codex MAJOR #1)', async () => {
+    const campaign = v2Campaign();
+    campaign.design_config.luckyDraw = { enabled: true, closesAt: '2026-09-02' };
+    const { result } = renderAi(campaign);
+    await generateReady(result, {
+      success: true,
+      data: {
+        draft: [DRAFT[0]],
+        verification: 'whatsapp',
+        drawTerms: {
+          campaignName: 'iPhone Draw',
+          prizes: [{ qty: 1, name: 'iPhone 17 Pro' }],
+          closesAt: '2026-09-02',
+          boostClosesAt: '2026-09-02',
+          multiplier: 10,
+          minAge: 21,
+          verification: 'sms', // stored channel, superseded by the proposal
+        },
+      },
+    });
+    act(() => result.current.ai.applyAll());
+    expect(result.current.docApi.doc.form.verification).toBe('whatsapp');
+    expect(result.current.docApi.doc.form.terms.html).toContain('one-time WhatsApp code');
+    expect(result.current.docApi.doc.form.terms.html).not.toContain('one-time SMS code');
+  });
+
+  it('no verification proposal → the stored channel still composes the terms', async () => {
+    const campaign = v2Campaign();
+    campaign.design_config.luckyDraw = { enabled: true, closesAt: '2026-09-02' };
+    const { result } = renderAi(campaign);
+    await generateReady(result, {
+      success: true,
+      data: {
+        draft: [DRAFT[0]],
+        verification: null,
+        drawTerms: {
+          campaignName: 'iPhone Draw', prizes: [{ qty: 1, name: 'iPhone 17 Pro' }],
+          closesAt: '2026-09-02', boostClosesAt: '2026-09-02', multiplier: 10, minAge: 21, verification: 'sms',
+        },
+      },
+    });
+    const termsRow = result.current.ai.sugs.find((r) => r.kind === 'terms');
+    expect(termsRow.value.html).toContain('one-time SMS code');
+  });
+});

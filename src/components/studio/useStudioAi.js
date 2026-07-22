@@ -192,6 +192,15 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       termsValue = { template: data.terms.template || 'default', html: data.terms.html };
     } else if (data?.drawTerms && data.drawTerms.closesAt) {
       drawFacts = data.drawTerms;
+      // Compose against the channel this response PROPOSES, falling back to the
+      // stored one — otherwise apply-all writes terms promising an SMS code
+      // next to a form.verification of 'whatsapp', and the save pins that
+      // contradiction as the version entrants accept. Accepting one row and
+      // keeping the other can still diverge; the readiness drift check is the
+      // backstop for that.
+      const proposedChannel = data.verification === 'sms' || data.verification === 'whatsapp'
+        ? data.verification
+        : drawFacts.verification;
       termsValue = {
         template: 'default',
         html: buildDrawTermsHtml({
@@ -202,7 +211,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
           boostClosesAt: drawFacts.boostClosesAt || undefined,
           multiplier: drawFacts.multiplier,
           minAge: drawFacts.minAge,
-          verification: drawFacts.verification,
+          verification: proposedChannel,
         }),
       };
     }

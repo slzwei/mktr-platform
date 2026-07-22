@@ -216,9 +216,12 @@ describe('computeDesignChecks — draw T&Cs drifting from the campaign settings'
     expect(items.filter((i) => /and above/.test(i.msg || ''))).toHaveLength(0);
   });
 
-  it('a min_age under the legal draw floor compares against 18, not the raw value', () => {
+  it('an under-18 draw warns TWICE: the illegal floor, and the 18+ terms that contradict it', () => {
+    // Codex MAJOR #2: comparing against a raised floor hid the worst case —
+    // terms promising 18+ while prospectService happily accepts a 16-year-old.
     const items = computeDesignChecks({ campaign: { ...CAMPAIGN, min_age: 16 }, doc: drawDoc(TERMS_18_SMS) });
-    expect(items.filter((i) => /and above/.test(i.msg || ''))).toHaveLength(0);
+    expect(items).toContainEqual(expect.objectContaining({ sev: 'warn', msg: expect.stringContaining('accepts entrants from age 16') }));
+    expect(items).toContainEqual(expect.objectContaining({ sev: 'warn', msg: expect.stringContaining('must be 18 and above') }));
   });
 
   it('T&Cs promising an SMS code while the form verifies by WhatsApp → warn', () => {
