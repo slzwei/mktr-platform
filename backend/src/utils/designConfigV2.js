@@ -36,7 +36,11 @@
 
 export const DESIGN_CONFIG_VERSION = 2;
 
-export const TEMPLATE_IDS = ['editorial', 'poster', 'split', 'spotlight', 'express', 'journey'];
+export const TEMPLATE_IDS = [
+  'editorial', 'poster', 'split', 'spotlight', 'express', 'journey',
+  // Draw-focused directions (drawTemplates.jsx, design review 2026-07-22).
+  'postcard', 'gazette', 'nightfall', 'stub', 'checklist',
+];
 
 /** Per-template parameter defaults — one bag, every template persists its
  * params across switches; first Studio use seeds these. Migration seeds the
@@ -49,6 +53,11 @@ export const TEMPLATE_PARAM_DEFAULTS = {
   spotlight: { introStyle: 'immersive', revealArt: 'meter' },
   express: { trustLine: '', storyFold: false },
   journey: { sectionRhythm: 'alternate', stickyCta: true },
+  postcard: { mediaSide: 'left', cardStyle: 'float', factStyle: 'numbered' },
+  gazette: { ruleDensity: 'airy', accentUse: 'fill', showSerial: true },
+  nightfall: { overlayTone: 'ink', showCountdown: true, ctaStyle: 'bar' },
+  stub: { ticketTone: 'paper', showSerial: true, stubEdge: 'bottom' },
+  checklist: { boostStep: 'inline', heroBand: true, railStyle: 'line' },
 };
 
 export const THEME_RADIUS_IDS = ['soft', 'sharp', 'round'];

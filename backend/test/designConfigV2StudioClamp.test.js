@@ -37,6 +37,35 @@ function studioDoc() {
   return doc;
 }
 
+describe('draw-template ids + params (drawTemplates.jsx)', () => {
+  it('accepts the five draw template ids and clamps their enum params to defaults on junk', () => {
+    const doc = studioDoc();
+    doc.template = {
+      id: 'nightfall',
+      params: {
+        ...doc.template.params,
+        nightfall: { overlayTone: 'neon', showCountdown: 'yes', ctaStyle: 'pill' },
+        postcard: { mediaSide: 'top', cardStyle: 'float', factStyle: 'inline' },
+        stub: { ticketTone: 'gold', stubEdge: 'left', showSerial: false },
+      },
+    };
+    const out = clampDesignConfigV2(doc, undefined, 'admin');
+    expect(out.template.id).toBe('nightfall');
+    expect(out.template.params.nightfall).toEqual({ overlayTone: 'ink', showCountdown: false, ctaStyle: 'pill' });
+    expect(out.template.params.postcard).toEqual({ mediaSide: 'left', cardStyle: 'float', factStyle: 'inline' });
+    expect(out.template.params.stub).toEqual({ ticketTone: 'paper', stubEdge: 'bottom', showSerial: false });
+    // Untouched draw templates keep seeded defaults.
+    expect(out.template.params.gazette).toEqual({ ruleDensity: 'airy', accentUse: 'fill', showSerial: true });
+    expect(out.template.params.checklist).toEqual({ boostStep: 'inline', heroBand: true, railStyle: 'line' });
+  });
+
+  it('unknown template id still falls back to editorial', () => {
+    const doc = studioDoc();
+    doc.template = { id: 'brutalist', params: doc.template.params };
+    expect(clampDesignConfigV2(doc, undefined, 'admin').template.id).toBe('editorial');
+  });
+});
+
 describe('clampDesignConfigV2 over Studio-authored docs', () => {
   it('is IDEMPOTENT for admins: clamp(clamp(x)) is byte-identical to clamp(x)', () => {
     const once = clampDesignConfigV2(studioDoc(), undefined, 'admin');

@@ -24,6 +24,17 @@ describe('publicLuckyDraw', () => {
     expect(publicLuckyDraw(undefined)).toBeUndefined();
     expect(publicLuckyDraw({ enabled: false, closesAt: '2026-08-31' })).toBeUndefined();
   });
+
+  it('exposes bookingUrl (display-only success CTA) but never internal ids', () => {
+    const out = publicLuckyDraw({
+      enabled: true,
+      closesAt: '2026-10-30',
+      bookingUrl: 'https://redeem.sg/book',
+      activationId: '2c8ba713-ac13-4e2f-89a8-fb5c25bd6371',
+    });
+    expect(out.bookingUrl).toBe('https://redeem.sg/book');
+    expect(out.activationId).toBeUndefined();
+  });
 });
 
 describe('buildPublicDesignConfig', () => {

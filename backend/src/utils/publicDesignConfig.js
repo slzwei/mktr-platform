@@ -48,6 +48,7 @@ export function publicLuckyDraw(raw) {
     ...(ld.drawOn ? { drawOn: ld.drawOn } : {}),
     multiplier: ld.multiplier,
     ...(ld.winners ? { winners: ld.winners } : {}),
+    ...(ld.bookingUrl ? { bookingUrl: ld.bookingUrl } : {}),
   };
 }
 

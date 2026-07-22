@@ -68,6 +68,20 @@ describe('normalizeLuckyDraw', () => {
   });
 });
 
+describe('normalizeLuckyDraw — bookingUrl (draw success CTA)', () => {
+  it('keeps http(s) urls, capped, and drops everything else', () => {
+    expect(normalizeLuckyDraw({ enabled: true, bookingUrl: 'https://redeem.sg/book' }).bookingUrl).toBe('https://redeem.sg/book');
+    expect(normalizeLuckyDraw({ enabled: true, bookingUrl: 'http://redeem.sg/book' }).bookingUrl).toBe('http://redeem.sg/book');
+    expect(normalizeLuckyDraw({ enabled: true, bookingUrl: 'javascript:alert(1)' }).bookingUrl).toBeUndefined();
+    expect(normalizeLuckyDraw({ enabled: true, bookingUrl: 'ftp://x' }).bookingUrl).toBeUndefined();
+    expect(normalizeLuckyDraw({ enabled: true, bookingUrl: 'redeem.sg/book' }).bookingUrl).toBeUndefined();
+    expect(normalizeLuckyDraw({ enabled: true, bookingUrl: 42 }).bookingUrl).toBeUndefined();
+    // The 300-char cap truncates into an invalid URL with whitespace-free tail — still http ok:
+    const long = `https://redeem.sg/${'a'.repeat(400)}`;
+    expect(normalizeLuckyDraw({ enabled: true, bookingUrl: long }).bookingUrl.length).toBeLessThanOrEqual(300);
+  });
+});
+
 describe('applyLuckyDrawPolicy', () => {
   const stored = { enabled: true, prize: 'Luggage', multiplier: 10 };
 

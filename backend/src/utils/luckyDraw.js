@@ -14,6 +14,7 @@
  */
 
 const MAX_PRIZE = 80;
+const MAX_BOOKING_URL = 300;
 const MIN_MULTIPLIER = 2;
 const MAX_MULTIPLIER = 100;
 const DEFAULT_MULTIPLIER = 10;
@@ -70,6 +71,12 @@ export function normalizeLuckyDraw(raw) {
   // No draw mechanics read it.
   const winners = Number(raw.winners);
   if (Number.isInteger(winners) && winners >= 1 && winners <= 1000) out.winners = winners;
+
+  // Session-booking link for the success screen's "Book your 20-min review"
+  // CTA (drawTemplates.jsx). Display-only — no draw mechanics read it. Absent
+  // or non-http(s) → CTA simply doesn't render.
+  const bookingUrl = cleanString(raw.bookingUrl, MAX_BOOKING_URL);
+  if (bookingUrl && /^https?:\/\/\S+$/i.test(bookingUrl)) out.bookingUrl = bookingUrl;
 
   for (const key of ['activationId', 'termsVersionId']) {
     if (typeof raw[key] === 'string' && UUID_RE.test(raw[key].trim())) {

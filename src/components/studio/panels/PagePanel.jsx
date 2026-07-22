@@ -21,7 +21,16 @@ const TEMPLATE_NAMES = {
   spotlight: 'Spotlight',
   express: 'Express',
   journey: 'Journey',
+  postcard: 'Postcard',
+  gazette: 'Gazette',
+  nightfall: 'Nightfall',
+  stub: 'Stub',
+  checklist: 'Checklist',
 };
+
+/** The five draw-focused directions (drawTemplates.jsx) — art-directed for
+ * lucky-draw campaigns; safe on non-draw campaigns (draw chrome hides). */
+const DRAW_TEMPLATE_SET = new Set(['postcard', 'gazette', 'nightfall', 'stub', 'checklist']);
 
 export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHint = null, onDismissMediaHint = null }) {
   // Per-field ✦ (Studio PR 4) — the five Page identity fields open the AI
@@ -106,8 +115,8 @@ export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHi
                   <span
                     style={{
                       position: 'absolute',
-                      inset: id === 'poster' ? 0 : id === 'split' ? '0 52% 0 0' : '12% 8% 55% 8%',
-                      background: id === 'express' ? 'transparent' : t.dark ? 'rgba(255,255,255,.14)' : 'rgba(0,0,0,.08)',
+                      inset: id === 'poster' || id === 'nightfall' ? 0 : id === 'split' ? '0 52% 0 0' : '12% 8% 55% 8%',
+                      background: id === 'express' ? 'transparent' : id === 'nightfall' ? 'rgba(20,22,31,.85)' : t.dark ? 'rgba(255,255,255,.14)' : 'rgba(0,0,0,.08)',
                       borderRadius: 4,
                     }}
                   />
@@ -219,6 +228,124 @@ export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHi
               onChange={(v) => setPath('template.params.journey.stickyCta', v)}
             />
           </>
+        )}
+        {templateId === 'postcard' && (
+          <>
+            <Seg
+              label="Desktop media side"
+              options={[{ value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }]}
+              value={params.mediaSide || 'left'}
+              onChange={(v) => setPath('template.params.postcard.mediaSide', v)}
+            />
+            <Seg
+              label="Form card"
+              options={[{ value: 'float', label: 'Float' }, { value: 'flush', label: 'Flush' }]}
+              value={params.cardStyle || 'float'}
+              onChange={(v) => setPath('template.params.postcard.cardStyle', v)}
+            />
+            <Seg
+              label="Trust facts"
+              options={[{ value: 'numbered', label: 'Numbered' }, { value: 'inline', label: 'Inline' }]}
+              value={params.factStyle || 'numbered'}
+              onChange={(v) => setPath('template.params.postcard.factStyle', v)}
+            />
+          </>
+        )}
+        {templateId === 'gazette' && (
+          <>
+            <Seg
+              label="Rule density"
+              options={[{ value: 'airy', label: 'Airy' }, { value: 'dense', label: 'Dense' }]}
+              value={params.ruleDensity || 'airy'}
+              onChange={(v) => setPath('template.params.gazette.ruleDensity', v)}
+            />
+            <Seg
+              label="Accent use"
+              options={[{ value: 'fill', label: 'Fill' }, { value: 'text', label: 'Text' }]}
+              value={params.accentUse || 'fill'}
+              onChange={(v) => setPath('template.params.gazette.accentUse', v)}
+            />
+            <ToggleRow
+              id="studio-gz-serial"
+              label="Serial number"
+              checked={params.showSerial !== false}
+              onChange={(v) => setPath('template.params.gazette.showSerial', v)}
+            />
+          </>
+        )}
+        {templateId === 'nightfall' && (
+          <>
+            <Seg
+              label="Hero scrim"
+              options={[{ value: 'ink', label: 'Ink' }, { value: 'dusk', label: 'Dusk' }]}
+              value={params.overlayTone || 'ink'}
+              onChange={(v) => setPath('template.params.nightfall.overlayTone', v)}
+            />
+            <Seg
+              label="CTA shape"
+              options={[{ value: 'bar', label: 'Bar' }, { value: 'pill', label: 'Pill' }]}
+              value={params.ctaStyle || 'bar'}
+              onChange={(v) => setPath('template.params.nightfall.ctaStyle', v)}
+            />
+            <ToggleRow
+              id="studio-nf-countdown"
+              label="Days-left countdown chip"
+              checked={params.showCountdown !== false}
+              onChange={(v) => setPath('template.params.nightfall.showCountdown', v)}
+            />
+          </>
+        )}
+        {templateId === 'stub' && (
+          <>
+            <Seg
+              label="Ticket header"
+              options={[{ value: 'paper', label: 'Photo' }, { value: 'accent', label: 'Accent' }]}
+              value={params.ticketTone || 'paper'}
+              onChange={(v) => setPath('template.params.stub.ticketTone', v)}
+            />
+            <Seg
+              label="Perforated stub"
+              options={[{ value: 'bottom', label: 'Bottom' }, { value: 'top', label: 'Top' }]}
+              value={params.stubEdge || 'bottom'}
+              onChange={(v) => setPath('template.params.stub.stubEdge', v)}
+            />
+            <ToggleRow
+              id="studio-stub-serial"
+              label="Ticket number"
+              checked={params.showSerial !== false}
+              onChange={(v) => setPath('template.params.stub.showSerial', v)}
+            />
+          </>
+        )}
+        {templateId === 'checklist' && (
+          <>
+            <Seg
+              label="×10 boost step"
+              options={[{ value: 'inline', label: 'In the spine' }, { value: 'footnote', label: 'Footnote' }]}
+              value={params.boostStep || 'inline'}
+              onChange={(v) => setPath('template.params.checklist.boostStep', v)}
+            />
+            <Seg
+              label="Step spine"
+              options={[{ value: 'line', label: 'Line' }, { value: 'dots', label: 'Dots' }]}
+              value={params.railStyle || 'line'}
+              onChange={(v) => setPath('template.params.checklist.railStyle', v)}
+            />
+            <ToggleRow
+              id="studio-cl-heroband"
+              label="Slim hero band"
+              hint="Auto-hides when there is no media"
+              checked={params.heroBand !== false}
+              onChange={(v) => setPath('template.params.checklist.heroBand', v)}
+            />
+          </>
+        )}
+        {DRAW_TEMPLATE_SET.has(templateId) && (
+          <WarnNote tone="info">
+            Draw-focused template — art-directed neutrals with the theme accent.
+            Draw chrome (prize, close date, ×10) renders only when this campaign
+            has luckyDraw enabled.
+          </WarnNote>
         )}
       </PanelSection>
 
