@@ -25,6 +25,7 @@ import {
   getStoredHostChoice,
 } from '../utils/designConfigV2Clamp.js';
 import { CONSUMER_CATEGORIES, OFFER_TYPES, MODES, MARKETPLACE_CAMPAIGN_TYPES } from '../utils/marketplaceContent.js';
+import { marketplaceInheritEnabled } from '../utils/listingDerivation.js';
 import { composeOps, passesStaticGate } from './marketplaceService.js';
 
 /**
@@ -111,12 +112,12 @@ export const COPY_FIELDS = [
   { path: 'quiz.reveal.valueExchange', label: 'Value-exchange line', section: 'Quiz', limit: QUIZ_COPY_LIMITS.valueExchange, when: (ctx) => ctx.quizEnabled },
   { path: 'quiz.reveal.ctaSubtext', label: 'Reveal CTA subtext', section: 'Quiz', limit: QUIZ_COPY_LIMITS.ctaSubtext, when: (ctx) => ctx.quizEnabled },
   { path: 'quiz.scoring.readiness.label', label: 'Readiness meter label', section: 'Quiz', limit: QUIZ_COPY_LIMITS.readinessLabel, when: (ctx) => ctx.quizEnabled && ctx.readinessEnabled },
-  { path: 'distribution.featuredDrop.title', label: 'Drop title', section: 'Distribution', limit: LIMITS.dropTitle },
+  { path: 'distribution.featuredDrop.title', label: 'Drop title', section: 'Distribution', limit: LIMITS.dropTitle, when: () => !marketplaceInheritEnabled() },
   { path: 'distribution.featuredDrop.valueLabel', label: 'Drop value label', section: 'Distribution', limit: LIMITS.dropValue },
   { path: 'distribution.featuredDrop.emoji', label: 'Drop emoji', section: 'Distribution', limit: LIMITS.dropEmoji },
-  { path: 'distribution.marketplace.title', label: 'Consumer title', section: 'Distribution', limit: LIMITS.mkTitle },
-  { path: 'distribution.marketplace.valueLine', label: 'Marketplace value line', section: 'Distribution', limit: LIMITS.mkValue },
-  { path: 'distribution.marketplace.imageAlt', label: 'Listing image alt text', section: 'Distribution', limit: LIMITS.mkAlt },
+  { path: 'distribution.marketplace.title', label: 'Consumer title', section: 'Distribution', limit: LIMITS.mkTitle, when: () => !marketplaceInheritEnabled() },
+  { path: 'distribution.marketplace.valueLine', label: 'Marketplace value line', section: 'Distribution', limit: LIMITS.mkValue, when: () => !marketplaceInheritEnabled() },
+  { path: 'distribution.marketplace.imageAlt', label: 'Listing image alt text', section: 'Distribution', limit: LIMITS.mkAlt, when: () => !marketplaceInheritEnabled() },
   { path: 'distribution.marketplace.dataUse', label: 'Data use', section: 'Distribution', limit: LIMITS.mkNote },
   { path: 'distribution.marketplace.cancellation', label: 'Cancellation', section: 'Distribution', limit: LIMITS.mkNote },
 ];
@@ -290,19 +291,21 @@ export function buildCampaignContext(campaign, gate = null) {
       : null,
     currentDistribution: {
       featuredDrop: {
-        title: drop?.title || '',
+        // Derived-copy echoes go blank under inheritance — stored values are
+        // dead reads there and would only mislead the model (Phase B §9c.3).
+        title: marketplaceInheritEnabled() ? '' : (drop?.title || ''),
         valueLabel: drop?.valueLabel || '',
         emoji: drop?.emoji || '',
       },
       marketplace: {
-        title: legacy.name || '',
+        title: marketplaceInheritEnabled() ? '' : (legacy.name || ''),
         category: legacy.category || null,
         offerType: legacy.offer_type || null,
         mode: legacy.mode || null,
         qrLanding: QR_V1_TO_V2[legacy.qr_entry] || legacy.qr_entry || null,
-        valueLine: legacy.value_line || '',
+        valueLine: marketplaceInheritEnabled() ? '' : (legacy.value_line || ''),
         inclusions: Array.isArray(legacy.inclusions) ? legacy.inclusions : [],
-        imageAlt: legacy.image_label || '',
+        imageAlt: marketplaceInheritEnabled() ? '' : (legacy.image_label || ''),
         dataUse: blocks.data_use || '',
         cancellation: blocks.cancellation || '',
       },
@@ -661,7 +664,7 @@ const DRAW_LOOKS_EXTRA = [
   'This campaign runs a lucky draw. Five draw-focused templates exist: postcard (warm prize postcard), gazette (newspaper fact-table), nightfall (dark cinematic), stub (raffle-ticket), checklist (step rail). Prefer a draw template for most looks, and pair draw templates with LIGHT theme presets (nightfall excepted).',
 ].join('\n');
 
-export function buildCopyDraftPrompts({ mode, scope, regen, templateId, brief, ctx, fields, settings }) {
+export function buildCopyDraftPrompts({ mode, scope, regen, templateId, brief, ctx, fields, settings, inclusionsAllowed = true }) {
   const everything = mode === 'copy' && !scope;
   const system = withOrgStyle(
     mode === 'full'
@@ -686,7 +689,9 @@ export function buildCopyDraftPrompts({ mode, scope, regen, templateId, brief, c
       ...(everything
         ? {
             marketplaceMeta: PICK_FIELDS.map((f) => ({ key: f.key, label: f.label, values: f.values })),
-            inclusions: { label: INCLUSIONS_FIELD.label, maxItems: INCLUSIONS_FIELD.maxItems, itemLimit: INCLUSIONS_FIELD.itemLimit },
+            ...(inclusionsAllowed
+              ? { inclusions: { label: INCLUSIONS_FIELD.label, maxItems: INCLUSIONS_FIELD.maxItems, itemLimit: INCLUSIONS_FIELD.itemLimit } }
+              : {}),
             recommendationTopics: REC_TOPICS,
           }
         : {}),
@@ -773,11 +778,11 @@ const termsSchema = {
  * + inclusions + fields + terms + advisory recommendations. Strict-schema
  * style matches fullModeSchema: every property required, nullable where
  * optional. */
-export function everythingModeSchema(paths) {
+export function everythingModeSchema(paths, { inclusions = true } = {}) {
   return {
     type: 'object',
     additionalProperties: false,
-    required: ['draft', 'marketplaceMeta', 'inclusions', 'fields', 'terms', 'recommendations'],
+    required: ['draft', 'marketplaceMeta', ...(inclusions ? ['inclusions'] : []), 'fields', 'terms', 'recommendations'],
     properties: {
       draft: draftArraySchema(paths),
       fields: fieldsSchema,
@@ -790,11 +795,15 @@ export function everythingModeSchema(paths) {
           PICK_FIELDS.map((f) => [f.key, { type: ['string', 'null'], enum: [...f.values, null] }])
         ),
       },
-      inclusions: {
-        type: ['array', 'null'],
-        maxItems: INCLUSIONS_FIELD.maxItems,
-        items: { type: 'string', minLength: 1, maxLength: 200 },
-      },
+      ...(inclusions
+        ? {
+            inclusions: {
+              type: ['array', 'null'],
+              maxItems: INCLUSIONS_FIELD.maxItems,
+              items: { type: 'string', minLength: 1, maxLength: 200 },
+            },
+          }
+        : {}),
       recommendations: {
         type: 'array',
         maxItems: REC_TOPICS.length,
@@ -900,6 +909,14 @@ export async function generateCampaignCopyDraft(body, userId, overrides = {}) {
   const ctx = buildCampaignContext(campaign, gate);
   const fields = allowedCopyFields(ctx, body.templateId);
   const scopeIsInclusions = scope === INCLUSIONS_FIELD.path;
+  // Single-door (plan §3B): a draw's marketplace "inclusions" ARE the prize
+  // rows under inheritance — there is nothing for the AI to write, in EITHER
+  // the scoped flow (422 below) or Fill-everything (prompt/schema/result all
+  // omit the slot — Phase B review finding 3).
+  const inclusionsAllowed = !(marketplaceInheritEnabled() && ctx.draw?.enabled === true);
+  if (scopeIsInclusions && !inclusionsAllowed) {
+    throw new AppError('Inclusions are derived from the draw prize list under marketplace inheritance.', 422);
+  }
   if (scope && !scopeIsInclusions && !fields.some((f) => f.path === scope)) {
     throw new AppError('That field is not AI-writable for this campaign right now.', 422);
   }
@@ -919,6 +936,7 @@ export async function generateCampaignCopyDraft(body, userId, overrides = {}) {
         ? [{ path: INCLUSIONS_FIELD.path, label: INCLUSIONS_FIELD.label, limit: INCLUSIONS_FIELD.itemLimit }]
         : requestFields,
     settings,
+    inclusionsAllowed,
   });
 
   // Full mode needs every look-writable path available to the model
@@ -928,7 +946,7 @@ export async function generateCampaignCopyDraft(body, userId, overrides = {}) {
     : scopeIsInclusions
       ? inclusionsModeSchema()
       : everything
-        ? everythingModeSchema(requestFields.map((f) => f.path))
+        ? everythingModeSchema(requestFields.map((f) => f.path), { inclusions: inclusionsAllowed })
         : copyModeSchema(requestFields.map((f) => f.path));
   const schemaName = body.mode === 'full'
     ? 'campaign_look_proposals'
@@ -993,7 +1011,7 @@ export async function generateCampaignCopyDraft(body, userId, overrides = {}) {
 
   const draft = sanitizeDraftRows(parsed?.draft, requestFields);
   const picks = everything ? sanitizePicks(parsed?.marketplaceMeta) : [];
-  const inclusions = everything ? sanitizeInclusions(parsed?.inclusions) : null;
+  const inclusions = everything && inclusionsAllowed ? sanitizeInclusions(parsed?.inclusions) : null;
   const aiFields = everything ? clampAiFields(parsed?.fields) : null;
   const aiTerms = everything ? clampAiTerms(parsed?.terms, ctx) : null;
   const drawTerms = everything ? ctx.drawTerms || null : null;

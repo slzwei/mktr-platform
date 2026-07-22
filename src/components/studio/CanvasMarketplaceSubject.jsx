@@ -1,5 +1,6 @@
 import OfferCard from '@/pages/marketplace/OfferCard';
 import { marketplaceToV1 } from '@/lib/designConfigV2';
+import { applyClientInheritance, marketplaceInheritEnabled } from '@/lib/listingDerivation';
 import { GATE_LABELS, drawCloseMismatchWithLive, sgtYmdFromInstant } from './studioReadiness';
 import '@/pages/marketplace/marketplace.css';
 
@@ -17,12 +18,19 @@ import '@/pages/marketplace/marketplace.css';
  */
 export default function CanvasMarketplaceSubject({ campaign, doc, preview, previewStatus }) {
   const mkDoc = marketplaceToV1(doc?.distribution?.marketplace || {});
+  // Single-door preview (plan §3B): under inheritance the card renders the
+  // UNSAVED doc's derived listing via the client twin — exactly what the
+  // server overlay will emit after save (lockstep-tested).
+  const baseDc = { ...(preview?.design_config || {}), ...mkDoc };
+  const cardDc = marketplaceInheritEnabled()
+    ? applyClientInheritance(baseDc, doc, campaign?.name)
+    : baseDc;
   const cardCampaign = {
     ...(preview || {}),
     id: campaign?.id,
     slug: campaign?.slug || preview?.slug || null,
     name: campaign?.name,
-    design_config: { ...(preview?.design_config || {}), ...mkDoc },
+    design_config: cardDc,
     ops: preview?.ops || null,
   };
   const gate = preview?.gate || null;

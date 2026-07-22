@@ -14,6 +14,8 @@ const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 const todayYmdSgt = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date());
 
+import { marketplaceInheritEnabled, deriveFeaturedDropTitleClient } from '@/lib/listingDerivation';
+
 export default function CanvasDropSubject({ doc }) {
   const drop = doc?.distribution?.featuredDrop;
   if (drop?.enabled !== true) {
@@ -40,7 +42,7 @@ export default function CanvasDropSubject({ doc }) {
           </span>
         </div>
         <div style={{ font: "700 17px 'Fraunces', serif", color: '#2B2317', lineHeight: 1.2, marginBottom: 6 }}>
-          {drop.title || 'Untitled drop'}
+          {(marketplaceInheritEnabled() ? deriveFeaturedDropTitleClient(doc) : drop.title) || (marketplaceInheritEnabled() ? drop.title : null) || 'Untitled drop'}
         </div>
         <div style={{ fontSize: 11, color: '#8D8371', marginBottom: 12 }}>{metaBits.join(' · ')}</div>
         <div style={{ background: '#2B2317', color: '#FBF7EF', borderRadius: 999, textAlign: 'center', padding: 9, font: "700 12.5px 'Albert Sans', sans-serif" }}>

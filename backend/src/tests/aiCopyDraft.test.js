@@ -1,5 +1,7 @@
 import { describe, it, expect, jest } from '@jest/globals';
 import {
+  everythingModeSchema,
+  buildCopyDraftPrompts,
   generateCampaignCopyDraft,
   buildCampaignContext,
   computeMarketplaceGate,
@@ -815,5 +817,47 @@ describe('create-everything amendment — fields, terms, draw awareness', () => 
     expect(plainSystem).toContain('STARTING DRAFT');
     expect(plainSystem).toContain('MKTR PTE. LTD.');
     expect(REC_TOPICS.map((t) => t.topic)).not.toContain('formFields');
+  });
+});
+
+
+describe('marketplace inheritance gates the derived-copy AI fields (plan §3B)', () => {
+  afterEach(() => { delete process.env.MARKETPLACE_INHERIT_ENABLED; });
+
+  it('Fill-everything omits draw inclusions end to end under inheritance (schema + prompt meta)', () => {
+    process.env.MARKETPLACE_INHERIT_ENABLED = 'true';
+    const schema = everythingModeSchema(['content.headline'], { inclusions: false });
+    expect(schema.required).not.toContain('inclusions');
+    expect(schema.properties.inclusions).toBeUndefined();
+    const withInc = everythingModeSchema(['content.headline']);
+    expect(withInc.required).toContain('inclusions');
+    const prompts = buildCopyDraftPrompts({
+      mode: 'copy', scope: null, regen: 0, templateId: 'editorial',
+      brief: { topic: 'x', audience: '', objective: '', mustInclude: '', tone: 'Friendly' },
+      ctx: { campaignName: 'C' }, fields: [], settings: {}, inclusionsAllowed: false,
+    });
+    expect(prompts.user).not.toContain('"inclusions"');
+  });
+
+  it('flag on: drop title + marketplace title/value/alt leave the writable set; picks and notes stay', () => {
+    const ctx = { hasMedia: true, hasImage: true, quizEnabled: false, readinessEnabled: false };
+    const before = allowedCopyFields(ctx, 'editorial').map((f) => f.path);
+    expect(before).toEqual(expect.arrayContaining([
+      'distribution.featuredDrop.title',
+      'distribution.marketplace.title',
+      'distribution.marketplace.valueLine',
+      'distribution.marketplace.imageAlt',
+    ]));
+    process.env.MARKETPLACE_INHERIT_ENABLED = 'true';
+    const after = allowedCopyFields(ctx, 'editorial').map((f) => f.path);
+    for (const gone of ['distribution.featuredDrop.title', 'distribution.marketplace.title', 'distribution.marketplace.valueLine', 'distribution.marketplace.imageAlt']) {
+      expect(after).not.toContain(gone);
+    }
+    expect(after).toEqual(expect.arrayContaining([
+      'distribution.featuredDrop.valueLabel',
+      'distribution.marketplace.dataUse',
+      'distribution.marketplace.cancellation',
+      'content.headline',
+    ]));
   });
 });

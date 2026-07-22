@@ -6,6 +6,7 @@
  * machine, the API layer and the panel, and stays trivially testable.
  */
 import { DRAW_TEMPLATE_IDS } from '@/lib/designConfigV2';
+import { marketplaceInheritEnabled } from '@/lib/listingDerivation';
 
 const DRAW_TEMPLATE_ID_SET = new Set(DRAW_TEMPLATE_IDS);
 
@@ -46,6 +47,17 @@ function quizOn(doc) {
 export function rowDisabledReason(doc, path) {
   if (!doc) return 'No document';
   switch (path) {
+    // Single-door (plan §3B): derived listing copy has no writable home while
+    // inheritance is on — receipt AND apply both refuse (Phase B finding 3).
+    case 'distribution.featuredDrop.title':
+    case 'distribution.marketplace.title':
+    case 'distribution.marketplace.valueLine':
+    case 'distribution.marketplace.imageAlt':
+      return marketplaceInheritEnabled() ? 'Inherited from the campaign page' : null;
+    case 'distribution.marketplace.inclusions':
+      return marketplaceInheritEnabled() && doc.luckyDraw?.enabled === true
+        ? 'Derived from the draw prize list'
+        : null;
     case 'content.heroCtaLabel':
       return (doc.content?.media?.kind || 'none') !== 'none' ? null : 'No hero media on the page right now';
     case 'content.media.alt':

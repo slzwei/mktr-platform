@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { listingTitleOf } from '@/lib/listingDerivation';
+import { DRAW_RECORD_PHRASE } from '@/lib/drawCopy';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import MarketplaceLayout from './MarketplaceLayout';
 import ConsentAgreementDialog from '@/components/campaigns/signup/ConsentAgreementDialog';
@@ -157,7 +159,7 @@ export default function MarketplaceFlow() {
         ensureFbp();
         trackEvent(
           'ViewContent',
-          { content_ids: [campaign.id], content_name: campaign.name, content_category: campaign.design_config?.category || 'marketplace' },
+          { content_ids: [campaign.id], content_name: listingTitleOf(campaign), content_category: campaign.design_config?.category || 'marketplace' },
           { eventID: vc.eventId }
         );
         markVcFired(campaign.id, 'meta');
@@ -167,7 +169,7 @@ export default function MarketplaceFlow() {
       const ttPixelId = campaign.tiktokPixelId || import.meta.env.VITE_TIKTOK_PIXEL_ID;
       if (ttPixelId) {
         initTikTokPixel(ttPixelId);
-        trackTikTokViewContent({ content_name: campaign.name, content_type: 'marketplace' }, vc.eventId);
+        trackTikTokViewContent({ content_name: listingTitleOf(campaign), content_type: 'marketplace' }, vc.eventId);
         markVcFired(campaign.id, 'tiktok');
       }
     }
@@ -380,12 +382,12 @@ export default function MarketplaceFlow() {
         const trackCtx = { campaign, pathname: window.location.pathname, search: window.location.search };
         if (shouldTrack(trackCtx)) {
           trackLead(
-            { content_ids: [campaign.id], content_name: campaign.name, content_category: dc.category || 'marketplace' },
+            { content_ids: [campaign.id], content_name: listingTitleOf(campaign), content_category: dc.category || 'marketplace' },
             leadEventIdRef.current
           );
         }
         if (shouldTrackTikTok(trackCtx)) {
-          trackTikTokLead({ content_name: campaign.name }, leadEventIdRef.current);
+          trackTikTokLead({ content_name: listingTitleOf(campaign) }, leadEventIdRef.current);
         }
         if (isDraw) trackCustom('draw_entry_confirmed');
         setResult({
@@ -475,7 +477,7 @@ export default function MarketplaceFlow() {
           ← Back to offer
         </button>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
-          <h1 className="rm-serif" style={{ margin: 0, fontSize: 'clamp(24px,3vw,30px)' }}>{dc.name || campaign.name}</h1>
+          <h1 className="rm-serif" style={{ margin: 0, fontSize: 'clamp(24px,3vw,30px)' }}>{listingTitleOf(campaign)}</h1>
           <span className="rm-mono-note" style={{ fontSize: 11 }}>{partnerName}</span>
         </div>
         {valueLine && <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--rm-pine)', marginTop: 6 }}>{valueLine}</div>}
@@ -914,7 +916,7 @@ function Confirmation({ campaign, isDraw, boost, needAck, actSummary, result, pa
         <span style={{ width: 62, height: 62, borderRadius: '50%', background: 'var(--rm-ok)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 700, animation: 'rmPop 0.45s ease both' }}>✓</span>
         <h2 className="rm-serif" style={{ margin: '14px 0 0', fontSize: 26 }}>{isDraw ? "You're in the draw" : 'Redemption confirmed'}</h2>
         <div className="rm-mono-note" style={{ fontSize: 11, marginTop: 6 }}>
-          {result.ref ? `Reference ${String(result.ref).slice(0, 8).toUpperCase()} · ` : ''}{dc.name || campaign.name}
+          {result.ref ? `Reference ${String(result.ref).slice(0, 8).toUpperCase()} · ` : ''}{listingTitleOf(campaign)}
         </div>
       </div>
 
@@ -926,7 +928,7 @@ function Confirmation({ campaign, isDraw, boost, needAck, actSummary, result, pa
               <Step n="1" apricot>Your entry is recorded — one chance in the draw, nothing more to do.</Step>
               {boost && (
                 <Step n="2" apricot>
-                  <strong>Boost your odds:</strong> complete the activation step before {fmtDateLong(boost.boostClosesAt)} and this entry counts ×{boost.multiplier}.{' '}
+                  <strong>Boost your odds:</strong> this entry counts ×{boost.multiplier} when {DRAW_RECORD_PHRASE} — any time before {fmtDateLong(boost.boostClosesAt)}.{' '}
                   The details are in your confirmation email, and the consultant can reach you at your verified number.
                 </Step>
               )}
