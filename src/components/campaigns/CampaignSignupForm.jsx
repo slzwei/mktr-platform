@@ -979,7 +979,7 @@ export default function CampaignSignupForm({
             paddingRight: 36,
             borderRadius: RADIUS.pill,
             backgroundColor: submitDisabled ? (TOKENS.disabledBg || TOKENS.hairline) : accent,
-            color: onAccent,
+            color: submitDisabled ? (TOKENS.onDisabled || onAccent) : onAccent,
             border: 'none',
             cursor: submitDisabled ? 'not-allowed' : 'pointer',
             fontFamily: 'Albert Sans, system-ui, sans-serif',

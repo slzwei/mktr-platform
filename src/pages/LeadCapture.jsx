@@ -15,6 +15,7 @@ import GuidedReviewPage, { GuidedReviewSuccess } from '../components/campaigns/g
 import CampaignPageRenderer from '../components/campaignPage/CampaignPageRenderer';
 import { DrawSuccessPage, DRAW_TEMPLATE_IDS } from '../components/campaignPage/drawTemplates';
 import { isV2, resolveTheme } from '@/lib/designConfigV2';
+import { CampaignThemeProvider, buildFunnelTokens } from '@/components/campaignPage/themeContext';
 import {
   shouldTrack,
   generateEventId,
@@ -616,7 +617,12 @@ export default function LeadCapture() {
               padding: '28px 24px 32px',
             }}
           >
-            {submitted ? <SuccessState onShare={() => setShareOpen(true)} /> : captureExperience}
+            {/* Without this provider the outcome components fall back to the
+                frozen warm-cream default and paint brown-on-dark (#236 made
+                them context-aware, but the mount never supplied the context). */}
+            <CampaignThemeProvider value={buildFunnelTokens(vt)}>
+              {submitted ? <SuccessState onShare={() => setShareOpen(true)} /> : captureExperience}
+            </CampaignThemeProvider>
           </div>
           {shareDialog}
         </div>

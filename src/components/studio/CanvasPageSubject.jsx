@@ -4,6 +4,7 @@ import { HARNESS_JUMPS } from '@/components/campaignPage/previewJumpFixtures';
 import { SuccessState, ErrorState } from '@/components/campaigns/LeadCaptureOutcomes';
 import ShareCampaignDialog from '@/components/campaigns/ShareCampaignDialog';
 import { resolveTheme } from '@/lib/designConfigV2';
+import { CampaignThemeProvider, buildFunnelTokens } from '@/components/campaignPage/themeContext';
 import { customerLeadCaptureUrl, resolveCustomerHost } from '@/lib/brand';
 
 const noop = () => {};
@@ -54,16 +55,20 @@ function HarnessOutcome({ campaign, doc, jump }) {
           padding: '28px 24px 32px',
         }}
       >
-        {jump === 'success' ? (
-          <SuccessState onShare={() => setShareOpen(true)} />
-        ) : (
-          <ErrorState
-            duplicateDetected={jump === 'duplicate'}
-            duplicateCountdown={5}
-            message={jump === 'duplicate' ? DUPLICATE_MESSAGE : GENERIC_ERROR_MESSAGE}
-            onShare={() => setShareOpen(true)}
-          />
-        )}
+        {/* Same provider the live LeadCapture mount supplies — the outcome
+            components read the funnel theme context. */}
+        <CampaignThemeProvider value={buildFunnelTokens(vt)}>
+          {jump === 'success' ? (
+            <SuccessState onShare={() => setShareOpen(true)} />
+          ) : (
+            <ErrorState
+              duplicateDetected={jump === 'duplicate'}
+              duplicateCountdown={5}
+              message={jump === 'duplicate' ? DUPLICATE_MESSAGE : GENERIC_ERROR_MESSAGE}
+              onShare={() => setShareOpen(true)}
+            />
+          )}
+        </CampaignThemeProvider>
       </div>
       <ShareCampaignDialog
         open={shareOpen}
