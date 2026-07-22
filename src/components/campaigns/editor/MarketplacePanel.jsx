@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { AlertCircle, CheckCircle2, Loader2, Store } from 'lucide-react';
 import { apiClient } from '@/api/client';
 import { marketplaceInheritEnabled, deriveListingPreview } from '@/lib/listingDerivation';
+import { CATEGORY_OPTIONS, OFFER_TYPES, MODES } from '@/components/studio/marketplaceOptions';
 
 /**
  * Marketplace panel — authors the design_config marketplace keys
@@ -20,15 +21,6 @@ import { marketplaceInheritEnabled, deriveListingPreview } from '@/lib/listingDe
  * save path here — it locks permanently once the campaign is first activated.
  */
 
-const CATEGORY_OPTIONS = [
-  ['art_creativity', 'Art & Creativity'], ['coding_robotics', 'Coding & Robotics'],
-  ['speech_performance', 'Speech & Performance'], ['sports_movement', 'Sports & Movement'],
-  ['music_dance', 'Music & Dance'], ['academic', 'Academic'],
-  ['family_lifestyle', 'Family & Lifestyle'], ['wellness', 'Wellness'],
-  ['dining', 'Dining'], ['financial_education', 'Financial Education'],
-];
-const OFFER_TYPES = ['trial', 'assessment', 'workshop', 'reward', 'consultation'];
-const MODES = ['physical', 'online', 'hybrid'];
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function Section({ title, hint, children }) {

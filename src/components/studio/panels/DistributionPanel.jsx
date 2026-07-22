@@ -124,6 +124,24 @@ export default function DistributionPanel({
         </p>
       </PanelSection>
 
+      <PanelSection title="CATEGORY">
+        <div>
+          <FieldLabel htmlFor="studio-mk-category">Campaign category</FieldLabel>
+          <select id="studio-mk-category" style={selectStyle} value={mk.category || ''} onChange={(e) => setMk({ category: e.target.value || undefined })}>
+            <option value="">—</option>
+            {CATEGORY_OPTIONS.map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p style={{ margin: 0, fontSize: 10.5, color: 'var(--ink-3, #9BA0AB)', lineHeight: 1.5 }}>
+          The campaign taxonomy — powers marketplace browse, cohort filters and cross-sell. Set one for every
+          campaign, listed on the marketplace or not.
+        </p>
+      </PanelSection>
+
       <PanelSection title="FEATURED DROP — REDEEM.SG HOMEPAGE">
         <ToggleRow
           id="studio-drop-enabled"
@@ -201,17 +219,6 @@ export default function DistributionPanel({
         {!inherit && (
           <TextField id="studio-mk-title" label="Consumer title" bind={bind('distribution.marketplace.title', 120)} onSuggest={suggest('distribution.marketplace.title', 'Consumer title')} />
         )}
-        <div>
-          <FieldLabel htmlFor="studio-mk-category">Category</FieldLabel>
-          <select id="studio-mk-category" style={selectStyle} value={mk.category || ''} onChange={(e) => setMk({ category: e.target.value || undefined })}>
-            <option value="">—</option>
-            {CATEGORY_OPTIONS.map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <div style={{ flex: 1 }}>
             <FieldLabel htmlFor="studio-mk-offer">Offer type</FieldLabel>

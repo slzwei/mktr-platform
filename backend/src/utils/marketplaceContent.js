@@ -13,18 +13,40 @@
  * is_active/status alone must never publish a campaign).
  */
 
-export const CONSUMER_CATEGORIES = [
-  'art_creativity',
-  'coding_robotics',
-  'speech_performance',
-  'sports_movement',
-  'music_dance',
-  'academic',
-  'family_lifestyle',
-  'wellness',
-  'dining',
-  'financial_education',
+/**
+ * THE campaign taxonomy (tracker "taxonomy") — the ONLY place a consumer
+ * category is added or removed. Everything else derives from this array:
+ *  - backend validation (CONSUMER_CATEGORIES → normalizeMarketplaceContent,
+ *    the v2 clamp, and the /api/cohorts campaignCategories filter)
+ *  - marketplace nav, /c/:id routes and labels (src/pages/marketplace/content.js)
+ *  - Studio + classic editor pickers and AI pick rows
+ *    (src/components/studio/marketplaceOptions.js)
+ *  - cohort facet vocabulary (cohortService.getCohortFacets)
+ *
+ * Stored on campaigns as design_config.category (v1 flat) /
+ * design_config.distribution.marketplace.category (v2) — read cross-version
+ * via getStoredCategory (designConfigV2Clamp.js). NOT the same taxonomy as
+ * Redeem Ops' partner categories (redeemOps/categoryService — admin-managed
+ * DB rows for partner CRM / Discover verticals); the two serve different
+ * domains on purpose.
+ */
+export const CONSUMER_CATEGORY_DEFS = [
+  { id: 'art_creativity', label: 'Art & Creativity', group: 'education', blurb: 'Drawing, painting and portfolio discovery' },
+  { id: 'coding_robotics', label: 'Coding & Robotics', group: 'education', blurb: 'Build, program and problem-solve' },
+  { id: 'speech_performance', label: 'Speech & Performance', group: 'education', blurb: 'Confidence on stage and in class' },
+  { id: 'sports_movement', label: 'Sports & Movement', group: 'education', blurb: 'Swim, play and move well' },
+  { id: 'music_dance', label: 'Music & Dance', group: 'education', blurb: 'Instruments, voice and rhythm' },
+  { id: 'academic', label: 'Academic', group: 'education', blurb: 'Diagnostics and subject support' },
+  { id: 'family_lifestyle', label: 'Family & Lifestyle', group: 'lifestyle', blurb: 'Experiences to share together' },
+  { id: 'wellness', label: 'Wellness', group: 'lifestyle', blurb: 'Self-care that earns its slot' },
+  { id: 'dining', label: 'Dining', group: 'lifestyle', blurb: 'Tables worth booking' },
+  { id: 'financial_education', label: 'Financial Education', group: 'lifestyle', blurb: 'Understand your money better' },
 ];
+
+export const CONSUMER_CATEGORIES = CONSUMER_CATEGORY_DEFS.map((c) => c.id);
+
+export const consumerCategoryLabel = (id) =>
+  CONSUMER_CATEGORY_DEFS.find((c) => c.id === id)?.label || id;
 
 export const OFFER_TYPES = ['trial', 'assessment', 'workshop', 'reward', 'consultation'];
 export const MODES = ['physical', 'online', 'hybrid'];

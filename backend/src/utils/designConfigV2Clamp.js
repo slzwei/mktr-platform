@@ -94,6 +94,15 @@ export function getStoredMarketplaceListed(doc) {
   return classifyDesignConfigVersion(doc) === 'v2' ? doc.distribution?.marketplace?.listed : doc.marketplaceListed;
 }
 
+/** Campaign taxonomy category (tracker "taxonomy") — save paths keep it valid
+ * (normalizeMarketplaceContent enum-drops anything else), so readers get a
+ * CONSUMER_CATEGORIES id or undefined. */
+export function getStoredCategory(doc) {
+  if (!isPlainObject(doc)) return undefined;
+  const raw = classifyDesignConfigVersion(doc) === 'v2' ? doc.distribution?.marketplace?.category : doc.category;
+  return typeof raw === 'string' && raw ? raw : undefined;
+}
+
 export function getStoredLuckyDraw(doc) {
   // Top-level in BOTH versions (admin-API-managed, editor-invisible).
   return isPlainObject(doc) ? doc.luckyDraw : undefined;

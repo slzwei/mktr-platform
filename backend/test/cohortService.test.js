@@ -484,3 +484,71 @@ describe('definition hygiene', () => {
     expect(() => normalizeDefinition({ filters: { attributes: { postalPrefixes: ['52%'] } } })).toThrow(/invalid/);
   });
 });
+
+describe('campaignCategories (tracker "taxonomy")', () => {
+  // Category ids chosen to be UNIQUE to this suite (no other test file
+  // creates campaigns carrying them) so exact member sets stay deterministic
+  // with parallel jest workers on the shared DB.
+  let campCatV1; let campCatV2;
+
+  beforeAll(async () => {
+    campCatV1 = await createTestCampaign(admin.user.id, {
+      name: `Cohort Cat V1 ${RUN}`,
+      design_config: { category: 'speech_performance' }, // v1 flat key
+    });
+    campCatV2 = await createTestCampaign(admin.user.id, {
+      name: `Cohort Cat V2 ${RUN}`,
+      // v2 shape — the category lives under distribution.marketplace
+      design_config: { version: 2, distribution: { marketplace: { category: 'coding_robotics' } } },
+    });
+    await makeConsumer('CAT_SPEECH');
+    await signup(C.CAT_SPEECH, campCatV1);
+    await makeConsumer('CAT_CODE');
+    await signup(C.CAT_CODE, campCatV2);
+  });
+
+  test('matches signups whose campaign carries the category — across BOTH design_config versions', async () => {
+    expect(await memberIds({ filters: { campaignCategories: ['speech_performance'] } }))
+      .toEqual(idOf('CAT_SPEECH'));
+    expect(await memberIds({ filters: { campaignCategories: ['coding_robotics'] } }))
+      .toEqual(idOf('CAT_CODE'));
+    expect(await memberIds({ filters: { campaignCategories: ['speech_performance', 'coding_robotics'] } }))
+      .toEqual(idOf('CAT_SPEECH', 'CAT_CODE'));
+  });
+
+  test('composes with other filters as AND', async () => {
+    const got = await memberIds({
+      filters: { campaignIds: [campCatV1.id, campCatV2.id], campaignCategories: ['coding_robotics'] },
+    });
+    expect(got).toEqual(idOf('CAT_CODE'));
+  });
+
+  test('a category the fixtures do not carry yields an empty cohort, not an error', async () => {
+    const got = await memberIds({
+      filters: { campaignIds: [campCatV1.id, campCatV2.id], campaignCategories: ['music_dance'] },
+    });
+    expect(got).toEqual([]);
+  });
+
+  test('unknown category ids are rejected (422), never silently ignored', () => {
+    expect(() => normalizeDefinition({ filters: { campaignCategories: ['bogus'] } }))
+      .toThrow(/not a known category/);
+  });
+
+  test('normalize dedupes and echoes the canonical list', () => {
+    const def = normalizeDefinition({ filters: { campaignCategories: ['dining', 'dining'] } });
+    expect(def.filters.campaignCategories).toEqual(['dining']);
+  });
+
+  test('facets expose the FULL taxonomy with counts + per-campaign category', async () => {
+    const facets = await getCohortFacets();
+    const byId = Object.fromEntries(facets.campaignCategories.map((c) => [c.id, c]));
+    expect(Object.keys(byId).length).toBe(10);
+    expect(byId.speech_performance.count).toBeGreaterThanOrEqual(1);
+    expect(byId.speech_performance.label).toBe('Speech & Performance');
+    const v1Row = facets.campaigns.find((c) => c.id === campCatV1.id);
+    const v2Row = facets.campaigns.find((c) => c.id === campCatV2.id);
+    expect(v1Row.category).toBe('speech_performance');
+    expect(v2Row.category).toBe('coding_robotics');
+  });
+});

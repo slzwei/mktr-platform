@@ -200,7 +200,25 @@ export default function CohortBuilder({ cohort = null, onClose, onSaved }) {
             )}
           </Section>
 
-          <Section label="Campaign tags" hint={(f?.campaignTags || []).length === 0 ? 'no tags exist yet (taxonomy pending)' : 'signed up for any campaign carrying one'}>
+          <Section label="Category" hint="signed up for any campaign in one of these — the campaign taxonomy, set in Studio">
+            {facets.isLoading ? <Skeleton height={30} /> : (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {(f?.campaignCategories || []).map((c) => (
+                  <TogglePill
+                    key={c.id}
+                    active={definition.filters.campaignCategories.includes(c.id)}
+                    onClick={() => patch((d) => { d.filters.campaignCategories = toggle(d.filters.campaignCategories, c.id); })}
+                    title={`${c.count} campaign${c.count === 1 ? '' : 's'} today`}
+                  >
+                    {c.label}{c.count > 0 ? ` · ${c.count}` : ''}
+                  </TogglePill>
+                ))}
+                {(f?.campaignCategories || []).length === 0 && <span className="av2-caption">No categories.</span>}
+              </div>
+            )}
+          </Section>
+
+          <Section label="Campaign tags" hint={(f?.campaignTags || []).length === 0 ? 'no freeform tags exist yet — Category above is the curated taxonomy' : 'freeform labels — signed up for any campaign carrying one'}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {(f?.campaignTags || []).map((t) => (
                 <TogglePill
