@@ -83,7 +83,7 @@ Same body, footer, and buttons as their text twins; the header becomes **format 
 
 - **The image is a send-time parameter.** Meta reviews only a *sample*; every push can then attach that campaign's own hero (Tokyo art for the Tokyo draw, partner hero for a partner reward) with **no re-approval**. Prod precedent: `reward_pass`/`reward_voucher` already send a per-customer QR card PNG as an IMAGE header through `whatsappService.uploadQrPng`.
 - **Sample asset:** `backend/scripts/assets/wa-marketing-sample.png` — 1200×628 (Meta-recommended ~1.91:1), Editorial voucher-card palette/fonts (terracotta + Fraunces), generated with the same satori→resvg pipeline as the QR cards. Reviewers see this; it is also what Manager shows as the template preview.
-- **Trade-off vs text twins:** the text headline ("New reward: X") is lost — the hero must carry that job, and the body still names the offer. WhatsApp renders the image above the body; chat-list preview crops to ~1.91:1, so heroes should keep key content centered.
+- **Headline moves into the body** (Shawn's Manager adaptation, 2026-07-23): the text header is gone, so each `_img` body opens with a bold headline line — `*New reward: {{2}}*` / `*Now open: {{2}}*` / `*A little something for you*` — followed by the same sentences. `{{1}}` stays the first name across the whole pack; in the campaign/draw twins the headline reuses the title variable, so for `marketing_new_campaign_img` `{{2}}` is the **reward title** (e.g. "FairPrice $20 Voucher"), not the lowercase offer phrase the text twin uses. Variables may appear out of numeric order in the text (`{{2}}` before `{{1}}`) — Meta requires the *set* {{1}}…{{n}} with samples, not appearance order (Manager accepts it; verified live 2026-07-23). WhatsApp renders the image above the body; chat-list preview crops to ~1.91:1, so heroes should keep key content centered.
 
 Send-time header parameter (the `wapush` side): `{ type: 'image', image: { link: heroUrl } }` with a **public HTTPS JPEG/PNG ≤5 MB** (campaign heroes under `/uploads/` qualify), or upload-then-`{ id }` exactly like the QR path. WhatsApp does **not** take webp — if a stored hero is webp, `wapush` must transcode or fall back to the text twin.
 
@@ -134,7 +134,9 @@ Idempotent (skips names already on the WABA), auto-resolves the WABA id from the
 5. Paste body and footer; fill a sample for every body variable (samples are mandatory).
 6. Buttons → **Visit website**, label from §2, URL type **Dynamic**, `https://redeem.sg/{{1}}`, sample = a full LeadCapture URL. Then **Custom** quick reply `Stop promotions`.
 7. Submit. Repeat for `marketing_new_draw` and `marketing_offer` (§2.3 has a static header — skip the variable).
-8. For the `_img` twins: same steps but Header = **Image**, and drag-drop `backend/scripts/assets/wa-marketing-sample.png` as the sample. Everything else (body, samples, footer, buttons) is identical to the text twin.
+8. For the `_img` twins: attach **Media sample → Image** (drag-drop `backend/scripts/assets/wa-marketing-sample.png` — the actual PNG, not a screenshot of it) and leave the text Header **empty**; attaching media *is* what makes it an image-header template. Use the §2.4 headline-led bodies. Footer and buttons as the text twin.
+
+New-UI gotchas (seen live 2026-07-23): "Type of variable" stays **Number** (positional `{{n}}`, what the sender code passes); the CTA's **URL type must be Dynamic** — with Static selected, `{{1}}` in the URL is not a variable and the per-campaign suffix never attaches (flip to Dynamic, then fill the sample-URL field it reveals with a full LeadCapture URL); watch for accidental duplicate lines when pasting the body.
 
 ## 6. Approval: expected wait & tracking
 
