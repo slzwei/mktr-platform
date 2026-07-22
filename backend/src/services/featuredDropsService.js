@@ -16,13 +16,35 @@ import { getStoredFeaturedDrop } from '../utils/designConfigV2Clamp.js';
 import { customerHostOrigin } from '../utils/customerHost.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { logger } from '../utils/logger.js';
+import { deriveFeaturedDropTitle, marketplaceInheritEnabled } from '../utils/listingDerivation.js';
 
 const TTL_MS = 60_000;
 const GONE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // gone cards auto-hide 7d after endsAt
 const MAX_DROPS = 6;
 
-let cache = { data: null, ts: 0 };
+let cache = { data: null, ts: 0, mode: null };
+let generation = 0;
 let inflight = null;
+let inflightMode = null;
+let inflightGen = -1;
+
+/** Campaign saves invalidate this cache like the marketplace one — before
+ * this, a homepage tile could serve stale copy for up to 60s after an edit
+ * (and indefinitely across stale-on-error refreshes). */
+export function invalidateFeaturedDropsCache() {
+  generation += 1;
+  cache = { data: null, ts: 0, mode: null };
+}
+
+/** The homepage tile title rule (Phase A review finding 5): with inheritance
+ * ON the stored drop title never wins — derived headline, else campaign name.
+ * Flag OFF keeps the stored-first read byte-identical. */
+export function featuredTitleOf(designConfig, fd, campaignName) {
+  if (marketplaceInheritEnabled()) {
+    return deriveFeaturedDropTitle(designConfig) || campaignName;
+  }
+  return fd.title || campaignName;
+}
 
 // endsAt is inclusive through the whole SGT day: an instant is within the day
 // iff now < sgtDayEndExclusiveMs(endsAt) (shared util — the old private helper
@@ -66,7 +88,7 @@ async function fetchDrops(now) {
     const ended = endMs !== null && now >= endMs;
     const drop = {
       id: c.id,
-      title: fd.title || c.name,
+      title: featuredTitleOf(c.design_config, fd, c.name),
       valueLabel: fd.valueLabel || null,
       emoji: fd.emoji || null,
       status: capReached || ended ? 'gone' : 'live',
@@ -96,16 +118,23 @@ async function fetchDrops(now) {
  * and stale-on-error (a failed refresh serves the last good list).
  */
 export async function getFeaturedDrops({ now = Date.now() } = {}) {
-  if (cache.data && now - cache.ts < TTL_MS) return cache.data;
-  if (inflight) return inflight;
+  const mode = marketplaceInheritEnabled();
+  if (cache.data && cache.mode === mode && now - cache.ts < TTL_MS) return cache.data;
+  if (inflight && inflightMode === mode && inflightGen === generation) return inflight;
+  const gen = generation;
+  inflightMode = mode;
+  inflightGen = gen;
   inflight = fetchDrops(now)
     .then((data) => {
-      cache = { data, ts: now };
+      // Commit only if no save invalidated us mid-flight (review finding 2)
+      // and tag the mode so a flag flip can never serve the other mode's copy
+      // (finding 1) — including via the stale-on-error path below.
+      if (gen === generation) cache = { data, ts: now, mode };
       return data;
     })
     .catch((err) => {
       logger.error({ err: err?.message }, 'featured_drops.refresh_failed');
-      if (cache.data) return cache.data; // stale-on-error
+      if (cache.data && cache.mode === mode) return cache.data; // stale-on-error, same mode only
       throw err;
     })
     .finally(() => {

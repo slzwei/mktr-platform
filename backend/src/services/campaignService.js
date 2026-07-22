@@ -17,6 +17,7 @@ import {
   getStoredLuckyDraw,
 } from '../utils/designConfigV2Clamp.js';
 import { invalidateMarketplaceCache } from './marketplaceCache.js';
+import { invalidateFeaturedDropsCache } from './featuredDropsService.js';
 import { refundCampaignCommitments } from './walletService.js';
 
 const SLUG_RE = /^[a-z0-9-]{3,80}$/;
@@ -467,6 +468,7 @@ export async function createCampaign(body, user) {
     throw err;
   }
   invalidateMarketplaceCache();
+  invalidateFeaturedDropsCache();
 
   if (campaignData.design_config?.luckyDraw?.enabled === true) {
     const withTerms = await ensureDrawTermsVersion(campaignData.design_config, campaign.id, user.id);
@@ -618,6 +620,7 @@ export async function updateCampaign(id, body, req) {
     );
   }
   invalidateMarketplaceCache();
+  invalidateFeaturedDropsCache();
 
   // Sync agent assignments to join table when assigned_agents is provided
   if (assigned_agents !== undefined) {
@@ -736,6 +739,7 @@ export async function setCampaignLaunchState(id, state, req) {
     ...(isActive && !campaign.firstActivatedAt ? { firstActivatedAt: new Date() } : {}),
   });
   invalidateMarketplaceCache();
+  invalidateFeaturedDropsCache();
 
   // Fan-out: refresh device manifests (same as updateCampaign content changes).
   await notifyDevices(id);
