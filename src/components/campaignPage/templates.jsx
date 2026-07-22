@@ -40,7 +40,7 @@ export function MediaBlock({ t, media, radius, style = {} }) {
     const id = youTubeIdFrom(media.src);
     if (!id) return null;
     return (
-      <div style={frame}>
+      <div data-se="content.media" style={frame}>
         <iframe
           src={`https://www.youtube-nocookie.com/embed/${id}?rel=0&modestbranding=1&playsinline=1`}
           title={media.alt || 'Campaign video'}
@@ -54,7 +54,7 @@ export function MediaBlock({ t, media, radius, style = {} }) {
   }
   if (media.kind === 'video') {
     return (
-      <div style={frame}>
+      <div data-se="content.media" style={frame}>
         <video
           ref={videoRef}
           src={resolveImageUrl(media.src)}
@@ -69,7 +69,7 @@ export function MediaBlock({ t, media, radius, style = {} }) {
     );
   }
   return (
-    <div style={frame}>
+    <div data-se="content.media" style={frame}>
       <img
         src={resolveImageUrl(media.src)}
         alt={media.alt || ''}
@@ -143,6 +143,7 @@ function Editorial({ t, content, params, luckyDraw, funnel, formAnchorRef, scrol
     >
       <div style={{ maxWidth, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div
+          data-se="content.wordmark"
           style={{
             textAlign: 'center',
             fontFamily: t.fontStack,
@@ -167,10 +168,10 @@ function Editorial({ t, content, params, luckyDraw, funnel, formAnchorRef, scrol
                 </div>
               )}
               {content.paragraphs.map((p, i) => (
-                <p key={i} style={{ fontSize: 14, lineHeight: 1.65, margin: '0 0 10px', color: t.bodyText }}>{p}</p>
+                <p key={i} data-se="content.story" style={{ fontSize: 14, lineHeight: 1.65, margin: '0 0 10px', color: t.bodyText }}>{p}</p>
               ))}
               {content.emphasis && (
-                <p style={{ fontSize: 15, fontWeight: 700, margin: '2px 0 0', color: t.ink }}>{content.emphasis}</p>
+                <p data-se="content.emphasis" style={{ fontSize: 15, fontWeight: 700, margin: '2px 0 0', color: t.ink }}>{content.emphasis}</p>
               )}
             </div>
           </div>
@@ -208,8 +209,8 @@ function Poster({ t, content, params, luckyDraw, funnel, formAnchorRef, scrollTo
     <div style={{ minHeight: '100vh', background: t.bg, fontFamily: SANS, color: t.ink }}>
       <div style={{ position: 'relative', height: mobile ? 430 : 480, background: heroBackdrop, overflow: 'hidden' }}>
         <MediaBlock t={t} media={content.media} radius={0} style={{ position: 'absolute', inset: 0, aspectRatio: 'auto', height: '100%' }} />
-        <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(to top, ${fade} 4%, rgba(12,10,8,.28) 55%, rgba(12,10,8,.2))` }} />
-        <div style={{ position: 'absolute', top: 16, left: 18, fontFamily: t.fontStack, fontSize: 18, fontWeight: 700, color: '#FFF' }}>
+        <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: `linear-gradient(to top, ${fade} 4%, rgba(12,10,8,.28) 55%, rgba(12,10,8,.2))` }} />
+        <div data-se="content.wordmark" style={{ position: 'absolute', top: 16, left: 18, fontFamily: t.fontStack, fontSize: 18, fontWeight: 700, color: '#FFF' }}>
           {content.wordmark}
         </div>
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: mobile ? 16 : 26, maxWidth: 620, margin: '0 auto', boxSizing: 'border-box' }}>
@@ -218,11 +219,11 @@ function Poster({ t, content, params, luckyDraw, funnel, formAnchorRef, scrollTo
               <DrawBadgeText luckyDraw={luckyDraw} />
             </div>
           )}
-          <div style={{ fontFamily: t.fontStack, fontSize: mobile ? 32 : 46, lineHeight: 1.06, fontWeight: 700, color: heroInk, letterSpacing: '-0.01em' }}>
+          <div data-se="content.headline" style={{ fontFamily: t.fontStack, fontSize: mobile ? 32 : 46, lineHeight: 1.06, fontWeight: 700, color: heroInk, letterSpacing: '-0.01em' }}>
             {content.headline}
           </div>
           {content.subheadline && (
-            <div style={{ fontSize: 14, lineHeight: 1.5, color: heroInk, opacity: 0.85, margin: '10px 0 14px', maxWidth: 440, whiteSpace: 'pre-line' }}>
+            <div data-se="content.subheadline" style={{ fontSize: 14, lineHeight: 1.5, color: heroInk, opacity: 0.85, margin: '10px 0 14px', maxWidth: 440, whiteSpace: 'pre-line' }}>
               {content.subheadline}
             </div>
           )}
@@ -233,9 +234,9 @@ function Poster({ t, content, params, luckyDraw, funnel, formAnchorRef, scrollTo
         {(content.paragraphs.length > 0 || content.emphasis) && (
           <div>
             {content.paragraphs.map((p, i) => (
-              <p key={i} style={{ fontSize: 14.5, lineHeight: 1.65, margin: '0 0 10px', color: t.bodyText }}>{p}</p>
+              <p key={i} data-se="content.story" style={{ fontSize: 14.5, lineHeight: 1.65, margin: '0 0 10px', color: t.bodyText }}>{p}</p>
             ))}
-            {content.emphasis && <p style={{ fontSize: 15, fontWeight: 700, margin: '2px 0 0' }}>{content.emphasis}</p>}
+            {content.emphasis && <p data-se="content.emphasis" style={{ fontSize: 15, fontWeight: 700, margin: '2px 0 0' }}>{content.emphasis}</p>}
           </div>
         )}
         <ReferredBadge t={t} referrerName={referrerName} />
@@ -268,12 +269,12 @@ function Split({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, r
   const formPanel = (
     <div style={{ background: t.card, padding: mobile ? '18px 16px' : '34px 32px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
       <div style={{ maxWidth: 440, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 13 }}>
-        <div style={{ fontFamily: t.fontStack, fontSize: 16, fontWeight: 700 }}>{content.wordmark}</div>
-        <div style={{ fontFamily: t.fontStack, fontSize: mobile ? 25 : 31, lineHeight: 1.12, fontWeight: 700, letterSpacing: '-0.01em' }}>
+        <div data-se="content.wordmark" style={{ fontFamily: t.fontStack, fontSize: 16, fontWeight: 700 }}>{content.wordmark}</div>
+        <div data-se="content.headline" style={{ fontFamily: t.fontStack, fontSize: mobile ? 25 : 31, lineHeight: 1.12, fontWeight: 700, letterSpacing: '-0.01em' }}>
           {content.headline}
         </div>
         {content.subheadline && (
-          <div style={{ fontSize: 13.5, lineHeight: 1.55, color: t.muted, whiteSpace: 'pre-line' }}>{content.subheadline}</div>
+          <div data-se="content.subheadline" style={{ fontSize: 13.5, lineHeight: 1.55, color: t.muted, whiteSpace: 'pre-line' }}>{content.subheadline}</div>
         )}
         <ReferredBadge t={t} referrerName={referrerName} />
         <div ref={formAnchorRef}>{funnel}</div>
@@ -306,16 +307,16 @@ function Spotlight({ t, content, luckyDraw, funnel, formAnchorRef, stage, referr
     <div style={{ minHeight: '100vh', background: t.bg, backgroundImage: t.bgCss !== 'none' ? t.bgCss : undefined, fontFamily: SANS, color: t.ink, padding: '16px 16px 0', boxSizing: 'border-box' }}>
       <div style={{ maxWidth: 460, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16, minHeight: '100vh', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 4 }}>
-          <span style={{ fontFamily: t.fontStack, fontSize: 17, fontWeight: 700 }}>{content.wordmark}</span>
+          <span data-se="content.wordmark" style={{ fontFamily: t.fontStack, fontSize: 17, fontWeight: 700 }}>{content.wordmark}</span>
           <DrawBadge t={t} luckyDraw={luckyDraw} inverted={false} />
         </div>
         {pastQuiz && (
           <div>
-            <div style={{ fontFamily: t.fontStack, fontSize: 24, lineHeight: 1.15, fontWeight: 700, marginBottom: 7 }}>{content.headline}</div>
+            <div data-se="content.headline" style={{ fontFamily: t.fontStack, fontSize: 24, lineHeight: 1.15, fontWeight: 700, marginBottom: 7 }}>{content.headline}</div>
             {content.paragraphs.map((p, i) => (
-              <p key={i} style={{ fontSize: 13.5, lineHeight: 1.6, margin: '0 0 8px', color: t.bodyText }}>{p}</p>
+              <p key={i} data-se="content.story" style={{ fontSize: 13.5, lineHeight: 1.6, margin: '0 0 8px', color: t.bodyText }}>{p}</p>
             ))}
-            {content.emphasis && <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{content.emphasis}</p>}
+            {content.emphasis && <p data-se="content.emphasis" style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{content.emphasis}</p>}
           </div>
         )}
         <ReferredBadge t={t} referrerName={referrerName} />
@@ -344,12 +345,12 @@ function Express({ t, content, params, luckyDraw, funnel, formAnchorRef, referre
   return (
     <div style={{ minHeight: '100vh', background: t.bg, backgroundImage: t.bgCss !== 'none' ? t.bgCss : undefined, fontFamily: SANS, color: t.ink, display: 'flex', flexDirection: 'column', justifyContent: 'safe center', padding: 16, boxSizing: 'border-box' }}>
       <div style={{ maxWidth: 430, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ textAlign: 'center', fontFamily: t.fontStack, fontSize: 18, fontWeight: 700 }}>{content.wordmark}</div>
+        <div data-se="content.wordmark" style={{ textAlign: 'center', fontFamily: t.fontStack, fontSize: 18, fontWeight: 700 }}>{content.wordmark}</div>
         <DrawBadge t={t} luckyDraw={luckyDraw} />
         <ReferredBadge t={t} referrerName={referrerName} />
         <FormCard t={t} formAnchorRef={formAnchorRef} funnel={funnel} padding="20px 18px" />
         {params.trustLine && (
-          <div style={{ textAlign: 'center', fontSize: 11.5, color: t.muted }}>{params.trustLine}</div>
+          <div data-se="template.params.express.trustLine" style={{ textAlign: 'center', fontSize: 11.5, color: t.muted }}>{params.trustLine}</div>
         )}
         <BrandFooter t={t} content={content} compact />
       </div>
@@ -365,9 +366,9 @@ function Journey({ t, content, params, luckyDraw, funnel, formAnchorRef, scrollT
   return (
     <div style={{ minHeight: '100vh', background: t.bg, backgroundImage: t.bgCss !== 'none' ? t.bgCss : undefined, fontFamily: SANS, color: t.ink }}>
       <div style={{ maxWidth: 600, margin: '0 auto', padding: mobile ? 16 : 26, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 18 }}>
-        <div style={{ textAlign: 'center', fontFamily: t.fontStack, fontSize: 20, fontWeight: 700, paddingTop: 6 }}>{content.wordmark}</div>
+        <div data-se="content.wordmark" style={{ textAlign: 'center', fontFamily: t.fontStack, fontSize: 20, fontWeight: 700, paddingTop: 6 }}>{content.wordmark}</div>
         <DrawBadge t={t} luckyDraw={luckyDraw} />
-        <div style={{ fontFamily: t.fontStack, fontSize: mobile ? 30 : 40, lineHeight: 1.1, fontWeight: 700, textAlign: 'center', letterSpacing: '-0.01em' }}>
+        <div data-se="content.headline" style={{ fontFamily: t.fontStack, fontSize: mobile ? 30 : 40, lineHeight: 1.1, fontWeight: 700, textAlign: 'center', letterSpacing: '-0.01em' }}>
           {content.headline}
         </div>
         <MediaBlock t={t} media={content.media} />
@@ -376,11 +377,11 @@ function Journey({ t, content, params, luckyDraw, funnel, formAnchorRef, scrollT
             <div style={{ font: "600 10px ui-monospace, 'SF Mono', Menlo, monospace", letterSpacing: '.12em', color: accentTextOn(t.accent, t.bg), marginBottom: 7 }}>
               {`0${i + 1}`}
             </div>
-            <p style={{ fontSize: 14.5, lineHeight: 1.7, margin: 0, color: t.bodyText }}>{p}</p>
+            <p data-se="content.story" style={{ fontSize: 14.5, lineHeight: 1.7, margin: 0, color: t.bodyText }}>{p}</p>
           </div>
         ))}
         {content.emphasis && (
-          <div style={{ border: `1.5px solid ${t.accent}`, borderRadius: t.r.card, padding: '14px 16px', textAlign: 'center', fontSize: 15, fontWeight: 700 }}>
+          <div data-se="content.emphasis" style={{ border: `1.5px solid ${t.accent}`, borderRadius: t.r.card, padding: '14px 16px', textAlign: 'center', fontSize: 15, fontWeight: 700 }}>
             {content.emphasis}
           </div>
         )}
@@ -392,7 +393,7 @@ function Journey({ t, content, params, luckyDraw, funnel, formAnchorRef, scrollT
       </div>
       {showSticky && (
         <div style={{ position: 'sticky', bottom: 0, background: t.card, borderTop: `1px solid ${t.line}`, padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span data-se="content.headline" style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {content.headline}
           </span>
           <button

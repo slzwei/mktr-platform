@@ -174,9 +174,9 @@ function DrawFootnotes({ draw, linkColor, mutedColor, faintColor, content, cente
           {SCAM_LINE} Masked results at <WinnersLink color={linkColor} />.
         </div>
       )}
-      <div style={{ fontSize: 11, color: faintColor, fontFamily: SANS }}>
+      <div data-se="content.footer.regulatory" style={{ fontSize: 11, color: faintColor, fontFamily: SANS }}>
         {content.regulatory}
-        <span style={{ display: 'block', marginTop: 4 }}>
+        <span data-se="content.footer.brand" style={{ display: 'block', marginTop: 4 }}>
           {content.brandPre}
           {content.brandLink && (
             <a href="https://mktr.sg" target="_blank" rel="noopener noreferrer" style={{ color: faintColor, textDecoration: 'underline' }}>MKTR</a>
@@ -265,15 +265,15 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
   const hero = (
     <div style={{ position: 'relative', height: mobile ? 300 : 'auto', minHeight: mobile ? 300 : '100%', flexShrink: 0, background: PC.heroInk }}>
       <BackdropMedia t={t} media={content.media} />
-      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(18,19,28,.15) 40%, rgba(18,19,28,.68))' }} />
+      <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(18,19,28,.15) 40%, rgba(18,19,28,.68))' }} />
       <div style={{ position: 'absolute', top: 16, left: 20, right: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontWeight: 800, fontSize: 17, color: '#fff', fontFamily: SANS }}>{content.wordmark}</div>
+        <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 17, color: '#fff', fontFamily: SANS }}>{content.wordmark}</div>
         {s.draw && <div style={mono(10.5, { letterSpacing: 1.5, color: 'rgba(255,255,255,.85)' })}>LUCKY DRAW · FREE ENTRY</div>}
       </div>
       <div style={{ position: 'absolute', left: 20, right: 20, bottom: mobile ? 56 : 36, color: '#fff' }}>
-        <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: mobile ? 33 : 46, lineHeight: 1.12 }}>{content.headline}</div>
+        <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: mobile ? 33 : 46, lineHeight: 1.12 }}>{content.headline}</div>
         {content.subheadline && (
-          <div style={{ marginTop: 6, fontSize: mobile ? 14 : 17, color: 'rgba(255,255,255,.88)', fontFamily: SANS, whiteSpace: 'pre-line' }}>{content.subheadline}</div>
+          <div data-se="content.subheadline" style={{ marginTop: 6, fontSize: mobile ? 14 : 17, color: 'rgba(255,255,255,.88)', fontFamily: SANS, whiteSpace: 'pre-line' }}>{content.subheadline}</div>
         )}
       </div>
     </div>
@@ -289,9 +289,9 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
   const belowCard = (
     <div style={{ padding: '22px 24px 26px', display: 'flex', flexDirection: 'column', gap: 18 }}>
       {content.paragraphs.map((p, i) => (
-        <div key={i} style={{ fontSize: 14, lineHeight: 1.55, color: PC.body, fontFamily: SANS }}>{p}</div>
+        <div key={i} data-se="content.story" style={{ fontSize: 14, lineHeight: 1.55, color: PC.body, fontFamily: SANS }}>{p}</div>
       ))}
-      {content.emphasis && <div style={{ fontSize: 15, fontWeight: 700, color: PC.ink, fontFamily: SANS }}>{content.emphasis}</div>}
+      {content.emphasis && <div data-se="content.emphasis" style={{ fontSize: 15, fontWeight: 700, color: PC.ink, fontFamily: SANS }}>{content.emphasis}</div>}
       {facts.length > 0 && (
         params.factStyle === 'inline' ? (
           <div style={{ fontSize: 13, lineHeight: 1.6, color: PC.body, fontFamily: SANS }}>
@@ -332,7 +332,7 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
         </div>
         {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: PC.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
         {content.paragraphs.map((p, i) => (
-          <div key={i} style={{ fontSize: 13.5, lineHeight: 1.55, color: PC.body, fontFamily: SANS }}>{p}</div>
+          <div key={i} data-se="content.story" style={{ fontSize: 13.5, lineHeight: 1.55, color: PC.body, fontFamily: SANS }}>{p}</div>
         ))}
         <div style={{ marginTop: 'auto' }}>
           <DrawFootnotes draw={s.draw} linkColor={accentInk} mutedColor={PC.mut} faintColor={PC.faint} content={content} t={t} />
@@ -341,11 +341,11 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
     );
     const heroPane = <div style={{ width: '50%', position: 'relative', background: PC.heroInk }}>
       <BackdropMedia t={t} media={content.media} />
-      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(18,19,28,.1) 40%, rgba(18,19,28,.7))' }} />
-      <div style={{ position: 'absolute', top: 26, left: 32, fontWeight: 800, fontSize: 20, color: '#fff', fontFamily: SANS }}>{content.wordmark}</div>
+      <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(18,19,28,.1) 40%, rgba(18,19,28,.7))' }} />
+      <div data-se="content.wordmark" style={{ position: 'absolute', top: 26, left: 32, fontWeight: 800, fontSize: 20, color: '#fff', fontFamily: SANS }}>{content.wordmark}</div>
       <div style={{ position: 'absolute', left: 32, right: 32, bottom: 36, color: '#fff', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 46, lineHeight: 1.1 }}>{content.headline}</div>
-        {content.subheadline && <div style={{ fontSize: 17, color: 'rgba(255,255,255,.88)', fontFamily: SANS, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
+        <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 46, lineHeight: 1.1 }}>{content.headline}</div>
+        {content.subheadline && <div data-se="content.subheadline" style={{ fontSize: 17, color: 'rgba(255,255,255,.88)', fontFamily: SANS, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
       </div>
     </div>;
     return (
@@ -382,7 +382,7 @@ function gazetteSerial(campaignName, closesAt) {
 function GazetteMasthead({ content, kickerText, inkColor, mutedColor }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: `2px solid ${inkColor}`, paddingBottom: 10, gap: 12 }}>
-      <div style={{ fontWeight: 800, fontSize: 17, fontFamily: SANS }}>{content.wordmark}</div>
+      <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 17, fontFamily: SANS }}>{content.wordmark}</div>
       <div style={mono(10.5, { letterSpacing: 1.6, color: mutedColor, textAlign: 'right' })}>{kickerText}</div>
     </div>
   );
@@ -404,7 +404,8 @@ function Gazette({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile,
   );
   const factTable = s.draw && (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {factRow('PRIZE', <strong>{s.prize || content.headline}</strong>)}
+      {/* PRIZE falls back to the headline — only that fallback is Studio text. */}
+      {factRow('PRIZE', <strong data-se={s.prize ? undefined : 'content.headline'}>{s.prize || content.headline}</strong>)}
       {factRow('CLOSES', <strong>{s.closesFull} · 23:59 SGT</strong>)}
       {factRow('ENTRY', 'One per verified mobile · SMS-verified · Free')}
       {factRow('BOOST', `×${s.multiplier} when a consultant meets you and scans your pass at a free 20-min review`, true)}
@@ -438,13 +439,13 @@ function Gazette({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile,
         <GazetteMasthead content={content} kickerText={`OFFICIAL ENTRY FORM${s.kicker ? ` · ${s.kicker}` : ''}`} inkColor={GZ.ink} mutedColor={GZ.mut} />
         <div style={{ display: 'flex', gap: 56 }}>
           <div style={{ flex: 1.1, display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 52, lineHeight: 1.08 }}>{content.headline}</div>
+            <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 52, lineHeight: 1.08 }}>{content.headline}</div>
             {content.paragraphs.map((p, i) => (
-              <div key={i} style={{ fontSize: 16, lineHeight: 1.55, color: GZ.mut }}>{p}</div>
+              <div key={i} data-se="content.story" style={{ fontSize: 16, lineHeight: 1.55, color: GZ.mut }}>{p}</div>
             ))}
             {photoPlate}
             {factTable}
-            {content.emphasis && <div style={serifItalic(19, { color: GZ.ink })}>{content.emphasis}</div>}
+            {content.emphasis && <div data-se="content.emphasis" style={serifItalic(19, { color: GZ.ink })}>{content.emphasis}</div>}
             {footnotes}
           </div>
           <div style={{ width: 400, flexShrink: 0 }}>{formBox}</div>
@@ -457,8 +458,8 @@ function Gazette({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile,
       <GazetteMasthead content={content} kickerText="OFFICIAL ENTRY FORM" inkColor={GZ.ink} mutedColor={GZ.mut} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18, paddingTop: 20 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 36, lineHeight: 1.1 }}>{content.headline}</div>
-          {content.subheadline && <div style={{ fontSize: 14, lineHeight: 1.5, color: GZ.mut, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
+          <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 36, lineHeight: 1.1 }}>{content.headline}</div>
+          {content.subheadline && <div data-se="content.subheadline" style={{ fontSize: 14, lineHeight: 1.5, color: GZ.mut, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
         </div>
         {photoPlate}
         {factTable}
@@ -494,16 +495,16 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
     return (
       <div style={{ minHeight: '100vh', background: NF_HERO, position: 'relative', display: 'flex', flexDirection: 'column', fontFamily: SANS }}>
         <BackdropMedia t={t} media={content.media} />
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(100deg, rgba(20,22,31,.9) 34%, rgba(20,22,31,.35))' }} />
+        <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(100deg, rgba(20,22,31,.9) 34%, rgba(20,22,31,.35))' }} />
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', padding: '26px 40px' }}>
-          <div style={{ fontWeight: 800, fontSize: 20, color: '#fff' }}>{content.wordmark}</div>
+          <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 20, color: '#fff' }}>{content.wordmark}</div>
           {s.draw && <div style={mono(11, { letterSpacing: 1.6, color: 'rgba(255,255,255,.8)' })}>FREE ENTRY</div>}
         </div>
         <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', gap: 60, padding: '0 56px 40px' }}>
           <div style={{ flex: 1, color: '#fff', display: 'flex', flexDirection: 'column', gap: 16 }}>
             {countdownChip}
-            <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 58, lineHeight: 1.06 }}>{content.headline}</div>
-            {content.subheadline && <div style={{ fontSize: 18, lineHeight: 1.5, color: 'rgba(255,255,255,.85)', maxWidth: 440, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
+            <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 58, lineHeight: 1.06 }}>{content.headline}</div>
+            {content.subheadline && <div data-se="content.subheadline" style={{ fontSize: 18, lineHeight: 1.5, color: 'rgba(255,255,255,.85)', maxWidth: 440, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
             {trustLine}
             {s.draw && (
               <div style={{ fontSize: 13.5, color: 'rgba(255,255,255,.6)' }}>
@@ -512,7 +513,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
             )}
           </div>
           <div ref={formAnchorRef} style={{ width: 400, flexShrink: 0, background: NF.card, borderRadius: 16, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,.45)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {content.emphasis && <div style={{ ...serifItalic(20), color: NF.ink }}>{content.emphasis}</div>}
+            {content.emphasis && <div data-se="content.emphasis" style={{ ...serifItalic(20), color: NF.ink }}>{content.emphasis}</div>}
             <ReferredBadge t={t} referrerName={referrerName} />
             {funnel}
           </div>
@@ -524,16 +525,16 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
     <div style={{ minHeight: '100vh', background: NF.bg, color: NF.ink, display: 'flex', flexDirection: 'column', position: 'relative', fontFamily: SANS }}>
       <div style={{ position: 'relative', minHeight: '100vh', background: NF_HERO, display: 'flex', flexDirection: 'column' }}>
         <BackdropMedia t={t} media={content.media} />
-        <div style={{ position: 'absolute', inset: 0, background: scrim }} />
+        <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: scrim }} />
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px' }}>
-          <div style={{ fontWeight: 800, fontSize: 17, color: '#fff' }}>{content.wordmark}</div>
+          <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 17, color: '#fff' }}>{content.wordmark}</div>
           {s.draw && <div style={mono(10.5, { letterSpacing: 1.5, color: 'rgba(255,255,255,.8)' })}>FREE ENTRY</div>}
         </div>
         <div style={{ position: 'relative', flex: 1 }} />
         <div style={{ position: 'relative', padding: '0 22px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {countdownChip}
-          <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 40, lineHeight: 1.08, color: '#fff' }}>{content.headline}</div>
-          {content.subheadline && <div style={{ fontSize: 15, lineHeight: 1.5, color: 'rgba(255,255,255,.85)', whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
+          <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 40, lineHeight: 1.08, color: '#fff' }}>{content.headline}</div>
+          {content.subheadline && <div data-se="content.subheadline" style={{ fontSize: 15, lineHeight: 1.5, color: 'rgba(255,255,255,.85)', whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
           {trustLine}
           <button
             type="button"
@@ -551,9 +552,9 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         </div>
       </div>
       <div style={{ padding: '26px 22px 30px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {content.emphasis && <div style={{ ...serifItalic(20), color: NF.ink }}>{content.emphasis}</div>}
+        {content.emphasis && <div data-se="content.emphasis" style={{ ...serifItalic(20), color: NF.ink }}>{content.emphasis}</div>}
         {content.paragraphs.map((p, i) => (
-          <div key={i} style={{ fontSize: 14, lineHeight: 1.6, color: NF.mut }}>{p}</div>
+          <div key={i} data-se="content.story" style={{ fontSize: 14, lineHeight: 1.6, color: NF.mut }}>{p}</div>
         ))}
         {s.draw && (
           <div style={{ border: `1px solid ${NF.border}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -566,7 +567,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
             {s.winners > 1 ? 'Winners contacted directly.' : 'Winner contacted directly.'} Masked results at <WinnersLink color={NF.ink} />.
           </div>
         )}
-        <div style={{ fontSize: 11, color: NF.faint }}>{content.regulatory}</div>
+        <div data-se="content.footer.regulatory" style={{ fontSize: 11, color: NF.faint }}>{content.regulatory}</div>
       </div>
       {/* Backdrop + sheet stay MOUNTED across open/close (the funnel's typed
           fields + OTP state must survive a close/reopen) and animate like a
@@ -598,7 +599,9 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <div style={serifItalic(19, { color: NF.ink })}>{content.emphasis || content.headline}</div>
+          {/* Fallback provenance: with no emphasis the sheet shows the HEADLINE,
+              so the click-to-edit target follows what is actually rendered. */}
+          <div data-se={content.emphasis ? 'content.emphasis' : 'content.headline'} style={serifItalic(19, { color: NF.ink })}>{content.emphasis || content.headline}</div>
           <button
             type="button"
             onClick={() => setSheetOpen(false)}
@@ -637,7 +640,7 @@ function Perforation({ children, notchColor, dashColor }) {
 function StubHeader({ content, mutedColor }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
-      <div style={{ fontWeight: 800, fontSize: 17, fontFamily: SANS }}>{content.wordmark}</div>
+      <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 17, fontFamily: SANS }}>{content.wordmark}</div>
       <div style={mono(10.5, { letterSpacing: 1.5, color: mutedColor })}>FREE ENTRY</div>
     </div>
   );
@@ -656,13 +659,13 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
   const ticketHead = (
     <div style={{ position: 'relative', padding: mobile ? '16px 18px' : '22px 28px', display: 'flex', flexDirection: 'column', gap: 6, overflow: 'hidden', background: accentTone ? accent : '#17181B' }}>
       {!accentTone && hasMedia && <BackdropMedia t={t} media={content.media} />}
-      {!accentTone && <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(23,24,27,.34), rgba(23,24,27,.62))' }} />}
+      {!accentTone && <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(23,24,27,.34), rgba(23,24,27,.62))' }} />}
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', gap: 10, opacity: 0.92 }}>
-        <div style={mono(10.5, { letterSpacing: 1.6, color: headInk, fontWeight: 600 })}>{s.kicker || content.wordmark.toUpperCase()}</div>
+        <div data-se={s.kicker ? undefined : 'content.wordmark'} style={mono(10.5, { letterSpacing: 1.6, color: headInk, fontWeight: 600 })}>{s.kicker || content.wordmark.toUpperCase()}</div>
         {s.draw && <div style={mono(10.5, { letterSpacing: 1.6, color: headInk, fontWeight: 600 })}>ADMIT 1 ENTRY</div>}
       </div>
-      <div style={{ position: 'relative', fontFamily: SERIF, fontWeight: 600, fontSize: mobile ? 29 : 36, lineHeight: 1.12, color: headInk }}>{content.headline}</div>
-      {content.subheadline && <div style={{ position: 'relative', fontSize: mobile ? 13.5 : 14.5, color: headInk, opacity: 0.88, fontFamily: SANS, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
+      <div data-se="content.headline" style={{ position: 'relative', fontFamily: SERIF, fontWeight: 600, fontSize: mobile ? 29 : 36, lineHeight: 1.12, color: headInk }}>{content.headline}</div>
+      {content.subheadline && <div data-se="content.subheadline" style={{ position: 'relative', fontSize: mobile ? 13.5 : 14.5, color: headInk, opacity: 0.88, fontFamily: SANS, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
     </div>
   );
   const stubLine = s.draw && (
@@ -681,7 +684,7 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
     return (
       <div style={{ minHeight: '100vh', background: ST.bg, padding: '34px 0', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, fontFamily: SANS, color: ST.ink }}>
         <div style={{ width: 760, maxWidth: 'calc(100vw - 48px)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontWeight: 800, fontSize: 20 }}>{content.wordmark}</div>
+          <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 20 }}>{content.wordmark}</div>
           <div style={mono(11, { letterSpacing: 1.5, color: ST.mut })}>FREE ENTRY</div>
         </div>
         <div style={{ width: 760, maxWidth: 'calc(100vw - 48px)', background: ST.card, borderRadius: 14, boxShadow: '0 10px 30px rgba(27,26,23,.09)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -735,9 +738,9 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
         </div>
       )}
       {content.paragraphs.map((p, i) => (
-        <div key={i} style={{ fontSize: 14, lineHeight: 1.55, color: ST.body, padding: '0 6px' }}>{p}</div>
+        <div key={i} data-se="content.story" style={{ fontSize: 14, lineHeight: 1.55, color: ST.body, padding: '0 6px' }}>{p}</div>
       ))}
-      {content.emphasis && <div style={{ fontSize: 15, fontWeight: 700, color: ST.ink, padding: '0 6px' }}>{content.emphasis}</div>}
+      {content.emphasis && <div data-se="content.emphasis" style={{ fontSize: 15, fontWeight: 700, color: ST.ink, padding: '0 6px' }}>{content.emphasis}</div>}
       <div style={{ borderTop: `1px solid ${ST.line}`, padding: '12px 6px 0' }}>
         <DrawFootnotes draw={s.draw} linkColor={accentInk} mutedColor={ST.mut} faintColor={ST.faint} content={content} t={t} />
       </div>
@@ -751,7 +754,7 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
 function ChecklistHeader({ content, s, mutedColor }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <div style={{ fontWeight: 800, fontSize: 17, fontFamily: SANS }}>{content.wordmark}</div>
+      <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 17, fontFamily: SANS }}>{content.wordmark}</div>
       {s.closesMono && <div style={mono(10.5, { letterSpacing: 1.5, color: mutedColor })}>{`CLOSES ${s.closesMono}`}</div>}
     </div>
   );
@@ -833,14 +836,14 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         {showBand && (
           <div style={{ position: 'relative', height: 190, borderRadius: 14, overflow: 'hidden' }}>
             <BackdropMedia t={t} media={content.media} />
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(23,24,27,0), rgba(23,24,27,.2))' }} />
+            <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(23,24,27,0), rgba(23,24,27,.2))' }} />
           </div>
         )}
         <div style={{ display: 'flex', gap: 56 }}>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 48, lineHeight: 1.08 }}>{content.headline}</div>
+            <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 48, lineHeight: 1.08 }}>{content.headline}</div>
             {content.paragraphs.map((p, i) => (
-              <div key={i} style={{ fontSize: 16, lineHeight: 1.55, color: CL.mut }}>{p}</div>
+              <div key={i} data-se="content.story" style={{ fontSize: 16, lineHeight: 1.55, color: CL.mut }}>{p}</div>
             ))}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ display: 'flex', gap: 14 }}>{circle('1', 'filled')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>Drop your details</strong> in the form.</div></div>
@@ -874,12 +877,12 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
       {showBand && (
         <div style={{ position: 'relative', height: 150, margin: '0 -20px', overflow: 'hidden' }}>
           <BackdropMedia t={t} media={content.media} />
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(23,24,27,0), rgba(23,24,27,.25))' }} />
+          <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(23,24,27,0), rgba(23,24,27,.25))' }} />
         </div>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 34, lineHeight: 1.12 }}>{content.headline}</div>
-        {content.subheadline && <div style={{ fontSize: 14, lineHeight: 1.5, color: CL.mut, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
+        <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 34, lineHeight: 1.12 }}>{content.headline}</div>
+        {content.subheadline && <div data-se="content.subheadline" style={{ fontSize: 14, lineHeight: 1.5, color: CL.mut, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
       </div>
       {spine}
       {footer}
@@ -1021,7 +1024,7 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
         {chrome.masthead && <GazetteMasthead content={content} kickerText="OFFICIAL ENTRY FORM" inkColor={pal.ink} mutedColor={pal.mut} />}
         {/* Dateless header on success: the page's one date row is ENTRIES CLOSE below. */}
         {chrome.header && !chrome.masthead && <ChecklistHeader content={content} s={{ ...s, closesMono: '' }} mutedColor={pal.mut} />}
-        {chrome.wordmark && <div style={{ fontWeight: 800, fontSize: 17, color: chrome.ink, fontFamily: SANS }}>{content.wordmark}</div>}
+        {chrome.wordmark && <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 17, color: chrome.ink, fontFamily: SANS }}>{content.wordmark}</div>}
         <div style={{ marginTop: chrome.masthead || chrome.header ? 22 : 26, display: 'flex', flexDirection: 'column', gap: 16 }}>
           {intro}
           {chances}
@@ -1099,7 +1102,7 @@ export function DrawClosedPage({ templateId, t, content, luckyDraw, campaignName
       <div style={{ width: '100%', maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
         {chrome.masthead && <GazetteMasthead content={content} kickerText="OFFICIAL ENTRY FORM" inkColor={pal.ink} mutedColor={pal.mut} />}
         {chrome.header && <StubHeader content={content} mutedColor={pal.mut} />}
-        {chrome.wordmark && <div style={{ fontWeight: 800, fontSize: 17, color: chrome.ink, fontFamily: SANS }}>{content.wordmark}</div>}
+        {chrome.wordmark && <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 17, color: chrome.ink, fontFamily: SANS }}>{content.wordmark}</div>}
         {chrome.card ? (
           <div style={{ background: pal.card, borderRadius: 12, boxShadow: '0 6px 22px rgba(27,26,23,.08)', padding: '22px 18px', display: 'flex', flexDirection: 'column', gap: 12, marginTop: 26 }}>
             {core}
@@ -1111,7 +1114,7 @@ export function DrawClosedPage({ templateId, t, content, luckyDraw, campaignName
             {cta}
           </div>
         )}
-        <div style={{ marginTop: 'auto', fontSize: 11, color: chrome.faint, borderTop: `1px solid ${chrome.divider}`, paddingTop: 12, fontFamily: SANS }}>
+        <div data-se="content.footer.regulatory" style={{ marginTop: 'auto', fontSize: 11, color: chrome.faint, borderTop: `1px solid ${chrome.divider}`, paddingTop: 12, fontFamily: SANS }}>
           {content.regulatory}
         </div>
       </div>

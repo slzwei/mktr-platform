@@ -795,8 +795,11 @@ export default function CampaignSignupForm({
         </div>
       )}
       <form onSubmit={handleSubmit}>
-        {/* Heavy-serif heading */}
+        {/* Heavy-serif heading. `data-se` = Studio canvas click-to-edit target
+            (studioEditTargets.js) — inert everywhere outside the Studio's
+            [data-studio-edit-scope] wrapper, including v1/guided_review mounts. */}
         <h2
+          data-se="content.headline"
           style={{
             fontFamily: headingFont,
             fontWeight: 800,
@@ -818,6 +821,7 @@ export default function CampaignSignupForm({
             unaffected). */}
         {formSubheadline && (
           <p
+            data-se="content.subheadline"
             style={{
               fontFamily: 'Albert Sans, system-ui, sans-serif',
               fontSize: 15,

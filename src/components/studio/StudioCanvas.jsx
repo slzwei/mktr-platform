@@ -50,6 +50,7 @@ export default function StudioCanvas({
   subject: subjectProp,
   onSubject,
   banner = null,
+  onEditTarget = null,
 }) {
   const [device, setDevice] = useState('mobile');
   const [subjectState, setSubjectState] = useState('page');
@@ -148,14 +149,14 @@ export default function StudioCanvas({
               {/* Keyed on jump + resetKey: every jump/reset is a coherent REMOUNT
                   (fixtures are initial state); doc edits re-render WITHOUT
                   remounting so in-progress funnel state survives typing. */}
-              <CanvasPageSubject key={jumpRenderKey} campaign={campaign} doc={doc} jump={jump} />
+              <CanvasPageSubject key={jumpRenderKey} campaign={campaign} doc={doc} jump={jump} onEditTarget={onEditTarget} />
             </DeviceFrame>
             <div style={{ padding: '8px 0 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
               <div style={{ font: "500 10.5px ui-monospace, 'SF Mono', Menlo, monospace", color: 'rgba(255,255,255,.5)' }}>
                 {urlChip}
               </div>
               <div style={{ font: "500 9.5px ui-monospace, 'SF Mono', Menlo, monospace", color: 'rgba(255,255,255,.32)' }}>
-                preview — OTP &amp; submit stubbed · pixels suppressed · rendering the UNSAVED document
+                preview — OTP &amp; submit stubbed · pixels suppressed · rendering the UNSAVED document{onEditTarget ? ' · click text to edit it' : ''}
               </div>
             </div>
           </>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import CampaignPageRenderer from '@/components/campaignPage/CampaignPageRenderer';
 import { HARNESS_JUMPS } from '@/components/campaignPage/previewJumpFixtures';
+import { STUDIO_EDIT_TARGETS } from './studioEditTargets';
 import { SuccessState, ErrorState } from '@/components/campaigns/LeadCaptureOutcomes';
 import ShareCampaignDialog from '@/components/campaigns/ShareCampaignDialog';
 import { resolveTheme } from '@/lib/designConfigV2';
@@ -99,20 +100,58 @@ function HarnessOutcome({ campaign, doc, jump }) {
  *    fixtures (previewJumpFixtures) — the Studio remounts this subject keyed
  *    on jump + resetKey, so fixtures are pure initial state.
  */
-export default function CanvasPageSubject({ campaign, doc, jump = null }) {
+/** Hover affordance for click-to-edit — rendered INSIDE the DeviceFrame tree,
+ * so the rules land in the frame document and never ship to live pages
+ * (which carry the inert `data-se` attributes but no scope wrapper). */
+const EDIT_HOVER_CSS = `
+[data-studio-edit-scope] [data-se] { cursor: pointer; }
+[data-studio-edit-scope] [data-se]:hover {
+  outline: 1.5px dashed rgba(94, 116, 225, 0.95);
+  outline-offset: 3px;
+  background-color: rgba(94, 116, 225, 0.08);
+}
+[data-studio-edit-scope] [data-se]:hover:has([data-se]:hover) {
+  outline: none;
+  background-color: transparent;
+}
+`;
+
+export default function CanvasPageSubject({ campaign, doc, jump = null, onEditTarget = null }) {
   if (!doc) return null; // the page mounts the canvas only once the doc seeds — belt & braces
-  if (HARNESS_JUMPS.includes(jump)) {
-    return <HarnessOutcome campaign={campaign} doc={doc} jump={jump} />;
-  }
-  const referrerName = jump === 'referred' ? 'Sarah Tan' : null;
-  const rendererJump = jump === 'referred' || jump === 'default' ? null : jump;
-  return (
+  const subject = HARNESS_JUMPS.includes(jump) ? (
+    <HarnessOutcome campaign={campaign} doc={doc} jump={jump} />
+  ) : (
     <CampaignPageRenderer
       campaign={{ ...campaign, design_config: doc }}
       previewMode
-      jump={rendererJump}
-      referrerName={referrerName}
+      jump={jump === 'referred' || jump === 'default' ? null : jump}
+      referrerName={jump === 'referred' ? 'Sarah Tan' : null}
       onSubmit={noop}
     />
+  );
+  // Without a handler (non-Studio mounts, tests) the subject renders exactly
+  // as before — no wrapper, no hover CSS, no interception.
+  if (!onEditTarget) return subject;
+  const handleClickCapture = (e) => {
+    // Realm-safe (iframe elements fail parent-realm instanceof checks) and
+    // text-node-safe: rely on a callable closest, never on Element.
+    const el = typeof e.target?.closest === 'function' ? e.target.closest('[data-se]') : null;
+    if (!el) return;
+    // Portalled trees (Radix dialogs → frame root) bubble through the REACT
+    // tree even though their DOM lives outside this wrapper — only suppress
+    // clicks whose matched node is really inside the scope, on a known path.
+    if (!e.currentTarget.contains(el)) return;
+    const path = el.getAttribute('data-se');
+    // Own-property check: a marker like "constructor" must not pass the guard.
+    if (!Object.prototype.hasOwnProperty.call(STUDIO_EDIT_TARGETS, path)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onEditTarget(path);
+  };
+  return (
+    <div data-studio-edit-scope="" onClickCapture={handleClickCapture}>
+      <style>{EDIT_HOVER_CSS}</style>
+      {subject}
+    </div>
   );
 }

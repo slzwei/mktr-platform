@@ -26,6 +26,7 @@ import { computeStudioReadiness } from '@/components/studio/studioReadiness';
 import StudioJsonView from '@/components/studio/StudioJsonView';
 import StudioGuardModal from '@/components/studio/StudioGuardModal';
 import useStudioAi from '@/components/studio/useStudioAi';
+import { useEditTargetFocus } from '@/components/studio/studioEditTargets';
 import StudioAiPanel from '@/components/studio/StudioAiPanel';
 import { studioPath, studioSupportsCampaign } from '@/components/studio/studioFlag';
 import '@/styles/adminV2.css';
@@ -120,6 +121,11 @@ export default function AdminCampaignStudio() {
   const ai = useStudioAi({ campaign, doc, setPath, replaceDoc, onPickLook, onSlugPrefill, onJumpSection: setSection });
   const aiRef = useRef(ai);
   aiRef.current = ai;
+
+  // Canvas click-to-edit: a click on Studio-editable text in the preview jumps
+  // the inspector to the matching Page-panel field (token-cancelled focus
+  // choreography lives in studioEditTargets.js).
+  const onEditTarget = useEditTargetFocus(setSection);
 
   // Create-flow auto-run (?ai=full, create-everything amendment §2.7): once
   // campaign AND doc are ready, open the panel in Fill-everything (full)
@@ -467,6 +473,7 @@ export default function AdminCampaignStudio() {
             jumpRenderKey={`${jump || 'default'}:${resetKey}`}
             subject={subject}
             onSubject={setSubject}
+            onEditTarget={onEditTarget}
             banner={
               ai.proposal ? (
                 <div

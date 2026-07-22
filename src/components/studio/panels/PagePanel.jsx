@@ -374,17 +374,21 @@ export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHi
             ) : null}
           </div>
         ) : null}
-        <Seg
-          ariaLabel="Media kind"
-          options={[
-            { value: 'none', label: 'None' },
-            { value: 'image', label: 'Image' },
-            { value: 'video', label: 'Video' },
-            { value: 'youtube', label: 'YouTube' },
-          ]}
-          value={media.kind || 'none'}
-          onChange={(v) => setMedia({ kind: v, ...(v === 'none' ? { src: '' } : {}) })}
-        />
+        {/* Anchor for canvas click-to-edit (studioEditTargets `content.media`) —
+            scrolled + flashed, never focused. */}
+        <div id="studio-media-kind">
+          <Seg
+            ariaLabel="Media kind"
+            options={[
+              { value: 'none', label: 'None' },
+              { value: 'image', label: 'Image' },
+              { value: 'video', label: 'Video' },
+              { value: 'youtube', label: 'YouTube' },
+            ]}
+            value={media.kind || 'none'}
+            onChange={(v) => setMedia({ kind: v, ...(v === 'none' ? { src: '' } : {}) })}
+          />
+        </div>
         {media.kind === 'image' && (
           <>
             <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => handleUpload(e, 'image')} data-testid="studio-image-input" />

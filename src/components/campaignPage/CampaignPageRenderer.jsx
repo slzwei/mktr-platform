@@ -97,15 +97,18 @@ export function deriveCampaignPageContent(doc) {
   };
 }
 
+/* `data-se` marks a Studio-editable text slot for canvas click-to-edit
+ * (studioEditTargets.js). Inert on live pages — no CSS or JS reads it
+ * outside the Studio's [data-studio-edit-scope] wrapper. */
 export function BrandFooter({ t, content, compact = false }) {
   return (
     <div style={{ textAlign: 'center', padding: compact ? '2px 8px 18px' : '6px 8px 22px' }}>
       {content.regulatory ? (
-        <p style={{ fontSize: compact ? 10 : 10.5, lineHeight: 1.6, color: t.muted, margin: '0 0 8px', opacity: 0.85 }}>
+        <p data-se="content.footer.regulatory" style={{ fontSize: compact ? 10 : 10.5, lineHeight: 1.6, color: t.muted, margin: '0 0 8px', opacity: 0.85 }}>
           {content.regulatory}
         </p>
       ) : null}
-      <div style={{ fontSize: compact ? 11 : 11.5, color: t.muted }}>
+      <div data-se="content.footer.brand" style={{ fontSize: compact ? 11 : 11.5, color: t.muted }}>
         {content.brandPre}
         {content.brandLink && (
           <a
@@ -165,7 +168,7 @@ function BlockedPage({ t, content, reason, luckyDraw }) {
         fontFamily: "'Albert Sans', system-ui, sans-serif",
       }}
     >
-      <div style={{ fontFamily: t.fontStack, fontSize: 19, fontWeight: 700, marginBottom: 26 }}>{content.wordmark}</div>
+      <div data-se="content.wordmark" style={{ fontFamily: t.fontStack, fontSize: 19, fontWeight: 700, marginBottom: 26 }}>{content.wordmark}</div>
       <div style={{ fontSize: 30, marginBottom: 10 }} aria-hidden="true">{isDraw ? '🎁' : '⏸️'}</div>
       <div style={{ fontFamily: t.fontStack, fontSize: 24, fontWeight: 700, marginBottom: 8, maxWidth: 400 }}>
         {isDraw ? 'This draw has closed.' : 'This campaign is no longer active.'}
@@ -175,7 +178,7 @@ function BlockedPage({ t, content, reason, luckyDraw }) {
           ? `Entries closed${closes ? ` on ${closes}` : ''}, 11:59pm SGT. Winners will be notified by SMS and email.`
           : `Follow ${content.host === 'mktr' ? 'mktr.sg' : 'redeem.sg'} for upcoming campaigns and rewards.`}
       </div>
-      <div style={{ fontSize: 11, color: t.muted, marginTop: 34, opacity: 0.8 }}>
+      <div data-se="content.footer.brand" style={{ fontSize: 11, color: t.muted, marginTop: 34, opacity: 0.8 }}>
         {content.brandPre}
         {content.brandLink && (
           <a href="https://mktr.sg" style={{ color: t.muted, textDecoration: 'underline' }}>MKTR</a>
