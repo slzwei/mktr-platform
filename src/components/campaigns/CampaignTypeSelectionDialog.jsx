@@ -6,7 +6,7 @@ import {
  DialogTitle,
 } from"@/components/ui/dialog";
 import { Button } from"@/components/ui/button";
-import { ClipboardCheck, QrCode, Sparkles } from"lucide-react";
+import { ClipboardCheck, Gift, QrCode, Sparkles } from"lucide-react";
 
 export default function CampaignTypeSelectionDialog({ open, onOpenChange, onSelect }) {
  return (
@@ -30,6 +30,22 @@ export default function CampaignTypeSelectionDialog({ open, onOpenChange, onSele
  <h3 className="font-semibold text-foreground">Regular Campaign</h3>
  <p className="text-sm text-muted-foreground font-normal mt-1 text-wrap">
  Standard QR code campaigns for lead generation. Perfect for events and direct sign-ups.
+ </p>
+ </div>
+ </div>
+ </Button>
+
+ <Button
+ variant="outline" className="h-auto p-4 flex flex-col items-start gap-2 border-2 hover:border-ring hover:bg-primary/10 transition-colors text-left group" onClick={() => onSelect("lucky_draw")}
+ >
+ <div className="flex items-center w-full gap-3">
+ <div className="p-2 bg-primary/10 rounded-lg group-hover:bg-primary/15 text-primary transition-colors">
+ <Gift className="w-6 h-6"/>
+ </div>
+ <div>
+ <h3 className="font-semibold text-foreground">Lucky Draw Campaign</h3>
+ <p className="text-sm text-muted-foreground font-normal mt-1 text-wrap">
+ One prize, verified entries. SMS-verified signups earn one chance; completing a review session multiplies it. Server-enforced entries, witnessed draw, masked results.
  </p>
  </div>
  </div>

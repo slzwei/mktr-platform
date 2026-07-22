@@ -32,7 +32,12 @@ export default function AdminCampaignWorkspace() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const isCreate = !id;
-  const typeParam = searchParams.get('type') || 'lead_generation';
+  const rawType = searchParams.get('type') || 'lead_generation';
+  // 'lucky_draw' is a CREATE-FLOW choice, not a backend type: it creates a
+  // lead_generation campaign with design_config.luckyDraw pre-armed (the
+  // server validates closesAt + terms and pins the terms version on create).
+  const isDrawCreate = isCreate && rawType === 'lucky_draw';
+  const typeParam = rawType === 'lucky_draw' ? 'lead_generation' : rawType;
   const tabParam = searchParams.get('tab');
 
   const [activeTab, setActiveTab] = useState(
@@ -204,6 +209,7 @@ export default function AdminCampaignWorkspace() {
             <CampaignDetailsTab
               initial={isCreate ? null : campaign}
               type={typeParam}
+              draw={isDrawCreate}
               isEdit={!isCreate}
               saving={savingDetails}
               onSubmit={handleSaveDetails}

@@ -95,7 +95,9 @@ export default function AdminCampaigns() {
  // else the classic create form. Ships dark (flag off) until set on the
  // mktr-platform static site.
  const workspace = import.meta.env.VITE_CAMPAIGN_WORKSPACE_ENABLED === 'true';
- navigate(workspace ? `/admin/campaigns/workspace?type=${type}` : `/admin/campaigns/new?type=${type}`);
+ // lucky_draw only exists as a workspace create flow (the classic form cannot
+ // arm design_config.luckyDraw) — route it there regardless of the flag.
+ navigate(workspace || type === 'lucky_draw' ? `/admin/campaigns/workspace?type=${type}` : `/admin/campaigns/new?type=${type}`);
  };
 
  const handleCopyLink = (campaign) => {
