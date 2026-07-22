@@ -148,9 +148,62 @@ export function makeConsentService(overrides = {}) {
       }
       if (!rows.length) return 0;
 
-      const run = (sp) => d.ConsentEvent.bulkCreate(rows, { transaction: sp, validate: true });
+      // Resubscribe lift (plan v3, Shawn's Reading-2 decision 2026-07-22): a
+      // fresh OTP-VERIFIED agree-all grant is the person's latest explicit
+      // choice — it LIFTS a prior self-service unsubscribe. Only reason
+      // 'unsubscribe' lifts: complaint/admin are not the person's own act,
+      // and erasure is an identity latch. The destroy + the evidence event
+      // are atomic with the capture's grant rows (same savepoint); on
+      // rollback the suppression stays — fail-safe is "still suppressed".
+      // Downstream un-flagging rides the reconciler (lead.unsuppressed).
+      const eraOfLift = contact === true && verified === true && isKnownConsentCopyVersion(copyVersion)
+        ? CONTACT_CONSENT_VERSIONS[copyVersion] : null;
+      const liftEligible = eraOfLift?.scope === 'brand';
+
+      let liftApplied = false;
+      const run = async (sp) => {
+        if (liftEligible) {
+          const suppression = await d.ConsumerSuppression.findOne({
+            where: { consumerId, channel: 'all', reason: 'unsubscribe' },
+            transaction: sp,
+          });
+          if (suppression) {
+            await suppression.destroy({ transaction: sp });
+            liftApplied = true;
+            rows.push({
+              ...base, id: randomUUID(), kind: 'contact', granted: true,
+              campaignId: null, channels: [...eraOfLift.channels],
+              version: copyVersion, source: 'resubscribe',
+              metadata: {
+                copyHash: eraOfLift.copyHash, scope: eraOfLift.scope,
+                lift: {
+                  reason: suppression.reason,
+                  source: suppression.source || null,
+                  suppressedAt: suppression.createdAt,
+                },
+              },
+            });
+          }
+        }
+        return d.ConsentEvent.bulkCreate(rows, { transaction: sp, validate: true });
+      };
       if (outerTx) await d.sequelize.transaction({ transaction: outerTx }, run);
       else await d.sequelize.transaction(run);
+      // Direct post-commit reconcile after a lift (Codex resub-round #7): the
+      // flush-time catchup only fires when a delivery actually flushes — a
+      // held/undelivered capture would otherwise wait for the hourly pass to
+      // flip the person's old pairs. Fire-and-forget; the pass is the healer.
+      if (liftApplied && d.reconcileSuppressionPropagation) {
+        const fire = () => {
+          Promise.resolve(d.reconcileSuppressionPropagation({ consumerId })).catch((err) => {
+            d.logger.warn('[consent] post-lift propagation trigger failed (periodic pass heals)', {
+              consumerId, error: err?.message || String(err),
+            });
+          });
+        };
+        if (outerTx && typeof outerTx.afterCommit === 'function') outerTx.afterCommit(fire);
+        else fire();
+      }
       return rows.length;
     } catch (err) {
       d.logger.warn('[consent] capture ledger write failed (non-blocking — backfill heals)', {

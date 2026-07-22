@@ -71,3 +71,31 @@ UPDATE webhook_deliveries SET status='failed', "errorMessage"='cancelled: rollou
  WHERE "eventType"='lead.suppressed' AND status='pending';
 ```
 (Recovery/timers ignore event arrays — pending rows would otherwise keep attempting.) Re-flipping later re-queues from the pairs automatically.
+
+## 6. `lead.unsuppressed` v1 — the resubscribe lift (added 2026-07-22)
+
+**"The person behind this lead re-consented; marketing contact is allowed again."** Emitted when a fresh OTP-VERIFIED agree-all capture lifts a prior `unsubscribe`-reason suppression (latest-explicit-consent-wins — Shawn's Reading-2 decision; evidence = a `source:'resubscribe'` consent-ledger event whose `occurredAt` is the watermark below). Only ever `scope:'marketing'`; the `'all'` scope (erasure) is a latch and never lifts. `complaint`/`admin` suppressions never auto-lift.
+
+```json
+{
+  "event": "lead.unsuppressed",
+  "deliveryId": "<uuid>",
+  "timestamp": "<ISO — queue/build time>",
+  "data": {
+    "lead": { "externalId": "<prospect uuid>" },
+    "unsuppression": { "schemaVersion": 1, "scope": "marketing", "reason": "resubscribe", "occurredAt": "<ISO>" }
+  }
+}
+```
+
+**Merge rule (BOTH events): a PERSISTENT per-lead state row, watermarked.** The consumer's suppression row is never deleted — it carries `state ('suppressed'|'lifted')` + the `occurred_at` watermark (deleting it would destroy the watermark and let a repaired OLDER suppression re-suppress a lifted person, and would discard lifts arriving before their suppression). Rules:
+- scope `'all'` (erasure) is a latch: marketing events never touch it; same-scope `'all'` refreshes the watermark forward only; an `'all'` suppression outranks any marketing state regardless of timestamps.
+- a marketing suppression applies when STRICTLY newer, or on an EQUAL watermark when the row is lifted — **ties resolve toward suppressed** (fail-safe direction).
+- a lift applies only when STRICTLY newer; with no row present it INSERTS a lifted row (the pre-arrival watermark hold).
+- lead columns stamp only from a resulting suppressed state (arrival hooks/triggers check `state='suppressed'`); a valid lift nulls `do_not_contact_*` **where scope is `'marketing'` only** and logs a `resubscribed` activity when state actually changed.
+
+New leads of a lifted person need no lift delivery — no suppression exists on the emitter, nothing stamps them (the lifted row is a hold, not a suppression), and create-time outreach (wa_intro) resumes naturally.
+
+**Documented residuals (Codex resub-round dispositions):** (a) transition ordering uses millisecond wall-clock `occurredAt` — a same-millisecond unsub/resub tie resolves toward suppressed at every layer (emitter lift requires strictly-newer; consumer ties prefer suppressed), so the failure direction is a missed lift, never a wrong un-suppression; (b) the OTP verification marker is phone-scoped for 10 minutes, not bound to the capturing request — a same-window caller knowing the phone could piggyback a verified capture (pre-existing spine semantics; raised stakes noted for the counsel pack and the future one-time-capture-credential hardening); (c) if the lift's savepoint fails, the person simply stays suppressed until their next verified agree-all capture — the consent backfill heals evidence, not lifts (fail-safe by construction).
+
+Sender side: pairs are a two-state machine (`state` desired / `deliveredState` conveyed); flips re-queue automatically; a subscriber whose `events` lacks `lead.unsuppressed` keeps its lifted pairs unqueued (silently, each pass) until its allowlist catches up — both events ride the same per-destination env flags, so managed subscribers always carry them together.

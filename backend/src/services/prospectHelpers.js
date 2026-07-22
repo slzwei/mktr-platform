@@ -279,6 +279,29 @@ export function buildLeadSuppressedPayload(prospectId, { scope, reason, channel 
   };
 }
 
+/**
+ * lead.unsuppressed v1 (plan v3 — resubscribe lift): "the person behind this
+ * lead re-consented; marketing contact is allowed again." Only ever emitted
+ * for scope 'marketing' — 'all' (erasure) is a latch and never lifts.
+ * Consumers apply it with a watermark: strictly-newer occurredAt wins in
+ * either direction, so out-of-order/repaired deliveries stay idempotent.
+ */
+export function buildLeadUnsuppressedPayload(prospectId, { reason, occurredAt }) {
+  return {
+    event: 'lead.unsuppressed',
+    timestamp: new Date().toISOString(),
+    data: {
+      lead: { externalId: prospectId },
+      unsuppression: {
+        schemaVersion: 1,
+        scope: 'marketing',
+        reason,
+        occurredAt: occurredAt instanceof Date ? occurredAt.toISOString() : occurredAt,
+      },
+    },
+  };
+}
+
 /** Format a budget object ({ min, max, currency, timeframe }) into one display string, or null. */
 function formatBudget(budget) {
   if (!budget || typeof budget !== 'object') return null;
