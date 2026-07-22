@@ -565,19 +565,33 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         )}
         <div style={{ fontSize: 11, color: NF.faint }}>{content.regulatory}</div>
       </div>
-      {sheetOpen && (
-        <div
-          onClick={() => setSheetOpen(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(10,11,18,.55)', zIndex: 40 }}
-        />
-      )}
+      {/* Backdrop + sheet stay MOUNTED across open/close (the funnel's typed
+          fields + OTP state must survive a close/reopen) and animate like a
+          native phone sheet: slide up on open, slide back down on close.
+          visibility flips only after the slide-down so the closed sheet stays
+          out of the a11y tree / tab order exactly as display:none did. */}
+      <div
+        onClick={() => setSheetOpen(false)}
+        aria-hidden="true"
+        style={{
+          position: 'fixed', inset: 0, background: 'rgba(10,11,18,.55)', zIndex: 40,
+          opacity: sheetOpen ? 1 : 0,
+          pointerEvents: sheetOpen ? 'auto' : 'none',
+          transition: 'opacity 300ms cubic-bezier(0.25, 1, 0.5, 1)',
+        }}
+      />
       <div
         style={{
           position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 41,
           background: NF.card, color: NF.ink, borderRadius: '18px 18px 0 0',
           padding: '18px 20px 22px', boxShadow: '0 -12px 40px rgba(0,0,0,.4)',
           maxHeight: '88vh', overflowY: 'auto',
-          display: sheetOpen ? 'flex' : 'none', flexDirection: 'column', gap: 14,
+          display: 'flex', flexDirection: 'column', gap: 14,
+          transform: sheetOpen ? 'translateY(0)' : 'translateY(100%)',
+          visibility: sheetOpen ? 'visible' : 'hidden',
+          transition: sheetOpen
+            ? 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1)'
+            : 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 300ms',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>

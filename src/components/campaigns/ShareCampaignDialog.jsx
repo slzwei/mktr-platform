@@ -13,6 +13,19 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
  const [shortening, setShortening] = useState(false);
  const [shortShareUrl, setShortShareUrl] = useState('');
  const [copied, setCopied] = useState(false);
+ // Presence: keep rendering through the close so the sheet can slide back
+ // down (phone-style) instead of vanishing. `open` drives enter/exit classes;
+ // `render` unmounts once the slide-down finishes (animationend + a safety
+ // timeout for environments that never fire it).
+ const [render, setRender] = useState(open);
+ useEffect(() => {
+ if (open) setRender(true);
+ }, [open]);
+ useEffect(() => {
+ if (open || !render) return undefined;
+ const t = setTimeout(() => setRender(false), 400);
+ return () => clearTimeout(t);
+ }, [open, render]);
 
  // Generate a shortlink when the dialog opens — UNLESS the backend already handed us the
  // canonical link at submit (serverShareUrl), which we then use directly. The fallback mint
@@ -56,7 +69,7 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
 
  const shareUrl = serverShareUrl || shortShareUrl || longShareUrl;
 
- if (!open) return null;
+ if (!render) return null;
 
  const close = () => {
  onOpenChange(false);
@@ -64,12 +77,22 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
  };
 
  return (
- <div ref={sheetRef} role="dialog" aria-modal="true" aria-label="Share campaign" className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+ <div ref={sheetRef} role="dialog" aria-modal="true" aria-label="Share campaign" className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center ${open ? '' : 'pointer-events-none'}`}>
  {/* Backdrop */}
- <button type="button" aria-label="Close share dialog" className="absolute inset-0 bg-foreground/60 cursor-default" onClick={close} />
+ <button
+ type="button"
+ aria-label="Close share dialog"
+ className={`absolute inset-0 bg-foreground/60 cursor-default duration-base ${open ? 'animate-in fade-in-0' : 'animate-out fade-out-0 fill-mode-forwards'}`}
+ onClick={close}
+ />
 
- {/* Sheet */}
- <div className="relative z-10 w-full sm:max-w-sm bg-card rounded-t-2xl sm:rounded-2xl shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
+ {/* Sheet — slides up on open and back down on close (phone-style) */}
+ <div
+ onAnimationEnd={() => {
+ if (!open) setRender(false);
+ }}
+ className={`relative z-10 w-full sm:max-w-sm bg-card rounded-t-2xl sm:rounded-2xl shadow-2xl duration-base ease-out-expo max-h-[85vh] overflow-y-auto ${open ? 'animate-in slide-in-from-bottom sm:fade-in-0' : 'animate-out slide-out-to-bottom fill-mode-forwards sm:fade-out-0'}`}
+ >
  {/* Header */}
  <div className="flex items-center justify-between px-5 pt-5 pb-3">
  <div className="flex-1">
