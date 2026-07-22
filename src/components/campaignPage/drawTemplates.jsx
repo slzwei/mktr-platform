@@ -88,13 +88,16 @@ function drawStrings(luckyDraw, campaignName) {
     boostBody: `Meet a consultant for a complimentary 20-minute financial review before ${boostFull} — when ${DRAW_RECORD_PHRASE}, your 1 entry becomes ${m}.`,
     steps: [
       'Your entry pass arrives by WhatsApp and email.',
-      `Book your complimentary ~20-min financial review — any time before ${boostFull}.`,
+      `Book your complimentary 20-minute financial review — any time before ${boostFull}.`,
       `Meet your consultant — when they record your completed session, your 1 entry becomes ${m} entries.`,
     ],
     closedBody: winners > 1
       ? `The ${winners} winners are being drawn in a witnessed process and will be contacted directly by phone or SMS.`
       : 'The winner is being drawn in a witnessed process and will be contacted directly by phone or SMS.',
-    freeSessionLine: `FREE SESSION · NO PAYMENT EVER · BEFORE ${boostFull.toUpperCase()}`,
+    // No date here on purpose: the booking deadline already sits in step 2 with
+    // context, and the page's single authoritative date row is the ENTRIES
+    // CLOSE line — a third copy stacked right between them read as a bug.
+    freeSessionLine: 'FREE SESSION · NO PAYMENT EVER',
   };
 }
 
@@ -167,7 +170,7 @@ function DrawFootnotes({ draw, linkColor, mutedColor, faintColor, content, cente
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, textAlign: align }}>
       {draw && (
-        <div style={{ fontSize: 12.5, color: mutedColor, fontFamily: SANS }}>
+        <div style={{ fontSize: 13.5, color: mutedColor, fontFamily: SANS }}>
           {SCAM_LINE} Masked results at <WinnersLink color={linkColor} />.
         </div>
       )}
@@ -191,7 +194,7 @@ function ChancesRow({ accent, accentLabel, inkColor, mutedColor, multiplier }) {
   const cell = (big, label, color, labelColor) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 38, lineHeight: 1, color }}>{big}</div>
-      <div style={mono(9.5, { letterSpacing: 1, color: labelColor })}>{label}</div>
+      <div style={mono(11.5, { letterSpacing: 1.2, color: labelColor })}>{label}</div>
     </div>
   );
   return (
@@ -208,11 +211,11 @@ function ChancesRow({ accent, accentLabel, inkColor, mutedColor, multiplier }) {
 function NextSteps({ s, accent, accentText, onAccent, stepBg, stepColor, bodyColor, lastColor, mutedColor, label, bookingUrl, ctaRadius = 9 }) {
   return (
     <>
-      <div style={mono(11, { letterSpacing: 1.5, color: accentText, fontWeight: 600 })}>{label}</div>
+      <div style={mono(12, { letterSpacing: 1.5, color: accentText, fontWeight: 600 })}>{label}</div>
       {s.steps.map((step, i) => (
         <div key={i} style={{ display: 'flex', gap: 10 }}>
-          <div style={{ width: 20, height: 20, borderRadius: '50%', background: stepBg, color: stepColor, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: SANS }}>{i + 1}</div>
-          <div style={{ fontSize: 13, lineHeight: 1.5, color: i === 2 ? lastColor : bodyColor, fontWeight: i === 2 ? 600 : 400, fontFamily: SANS }}>{step}</div>
+          <div style={{ width: 22, height: 22, borderRadius: '50%', background: stepBg, color: stepColor, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: SANS }}>{i + 1}</div>
+          <div style={{ fontSize: 14.5, lineHeight: 1.55, color: i === 2 ? lastColor : bodyColor, fontWeight: i === 2 ? 600 : 400, fontFamily: SANS }}>{step}</div>
         </div>
       ))}
       {bookingUrl && (
@@ -220,12 +223,12 @@ function NextSteps({ s, accent, accentText, onAccent, stepBg, stepColor, bodyCol
           href={bookingUrl}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ background: accent, color: onAccent, border: 'none', borderRadius: ctaRadius, padding: 13, fontSize: 14.5, fontWeight: 700, fontFamily: SANS, textAlign: 'center', textDecoration: 'none', display: 'block' }}
+          style={{ background: accent, color: onAccent, border: 'none', borderRadius: ctaRadius, padding: 14, fontSize: 16, fontWeight: 700, fontFamily: SANS, textAlign: 'center', textDecoration: 'none', display: 'block' }}
         >
           Book your 20-min review
         </a>
       )}
-      <div style={mono(9.5, { letterSpacing: 0.8, color: mutedColor, textAlign: 'center' })}>{s.freeSessionLine}</div>
+      <div style={mono(11.5, { letterSpacing: 1, color: mutedColor, textAlign: 'center' })}>{s.freeSessionLine}</div>
     </>
   );
 }
@@ -265,7 +268,7 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(18,19,28,.15) 40%, rgba(18,19,28,.68))' }} />
       <div style={{ position: 'absolute', top: 16, left: 20, right: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontWeight: 800, fontSize: 17, color: '#fff', fontFamily: SANS }}>{content.wordmark}</div>
-        {s.draw && <div style={mono(10, { letterSpacing: 1.5, color: 'rgba(255,255,255,.85)' })}>LUCKY DRAW · FREE ENTRY</div>}
+        {s.draw && <div style={mono(10.5, { letterSpacing: 1.5, color: 'rgba(255,255,255,.85)' })}>LUCKY DRAW · FREE ENTRY</div>}
       </div>
       <div style={{ position: 'absolute', left: 20, right: 20, bottom: mobile ? 56 : 36, color: '#fff' }}>
         <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: mobile ? 33 : 46, lineHeight: 1.12 }}>{content.headline}</div>
@@ -315,7 +318,7 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
       {cardHeader}
       <ReferredBadge t={t} referrerName={referrerName} />
       {funnel}
-      {s.draw && <div style={mono(9.5, { letterSpacing: 0.8, color: PC.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+      {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: PC.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
     </div>
   );
   if (!mobile) {
@@ -327,7 +330,7 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
           <ReferredBadge t={t} referrerName={referrerName} />
           {funnel}
         </div>
-        {s.draw && <div style={mono(10.5, { letterSpacing: 0.8, color: PC.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+        {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: PC.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
         {content.paragraphs.map((p, i) => (
           <div key={i} style={{ fontSize: 13.5, lineHeight: 1.55, color: PC.body, fontFamily: SANS }}>{p}</div>
         ))}
@@ -380,7 +383,7 @@ function GazetteMasthead({ content, kickerText, inkColor, mutedColor }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: `2px solid ${inkColor}`, paddingBottom: 10, gap: 12 }}>
       <div style={{ fontWeight: 800, fontSize: 17, fontFamily: SANS }}>{content.wordmark}</div>
-      <div style={mono(10, { letterSpacing: 1.6, color: mutedColor, textAlign: 'right' })}>{kickerText}</div>
+      <div style={mono(10.5, { letterSpacing: 1.6, color: mutedColor, textAlign: 'right' })}>{kickerText}</div>
     </div>
   );
 }
@@ -412,18 +415,18 @@ function Gazette({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile,
       <div style={{ height: mobile ? 130 : 170, overflow: 'hidden', position: 'relative' }}>
         <BackdropMedia t={t} media={content.media} />
       </div>
-      <div style={mono(9, { letterSpacing: 1.2, color: GZ.mut })}>PRIZE DESTINATION</div>
+      <div style={mono(10.5, { letterSpacing: 1.2, color: GZ.mut })}>PRIZE DESTINATION</div>
     </div>
   ) : null;
   const formBox = (
     <div ref={formAnchorRef} style={{ background: GZ.card, border: `1.5px solid ${GZ.ink}`, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={mono(10.5, { letterSpacing: 1.6, fontWeight: 600 })}>ENTRY FORM — 01</div>
-        {params.showSerial !== false && <div style={mono(10, { color: GZ.mut })}>{gazetteSerial(campaignName, s.draw?.closesAt)}</div>}
+        {params.showSerial !== false && <div style={mono(10.5, { color: GZ.mut })}>{gazetteSerial(campaignName, s.draw?.closesAt)}</div>}
       </div>
       <ReferredBadge t={t} referrerName={referrerName} />
       {funnel}
-      {s.draw && <div style={mono(9.5, { letterSpacing: 0.8, color: GZ.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+      {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: GZ.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
     </div>
   );
   const footnotes = (
@@ -485,7 +488,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
     </div>
   );
   const trustLine = s.draw && (
-    <div style={mono(9.5, { letterSpacing: 0.8, color: 'rgba(255,255,255,.65)' })}>{TRUST_ROW}</div>
+    <div style={mono(11, { letterSpacing: 0.8, color: 'rgba(255,255,255,.65)' })}>{TRUST_ROW}</div>
   );
   if (!mobile) {
     return (
@@ -503,7 +506,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
             {content.subheadline && <div style={{ fontSize: 18, lineHeight: 1.5, color: 'rgba(255,255,255,.85)', maxWidth: 440, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
             {trustLine}
             {s.draw && (
-              <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,.6)' }}>
+              <div style={{ fontSize: 13.5, color: 'rgba(255,255,255,.6)' }}>
                 {SCAM_LINE} Masked results at <WinnersLink color="#fff" />.
               </div>
             )}
@@ -524,7 +527,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         <div style={{ position: 'absolute', inset: 0, background: scrim }} />
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px' }}>
           <div style={{ fontWeight: 800, fontSize: 17, color: '#fff' }}>{content.wordmark}</div>
-          {s.draw && <div style={mono(10, { letterSpacing: 1.5, color: 'rgba(255,255,255,.8)' })}>FREE ENTRY</div>}
+          {s.draw && <div style={mono(10.5, { letterSpacing: 1.5, color: 'rgba(255,255,255,.8)' })}>FREE ENTRY</div>}
         </div>
         <div style={{ position: 'relative', flex: 1 }} />
         <div style={{ position: 'relative', padding: '0 22px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -540,11 +543,11 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
             {content.submitLabel}
           </button>
           {s.draw && (
-            <div style={mono(9.5, { letterSpacing: 0.8, color: 'rgba(255,255,255,.65)', textAlign: 'center' })}>
+            <div style={mono(11, { letterSpacing: 0.8, color: 'rgba(255,255,255,.65)', textAlign: 'center' })}>
               {`THEN MEET A CONSULTANT · PASS SCANNED · ENTRY ×${s.multiplier}`}
             </div>
           )}
-          {s.draw && <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.6)', textAlign: 'center' }}>{SCAM_LINE}</div>}
+          {s.draw && <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,.6)', textAlign: 'center' }}>{SCAM_LINE}</div>}
         </div>
       </div>
       <div style={{ padding: '26px 22px 30px', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -559,7 +562,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
           </div>
         )}
         {s.draw && (
-          <div style={{ fontSize: 12.5, color: NF.mut }}>
+          <div style={{ fontSize: 13.5, color: NF.mut }}>
             {s.winners > 1 ? 'Winners contacted directly.' : 'Winner contacted directly.'} Masked results at <WinnersLink color={NF.ink} />.
           </div>
         )}
@@ -609,7 +612,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
           <ReferredBadge t={t} referrerName={referrerName} />
           {funnel}
         </div>
-        {s.draw && <div style={mono(9.5, { letterSpacing: 0.8, color: NF.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+        {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: NF.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
       </div>
     </div>
   );
@@ -635,7 +638,7 @@ function StubHeader({ content, mutedColor }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
       <div style={{ fontWeight: 800, fontSize: 17, fontFamily: SANS }}>{content.wordmark}</div>
-      <div style={mono(10, { letterSpacing: 1.5, color: mutedColor })}>FREE ENTRY</div>
+      <div style={mono(10.5, { letterSpacing: 1.5, color: mutedColor })}>FREE ENTRY</div>
     </div>
   );
 }
@@ -655,8 +658,8 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
       {!accentTone && hasMedia && <BackdropMedia t={t} media={content.media} />}
       {!accentTone && <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(23,24,27,.34), rgba(23,24,27,.62))' }} />}
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', gap: 10, opacity: 0.92 }}>
-        <div style={mono(10, { letterSpacing: 1.6, color: headInk, fontWeight: 600 })}>{s.kicker || content.wordmark.toUpperCase()}</div>
-        {s.draw && <div style={mono(10, { letterSpacing: 1.6, color: headInk, fontWeight: 600 })}>ADMIT 1 ENTRY</div>}
+        <div style={mono(10.5, { letterSpacing: 1.6, color: headInk, fontWeight: 600 })}>{s.kicker || content.wordmark.toUpperCase()}</div>
+        {s.draw && <div style={mono(10.5, { letterSpacing: 1.6, color: headInk, fontWeight: 600 })}>ADMIT 1 ENTRY</div>}
       </div>
       <div style={{ position: 'relative', fontFamily: SERIF, fontWeight: 600, fontSize: mobile ? 29 : 36, lineHeight: 1.12, color: headInk }}>{content.headline}</div>
       {content.subheadline && <div style={{ position: 'relative', fontSize: mobile ? 13.5 : 14.5, color: headInk, opacity: 0.88, fontFamily: SANS, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
@@ -692,12 +695,12 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
                   <strong>Make it ×{s.multiplier}.</strong> {s.boostBody}
                 </div>
               )}
-              {params.showSerial !== false && <div style={{ marginTop: 'auto', ...mono(10, { color: ST.mut }) }}>NO. 0000001</div>}
+              {params.showSerial !== false && <div style={{ marginTop: 'auto', ...mono(10.5, { color: ST.mut }) }}>NO. 0000001</div>}
             </div>
           </div>
         </div>
         <div style={{ width: 760, maxWidth: 'calc(100vw - 48px)', display: 'flex', flexDirection: 'column', gap: 8, textAlign: 'center' }}>
-          {s.draw && <div style={mono(10, { letterSpacing: 0.8, color: ST.mut })}>{TRUST_ROW}</div>}
+          {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: ST.mut })}>{TRUST_ROW}</div>}
           <DrawFootnotes draw={s.draw} linkColor={accentInk} mutedColor={ST.mut} faintColor={ST.faint} content={content} t={t} center />
         </div>
       </div>
@@ -724,7 +727,7 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
     <div style={{ minHeight: '100vh', background: ST.bg, display: 'flex', flexDirection: 'column', padding: '18px 16px 26px', boxSizing: 'border-box', gap: 14, fontFamily: SANS, color: ST.ink }}>
       <StubHeader content={content} mutedColor={ST.mut} />
       {ticket}
-      {s.draw && <div style={mono(9.5, { letterSpacing: 0.8, color: ST.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+      {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: ST.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
       {s.draw && (
         <div style={{ background: ST.card, borderRadius: 12, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={mono(11, { letterSpacing: 1.5, color: accentInk, fontWeight: 600 })}>{`MAKE IT ×${s.multiplier}`}</div>
@@ -749,7 +752,7 @@ function ChecklistHeader({ content, s, mutedColor }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <div style={{ fontWeight: 800, fontSize: 17, fontFamily: SANS }}>{content.wordmark}</div>
-      {s.closesMono && <div style={mono(10, { letterSpacing: 1.5, color: mutedColor })}>{`CLOSES ${s.closesMono}`}</div>}
+      {s.closesMono && <div style={mono(10.5, { letterSpacing: 1.5, color: mutedColor })}>{`CLOSES ${s.closesMono}`}</div>}
     </div>
   );
 }
@@ -818,7 +821,7 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
   );
   const footer = (
     <div style={{ borderTop: `1px solid ${CL.line}`, paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {s.draw && <div style={mono(9.5, { letterSpacing: 0.8, color: CL.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+      {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: CL.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
       {footnote}
       <DrawFootnotes draw={s.draw} linkColor={accentInk} mutedColor={CL.mut} faintColor={CL.faint} content={content} t={t} center />
     </div>
@@ -855,7 +858,7 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
             <div ref={formAnchorRef} style={{ background: CL.card, border: `1px solid ${CL.line}`, borderRadius: 14, padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <ReferredBadge t={t} referrerName={referrerName} />
               {funnel}
-              {s.draw && <div style={mono(9.5, { letterSpacing: 0.6, color: CL.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+              {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: CL.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
             </div>
           </div>
         </div>
@@ -944,7 +947,7 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
   const monoMut = pal.mut;
   const chances = (
     <div style={{ ...chrome.box, padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={mono(11, { letterSpacing: 1.5, color: templateId === 'gazette' ? pal.ink : accentOnBox, fontWeight: 600 })}>CHANCES</div>
+      <div style={mono(12, { letterSpacing: 1.5, color: templateId === 'gazette' ? pal.ink : accentOnBox, fontWeight: 600 })}>CHANCES</div>
       <ChancesRow accent={chrome.tenX} accentLabel={accentTextOn(chrome.tenX, chrome.pageBg)} inkColor={chrome.ink} mutedColor={monoMut} multiplier={s.multiplier} />
     </div>
   );
@@ -970,17 +973,17 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
       {chrome.check ? (
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <div style={{ width: 26, height: 26, borderRadius: '50%', background: accent, color: theme.onAccent, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
-          <div style={mono(10.5, { letterSpacing: 1.5, color: monoMut })}>ENTRY VERIFIED · YOU'RE IN THE DRAW</div>
+          <div style={mono(11.5, { letterSpacing: 1.5, color: monoMut })}>ENTRY VERIFIED · YOU'RE IN THE DRAW</div>
         </div>
       ) : (
         <div style={{ width: 14, height: 14, borderRadius: '50%', background: chrome.dot }} />
       )}
       <div style={serifItalic(42, { color: chrome.ink })}>{chrome.title}</div>
-      <div style={{ fontSize: 14.5, lineHeight: 1.55, color: chrome.body, fontFamily: SANS }}>{sub}</div>
+      <div style={{ fontSize: 16, lineHeight: 1.55, color: chrome.body, fontFamily: SANS }}>{sub}</div>
     </div>
   );
   const footerLine = (
-    <div style={{ marginTop: 'auto', fontSize: 12.5, color: pal.mut, borderTop: `1px solid ${chrome.divider}`, paddingTop: 14, fontFamily: SANS }}>
+    <div style={{ marginTop: 'auto', fontSize: 13.5, color: pal.mut, borderTop: `1px solid ${chrome.divider}`, paddingTop: 14, fontFamily: SANS }}>
       {SCAM_LINE} Results at <WinnersLink color={theme.dark ? pal.ink : accentOnPage} />.
     </div>
   );
@@ -994,10 +997,10 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
           <div style={{ background: accentSoftOf(accent), padding: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ width: 14, height: 14, borderRadius: '50%', background: accent }} />
             <div style={serifItalic(38, { color: pal.ink })}>{chrome.title}</div>
-            <div style={{ fontSize: 14, lineHeight: 1.55, color: pal.body, fontFamily: SANS }}>{sub}</div>
+            <div style={{ fontSize: 16, lineHeight: 1.55, color: pal.body, fontFamily: SANS }}>{sub}</div>
           </div>
           <div style={{ padding: '16px 18px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={mono(11, { letterSpacing: 1.5, color: accentOnCard, fontWeight: 600 })}>CHANCES</div>
+            <div style={mono(12, { letterSpacing: 1.5, color: accentOnCard, fontWeight: 600 })}>CHANCES</div>
             <ChancesRow accent={accentOnCard} accentLabel={accentTextOn(accentOnCard, pal.card)} inkColor={pal.ink} mutedColor={monoMut} multiplier={s.multiplier} />
           </div>
           <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1005,24 +1008,25 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
           </div>
           {s.closesMono && (
             <Perforation notchColor={pal.bg} dashColor={pal.dash}>
-              <div style={{ padding: '13px 18px', ...mono(10.5, { letterSpacing: 1, color: pal.ink, fontWeight: 600 }) }}>{`ENTRY HELD · CLOSES ${s.closesMono}`}</div>
+              <div style={{ padding: '13px 18px', ...mono(12, { letterSpacing: 1, color: pal.ink, fontWeight: 600 }) }}>{`ENTRY HELD · CLOSES ${s.closesMono}`}</div>
             </Perforation>
           )}
         </div>
-        <div style={{ marginTop: 'auto', fontSize: 12.5, color: pal.mut, padding: '0 6px', fontFamily: SANS }}>{SCAM_LINE}</div>
+        <div style={{ marginTop: 'auto', fontSize: 13.5, color: pal.mut, padding: '0 6px', fontFamily: SANS }}>{SCAM_LINE}</div>
       </>
     );
   } else {
     body = (
       <>
         {chrome.masthead && <GazetteMasthead content={content} kickerText="OFFICIAL ENTRY FORM" inkColor={pal.ink} mutedColor={pal.mut} />}
-        {chrome.header && !chrome.masthead && <ChecklistHeader content={content} s={s} mutedColor={pal.mut} />}
+        {/* Dateless header on success: the page's one date row is ENTRIES CLOSE below. */}
+        {chrome.header && !chrome.masthead && <ChecklistHeader content={content} s={{ ...s, closesMono: '' }} mutedColor={pal.mut} />}
         {chrome.wordmark && <div style={{ fontWeight: 800, fontSize: 17, color: chrome.ink, fontFamily: SANS }}>{content.wordmark}</div>}
         <div style={{ marginTop: chrome.masthead || chrome.header ? 22 : 26, display: 'flex', flexDirection: 'column', gap: 16 }}>
           {intro}
           {chances}
           {nextSteps}
-          {closesLine && <div style={mono(10.5, { color: monoMut })}>{closesLine}</div>}
+          {closesLine && <div style={mono(12.5, { letterSpacing: 1, color: monoMut })}>{closesLine}</div>}
         </div>
         {footerLine}
       </>
@@ -1081,8 +1085,8 @@ export function DrawClosedPage({ templateId, t, content, luckyDraw, campaignName
     <>
       <div style={mono(11, { letterSpacing: 2, color: chrome.mut })}>{s.kicker}</div>
       <div style={serifItalic(42, { color: chrome.ink })}>Entries closed.</div>
-      {s.closesMono && <div style={mono(11, { color: chrome.mut })}>{`${s.closesMono} · 23:59 SGT`}</div>}
-      <div style={{ fontSize: 14.5, lineHeight: 1.55, color: chrome.body, fontFamily: SANS }}>{s.closedBody}</div>
+      {s.closesMono && <div style={mono(12.5, { letterSpacing: 1, color: chrome.mut })}>{`${s.closesMono} · 23:59 SGT`}</div>}
+      <div style={{ fontSize: 15.5, lineHeight: 1.55, color: chrome.body, fontFamily: SANS }}>{s.closedBody}</div>
       <div style={{ fontSize: 13, color: scamMut, fontFamily: SANS }}>{SCAM_LINE}</div>
     </>
   );
