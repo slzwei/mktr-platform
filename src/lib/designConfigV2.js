@@ -279,6 +279,42 @@ function hexToRgb(hex) {
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 }
 
+const toHex = (rgb) => '#' + rgb.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+
+/**
+ * Blend `hex` toward `target` by `amount` (0..1). Returns `hex` unchanged when
+ * either side is unparseable, so a malformed operator accent can never blank a
+ * surface. The warm-cream input fill depends on the exact arithmetic here:
+ * mix('#FFFAF0', '#FFFFFF', .4) === '#FFFCF6', the frozen production value.
+ */
+export function mixHex(hex, target, amount) {
+  const a = hexToRgb(hex);
+  const b = hexToRgb(target);
+  if (!a || !b) return hex;
+  return toHex(a.map((v, i) => v + (b[i] - v) * amount));
+}
+
+/**
+ * An accent that is legible AS TEXT on `bg` — the accent itself when it already
+ * clears `min`, otherwise stepped toward the surface's opposite pole until it
+ * does. Light accents (lime, periwinkle) are unreadable as text on white; this
+ * keeps the campaign's hue while making the label readable. Falls back to the
+ * ink/light pole when even the extreme cannot clear the bar.
+ */
+export function accentTextOn(accent, bg, min = 4.5, ink = '#3D1F0B') {
+  const bgL = luminance(bg);
+  const accentL = luminance(accent);
+  if (bgL == null || accentL == null) return accent;
+  if (contrastRatio(accentL, bgL) >= min) return accent;
+  const pole = bgL > 0.5 ? '#000000' : '#FFFFFF';
+  for (let step = 1; step <= 10; step += 1) {
+    const candidate = mixHex(accent, pole, step / 10);
+    const l = luminance(candidate);
+    if (l != null && contrastRatio(l, bgL) >= min) return candidate;
+  }
+  return bgL > 0.5 ? ink : '#FFFFFF';
+}
+
 /** Nearest preset by accent RGB distance; invalid/absent hex → warm-cream. */
 export function nearestPresetForAccent(hex) {
   const rgb = hexToRgb(hex);
@@ -558,6 +594,7 @@ export function resolveTheme(theme = {}) {
   const fontId = FONT_IDS.includes(theme.font) ? theme.font : p.font;
   let r = RADII[theme.radius || p.radius] || RADII.soft;
   if (p.rx && (!theme.radius || theme.radius === p.radius)) r = p.rx;
+  const disabledBg = p.hairline || mixHex(p.card, p.dark ? '#FFFFFF' : '#000000', p.dark ? 0.16 : 0.1);
   return {
     ...p,
     accent,
@@ -569,10 +606,27 @@ export function resolveTheme(theme = {}) {
     bodyText: p.bodyText || p.ink,
     divider: p.divider || p.hairline || (p.dark ? 'rgba(255,255,255,.2)' : 'rgba(0,0,0,.16)'),
     accentDeep: p.accentDeep || accent,
-    danger: p.danger || '#B4443C',
-    success: p.success || '#2F6B43',
+    // Status colors are surface-aware: the light-theme pair sits at ~2:1 on a
+    // dark card, so dark presets get lifted variants. warm-cream declares both
+    // explicitly and is untouched (frozen parity).
+    danger: p.danger || (p.dark ? '#F2938B' : '#B4443C'),
+    success: p.success || (p.dark ? '#7FD1A0' : '#2F6B43'),
     line: p.hairline || (p.dark ? 'rgba(255,255,255,.14)' : 'rgba(0,0,0,.1)'),
     soft: p.dark ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.045)',
+    // OPAQUE input fill. The funnel paints typed text in `ink`, so this must
+    // track the theme or the text goes invisible (dark presets sat at 1.1:1 on
+    // the old hardcoded '#FFFCF6'). Lightening the card by .4 reproduces the
+    // frozen warm-cream value byte-exactly; dark presets lift off the card
+    // instead so the field still reads as a well.
+    inputBg: p.inputBg || mixHex(p.card, '#FFFFFF', p.dark ? 0.08 : 0.4),
+    // Disabled control fill + its label. `hairline` was being used as a surface
+    // AND fed to a hex-only contrast helper, which returned white for the 9
+    // presets whose hairline is an rgba() string. These are always opaque hex.
+    disabledBg,
+    onDisabled: onColor(disabledBg),
+    // The accent, stepped until it is legible AS TEXT on the form card — lime
+    // and periwinkle accents are ~1.8:1 on white and vanish as link/label text.
+    accentText: accentTextOn(accent, p.card),
     bgCss: theme.background === 'wash'
       ? `linear-gradient(180deg, ${accent}18, ${p.bg} 320px)`
       : theme.background === 'grain'

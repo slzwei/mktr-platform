@@ -54,7 +54,9 @@ export default function ConsentAgreementDialog({
           width: 'calc(100vw - 32px)',
           maxHeight: '85vh',
           padding: 0,
-          boxShadow: '0 24px 64px rgba(60, 40, 20, 0.18), 0 4px 16px rgba(60, 40, 20, 0.08)',
+          boxShadow: TOKENS.colorScheme === 'dark'
+            ? '0 24px 64px rgba(0,0,0,.55), 0 4px 16px rgba(0,0,0,.4)'
+            : '0 24px 64px rgba(60, 40, 20, 0.18), 0 4px 16px rgba(60, 40, 20, 0.08)',
           display: 'flex',
           flexDirection: 'column',
         }}
@@ -169,7 +171,7 @@ export default function ConsentAgreementDialog({
               paddingLeft: 24,
               paddingRight: 24,
               borderRadius: RADIUS.pill,
-              backgroundColor: '#ffffff',
+              backgroundColor: TOKENS.inputBg || '#ffffff',
               color: TOKENS.body,
               border: `1px solid ${TOKENS.hairline}`,
               cursor: 'pointer',
@@ -196,7 +198,7 @@ export default function ConsentAgreementDialog({
               fontWeight: 600,
               fontSize: 15,
               minWidth: 110,
-              boxShadow: '0 4px 14px rgba(209, 112, 41, 0.18)',
+              boxShadow: `0 4px 14px ${TOKENS.accentShadow || 'rgba(209, 112, 41, 0.18)'}`,
             }}
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = TOKENS.accentDeep)}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = accent)}

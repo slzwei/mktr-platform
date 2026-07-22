@@ -6,9 +6,9 @@ import { readableTextOn } from '@/lib/contrast';
 // !important overrides the inputs' inline styles; pointer-events:none blocks editing.
 const LOCKED_FIELD_CSS = `
   .lc-field-locked input, .lc-field-locked select {
-    background-color: #F0E7D4 !important;
-    border-color: #E2D6BC !important;
-    color: #A8916E !important;
+    background-color: var(--lc-locked-bg, #F0E7D4) !important;
+    border-color: var(--lc-locked-line, #E2D6BC) !important;
+    color: var(--lc-locked-ink, #A8916E) !important;
     pointer-events: none;
   }
   .lc-field-locked select { cursor: default !important; }
@@ -38,6 +38,7 @@ const makeInputBaseStyle = (TOKENS, RADIUS) => ({
   fontFamily: 'Albert Sans, system-ui, sans-serif',
   color: TOKENS.ink,
   backgroundColor: TOKENS.inputBg || '#FFFCF6',
+  colorScheme: TOKENS.colorScheme || 'light',
   border: `1px solid ${TOKENS.hairline}`,
   borderRadius: RADIUS.input,
   outline: 'none',
@@ -272,8 +273,8 @@ export default function FieldRenderer({
                     fontFamily: 'Albert Sans, system-ui, sans-serif',
                     fontWeight: 600,
                     fontSize: 14,
-                    color: readableTextOn(canSend ? themeColor || TOKENS.accent : TOKENS.hairline),
-                    backgroundColor: canSend ? themeColor || TOKENS.accent : TOKENS.hairline,
+                    color: canSend ? readableTextOn(themeColor || TOKENS.accent) : (TOKENS.onDisabled || readableTextOn(TOKENS.hairline)),
+                    backgroundColor: canSend ? themeColor || TOKENS.accent : (TOKENS.disabledBg || TOKENS.hairline),
                     transition: 'background-color 200ms ease',
                     whiteSpace: 'nowrap',
                     minWidth: 100,
@@ -460,7 +461,7 @@ export default function FieldRenderer({
       <Lock
         size={14}
         aria-hidden="true"
-        style={{ position: 'absolute', right: 18, top: 42, stroke: '#B6A07C', pointerEvents: 'none' }}
+        style={{ position: 'absolute', right: 18, top: 42, stroke: TOKENS.muted, pointerEvents: 'none' }}
       />
     </div>
   );

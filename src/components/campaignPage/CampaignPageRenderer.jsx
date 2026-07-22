@@ -23,7 +23,7 @@ import { brand } from '@/lib/brand';
 import { heroFontStack } from '@/lib/heroFonts';
 import { QuizGate } from '@/components/campaigns/CampaignQuiz';
 import CampaignSignupForm from '@/components/campaigns/CampaignSignupForm';
-import { CampaignThemeProvider } from './themeContext';
+import { CampaignThemeProvider, DEFAULT_CAMPAIGN_THEME } from './themeContext';
 import { adaptCampaignForFunnel, deriveFunnelProps } from './funnelAdapter';
 import { resolveJumpFixtures } from './previewJumpFixtures';
 import { TEMPLATES } from './templates';
@@ -225,6 +225,9 @@ export default function CampaignPageRenderer({
     [adapted.theme]
   );
   const content = useMemo(() => deriveCampaignPageContent(doc), [doc]);
+  // The funnel's own token bag — also drives the root-level bits inline styles
+  // cannot reach (color-scheme, autofill, ::placeholder, the locked-field vars).
+  const funnelTokens = adapted.funnelTheme?.tokens || DEFAULT_CAMPAIGN_THEME.tokens;
   const rootRef = useRef(null);
   const mobile = useIsMobile(rootRef);
   const [stage, setStage] = useState('quiz');
@@ -296,7 +299,38 @@ export default function CampaignPageRenderer({
   const params = doc.template?.params?.[templateId] || {};
 
   return (
-    <div ref={rootRef} data-campaign-page-template={templateId} data-campaign-page-ready="true">
+    <div
+      ref={rootRef}
+      data-campaign-page-template={templateId}
+      data-campaign-page-ready="true"
+      style={{
+        colorScheme: funnelTokens.colorScheme,
+        // Consumed by FieldRenderer's LOCKED_FIELD_CSS, which needs !important
+        // to beat the inputs' inline styles and therefore cannot read tokens.
+        '--lc-locked-bg': funnelTokens.lockedBg,
+        '--lc-locked-line': funnelTokens.lockedLine,
+        '--lc-locked-ink': funnelTokens.lockedInk,
+      }}
+    >
+      {/* Chrome repaints autofilled inputs with an !important UA style that
+          inline styles cannot touch — without this the most common real-world
+          state of the form ignores the theme entirely. Placeholder colour is
+          equally unreachable from inline styles. */}
+      <style>{`
+        [data-campaign-page-template] input:-webkit-autofill,
+        [data-campaign-page-template] input:-webkit-autofill:hover,
+        [data-campaign-page-template] input:-webkit-autofill:focus {
+          -webkit-text-fill-color: ${funnelTokens.ink};
+          -webkit-box-shadow: 0 0 0 1000px ${funnelTokens.inputBg} inset;
+          box-shadow: 0 0 0 1000px ${funnelTokens.inputBg} inset;
+          caret-color: ${funnelTokens.ink};
+        }
+        [data-campaign-page-template] input::placeholder,
+        [data-campaign-page-template] textarea::placeholder {
+          color: ${funnelTokens.muted};
+          opacity: 1;
+        }
+      `}</style>
       <Template
         t={t}
         content={content}

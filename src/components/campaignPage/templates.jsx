@@ -16,7 +16,7 @@
  */
 import { useRef, useEffect } from 'react';
 import { resolveImageUrl } from '@/components/campaigns/LeadCaptureLayout';
-import { youTubeIdFrom } from '@/lib/designConfigV2';
+import { youTubeIdFrom, onColor, accentTextOn } from '@/lib/designConfigV2';
 import { BrandFooter, DrawBadge, ReferredBadge, formatDrawDate } from './CampaignPageRenderer';
 
 const SANS = "'Albert Sans', system-ui, sans-serif";
@@ -197,11 +197,16 @@ function Editorial({ t, content, params, luckyDraw, funnel, formAnchorRef, scrol
 // ─────────────────────────────────── Poster ───────────────────────────────────
 
 function Poster({ t, content, params, luckyDraw, funnel, formAnchorRef, scrollToForm, mobile, referrerName }) {
-  const fade = params.overlay === 'plain' ? 'rgba(12,10,8,.45)' : t.bg;
+  const dusk = params.overlay !== 'plain';
+  const fade = dusk ? t.bg : 'rgba(12,10,8,.45)';
+  // The hero copy sits where the gradient has already reached `fade`, so its
+  // colour has to follow that surface — a fixed white vanished on light presets.
+  const heroInk = dusk ? onColor(t.bg) : '#FFF';
+  const heroBackdrop = t.dark ? t.card : '#17191E';
   const showCta = content.media.kind !== 'none' && !!content.heroCtaLabel;
   return (
     <div style={{ minHeight: '100vh', background: t.bg, fontFamily: SANS, color: t.ink }}>
-      <div style={{ position: 'relative', height: mobile ? 430 : 480, background: '#17191E', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', height: mobile ? 430 : 480, background: heroBackdrop, overflow: 'hidden' }}>
         <MediaBlock t={t} media={content.media} radius={0} style={{ position: 'absolute', inset: 0, aspectRatio: 'auto', height: '100%' }} />
         <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(to top, ${fade} 4%, rgba(12,10,8,.28) 55%, rgba(12,10,8,.2))` }} />
         <div style={{ position: 'absolute', top: 16, left: 18, fontFamily: t.fontStack, fontSize: 18, fontWeight: 700, color: '#FFF' }}>
@@ -209,15 +214,15 @@ function Poster({ t, content, params, luckyDraw, funnel, formAnchorRef, scrollTo
         </div>
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: mobile ? 16 : 26, maxWidth: 620, margin: '0 auto', boxSizing: 'border-box' }}>
           {luckyDraw?.enabled === true && (
-            <div style={{ display: 'inline-block', font: "600 10px ui-monospace, 'SF Mono', Menlo, monospace", background: 'rgba(255,255,255,.14)', color: '#FFE9A8', borderRadius: 999, padding: '5px 11px', marginBottom: 10, backdropFilter: 'blur(4px)' }}>
+            <div style={{ display: 'inline-block', font: "600 10px ui-monospace, 'SF Mono', Menlo, monospace", background: dusk ? t.soft : 'rgba(255,255,255,.14)', color: heroInk, borderRadius: 999, padding: '5px 11px', marginBottom: 10, backdropFilter: 'blur(4px)' }}>
               <DrawBadgeText luckyDraw={luckyDraw} />
             </div>
           )}
-          <div style={{ fontFamily: t.fontStack, fontSize: mobile ? 32 : 46, lineHeight: 1.06, fontWeight: 700, color: '#FFF', letterSpacing: '-0.01em' }}>
+          <div style={{ fontFamily: t.fontStack, fontSize: mobile ? 32 : 46, lineHeight: 1.06, fontWeight: 700, color: heroInk, letterSpacing: '-0.01em' }}>
             {content.headline}
           </div>
           {content.subheadline && (
-            <div style={{ fontSize: 14, lineHeight: 1.5, color: 'rgba(255,255,255,.85)', margin: '10px 0 14px', maxWidth: 440, whiteSpace: 'pre-line' }}>
+            <div style={{ fontSize: 14, lineHeight: 1.5, color: heroInk, opacity: 0.85, margin: '10px 0 14px', maxWidth: 440, whiteSpace: 'pre-line' }}>
               {content.subheadline}
             </div>
           )}
@@ -251,7 +256,7 @@ function DrawBadgeText({ luckyDraw }) {
 function Split({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, referrerName }) {
   const mediaSide = params.mediaSide === 'right' ? 'right' : 'left';
   const mediaPanel = (
-    <div style={{ position: 'relative', background: '#17191E', minHeight: mobile ? 220 : 'auto', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', background: t.dark ? t.card : '#17191E', minHeight: mobile ? 220 : 'auto', overflow: 'hidden' }}>
       <MediaBlock t={t} media={content.media} radius={0} style={{ position: 'absolute', inset: 0, aspectRatio: 'auto', height: '100%', objectFit: params.mediaFit === 'contain' ? 'contain' : 'cover' }} />
       {luckyDraw?.enabled === true && (
         <span style={{ position: 'absolute', top: 14, left: 14, font: "600 10px ui-monospace, 'SF Mono', Menlo, monospace", background: 'rgba(12,10,8,.72)', color: '#FFE9A8', borderRadius: 999, padding: '5px 11px' }}>
@@ -308,7 +313,7 @@ function Spotlight({ t, content, luckyDraw, funnel, formAnchorRef, stage, referr
           <div>
             <div style={{ fontFamily: t.fontStack, fontSize: 24, lineHeight: 1.15, fontWeight: 700, marginBottom: 7 }}>{content.headline}</div>
             {content.paragraphs.map((p, i) => (
-              <p key={i} style={{ fontSize: 13.5, lineHeight: 1.6, margin: '0 0 8px', color: t.muted }}>{p}</p>
+              <p key={i} style={{ fontSize: 13.5, lineHeight: 1.6, margin: '0 0 8px', color: t.bodyText }}>{p}</p>
             ))}
             {content.emphasis && <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{content.emphasis}</p>}
           </div>
@@ -368,7 +373,7 @@ function Journey({ t, content, params, luckyDraw, funnel, formAnchorRef, scrollT
         <MediaBlock t={t} media={content.media} />
         {content.paragraphs.map((p, i) => (
           <div key={i} style={{ background: alternate && i % 2 === 0 ? t.soft : 'transparent', borderRadius: t.r.card, padding: alternate && i % 2 === 0 ? '16px 17px' : '4px 17px' }}>
-            <div style={{ font: "600 10px ui-monospace, 'SF Mono', Menlo, monospace", letterSpacing: '.12em', color: t.accent, marginBottom: 7 }}>
+            <div style={{ font: "600 10px ui-monospace, 'SF Mono', Menlo, monospace", letterSpacing: '.12em', color: accentTextOn(t.accent, t.bg), marginBottom: 7 }}>
               {`0${i + 1}`}
             </div>
             <p style={{ fontSize: 14.5, lineHeight: 1.7, margin: 0, color: t.bodyText }}>{p}</p>

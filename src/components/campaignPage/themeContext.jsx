@@ -41,6 +41,11 @@ export const DEFAULT_CAMPAIGN_THEME = Object.freeze({
   onAccent: '#ffffff',
 });
 
+// NOTE: `tokens` above is the frozen 13-key production constant. The v2-only
+// keys (inputBg, disabledBg, onDisabled, accentText, locked*, accentShadow,
+// colorScheme) are deliberately ABSENT here — every call site falls back to the
+// literal it used to inline, so an unprovidered v1 mount stays byte-identical.
+
 const CampaignThemeContext = createContext(DEFAULT_CAMPAIGN_THEME);
 export const CampaignThemeProvider = CampaignThemeContext.Provider;
 export const useCampaignTheme = () => useContext(CampaignThemeContext);
@@ -66,6 +71,22 @@ export function buildFunnelTokens(t) {
       accentDeep: t.accentDeep,
       required: t.danger,
       success: t.success,
+      // Opaque control surfaces — the funnel previously inlined warm-cream
+      // literals for these, which is why every dark preset rendered
+      // near-white text on a near-white field.
+      inputBg: t.inputBg,
+      disabledBg: t.disabledBg,
+      onDisabled: t.onDisabled,
+      accentText: t.accentText,
+      lockedBg: t.dark ? t.disabledBg : '#F0E7D4',
+      lockedLine: t.dark ? t.line : '#E2D6BC',
+      lockedInk: t.dark ? t.muted : '#A8916E',
+      // Button glow derived from the campaign accent instead of the baked
+      // terracotta; dark surfaces swallow a light shadow, so they get a scrim.
+      accentShadow: t.dark ? 'rgba(0,0,0,.45)' : `${t.accent}2E`,
+      // Drives `color-scheme` so the native caret, select popups and
+      // scrollbars follow the preset instead of staying light.
+      colorScheme: t.dark ? 'dark' : 'light',
     },
     radius: {
       pill: t.r.btn === 999 ? 999 : t.r.btn,
