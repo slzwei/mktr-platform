@@ -151,6 +151,29 @@ function clampTemplate(raw) {
     }
     if (tpl === 'express') out.trustLine = cleanString(inc.trustLine, LIMITS.trustLine) ?? '';
     if (tpl === 'journey') out.sectionRhythm = cleanEnum(out.sectionRhythm, ['alternate', 'stacked'], 'alternate');
+    // Draw-focused templates (drawTemplates.jsx) — booleans (showSerial,
+    // showCountdown, heroBand) are already typed by the generic pass above.
+    if (tpl === 'postcard') {
+      out.mediaSide = cleanEnum(out.mediaSide, ['left', 'right'], 'left');
+      out.cardStyle = cleanEnum(out.cardStyle, ['float', 'flush'], 'float');
+      out.factStyle = cleanEnum(out.factStyle, ['numbered', 'inline'], 'numbered');
+    }
+    if (tpl === 'gazette') {
+      out.ruleDensity = cleanEnum(out.ruleDensity, ['airy', 'dense'], 'airy');
+      out.accentUse = cleanEnum(out.accentUse, ['text', 'fill'], 'fill');
+    }
+    if (tpl === 'nightfall') {
+      out.overlayTone = cleanEnum(out.overlayTone, ['dusk', 'ink'], 'ink');
+      out.ctaStyle = cleanEnum(out.ctaStyle, ['bar', 'pill'], 'bar');
+    }
+    if (tpl === 'stub') {
+      out.ticketTone = cleanEnum(out.ticketTone, ['paper', 'accent'], 'paper');
+      out.stubEdge = cleanEnum(out.stubEdge, ['top', 'bottom'], 'bottom');
+    }
+    if (tpl === 'checklist') {
+      out.boostStep = cleanEnum(out.boostStep, ['inline', 'footnote'], 'inline');
+      out.railStyle = cleanEnum(out.railStyle, ['line', 'dots'], 'line');
+    }
     params[tpl] = out;
   }
   return { id, params };

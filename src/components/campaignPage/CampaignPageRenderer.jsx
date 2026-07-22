@@ -27,6 +27,7 @@ import { CampaignThemeProvider } from './themeContext';
 import { adaptCampaignForFunnel, deriveFunnelProps } from './funnelAdapter';
 import { resolveJumpFixtures } from './previewJumpFixtures';
 import { TEMPLATES } from './templates';
+import { DRAW_TEMPLATES, DrawClosedPage } from './drawTemplates';
 
 /** SGT day-end draw cutoff — mirrors marketplace content.js offerUnavailability
  * (entries close 23:59:59.999 SGT on closesAt; server 410s past it). */
@@ -232,12 +233,27 @@ export default function CampaignPageRenderer({
     formAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
+  const templateId = doc.template?.id || 'editorial';
+
   const blocked = jump === 'inactive' || inactive
     ? 'inactive'
     : jump === 'draw-closed' || isDrawClosed(doc.luckyDraw)
       ? 'draw'
       : null;
   if (blocked) {
+    // The five draw templates own their designed closed page; everything else
+    // (and the inactive state) keeps the shared BlockedPage.
+    if (blocked === 'draw' && DRAW_TEMPLATES[templateId]) {
+      return (
+        <DrawClosedPage
+          templateId={templateId}
+          t={t}
+          content={content}
+          luckyDraw={doc.luckyDraw}
+          campaignName={campaign?.name}
+        />
+      );
+    }
     return <BlockedPage t={t} content={content} reason={blocked} luckyDraw={doc.luckyDraw} />;
   }
 
@@ -273,8 +289,10 @@ export default function CampaignPageRenderer({
     </CampaignThemeProvider>
   );
 
-  const templateId = doc.template?.id || 'editorial';
-  const Template = TEMPLATES[templateId] || TEMPLATES.editorial;
+  // Merged at lookup time (not module scope) — templates.jsx and
+  // drawTemplates.jsx sit in an import cycle with this file, so a module-scope
+  // spread of either registry would hit the const TDZ depending on entry order.
+  const Template = TEMPLATES[templateId] || DRAW_TEMPLATES[templateId] || TEMPLATES.editorial;
   const params = doc.template?.params?.[templateId] || {};
 
   return (
@@ -290,6 +308,8 @@ export default function CampaignPageRenderer({
         mobile={mobile}
         stage={stage}
         referrerName={referrerName}
+        campaignName={campaign?.name}
+        formJumpActive={Boolean(jumpFixtures?.form)}
       />
     </div>
   );

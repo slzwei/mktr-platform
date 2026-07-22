@@ -13,6 +13,7 @@ import LeadCaptureLayout, { TOKENS } from '../components/campaigns/LeadCaptureLa
 import { deriveLeadCaptureContent } from '../components/campaigns/leadCaptureContent';
 import GuidedReviewPage, { GuidedReviewSuccess } from '../components/campaigns/guided-review/GuidedReviewPage';
 import CampaignPageRenderer from '../components/campaignPage/CampaignPageRenderer';
+import { DrawSuccessPage, DRAW_TEMPLATE_IDS } from '../components/campaignPage/drawTemplates';
 import { isV2, resolveTheme } from '@/lib/designConfigV2';
 import {
   shouldTrack,
@@ -65,6 +66,8 @@ export default function LeadCapture() {
   // The created prospect's id — embedded in the share URL (?ref={id}) so a
   // friend's referred submit can be attributed back to this sharer.
   const [submittedProspectId, setSubmittedProspectId] = useState(null);
+  // Kept for the draw success screen's masked "Entry confirmed for +65 …" line.
+  const [submittedPhone, setSubmittedPhone] = useState(null);
   // The canonical short share link the backend minted at creation — identical to the one
   // in the confirmation email. Preferred over the locally-built long URL when present.
   const [serverShareUrl, setServerShareUrl] = useState(null);
@@ -360,6 +363,7 @@ export default function LeadCapture() {
         // Keep the new prospect's id so this submitter's share links carry
         // their identity (?ref={id}) instead of the anonymous ref=1.
         setSubmittedProspectId(result?.data?.prospect?.id || null);
+        setSubmittedPhone(formData.phone || null);
         // Canonical short share link minted server-side (matches the confirmation email).
         setServerShareUrl(result?.data?.shareUrl || null);
         // We email the confirmation (with this link) only when an email was provided.
@@ -568,6 +572,21 @@ export default function LeadCapture() {
   // (success / duplicate / error) keep their v1 behavior on the v2 theme
   // background (themed outcome screens ride the deferred widget-redesign PR).
   if (isV2(campaign?.design_config)) {
+    // Draw campaigns on the five draw templates get the designed "you're in
+    // the draw" page (drawTemplates.jsx) instead of the generic SuccessState.
+    const v2Doc = campaign.design_config;
+    if (
+      submitted &&
+      v2Doc.luckyDraw?.enabled === true &&
+      DRAW_TEMPLATE_IDS.includes(v2Doc.template?.id)
+    ) {
+      return (
+        <>
+          <DrawSuccessPage campaign={campaign} submittedPhone={submittedPhone} />
+          {shareDialog}
+        </>
+      );
+    }
     if (submitted || error) {
       const vt = resolveTheme(campaign.design_config.theme || {});
       return (
