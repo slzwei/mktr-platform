@@ -11,11 +11,15 @@ import {
   sanitizeRecommendations,
   stripUrlish,
   contrastRatioHex,
+  clampAiFields,
+  clampAiTerms,
+  sanitizeAiTermsHtml,
+  REC_TOPICS,
   COPY_FIELDS,
   PICK_FIELDS,
   INCLUSIONS_FIELD,
 } from '../services/campaignCopyAiService.js';
-import { LIMITS } from '../utils/designConfigV2.js';
+import { LIMITS, DRAW_TEMPLATE_IDS } from '../utils/designConfigV2.js';
 
 /**
  * Campaign Studio AI copy assist (Studio PR 4 + the 2026-07-18 full-coverage
@@ -495,7 +499,11 @@ describe('transport + prompts + error taxonomy', () => {
     expect(captured.url).toBe('https://api.openai.com/v1/responses');
     expect(captured.body.text.format).toMatchObject({ type: 'json_schema', name: 'campaign_fill_draft', strict: true });
     const schemaProps = captured.body.text.format.schema.properties;
-    expect(Object.keys(schemaProps)).toEqual(['draft', 'marketplaceMeta', 'inclusions', 'recommendations']);
+    // create-everything amendment: fields + terms join the everything schema.
+    expect(Object.keys(schemaProps)).toEqual(['draft', 'fields', 'terms', 'marketplaceMeta', 'inclusions', 'recommendations']);
+    expect(captured.body.text.format.schema.required).toEqual(
+      expect.arrayContaining(['fields', 'terms'])
+    );
     expect(Object.keys(schemaProps.marketplaceMeta.properties)).toEqual(PICK_FIELDS.map((f) => f.key));
     const system = captured.body.input.find((m) => m.role === 'system').content;
     const user = captured.body.input.find((m) => m.role === 'user').content;
@@ -638,5 +646,174 @@ describe('helpers', () => {
     expect(contrastRatioHex('#000000', '#FFFFFF')).toBeCloseTo(21, 0);
     expect(contrastRatioHex('#FFFAF0', '#FFFAF0')).toBeCloseTo(1, 1);
     expect(contrastRatioHex('zz-not-a-color', '#FFFFFF')).toBe(null); // NB 'bad' would be VALID 3-digit hex
+  });
+});
+
+describe('create-everything amendment — fields, terms, draw awareness', () => {
+  const ctxDraw = buildCampaignContext(RICH_CAMPAIGN);
+  const ctxPlain = buildCampaignContext(BARE_CAMPAIGN);
+  const LONG = '<p>' + 'terms body '.repeat(30) + '</p>';
+
+  it('clampAiFields: trio forced, required⇒visible, dup first-wins, unknown dropped, canonical append order', () => {
+    const out = clampAiFields([
+      { id: 'phone', visible: false, required: false }, // locked → forced true/true
+      { id: 'salary', visible: false, required: true }, // required ⇒ visible
+      { id: 'salary', visible: false, required: false }, // dup → first wins
+      { id: 'bogus', visible: true, required: true }, // unknown → dropped
+      { id: 'education', visible: true, required: false },
+    ]);
+    expect(out.map((f) => f.id)).toEqual(['phone', 'salary', 'education', 'name', 'email', 'dob', 'postal']);
+    expect(out.find((f) => f.id === 'phone')).toEqual({ id: 'phone', visible: true, required: true });
+    expect(out.find((f) => f.id === 'salary')).toEqual({ id: 'salary', visible: true, required: true });
+    expect(out.find((f) => f.id === 'dob')).toEqual({ id: 'dob', visible: true, required: false }); // canonical default
+    expect(out).toHaveLength(7);
+  });
+
+  it('clampAiFields: zero valid rows or non-arrays → null (never a partial form)', () => {
+    expect(clampAiFields([])).toBe(null);
+    expect(clampAiFields([{ id: 'nope' }, 'junk', null])).toBe(null);
+    expect(clampAiFields('garbage')).toBe(null);
+    expect(clampAiFields(undefined)).toBe(null);
+  });
+
+  it('sanitizeAiTermsHtml: allowlisted tags survive bare, attributes stripped, only https hrefs kept', () => {
+    const html = sanitizeAiTermsHtml(
+      '<p onclick="alert(1)" style="color:red">' + 'x'.repeat(250) + '</p>' +
+      '<script>evil()</script><img src=x onerror=alert(1)>' +
+      '<a href="javascript:boom()">bad</a><a href="https://redeem.sg/policy">ok</a><h3>Head</h3>'
+    );
+    expect(html).toContain('<p>');
+    expect(html).not.toContain('onclick');
+    expect(html).not.toContain('<script');
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('javascript:');
+    expect(html).toContain('<a href="https://redeem.sg/policy">');
+    expect(html).toContain('<a>bad</a>');
+    expect(html).toContain('<h3>');
+  });
+
+  it('sanitizeAiTermsHtml: under 200 chars after sanitize → null; oversize input capped', () => {
+    expect(sanitizeAiTermsHtml('<p>short</p>')).toBe(null);
+    expect(sanitizeAiTermsHtml('<script>' + 'x'.repeat(500) + '</script>')).toBe(null);
+    const big = sanitizeAiTermsHtml('<p>' + 'y'.repeat(20000) + '</p>');
+    expect(big.length).toBeLessThanOrEqual(LIMITS.terms);
+  });
+
+  it('clampAiTerms: draw campaigns discard model terms wholesale; non-draw clamps template + html', () => {
+    expect(clampAiTerms({ template: 'privacy', html: LONG }, ctxDraw)).toBe(null);
+    const out = clampAiTerms({ template: 'privacy', html: LONG }, ctxPlain);
+    expect(out.template).toBe('privacy');
+    expect(out.html).toContain('terms body');
+    expect(clampAiTerms({ template: 'bogus', html: LONG }, ctxPlain).template).toBe('default');
+    expect(clampAiTerms({ template: 'privacy', html: '<p>tiny</p>' }, ctxPlain)).toBe(null);
+  });
+
+  it('context: drawTerms facts carry fresh campaign values (minAge floor, verification, prizes)', () => {
+    expect(ctxDraw.drawTerms).toMatchObject({
+      campaignName: 'Tokyo Draw',
+      closesAt: '2026-10-30',
+      prize: 'Tokyo trip',
+      minAge: 21,
+      verification: 'sms',
+      multiplier: 10,
+    });
+    expect(ctxPlain.drawTerms).toBe(null);
+    const young = buildCampaignContext({
+      ...RICH_CAMPAIGN,
+      min_age: 16,
+      design_config: {
+        ...RICH_CAMPAIGN.design_config,
+        otpChannel: 'whatsapp',
+        luckyDraw: {
+          enabled: true, closesAt: '2026-10-30',
+          prizes: [{ qty: 1, name: 'iPhone 17 Pro' }, { qty: 3, name: '$100 Voucher' }],
+        },
+      },
+    });
+    expect(young.drawTerms.minAge).toBe(18); // floored
+    expect(young.drawTerms.verification).toBe('whatsapp');
+    expect(young.drawTerms.prizes).toEqual([{ qty: 1, name: 'iPhone 17 Pro' }, { qty: 3, name: '$100 Voucher' }]);
+  });
+
+  it('everything response lands clamped fields + terms for non-draw; draw campaigns get drawTerms instead of model terms', async () => {
+    const payload = {
+      draft: [{ path: 'content.headline', value: 'Hi' }],
+      fields: [{ id: 'dob', visible: false, required: false }],
+      terms: { template: 'marketing', html: LONG },
+    };
+    const plain = await run(baseBody({ campaignId: 'c-bare' }), payload, BARE_CAMPAIGN);
+    expect(plain.fields).toHaveLength(7);
+    expect(plain.fields.find((f) => f.id === 'dob').visible).toBe(false);
+    expect(plain.terms.template).toBe('marketing');
+    expect(plain.drawTerms).toBe(null);
+    const draw = await run(baseBody(), payload, RICH_CAMPAIGN);
+    expect(draw.terms).toBe(null);
+    expect(draw.drawTerms).toMatchObject({ closesAt: '2026-10-30', minAge: 21 });
+  });
+
+  it('a fields-only response is USABLE (no 502) — but drawTerms alone never rescues a dead response', async () => {
+    const okFields = await run(baseBody({ campaignId: 'c-bare' }), { draft: [], fields: [{ id: 'dob', visible: true, required: false }] }, BARE_CAMPAIGN);
+    expect(okFields.fields).toHaveLength(7);
+    await expect(run(baseBody(), { draft: [] }, RICH_CAMPAIGN)).rejects.toMatchObject({ statusCode: 502 });
+  });
+
+  it('full mode: fields/terms/drawTerms ride beside proposals; draw templates allowed for draw campaigns', async () => {
+    const look = {
+      name: 'Ticket', rationale: 'Draw-native.', templateId: 'stub',
+      theme: { preset: 'warm-cream', font: null, radius: null, background: null, accent: null },
+      media: { kind: 'none', note: '' },
+      draft: [{ path: 'content.headline', value: 'Win Tokyo' }],
+    };
+    let captured;
+    const fetchImpl = jest.fn(async (url, options) => {
+      captured = JSON.parse(options.body);
+      return openAiResponse({ proposals: [look], fields: [{ id: 'dob', visible: true, required: true }], terms: null });
+    });
+    const res = await run(baseBody({ mode: 'full' }), null, RICH_CAMPAIGN, fetchImpl);
+    expect(res.proposals[0].template.id).toBe('stub');
+    expect(res.fields.find((f) => f.id === 'dob')).toEqual({ id: 'dob', visible: true, required: true });
+    expect(res.drawTerms).toMatchObject({ closesAt: '2026-10-30' });
+    // schema: draw campaign keeps the full 11-template enum + fields/terms required
+    const schema = captured.text.format.schema;
+    expect(schema.properties.proposals.items.properties.templateId.enum).toEqual(expect.arrayContaining(DRAW_TEMPLATE_IDS));
+    expect(schema.required).toEqual(expect.arrayContaining(['fields', 'terms']));
+    expect(captured.body?.max_output_tokens || captured.max_output_tokens).toBe(14000);
+  });
+
+  it('full mode: NON-draw campaigns get a draw-free template enum, and a smuggled draw look is dropped', async () => {
+    let captured;
+    const fetchImpl = jest.fn(async (url, options) => {
+      captured = JSON.parse(options.body);
+      return openAiResponse({
+        proposals: [
+          { name: 'Smuggled', rationale: 'x', templateId: 'postcard', theme: { preset: 'warm-cream', font: null, radius: null, background: null, accent: null }, media: { kind: 'none', note: '' }, draft: [{ path: 'content.headline', value: 'Hi' }] },
+          { name: 'Fine', rationale: 'x', templateId: 'editorial', theme: { preset: 'warm-cream', font: null, radius: null, background: null, accent: null }, media: { kind: 'none', note: '' }, draft: [{ path: 'content.headline', value: 'Hi' }] },
+        ],
+      });
+    });
+    const res = await run(baseBody({ campaignId: 'c-bare', mode: 'full' }), null, BARE_CAMPAIGN, fetchImpl);
+    const enumIds = captured.text.format.schema.properties.proposals.items.properties.templateId.enum;
+    for (const id of DRAW_TEMPLATE_IDS) expect(enumIds).not.toContain(id);
+    expect(res.proposals.map((p) => p.template.id)).toEqual(['editorial']);
+  });
+
+  it('prompts: draw-template steering only for draw campaigns; terms scaffold instructions only for non-draw; REC_TOPICS retired formFields', async () => {
+    let drawSystem;
+    await run(baseBody({ mode: 'full' }), null, RICH_CAMPAIGN, jest.fn(async (url, options) => {
+      drawSystem = JSON.parse(options.body).input.find((m) => m.role === 'system').content;
+      return openAiResponse({ proposals: [{ name: 'L', rationale: 'x', templateId: 'gazette', theme: { preset: 'warm-cream', font: null, radius: null, background: null, accent: null }, media: { kind: 'none', note: '' }, draft: [{ path: 'content.headline', value: 'Hi' }] }] });
+    }));
+    expect(drawSystem).toContain('lucky draw');
+    expect(drawSystem).toContain('postcard');
+    expect(drawSystem).toContain('return null');
+    let plainSystem;
+    await run(baseBody({ campaignId: 'c-bare' }), null, BARE_CAMPAIGN, jest.fn(async (url, options) => {
+      plainSystem = JSON.parse(options.body).input.find((m) => m.role === 'system').content;
+      return openAiResponse({ draft: [{ path: 'content.headline', value: 'Hi' }] });
+    }));
+    expect(plainSystem).not.toContain('postcard');
+    expect(plainSystem).toContain('STARTING DRAFT');
+    expect(plainSystem).toContain('MKTR PTE. LTD.');
+    expect(REC_TOPICS.map((t) => t.topic)).not.toContain('formFields');
   });
 });

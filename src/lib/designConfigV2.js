@@ -20,6 +20,10 @@ export const TEMPLATE_IDS = [
   'postcard', 'gazette', 'nightfall', 'stub', 'checklist',
 ];
 
+/** The draw-focused subset — canonical source for every consumer (PagePanel,
+ * AI look gating); drawTemplates.jsx's registry is test-pinned to equal it. */
+export const DRAW_TEMPLATE_IDS = ['postcard', 'gazette', 'nightfall', 'stub', 'checklist'];
+
 /** Per-template parameter defaults — one bag, every template persists its
  * params across switches; first Studio use seeds these. Migration seeds the
  * bag but copies editorial.formWidth ONLY when v1 stored one (v1's RENDER

@@ -141,3 +141,51 @@ describe('AdminCampaignStudio', () => {
     expect(screen.queryByRole('button', { name: '↩ Revert look' })).toBeNull();
   });
 });
+
+describe('create-flow auto-run (?ai=full)', () => {
+  function renderStudioWithAiParam(campaign = LEAD_CAMPAIGN) {
+    mockUseCampaign.mockReturnValue({ data: campaign, isLoading: false });
+    mockUseCampaignLookup.mockReturnValue({ data: [campaign] });
+    apiClient.post.mockResolvedValue({ success: true, data: { proposals: [], fields: null, terms: null, drawTerms: null } });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[`/admin/campaigns/${campaign.id}/studio?ai=full&tab=x`]}>
+          <Routes>
+            <Route path="/admin/campaigns/:id/studio" element={<AdminCampaignStudio />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+  }
+
+  it('fires exactly ONE full-mode generation from campaign facts once the doc is ready', async () => {
+    renderStudioWithAiParam();
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(1));
+    const [, body] = apiClient.post.mock.calls[0];
+    expect(body).toMatchObject({ mode: 'full', campaignId: 'c1' });
+    expect(body.brief.topic).toContain('FairPrice Voucher');
+    // settle: no second call on subsequent renders/effects
+    await new Promise((r) => setTimeout(r, 50));
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('draw campaigns prefill the brief with prize + close facts', async () => {
+    renderStudioWithAiParam({
+      ...LEAD_CAMPAIGN,
+      id: 'c-draw',
+      name: 'iPhone 17 Pro Lucky Draw',
+      design_config: {
+        formHeadline: 'Hi',
+        customerHost: 'redeem',
+        luckyDraw: { enabled: true, closesAt: '2026-08-31', prize: 'iPhone 17 Pro + 3× $100 Voucher', multiplier: 10 },
+      },
+    });
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(1));
+    const [, body] = apiClient.post.mock.calls[0];
+    expect(body.brief.topic).toContain('iPhone 17 Pro Lucky Draw');
+    expect(body.brief.topic).toContain('prize: iPhone 17 Pro + 3× $100 Voucher');
+    expect(body.brief.topic).toContain('entries close 2026-08-31');
+    expect(body.brief.objective).toMatch(/draw entries/);
+  });
+});

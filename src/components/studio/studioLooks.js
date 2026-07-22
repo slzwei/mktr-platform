@@ -1,8 +1,13 @@
 /**
  * Pure helpers for the Studio AI assist (PR 4) — the conditional-path gate
- * mirror and the CO-1 look composer. No imports: this module is shared by the
- * state machine, the API layer and the panel, and stays trivially testable.
+ * mirror and the CO-1 look composer. No imports beyond the pure
+ * designConfigV2 constants (create-everything amendment: the draw-template
+ * subset must stay single-sourced): this module is shared by the state
+ * machine, the API layer and the panel, and stays trivially testable.
  */
+import { DRAW_TEMPLATE_IDS } from '@/lib/designConfigV2';
+
+const DRAW_TEMPLATE_ID_SET = new Set(DRAW_TEMPLATE_IDS);
 
 /** Minimal dotted-path reader (local twin of useStudioDoc's getPath). */
 export function getAtPath(obj, path) {
@@ -63,11 +68,22 @@ export function rowDisabledReason(doc, path) {
 }
 
 /** Kind-aware current value for a review row: strings for copy/pick rows,
- * arrays for the inclusions list row ([] when unset). */
+ * arrays for the inclusions list row ([] when unset), the RAW form.fields
+ * array for fields rows (row pairing preserved so keep-mine restores it
+ * exactly), and a {template, html} view for terms rows ('' when unset). */
 export function rowCurrentValue(doc, row) {
   if (row?.kind === 'list') {
     const v = getAtPath(doc, row.path);
     return Array.isArray(v) ? v : [];
+  }
+  if (row?.kind === 'fields') {
+    const v = getAtPath(doc, row.path);
+    return Array.isArray(v) ? JSON.parse(JSON.stringify(v)) : [];
+  }
+  if (row?.kind === 'terms') {
+    const v = getAtPath(doc, row.path);
+    if (!v || typeof v !== 'object') return '';
+    return { template: v.template || 'default', html: typeof v.html === 'string' ? v.html : '' };
   }
   return currentValueAt(doc, row?.path || '');
 }
@@ -81,16 +97,27 @@ export function rowValueAbsent(doc, row) {
   return getAtPath(doc, row?.path || '') === undefined;
 }
 
-/** Structural equality across row value types (string | string[]). */
+/** Fields arrays compare on {id, visible, required} only — `row` pairing is
+ * layout state the AI never proposes (client applies row:null). */
+const normalizeForEquality = (v) =>
+  Array.isArray(v) && v.length && v.every((x) => x && typeof x === 'object' && typeof x.id === 'string')
+    ? v.map((f) => ({ id: f.id, visible: f.visible !== false, required: f.required === true }))
+    : v;
+
+/** Structural equality across row value types (string | string[] | fields[] | terms{}). */
 export function rowValuesEqual(a, b) {
-  return JSON.stringify(a) === JSON.stringify(b);
+  return JSON.stringify(normalizeForEquality(a)) === JSON.stringify(normalizeForEquality(b));
 }
 
 /** Why a look can't be picked against the CURRENT doc (re-checked at pick
- * time, F6) — today only the Spotlight↔quiz coupling. */
+ * time, F6) — the Spotlight↔quiz coupling, and draw templates on docs with
+ * no enabled draw (stale-server belt: the API already gates them). */
 export function lookBlockedReason(doc, look) {
   if (look?.template?.id === 'spotlight' && !quizOn(doc)) {
     return 'Spotlight needs the quiz enabled with at least one question';
+  }
+  if (DRAW_TEMPLATE_ID_SET.has(look?.template?.id) && doc?.luckyDraw?.enabled !== true) {
+    return 'Draw templates need a lucky draw on this campaign';
   }
   return null;
 }
@@ -152,6 +179,7 @@ export function adoptedCopyRows(look, prevDoc, lookDoc) {
     .filter((row) => currentValueAt(lookDoc, row.path) === row.value && !rowDisabledReason(lookDoc, row.path))
     .map((row) => ({
       ...row,
+      kind: 'copy', // uniform with the review-stream kinds (fields/terms/pick/list)
       old: currentValueAt(prevDoc, row.path),
       oldAbsent: getAtPath(prevDoc, row.path) === undefined,
       state: 'applied',

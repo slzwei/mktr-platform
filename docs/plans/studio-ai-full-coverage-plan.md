@@ -1,6 +1,6 @@
 # Studio "Write it for me" — full-page coverage + Distribution recommendations
 
-**Status: IMPLEMENTED 2026-07-18** — PR 1 (backend) + PR 2 (frontend) built to
+**Status: IMPLEMENTED 2026-07-18 · AMENDED 2026-07-22 by docs/plans/studio-ai-create-everything-plan.md** (fields became a review-gated WRITE, terms became draftable — deterministic template for draws — and full mode carries the common sections beside its looks) — PR 1 (backend) + PR 2 (frontend) built to
 this scope, tests green (41 jest / full vitest), pending review + merge. §8
 open calls resolved by default recommendation (1: writable, 2: include,
 3: Apply allowed with blast-radius note, 4: "Fill everything", 5: parked).

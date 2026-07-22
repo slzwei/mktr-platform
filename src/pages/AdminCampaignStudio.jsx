@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { apiClient } from '@/api/client';
 import { Campaign } from '@/api/entities';
@@ -120,6 +120,32 @@ export default function AdminCampaignStudio() {
   const ai = useStudioAi({ campaign, doc, setPath, replaceDoc, onPickLook, onSlugPrefill, onJumpSection: setSection });
   const aiRef = useRef(ai);
   aiRef.current = ai;
+
+  // Create-flow auto-run (?ai=full, create-everything amendment §2.7): once
+  // campaign AND doc are ready, open the panel in Fill-everything (full)
+  // mode and generate from campaign facts — one real request (shared 10/min
+  // budget) — then strip ONLY the `ai` param so refresh never re-triggers.
+  // The once-ref also guards StrictMode double-effects.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const aiAutoRanRef = useRef(false);
+  useEffect(() => {
+    if (aiAutoRanRef.current) return;
+    if (searchParams.get('ai') !== 'full') return;
+    if (!campaign?.id || !doc) return;
+    aiAutoRanRef.current = true;
+    const draw = doc?.luckyDraw?.enabled === true ? doc.luckyDraw : null;
+    aiRef.current.beginFull({
+      topic: [
+        campaign.name || '',
+        draw?.prize ? `Lucky draw — prize: ${draw.prize}` : '',
+        draw?.closesAt ? `entries close ${draw.closesAt}` : '',
+      ].filter(Boolean).join(' · '),
+      objective: draw ? 'maximise verified draw entries' : '',
+    });
+    const next = new URLSearchParams(searchParams);
+    next.delete('ai');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, campaign?.id, campaign?.name, doc]);
 
   // Codex F11a: an edit can make the active jump unavailable (e.g. the SG/PR
   // gate toggled off while previewing it) — leave it instead of rendering a

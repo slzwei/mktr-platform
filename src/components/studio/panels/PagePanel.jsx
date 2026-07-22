@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { UploadFile } from '@/api/integrations';
 import { MAX_UPLOAD_SIZE_MB } from '@/lib/uploadLimits';
-import { TEMPLATE_IDS, youTubeIdFrom, resolveTheme } from '@/lib/designConfigV2';
+import { TEMPLATE_IDS, DRAW_TEMPLATE_IDS, youTubeIdFrom, resolveTheme } from '@/lib/designConfigV2';
 import { makeBind, PanelSection, TextField, TextAreaField, Seg, ToggleRow, WarnNote, FieldLabel } from './panelKit';
 
 /**
@@ -30,7 +30,7 @@ const TEMPLATE_NAMES = {
 
 /** The five draw-focused directions (drawTemplates.jsx) — art-directed for
  * lucky-draw campaigns; safe on non-draw campaigns (draw chrome hides). */
-const DRAW_TEMPLATE_SET = new Set(['postcard', 'gazette', 'nightfall', 'stub', 'checklist']);
+const DRAW_TEMPLATE_SET = new Set(DRAW_TEMPLATE_IDS);
 
 export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHint = null, onDismissMediaHint = null }) {
   // Per-field ✦ (Studio PR 4) — the five Page identity fields open the AI
