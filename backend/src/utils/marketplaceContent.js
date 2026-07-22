@@ -160,7 +160,21 @@ export function normalizeMarketplaceContent(raw) {
   } else if (isPlainObject(raw.sponsor)) {
     const kind = cleanString(raw.sponsor.kind, 40);
     const disclosure = cleanString(raw.sponsor.disclosure, 400);
-    if (kind || disclosure) out.sponsor = { ...(kind ? { kind } : {}), ...(disclosure ? { disclosure } : {}) };
+    // `name` is the KEY the consent chain runs on: isSponsoredCampaign
+    // (src/lib/consentCopy.js) requires a non-empty sponsor.name before the
+    // named third-party clause renders at all. Dropping it here meant every
+    // save silently erased it, so the clause could never appear, and the whole
+    // agree-all sponsored path — clause -> consent_third_party -> external
+    // evidence -> externally-eligible routing — was dead code. Fail-closed, so
+    // nothing was ever wrongly disclosed; it just could not work.
+    const name = cleanString(raw.sponsor.name, 120);
+    if (kind || disclosure || name) {
+      out.sponsor = {
+        ...(name ? { name } : {}),
+        ...(kind ? { kind } : {}),
+        ...(disclosure ? { disclosure } : {}),
+      };
+    }
   }
 
   const valueLine = cleanString(raw.value_line, 80);

@@ -104,3 +104,31 @@ describe('CONSUMER_CATEGORY_DEFS (tracker "taxonomy" — the ONE category source
     expect(consumerCategoryLabel('unknown_thing')).toBe('unknown_thing');
   });
 });
+
+describe('sponsor.name survives the clamp (the named third-party consent key)', () => {
+  it('keeps name alongside kind and disclosure', () => {
+    const out = normalizeMarketplaceContent({
+      sponsor: { name: '  Prudential Singapore ', kind: 'insurer', disclosure: 'Shared with a licensed rep.' },
+    });
+    expect(out.sponsor).toEqual({
+      name: 'Prudential Singapore',
+      kind: 'insurer',
+      disclosure: 'Shared with a licensed rep.',
+    });
+  });
+
+  it('a name-only sponsor is enough to survive — it is what gates the clause', () => {
+    expect(normalizeMarketplaceContent({ sponsor: { name: 'Acme' } }).sponsor).toEqual({ name: 'Acme' });
+  });
+
+  it('is idempotent — the old clamp erased the name on every re-save', () => {
+    const once = normalizeMarketplaceContent({ sponsor: { name: 'Acme', kind: 'insurer' } });
+    const twice = normalizeMarketplaceContent(once);
+    expect(twice.sponsor).toEqual({ name: 'Acme', kind: 'insurer' });
+  });
+
+  it('explicit null still clears the sponsor, and a blank name is not kept', () => {
+    expect(normalizeMarketplaceContent({ sponsor: null }).sponsor).toBe(null);
+    expect(normalizeMarketplaceContent({ sponsor: { name: '   ' } }).sponsor).toBeUndefined();
+  });
+});
