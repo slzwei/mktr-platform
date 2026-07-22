@@ -129,6 +129,13 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
     const drawConfig = draw
       ? {
           design_config: {
+            // A draw states an age floor in its T&Cs and the server enforces it
+            // from the entrant's DOB — but the age gate only runs on a DOB that
+            // was actually captured. Optional DOB (the platform default) makes
+            // the floor unenforceable for anyone who skips the field, so draws
+            // arm it as REQUIRED at birth. Existing draws are untouched;
+            // readiness warns about them instead.
+            requiredFields: { dob: true },
             luckyDraw: {
               enabled: true,
               // prizes[] is canonical (award order); the summary `prize` and

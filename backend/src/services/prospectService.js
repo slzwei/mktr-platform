@@ -628,9 +628,24 @@ export function makeProspectService(overrides = {}) {
     // Handle Date of Birth -> Age mapping + campaign age gate (defense-in-depth;
     // the LeadCapture form's getAgeValidationError already blocks client-side,
     // but a determined caller can POST directly to /api/prospects).
-    if (body.date_of_birth) {
-      const dob = new Date(body.date_of_birth);
-      if (!isNaN(dob.getTime())) {
+    //
+    // The gate used to hang entirely off `if (body.date_of_birth)`, so a blank
+    // DOB skipped it silently — a campaign could advertise "ages 21-65" and
+    // still accept a 15-year-old who left the field empty (and those leads are
+    // then permanently unmarketable: the binding 18+ cohort floor excludes
+    // anyone with no recorded age). A REQUIRED dob is now enforced as required.
+    // Deliberately scoped to the operator's own form config: campaigns that
+    // leave dob optional keep behaving exactly as before, so this can never
+    // start rejecting entrants on a live funnel that was set up to allow them.
+    const dobRequired = sourceDesign.requiredFields?.dob === true;
+    const parsedDob = body.date_of_birth ? new Date(body.date_of_birth) : null;
+    const dobUsable = !!parsedDob && !isNaN(parsedDob.getTime());
+    if (dobRequired && !dobUsable) {
+      throw new d.AppError('Date of birth is required for this campaign.', 422);
+    }
+    if (dobUsable) {
+      const dob = parsedDob;
+      {
         const today = new Date();
         let age = today.getFullYear() - dob.getFullYear();
         const m_ = today.getMonth() - dob.getMonth();
@@ -638,10 +653,10 @@ export function makeProspectService(overrides = {}) {
           age--;
         }
 
+        // sourceCampaign is already loaded above (same row, full attributes) —
+        // the old second findByPk here was a redundant query.
         if (incoming.campaignId) {
-          const campaign = await m.Campaign.findByPk(incoming.campaignId, {
-            attributes: ['min_age', 'max_age']
-          });
+          const campaign = sourceCampaign;
           if (campaign) {
             if (campaign.min_age != null && age < campaign.min_age) {
               throw new d.AppError(`Must be at least ${campaign.min_age} years old for this campaign.`, 422);

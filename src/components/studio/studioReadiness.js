@@ -100,6 +100,18 @@ export function computeDesignChecks({ campaign, doc, marketplacePreview }) {
         msg: `This draw accepts entrants from age ${ageFloor} — draws are 18+ and the platform terms template says so. Raise the minimum age on the Details tab.`,
       });
     }
+    // An age floor is only enforceable against a DOB the form actually
+    // captures: prospectService gates on the submitted date, so an optional or
+    // hidden dob lets anyone through by leaving it blank — while the T&Cs still
+    // promise the floor.
+    const dobField = (doc.form?.fields || []).find((f) => f?.id === 'dob');
+    if (dobField && (dobField.required !== true || dobField.visible === false)) {
+      out.push({
+        sev: 'warn',
+        sec: 'form',
+        msg: `Date of birth is ${dobField.visible === false ? 'hidden' : 'optional'}, so the ${ageFloor}+ age limit in the T&Cs is not enforced — anyone who leaves it blank gets in. Make it required.`,
+      });
+    }
     const statedAge = /aged\s+(\d{1,2})\s+and above/i.exec(terms);
     if (statedAge && Number(statedAge[1]) !== ageFloor) {
       out.push({
