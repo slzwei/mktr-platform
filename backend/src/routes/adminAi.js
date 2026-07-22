@@ -50,6 +50,15 @@ const briefSchema = Joi.object({
   mustInclude: Joi.string().trim().allow('').max(3000).default(''),
 });
 
+// New-campaign Details "Fill it for me" (workspace create flow, every type;
+// 'lucky_draw' is the create-flow pseudo-type → draw fields included).
+const detailsDraftSchema = Joi.object({
+  type: Joi.string()
+    .valid('lead_generation', 'quiz', 'guided_review', 'brand_awareness', 'product_promotion', 'event_marketing', 'lucky_draw')
+    .default('lead_generation'),
+  brief: Joi.string().trim().min(5).max(2000).required(),
+});
+
 // Campaign Studio copy assist (Studio PR 4, spec §05/CO-1). No provider field:
 // the provider comes from admin AI Settings. Joi failures are 400s (house
 // validate middleware); the semantic scope-not-allowed check is a service 422.
@@ -73,5 +82,6 @@ router.put('/settings', validate(settingsSchema, { stripUnknown: true }), aiCont
 router.post('/providers/:provider/test', aiGenerationLimiter, aiController.testProvider);
 router.post('/guided-review/draft', aiGenerationLimiter, validate(briefSchema, { stripUnknown: true }), aiController.generateGuidedReview);
 router.post('/copy-draft', aiGenerationLimiter, validate(copyDraftSchema, { stripUnknown: true }), aiController.generateCampaignCopy);
+router.post('/details-draft', aiGenerationLimiter, validate(detailsDraftSchema, { stripUnknown: true }), aiController.generateCampaignDetails);
 
 export default router;

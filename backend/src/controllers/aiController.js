@@ -2,6 +2,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { getAdminAiSettings, updateAdminAiSettings } from '../services/aiSettingsService.js';
 import { generateGuidedReviewDraft, testAiProvider } from '../services/guidedReviewAiService.js';
 import { generateCampaignCopyDraft } from '../services/campaignCopyAiService.js';
+import { generateCampaignDetailsDraft } from '../services/campaignDetailsAiService.js';
 
 export const getSettings = asyncHandler(async (_req, res) => {
   res.json({ success: true, data: { settings: await getAdminAiSettings() } });
@@ -19,6 +20,12 @@ export const generateGuidedReview = asyncHandler(async (req, res) => {
 
 export const testProvider = asyncHandler(async (req, res) => {
   const result = await testAiProvider(req.params.provider, req.user.id);
+  res.json({ success: true, data: result });
+});
+
+// New-campaign Details "Fill it for me": data = {fields}.
+export const generateCampaignDetails = asyncHandler(async (req, res) => {
+  const result = await generateCampaignDetailsDraft(req.body, req.user.id);
   res.json({ success: true, data: result });
 });
 
