@@ -48,6 +48,14 @@ describe('AdminV2Campaigns — new-campaign type chooser', () => {
     expect(navigateMock).toHaveBeenCalledWith(`${newCampaignHref()}?type=guided_review`);
   });
 
+  it('offers Lucky Draw and navigates with ?type=lucky_draw', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole('button', { name: '+ New campaign' }));
+    await user.click(screen.getByText('Lucky Draw Campaign'));
+    expect(navigateMock).toHaveBeenCalledWith(`${newCampaignHref()}?type=lucky_draw`);
+  });
+
   it('the retired PHV (brand_awareness) option is gone', async () => {
     const user = userEvent.setup();
     renderPage();

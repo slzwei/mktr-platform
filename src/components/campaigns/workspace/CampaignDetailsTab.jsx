@@ -4,7 +4,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Gift } from 'lucide-react';
+import { buildDrawTermsHtml, formatLongDate } from './drawTermsTemplate';
 
 const toDateInput = (v) => {
   if (!v) return '';
@@ -17,7 +18,7 @@ const toDateInput = (v) => {
  * (enforceLeadQuota) and per-campaign tracking pixels. Controlled form; the
  * workspace owns create-vs-update. PHV tablet media stays in the classic editor.
  */
-export default function CampaignDetailsTab({ initial, type, isEdit, saving, onSubmit }) {
+export default function CampaignDetailsTab({ initial, type, draw = false, isEdit, saving, onSubmit }) {
   const campaignType = initial?.type || type || 'lead_generation';
   const [form, setForm] = useState({
     name: initial?.name || '',
@@ -31,19 +32,51 @@ export default function CampaignDetailsTab({ initial, type, isEdit, saving, onSu
     leadPriceDollars: initial?.leadPriceCents != null ? String(initial.leadPriceCents / 100) : '',
     metaPixelId: initial?.metaPixelId || '',
     tiktokPixelId: initial?.tiktokPixelId || '',
+    // Lucky-draw create flow only (draw prop) — never shown on edit.
+    drawPrize: '',
+    drawClosesAt: '',
+    drawBoostClosesAt: '',
+    drawMultiplier: 10,
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
+    if (draw && (!form.drawPrize.trim() || !form.drawClosesAt)) return; // inputs are required; belt for non-native submits
+    const drawConfig = draw
+      ? {
+          design_config: {
+            luckyDraw: {
+              enabled: true,
+              prize: form.drawPrize.trim(),
+              closesAt: form.drawClosesAt,
+              boostClosesAt: form.drawBoostClosesAt || form.drawClosesAt,
+              multiplier: Number(form.drawMultiplier) || 10,
+            },
+            // Starter T&C generated from these details; the server pins it as
+            // draw_terms_versions v1. Edit in the designer before launch —
+            // edits mint a new version, entrants keep what they accepted.
+            termsContent: buildDrawTermsHtml({
+              campaignName: form.name.trim(),
+              prize: form.drawPrize.trim(),
+              closesAt: form.drawClosesAt,
+              boostClosesAt: form.drawBoostClosesAt || form.drawClosesAt,
+              multiplier: Number(form.drawMultiplier) || 10,
+            }),
+          },
+        }
+      : {};
     onSubmit({
+      ...drawConfig,
       name: form.name.trim(),
       type: campaignType,
       min_age: Number(form.min_age) || 18,
       max_age: Number(form.max_age) || 65,
       start_date: form.start_date ? new Date(form.start_date).toISOString() : undefined,
-      end_date: form.end_date ? new Date(form.end_date).toISOString() : undefined,
+      end_date: form.end_date
+        ? new Date(form.end_date).toISOString()
+        : (draw && form.drawClosesAt ? new Date(form.drawClosesAt).toISOString() : undefined),
       commission_amount_driver: form.commission_amount_driver === '' ? null : Number(form.commission_amount_driver),
       commission_amount_fleet: form.commission_amount_fleet === '' ? null : Number(form.commission_amount_fleet),
       enforceLeadQuota: form.enforceLeadQuota,
@@ -78,6 +111,46 @@ export default function CampaignDetailsTab({ initial, type, isEdit, saving, onSu
           </div>
         </CardContent>
       </Card>
+
+      {draw && (
+        <Card data-testid="draw-setup-card">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2"><Gift className="w-4 h-4" /> Lucky draw</CardTitle>
+            <CardDescription>
+              Entries are server-enforced: SMS-verified number, accepted T&Cs, one entry per phone,
+              hard close at 23:59 SGT. A starter T&C is generated from these details and pinned as
+              version 1 — review it in the designer before launch.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="draw_prize">Prize</Label>
+              <Input id="draw_prize" value={form.drawPrize} onChange={(e) => set('drawPrize', e.target.value)} placeholder="e.g. One (1) iPhone 17 Pro 256GB" required maxLength={80} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="draw_closes">Entries close</Label>
+                <Input id="draw_closes" type="date" value={form.drawClosesAt} onChange={(e) => set('drawClosesAt', e.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="draw_boost">Session boost deadline</Label>
+                <Input id="draw_boost" type="date" value={form.drawBoostClosesAt} onChange={(e) => set('drawBoostClosesAt', e.target.value)} />
+                <p className="text-xs text-muted-foreground">Empty = same as close date.</p>
+              </div>
+            </div>
+            <div className="space-y-2 max-w-[160px]">
+              <Label htmlFor="draw_multiplier">Session multiplier</Label>
+              <Input id="draw_multiplier" type="number" min={2} max={100} value={form.drawMultiplier} onChange={(e) => set('drawMultiplier', e.target.value)} />
+              <p className="text-xs text-muted-foreground">A completed, consultant-scanned review session multiplies the entry.</p>
+            </div>
+            {form.drawClosesAt ? (
+              <p className="text-xs text-muted-foreground">
+                Closes {formatLongDate(form.drawClosesAt)}, 23:59 SGT · boost until {formatLongDate(form.drawBoostClosesAt || form.drawClosesAt)} · ×{Number(form.drawMultiplier) || 10} after a scanned session.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader><CardTitle className="text-base">Lead delivery</CardTitle></CardHeader>
