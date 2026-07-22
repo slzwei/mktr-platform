@@ -1,6 +1,6 @@
 # WhatsApp MARKETING template pack — cohort pushes (`watemplates`)
 
-**Status:** drafted 2026-07-22 · submission pending (creds are Render-only — see §5) · Meta approval external
+**Status:** drafted 2026-07-22 · image-header variants added 2026-07-23 (§2.4) · submission pending (creds are Render-only — see §5) · Meta approval external
 **Submission tool:** `backend/scripts/submit-wa-marketing-templates.mjs` (the canonical JSON lives there; `--dry` prints it)
 **Consumers:** `wapush` (WhatsApp option on the cohort Push button, rides `whatsappService.js` + the email-broadcast runner) and `pushmeasure` (utm contract on the CTA button)
 
@@ -14,10 +14,10 @@ Locked-in conventions (must match `whatsappService.js`):
 |---|---|---|
 | Language | `en` (plain "English", **not** "English (US)") | `WHATSAPP_TEMPLATE_LANG` defaults to `en`; an `en_US`-only approval makes every send fail with error 132001 template-not-found |
 | Graph version | `v21.0` | `META_GRAPH_VERSION` default |
-| Header style | TEXT (no image) | Marketing sends don't have a per-customer QR; text headers approve faster and need no media upload at send time |
-| Names | `marketing_new_campaign` · `marketing_new_draw` · `marketing_offer` | Same terse snake style as `reward_pass`; the `marketing_` prefix makes the category obvious in Manager and in future env defaults |
+| Header style | TEXT set + IMAGE `_img` twins | Text approves with zero assets; the `_img` twins carry a per-send hero image (§2.4). Composer picks per push |
+| Names | `marketing_new_campaign` · `marketing_new_draw` · `marketing_offer` (+ `_img` twins) | Same terse snake style as `reward_pass`; the `marketing_` prefix makes the category obvious in Manager and in future env defaults |
 
-## 2. The three templates
+## 2. The templates (3 copy shapes × text/image headers = 6 names)
 
 The exact submission payloads are in the script (single source of truth). Human-readable view:
 
@@ -77,6 +77,16 @@ The exact submission payloads are in the script (single source of truth). Human-
 | Body | `Hi {{1}}, here's something we think you'll like: {{2}}. {{3}}.` ¶ `Tap below to see the details — it takes less than a minute.` | {{1}} first name · {{2}} offer one-liner · {{3}} availability/urgency line — **no trailing period** (template adds it) |
 | Footer / buttons | as 2.1, CTA label `See details` | |
 
+### 2.4 Image-header twins — `marketing_new_campaign_img` / `marketing_new_draw_img` / `marketing_offer_img`
+
+Same body, footer, and buttons as their text twins; the header becomes **format IMAGE**. Three things make this the higher-impact variant with no ongoing cost:
+
+- **The image is a send-time parameter.** Meta reviews only a *sample*; every push can then attach that campaign's own hero (Tokyo art for the Tokyo draw, partner hero for a partner reward) with **no re-approval**. Prod precedent: `reward_pass`/`reward_voucher` already send a per-customer QR card PNG as an IMAGE header through `whatsappService.uploadQrPng`.
+- **Sample asset:** `backend/scripts/assets/wa-marketing-sample.png` — 1200×628 (Meta-recommended ~1.91:1), Editorial voucher-card palette/fonts (terracotta + Fraunces), generated with the same satori→resvg pipeline as the QR cards. Reviewers see this; it is also what Manager shows as the template preview.
+- **Trade-off vs text twins:** the text headline ("New reward: X") is lost — the hero must carry that job, and the body still names the offer. WhatsApp renders the image above the body; chat-list preview crops to ~1.91:1, so heroes should keep key content centered.
+
+Send-time header parameter (the `wapush` side): `{ type: 'image', image: { link: heroUrl } }` with a **public HTTPS JPEG/PNG ≤5 MB** (campaign heroes under `/uploads/` qualify), or upload-then-`{ id }` exactly like the QR path. WhatsApp does **not** take webp — if a stored hero is webp, `wapush` must transcode or fall back to the text twin.
+
 ## 3. Variable → data contract (for `wapush`)
 
 | Variable | Source | Rules |
@@ -87,6 +97,7 @@ The exact submission payloads are in the script (single source of truth). Human-
 | Prize phrase | draw `prizes[0]` name phrased as "a …" | human-written in the composer, not auto-derived |
 | Close date | `toLocaleDateString('en-SG', { day:'numeric', month:'short', year:'numeric' })` | same formatter as the voucher expiry — "30 Oct 2026" |
 | CTA suffix | `LeadCapture?campaign_id=<id>&utm_source=wa_push&utm_campaign=broadcast-<id8>` | URL button base is `https://redeem.sg/` + suffix; carries the pushmeasure utm contract; matches `customerLeadCaptureUrl` shape |
+| Header image (`_img` twins only) | campaign hero → `{ image: { link: <public https url> } }`, or media-upload `{ id }` like `uploadQrPng` | JPEG/PNG ≤5 MB, never webp (transcode or fall back to the text twin); aim ~1.91:1 with key content centered |
 
 ## 4. Compliance rails baked into the copy
 
@@ -103,11 +114,16 @@ Creds situation (verified 2026-07-22): `WHATSAPP_TOKEN` exists **only** in Rende
 ### Path A — script (recommended)
 
 ```bash
-# token: Render dashboard → mktr-backend-jo6r → Environment → WHATSAPP_TOKEN (reveal+copy)
+# Easiest — Render dashboard → mktr-backend-jo6r → Shell tab (env already present):
+node scripts/submit-wa-marketing-templates.mjs
+
+# Or locally, with the token copied from that service's Environment tab:
 WHATSAPP_TOKEN=… node backend/scripts/submit-wa-marketing-templates.mjs
 ```
 
-Idempotent (skips names already on the WABA), auto-resolves the WABA id from the token (`WHATSAPP_WABA_ID` overrides), prints a status table, and sanity-checks it landed on the WABA that holds `reward_pass`. `--dry` prints the payloads without network.
+Idempotent (skips names already on the WABA), auto-resolves the WABA id from the token (`WHATSAPP_WABA_ID` overrides), prints a status table, and sanity-checks it landed on the WABA that holds `reward_pass`. Submits all 6 by default: for the `_img` twins it first uploads the committed sample via the Resumable Upload API (app id auto-read from `debug_token`; `WHATSAPP_APP_ID` overrides; `--sample <path>` swaps the image). `--text-only` / `--images-only` narrow the set; `--dry` prints the payloads without network. If the sample upload fails, the text set still submits and the script says exactly what to fix.
+
+> Note for the Shell-tab path: the sample PNG rides inside the Docker image (`COPY scripts/`), so the image variants work there too — but only after the deploy carrying it is live.
 
 ### Path B — WhatsApp Manager (manual)
 
@@ -118,10 +134,11 @@ Idempotent (skips names already on the WABA), auto-resolves the WABA id from the
 5. Paste body and footer; fill a sample for every body variable (samples are mandatory).
 6. Buttons → **Visit website**, label from §2, URL type **Dynamic**, `https://redeem.sg/{{1}}`, sample = a full LeadCapture URL. Then **Custom** quick reply `Stop promotions`.
 7. Submit. Repeat for `marketing_new_draw` and `marketing_offer` (§2.3 has a static header — skip the variable).
+8. For the `_img` twins: same steps but Header = **Image**, and drag-drop `backend/scripts/assets/wa-marketing-sample.png` as the sample. Everything else (body, samples, footer, buttons) is identical to the text twin.
 
 ## 6. Approval: expected wait & tracking
 
-- **Wait:** review is mostly automated — typically **minutes to a few hours**; Meta's stated SLA is **up to 24 h**. Budget one day; it runs in parallel with everything else (that's why this item ships before `wapush`).
+- **Wait:** review is mostly automated — typically **minutes to a few hours**; Meta's stated SLA is **up to 24 h**. Budget one day; it runs in parallel with everything else (that's why this item ships before `wapush`). The `_img` twins' sample image is policy-reviewed too — same window, but an off-policy sample would reject only those three.
 - **Outcomes:** `PENDING → APPROVED` or `REJECTED` (reason shown in Manager and on the API as `rejected_reason`). Rejected → edit the same template and resubmit (rejected names are editable immediately; approved ones allow 1 edit/24 h, 10/month, each edit re-enters review). Deleting a name blocks reusing it for 30 days — prefer edit over delete.
 - **Tracking:**
   - `WHATSAPP_TOKEN=… node backend/scripts/submit-wa-marketing-templates.mjs --status` — poll table (status, category, quality, rejection reason).
