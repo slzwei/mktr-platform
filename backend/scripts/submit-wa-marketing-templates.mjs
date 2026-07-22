@@ -153,18 +153,44 @@ export const TEMPLATES = [
   },
 ];
 
-// Image-header twins: same body/footer/buttons, the text header becomes an
-// IMAGE header whose content is a send-time parameter ({link} or {id}). The
-// example handle is injected at submit time after the sample upload.
+// Image-header twins: footer/buttons unchanged, the text header becomes an
+// IMAGE header whose content is a send-time parameter ({link} or {id}), and
+// the body opens with a bold headline line — the text header carried the
+// headline in the text set, so without this the image twins had none (Shawn's
+// Manager adaptation, 2026-07-23). {{1}} stays the first name across the whole
+// pack; the headline reuses the title var. The example handle is injected at
+// submit time after the sample upload.
 const HANDLE_PLACEHOLDER = '<sample-handle-uploaded-at-submit>';
-export const IMAGE_TEMPLATES = TEMPLATES.map((t) => ({
-  ...t,
-  name: `${t.name}_img`,
-  components: [
-    { type: 'HEADER', format: 'IMAGE', example: { header_handle: [HANDLE_PLACEHOLDER] } },
-    ...t.components.filter((c) => c.type !== 'HEADER'),
-  ],
-}));
+const IMG_BODIES = {
+  marketing_new_campaign_img: {
+    text:
+      "*New reward: {{2}}*\n\nHi {{1}}, a new reward just went live on Redeem: *{{2}}*, from *{{3}}*.\n\nQuantities are limited and available on a first-come, first-served basis.\n\nTap below to view the reward and claim yours in about a minute.",
+    example: { body_text: [['Shawn', 'FairPrice $20 Voucher', 'FairPrice']] },
+  },
+  marketing_new_draw_img: {
+    text:
+      '*Now open: {{2}}*\n\nHi {{1}}, the {{2}} is open for entries — stand a chance to win *{{3}}*. Entries close {{4}}, and entering takes about a minute.\n\nGood luck 🍀',
+    example: { body_text: [['Shawn', 'Tokyo Getaway Lucky Draw', 'a 4D3N trip for two to Tokyo', '30 Oct 2026']] },
+  },
+  marketing_offer_img: {
+    text:
+      "*A little something for you*\n\nHi {{1}}, here's something we think you'll like: {{2}}. {{3}}.\n\nTap below to see the details — it takes less than a minute.",
+    example: { body_text: [['Shawn', 'a $10 GrabFood voucher when you sign up this week', 'Available while stocks last']] },
+  },
+};
+export const IMAGE_TEMPLATES = TEMPLATES.map((t) => {
+  const name = `${t.name}_img`;
+  return {
+    ...t,
+    name,
+    components: [
+      { type: 'HEADER', format: 'IMAGE', example: { header_handle: [HANDLE_PLACEHOLDER] } },
+      ...t.components
+        .filter((c) => c.type !== 'HEADER')
+        .map((c) => (c.type === 'BODY' ? { ...c, ...IMG_BODIES[name] } : c)),
+    ],
+  };
+});
 
 async function graphGet(path_, token) {
   const res = await fetch(`${BASE}${path_}`, { headers: { Authorization: `Bearer ${token}` } });
