@@ -33,7 +33,7 @@ const SANS = "'Albert Sans', system-ui, sans-serif";
 const SERIF = "'Fraunces', Georgia, serif";
 const MONO = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace";
 
-const TRUST_ROW = 'SMS-VERIFIED · ONE ENTRY PER NUMBER · FREE TO ENTER · 18+';
+const TRUST_ROW = 'SMS-VERIFIED · ONE ENTRY PER NUMBER · FREE TO ENTER';
 const SCAM_LINE = 'We never ask for payment to release a prize.';
 const WINNERS_URL = 'https://redeem.sg/winners';
 
@@ -403,7 +403,7 @@ function Gazette({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile,
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {factRow('PRIZE', <strong>{s.prize || content.headline}</strong>)}
       {factRow('CLOSES', <strong>{s.closesFull} · 23:59 SGT</strong>)}
-      {factRow('ENTRY', 'One per verified mobile · SMS-verified · Free · 18+')}
+      {factRow('ENTRY', 'One per verified mobile · SMS-verified · Free')}
       {factRow('BOOST', `×${s.multiplier} when a consultant meets you and scans your pass at a free 20-min review`, true)}
     </div>
   );
@@ -494,7 +494,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(100deg, rgba(20,22,31,.9) 34%, rgba(20,22,31,.35))' }} />
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', padding: '26px 40px' }}>
           <div style={{ fontWeight: 800, fontSize: 20, color: '#fff' }}>{content.wordmark}</div>
-          {s.draw && <div style={mono(11, { letterSpacing: 1.6, color: 'rgba(255,255,255,.8)' })}>FREE ENTRY · 18+</div>}
+          {s.draw && <div style={mono(11, { letterSpacing: 1.6, color: 'rgba(255,255,255,.8)' })}>FREE ENTRY</div>}
         </div>
         <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', gap: 60, padding: '0 56px 40px' }}>
           <div style={{ flex: 1, color: '#fff', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -524,7 +524,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         <div style={{ position: 'absolute', inset: 0, background: scrim }} />
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px' }}>
           <div style={{ fontWeight: 800, fontSize: 17, color: '#fff' }}>{content.wordmark}</div>
-          {s.draw && <div style={mono(10, { letterSpacing: 1.5, color: 'rgba(255,255,255,.8)' })}>FREE ENTRY · 18+</div>}
+          {s.draw && <div style={mono(10, { letterSpacing: 1.5, color: 'rgba(255,255,255,.8)' })}>FREE ENTRY</div>}
         </div>
         <div style={{ position: 'relative', flex: 1 }} />
         <div style={{ position: 'relative', padding: '0 22px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -621,7 +621,7 @@ function StubHeader({ content, mutedColor }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
       <div style={{ fontWeight: 800, fontSize: 17, fontFamily: SANS }}>{content.wordmark}</div>
-      <div style={mono(10, { letterSpacing: 1.5, color: mutedColor })}>FREE ENTRY · 18+</div>
+      <div style={mono(10, { letterSpacing: 1.5, color: mutedColor })}>FREE ENTRY</div>
     </div>
   );
 }
@@ -665,7 +665,7 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
       <div style={{ minHeight: '100vh', background: ST.bg, padding: '34px 0', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, fontFamily: SANS, color: ST.ink }}>
         <div style={{ width: 760, maxWidth: 'calc(100vw - 48px)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontWeight: 800, fontSize: 20 }}>{content.wordmark}</div>
-          <div style={mono(11, { letterSpacing: 1.5, color: ST.mut })}>FREE ENTRY · 18+</div>
+          <div style={mono(11, { letterSpacing: 1.5, color: ST.mut })}>FREE ENTRY</div>
         </div>
         <div style={{ width: 760, maxWidth: 'calc(100vw - 48px)', background: ST.card, borderRadius: 14, boxShadow: '0 10px 30px rgba(27,26,23,.09)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {ticketHead}
@@ -788,7 +788,7 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
           </div>
         ),
       })}
-      {spineStep('s2', circle('2', 'outline'), 'Verify with an SMS code', 'One entry per verified number — no bots, no multiple entries. Free, 18+.')}
+      {spineStep('s2', circle('2', 'outline'), 'Verify with an SMS code', 'One entry per verified number — no bots, no multiple entries. Free.')}
       {spineStep('s3', circle('3', 'outline'), s.draw ? "You're in the draw" : "You're in",
         s.draw
           ? `Your entry pass arrives by WhatsApp and email. ${s.winners > 1 ? `${s.winners} winners` : 'One winner'} drawn after ${s.closesFull} in a witnessed process.`
