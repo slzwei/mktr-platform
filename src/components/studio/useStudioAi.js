@@ -650,6 +650,19 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
         regensRef.current[key] = n;
         const fresh = data.proposals?.[0];
         if (fresh) setLooks((prev) => prev.map((look, i) => (i === index ? fresh : look)));
+        // A regeneration is a full-mode call: it returns the common sections
+        // too, and dropping them threw away a paid provider round-trip — on
+        // Adopt, buildCommonRows rebuilt from the FIRST response, so a field
+        // set or T&C draft generated here never became a row. Merged per key so
+        // a fresh null (model chose to leave the form alone) cannot wipe a good
+        // earlier proposal.
+        setCommonSections((prev) => ({
+          fields: data.fields || prev?.fields || null,
+          terms: data.terms || prev?.terms || null,
+          gates: data.gates || prev?.gates || null,
+          verification: data.verification || prev?.verification || null,
+          drawTerms: data.drawTerms || prev?.drawTerms || null,
+        }));
       } catch (err) {
         if (generation !== generationRef.current) return;
         fail(err);

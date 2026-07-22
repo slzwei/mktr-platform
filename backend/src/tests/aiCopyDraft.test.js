@@ -660,7 +660,7 @@ describe('create-everything amendment — fields, terms, draw awareness', () => 
   const ctxPlain = buildCampaignContext(BARE_CAMPAIGN);
   const LONG = '<p>' + 'terms body '.repeat(30) + '</p>';
 
-  it('clampAiFields: trio forced, required⇒visible, dup first-wins, unknown dropped, canonical append order', () => {
+  it('clampAiFields: trio forced, required⇒visible, dup first-wins, unknown dropped, OMITTED fields hidden', () => {
     const out = clampAiFields([
       { id: 'phone', visible: false, required: false }, // locked → forced true/true
       { id: 'salary', visible: false, required: true }, // required ⇒ visible
@@ -671,7 +671,14 @@ describe('create-everything amendment — fields, terms, draw awareness', () => 
     expect(out.map((f) => f.id)).toEqual(['phone', 'salary', 'education', 'name', 'email', 'dob', 'postal']);
     expect(out.find((f) => f.id === 'phone')).toEqual({ id: 'phone', visible: true, required: true });
     expect(out.find((f) => f.id === 'salary')).toEqual({ id: 'salary', visible: true, required: true });
-    expect(out.find((f) => f.id === 'dob')).toEqual({ id: 'dob', visible: true, required: false }); // canonical default
+    // Omission = "do not capture this" (the prompt's own contract). The old
+    // canonical-default append made dob/postal visible, so a "keep signup
+    // short" brief still asked for both.
+    expect(out.find((f) => f.id === 'dob')).toEqual({ id: 'dob', visible: false, required: false });
+    expect(out.find((f) => f.id === 'postal')).toEqual({ id: 'postal', visible: false, required: false });
+    // …but an omitted LOCKED field is still forced on — never the model's to drop.
+    expect(out.find((f) => f.id === 'name')).toEqual({ id: 'name', visible: true, required: true });
+    expect(out.find((f) => f.id === 'email')).toEqual({ id: 'email', visible: true, required: true });
     expect(out).toHaveLength(7);
   });
 

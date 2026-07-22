@@ -129,3 +129,31 @@ describe('clampDesignConfigV2 over Studio-authored docs', () => {
     expect(out.ai).toEqual(stored.ai);
   });
 });
+
+describe('qrLanding survives the save clamp (the v1/v2 enum trap)', () => {
+  const save = (qrLanding) => clampDesignConfigV2({
+    version: 2,
+    distribution: { marketplace: { title: 'X', qrLanding } },
+  }, undefined, 'admin');
+  const read = (doc) => doc.distribution?.marketplace?.qrLanding;
+
+  it("'offer' stays 'offer' — it used to save as the v1 'detail' and revert the picker", () => {
+    expect(read(save('offer'))).toBe('offer');
+  });
+
+  it("'form' stays 'form' (it used to save as 'direct')", () => {
+    expect(read(save('form'))).toBe('form');
+  });
+
+  it('is idempotent across repeated saves — the old bug re-corrupted on every one', () => {
+    let doc = save('offer');
+    for (let i = 0; i < 3; i += 1) doc = clampDesignConfigV2(doc, undefined, 'admin');
+    expect(read(doc)).toBe('offer');
+  });
+
+  it('never emits a v1 enum value into a v2 document', () => {
+    for (const v of ['offer', 'form', 'detail', 'direct']) {
+      expect(['form', 'offer', undefined]).toContain(read(save(v)));
+    }
+  });
+});

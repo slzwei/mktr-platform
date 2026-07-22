@@ -497,8 +497,16 @@ export function clampAiFields(raw) {
     });
   }
   if (out.length === 0) return null;
+  // Omission means "do not capture this" — the prompt tells the model to
+  // include a field only when the brief supports it ("fewer fields converts
+  // better"). Appending the canonical DEFAULTS inverted that: dob and postal
+  // default to visible, so briefing "keep signup as short as possible" still
+  // produced a form asking for both. Unnamed optional fields come back HIDDEN;
+  // the locked trio is still forced on, because it is not the model's to drop.
   for (const f of defaultFields()) {
-    if (!seen.has(f.id)) out.push({ id: f.id, visible: f.visible, required: f.required });
+    if (seen.has(f.id)) continue;
+    const locked = LOCKED_FIELD_IDS.includes(f.id);
+    out.push({ id: f.id, visible: locked, required: locked });
   }
   return out;
 }
