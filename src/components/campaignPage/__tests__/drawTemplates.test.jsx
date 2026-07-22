@@ -227,6 +227,40 @@ describe('DrawSuccessPage', () => {
   });
 });
 
+describe('close-date de-duplication + type floors (2026-07-23)', () => {
+  // Every inline font size actually rendered, parsed from style attributes.
+  // clamp()/unset values parse to NaN and are filtered.
+  const inlineFontSizes = (root) => Array.from(root.querySelectorAll('*'))
+    .map((el) => parseFloat(el.style?.fontSize))
+    .filter((n) => Number.isFinite(n));
+
+  it.each(DRAW_TEMPLATE_IDS)('%s success prints the close date exactly once — the free-session row carries no date', (id) => {
+    render(<DrawSuccessPage campaign={drawCampaign(id)} submittedPhone="+6591234312" />);
+    expect(document.body.textContent).toContain('FREE SESSION · NO PAYMENT EVER');
+    expect(document.body.textContent).not.toContain('NO PAYMENT EVER · BEFORE');
+    // One authoritative uppercase date row (ENTRIES CLOSE / ENTRY HELD); the
+    // only other mention is step 2's contextual mixed-case booking deadline.
+    expect(document.body.textContent.match(/30 AUG 2026/g)).toHaveLength(1);
+    expect(screen.getByText(/20-minute financial review/)).toBeInTheDocument();
+  });
+
+  it.each(DRAW_TEMPLATE_IDS)('%s success keeps every font at or above the 10.5px floor', (id) => {
+    const { container } = render(<DrawSuccessPage campaign={drawCampaign(id)} submittedPhone="+6591234312" />);
+    const sizes = inlineFontSizes(container);
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(10.5);
+  });
+
+  it.each(DRAW_TEMPLATE_IDS)('%s closed page keeps every font at or above the 10.5px floor', (id) => {
+    const { container } = render(
+      <CampaignPageRenderer campaign={drawCampaign(id)} jump="draw-closed" previewMode onSubmit={vi.fn()} />,
+    );
+    expect(document.querySelector(`[data-draw-closed="${id}"]`)).toBeTruthy();
+    const sizes = inlineFontSizes(container);
+    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(10.5);
+  });
+});
+
 describe('helpers', () => {
   it('formatDrawDateFull renders day month year and rejects junk', () => {
     expect(formatDrawDateFull('2026-10-30')).toBe('30 Oct 2026');
