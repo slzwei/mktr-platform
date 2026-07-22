@@ -303,8 +303,19 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
               </div>
               <div className="space-y-2">
                 <Label htmlFor="draw_boost">Session boost deadline</Label>
-                <Input id="draw_boost" type="date" value={form.drawBoostClosesAt} onChange={(e) => set('drawBoostClosesAt', e.target.value)} />
-                <p className="text-xs text-muted-foreground">Empty = same as close date.</p>
+                {/* min = the close date: the engine requires boostClosesAt >=
+                    closesAt (entrants may finish a session AFTER entries
+                    close). An earlier date used to be accepted here, printed
+                    into the pinned T&Cs, and then 422'd at draw creation. */}
+                <Input id="draw_boost" type="date" min={form.drawClosesAt || undefined} value={form.drawBoostClosesAt} onChange={(e) => set('drawBoostClosesAt', e.target.value)} />
+                <p className="text-xs text-muted-foreground">
+                  Empty = same as close date. Cannot be earlier than the close — sessions may finish after entries close.
+                </p>
+                {form.drawClosesAt && form.drawBoostClosesAt && form.drawBoostClosesAt < form.drawClosesAt ? (
+                  <p className="text-xs text-red-600">
+                    The boost deadline must be on or after {formatLongDate(form.drawClosesAt)}.
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="space-y-2 max-w-[160px]">

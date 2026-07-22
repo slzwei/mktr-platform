@@ -53,7 +53,7 @@ describe('sanitizeDetailsDraft', () => {
     multiplier: 10,
   };
 
-  it('clamps a full draw draft: whitespace, qty floor, 18+ floor, boost <= close', () => {
+  it('clamps a full draw draft: whitespace, qty floor, 18+ floor, boost >= close', () => {
     const out = sanitizeDetailsDraft(drawRaw, { draw: true, today: TODAY });
     expect(out.name).toBe('iPhone 17 Lucky Draw — August 2026');
     expect(out.minAge).toBe(18); // draw floor beats the model's 16
@@ -63,11 +63,20 @@ describe('sanitizeDetailsDraft', () => {
       { qty: 1, name: 'Zero qty coerces to 1' },
     ]);
     expect(out.closesAt).toBe('2026-08-31');
-    expect(out.boostClosesAt).toBe('2026-08-15');
+    // Direction CORRECTED: the engine requires boostClosesAt >= closesAt
+    // ('must not be before closesAt'), because an entrant may complete their
+    // session AFTER entries close. The fixture's 2026-08-15 is before the
+    // close, so it snaps up — it used to be kept, printed into the pinned
+    // T&Cs, and then 422'd at draw creation.
+    expect(out.boostClosesAt).toBe('2026-08-31');
   });
 
-  it('boost after close, or in the past, snaps to the close date', () => {
-    expect(sanitizeDetailsDraft({ ...drawRaw, boostClosesAt: '2026-09-15' }, { draw: true, today: TODAY }).boostClosesAt).toBe('2026-08-31');
+  it('a boost AFTER the close is legitimate and survives', () => {
+    expect(sanitizeDetailsDraft({ ...drawRaw, boostClosesAt: '2026-09-15' }, { draw: true, today: TODAY }).boostClosesAt).toBe('2026-09-15');
+  });
+
+  it('a boost before the close — or in the past — snaps up to the close date', () => {
+    expect(sanitizeDetailsDraft({ ...drawRaw, boostClosesAt: '2026-08-15' }, { draw: true, today: TODAY }).boostClosesAt).toBe('2026-08-31');
     expect(sanitizeDetailsDraft({ ...drawRaw, boostClosesAt: '2026-01-01' }, { draw: true, today: TODAY }).boostClosesAt).toBe('2026-08-31');
   });
 
@@ -96,8 +105,10 @@ describe('sanitizeDetailsDraft', () => {
   it('Codex folds: name truncates at the campaignCreate limit (100), same-day boost survives, age 0 falls back', () => {
     const long = sanitizeDetailsDraft({ name: 'x'.repeat(120) }, { draw: false, today: TODAY });
     expect(long.name).toHaveLength(100);
+    // A boost dated TODAY is necessarily before the close (closesAt must be
+    // in the future), so it snaps up to the close — the engine would refuse it.
     const sameDayBoost = sanitizeDetailsDraft({ ...drawRaw, boostClosesAt: TODAY }, { draw: true, today: TODAY });
-    expect(sameDayBoost.boostClosesAt).toBe(TODAY); // SGT day is open until 23:59
+    expect(sameDayBoost.boostClosesAt).toBe('2026-08-31');
     const zeroAges = sanitizeDetailsDraft({ name: 'Zero Ages', minAge: 0, maxAge: 0 }, { draw: false, today: TODAY });
     expect(zeroAges.minAge).toBe(18);
     expect(zeroAges.maxAge).toBe(65);

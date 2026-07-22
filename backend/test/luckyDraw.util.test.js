@@ -146,7 +146,10 @@ describe('normalizeLuckyDraw — structured prizes', () => {
     expect(derivePrizeSummary([{ qty: 1, name: 'A' }])).toBe('A');
     expect(derivePrizeSummary(ROWS)).toBe('iPhone 17 Pro + 3× $100 FairPrice Voucher');
     expect(totalPrizeQuantity(normalizeLuckyDraw({ enabled: true, prizes: ROWS }))).toBe(4);
-    expect(totalPrizeQuantity(normalizeLuckyDraw({ enabled: true, prize: 'Manual', winners: 9 }))).toBe(0);
+    // WAS 0 — that was the bug: a legacy hand-set `winners` promised 9 winners
+    // on the consumer page and returned 0 to both multi-prize guards, so the
+    // draw activated while the engine stays terminal after ONE claimed winner.
+    expect(totalPrizeQuantity(normalizeLuckyDraw({ enabled: true, prize: 'Manual', winners: 9 }))).toBe(9);
     expect(totalPrizeQuantity(undefined)).toBe(0);
   });
 });
@@ -218,5 +221,28 @@ describe('sgtDayEndExclusiveMs', () => {
     for (const v of [null, undefined, 42, '2026-13-99', '12/07/2026', '2026-07-12T00:00:00Z', '2026-02-31']) {
       expect(sgtDayEndExclusiveMs(v)).toBeNull();
     }
+  });
+});
+
+describe('totalPrizeQuantity — legacy winners count as promised winners', () => {
+  it('a hand-set winners on a legacy (no prizes[]) draw is counted', () => {
+    expect(totalPrizeQuantity({ enabled: true, prize: '3 x iPhone 17', winners: 3 })).toBe(3);
+  });
+
+  it('structured prizes still win when both are present', () => {
+    expect(totalPrizeQuantity({ prizes: [{ qty: 2, name: 'A' }], winners: 99 })).toBe(2);
+  });
+
+  it('a legacy single-winner draw is still 1, and a shapeless one still 0', () => {
+    expect(totalPrizeQuantity({ prize: 'One trip', winners: 1 })).toBe(1);
+    expect(totalPrizeQuantity({ prize: 'One trip' })).toBe(0);
+    expect(totalPrizeQuantity(null)).toBe(0);
+  });
+
+  it('normalizeLuckyDraw + totalPrizeQuantity now REFUSE the legacy multi-winner shape the guards used to miss', () => {
+    const ld = normalizeLuckyDraw({ enabled: true, prize: '3 x iPhone 17', winners: 3, closesAt: '2026-09-02' });
+    expect(ld.winners).toBe(3);
+    // > 1 is what assertDrawActivatable and createDraw both gate on.
+    expect(totalPrizeQuantity(ld)).toBe(3);
   });
 });
