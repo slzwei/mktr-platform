@@ -45,6 +45,7 @@ export function emptyDefinition() {
       drawIds: [],
       anyDraw: false,
       campaignTags: [],
+      campaignCategories: [],
       attributes: { postalPrefixes: [], incomes: [], educations: [], genders: [] },
     },
     ageGate: { minAge: 18, maxAge: null },
@@ -64,6 +65,7 @@ export function normalizeDefinitionShape(def) {
       drawIds: Array.isArray(f.drawIds) ? f.drawIds : [],
       anyDraw: f.anyDraw === true,
       campaignTags: Array.isArray(f.campaignTags) ? f.campaignTags : [],
+      campaignCategories: Array.isArray(f.campaignCategories) ? f.campaignCategories : [],
       attributes: {
         postalPrefixes: Array.isArray(a.postalPrefixes) ? a.postalPrefixes : [],
         incomes: Array.isArray(a.incomes) ? a.incomes : [],
@@ -92,6 +94,10 @@ export function summarizeDefinition(def, facets = null) {
   }
   if (d.filters.drawIds.length) parts.push(`${d.filters.drawIds.length} draw${d.filters.drawIds.length > 1 ? 's' : ''}`);
   else if (d.filters.anyDraw) parts.push('any draw');
+  if (d.filters.campaignCategories.length) {
+    const labelOf = (id) => facets?.campaignCategories?.find((c) => c.id === id)?.label || id;
+    parts.push(`category: ${d.filters.campaignCategories.map(labelOf).join(', ')}`);
+  }
   if (d.filters.campaignTags.length) parts.push(`tags: ${d.filters.campaignTags.join(', ')}`);
   const attrs = d.filters.attributes;
   const attrBits = [];

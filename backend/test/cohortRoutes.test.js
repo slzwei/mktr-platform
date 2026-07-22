@@ -208,3 +208,22 @@ describe('CRUD lifecycle', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('campaignCategories filter (tracker "taxonomy")', () => {
+  test('preview accepts a known category id', async () => {
+    const res = await request(app)
+      .post('/api/cohorts/preview')
+      .set(auth(adminToken))
+      .send({ definition: { filters: { campaignCategories: ['dining'] } } });
+    expect(res.status).toBe(200);
+    expect(res.body.data.definition.filters.campaignCategories).toEqual(['dining']);
+  });
+
+  test('unknown category ids are a loud 400 at the boundary', async () => {
+    const res = await request(app)
+      .post('/api/cohorts/preview')
+      .set(auth(adminToken))
+      .send({ definition: { filters: { campaignCategories: ['bogus'] } } });
+    expect(res.status).toBe(400);
+  });
+});

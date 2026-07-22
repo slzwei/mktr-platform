@@ -1,4 +1,7 @@
-import { normalizeMarketplaceContent, applyMarketplacePolicy, MARKETPLACE_CAMPAIGN_TYPES } from '../src/utils/marketplaceContent.js';
+import {
+  normalizeMarketplaceContent, applyMarketplacePolicy, MARKETPLACE_CAMPAIGN_TYPES,
+  CONSUMER_CATEGORY_DEFS, CONSUMER_CATEGORIES, consumerCategoryLabel,
+} from '../src/utils/marketplaceContent.js';
 
 describe('normalizeMarketplaceContent', () => {
   test('non-objects normalize to empty', () => {
@@ -81,5 +84,23 @@ describe('applyMarketplacePolicy', () => {
     expect(MARKETPLACE_CAMPAIGN_TYPES).not.toContain('quiz');
     expect(MARKETPLACE_CAMPAIGN_TYPES).not.toContain('guided_review');
     expect(MARKETPLACE_CAMPAIGN_TYPES).toContain('lead_generation');
+  });
+});
+
+describe('CONSUMER_CATEGORY_DEFS (tracker "taxonomy" — the ONE category source)', () => {
+  test('ids are unique and CONSUMER_CATEGORIES derives 1:1', () => {
+    const ids = CONSUMER_CATEGORY_DEFS.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(CONSUMER_CATEGORIES).toEqual(ids);
+  });
+
+  test('every def carries a label and a known group', () => {
+    for (const def of CONSUMER_CATEGORY_DEFS) {
+      expect(typeof def.label).toBe('string');
+      expect(def.label.length).toBeGreaterThan(0);
+      expect(['education', 'lifestyle']).toContain(def.group);
+    }
+    expect(consumerCategoryLabel('dining')).toBe('Dining');
+    expect(consumerCategoryLabel('unknown_thing')).toBe('unknown_thing');
   });
 });

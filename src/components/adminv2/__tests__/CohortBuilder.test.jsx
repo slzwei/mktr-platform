@@ -12,9 +12,13 @@ vi.mock('@/api/adminV2', () => ({
   fetchCohortFacets: vi.fn(async () => ({
     attributes: { incomes: ['$3,000 - $4,999'], educations: ['Degree'], genders: ['female'] },
     campaignTags: ['parenting'],
+    campaignCategories: [
+      { id: 'dining', label: 'Dining', count: 1 },
+      { id: 'wellness', label: 'Wellness', count: 0 },
+    ],
     campaigns: [
-      { id: 'c1', name: 'Tokyo Getaway Lucky Draw', status: 'active' },
-      { id: 'c2', name: 'NTUC $20', status: 'active' },
+      { id: 'c1', name: 'Tokyo Getaway Lucky Draw', status: 'active', category: 'dining' },
+      { id: 'c2', name: 'NTUC $20', status: 'active', category: null },
     ],
     draws: [{ id: 'd1', campaignId: 'c1', campaignName: 'Tokyo Getaway Lucky Draw', status: 'open', closesAt: '2026-10-30T00:00:00Z' }],
   })),
@@ -82,6 +86,19 @@ describe('CohortBuilder', () => {
         ageGate: { minAge: 18, maxAge: null },
       }),
     })));
+  });
+
+  it('toggling a category pill re-previews with that category in the definition', async () => {
+    setup();
+    // In-use categories show their live campaign count; empty ones just the label.
+    const pill = await screen.findByRole('button', { name: 'Dining · 1' });
+    fireEvent.click(pill);
+    expect(pill).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Wellness' })).toHaveAttribute('aria-pressed', 'false');
+    await waitFor(() => {
+      const defs = previewCohortDefinition.mock.calls.map(([def]) => def);
+      expect(defs.some((d) => d.filters.campaignCategories.includes('dining'))).toBe(true);
+    }, { timeout: 3000 });
   });
 
   it('postal input keeps only valid digit prefixes', async () => {

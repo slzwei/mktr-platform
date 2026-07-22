@@ -1,6 +1,8 @@
 import { sequelize, Cohort, Campaign } from '../models/index.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { CONSUMER_CATEGORIES, CONSUMER_CATEGORY_DEFS } from '../utils/marketplaceContent.js';
+import { getStoredCategory } from '../utils/designConfigV2Clamp.js';
 
 /**
  * Cohort builder (tracker "cohortapi", docs/plans/cohort-builder-backend.md).
@@ -48,6 +50,11 @@ import { logger } from '../utils/logger.js';
  *  - campaigns.tags is unchecked TEXT holding JSON; it is parsed in JS
  *    (malformed rows are skipped) and NEVER cast to jsonb in SQL, where one
  *    bad row would abort the whole cohort query.
+ *  - campaignCategories (tracker "taxonomy") resolves the same way: campaign
+ *    design_configs are read in JS through the version-aware getStoredCategory
+ *    (v1 flat `category` / v2 `distribution.marketplace.category`), never cast
+ *    in SQL. Values are validated against CONSUMER_CATEGORIES — the taxonomy
+ *    has exactly one definition (utils/marketplaceContent.js).
  */
 
 export const COHORT_CHANNELS = ['all', 'email', 'whatsapp', 'sms', 'voice'];
@@ -61,7 +68,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const TAG_RE = /^[^\s]([\s\S]{0,62}[^\s])?$/; // 1..64 chars, no leading/trailing whitespace
 const POSTAL_PREFIX_RE = /^[0-9]{2,6}$/;
 
-const MAX_LIST = { campaignIds: 50, drawIds: 50, campaignTags: 20, postalPrefixes: 20, incomes: 20, educations: 20, genders: 10 };
+const MAX_LIST = {
+  campaignIds: 50, drawIds: 50, campaignTags: 20,
+  campaignCategories: CONSUMER_CATEGORIES.length,
+  postalPrefixes: 20, incomes: 20, educations: 20, genders: 10,
+};
 
 function cleanStringList(value, { max, re, label }) {
   if (value === undefined || value === null) return [];
@@ -94,11 +105,19 @@ export function normalizeDefinition(definition) {
   const a = f.attributes || {};
   if (typeof a !== 'object' || Array.isArray(a)) throw new AppError('filters.attributes must be an object', 422);
 
+  const campaignCategories = cleanStringList(f.campaignCategories, { max: MAX_LIST.campaignCategories, re: TAG_RE, label: 'filters.campaignCategories' });
+  for (const cat of campaignCategories) {
+    if (!CONSUMER_CATEGORIES.includes(cat)) {
+      throw new AppError(`filters.campaignCategories entry "${cat.slice(0, 40)}" is not a known category`, 422);
+    }
+  }
+
   const filters = {
     campaignIds: cleanStringList(f.campaignIds, { max: MAX_LIST.campaignIds, re: UUID_RE, label: 'filters.campaignIds' }),
     drawIds: cleanStringList(f.drawIds, { max: MAX_LIST.drawIds, re: UUID_RE, label: 'filters.drawIds' }),
     anyDraw: f.anyDraw === true,
     campaignTags: cleanStringList(f.campaignTags, { max: MAX_LIST.campaignTags, re: TAG_RE, label: 'filters.campaignTags' }),
+    campaignCategories,
     attributes: {
       postalPrefixes: cleanStringList(a.postalPrefixes, { max: MAX_LIST.postalPrefixes, re: POSTAL_PREFIX_RE, label: 'filters.attributes.postalPrefixes' }),
       incomes: cleanStringList(a.incomes, { max: MAX_LIST.incomes, re: TAG_RE, label: 'filters.attributes.incomes' }),
@@ -209,6 +228,18 @@ async function buildResolution(d, def, channel) {
       conds.push(`EXISTS (
         SELECT 1 FROM prospects tp
          WHERE tp."consumerId" = c.id AND tp."campaignId" IN (:tagCampaignIds))`);
+    }
+  }
+
+  if (filters.campaignCategories.length) {
+    const categoryCampaignIds = await resolveCategoryCampaignIds(d, filters.campaignCategories);
+    if (!categoryCampaignIds.length) {
+      conds.push('false'); // categories no campaign carries → empty cohort, loudly countable
+    } else {
+      repl.categoryCampaignIds = categoryCampaignIds;
+      conds.push(`EXISTS (
+        SELECT 1 FROM prospects catp
+         WHERE catp."consumerId" = c.id AND catp."campaignId" IN (:categoryCampaignIds))`);
     }
   }
 
@@ -337,6 +368,30 @@ async function resolveTagCampaignIds(d, tags) {
     if (Array.isArray(parsed) && parsed.some((t) => typeof t === 'string' && wanted.has(t))) {
       out.push(r.id);
     }
+  }
+  return out;
+}
+
+/** design_config arrives parsed (JSON column) but old rows can be strings or
+ * garbage — normalize defensively, then read the version-aware key. */
+function storedCategoryOf(rawDesignConfig) {
+  let dc = rawDesignConfig;
+  if (typeof dc === 'string') {
+    try { dc = JSON.parse(dc); } catch { return undefined; }
+  }
+  return getStoredCategory(dc);
+}
+
+/** Campaign taxonomy analog of resolveTagCampaignIds: categories live inside
+ * design_config (v1 root / v2 distribution.marketplace), so they are read in
+ * JS through the same accessor every other reader uses — never cast in SQL. */
+async function resolveCategoryCampaignIds(d, categories) {
+  const rows = await d.Campaign.findAll({ attributes: ['id', 'design_config'], raw: true });
+  const wanted = new Set(categories);
+  const out = [];
+  for (const r of rows) {
+    const cat = storedCategoryOf(r.design_config);
+    if (cat && wanted.has(cat)) out.push(r.id);
   }
   return out;
 }
@@ -553,9 +608,12 @@ export function makeCohortService(overrides = {}) {
       distinctVals('income'), distinctVals('education'), distinctVals('gender'),
     ]);
 
-    const campaigns = await d.Campaign.findAll({ attributes: ['id', 'name', 'tags', 'status'], raw: true });
+    const campaigns = await d.Campaign.findAll({ attributes: ['id', 'name', 'tags', 'status', 'design_config'], raw: true });
     const tagSet = new Set();
+    const categoryCounts = new Map();
     for (const r of campaigns) {
+      const cat = storedCategoryOf(r.design_config);
+      if (cat) categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
       if (typeof r.tags !== 'string' || !r.tags) continue;
       try {
         const parsed = JSON.parse(r.tags);
@@ -571,7 +629,16 @@ export function makeCohortService(overrides = {}) {
     return {
       attributes: { incomes, educations, genders },
       campaignTags: [...tagSet].sort(),
-      campaigns: campaigns.map((r) => ({ id: r.id, name: r.name, status: r.status })),
+      // The FULL taxonomy, not just categories in use — a definition may
+      // pre-select a category future campaigns will carry; counts let the UI
+      // show which are live today.
+      campaignCategories: CONSUMER_CATEGORY_DEFS.map(({ id, label }) => ({
+        id, label, count: categoryCounts.get(id) || 0,
+      })),
+      campaigns: campaigns.map((r) => ({
+        id: r.id, name: r.name, status: r.status,
+        category: storedCategoryOf(r.design_config) || null,
+      })),
       draws,
     };
   }

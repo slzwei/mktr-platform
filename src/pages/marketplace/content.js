@@ -1,22 +1,13 @@
 /**
  * Marketplace static content + display helpers (from the approved
- * claude.ai/design Prototype v2). Categories mirror the backend consumer
- * taxonomy (backend/src/utils/marketplaceContent.js CONSUMER_CATEGORIES) —
- * change them together.
+ * claude.ai/design Prototype v2). Categories come from THE taxonomy
+ * (backend/src/utils/marketplaceContent.js, tracker "taxonomy") — add or
+ * remove a category there and only there.
  */
 
-export const CATEGORIES = [
-  { id: 'art_creativity', label: 'Art & Creativity', group: 'education', blurb: 'Drawing, painting and portfolio discovery' },
-  { id: 'coding_robotics', label: 'Coding & Robotics', group: 'education', blurb: 'Build, program and problem-solve' },
-  { id: 'speech_performance', label: 'Speech & Performance', group: 'education', blurb: 'Confidence on stage and in class' },
-  { id: 'sports_movement', label: 'Sports & Movement', group: 'education', blurb: 'Swim, play and move well' },
-  { id: 'music_dance', label: 'Music & Dance', group: 'education', blurb: 'Instruments, voice and rhythm' },
-  { id: 'academic', label: 'Academic', group: 'education', blurb: 'Diagnostics and subject support' },
-  { id: 'family_lifestyle', label: 'Family & Lifestyle', group: 'lifestyle', blurb: 'Experiences to share together' },
-  { id: 'wellness', label: 'Wellness', group: 'lifestyle', blurb: 'Self-care that earns its slot' },
-  { id: 'dining', label: 'Dining', group: 'lifestyle', blurb: 'Tables worth booking' },
-  { id: 'financial_education', label: 'Financial Education', group: 'lifestyle', blurb: 'Understand your money better' },
-];
+import { CONSUMER_CATEGORY_DEFS } from '../../../backend/src/utils/marketplaceContent.js';
+
+export const CATEGORIES = CONSUMER_CATEGORY_DEFS;
 
 export const categoryLabel = (id) => CATEGORIES.find((c) => c.id === id)?.label || id;
 

@@ -170,8 +170,8 @@ describe('DistributionPanel — single-door mode (inheritance flag on)', () => {
     expect(screen.queryByLabelText('Consumer title')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Value line')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Image alt text')).not.toBeInTheDocument();
-    // …picks stay…
-    expect(screen.getByLabelText('Category')).toBeInTheDocument();
+    // …picks stay… (Category moved to its own campaign-wide taxonomy section)
+    expect(screen.getByLabelText('Campaign category')).toBeInTheDocument();
     expect(screen.getByLabelText('Audience age min')).toBeInTheDocument();
     // …and the inherited preview names the sources.
     const preview = screen.getByTestId('dist-inherited-preview');

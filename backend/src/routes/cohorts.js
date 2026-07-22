@@ -2,6 +2,7 @@ import express from 'express';
 import Joi from 'joi';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
+import { CONSUMER_CATEGORIES } from '../utils/marketplaceContent.js';
 import * as cohortController from '../controllers/cohortController.js';
 
 export const meta = { path: '/api/cohorts' };
@@ -26,6 +27,9 @@ const definitionSchema = Joi.object({
     drawIds: Joi.array().items(uuid).max(50),
     anyDraw: Joi.boolean(),
     campaignTags: Joi.array().items(shortStr(64)).max(20),
+    campaignCategories: Joi.array()
+      .items(Joi.string().valid(...CONSUMER_CATEGORIES))
+      .max(CONSUMER_CATEGORIES.length),
     attributes: Joi.object({
       postalPrefixes: Joi.array().items(Joi.string().pattern(/^[0-9]{2,6}$/)).max(20),
       incomes: Joi.array().items(shortStr(64)).max(20),
