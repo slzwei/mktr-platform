@@ -1,5 +1,8 @@
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
+vi.mock('@/api/client', () => ({ apiClient: { post: vi.fn(), get: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+
 import CampaignDetailsTab from '../CampaignDetailsTab';
 
 afterEach(cleanup);
@@ -215,5 +218,94 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     fireEvent.change(screen.getByLabelText('Campaign name'), { target: { value: 'Plain' } });
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     expect(onSubmit.mock.calls[0][0].design_config).toBeUndefined();
+  });
+});
+
+describe('CampaignDetailsTab — AI "Fill it for me"', () => {
+  it('drafts every field from one brief on a draw create (prizes rows included)', async () => {
+    const { apiClient } = await import('@/api/client');
+    apiClient.post.mockResolvedValueOnce({
+      data: {
+        fields: {
+          name: 'iPhone 17 Lucky Draw — August 2026',
+          startDate: '2026-07-22',
+          endDate: '2026-08-31',
+          minAge: 18,
+          maxAge: 45,
+          prizes: [{ qty: 1, name: 'iPhone 17 Pro 256GB' }, { qty: 3, name: 'AirPods Pro' }],
+          closesAt: '2026-08-31',
+          boostClosesAt: '2026-08-31',
+          multiplier: 10,
+        },
+      },
+    });
+    render(
+      <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={vi.fn()} />
+    );
+    fireEvent.change(screen.getByLabelText('Campaign brief for AI draft'), { target: { value: 'iPhone 17 draw, 1 grand + 3 AirPods, until end of August' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Fill it for me' }));
+    expect(await screen.findByDisplayValue('iPhone 17 Lucky Draw — August 2026')).toBeInTheDocument();
+    expect(apiClient.post).toHaveBeenCalledWith('/admin/ai/details-draft', {
+      type: 'lucky_draw',
+      brief: 'iPhone 17 draw, 1 grand + 3 AirPods, until end of August',
+    });
+    expect(screen.getByDisplayValue('iPhone 17 Pro 256GB')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('AirPods Pro')).toBeInTheDocument();
+    expect(screen.getByLabelText('Entries close').value).toBe('2026-08-31');
+    // boost equal to close renders as "same as close" (empty input)
+    expect(screen.getByLabelText('Session boost deadline').value).toBe('');
+  });
+
+  it('non-draw create sends the real campaign type and never touches draw state', async () => {
+    const { apiClient } = await import('@/api/client');
+    apiClient.post.mockResolvedValueOnce({
+      data: { fields: { name: 'NTUC Voucher Push', minAge: 21, maxAge: 55 } },
+    });
+    render(
+      <CampaignDetailsTab initial={null} type="quiz" isEdit={false} saving={false} onSubmit={vi.fn()} />
+    );
+    fireEvent.change(screen.getByLabelText('Campaign brief for AI draft'), { target: { value: '$20 NTUC voucher push for adults' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Fill it for me' }));
+    expect(await screen.findByDisplayValue('NTUC Voucher Push')).toBeInTheDocument();
+    expect(apiClient.post).toHaveBeenCalledWith('/admin/ai/details-draft', expect.objectContaining({ type: 'quiz' }));
+  });
+
+  it('AI card is create-only', () => {
+    render(
+      <CampaignDetailsTab initial={{ name: 'Existing', type: 'lead_generation' }} isEdit saving={false} onSubmit={vi.fn()} />
+    );
+    expect(screen.queryByTestId('ai-details-card')).not.toBeInTheDocument();
+  });
+});
+
+describe('CampaignDetailsTab — AI fill Codex folds', () => {
+  it('a field edited while the draft is generating wins over the AI value', async () => {
+    const { apiClient } = await import('@/api/client');
+    let resolveDraft;
+    apiClient.post.mockReturnValueOnce(new Promise((resolve) => { resolveDraft = resolve; }));
+    render(
+      <CampaignDetailsTab initial={null} type="lead_generation" isEdit={false} saving={false} onSubmit={vi.fn()} />
+    );
+    fireEvent.change(screen.getByLabelText('Campaign brief for AI draft'), { target: { value: 'voucher push for adults' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Fill it for me' }));
+    // Operator keeps typing while the provider is slow.
+    fireEvent.change(screen.getByLabelText('Campaign name'), { target: { value: 'My Hand-Typed Name' } });
+    resolveDraft({ data: { fields: { name: 'AI Name', minAge: 21, maxAge: 45 } } });
+    // Ages (untouched) fill; the concurrently-edited name is preserved.
+    expect(await screen.findByDisplayValue('21')).toBeInTheDocument();
+    expect(screen.getByLabelText('Campaign name').value).toBe('My Hand-Typed Name');
+  });
+
+  it('an explicit empty endDate clears a previously typed end date', async () => {
+    const { apiClient } = await import('@/api/client');
+    apiClient.post.mockResolvedValueOnce({ data: { fields: { name: 'Ongoing Push', endDate: '' } } });
+    render(
+      <CampaignDetailsTab initial={null} type="lead_generation" isEdit={false} saving={false} onSubmit={vi.fn()} />
+    );
+    fireEvent.change(screen.getByLabelText('End date'), { target: { value: '2026-12-31' } });
+    fireEvent.change(screen.getByLabelText('Campaign brief for AI draft'), { target: { value: 'ongoing evergreen voucher push' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Fill it for me' }));
+    expect(await screen.findByDisplayValue('Ongoing Push')).toBeInTheDocument();
+    expect(screen.getByLabelText('End date').value).toBe('');
   });
 });

@@ -4,7 +4,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Loader2, Gift, Plus, X } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Loader2, Gift, Plus, X, Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
+import { apiClient } from '@/api/client';
 import { buildDrawTermsHtml, formatLongDate } from './drawTermsTemplate';
 
 const toDateInput = (v) => {
@@ -56,6 +59,54 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
     drawMultiplier: 10,
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  // "Fill it for me" — one brief drafts every field below (create mode only).
+  // The server clamps the model output (dates/ages/prize rows); this merge
+  // only touches fields the draft returned, so partial answers never blank
+  // out what the operator already typed.
+  const [aiBrief, setAiBrief] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const handleAiFill = async () => {
+    if (aiBusy || aiBrief.trim().length < 5) return;
+    setAiBusy(true);
+    // Snapshot at request start: the provider can take a while, and a field
+    // the operator edits DURING generation must win over the AI's value —
+    // each draft value applies only where the field is unchanged since click.
+    const snap = form;
+    try {
+      const resp = await apiClient.post('/admin/ai/details-draft', {
+        type: draw ? 'lucky_draw' : campaignType,
+        brief: aiBrief.trim(),
+      });
+      const f = resp?.data?.fields || {};
+      setForm((prev) => {
+        const put = (key, value) => (prev[key] === snap[key] ? { [key]: value } : {});
+        return {
+          ...prev,
+          ...(f.name ? put('name', f.name) : {}),
+          ...(f.startDate ? put('start_date', f.startDate) : {}),
+          // endDate arrives by PRESENCE — '' is an intentional "no end date"
+          // and clears the field (server returns it only deliberately).
+          ...(Object.prototype.hasOwnProperty.call(f, 'endDate') ? put('end_date', f.endDate) : {}),
+          ...(f.minAge !== undefined ? put('min_age', f.minAge) : {}),
+          ...(f.maxAge !== undefined ? put('max_age', f.maxAge) : {}),
+          ...(draw && Array.isArray(f.prizes) && f.prizes.length
+            ? put('drawPrizes', f.prizes.map((row) => ({ qty: String(row.qty), name: row.name })))
+            : {}),
+          ...(draw && f.closesAt ? put('drawClosesAt', f.closesAt) : {}),
+          ...(draw && f.closesAt
+            ? put('drawBoostClosesAt', f.boostClosesAt && f.boostClosesAt !== f.closesAt ? f.boostClosesAt : '')
+            : {}),
+          ...(draw && f.multiplier ? put('drawMultiplier', f.multiplier) : {}),
+        };
+      });
+      toast.success('Drafted — review every field, then create.');
+    } catch (e) {
+      toast.error(e?.response?.data?.message || e.message || 'AI draft failed — try again.');
+    } finally {
+      setAiBusy(false);
+    }
+  };
   const setPrizeRow = (i, key, value) =>
     setForm((f) => ({
       ...f,
@@ -126,6 +177,32 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-3xl">
+      {!isEdit && (
+        <Card data-testid="ai-details-card">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2"><Sparkles className="w-4 h-4" /> Fill it for me</CardTitle>
+            <CardDescription>
+              Describe the campaign — the offer{draw ? ' or prizes' : ''}, who it&apos;s for, and when it runs.
+              AI drafts every field below; you review and adjust before creating.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Textarea
+              rows={3}
+              value={aiBrief}
+              onChange={(e) => setAiBrief(e.target.value)}
+              placeholder={draw
+                ? 'e.g. iPhone 17 Pro lucky draw for young adults — 1 grand prize + 3 AirPods, entries until end of August'
+                : 'e.g. $20 NTUC voucher for verified sign-ups, running through September, ages 21 to 55'}
+              aria-label="Campaign brief for AI draft"
+            />
+            <Button type="button" onClick={handleAiFill} disabled={aiBusy || aiBrief.trim().length < 5}>
+              {aiBusy ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Drafting…</>) : 'Fill it for me'}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Campaign details</CardTitle>
