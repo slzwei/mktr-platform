@@ -26,7 +26,20 @@ const DialogOverlay = React.forwardRef(({ className, ...props }, ref) => (
 ))
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 
-const DialogContent = React.forwardRef(({ className, children, hideClose, ...props }, ref) => {
+// `variant="sheet"` (customer-funnel modals): phone-style bottom sheet under
+// 640px — slides up from the bottom edge on open and back down on close — and
+// a centered card with a soft rise/settle (no zoom) from sm up. The classes
+// are swapped wholesale rather than merged because tailwindcss-animate's
+// slide-* utilities all write the same --tw-enter/exit vars, so stylesheet
+// order (not className order) would decide a merge.
+const dialogContentVariants = {
+ default:
+ "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-micro data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
+ sheet:
+ "fixed inset-x-0 bottom-0 top-auto z-50 grid w-full max-w-full gap-4 border bg-background p-6 shadow-lg rounded-t-2xl duration-base ease-out-expo data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom sm:inset-x-auto sm:left-[50%] sm:top-[50%] sm:bottom-auto sm:max-w-lg sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-lg sm:data-[state=open]:fade-in-0 sm:data-[state=closed]:fade-out-0 sm:data-[state=open]:slide-in-from-left-1/2 sm:data-[state=closed]:slide-out-to-left-1/2 sm:data-[state=open]:slide-in-from-top-[46%] sm:data-[state=closed]:slide-out-to-top-[46%]",
+}
+
+const DialogContent = React.forwardRef(({ className, children, hideClose, variant = "default", ...props }, ref) => {
  // Containment override for trees rendered inside the Studio DeviceFrame
  // iframe; undefined (the default everywhere else) keeps Radix's own
  // document.body portal, byte-identical to before.
@@ -37,7 +50,7 @@ const DialogContent = React.forwardRef(({ className, children, hideClose, ...pro
  <DialogPrimitive.Content
  ref={ref}
  className={cn(
- "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-micro data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
+ dialogContentVariants[variant] ?? dialogContentVariants.default,
  className
  )}
  {...props}>

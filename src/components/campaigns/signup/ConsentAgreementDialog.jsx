@@ -45,13 +45,16 @@ export default function ConsentAgreementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* Phone-style sheet under 640px (slides up/down from the bottom edge),
+          centered card from sm up. Width + radius live in responsive classes —
+          inline styles can't branch on viewport — with the themed modal radius
+          threaded through a CSS var. */}
       <DialogContent
-        className="border-0 p-0 gap-0"
+        variant="sheet"
+        className="border-0 p-0 gap-0 rounded-t-[var(--consent-modal-r)] rounded-b-none sm:rounded-[var(--consent-modal-r)] sm:w-[calc(100vw-32px)] sm:max-w-[520px]"
         style={{
+          '--consent-modal-r': `${RADIUS.modal}px`,
           backgroundColor: TOKENS.modal,
-          borderRadius: RADIUS.modal,
-          maxWidth: 520,
-          width: 'calc(100vw - 32px)',
           maxHeight: '85vh',
           padding: 0,
           boxShadow: TOKENS.colorScheme === 'dark'
