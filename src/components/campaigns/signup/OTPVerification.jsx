@@ -94,7 +94,7 @@ export default function OTPVerification({
         <div
           style={{
             padding: 16,
-            backgroundColor: '#FFFCF6',
+            backgroundColor: TOKENS.modal || '#FFFCF6',
             border: `1px solid ${TOKENS.hairline}`,
             borderRadius: RADIUS.image,
             animation: reduce ? undefined : 'lc-reveal 260ms cubic-bezier(0.16, 1, 0.3, 1)',
@@ -163,7 +163,8 @@ export default function OTPVerification({
                 letterSpacing: otp ? '0.3em' : 'normal',
                 fontFamily: 'Albert Sans, system-ui, sans-serif',
                 color: TOKENS.ink,
-                backgroundColor: '#ffffff',
+                backgroundColor: TOKENS.inputBg || '#ffffff',
+                colorScheme: TOKENS.colorScheme || 'light',
                 border: `1px solid ${error ? TOKENS.required : TOKENS.hairline}`,
                 borderRadius: RADIUS.pill,
                 outline: 'none',

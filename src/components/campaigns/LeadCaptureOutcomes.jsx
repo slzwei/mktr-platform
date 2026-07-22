@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import AlertTriangle from 'lucide-react/icons/alert-triangle';
 import CheckCircle from 'lucide-react/icons/check-circle';
 import ArrowLeft from 'lucide-react/icons/arrow-left';
-import { TOKENS, RADIUS } from './LeadCaptureLayout';
+import { useCampaignTheme } from '@/components/campaignPage/themeContext';
 
 /**
  * Lead-capture OUTCOME states — extracted verbatim from LeadCapture.jsx
@@ -16,6 +16,7 @@ import { TOKENS, RADIUS } from './LeadCaptureLayout';
  */
 
 export function SuccessState({ onShare }) {
+  const { tokens: TOKENS, radius: RADIUS } = useCampaignTheme();
   return (
     <div style={{ textAlign: 'center', padding: '24px 0 16px' }}>
       <div
@@ -65,7 +66,7 @@ export function SuccessState({ onShare }) {
           paddingLeft: 28,
           paddingRight: 28,
           borderRadius: RADIUS.pill,
-          backgroundColor: '#ffffff',
+          backgroundColor: TOKENS.inputBg || '#ffffff',
           color: TOKENS.body,
           border: `1px solid ${TOKENS.hairline}`,
           fontFamily: 'Albert Sans, system-ui, sans-serif',
@@ -81,6 +82,7 @@ export function SuccessState({ onShare }) {
 }
 
 export function ErrorState({ duplicateDetected, duplicateCountdown, message, onShare }) {
+  const { tokens: TOKENS, radius: RADIUS, onAccent } = useCampaignTheme();
   return (
     <div style={{ textAlign: 'center', padding: '16px 0' }}>
       <div
@@ -138,7 +140,7 @@ export function ErrorState({ duplicateDetected, duplicateCountdown, message, onS
               paddingRight: 32,
               borderRadius: RADIUS.pill,
               backgroundColor: TOKENS.accent,
-              color: '#ffffff',
+              color: onAccent,
               border: 'none',
               fontFamily: 'Albert Sans, system-ui, sans-serif',
               fontWeight: 600,

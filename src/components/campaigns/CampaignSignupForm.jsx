@@ -554,7 +554,7 @@ export default function CampaignSignupForm({
                   fontFamily: 'Albert Sans, system-ui, sans-serif',
                   fontWeight: 600,
                   fontSize: 16,
-                  boxShadow: '0 4px 14px rgba(209, 112, 41, 0.18)',
+                  boxShadow: `0 4px 14px ${TOKENS.accentShadow || 'rgba(209, 112, 41, 0.18)'}`,
                 }}
               >
                 Yes, I am
@@ -566,7 +566,7 @@ export default function CampaignSignupForm({
                   flex: 1,
                   height: 56,
                   borderRadius: RADIUS.pill,
-                  backgroundColor: '#ffffff',
+                  backgroundColor: TOKENS.inputBg || '#ffffff',
                   color: TOKENS.body,
                   border: `1px solid ${TOKENS.hairline}`,
                   cursor: 'pointer',
@@ -691,7 +691,7 @@ export default function CampaignSignupForm({
                   fontFamily: 'Albert Sans, system-ui, sans-serif',
                   fontWeight: 600,
                   fontSize: 16,
-                  boxShadow: '0 4px 14px rgba(209, 112, 41, 0.18)',
+                  boxShadow: `0 4px 14px ${TOKENS.accentShadow || 'rgba(209, 112, 41, 0.18)'}`,
                 }}
               >
                 No, I am not
@@ -703,7 +703,7 @@ export default function CampaignSignupForm({
                   flex: 1,
                   height: 56,
                   borderRadius: RADIUS.pill,
-                  backgroundColor: '#ffffff',
+                  backgroundColor: TOKENS.inputBg || '#ffffff',
                   color: TOKENS.body,
                   border: `1px solid ${TOKENS.hairline}`,
                   cursor: 'pointer',
@@ -978,7 +978,7 @@ export default function CampaignSignupForm({
             paddingLeft: 36,
             paddingRight: 36,
             borderRadius: RADIUS.pill,
-            backgroundColor: submitDisabled ? TOKENS.hairline : accent,
+            backgroundColor: submitDisabled ? (TOKENS.disabledBg || TOKENS.hairline) : accent,
             color: onAccent,
             border: 'none',
             cursor: submitDisabled ? 'not-allowed' : 'pointer',
@@ -986,7 +986,7 @@ export default function CampaignSignupForm({
             fontWeight: 600,
             fontSize: 16,
             letterSpacing: '0.005em',
-            boxShadow: submitDisabled ? 'none' : '0 4px 14px rgba(209, 112, 41, 0.18)',
+            boxShadow: submitDisabled ? 'none' : `0 4px 14px ${TOKENS.accentShadow || 'rgba(209, 112, 41, 0.18)'}`,
             transition: 'background-color 200ms ease, opacity 200ms ease, transform 120ms ease',
             opacity: submitDisabled ? 0.6 : 1,
           }}
@@ -1021,7 +1021,7 @@ export default function CampaignSignupForm({
 }
 
 function ConsentCheckbox({ id, checked, onChange, children, accent, required }) {
-  const { tokens: TOKENS, radius: RADIUS } = useCampaignTheme();
+  const { tokens: TOKENS, radius: RADIUS, onAccent } = useCampaignTheme();
   return (
     <label
       htmlFor={id}
@@ -1049,7 +1049,7 @@ function ConsentCheckbox({ id, checked, onChange, children, accent, required }) 
           height: 22,
           marginTop: 1,
           borderRadius: RADIUS.checkbox,
-          backgroundColor: checked ? accent : '#ffffff',
+          backgroundColor: checked ? accent : (TOKENS.inputBg || '#ffffff'),
           border: `1px solid ${checked ? accent : TOKENS.hairline}`,
           display: 'inline-flex',
           alignItems: 'center',
@@ -1059,7 +1059,7 @@ function ConsentCheckbox({ id, checked, onChange, children, accent, required }) 
       >
         {checked && (
           <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-            <path d="M3 6.8L5.5 9.2L10 4" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M3 6.8L5.5 9.2L10 4" stroke={onAccent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}
       </span>
