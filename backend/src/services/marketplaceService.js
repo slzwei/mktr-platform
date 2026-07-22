@@ -46,10 +46,14 @@ const TTL_MS = 60_000;
 const MAX_STALE_MS = 5 * 60_000;
 
 let inflight = null;
+let inflightMode = null;
+let inflightGen = -1;
 
 // Cache state + write-side invalidation live in marketplaceCache.js (model-free)
 // so writer services can bust it without importing this read model.
 export { invalidateMarketplaceCache } from './marketplaceCache.js';
+import { getMarketplaceCacheGeneration } from './marketplaceCache.js';
+import { applyListingInheritance, marketplaceInheritEnabled } from '../utils/listingDerivation.js';
 
 const LIVE_ACTIVATION_STATUSES = ['active'];
 
@@ -222,7 +226,15 @@ const CAMPAIGN_ATTRS = [
   'metaPixelId', 'tiktokPixelId', 'design_config',
 ];
 
-function toDto(campaign, ops) {
+export function toDto(campaign, ops) {
+  // Phase A inheritance (plan: marketplace-inherits-campaign-page): behind the
+  // flag, listing COPY derives from page content at this single choke point —
+  // list, detail, and preview all pass through here. Flag off = stored reads,
+  // byte-identical (the emergency brake).
+  const publicDc = buildPublicDesignConfig(campaign.design_config);
+  const design_config = marketplaceInheritEnabled()
+    ? applyListingInheritance({ campaign, publicDc, rawDc: campaign.design_config })
+    : publicDc;
   return {
     id: campaign.id,
     slug: campaign.slug,
@@ -231,7 +243,7 @@ function toDto(campaign, ops) {
     max_age: campaign.max_age ?? null,
     metaPixelId: campaign.metaPixelId || null,
     tiktokPixelId: campaign.tiktokPixelId || null,
-    design_config: buildPublicDesignConfig(campaign.design_config),
+    design_config,
     ops,
   };
 }
@@ -270,20 +282,26 @@ async function fetchAll(now) {
   return out;
 }
 
-/** Public list — 60s TTL, coalesced, stale-on-error bounded to MAX_STALE_MS. */
+/** Public list — 60s TTL, coalesced, stale-on-error bounded to MAX_STALE_MS.
+ * Cache identity includes the inheritance mode, and refreshes commit only when
+ * no invalidation landed mid-flight (Phase A review findings 1–2). */
 export async function listMarketplaceCampaigns({ now = Date.now() } = {}) {
+  const mode = marketplaceInheritEnabled();
   const cache = getMarketplaceCacheState();
-  if (cache.data && now - cache.ts < TTL_MS) return cache.data;
-  if (inflight) return inflight;
+  if (cache.data && cache.mode === mode && now - cache.ts < TTL_MS) return cache.data;
+  if (inflight && inflightMode === mode && inflightGen === getMarketplaceCacheGeneration()) return inflight;
+  const gen = getMarketplaceCacheGeneration();
+  inflightMode = mode;
+  inflightGen = gen;
   inflight = fetchAll(now)
     .then((data) => {
-      setMarketplaceCacheState(data, now);
+      setMarketplaceCacheState(data, now, mode, gen);
       return data;
     })
     .catch((err) => {
       logger.error({ err: err?.message }, 'marketplace.refresh_failed');
       const stale = getMarketplaceCacheState();
-      if (stale.data && now - stale.ts < MAX_STALE_MS) return stale.data;
+      if (stale.data && stale.mode === mode && now - stale.ts < MAX_STALE_MS) return stale.data;
       throw err;
     })
     .finally(() => {
