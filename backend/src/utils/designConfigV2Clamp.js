@@ -32,6 +32,7 @@ import {
   LIMITS,
   LOCKED_FIELD_IDS,
   MARKETPLACE_V1_TO_V2,
+  QR_V1_TO_V2,
   marketplaceToV1,
   PRESET_IDS,
   readLegacyView,
@@ -303,6 +304,14 @@ function clampMarketplace(raw) {
   for (const [v1Key, v2Key] of Object.entries(MARKETPLACE_V1_TO_V2)) {
     if (normalized[v1Key] !== undefined) out[v2Key] = normalized[v1Key];
   }
+  // qr_entry is the ONLY marketplace key whose VALUES differ between versions
+  // ('direct'/'detail' ↔ 'form'/'offer'), so the key-rename loop above is not
+  // enough — without this the v1 value was written straight into the v2 doc and
+  // every save silently reverted the operator's (or the AI's) QR-landing pick:
+  // 'offer' saved as 'detail', the Studio segment re-rendered as "Straight to
+  // form", and 'detail' shipped in the public DTO. marketplaceFromV1 has always
+  // done this; the clamp's hand-rolled inverse did not.
+  if (typeof out.qrLanding === 'string') out.qrLanding = QR_V1_TO_V2[out.qrLanding] || out.qrLanding;
   if (normalized.age_range) {
     out.audienceAgeMin = normalized.age_range.min;
     out.audienceAgeMax = normalized.age_range.max;

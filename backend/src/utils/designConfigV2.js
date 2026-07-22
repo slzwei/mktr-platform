@@ -357,8 +357,8 @@ export function nearestPresetForAccent(hex) {
 /** v1 qr_entry values ↔ v2 qrLanding values (the enums differ, not just the key:
  * v1 'direct'|'detail' ↔ v2 'form'|'offer' per the Phase 5 handoff). Unknown
  * values pass through verbatim (the save clamp validates). */
-const QR_V1_TO_V2 = { direct: 'form', detail: 'offer' };
-const QR_V2_TO_V1 = { form: 'direct', offer: 'detail' };
+export const QR_V1_TO_V2 = { direct: 'form', detail: 'offer' };
+export const QR_V2_TO_V1 = { form: 'direct', offer: 'detail' };
 
 function marketplaceFromV1(dc) {
   const out = {};

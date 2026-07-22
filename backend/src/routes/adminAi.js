@@ -69,7 +69,13 @@ const copyDraftSchema = Joi.object({
   scope: Joi.string().trim().max(80).allow(null).optional(),
   regen: Joi.number().integer().min(0).max(50).default(0),
   brief: Joi.object({
-    topic: Joi.string().trim().min(3).max(1000).required(),
+    // 2000 to MATCH the details-draft cap below. They used to disagree
+    // (1000 here, 2000 there), and the create flow feeds the very same operator
+    // brief to both: a 1200-char brief filled Details fine, then the headless
+    // auto-design pass 400'd and surfaced as a generic "AI failed" toast — with
+    // the brief discarded, since the manual retry rebuilds it from the
+    // campaign name.
+    topic: Joi.string().trim().min(3).max(2000).required(),
     audience: Joi.string().trim().allow('').max(1000).default(''),
     objective: Joi.string().trim().allow('').max(1000).default(''),
     mustInclude: Joi.string().trim().allow('').max(3000).default(''),
