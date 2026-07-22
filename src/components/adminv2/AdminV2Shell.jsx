@@ -203,7 +203,10 @@ export default function AdminV2Shell({ children, fullBleed = false, legacyBridge
             </div>
           </header>
 
-          <main style={fullBleed
+          {/* legacyBridge remaps the shadcn token set for the pre-rebuild editors.
+              It lands HERE, not on the shell root: its --accent is an HSL triplet
+              and the chrome above reads var(--accent) raw. */}
+          <main className={legacyBridge ? 'av2-bridge-tokens' : undefined} style={fullBleed
             ? { flex: 1, width: '100%', minWidth: 0 }
             : { flex: 1, width: '100%', maxWidth: 1520, margin: '0 auto', padding: '20px 24px 48px', boxSizing: 'border-box' }}>
             {children}

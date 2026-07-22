@@ -249,12 +249,19 @@ body[data-theme='dark'] .admin-v2 {
    .gr-designer-chrome. The customer-facing design preview opts back out via
    .av2-theme-reset below.
 
-   SCOPED to .av2-legacy-bridge (AdminV2Shell `legacyBridge` — only the five
-   editor routes), NOT bare .admin-v2: shadcn's token set collides with
-   Switchboard's own --accent, and declaring the triplet later on the same
-   selector clobbered `var(--accent)` for every v2 screen (invisible primary
-   buttons / checked checkboxes — live bug 2026-07-15). */
-.admin-v2.av2-legacy-bridge {
+   SCOPED to .av2-bridge-tokens — the shell's <main>, i.e. the legacy page body
+   ONLY — never the token root: shadcn's set collides with Switchboard's own
+   --accent, and an HSL triplet winning `var(--accent)` makes raw consumers
+   invalid-at-computed-value-time (they drop to `initial`, they do NOT fall
+   back). Declared on bare .admin-v2 it broke every v2 screen (invisible primary
+   buttons / checked checkboxes — live bug 2026-07-15); re-scoping it to the
+   root's .av2-legacy-bridge left the SHELL CHROME broken on the four editor
+   routes, since the chrome renders inside that root too (invisible sidebar logo
+   mark — live bug 2026-07-22). Keep the triples off anything the chrome reads.
+   .av2-legacy-bridge stays on the root for `color-scheme` (inherits to <main>). */
+.admin-v2.av2-legacy-bridge[data-theme='dark'] { color-scheme: dark; }
+
+.admin-v2 .av2-bridge-tokens {
   --background: 220 27.3% 95.7%;
   --foreground: 220 21.4% 11%;
   --card: 0 0% 100%;
@@ -277,8 +284,7 @@ body[data-theme='dark'] .admin-v2 {
   --radius: 0.625rem;
 }
 
-.admin-v2.av2-legacy-bridge[data-theme='dark'] {
-  color-scheme: dark;
+.admin-v2[data-theme='dark'] .av2-bridge-tokens {
   --background: 222.9 18.9% 7.3%;
   --foreground: 220 36% 95.1%;
   --card: 222 17.9% 11%;
