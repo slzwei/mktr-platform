@@ -8,15 +8,18 @@ process.env.WEBHOOK_ENABLED = 'true';
 
 import { jest } from '@jest/globals';
 import crypto from 'crypto';
+import { Op } from 'sequelize';
 import request from 'supertest';
 import {
   getApp, closeDb, createTestUser, createTestCampaign,
 } from '../helpers.js';
-import { Consumer, Prospect, WebhookSubscriber, WebhookDelivery,
-  SuppressionPropagation, ConsumerSuppression,
+import { sequelize, Consumer, Prospect, WebhookSubscriber, WebhookDelivery,
+  SuppressionPropagation, ConsumerSuppression, ConsentEvent,
 } from '../../src/models/index.js';
 import { makeSuppressionPropagationService } from '../../src/services/suppressionPropagationService.js';
-import { makeConsentService, ensureUnsubToken } from '../../src/services/consentService.js';
+import { makeConsentService, ensureUnsubToken, canMarketTo } from '../../src/services/consentService.js';
+import { markPhoneVerified } from '../../src/services/verifiedPhoneStore.js';
+import { buildLeadUnsuppressedPayload } from '../../src/services/prospectHelpers.js';
 import { makeErasureService } from '../../src/services/erasureService.js';
 import { buildLeadSuppressedPayload } from '../../src/services/prospectHelpers.js';
 import {
@@ -509,12 +512,14 @@ describe('bootstrap env-gated subscription', () => {
     await ensureLyfeWebhookSubscriber();
     let sub = await WebhookSubscriber.findOne({ where: { name: 'Lyfe App' } });
     expect(sub.events).toContain('lead.suppressed');
+    expect(sub.events).toContain('lead.unsuppressed');
 
     // Self-heal removal on flag off (UPDATE path).
     process.env.LYFE_LEAD_SUPPRESSED_ENABLED = 'false';
     await ensureLyfeWebhookSubscriber();
     sub = await WebhookSubscriber.findOne({ where: { name: 'Lyfe App' } });
     expect(sub.events).not.toContain('lead.suppressed');
+    expect(sub.events).not.toContain('lead.unsuppressed');
 
     // UPDATE path addition on flag on.
     process.env.LYFE_LEAD_SUPPRESSED_ENABLED = 'true';
@@ -537,6 +542,437 @@ describe('bootstrap env-gated subscription', () => {
     sub = await WebhookSubscriber.findOne({ where: { name: 'MKTR Leads App' } });
     expect(sub.events).not.toContain('lead.suppressed');
     await WebhookSubscriber.destroy({ where: { name: 'MKTR Leads App' } });
+  });
+});
+
+describe('resubscribe lift (plan v3)', () => {
+  /** Verified agree-all capture — the lift trigger. */
+  async function captureAgreeAll(phone8, campaignArg = campaign, { verify = true } = {}) {
+    if (verify) markPhoneVerified(`+65${phone8}`);
+    const res = await request(app).post('/api/prospects').send({
+      firstName: 'Re',
+      lastName: 'Subscriber',
+      email: `resub-${phone8}-${Date.now()}@test.com`,
+      phone: phone8,
+      campaignId: campaignArg.id,
+      leadSource: 'website',
+      consent_contact: true,
+      consent_terms: true,
+      consent_copy_version: '2026-07-21-agree-all-v1',
+    });
+    expect(res.status).toBe(201);
+    return Prospect.findByPk(res.body.data.prospect.id);
+  }
+
+  test('verified agree-all capture lifts an unsubscribe: row gone, ledger evidence, canMarketTo true, pairs flip to lead.unsuppressed', async () => {
+    const phone = p8(31);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'unsubscribe_link' });
+    const s1 = await mkSubscriber(['lead.suppressed', 'lead.unsuppressed']);
+    await seedHistory(s1, prospect.id);
+    const { svc } = svcWithSpy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    let pairs = await pairsOf(s1.id);
+    expect(pairs[0].state).toBe('suppressed');
+    expect(pairs[0].deliveredState).toBe('suppressed');
+
+    await captureAgreeAll(phone, campaign2);
+
+    // MKTR side: suppression gone + evidence + gate opens.
+    expect(await ConsumerSuppression.count({ where: { consumerId: consumer.id } })).toBe(0);
+    const evidence = await ConsentEvent.findOne({
+      where: { consumerId: consumer.id, source: 'resubscribe' },
+    });
+    expect(evidence).toBeTruthy();
+    expect(evidence.granted).toBe(true);
+    expect(evidence.verified).toBe(true);
+    expect(evidence.campaignId).toBeNull();
+    expect(evidence.metadata.lift.reason).toBe('unsubscribe');
+    expect(await canMarketTo({ consumerId: consumer.id, campaignId: campaign2.id })).toBe(true);
+
+    // Downstream: pair flips + lead.unsuppressed queued with the evidence watermark.
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    pairs = await pairsOf(s1.id);
+    expect(pairs[0].state).toBe('lifted');
+    expect(pairs[0].deliveredState).toBe('lifted');
+    expect(new Date(pairs[0].occurredAt).getTime()).toBe(new Date(evidence.occurredAt).getTime());
+    const lifts = await WebhookDelivery.findAll({
+      where: { subscriberId: s1.id, eventType: 'lead.unsuppressed' },
+    });
+    expect(lifts).toHaveLength(1);
+    expect(lifts[0].payload.data.unsuppression).toMatchObject({ schemaVersion: 1, scope: 'marketing', reason: 'resubscribe' });
+    expect(JSON.stringify(lifts[0].payload)).not.toContain(consumer.id);
+  });
+
+  test('no lift without OTP verification, on the legacy era, or for admin-reason suppressions', async () => {
+    // Unverified agree-all: no lift.
+    const phoneA = p8(32);
+    const pA = await capture(phoneA);
+    const cA = await Consumer.findByPk(pA.consumerId);
+    await ConsumerSuppression.create({ consumerId: cA.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+    await captureAgreeAll(phoneA, campaign2, { verify: false });
+    expect(await ConsumerSuppression.count({ where: { consumerId: cA.id } })).toBe(1);
+
+    // Verified but LEGACY era (no consent_copy_version): no lift.
+    const phoneB = p8(33);
+    const pB = await capture(phoneB);
+    const cB = await Consumer.findByPk(pB.consumerId);
+    await ConsumerSuppression.create({ consumerId: cB.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+    markPhoneVerified(`+65${phoneB}`);
+    const legacy = await request(app).post('/api/prospects').send({
+      firstName: 'Legacy', lastName: 'Era', email: `legacy-${phoneB}@test.com`,
+      phone: phoneB, campaignId: campaign2.id, leadSource: 'website',
+      consent_contact: true, consent_terms: true,
+    });
+    expect(legacy.status).toBe(201);
+    expect(await ConsumerSuppression.count({ where: { consumerId: cB.id } })).toBe(1);
+
+    // Admin-reason suppression: never auto-lifts.
+    const phoneC = p8(34);
+    const pC = await capture(phoneC);
+    const cC = await Consumer.findByPk(pC.consumerId);
+    await ConsumerSuppression.create({ consumerId: cC.id, channel: 'all', reason: 'admin', source: 'test' });
+    await captureAgreeAll(phoneC, campaign2);
+    const surviving = await ConsumerSuppression.findOne({ where: { consumerId: cC.id } });
+    expect(surviving.reason).toBe('admin');
+    expect(await ConsentEvent.count({ where: { consumerId: cC.id, source: 'resubscribe' } })).toBe(0);
+  });
+
+  test('cycle: lift then re-unsubscribe flips pairs back and redelivers with a newer watermark', async () => {
+    const phone = p8(35);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+    const s1 = await mkSubscriber(['lead.suppressed', 'lead.unsuppressed']);
+    await seedHistory(s1, prospect.id);
+    const { svc } = svcWithSpy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+
+    await captureAgreeAll(phone, campaign2);
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    let pair = (await pairsOf(s1.id))[0];
+    expect(pair.state).toBe('lifted');
+    const liftAt = new Date(pair.occurredAt).getTime();
+
+    // Person changes their mind again.
+    const consent = makeConsentService({ reconcileSuppressionPropagation: async () => ({}) });
+    await consent.applyUnsubscribe(consumer, { source: 'test' });
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    pair = (await pairsOf(s1.id))[0];
+    expect(pair.state).toBe('suppressed');
+    expect(pair.deliveredState).toBe('suppressed');
+    expect(new Date(pair.occurredAt).getTime()).toBeGreaterThan(liftAt);
+    // Delivery sequence: suppressed, unsuppressed, suppressed.
+    const seq = await WebhookDelivery.findAll({
+      where: { subscriberId: s1.id, eventType: { [Op.in]: ['lead.suppressed', 'lead.unsuppressed'] } },
+      order: [['createdAt', 'ASC']],
+    });
+    expect(seq.map((r) => r.eventType)).toEqual(['lead.suppressed', 'lead.unsuppressed', 'lead.suppressed']);
+  });
+
+  test('evidence-driven only: a manual suppression-row delete without a resubscribe event never flips pairs', async () => {
+    const phone = p8(36);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+    const s1 = await mkSubscriber(['lead.suppressed', 'lead.unsuppressed']);
+    await seedHistory(s1, prospect.id);
+    const { svc } = svcWithSpy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+
+    await ConsumerSuppression.destroy({ where: { consumerId: consumer.id } }); // manual, no evidence
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    const pair = (await pairsOf(s1.id))[0];
+    expect(pair.state).toBe('suppressed'); // no flip without the ledger event
+  });
+
+  test("the 'all' lane is a latch: erasure pairs never lift even with resubscribe evidence", async () => {
+    const phone = p8(37);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    const s1 = await mkSubscriber(['lead.suppressed']); // suppressed-only → gets the erasure fallback pair
+    await seedHistory(s1, prospect.id);
+    const erasure = makeErasureService({
+      flushDeliveries: () => {},
+      reconcileSuppressionPropagation: async () => ({}),
+    });
+    await erasure.eraseConsumer(consumer.id, { actorUser: admin.user });
+    const { svc } = svcWithSpy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    let pairs = await pairsOf(s1.id);
+    expect(pairs.map((p) => p.scope)).toEqual(['all']);
+
+    // Even with (synthetic) resubscribe evidence, 'all' never flips.
+    await ConsentEvent.create({
+      consumerId: consumer.id, prospectId: null, campaignId: null,
+      kind: 'contact', granted: true, channels: null,
+      version: '2026-07-21-agree-all-v1', source: 'resubscribe',
+      verified: true, occurredAt: new Date(),
+    });
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    pairs = await pairsOf(s1.id);
+    expect(pairs[0].state).toBe('suppressed');
+  });
+
+  test('a subscriber without lead.unsuppressed keeps lifted pairs unqueued until its allowlist catches up', async () => {
+    const phone = p8(38);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+    const s1 = await mkSubscriber(['lead.suppressed']); // no lead.unsuppressed
+    await seedHistory(s1, prospect.id);
+    const { svc } = svcWithSpy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+
+    await captureAgreeAll(phone, campaign2);
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    let pair = (await pairsOf(s1.id))[0];
+    expect(pair.state).toBe('lifted');
+    expect(pair.deliveredState).toBe('suppressed'); // flip NOT queued
+    expect(await WebhookDelivery.count({
+      where: { subscriberId: s1.id, eventType: 'lead.unsuppressed' },
+    })).toBe(0);
+
+    await s1.update({ events: ['lead.suppressed', 'lead.unsuppressed'] });
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    pair = (await pairsOf(s1.id))[0];
+    expect(pair.deliveredState).toBe('lifted');
+    expect(await WebhookDelivery.count({
+      where: { subscriberId: s1.id, eventType: 'lead.unsuppressed' },
+    })).toBe(1);
+  });
+
+  test('prod-constraint parity: lift writes pass with 080/083 CHECKs + 086 surgery applied', async () => {
+    // Test schemas are sync-built (no migration CHECKs) — recreate prod's
+    // gauntlet, run 086's surgery over it, then prove the full lift E2E.
+    await sequelize.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_ce_source') THEN
+        ALTER TABLE consent_events ADD CONSTRAINT chk_ce_source
+          CHECK (source IN ('signup','backfill','unsubscribe','admin','erasure')) NOT VALID;
+      END IF; END $$`);
+    await sequelize.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_sp_reason') THEN
+        ALTER TABLE suppression_propagations ADD CONSTRAINT chk_sp_reason
+          CHECK (reason IN ('unsubscribe','complaint','admin','erasure')) NOT VALID;
+      END IF; END $$`);
+    const { up: up086 } = await import('../../src/database/migrations/086-suppression-lift.js');
+    await up086({ sequelize });
+
+    const phone = p8(41);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+    const s1 = await mkSubscriber(['lead.suppressed', 'lead.unsuppressed']);
+    await seedHistory(s1, prospect.id);
+    const { svc } = svcWithSpy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+
+    await captureAgreeAll(phone, campaign2); // resubscribe event INSERT passes chk_ce_source
+    expect(await ConsentEvent.count({ where: { consumerId: consumer.id, source: 'resubscribe' } })).toBe(1);
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id }); // reason='resubscribe' passes chk_sp_reason
+    expect((await pairsOf(s1.id))[0].state).toBe('lifted');
+  });
+
+  test('stale-evidence replay: an old resubscribe cannot lift after a NEWER unsubscribe is manually removed', async () => {
+    const phone = p8(42);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+    const s1 = await mkSubscriber(['lead.suppressed', 'lead.unsuppressed']);
+    await seedHistory(s1, prospect.id);
+    const { svc } = svcWithSpy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id }); // S1 pair
+
+    await captureAgreeAll(phone, campaign2); // R1 lift
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    expect((await pairsOf(s1.id))[0].state).toBe('lifted');
+
+    // S2: re-unsubscribe (newer than R1) → suppressed again.
+    const consent = makeConsentService({ reconcileSuppressionPropagation: async () => ({}) });
+    await consent.applyUnsubscribe(consumer, { source: 'test' });
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    expect((await pairsOf(s1.id))[0].state).toBe('suppressed');
+
+    // S2's row vanishes WITHOUT evidence (manual/admin mistake). Old R1 must
+    // NOT resurrect the lift: pair.occurredAt (S2) is newer than R1.
+    await ConsumerSuppression.destroy({ where: { consumerId: consumer.id } });
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    expect((await pairsOf(s1.id))[0].state).toBe('suppressed');
+  });
+
+  test('equal-watermark tie never lifts (fail-safe toward suppressed)', async () => {
+    const phone = p8(43);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    const suppression = await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+    const s1 = await mkSubscriber(['lead.suppressed', 'lead.unsuppressed']);
+    await seedHistory(s1, prospect.id);
+    const { svc } = svcWithSpy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    const pair = (await pairsOf(s1.id))[0];
+
+    // Synthetic resubscribe evidence with occurredAt EXACTLY equal to the
+    // pair's suppressed transition; suppression row removed so only the
+    // watermark predicate decides.
+    await ConsentEvent.create({
+      consumerId: consumer.id, prospectId: null, campaignId: null,
+      kind: 'contact', granted: true, channels: null,
+      version: '2026-07-21-agree-all-v1', source: 'resubscribe',
+      verified: true, occurredAt: pair.occurredAt,
+    });
+    await suppression.destroy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    expect((await pairsOf(s1.id))[0].state).toBe('suppressed'); // tie → no lift
+  });
+
+  test('a subscriber with ONLY lead.unsuppressed still receives its lifts', async () => {
+    const phone = p8(44);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+    const s1 = await mkSubscriber(['lead.suppressed', 'lead.unsuppressed']);
+    await seedHistory(s1, prospect.id);
+    const { svc } = svcWithSpy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+
+    // Subscriber drops lead.suppressed (keeps unsuppressed) BEFORE the lift.
+    await s1.update({ events: ['lead.created', 'lead.unsuppressed'] });
+    await captureAgreeAll(phone, campaign2);
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    const pair = (await pairsOf(s1.id))[0];
+    expect(pair.state).toBe('lifted');
+    expect(pair.deliveredState).toBe('lifted');
+    expect(await WebhookDelivery.count({
+      where: { subscriberId: s1.id, eventType: 'lead.unsuppressed' },
+    })).toBe(1);
+  });
+
+  test('a failed lead.unsuppressed delivery re-queues', async () => {
+    const phone = p8(45);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+    const s1 = await mkSubscriber(['lead.suppressed', 'lead.unsuppressed']);
+    await seedHistory(s1, prospect.id);
+    const { svc } = svcWithSpy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    await captureAgreeAll(phone, campaign2);
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    const pair = (await pairsOf(s1.id))[0];
+    expect(pair.deliveredState).toBe('lifted');
+
+    await WebhookDelivery.update({ status: 'failed' }, { where: { deliveryId: pair.deliveryId } });
+    const counts = await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    expect(counts.requeued).toBe(1);
+    expect(await WebhookDelivery.count({
+      where: { subscriberId: s1.id, eventType: 'lead.unsuppressed' },
+    })).toBe(2);
+  });
+
+  test('the lift fires the reconciler post-commit by itself (no delivery-flush dependency)', async () => {
+    const phone = p8(46);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+
+    const spy = jest.fn().mockResolvedValue({});
+    const consent = makeConsentService({ reconcileSuppressionPropagation: spy });
+    let committed = false;
+    await sequelize.transaction(async (t) => {
+      await consent.recordCaptureConsentEventsTx(t, {
+        consumerId: consumer.id, prospectId: prospect.id, campaignId: campaign2.id,
+        verified: true, contact: true, copyVersion: '2026-07-21-agree-all-v1', terms: true,
+      });
+      expect(spy).not.toHaveBeenCalled(); // must wait for the COMMIT
+      committed = true;
+    });
+    expect(committed).toBe(true);
+    await new Promise((r) => setTimeout(r, 50)); // afterCommit is async
+    expect(spy).toHaveBeenCalledWith({ consumerId: consumer.id });
+    expect(await ConsumerSuppression.count({ where: { consumerId: consumer.id } })).toBe(0);
+  });
+
+  test('coalesced transitions: S1→lift→S2 with NO reconcile between, then S2 manually removed → ledger withdrawal still blocks the stale lift', async () => {
+    const phone = p8(51);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    // S1 with a ledger withdrawal event (as applyUnsubscribe writes).
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+    await ConsentEvent.create({
+      consumerId: consumer.id, prospectId: null, campaignId: null,
+      kind: 'contact', granted: false, channels: null,
+      version: '2026-07-21-agree-all-v1', source: 'unsubscribe',
+      verified: false, occurredAt: new Date(Date.now() - 3000),
+    });
+    const s1 = await mkSubscriber(['lead.suppressed', 'lead.unsuppressed']);
+    await seedHistory(s1, prospect.id);
+    const { svc } = svcWithSpy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id }); // pair @ S1
+
+    // R1 lift + S2 re-unsubscribe happen back-to-back with NO reconcile pass
+    // in between (evidence constructed manually so no capture/writer trigger
+    // can slip a pass in): the pair watermark stays at S1, older than R1.
+    await ConsumerSuppression.destroy({ where: { consumerId: consumer.id } }); // R1's lift removes S1's row…
+    await ConsentEvent.create({ // …and writes the resubscribe evidence
+      consumerId: consumer.id, prospectId: null, campaignId: null,
+      kind: 'contact', granted: true, channels: null,
+      version: '2026-07-21-agree-all-v1', source: 'resubscribe',
+      verified: true, occurredAt: new Date(Date.now() - 2000),
+    });
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test-s2' }); // S2 row
+    await ConsentEvent.create({ // S2's withdrawal evidence (append-only, survives everything)
+      consumerId: consumer.id, prospectId: null, campaignId: null,
+      kind: 'contact', granted: false, channels: null,
+      version: '2026-07-21-agree-all-v1', source: 'unsubscribe',
+      verified: false, occurredAt: new Date(Date.now() - 1000),
+    });
+
+    // S2's ROW is then manually removed (out-of-band mistake). Its ledger
+    // withdrawal event is append-only and survives — R1 predates it, so the
+    // lift must NOT fire.
+    await ConsumerSuppression.destroy({ where: { consumerId: consumer.id } });
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    expect((await pairsOf(s1.id))[0].state).toBe('suppressed');
+  });
+
+  test('stale-watermark maintenance: a suppressed pair lagging a NEWER suppression refreshes its watermark and redelivers', async () => {
+    const phone = p8(52);
+    const prospect = await capture(phone);
+    const consumer = await Consumer.findByPk(prospect.consumerId);
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test' });
+    const s1 = await mkSubscriber(['lead.suppressed', 'lead.unsuppressed']);
+    await seedHistory(s1, prospect.id);
+    const { svc } = svcWithSpy();
+    await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    const before = (await pairsOf(s1.id))[0];
+    const beforeAt = new Date(before.occurredAt).getTime();
+
+    // Simulate the coalesced lift+re-unsubscribe: replace the suppression row
+    // with a NEWER one while the pair still carries the old watermark.
+    await ConsumerSuppression.destroy({ where: { consumerId: consumer.id } });
+    await new Promise((r) => setTimeout(r, 25));
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'all', reason: 'unsubscribe', source: 'test-2' });
+
+    const counts = await svc.reconcileSuppressionPropagation({ consumerId: consumer.id });
+    const after = (await pairsOf(s1.id))[0];
+    expect(after.state).toBe('suppressed');
+    expect(new Date(after.occurredAt).getTime()).toBeGreaterThan(beforeAt); // watermark advanced
+    expect(counts.queued).toBe(1); // redelivered with the fresh watermark
+    expect(await WebhookDelivery.count({
+      where: { subscriberId: s1.id, eventType: 'lead.suppressed' },
+    })).toBe(2);
+  });
+
+  test('buildLeadUnsuppressedPayload: exact v1 shape', () => {
+    const at = new Date('2026-07-22T10:00:00.000Z');
+    const p = buildLeadUnsuppressedPayload('xyz-1', { reason: 'resubscribe', occurredAt: at });
+    expect(p.event).toBe('lead.unsuppressed');
+    expect(p.data.lead).toEqual({ externalId: 'xyz-1' });
+    expect(p.data.unsuppression).toEqual({
+      schemaVersion: 1, scope: 'marketing', reason: 'resubscribe',
+      occurredAt: '2026-07-22T10:00:00.000Z',
+    });
   });
 });
 

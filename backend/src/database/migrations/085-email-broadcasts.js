@@ -131,3 +131,10 @@ export async function up(queryInterface) {
   await q(`CREATE INDEX IF NOT EXISTS idx_ebr_broadcast_status
              ON email_broadcast_recipients ("broadcastId", status)`);
 }
+
+// Drive-by (resub PR): 085 shipped without a down() — the migrations gate
+// requires one. Reversal drops only what up() creates.
+export async function down(queryInterface) {
+  await queryInterface.sequelize.query('DROP TABLE IF EXISTS email_broadcast_recipients');
+  await queryInterface.sequelize.query('DROP TABLE IF EXISTS email_broadcasts');
+}

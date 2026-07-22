@@ -58,3 +58,11 @@ export async function up(queryInterface) {
   await q(`CREATE INDEX IF NOT EXISTS idx_de_prospect
              ON draw_entries ("prospectId") WHERE "prospectId" IS NOT NULL`);
 }
+
+// Drive-by (resub PR): 084 shipped without a down() — the migrations gate
+// requires one. Reversal drops only what up() creates.
+export async function down(queryInterface) {
+  await queryInterface.sequelize.query('DROP TABLE IF EXISTS cohorts');
+  await queryInterface.sequelize.query('DROP INDEX IF EXISTS idx_de_prospect');
+  await queryInterface.sequelize.query('DROP INDEX IF EXISTS idx_de_phone_hash');
+}

@@ -61,7 +61,16 @@ describe('Migration static validation', () => {
   });
 
   test('migration numbering has no duplicates', () => {
-    const numbers = migrationFiles.map(f => f.split('-')[0]);
+    // 083 is a HISTORICAL duplicate: 083-suppression-propagation (#220) and
+    // 083-sms-rate-counters (#221) were built in parallel sessions and BOTH
+    // are applied in prod's _migrations under these exact filenames. The
+    // runner keys strictly by filename, so renaming either would re-run it
+    // (forward-safe but a rollback footgun — Codex resub-round #10). The
+    // duplicate number is frozen as-is; nothing else may join this list.
+    const HISTORICAL_DUPLICATES = new Set(['083']);
+    const numbers = migrationFiles
+      .map(f => f.split('-')[0])
+      .filter(n => !HISTORICAL_DUPLICATES.has(n));
     const unique = [...new Set(numbers)];
     expect(numbers.length).toBe(unique.length);
   });

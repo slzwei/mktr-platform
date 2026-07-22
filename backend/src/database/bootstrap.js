@@ -387,7 +387,7 @@ export async function ensureLyfeWebhookSubscriber() {
   const requiredEvents = [
     'lead.created', 'lead.assigned', 'lead.unassigned',
     ...(String(process.env.LYFE_LEAD_SUPPRESSED_ENABLED || 'false').toLowerCase() === 'true'
-      ? ['lead.suppressed'] : []),
+      ? ['lead.suppressed', 'lead.unsuppressed'] : []),
   ];
 
   if (existing) {
@@ -448,7 +448,7 @@ export async function ensureMktrLeadsWebhookSubscriber() {
   const requiredEvents = [
     'lead.created', 'lead.assigned', 'lead.unassigned', 'lead.held', 'lead.deleted',
     ...(String(process.env.MKTR_LEADS_LEAD_SUPPRESSED_ENABLED || 'false').toLowerCase() === 'true'
-      ? ['lead.suppressed'] : []),
+      ? ['lead.suppressed', 'lead.unsuppressed'] : []),
   ];
 
   const existing = await WebhookSubscriber.findOne({ where: { name: SUBSCRIBER_NAME } });
