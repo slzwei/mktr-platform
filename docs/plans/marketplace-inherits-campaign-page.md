@@ -115,3 +115,16 @@ Phase A: M · Phase B: M–L (two editors + AI contract + twin) · Phase C: S. E
 | 7 | MINOR | Adopted in part — lockstep dirty/media fixtures, canvas flag-on tests, AI everything-mode omission test added; full tracking-payload + classic-panel render matrix noted for Phase C hardening. |
 
 **Two-flag matrix (runbook):** both flags flip together. Off/Off = legacy reads + legacy editors (wording/tracking fixes stay, deliberately). On/On = single-door. Off/On = editors preview inheritance while the server still serves stored copy (harmless, temporary). On/Off = served copy is inherited while editors still show dead inputs (avoid; flip frontend first is the safe order: VITE first, backend second — or same deploy).
+
+## 10. Flip record — 2026-07-22 (Phases A+B LIVE)
+
+Both flags went ON together (~15:00Z): `MARKETPLACE_INHERIT_ENABLED` (backend srv-d2s9p0emcj7s73acd9lg) + `VITE_MARKETPLACE_INHERIT_ENABLED` (mktr.sg srv-d2s3che3jp1c738qlgjg, redeem.sg srv-d88qhph9rddc738nk0d0). ops.redeem.sg needs no flag — grep-verified nothing under the ops surface imports the module.
+
+**Gate (pre-flip):** the §4 rollout diff ran over EVERY listed prod campaign via the offline harness (prod DATABASE_URL isn't exposed locally: psql `COPY(json_agg(...)) TO STDOUT` export → un-escape `\\`→`\` → scratchpad .mjs importing the real backend derivation with dummy DB env). Result, exactly the intended deltas:
+- **tokyo-draw**: +description, +imageUrl (hero — card previously rendered a placeholder), +regulatory_line, inclusions deleted (draw), value_line → canonical prize summary. Its doc predated #232's structured rows, so `luckyDraw.prizes` was seeded via SQL (`[{qty:1,name:"4D3N Tokyo getaway (flights + hotel)"}]` — same text as the stored summary) so `prize_breakdown` serves and the door gets its Prizes card.
+- **pethotel**: title now the real headline ("One night out for your furry one", was the internal campaign name), +description, +imageUrl.
+- **Featured tiles**: Tokyo campaign-name → headline; Pet Hotel's stale stored "Hello" → headline. Tiles carry emoji + valueLabel, no image — nothing else to derive.
+
+**Post-flip verification:** API DTOs match the gate byte-for-byte (derived name/description/imageUrl/regulatory; Tokyo prize_breakdown serving, inclusions gone); `/api/campaigns/featured-drops` titles derived; both domains serve the flag builds (redeem `index-Clnj0bEp.js`, mktr `index-CtUhSQzJ.js`); **13/13 rendered-DOM Playwright checks on live redeem.sg** (mobile viewport): apex cards (derived titles, Prizes: line, neutral "records your completed session" wording, old title absent) + both offer doors (description/prizes/regulatory testids mounted, "Awarded in this order", no "Includes:" on the draw). Editor panels are unit-tested + deploy-verified; first authed Studio open is the remaining eyeball.
+
+**Phase C soak clock starts 2026-07-22** → destructive clamp cleanup no earlier than 2026-07-29, and only on explicit sign-off.
