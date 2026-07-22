@@ -1,7 +1,21 @@
 import { describe, expect, test } from 'vitest';
 import { flattenFieldOrder, isFieldVisible, isFieldRequired, dobToIso } from '../MarketplaceFlow';
-import { offerUnavailability } from '../content';
+import { offerUnavailability, winnersDrawnSentence } from '../content';
 import { isTrackableLeadCapture } from '@/lib/pixelSuppression';
+
+describe('winnersDrawnSentence — verb-agreed draw copy', () => {
+  test('pluralizes by count and never prints "1 winners"', () => {
+    expect(winnersDrawnSentence(1)).toBe('1 winner is drawn within seven days.');
+    expect(winnersDrawnSentence(4)).toBe('4 winners are drawn within seven days.');
+  });
+
+  test('countless fallback capitalizes for sentence start, lowercases mid-sentence', () => {
+    expect(winnersDrawnSentence(undefined)).toBe('Winners are drawn within seven days.');
+    expect(winnersDrawnSentence(0)).toBe('Winners are drawn within seven days.');
+    expect(winnersDrawnSentence(null, { capitalize: false })).toBe('winners are drawn within seven days.');
+    expect(winnersDrawnSentence(4, { capitalize: false })).toBe('4 winners are drawn within seven days.');
+  });
+});
 
 describe('flattenFieldOrder — both production fieldOrder shapes', () => {
   test('legacy flat string[] passes through', () => {

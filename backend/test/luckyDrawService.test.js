@@ -190,6 +190,38 @@ describe('createDraw', () => {
     await expect(svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN)).rejects.toMatchObject({ statusCode: 422 });
   });
 
+  it('422s (DRAW_MULTI_PRIZE_UNSUPPORTED) when structured prizes total more than one unit', async () => {
+    const { deps } = buildDeps();
+    deps.Campaign.findByPk.mockResolvedValue({
+      id: CAMPAIGN_ID,
+      design_config: {
+        luckyDraw: {
+          enabled: true,
+          closesAt: '2026-08-31',
+          prizes: [{ qty: 1, name: 'iPhone 17 Pro' }, { qty: 3, name: '$100 FairPrice Voucher' }],
+        },
+      },
+    });
+    const svc = makeLuckyDrawService(deps);
+    await expect(svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN)).rejects.toMatchObject({
+      statusCode: 422,
+      data: { code: 'DRAW_MULTI_PRIZE_UNSUPPORTED' },
+    });
+  });
+
+  it('a single structured prize (one row, qty 1) still creates the draw', async () => {
+    const { deps } = buildDeps();
+    deps.Campaign.findByPk.mockResolvedValue({
+      id: CAMPAIGN_ID,
+      design_config: {
+        luckyDraw: { enabled: true, closesAt: '2026-08-31', prizes: [{ qty: 1, name: 'iPhone 17 Pro' }] },
+      },
+    });
+    const svc = makeLuckyDrawService(deps);
+    const draw = await svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN);
+    expect(draw.status).toBe('open');
+  });
+
   it('derives fixed SGT-exclusive instants and persists config', async () => {
     const { deps } = buildDeps();
     deps.Campaign.findByPk.mockResolvedValue({

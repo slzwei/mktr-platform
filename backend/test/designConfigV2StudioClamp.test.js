@@ -91,6 +91,22 @@ describe('clampDesignConfigV2 over Studio-authored docs', () => {
     expect(out.customerHost).toBe('redeem'); // derived mirror
   });
 
+  it('structured luckyDraw.prizes survive the v2 clamp with derived prize + winners', () => {
+    const doc = studioDoc();
+    doc.luckyDraw = {
+      enabled: true,
+      closesAt: '2026-10-30',
+      multiplier: 10,
+      prizes: [{ qty: 1, name: 'iPhone 17 Pro' }, { qty: 3, name: '$100 FairPrice Voucher' }],
+      prize: 'stale summary',
+      winners: 77,
+    };
+    const out = clampDesignConfigV2(doc, undefined, 'admin');
+    expect(out.luckyDraw.prizes).toEqual([{ qty: 1, name: 'iPhone 17 Pro' }, { qty: 3, name: '$100 FairPrice Voucher' }]);
+    expect(out.luckyDraw.prize).toBe('iPhone 17 Pro + 3× $100 FairPrice Voucher');
+    expect(out.luckyDraw.winners).toBe(4);
+  });
+
   it('PR 5: the clamp DROPS marketplace.endsAt (expiry is ops-derived — pins the schema decision)', () => {
     const doc = studioDoc();
     doc.distribution.marketplace.endsAt = '2026-12-31';

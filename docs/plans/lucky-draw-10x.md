@@ -73,11 +73,17 @@ first; Lyfe app (internal agents) later. The paid `ExternalAgent` buyer rail is
 
 A lucky draw is a **Regular (`lead_generation`) campaign** with:
 
-- `design_config.luckyDraw = { enabled: true, closesAt: 'YYYY-MM-DD', boostClosesAt: 'YYYY-MM-DD', drawOn?: 'YYYY-MM-DD', prize: '…', multiplier: 10, activationId: '<uuid>', termsVersionId: '<uuid>' }`
+- `design_config.luckyDraw = { enabled: true, closesAt: 'YYYY-MM-DD', boostClosesAt: 'YYYY-MM-DD', drawOn?: 'YYYY-MM-DD', prize: '…', prizes?: [{ qty, name }], multiplier: 10, activationId: '<uuid>', termsVersionId: '<uuid>' }`
   — admin-gated on write like `featuredDrop` (`applyFeaturedDropPolicy` pattern),
   clamped server-side in `campaignService`. `duplicateCampaign` must strip
   `luckyDraw` (it currently copies design config wholesale and disables only
   `featuredDrop` — `campaignService.js:412`).
+  `prizes` (docs/plans/lucky-draw-multi-prize-plan.md) is the structured prize
+  list — [{qty 1..99, name ≤80}], ≤8 rows, array order = award order. When
+  present, `prize` (compact summary) and `winners` (Σqty) are DERIVED by
+  `normalizeLuckyDraw`, overwriting client input. Until the multi-winner
+  engine ships, Σqty > 1 cannot activate or mint a draw record
+  (`DRAW_MULTI_PRIZE_UNSUPPORTED`, non-forceable).
 - A live Redeem Ops **Activation** (`luckyDraw.activationId`, validated to belong
   to this campaign). Recommended: pair the draw with the guaranteed session
   voucher — one Activation powers the voucher AND the ×10 evidence.

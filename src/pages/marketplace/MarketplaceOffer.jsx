@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import MarketplaceLayout from './MarketplaceLayout';
 import OfferCard from './OfferCard';
 import { getMarketplaceCampaign, listMarketplaceCampaigns } from '@/api/marketplace';
-import { composeValueLine, ageLabelOf, fmtDateLong, categoryLabel, isDrawCampaign, boostOf, offerUnavailability, UNAVAILABLE_COPY } from './content';
+import { composeValueLine, ageLabelOf, fmtDateLong, categoryLabel, isDrawCampaign, boostOf, offerUnavailability, UNAVAILABLE_COPY, winnersDrawnSentence } from './content';
 import { shouldTrack, initPixel, ensureFbp, trackEvent, captureFbcFromUrl, captureUtmsFromUrl } from '@/lib/metaPixel';
 import { shouldTrackTikTok, initTikTokPixel, trackTikTokViewContent, captureTtclidFromUrl } from '@/lib/tiktokPixel';
 import { getOrCreateVcState, markVcFired } from '@/lib/pixelSession';
@@ -202,7 +202,7 @@ export default function MarketplaceOffer() {
                     </DrawStep>
                   )}
                   <DrawStep n={boost ? '3' : '2'}>
-                    Entries close on {fmtDateLong(dc.luckyDraw?.closesAt)}.{dc.luckyDraw?.winners ? ` ${dc.luckyDraw.winners} winners are drawn within seven days.` : ' Winners are drawn within seven days.'}
+                    Entries close on {fmtDateLong(dc.luckyDraw?.closesAt)}. {winnersDrawnSentence(dc.luckyDraw?.winners)}
                   </DrawStep>
                   <DrawStep n={boost ? '4' : '3'}>
                     Winners are contacted at their verified number and listed (partially masked) on the <Link to="/winners" className="rm-underline">winners page</Link>.

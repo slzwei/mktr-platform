@@ -124,6 +124,49 @@ describe('open states', () => {
   });
 });
 
+describe('winner-count copy (structured multi-prize)', () => {
+  const withWinners = (id, winners) => {
+    const campaign = drawCampaign(id);
+    campaign.design_config.luckyDraw = { ...campaign.design_config.luckyDraw, winners };
+    return campaign;
+  };
+
+  it.each(DRAW_TEMPLATE_IDS)('%s open state never claims "One winner" when 4 winners are configured', (id) => {
+    render(<CampaignPageRenderer campaign={withWinners(id, 4)} previewMode onSubmit={vi.fn()} />);
+    expect(document.body.textContent).not.toContain('One winner');
+  });
+
+  it.each(DRAW_TEMPLATE_IDS)('%s open state never prints "1 winners" for the default single-winner fixture', (id) => {
+    render(<CampaignPageRenderer campaign={drawCampaign(id)} previewMode onSubmit={vi.fn()} />);
+    expect(document.body.textContent).not.toContain('1 winners');
+  });
+
+  it('postcard mobile fact list (factStyle: list) speaks in the configured count', () => {
+    setViewport(390); // belowCard (the facts) renders on the mobile branch only
+    const campaign = drawCampaign('postcard', { factStyle: 'list' });
+    campaign.design_config.luckyDraw = { ...campaign.design_config.luckyDraw, winners: 4 };
+    render(<CampaignPageRenderer campaign={campaign} previewMode onSubmit={vi.fn()} />);
+    expect(document.body.textContent).toContain('4 winners, drawn in a witnessed process.');
+  });
+
+  it('checklist names the count after the close date', () => {
+    render(<CampaignPageRenderer campaign={withWinners('checklist', 4)} previewMode onSubmit={vi.fn()} />);
+    expect(document.body.textContent).toContain('4 winners drawn after');
+  });
+
+  it('the closed page pluralizes its being-drawn line (and keeps the singular verbatim for one winner)', () => {
+    const multi = withWinners('postcard', 4);
+    multi.design_config.luckyDraw.closesAt = '2020-01-01';
+    const { unmount } = render(<CampaignPageRenderer campaign={multi} previewMode onSubmit={vi.fn()} />);
+    expect(document.body.textContent).toContain('The 4 winners are being drawn in a witnessed process');
+    unmount();
+    const single = withWinners('postcard', 1);
+    single.design_config.luckyDraw.closesAt = '2020-01-01';
+    render(<CampaignPageRenderer campaign={single} previewMode onSubmit={vi.fn()} />);
+    expect(document.body.textContent).toContain('The winner is being drawn in a witnessed process');
+  });
+});
+
 describe('closed state', () => {
   it('draw templates get their designed closed page', () => {
     const campaign = drawCampaign('postcard');

@@ -25,6 +25,27 @@ describe('publicLuckyDraw', () => {
     expect(publicLuckyDraw({ enabled: false, closesAt: '2026-08-31' })).toBeUndefined();
   });
 
+  test('structured prizes are exposed with the derived summary + winners; ids still stripped', () => {
+    const out = publicLuckyDraw({
+      enabled: true,
+      closesAt: '2026-10-30',
+      prizes: [{ qty: 1, name: 'iPhone 17 Pro' }, { qty: 3, name: '$100 FairPrice Voucher' }],
+      prize: 'stale client summary',
+      winners: 500,
+      activationId: '2a2a2a2a-2a2a-4a2a-8a2a-2a2a2a2a2a2a',
+      termsVersionId: '3b3b3b3b-3b3b-4b3b-8b3b-3b3b3b3b3b3b',
+      termsHash: 'a'.repeat(64),
+    });
+    expect(out).toEqual({
+      enabled: true,
+      prize: 'iPhone 17 Pro + 3× $100 FairPrice Voucher',
+      prizes: [{ qty: 1, name: 'iPhone 17 Pro' }, { qty: 3, name: '$100 FairPrice Voucher' }],
+      closesAt: '2026-10-30',
+      multiplier: 10,
+      winners: 4,
+    });
+  });
+
   it('exposes bookingUrl (display-only success CTA) but never internal ids', () => {
     const out = publicLuckyDraw({
       enabled: true,

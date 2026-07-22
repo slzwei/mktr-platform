@@ -7,13 +7,14 @@ import { AppError } from '../middleware/errorHandler.js';
 import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
-import { applyLuckyDrawPolicy } from '../utils/luckyDraw.js';
+import { applyLuckyDrawPolicy, normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
 import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/marketplaceContent.js';
 import {
   classifyDesignConfigVersion,
   clampDesignConfigV2,
   designConfigV2WritesEnabled,
   getStoredTermsHtml,
+  getStoredLuckyDraw,
 } from '../utils/designConfigV2Clamp.js';
 import { invalidateMarketplaceCache } from './marketplaceCache.js';
 import { refundCampaignCommitments } from './walletService.js';
@@ -358,6 +359,30 @@ export async function getCampaign(id, req) {
 }
 
 /**
+ * Fail-closed activation gate (docs/plans/lucky-draw-multi-prize-plan.md §3.5):
+ * the draw engine resolves exactly ONE claimed winner per campaign
+ * (luckyDrawService — a claimed attempt is terminal), so a campaign whose
+ * structured prizes total more than one unit must not BE active: it would
+ * collect entries under T&Cs the platform cannot honour. Enforced at the
+ * service layer on every path that can leave a campaign active (create /
+ * update / setCampaignLaunchState) plus createDraw — the launch `force` flag
+ * only skips READINESS, never this. Phase 3 (multi-winner engine) removes it.
+ */
+export function assertDrawActivatable(designConfig) {
+  const ld = normalizeLuckyDraw(getStoredLuckyDraw(designConfig));
+  if (!ld || ld.enabled !== true) return;
+  const total = totalPrizeQuantity(ld);
+  if (total > 1) {
+    const err = new AppError(
+      `This draw promises ${total} prizes, but multi-winner draw execution isn't live yet — the campaign can stay a draft (or paused) but cannot be active.`,
+      422
+    );
+    err.data = { code: 'DRAW_MULTI_PRIZE_UNSUPPORTED' };
+    throw err;
+  }
+}
+
+/**
  * Create a new campaign.
  */
 export async function createCampaign(body, user) {
@@ -427,6 +452,10 @@ export async function createCampaign(body, user) {
       throw err;
     }
   }
+  // is_active DEFAULTS TO TRUE when omitted (above) — an API create of a
+  // multi-prize draw must be an explicit draft (the workspace sends
+  // is_active:false), never born active.
+  if (campaignData.is_active) assertDrawActivatable(campaignData.design_config);
 
   let campaign;
   try {
@@ -564,6 +593,15 @@ export async function updateCampaign(id, body, req) {
     updateData.leadPriceCents = normalizeLeadPriceCents(body.leadPriceCents);
   }
 
+  // Fail-closed: a campaign may not END UP active with a multi-prize draw —
+  // whether this save flips is_active or edits the design under an active one.
+  const willBeActive = is_active !== undefined ? is_active === true : campaign.is_active === true;
+  if (willBeActive) {
+    assertDrawActivatable(
+      updateData.design_config !== undefined ? updateData.design_config : campaign.design_config
+    );
+  }
+
   try {
     await campaign.update(updateData);
   } catch (err) {
@@ -687,6 +725,9 @@ export async function setCampaignLaunchState(id, state, req) {
   if (campaign.status === 'archived') {
     throw new AppError('Archived campaigns cannot be activated or paused. Restore it first.', 400);
   }
+  // Fail-closed: this is the path `force` reaches (the controller only skips
+  // readiness on force) — the multi-prize gate must hold here regardless.
+  if (state === 'active') assertDrawActivatable(campaign.design_config);
 
   const isActive = state === 'active';
   await campaign.update({
