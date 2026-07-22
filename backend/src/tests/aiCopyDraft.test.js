@@ -1,6 +1,7 @@
 import { describe, it, expect, jest } from '@jest/globals';
 import {
   everythingModeSchema,
+  fullModeSchema,
   buildCopyDraftPrompts,
   generateCampaignCopyDraft,
   buildCampaignContext,
@@ -15,7 +16,10 @@ import {
   contrastRatioHex,
   clampAiFields,
   clampAiTerms,
+  clampAiGates,
+  clampAiVerification,
   sanitizeAiTermsHtml,
+  AI_GATE_IDS,
   REC_TOPICS,
   COPY_FIELDS,
   PICK_FIELDS,
@@ -322,14 +326,13 @@ describe('picks + inclusions + recommendations', () => {
       { topic: 'listMarketplace', advice: 'a', suggestedValue: 'yes' }, // not on/off
       { topic: 'featureDrop', advice: 'b', suggestedValue: 'off' },
       { topic: 'customerHost', advice: 'c', suggestedValue: 'redeem.sg' }, // not the enum
-      { topic: 'formGates', advice: 'd', suggestedValue: 'on' }, // advice-only topic
+      { topic: 'formGates', advice: 'd', suggestedValue: 'on' }, // RETIRED topic → dropped entirely
       { topic: 'slug', advice: 'e', suggestedValue: 'Free Pet Hotel!' }, // bad slug format
     ], ctxBare);
     expect(Object.fromEntries(recs.map((r) => [r.topic, r.suggestedValue]))).toEqual({
       listMarketplace: null,
       featureDrop: 'off',
       customerHost: null,
-      formGates: null,
       slug: null,
     });
   });
@@ -501,10 +504,11 @@ describe('transport + prompts + error taxonomy', () => {
     expect(captured.url).toBe('https://api.openai.com/v1/responses');
     expect(captured.body.text.format).toMatchObject({ type: 'json_schema', name: 'campaign_fill_draft', strict: true });
     const schemaProps = captured.body.text.format.schema.properties;
-    // create-everything amendment: fields + terms join the everything schema.
-    expect(Object.keys(schemaProps)).toEqual(['draft', 'fields', 'terms', 'marketplaceMeta', 'inclusions', 'recommendations']);
+    // create-everything amendment: fields + terms join the everything schema;
+    // eligibility-gates amendment adds gates + verification beside them.
+    expect(Object.keys(schemaProps)).toEqual(['draft', 'fields', 'terms', 'gates', 'verification', 'marketplaceMeta', 'inclusions', 'recommendations']);
     expect(captured.body.text.format.schema.required).toEqual(
-      expect.arrayContaining(['fields', 'terms'])
+      expect.arrayContaining(['fields', 'terms', 'gates', 'verification'])
     );
     expect(Object.keys(schemaProps.marketplaceMeta.properties)).toEqual(PICK_FIELDS.map((f) => f.key));
     const system = captured.body.input.find((m) => m.role === 'system').content;
@@ -859,5 +863,132 @@ describe('marketplace inheritance gates the derived-copy AI fields (plan §3B)',
       'distribution.marketplace.cancellation',
       'content.headline',
     ]));
+  });
+});
+
+describe('eligibility-gates amendment — gates + verification are WRITES, not advice', () => {
+  const ctxWaOn = { whatsappConfigured: true };
+  const ctxWaOff = { whatsappConfigured: false };
+
+  it('clampAiGates: only the two AI gates survive; dncCheck can never be written', () => {
+    expect(AI_GATE_IDS).toEqual(['sgPr', 'advisorExclusion']);
+    const out = clampAiGates({ sgPr: true, advisorExclusion: false, dncCheck: true, bogus: true });
+    expect(out).toEqual({ sgPr: true, advisorExclusion: false });
+    expect(out).not.toHaveProperty('dncCheck');
+  });
+
+  it('clampAiGates: missing keys read as false (omission = "not this campaign"), junk → null', () => {
+    expect(clampAiGates({ sgPr: true })).toEqual({ sgPr: true, advisorExclusion: false });
+    expect(clampAiGates({ sgPr: 'yes' })).toEqual({ sgPr: false, advisorExclusion: false });
+    expect(clampAiGates(null)).toBe(null);
+    expect(clampAiGates('garbage')).toBe(null);
+    expect(clampAiGates(undefined)).toBe(null);
+  });
+
+  it('clampAiVerification: WhatsApp only when the server can actually send it', () => {
+    expect(clampAiVerification('whatsapp', ctxWaOn)).toBe('whatsapp');
+    expect(clampAiVerification('whatsapp', ctxWaOff)).toBe(null);
+    expect(clampAiVerification('sms', ctxWaOff)).toBe('sms');
+    expect(clampAiVerification('telegram', ctxWaOn)).toBe(null);
+    expect(clampAiVerification(null, ctxWaOn)).toBe(null);
+  });
+
+  it('the advisory topics they replaced are retired', () => {
+    const topics = REC_TOPICS.map((t) => t.topic);
+    expect(topics).not.toContain('formGates');
+    expect(topics).not.toContain('verification');
+    // A model that answers with a retired topic is dropped, not surfaced.
+    const recs = sanitizeRecommendations(
+      [{ topic: 'formGates', advice: 'Turn on the SG/PR gate', suggestedValue: 'on' }],
+      { marketplaceGate: null }
+    );
+    expect(recs).toEqual([]);
+  });
+
+  it('both modes carry gates + verification in the schema', () => {
+    const everything = everythingModeSchema(['content.headline']);
+    expect(everything.required).toEqual(expect.arrayContaining(['gates', 'verification']));
+    expect(everything.properties.gates.required).toEqual(['sgPr', 'advisorExclusion']);
+    expect(everything.properties.gates.properties).not.toHaveProperty('dncCheck');
+    expect(everything.properties.verification.enum).toEqual(['sms', 'whatsapp', null]);
+    const full = fullModeSchema(['content.headline'], { draw: true });
+    expect(full.required).toEqual(expect.arrayContaining(['gates', 'verification']));
+  });
+
+  it('context exposes the current gates + the WhatsApp send-path fact', () => {
+    const ctx = buildCampaignContext({
+      ...BARE_CAMPAIGN,
+      design_config: { ...BARE_CAMPAIGN.design_config, sgPrOnly: true, excludeAdvisors: false, otpChannel: 'whatsapp' },
+    });
+    expect(ctx.currentGates).toEqual({ sgPr: true, advisorExclusion: false });
+    expect(ctx.currentVerification).toBe('whatsapp');
+    expect(typeof ctx.whatsappConfigured).toBe('boolean');
+  });
+
+  it('the prompt tells the model the copy and the gate must agree', () => {
+    const prompts = buildCopyDraftPrompts({
+      mode: 'copy', scope: null, regen: 0, templateId: 'editorial',
+      brief: { topic: 'x', audience: '', objective: '', mustInclude: '', tone: 'Friendly' },
+      ctx: { campaignName: 'C', whatsappConfigured: true }, fields: [], settings: {},
+    });
+    expect(prompts.system).toContain('sgPr');
+    expect(prompts.system).toContain('Never claim an eligibility restriction in the copy without setting the matching gate');
+  });
+
+  it('no WhatsApp credentials → the prompt refuses to offer the channel', () => {
+    const prompts = buildCopyDraftPrompts({
+      mode: 'copy', scope: null, regen: 0, templateId: 'editorial',
+      brief: { topic: 'x', audience: '', objective: '', mustInclude: '', tone: 'Friendly' },
+      ctx: { campaignName: 'C', whatsappConfigured: false }, fields: [], settings: {},
+    });
+    expect(prompts.system).toContain('WhatsApp is not selectable');
+  });
+
+  it('END TO END: "citizens and PRs only" brief → Fill-everything returns the SG/PR gate on', async () => {
+    const res = await run(baseBody(), {
+      draft: [{ path: 'content.headline', value: 'Win an iPhone 17 Pro' }],
+      marketplaceMeta: {},
+      inclusions: null,
+      fields: null,
+      terms: null,
+      gates: { sgPr: true, advisorExclusion: false, dncCheck: true },
+      verification: 'sms',
+      recommendations: [],
+    });
+    expect(res.gates).toEqual({ sgPr: true, advisorExclusion: false });
+    expect(res.verification).toBe('sms');
+  });
+
+  it('END TO END: full mode carries the gates beside the looks', async () => {
+    const res = await run(baseBody({ mode: 'full' }), {
+      proposals: [{
+        name: 'Stub', rationale: 'r', templateId: 'stub',
+        theme: { preset: 'warm-cream', font: null, radius: null, background: null, accent: null },
+        media: { kind: 'none', note: '' },
+        draft: [{ path: 'content.headline', value: 'Win an iPhone 17 Pro' }],
+      }],
+      fields: null,
+      terms: null,
+      gates: { sgPr: true, advisorExclusion: false },
+      verification: 'whatsapp',
+    });
+    expect(res.gates).toEqual({ sgPr: true, advisorExclusion: false });
+    // No Meta creds in the test env → WhatsApp is refused rather than promised.
+    expect(res.verification).toBe(null);
+  });
+
+  it('a run whose ONLY useful answer is a gate is still a result, not a 502', async () => {
+    const res = await run(baseBody(), {
+      draft: [],
+      marketplaceMeta: {},
+      inclusions: null,
+      fields: null,
+      terms: null,
+      gates: { sgPr: true, advisorExclusion: false },
+      verification: null,
+      recommendations: [],
+    });
+    expect(res.gates).toEqual({ sgPr: true, advisorExclusion: false });
+    expect(res.draft).toEqual([]);
   });
 });

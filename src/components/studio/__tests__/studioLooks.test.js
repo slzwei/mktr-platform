@@ -153,3 +153,22 @@ describe('create-everything amendment — fields/terms kinds + draw look gate', 
     expect(lookBlockedReason({}, { template: { id: 'poster' } })).toBe(null);
   });
 });
+
+describe('rowCurrentValue — gates rows read through the proposal key set', () => {
+  const gatesRow = { path: 'form.gates', kind: 'gates', value: { sgPr: true, advisorExclusion: false } };
+
+  it('returns only the keys the AI proposed — dncCheck never appears as a phantom "off"', () => {
+    const doc = { form: { gates: { sgPr: false, advisorExclusion: true, dncCheck: true } } };
+    expect(rowCurrentValue(doc, gatesRow)).toEqual({ sgPr: false, advisorExclusion: true });
+  });
+
+  it('missing/!== true values normalize to false so equality is stable', () => {
+    expect(rowCurrentValue({ form: {} }, gatesRow)).toEqual({ sgPr: false, advisorExclusion: false });
+    expect(rowCurrentValue({ form: { gates: { sgPr: 'yes' } } }, gatesRow)).toEqual({ sgPr: false, advisorExclusion: false });
+  });
+
+  it('an identical posture compares equal (that is what suppresses a no-op row)', () => {
+    const doc = { form: { gates: { sgPr: true, advisorExclusion: false, dncCheck: true } } };
+    expect(rowValuesEqual(rowCurrentValue(doc, gatesRow), gatesRow.value)).toBe(true);
+  });
+});

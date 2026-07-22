@@ -133,6 +133,30 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     expect(payload.end_date).toBe(new Date('2026-08-31').toISOString());
   });
 
+  it('the seeded eligibility clause states THIS campaign age floor, not the template default', () => {
+    const onSubmit = vi.fn();
+    render(
+      <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={onSubmit} />
+    );
+    fillBasics();
+    fireEvent.change(screen.getByLabelText('Min age'), { target: { value: '21' } });
+    fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
+    const terms = onSubmit.mock.calls[0][0].design_config.termsContent;
+    expect(terms).toContain('aged 21 and above');
+    expect(terms).not.toContain('aged 18 and above');
+  });
+
+  it('a below-floor min age still seeds the legal 18+ clause', () => {
+    const onSubmit = vi.fn();
+    render(
+      <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={onSubmit} />
+    );
+    fillBasics();
+    fireEvent.change(screen.getByLabelText('Min age'), { target: { value: '16' } });
+    fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
+    expect(onSubmit.mock.calls[0][0].design_config.termsContent).toContain('aged 18 and above');
+  });
+
   it('multiple prize rows arm ordered prizes, a derived summary, and N-winner terms', () => {
     const onSubmit = vi.fn();
     render(
