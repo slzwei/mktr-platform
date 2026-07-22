@@ -309,3 +309,30 @@ describe('CampaignDetailsTab — AI fill Codex folds', () => {
     expect(screen.getByLabelText('End date').value).toBe('');
   });
 });
+
+describe('CampaignDetailsTab — brief handoff + designing state', () => {
+  it('forwards the typed brief to onSubmit as the second argument (create)', () => {
+    const onSubmit = vi.fn();
+    render(<CampaignDetailsTab initial={null} type="lead_generation" isEdit={false} saving={false} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByLabelText('Campaign name'), { target: { value: 'Voucher Push' } });
+    fireEvent.change(screen.getByLabelText('Campaign brief for AI draft'), { target: { value: '  $20 NTUC voucher for verified sign-ups  ' } });
+    fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][1]).toBe('$20 NTUC voucher for verified sign-ups'); // trimmed
+  });
+
+  it('passes an empty second argument when no brief was typed', () => {
+    const onSubmit = vi.fn();
+    render(<CampaignDetailsTab initial={null} type="lead_generation" isEdit={false} saving={false} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByLabelText('Campaign name'), { target: { value: 'Plain' } });
+    fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
+    expect(onSubmit.mock.calls[0][1]).toBe('');
+  });
+
+  it('the submit button reads as designing (disabled) while the post-create AI pass runs', () => {
+    render(<CampaignDetailsTab initial={null} type="lead_generation" isEdit={false} saving designing onSubmit={vi.fn()} />);
+    const btn = screen.getByRole('button', { name: /Designing your page/i });
+    expect(btn).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /Create draft/i })).not.toBeInTheDocument();
+  });
+});

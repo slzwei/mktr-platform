@@ -38,7 +38,7 @@ const prizeSummary = (rows) =>
  * (enforceLeadQuota) and per-campaign tracking pixels. Controlled form; the
  * workspace owns create-vs-update. PHV tablet media stays in the classic editor.
  */
-export default function CampaignDetailsTab({ initial, type, draw = false, isEdit, saving, onSubmit }) {
+export default function CampaignDetailsTab({ initial, type, draw = false, isEdit, saving, designing = false, onSubmit }) {
   const campaignType = initial?.type || type || 'lead_generation';
   const [form, setForm] = useState({
     name: initial?.name || '',
@@ -153,6 +153,9 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
           },
         }
       : {};
+    // Second arg = the brief the operator typed (create only; edit never shows
+    // the box). The workspace uses a non-empty brief to auto-design the whole
+    // page after create — it is transient input, never persisted as a field.
     onSubmit({
       ...drawConfig,
       name: form.name.trim(),
@@ -172,7 +175,7 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
       })(),
       metaPixelId: form.metaPixelId.trim() || null,
       tiktokPixelId: form.tiktokPixelId.trim() || null,
-    });
+    }, aiBrief.trim());
   };
 
   return (
@@ -344,9 +347,12 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
       </Card>
 
       <div className="flex justify-end">
-        <Button type="submit" disabled={saving || !form.name.trim()}>
-          {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-          {isEdit ? 'Save details' : 'Create draft & continue'}
+        {/* `designing` = the post-create AI page-design pass (create flow, when
+            a brief was used). It reuses this button so the operator sees the
+            work continue, not a frozen "Create" button. */}
+        <Button type="submit" disabled={saving || designing || !form.name.trim()}>
+          {(saving || designing) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+          {designing ? 'Designing your page…' : isEdit ? 'Save details' : 'Create draft & continue'}
         </Button>
       </div>
     </form>
