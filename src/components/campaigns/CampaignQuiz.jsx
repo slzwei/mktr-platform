@@ -284,7 +284,7 @@ function PillButton({ accent, onClick, children }) {
         fontWeight: 600,
         fontSize: 16,
         cursor: 'pointer',
-        boxShadow: '0 4px 14px rgba(60, 40, 20, 0.18)',
+        boxShadow: `0 4px 14px ${TOKENS.accentShadow || 'rgba(60, 40, 20, 0.18)'}`,
       }}
     >
       {children}
