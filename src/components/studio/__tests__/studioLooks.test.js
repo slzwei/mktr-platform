@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildLookDoc, adoptedCopyRows, lookBlockedReason, rowDisabledReason } from '../studioLooks';
+import { buildLookDoc, adoptedCopyRows, lookBlockedReason, rowDisabledReason, rowCurrentValue, rowValuesEqual } from '../studioLooks';
 
 /**
  * The CO-1 look composer (PR 4) — the keep matrix, params-bag preservation,
@@ -124,5 +124,32 @@ describe('rowDisabledReason — moved home (re-exported via studioAiApi)', () =>
     expect(rowDisabledReason(base(), 'quiz.intro.headline')).toMatch(/quiz is disabled/i);
     expect(rowDisabledReason(base(), 'distribution.featuredDrop.title')).toBeNull();
     expect(rowDisabledReason(base(), 'distribution.marketplace.valueLine')).toBeNull();
+  });
+});
+
+describe('create-everything amendment — fields/terms kinds + draw look gate', () => {
+  it('rowCurrentValue: fields returns the RAW array (pairing intact); terms returns {template, html}', () => {
+    const doc = { form: { fields: [{ id: 'name', visible: true, required: true, row: 'r1' }], terms: { template: 'privacy', html: '<p>x</p>' } } };
+    expect(rowCurrentValue(doc, { kind: 'fields', path: 'form.fields' })).toEqual([{ id: 'name', visible: true, required: true, row: 'r1' }]);
+    expect(rowCurrentValue(doc, { kind: 'terms', path: 'form.terms' })).toEqual({ template: 'privacy', html: '<p>x</p>' });
+    expect(rowCurrentValue({ form: {} }, { kind: 'fields', path: 'form.fields' })).toEqual([]);
+    expect(rowCurrentValue({ form: {} }, { kind: 'terms', path: 'form.terms' })).toBe('');
+  });
+
+  it('rowValuesEqual: fields arrays compare on id/visible/required — row pairing never breaks equality', () => {
+    const withRows = [{ id: 'name', visible: true, required: true, row: 'r1' }, { id: 'dob', visible: true, required: false, row: null }];
+    const aiShape = [{ id: 'name', visible: true, required: true }, { id: 'dob', visible: true, required: false }];
+    expect(rowValuesEqual(withRows, aiShape)).toBe(true);
+    expect(rowValuesEqual(withRows, [{ id: 'name', visible: true, required: true }])).toBe(false);
+    expect(rowValuesEqual({ template: 'default', html: 'a' }, { template: 'default', html: 'a' })).toBe(true);
+    expect(rowValuesEqual({ template: 'default', html: 'a' }, { template: 'privacy', html: 'a' })).toBe(false);
+  });
+
+  it('lookBlockedReason: draw templates blocked on docs without an enabled draw', () => {
+    const drawLook = { template: { id: 'postcard' } };
+    expect(lookBlockedReason({ luckyDraw: { enabled: false } }, drawLook)).toMatch(/lucky draw/i);
+    expect(lookBlockedReason({}, drawLook)).toMatch(/lucky draw/i);
+    expect(lookBlockedReason({ luckyDraw: { enabled: true } }, drawLook)).toBe(null);
+    expect(lookBlockedReason({}, { template: { id: 'poster' } })).toBe(null);
   });
 });

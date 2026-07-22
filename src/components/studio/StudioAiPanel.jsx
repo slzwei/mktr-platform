@@ -26,7 +26,51 @@ const TEMPLATE_NAMES = {
   spotlight: 'Spotlight',
   express: 'Express',
   journey: 'Journey',
+  postcard: 'Postcard',
+  gazette: 'Gazette',
+  nightfall: 'Nightfall',
+  stub: 'Stub',
+  checklist: 'Checklist',
 };
+
+const FIELD_LABELS = { name: 'Name', email: 'Email', phone: 'Phone', dob: 'Date of birth', postal: 'Postal code', education: 'Education', salary: 'Salary' };
+
+/** Fields row → display lines ("Name · Phone · … " + hidden list). */
+function fieldsLines(value) {
+  if (!Array.isArray(value) || !value.length) return [];
+  const visible = value.filter((f) => f?.visible !== false);
+  const hidden = value.filter((f) => f?.visible === false);
+  const lines = [];
+  if (visible.length) lines.push(visible.map((f) => `${FIELD_LABELS[f.id] || f.id}${f.required === true ? '' : ' (optional)'}`).join(' · '));
+  if (hidden.length) lines.push(`Hidden: ${hidden.map((f) => FIELD_LABELS[f.id] || f.id).join(', ')}`);
+  return lines;
+}
+
+/** Terms row value → compact preview: template chip + tag-stripped excerpt +
+ * size, and the legal-draft framing line (platform template vs AI scaffold). */
+function TermsValue({ row, oldEmpty }) {
+  const excerptOf = (v) => String(v?.html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const cur = excerptOf(row.value);
+  const old = oldEmpty ? '' : excerptOf(row.old);
+  return (
+    <div style={{ marginBottom: 8 }}>
+      {old ? (
+        <div style={{ fontSize: 11, color: 'var(--ink-3, #9BA0AB)', textDecoration: 'line-through', marginBottom: 3 }}>
+          {old.slice(0, 140)}{old.length > 140 ? '…' : ''}
+        </div>
+      ) : null}
+      <div style={{ font: mono, color: 'var(--ink-2, #5B616E)', marginBottom: 4 }}>
+        template: {row.value?.template || 'default'} · {String(row.value?.html || '').length} chars
+      </div>
+      <div style={{ fontSize: 12, lineHeight: 1.5 }}>{cur.slice(0, 220)}{cur.length > 220 ? '…' : ''}</div>
+      <div style={{ fontSize: 10.5, lineHeight: 1.5, color: '#8A5B07', marginTop: 5 }}>
+        {row.deterministic
+          ? 'Platform draw-terms template, composed from the live draw settings.'
+          : 'AI-drafted starting point — review before launch; this is not legal advice.'}
+      </div>
+    </div>
+  );
+}
 
 const CATEGORY_LABELS = Object.fromEntries(CATEGORY_OPTIONS);
 
@@ -145,16 +189,18 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
             </div>
             {mode === 'copy' && (
               <div style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--ink-2, #7A8090)' }}>
-                Drafts every fillable detail in one pass — page, form and quiz copy, marketplace metadata, inclusions —
-                plus advisory recommendations for the publication switches, domain and slug. Nothing is applied without
-                your review; publication switches are only ever flipped by you.
+                Drafts every fillable detail in one pass — page, form and quiz copy, marketplace metadata, inclusions,
+                the sign-up field set and a Terms &amp; Conditions draft (draw campaigns use the platform draw-terms
+                template) — plus advisory recommendations for the publication switches, domain and slug. Nothing is
+                applied without your review; AI T&amp;Cs are a starting draft, not legal advice; consent-checkbox copy,
+                the regulatory footer and publication switches are only ever yours.
               </div>
             )}
             {mode === 'full' && (
               <div style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--ink-2, #7A8090)' }}>
                 Proposes template + theme + copy together, as up to 3 complete looks — chosen only from documented
-                schema values. Gates, consents, legal text, form fields, verification and publication switches are
-                never touched.
+                schema values — plus the sign-up field set and a Terms &amp; Conditions draft to review after you adopt
+                a look. Gates, consents, the regulatory footer, verification and publication switches are never touched.
               </div>
             )}
 
@@ -281,8 +327,19 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
                         </span>
                         <span style={{ fontSize: 9.5, fontWeight: 600, color: row.state === 'applied' ? '#1F7A46' : 'var(--ink-3)' }}>{stateLabel}</span>
                       </div>
-                      {oldEmpty ? null : <ValueLines value={row.old} struck />}
-                      <ValueLines value={row.kind === 'pick' ? displayValue(row) : row.value} />
+                      {row.kind === 'fields' ? (
+                        <>
+                          {oldEmpty ? null : <ValueLines value={fieldsLines(row.old)} struck />}
+                          <ValueLines value={fieldsLines(row.value)} />
+                        </>
+                      ) : row.kind === 'terms' ? (
+                        <TermsValue row={row} oldEmpty={oldEmpty} />
+                      ) : (
+                        <>
+                          {oldEmpty ? null : <ValueLines value={row.old} struck />}
+                          <ValueLines value={row.kind === 'pick' ? displayValue(row) : row.value} />
+                        </>
+                      )}
                       {blocked ? (
                         <div style={{ fontSize: 10.5, color: '#8A5B07', marginBottom: 8 }}>{liveReason}</div>
                       ) : null}
@@ -293,7 +350,7 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
                         <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" disabled={row.state === 'kept'} onClick={() => ai.keepRow(index)}>
                           Keep mine
                         </button>
-                        {row.kind !== 'pick' ? (
+                        {row.kind !== 'pick' && row.kind !== 'fields' && row.kind !== 'terms' ? (
                           <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" title="Regenerate this field" onClick={() => ai.regenRow(index)} style={{ marginLeft: 'auto' }}>
                             ↻
                           </button>

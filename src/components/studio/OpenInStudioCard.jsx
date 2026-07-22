@@ -22,12 +22,21 @@ export default function OpenInStudioCard({ campaignId }) {
           The Studio is the full-screen editor for the campaign page, form, quiz, theme and
           distribution — with a live device preview of the unsaved document.
         </p>
-        <Link
-          to={studioPath(campaignId)}
-          className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          Open Campaign Studio →
-        </Link>
+        <div className="flex flex-col items-center gap-2">
+          <Link
+            to={`${studioPath(campaignId)}?ai=full`}
+            data-testid="studio-ai-fill-link"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            ✦ Fill everything with AI
+          </Link>
+          <Link
+            to={studioPath(campaignId)}
+            className="inline-flex items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Open Campaign Studio →
+          </Link>
+        </div>
       </div>
     </div>
   );

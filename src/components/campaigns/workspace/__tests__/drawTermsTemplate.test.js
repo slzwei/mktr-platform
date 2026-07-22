@@ -101,3 +101,21 @@ describe('buildDrawTermsHtml — structured multi-prize', () => {
     expect(numberWords(100)).toBe('100');
   });
 });
+
+describe('buildDrawTermsHtml — minAge + verification facts (create-everything amendment)', () => {
+  it('interpolates a higher age floor and the WhatsApp channel', () => {
+    const html = buildDrawTermsHtml({
+      campaignName: 'D', prize: 'One (1) iPhone', closesAt: '2026-08-31', minAge: 21, verification: 'whatsapp',
+    });
+    expect(html).toContain('aged 21 and above');
+    expect(html).toContain('one-time WhatsApp code');
+  });
+
+  it('defaults and sub-18 floors reproduce the legacy 18+/SMS wording byte-for-byte', () => {
+    const base = { campaignName: 'D', prize: 'One (1) iPhone', closesAt: '2026-08-31' };
+    expect(buildDrawTermsHtml({ ...base, minAge: 18, verification: 'sms' })).toBe(buildDrawTermsHtml(base));
+    expect(buildDrawTermsHtml({ ...base, minAge: 16 })).toBe(buildDrawTermsHtml(base));
+    expect(buildDrawTermsHtml(base)).toContain('aged 18 and above');
+    expect(buildDrawTermsHtml(base)).toContain('one-time SMS code');
+  });
+});

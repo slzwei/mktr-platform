@@ -9,6 +9,7 @@ import {
   lookBlockedReason,
   adoptedCopyRows,
 } from './studioLooks';
+import { buildDrawTermsHtml } from '@/components/campaigns/workspace/drawTermsTemplate';
 
 /**
  * Studio AI assist state machine (PR 4) — the mock's semantics with the
@@ -71,6 +72,11 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
   const [recs, setRecs] = useState([]); // advisory cards — never in apply-all
   const [scope, setScope] = useState(null); // {path, label} | null
   const [looks, setLooks] = useState([]);
+  // Full-mode common sections (create-everything amendment): the raw
+  // fields/terms/drawTerms response parts, held until a look is ADOPTED —
+  // then assembled into review rows against the pre-look doc, so they
+  // survive pick/keep/revert cycles.
+  const [commonSections, setCommonSections] = useState(null);
   const [proposal, setProposal] = useState(null); // {prev:{doc}, look, keep, adopted}
   const [mediaHint, setMediaHint] = useState(null); // {kind, note} | null
   const [regeningLook, setRegeningLook] = useState(null); // index | null
@@ -122,6 +128,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     setRecs([]);
     setScope(null);
     setLooks([]);
+    setCommonSections(null);
     setProposal(null);
     setMediaHint(null);
     setRegeningLook(null);
@@ -159,9 +166,62 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
 
   const templateId = doc?.template?.id || 'editorial';
 
+  /** Annotate assembled rows with old/absent/state against a base doc. */
+  const annotateRows = useCallback((rows, base) => rows.map((row) => ({
+    ...row,
+    old: rowCurrentValue(base, row),
+    oldAbsent: rowValueAbsent(base, row),
+    state: 'open',
+    disabledReason: rowDisabledReason(base, row.path),
+  })), []);
+
+  /** Common rows (create-everything amendment): the sign-up FIELDS row and
+   * the TERMS row. Draw campaigns compose the terms document CLIENT-side
+   * from the response's deterministic drawTerms FACTS (fresh from the stored
+   * campaign) with the same template the create flow uses — never LLM legal
+   * text. Old servers send neither key — both rows are optional. */
+  const buildCommonRows = useCallback((data, base) => {
+    const rows = [];
+    if (Array.isArray(data?.fields) && data.fields.length) {
+      rows.push({ path: 'form.fields', label: 'Sign-up fields', section: 'Form', kind: 'fields', value: data.fields });
+    }
+    let termsValue = null;
+    let drawFacts = null;
+    if (data?.terms && typeof data.terms.html === 'string' && data.terms.html) {
+      termsValue = { template: data.terms.template || 'default', html: data.terms.html };
+    } else if (data?.drawTerms && data.drawTerms.closesAt) {
+      drawFacts = data.drawTerms;
+      termsValue = {
+        template: 'default',
+        html: buildDrawTermsHtml({
+          campaignName: drawFacts.campaignName,
+          prizes: drawFacts.prizes || undefined,
+          prize: drawFacts.prize || undefined,
+          closesAt: drawFacts.closesAt,
+          boostClosesAt: drawFacts.boostClosesAt || undefined,
+          multiplier: drawFacts.multiplier,
+          minAge: drawFacts.minAge,
+          verification: drawFacts.verification,
+        }),
+      };
+    }
+    if (termsValue) {
+      rows.push({
+        path: 'form.terms',
+        label: drawFacts ? 'Draw Terms & Conditions (platform template)' : 'Terms & Conditions (draft)',
+        section: 'Form',
+        kind: 'terms',
+        value: termsValue,
+        ...(drawFacts ? { deterministic: true } : {}),
+      });
+    }
+    return annotateRows(rows, base);
+  }, [annotateRows]);
+
   /** Merge the response's typed sections into ONE review stream: string draft
-   * rows, marketplace enum picks, the inclusions list. Old servers send only
-   * `draft` — every section is optional. */
+   * rows, marketplace enum picks, the inclusions list, plus the common
+   * fields/terms rows. Old servers send only `draft` — every section is
+   * optional. */
   const toRows = useCallback((data) => {
     const current = docRef.current;
     const merged = [
@@ -169,14 +229,8 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       ...(data?.picks || []).map((row) => ({ ...row, kind: 'pick' })),
       ...(data?.inclusions ? [{ ...data.inclusions, kind: 'list', value: data.inclusions.values }] : []),
     ];
-    return merged.map((row) => ({
-      ...row,
-      old: rowCurrentValue(current, row),
-      oldAbsent: rowValueAbsent(current, row),
-      state: 'open',
-      disabledReason: rowDisabledReason(current, row.path),
-    }));
-  }, []);
+    return [...annotateRows(merged, current), ...buildCommonRows(data, current)];
+  }, [annotateRows, buildCommonRows]);
 
   const fail = useCallback((err) => {
     if (err?.kind === 'aborted') return;
@@ -275,6 +329,18 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     [campaign?.id, templateId, briefOrName, startRequest, noteCall, toRows, fail]
   );
 
+  /** The doc-write shape for a row's value: fields rows land as canonical
+   * form.fields entries (row:null — pairing is layout state the AI never
+   * proposes); terms rows land atomically as {template, html} (a labelled
+   * terms object without html would be dropped by the save clamp). */
+  const rowApplyValue = (row) => {
+    if (row.kind === 'fields') {
+      return row.value.map((f) => ({ id: f.id, visible: f.visible !== false, required: f.required === true, row: null }));
+    }
+    if (row.kind === 'terms') return { template: row.value.template || 'default', html: row.value.html || '' };
+    return row.value;
+  };
+
   /** Accept one row — action-time re-gate, then write. */
   const acceptRow = useCallback(
     (index) => {
@@ -285,7 +351,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
         patchRow(index, { disabledReason: reason });
         return;
       }
-      setPath(row.path, row.value);
+      setPath(row.path, rowApplyValue(row));
       patchRow(index, { disabledReason: null, state: 'applied' });
     },
     [setPath, patchRow]
@@ -309,11 +375,13 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
   );
 
   /** Scoped per-row regenerate (regens[path]+1), replace in place. Pick rows
-   * have no regen (enum re-rolls are noise; the server 422s pick scopes). */
+   * have no regen (enum re-rolls are noise; the server 422s pick scopes);
+   * fields/terms rows have none either (their scopes aren't in the server
+   * whitelist — a full generate re-derives them). */
   const regenRow = useCallback(
     async (index) => {
       const row = sugsRef.current[index];
-      if (!row || row.kind === 'pick' || !campaign?.id) return;
+      if (!row || row.kind === 'pick' || row.kind === 'fields' || row.kind === 'terms' || !campaign?.id) return;
       const { generation, signal } = startRequest();
       const n = (regensRef.current[row.path] || 0) + 1;
       noteCall();
@@ -367,7 +435,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       if (section && row.section !== section) return null;
       const reason = rowDisabledReason(docRef.current, row.path);
       if (reason) return { disabledReason: reason };
-      setPath(row.path, row.value);
+      setPath(row.path, rowApplyValue(row));
       return { disabledReason: null, state: 'applied' };
     });
     setSugs((prev) => prev.map((row, i) => (patches[i] ? { ...row, ...patches[i] } : row)));
@@ -462,12 +530,48 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       );
       if (generation !== generationRef.current) return;
       setLooks(Array.isArray(data.proposals) ? data.proposals : []);
+      setCommonSections({ fields: data.fields || null, terms: data.terms || null, drawTerms: data.drawTerms || null });
       setPhase('looks');
     } catch (err) {
       if (generation !== generationRef.current) return;
       fail(err);
     }
   }, [brief, campaign?.id, templateId, startRequest, noteCall, fail]);
+
+  /**
+   * Atomic auto-start (create-everything amendment §2.7): open the panel in
+   * full mode and generate from the ARGUMENT brief — never from possibly-
+   * stale closure state (setBrief + generate would race the closure). Used
+   * by the ?ai=full create-flow handoff; consumes one budget call like any
+   * generation.
+   */
+  const beginFull = useCallback(async (prefill = {}) => {
+    if (!campaign?.id) return;
+    const usedBrief = { ...EMPTY_BRIEF, ...prefill };
+    if (!usedBrief.topic.trim()) usedBrief.topic = campaign?.name || '';
+    if (!usedBrief.topic.trim()) return;
+    setBrief(usedBrief);
+    setOpen(true);
+    setMode('full');
+    const { generation, signal } = startRequest();
+    setPhase('looksLoading');
+    setRecs([]);
+    setError('');
+    noteCall();
+    try {
+      const data = await requestCopyDraft(
+        { campaignId: campaign.id, templateId, mode: 'full', scope: null, regen: 0, brief: usedBrief },
+        { signal }
+      );
+      if (generation !== generationRef.current) return;
+      setLooks(Array.isArray(data.proposals) ? data.proposals : []);
+      setCommonSections({ fields: data.fields || null, terms: data.terms || null, drawTerms: data.drawTerms || null });
+      setPhase('looks');
+    } catch (err) {
+      if (generation !== generationRef.current) return;
+      fail(err);
+    }
+  }, [campaign?.id, campaign?.name, templateId, startRequest, noteCall, fail]);
 
   /** Per-card ↻ — regenerate ONE look in place (gallery only). Mid-proposal
    * the ORIGINAL prev is retained (the proposal object is untouched, F9). */
@@ -554,7 +658,11 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
   }, [replaceDoc]);
 
   /** Adopt — all-three-kept is a no-op discard (F9); otherwise the look's
-   * landed copy becomes an `applied` review list (old = pre-look values). */
+   * landed copy becomes an `applied` review list (old = pre-look values),
+   * FOLLOWED by the common fields/terms rows (create-everything amendment):
+   * they are look-independent, arrive `open` (the look swap never wrote
+   * them), and survive pick/revert cycles because they rebuild from the raw
+   * response sections each adoption. */
   const adoptLook = useCallback(() => {
     const p = proposalRef.current;
     if (!p || p.adopted) return;
@@ -563,15 +671,17 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       return;
     }
     setProposal({ ...p, adopted: true });
-    if (!p.keep.copy) {
-      setSugs(adoptedCopyRows(p.look, p.prev.doc, docRef.current));
+    const common = commonSections ? buildCommonRows(commonSections, docRef.current) : [];
+    const copyRows = p.keep.copy ? [] : adoptedCopyRows(p.look, p.prev.doc, docRef.current);
+    if (copyRows.length || common.length) {
+      setSugs([...copyRows, ...common]);
       setScope(null);
       setPhase('ready');
     } else {
       setSugs([]);
       setPhase('brief');
     }
-  }, [revertLook]);
+  }, [revertLook, commonSections, buildCommonRows]);
 
   /** Save success = the commit point — the proposal is no longer revertable.
    * The caller passes the proposal AS OF SAVE START (Codex diff #3): a look
@@ -613,6 +723,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
     discard,
     backToBrief,
     generateLooks,
+    beginFull,
     regenLook,
     pickLook,
     toggleKeep,

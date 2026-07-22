@@ -840,3 +840,146 @@ describe('studioAiApi — requestCopyDraft error mapping', () => {
     await expect(requestCopyDraft({})).rejects.toMatchObject({ kind: 'error', message: 'AI provider timed out.' });
   });
 });
+
+describe('create-everything amendment — fields + terms rows, beginFull', () => {
+  const LONG_TERMS = '<p>' + 'terms body '.repeat(25) + '</p>';
+  const AI_FIELDS = [
+    { id: 'name', visible: true, required: true },
+    { id: 'email', visible: true, required: true },
+    { id: 'phone', visible: true, required: true },
+    { id: 'dob', visible: true, required: true },
+    { id: 'postal', visible: false, required: false },
+    { id: 'education', visible: false, required: false },
+    { id: 'salary', visible: false, required: false },
+  ];
+  const LOOK = {
+    name: 'Poster look',
+    rationale: 'Bold.',
+    template: { id: 'poster' },
+    theme: { preset: 'warm-cream', accent: null },
+    media: { kind: 'none', note: '' },
+    draft: [{ path: 'content.headline', label: 'Headline', section: 'Page', value: 'Look headline' }],
+  };
+
+  it('copy mode assembles fields + terms rows; accept writes canonical shapes; keep-mine restores', async () => {
+    const seeded = v2Campaign('c1', {
+      form: {
+        fields: [{ id: 'name', visible: true, required: true, row: 'r1' }],
+        verification: 'sms',
+        gates: { sgPr: false, advisorExclusion: false, dncCheck: false },
+        terms: { template: 'default', html: '<p>t</p>' },
+      },
+    });
+    const { result } = renderAi(seeded);
+    await generateReady(result, {
+      success: true,
+      data: { draft: DRAFT, fields: AI_FIELDS, terms: { template: 'privacy', html: LONG_TERMS } },
+    });
+    const rows = result.current.ai.sugs;
+    const fIdx = rows.findIndex((r) => r.kind === 'fields');
+    const tIdx = rows.findIndex((r) => r.kind === 'terms');
+    expect(fIdx).toBeGreaterThan(-1);
+    expect(tIdx).toBeGreaterThan(-1);
+    expect(rows[fIdx]).toMatchObject({ path: 'form.fields', section: 'Form', state: 'open' });
+    expect(rows[tIdx].value).toEqual({ template: 'privacy', html: LONG_TERMS });
+
+    act(() => result.current.ai.acceptRow(fIdx));
+    expect(result.current.docApi.doc.form.fields).toEqual(AI_FIELDS.map((f) => ({ ...f, row: null })));
+    act(() => result.current.ai.acceptRow(tIdx));
+    expect(result.current.docApi.doc.form.terms).toEqual({ template: 'privacy', html: LONG_TERMS });
+
+    // keep-mine restores the ORIGINAL field array (row pairing intact) + terms
+    act(() => result.current.ai.keepRow(fIdx));
+    expect(result.current.docApi.doc.form.fields).toEqual([{ id: 'name', visible: true, required: true, row: 'r1' }]);
+    act(() => result.current.ai.keepRow(tIdx));
+    expect(result.current.docApi.doc.form.terms).toEqual({ template: 'default', html: '<p>t</p>' });
+  });
+
+  it('draw campaigns compose a DETERMINISTIC terms row from drawTerms facts (multi-prize, WhatsApp, minAge)', async () => {
+    const campaign = v2Campaign('c-draw', { luckyDraw: { enabled: true, closesAt: '2026-10-30', multiplier: 10 } });
+    const { result } = renderAi(campaign);
+    await generateReady(result, {
+      success: true,
+      data: {
+        draft: [],
+        fields: null,
+        terms: null,
+        drawTerms: {
+          campaignName: 'Tokyo Draw',
+          prizes: [{ qty: 1, name: 'iPhone 17 Pro' }, { qty: 3, name: '$100 Voucher' }],
+          prize: null,
+          closesAt: '2026-10-30',
+          boostClosesAt: null,
+          multiplier: 10,
+          minAge: 21,
+          verification: 'whatsapp',
+        },
+      },
+    });
+    const row = result.current.ai.sugs.find((r) => r.kind === 'terms');
+    expect(row.deterministic).toBe(true);
+    expect(row.value.html).toContain('Four (4) winners are drawn');
+    expect(row.value.html).toContain('aged 21 and above');
+    expect(row.value.html).toContain('WhatsApp code');
+    expect(row.value.html).toContain('One (1) &times; iPhone 17 Pro');
+  });
+
+  it('regen is a NO-OP for fields and terms rows (no extra provider call)', async () => {
+    const { result } = renderAi();
+    await generateReady(result, {
+      success: true,
+      data: { draft: [], fields: AI_FIELDS, terms: { template: 'default', html: LONG_TERMS } },
+    });
+    const calls = apiClient.post.mock.calls.length;
+    const fIdx = result.current.ai.sugs.findIndex((r) => r.kind === 'fields');
+    const tIdx = result.current.ai.sugs.findIndex((r) => r.kind === 'terms');
+    await act(async () => { await result.current.ai.regenRow(fIdx); });
+    await act(async () => { await result.current.ai.regenRow(tIdx); });
+    expect(apiClient.post.mock.calls.length).toBe(calls);
+  });
+
+  it('apply-all covers fields + terms rows', async () => {
+    const { result } = renderAi();
+    await generateReady(result, {
+      success: true,
+      data: { draft: [], fields: AI_FIELDS, terms: { template: 'marketing', html: LONG_TERMS } },
+    });
+    act(() => result.current.ai.applyAll());
+    expect(result.current.docApi.doc.form.fields).toHaveLength(7);
+    expect(result.current.docApi.doc.form.terms.template).toBe('marketing');
+    expect(result.current.ai.sugs.every((r) => r.state === 'applied')).toBe(true);
+  });
+
+  it('beginFull generates ONCE from the ARGUMENT brief; common rows survive pick → adopt', async () => {
+    const { result } = renderAi();
+    apiClient.post.mockResolvedValueOnce({
+      success: true,
+      data: { proposals: [LOOK], fields: AI_FIELDS, terms: { template: 'default', html: LONG_TERMS }, drawTerms: null },
+    });
+    await act(async () => { await result.current.ai.beginFull({ topic: 'Auto brief from create flow' }); });
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
+    const [, body] = apiClient.post.mock.calls[0];
+    expect(body).toMatchObject({ mode: 'full' });
+    expect(body.brief.topic).toBe('Auto brief from create flow');
+    expect(result.current.ai.open).toBe(true);
+    expect(result.current.ai.mode).toBe('full');
+    expect(result.current.ai.phase).toBe('looks');
+
+    act(() => result.current.ai.pickLook(0));
+    expect(result.current.ai.phase).toBe('proposal');
+    act(() => result.current.ai.adoptLook());
+    const kinds = result.current.ai.sugs.map((r) => r.kind);
+    expect(kinds).toContain('copy'); // the look's landed copy
+    expect(kinds).toContain('fields'); // common rows survive adoption
+    expect(kinds).toContain('terms');
+    const fieldsRow = result.current.ai.sugs.find((r) => r.kind === 'fields');
+    expect(fieldsRow.state).toBe('open'); // the look swap never wrote them
+  });
+
+  it('beginFull without a topic falls back to the campaign name', async () => {
+    const { result } = renderAi();
+    apiClient.post.mockResolvedValueOnce({ success: true, data: { proposals: [LOOK], fields: null, terms: null, drawTerms: null } });
+    await act(async () => { await result.current.ai.beginFull({}); });
+    expect(apiClient.post.mock.calls[0][1].brief.topic).toBe('Voucher Blast');
+  });
+});

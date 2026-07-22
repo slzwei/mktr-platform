@@ -102,10 +102,12 @@ describe('StudioAiPanel', () => {
     const ai = fakeAi();
     render(<StudioAiPanel ai={ai} />);
     expect(screen.getByRole('button', { name: 'Generate suggestions' })).toBeDisabled();
-    // full-coverage amendment: the first tab is "Fill everything" with the
-    // everything explainer (recommendations never auto-apply)
+    // create-everything amendment: the explainer now covers fields + T&Cs
+    // drafting and keeps the never-yours-to-flip framing for switches.
     expect(screen.getByRole('button', { name: 'Fill everything' })).toBeInTheDocument();
-    expect(screen.getByText(/publication switches are only ever flipped by you/i)).toBeInTheDocument();
+    expect(screen.getByText(/sign-up field set and a Terms & Conditions draft/i)).toBeInTheDocument();
+    expect(screen.getByText(/not legal advice/i)).toBeInTheDocument();
+    expect(screen.getByText(/publication switches are only ever yours/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Design the whole page' }));
     expect(ai.setMode).toHaveBeenCalledWith('full');
     fireEvent.click(screen.getByRole('button', { name: 'Friendly' }));
@@ -406,5 +408,51 @@ describe('AI entry points', () => {
 
     rerender(<PagePanel doc={doc} setPath={() => {}} mut={() => {}} />);
     expect(screen.queryAllByRole('button', { name: /^AI suggest — / })).toHaveLength(0);
+  });
+});
+
+describe('create-everything amendment — fields + terms rows render', () => {
+  const FIELDS_ROW = {
+    path: 'form.fields', label: 'Sign-up fields', section: 'Form', kind: 'fields', state: 'open',
+    value: [
+      { id: 'name', visible: true, required: true },
+      { id: 'dob', visible: true, required: false },
+      { id: 'salary', visible: false, required: false },
+    ],
+    old: [], oldAbsent: true, disabledReason: null,
+  };
+  const TERMS_ROW = {
+    path: 'form.terms', label: 'Terms & Conditions (draft)', section: 'Form', kind: 'terms', state: 'open',
+    value: { template: 'privacy', html: '<p>' + 'clause '.repeat(50) + '</p>' },
+    old: '', oldAbsent: true, disabledReason: null,
+  };
+
+  it('fields rows render a readable summary (never [object Object]) and no regen button', () => {
+    const ai = fakeAi({ phase: 'ready', sugs: [FIELDS_ROW] });
+    render(<StudioAiPanel ai={ai} />);
+    const card = screen.getByTestId('ai-sug-form.fields');
+    expect(card.textContent).toContain('Name');
+    expect(card.textContent).toContain('Date of birth (optional)');
+    expect(card.textContent).toContain('Hidden: Salary');
+    expect(card.textContent).not.toContain('[object Object]');
+    expect(card.querySelector('[title="Regenerate this field"]')).toBeNull();
+  });
+
+  it('terms rows render the template chip, an excerpt, and the legal-draft framing', () => {
+    const ai = fakeAi({ phase: 'ready', sugs: [TERMS_ROW] });
+    render(<StudioAiPanel ai={ai} />);
+    const card = screen.getByTestId('ai-sug-form.terms');
+    expect(card.textContent).toContain('template: privacy');
+    expect(card.textContent).toContain('clause');
+    expect(card.textContent).toContain('not legal advice');
+    expect(card.querySelector('[title="Regenerate this field"]')).toBeNull();
+  });
+
+  it('deterministic draw terms rows say so instead of the legal-draft warning', () => {
+    const ai = fakeAi({ phase: 'ready', sugs: [{ ...TERMS_ROW, deterministic: true, label: 'Draw Terms & Conditions (platform template)' }] });
+    render(<StudioAiPanel ai={ai} />);
+    const card = screen.getByTestId('ai-sug-form.terms');
+    expect(card.textContent).toContain('Platform draw-terms template');
+    expect(card.textContent).not.toContain('not legal advice');
   });
 });
