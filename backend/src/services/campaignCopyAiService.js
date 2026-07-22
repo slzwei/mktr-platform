@@ -75,8 +75,17 @@ import { composeOps, passesStaticGate } from './marketplaceService.js';
  * freshly-fetched campaign, never model output) and the client composes the
  * document with the same deterministic template the create flow uses. Full
  * mode's template enum excludes the draw templates for non-draw campaigns.
- * Still never writable: consents, regulatory footer, form gates/verification,
- * luckyDraw, media sources, the publication switches.
+ * Still never writable: consents, regulatory footer, luckyDraw, media sources,
+ * the publication switches.
+ *
+ * ELIGIBILITY-GATES AMENDMENT (2026-07-22): both modes also return `gates`
+ * (the sgPr / advisorExclusion screening cards) and `verification` (the OTP
+ * channel) as review-gated WRITES, retiring the formGates + verification
+ * advisory topics. Advice was the wrong shape: a brief reading "Singaporean
+ * citizens and PRs only" wrote that promise into the headline while the gate
+ * stayed off, so the page advertised a restriction it never enforced. The DNC
+ * gate stays operator-only (AI_GATE_IDS) and WhatsApp is only selectable when
+ * the server actually has Meta credentials.
  */
 
 // ─────────────────────────── whitelist ───────────────────────────
@@ -171,10 +180,13 @@ export const REC_TOPICS = [
   { topic: 'featureDrop', label: 'Featured drop' },
   { topic: 'customerHost', label: 'Customer domain' },
   { topic: 'slug', label: 'URL slug' },
-  { topic: 'formGates', label: 'Eligibility gates' },
   // formFields retired 2026-07-22: field selection is a review-gated WRITE
   // row now (create-everything amendment), not advice.
-  { topic: 'verification', label: 'Verification channel' },
+  // formGates + verification retired 2026-07-22 (eligibility-gates amendment):
+  // both are review-gated WRITE rows now. Advice-only was the wrong shape —
+  // a brief that says "Singaporean citizens and PRs only" would write that
+  // promise into the page copy while the screening gate stayed off, so the
+  // page advertised a restriction it never enforced.
 ];
 const REC_TOPIC_IDS = REC_TOPICS.map((t) => t.topic);
 const REC_LABELS = Object.fromEntries(REC_TOPICS.map((t) => [t.topic, t.label]));
@@ -264,6 +276,16 @@ export function buildCampaignContext(campaign, gate = null) {
       template: (isObj(doc) && doc.version === 2 ? doc.form?.terms?.template : null) || 'default',
       hasHtml: !!String((isObj(doc) && doc.version === 2 ? doc.form?.terms?.html : legacy.termsContent) || '').trim(),
     },
+    // Eligibility-gates amendment: the two AI-writable screening gates (dncCheck
+    // is deliberately absent — see AI_GATE_IDS) plus the verification channel,
+    // read version-agnostically through the legacy view.
+    currentGates: { sgPr: legacy.sgPrOnly === true, advisorExclusion: legacy.excludeAdvisors === true },
+    currentVerification: legacy.otpChannel === 'whatsapp' ? 'whatsapp' : 'sms',
+    // Server env fact, same probe campaignReadinessService uses. The model may
+    // only pick WhatsApp when the send path actually exists; the clamp enforces
+    // it (a model-chosen WhatsApp on a bare server would silently fall back to
+    // SMS and raise a readiness warning the operator never asked for).
+    whatsappConfigured: Boolean(process.env.META_WA_PHONE_NUMBER_ID) && Boolean(process.env.META_WA_ACCESS_TOKEN),
     minAge: campaign.min_age ?? 18,
     maxAge: campaign.max_age ?? 65,
     slug: campaign.slug || null,
@@ -434,7 +456,9 @@ export function sanitizeRecommendations(rows, ctx) {
       suggestedValue = suggestedValue ? suggestedValue.toLowerCase() : null;
       if (!suggestedValue || !SLUG_RE.test(suggestedValue) || ctx.slug || ctx.slugLocked) suggestedValue = null;
     } else {
-      suggestedValue = null; // formGates / formFields / verification: advice-only
+      // Defensive default: every live topic is handled above, so this only
+      // catches a topic added to REC_TOPICS without a validator.
+      suggestedValue = null;
     }
     seen.add(topic);
     out.push({ topic, label: REC_LABELS[topic], advice, suggestedValue });
@@ -511,6 +535,41 @@ export function sanitizeAiTermsHtml(raw) {
  * terms — the client composes the document from ctx.drawTerms facts with the
  * deterministic template (create-flow parity); model output is discarded.
  */
+/**
+ * The eligibility gates the AI may propose. `dncCheck` is DELIBERATELY not
+ * here: it is an ops/compliance switch bound to the server-side PDPC DNC
+ * onboarding, not a campaign-copy decision — an LLM turning it on because a
+ * brief mentioned "no spam" would add a live consent step to the funnel that
+ * nobody asked for. It stays operator-only and is preserved untouched at apply.
+ */
+export const AI_GATE_IDS = ['sgPr', 'advisorExclusion'];
+
+/**
+ * Gates row value {sgPr, advisorExclusion} or null. Full-object-or-null (the
+ * fields/terms convention): a partial gate map is meaningless because the
+ * operator reviews the whole screening posture as one decision. Missing keys
+ * read as false — the model omitting a gate means "not this campaign", never
+ * "keep whatever is there".
+ */
+export function clampAiGates(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const out = {};
+  for (const id of AI_GATE_IDS) out[id] = raw[id] === true;
+  return out;
+}
+
+/**
+ * Verification channel 'sms' | 'whatsapp', or null when the model said nothing
+ * usable. WhatsApp downgrades to null (leave the campaign alone) when the
+ * server has no Meta credentials — picking an undeliverable channel is worse
+ * than leaving the default.
+ */
+export function clampAiVerification(raw, ctx) {
+  if (raw !== 'sms' && raw !== 'whatsapp') return null;
+  if (raw === 'whatsapp' && ctx?.whatsappConfigured !== true) return null;
+  return raw;
+}
+
 export function clampAiTerms(raw, ctx) {
   if (ctx?.draw) return null;
   if (!raw || typeof raw !== 'object') return null;
@@ -633,7 +692,7 @@ const EVERYTHING_MODE_EXTRA = [
   'The drop emoji field may contain a single emoji; emojis stay forbidden everywhere else unless the current copy already uses them.',
   'recommendations are ADVISORY notes for the operator on publication decisions; they are never applied automatically. Ground each one in the campaign context and the marketplaceGate snapshot (false keys = unmet publication requirements); never promise that a listing or feature will go live. Only include topics with something concrete to say.',
   'When marketplaceGate.supportedType is false, say the marketplace is unavailable for this campaign type — do not recommend listing.',
-  'suggestedValue: "on"/"off" for listMarketplace/featureDrop, "redeem"/"mktr" for customerHost, a lowercase-dash slug (3-80 chars) for slug ONLY when the campaign has none, otherwise null. formGates/verification are advice-only (null).',
+  'suggestedValue: "on"/"off" for listMarketplace/featureDrop, "redeem"/"mktr" for customerHost, a lowercase-dash slug (3-80 chars) for slug ONLY when the campaign has none, otherwise null.',
 ].join('\n');
 
 /** fields + terms guidance — shared by the everything AND full modes
@@ -643,6 +702,13 @@ function fieldsTermsExtra(ctx) {
   const lines = [
     '',
     'fields: choose which sign-up fields this campaign should capture, in display order. name/email/phone are always visible and required (locked). Only include dob/postal/education/salary when the brief or campaign objective supports them — fewer fields converts better; qualification objectives justify more. Or return null to leave the form unchanged.',
+    // Eligibility-gates amendment: the copy and the gate must agree. The page
+    // stating "for Singaporeans and PRs" while the screening card is off is
+    // the exact failure this section exists to prevent.
+    'gates: the screening cards shown BEFORE the form. sgPr = a Yes/No "are you a Singapore Citizen or PR?" card — set it true whenever the brief restricts entry to citizens/PRs/locals, or whenever your own copy tells the reader the offer is for Singaporeans or PRs. advisorExclusion = a second card excluding financial advisers/insurance agents — set it true only when the brief asks to exclude them or the offer is an adviser-facing conflict. Never claim an eligibility restriction in the copy without setting the matching gate. Return null only when the brief implies no screening at all.',
+    ctx.whatsappConfigured
+      ? 'verification: "sms" or "whatsapp" — the channel the one-time code is sent on. Default to "sms"; pick "whatsapp" only when the brief asks for it or the audience is explicitly WhatsApp-first. Or null to leave it unchanged.'
+      : 'verification: return "sms" or null — this server has no WhatsApp sending credentials, so WhatsApp is not selectable.',
   ];
   if (ctx.draw) {
     lines.push(
@@ -773,6 +839,15 @@ const termsSchema = {
     html: { type: ['string', 'null'], maxLength: 12000 },
   },
 };
+/** Eligibility-gates amendment — shared by BOTH modes, same nullable-required
+ * strict-schema style. dncCheck is absent by design (AI_GATE_IDS). */
+const gatesSchema = {
+  type: ['object', 'null'],
+  additionalProperties: false,
+  required: AI_GATE_IDS,
+  properties: Object.fromEntries(AI_GATE_IDS.map((id) => [id, { type: 'boolean' }])),
+};
+const verificationSchema = { type: ['string', 'null'], enum: ['sms', 'whatsapp', null] };
 
 /** Unscoped copy mode fills EVERYTHING in one call: string draft + enum picks
  * + inclusions + fields + terms + advisory recommendations. Strict-schema
@@ -782,11 +857,13 @@ export function everythingModeSchema(paths, { inclusions = true } = {}) {
   return {
     type: 'object',
     additionalProperties: false,
-    required: ['draft', 'marketplaceMeta', ...(inclusions ? ['inclusions'] : []), 'fields', 'terms', 'recommendations'],
+    required: ['draft', 'marketplaceMeta', ...(inclusions ? ['inclusions'] : []), 'fields', 'terms', 'gates', 'verification', 'recommendations'],
     properties: {
       draft: draftArraySchema(paths),
       fields: fieldsSchema,
       terms: termsSchema,
+      gates: gatesSchema,
+      verification: verificationSchema,
       marketplaceMeta: {
         type: 'object',
         additionalProperties: false,
@@ -829,10 +906,12 @@ export function fullModeSchema(paths, { draw = false } = {}) {
   return {
     type: 'object',
     additionalProperties: false,
-    required: ['proposals', 'fields', 'terms'],
+    required: ['proposals', 'fields', 'terms', 'gates', 'verification'],
     properties: {
       fields: fieldsSchema,
       terms: termsSchema,
+      gates: gatesSchema,
+      verification: verificationSchema,
       proposals: {
         type: 'array',
         minItems: 1,
@@ -993,11 +1072,20 @@ export async function generateCampaignCopyDraft(body, userId, overrides = {}) {
     }
     const aiFields = clampAiFields(parsed?.fields);
     const aiTerms = clampAiTerms(parsed?.terms, ctx);
+    const aiGates = clampAiGates(parsed?.gates);
+    const aiVerification = clampAiVerification(parsed?.verification, ctx);
     logger.info(
-      { userId, campaignId: body.campaignId, proposals: proposals.length, fields: !!aiFields, terms: !!aiTerms },
+      { userId, campaignId: body.campaignId, proposals: proposals.length, fields: !!aiFields, terms: !!aiTerms, gates: !!aiGates, verification: aiVerification },
       'ai.copy_draft.full'
     );
-    return { proposals, fields: aiFields, terms: aiTerms, drawTerms: ctx.drawTerms || null };
+    return {
+      proposals,
+      fields: aiFields,
+      terms: aiTerms,
+      gates: aiGates,
+      verification: aiVerification,
+      drawTerms: ctx.drawTerms || null,
+    };
   }
 
   if (scopeIsInclusions) {
@@ -1006,7 +1094,17 @@ export async function generateCampaignCopyDraft(body, userId, overrides = {}) {
       throw new AppError('The AI provider returned no usable draft.', 502);
     }
     logger.info({ userId, campaignId: body.campaignId, rows: 0, scope }, 'ai.copy_draft.copy');
-    return { draft: [], picks: [], inclusions, recommendations: [], fields: null, terms: null, drawTerms: null };
+    return {
+      draft: [],
+      picks: [],
+      inclusions,
+      recommendations: [],
+      fields: null,
+      terms: null,
+      gates: null,
+      verification: null,
+      drawTerms: null,
+    };
   }
 
   const draft = sanitizeDraftRows(parsed?.draft, requestFields);
@@ -1014,16 +1112,19 @@ export async function generateCampaignCopyDraft(body, userId, overrides = {}) {
   const inclusions = everything && inclusionsAllowed ? sanitizeInclusions(parsed?.inclusions) : null;
   const aiFields = everything ? clampAiFields(parsed?.fields) : null;
   const aiTerms = everything ? clampAiTerms(parsed?.terms, ctx) : null;
+  const aiGates = everything ? clampAiGates(parsed?.gates) : null;
+  const aiVerification = everything ? clampAiVerification(parsed?.verification, ctx) : null;
   const drawTerms = everything ? ctx.drawTerms || null : null;
   const recommendations = everything ? sanitizeRecommendations(parsed?.recommendations, ctx) : [];
   // drawTerms is deterministic context (not model output) — it never makes a
-  // dead model response "usable".
-  if (draft.length === 0 && picks.length === 0 && !inclusions && !aiFields && !aiTerms) {
+  // dead model response "usable". gates/verification CAN: a run whose only
+  // useful answer is "switch the SG/PR screening on" is a real result.
+  if (draft.length === 0 && picks.length === 0 && !inclusions && !aiFields && !aiTerms && !aiGates && !aiVerification) {
     throw new AppError('The AI provider returned no usable draft.', 502);
   }
   logger.info(
-    { userId, campaignId: body.campaignId, rows: draft.length, picks: picks.length, recs: recommendations.length, fields: !!aiFields, terms: !!aiTerms, scope },
+    { userId, campaignId: body.campaignId, rows: draft.length, picks: picks.length, recs: recommendations.length, fields: !!aiFields, terms: !!aiTerms, gates: !!aiGates, verification: aiVerification, scope },
     'ai.copy_draft.copy'
   );
-  return { draft, picks, inclusions, recommendations, fields: aiFields, terms: aiTerms, drawTerms };
+  return { draft, picks, inclusions, recommendations, fields: aiFields, terms: aiTerms, gates: aiGates, verification: aiVerification, drawTerms };
 }

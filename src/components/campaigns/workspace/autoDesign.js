@@ -23,6 +23,18 @@ function applyCommonSections(doc, data) {
       row: null,
     }));
   }
+  // Eligibility-gates amendment: gates MERGE (the AI proposes only sgPr and
+  // advisorExclusion — a whole-object write would clear the operator-owned DNC
+  // gate), verification is a straight enum the server already clamped against
+  // the WhatsApp send path.
+  if (data?.gates && typeof data.gates === 'object') {
+    doc.form = doc.form || {};
+    doc.form.gates = { ...(doc.form.gates || {}), ...data.gates };
+  }
+  if (data?.verification === 'sms' || data?.verification === 'whatsapp') {
+    doc.form = doc.form || {};
+    doc.form.verification = data.verification;
+  }
   let terms = null;
   if (data?.terms && typeof data.terms.html === 'string' && data.terms.html) {
     terms = { template: data.terms.template || 'default', html: data.terms.html };
@@ -38,7 +50,10 @@ function applyCommonSections(doc, data) {
         boostClosesAt: facts.boostClosesAt || undefined,
         multiplier: facts.multiplier,
         minAge: facts.minAge,
-        verification: facts.verification,
+        // The APPLIED channel, not the stored one: the same pass may have just
+        // switched the campaign to WhatsApp, and terms that promise an SMS
+        // code the funnel never sends are wrong the moment they are written.
+        verification: doc.form?.verification || facts.verification,
       }),
     };
   }
@@ -87,11 +102,14 @@ export async function generateCampaignDesign({ campaign, brief, signal } = {}) {
   // templates need an enabled draw) — re-gated against the seed doc, same as
   // the Studio gallery does at pick time.
   const look = proposals.find((p) => lookBlockedReason(base, p) === null);
-  // Terms + fields apply even when no look is usable — a campaign with legal
-  // wording and the right form beats returning nothing. Copy/theme need a look.
+  // Terms + fields + gates apply even when no look is usable — a campaign with
+  // legal wording, the right form and the right screening beats returning
+  // nothing. Copy/theme need a look.
   const hasCommon = (Array.isArray(data?.fields) && data.fields.length) ||
     (data?.terms && typeof data.terms.html === 'string' && data.terms.html) ||
-    (data?.drawTerms && data.drawTerms.closesAt);
+    (data?.drawTerms && data.drawTerms.closesAt) ||
+    (data?.gates && typeof data.gates === 'object') ||
+    data?.verification === 'sms' || data?.verification === 'whatsapp';
   if (!look && !hasCommon) return null;
   return applyCommonSections(look ? buildLookDoc(base, look, {}) : structuredClone(base), data);
 }

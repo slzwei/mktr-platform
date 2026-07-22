@@ -195,3 +195,43 @@ describe('PR 5 — server code mapping + WhatsApp dedupe + draw-date math', () =
     expect(sgtYmdFromInstant('garbage')).toBeNull();
   });
 });
+
+describe('computeDesignChecks — draw T&Cs drifting from the campaign settings', () => {
+  const drawDoc = (termsHtml, extras = {}) =>
+    docWith({}, {
+      luckyDraw: { enabled: true, closesAt: '2026-09-02' },
+      form: { verification: 'sms', terms: { template: 'default', html: termsHtml }, ...extras },
+    });
+  const TERMS_18_SMS = '<p><strong>Eligibility &amp; entry:</strong> Open to Singapore residents aged 18 and above. Verify with the one-time SMS code.</p>';
+
+  it('T&Cs stating 18+ on a 21+ campaign → warn (the exact prod drift)', () => {
+    const items = computeDesignChecks({ campaign: { ...CAMPAIGN, min_age: 21 }, doc: drawDoc(TERMS_18_SMS) });
+    expect(items).toContainEqual(
+      expect.objectContaining({ sev: 'warn', sec: 'form', msg: expect.stringContaining('must be 18 and above') })
+    );
+  });
+
+  it('matching age → no warning', () => {
+    const items = computeDesignChecks({ campaign: { ...CAMPAIGN, min_age: 18 }, doc: drawDoc(TERMS_18_SMS) });
+    expect(items.filter((i) => /and above/.test(i.msg || ''))).toHaveLength(0);
+  });
+
+  it('a min_age under the legal draw floor compares against 18, not the raw value', () => {
+    const items = computeDesignChecks({ campaign: { ...CAMPAIGN, min_age: 16 }, doc: drawDoc(TERMS_18_SMS) });
+    expect(items.filter((i) => /and above/.test(i.msg || ''))).toHaveLength(0);
+  });
+
+  it('T&Cs promising an SMS code while the form verifies by WhatsApp → warn', () => {
+    const doc = drawDoc(TERMS_18_SMS, { verification: 'whatsapp' });
+    const items = computeDesignChecks({ campaign: { ...CAMPAIGN, min_age: 18 }, doc });
+    expect(items).toContainEqual(
+      expect.objectContaining({ sev: 'warn', msg: expect.stringContaining('one-time SMS code') })
+    );
+  });
+
+  it('hand-written terms that use neither phrase never warn', () => {
+    const doc = drawDoc('<p>Bespoke legal wording with no template phrasing at all.</p>');
+    const items = computeDesignChecks({ campaign: { ...CAMPAIGN, min_age: 21 }, doc });
+    expect(items.filter((i) => i.sev === 'warn')).toHaveLength(0);
+  });
+});

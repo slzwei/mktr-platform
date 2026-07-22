@@ -83,6 +83,29 @@ export function computeDesignChecks({ campaign, doc, marketplacePreview }) {
     if (!isValidYmd(doc.luckyDraw?.closesAt)) {
       out.push({ sev: 'block', sec: 'form', msg: 'Lucky draw needs a valid close date on the draw record (server invariant).' });
     }
+    // Terms-vs-settings drift. The platform draw-terms template states the age
+    // floor and the OTP channel in prose, so changing min_age or the
+    // verification channel afterwards leaves the legal text behind — and the
+    // text is what gets PINNED as the version entrants accept. Both checks key
+    // on the template's own phrasing, so hand-written terms never warn.
+    const statedAge = /aged\s+(\d{1,2})\s+and above/i.exec(terms);
+    const ageFloor = Math.max(18, Number.isInteger(campaign?.min_age) ? campaign.min_age : 18);
+    if (statedAge && Number(statedAge[1]) !== ageFloor) {
+      out.push({
+        sev: 'warn',
+        sec: 'form',
+        msg: `Draw T&Cs say entrants must be ${statedAge[1]} and above, but this campaign is set to ${ageFloor}+ — update the terms before launch.`,
+      });
+    }
+    const statedChannel = /one-time (SMS|WhatsApp) code/i.exec(terms);
+    const channel = doc.form?.verification === 'whatsapp' ? 'whatsapp' : 'sms';
+    if (statedChannel && statedChannel[1].toLowerCase() !== channel) {
+      out.push({
+        sev: 'warn',
+        sec: 'form',
+        msg: `Draw T&Cs promise a one-time ${statedChannel[1]} code but this campaign verifies by ${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}.`,
+      });
+    }
   }
   if (
     marketplaceInheritEnabled() &&

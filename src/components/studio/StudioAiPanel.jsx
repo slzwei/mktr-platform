@@ -46,6 +46,18 @@ function fieldsLines(value) {
   return lines;
 }
 
+/** Gate ids → the FormPanel's own labels (the operator must recognise the row
+ * as the switches they'd otherwise flip by hand). */
+const GATE_LABELS = { sgPr: 'Singapore Citizen / PR gate', advisorExclusion: 'Exclude financial advisors' };
+
+/** Gates row → display lines ("Singapore Citizen / PR gate: ON"). */
+function gatesLines(value) {
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value).map(([id, on]) => `${GATE_LABELS[id] || id}: ${on === true ? 'ON' : 'off'}`);
+}
+
+const VERIFICATION_LABELS = { sms: 'SMS OTP', whatsapp: 'WhatsApp OTP' };
+
 /** Terms row value → compact preview: template chip + tag-stripped excerpt +
  * size, and the legal-draft framing line (platform template vs AI scaffold). */
 function TermsValue({ row, oldEmpty }) {
@@ -334,6 +346,16 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
                         </>
                       ) : row.kind === 'terms' ? (
                         <TermsValue row={row} oldEmpty={oldEmpty} />
+                      ) : row.kind === 'gates' ? (
+                        <>
+                          <ValueLines value={gatesLines(row.old)} struck />
+                          <ValueLines value={gatesLines(row.value)} />
+                        </>
+                      ) : row.kind === 'verification' ? (
+                        <>
+                          {oldEmpty ? null : <ValueLines value={VERIFICATION_LABELS[row.old] || row.old} struck />}
+                          <ValueLines value={VERIFICATION_LABELS[row.value] || row.value} />
+                        </>
                       ) : (
                         <>
                           {oldEmpty ? null : <ValueLines value={row.old} struck />}
@@ -350,7 +372,7 @@ export default function StudioAiPanel({ ai, campaign, doc }) {
                         <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" disabled={row.state === 'kept'} onClick={() => ai.keepRow(index)}>
                           Keep mine
                         </button>
-                        {row.kind !== 'pick' && row.kind !== 'fields' && row.kind !== 'terms' ? (
+                        {!['pick', 'fields', 'terms', 'gates', 'verification'].includes(row.kind) ? (
                           <button type="button" className="av2-btn av2-btn--ghost av2-btn--sm" title="Regenerate this field" onClick={() => ai.regenRow(index)} style={{ marginLeft: 'auto' }}>
                             ↻
                           </button>

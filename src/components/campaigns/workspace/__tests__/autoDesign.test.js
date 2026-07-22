@@ -148,3 +148,63 @@ describe('generateCampaignDesign', () => {
     expect(doc.form.terms.html).toBe('<p>Drafted terms.</p>');
   });
 });
+
+describe('generateCampaignDesign — eligibility gates + verification (headless)', () => {
+  const resolvesWith = (data) => apiClient.post.mockResolvedValueOnce({ data });
+
+  it('applies the gates the brief earned, MERGING so the DNC gate survives', async () => {
+    resolvesWith({ proposals: [POSTER_LOOK], gates: { sgPr: true, advisorExclusion: false } });
+    const doc = await generateCampaignDesign({
+      campaign: {
+        id: 'c1',
+        design_config: { version: 2, form: { gates: { sgPr: false, advisorExclusion: false, dncCheck: true } } },
+      },
+      brief: '1 x iphone 17 pro lucky draw for singaporeans or pr. 21 to 65 years old only.',
+    });
+    expect(doc.form.gates).toEqual({ sgPr: true, advisorExclusion: false, dncCheck: true });
+  });
+
+  it('applies the verification channel the server cleared', async () => {
+    resolvesWith({ proposals: [POSTER_LOOK], verification: 'whatsapp' });
+    const doc = await generateCampaignDesign({ campaign: { id: 'c1', design_config: {} }, brief: 'x' });
+    expect(doc.form.verification).toBe('whatsapp');
+  });
+
+  it('ignores a verification value the server did not clamp to the enum', async () => {
+    resolvesWith({ proposals: [POSTER_LOOK], verification: 'telegram' });
+    const doc = await generateCampaignDesign({ campaign: { id: 'c1', design_config: {} }, brief: 'x' });
+    expect(doc.form?.verification).not.toBe('telegram');
+  });
+
+  it('draw terms quote the channel this pass just APPLIED, not the stored one', async () => {
+    resolvesWith({
+      proposals: [{ name: 'Postcard', template: { id: 'postcard', params: {} }, theme: { preset: 'warm-cream' }, draft: [] }],
+      verification: 'whatsapp',
+      drawTerms: {
+        campaignName: 'iPhone 17 Pro Lucky Draw',
+        prizes: [{ qty: 1, name: 'iPhone 17 Pro' }],
+        closesAt: '2026-09-02',
+        boostClosesAt: '2026-09-02',
+        multiplier: 10,
+        minAge: 21,
+        verification: 'sms', // STORED channel — superseded by the applied one
+      },
+    });
+    const doc = await generateCampaignDesign({
+      campaign: { id: 'c-draw', design_config: { luckyDraw: { enabled: true, closesAt: '2026-09-02' } } },
+      brief: 'iphone draw',
+    });
+    expect(doc.form.verification).toBe('whatsapp');
+    expect(doc.form.terms.html).toContain('one-time WhatsApp code');
+    expect(doc.form.terms.html).not.toContain('one-time SMS code');
+    // …and the age floor is the campaign's, not the template default.
+    expect(doc.form.terms.html).toContain('aged 21 and above');
+  });
+
+  it('gates still land when every look is blocked (screening beats returning nothing)', async () => {
+    resolvesWith({ proposals: [SPOTLIGHT_LOOK], gates: { sgPr: true, advisorExclusion: false } });
+    const doc = await generateCampaignDesign({ campaign: { id: 'c1', design_config: {} }, brief: 'x' });
+    expect(doc).not.toBeNull();
+    expect(doc.form.gates.sgPr).toBe(true);
+  });
+});

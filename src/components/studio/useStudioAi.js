@@ -72,10 +72,11 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
   const [recs, setRecs] = useState([]); // advisory cards — never in apply-all
   const [scope, setScope] = useState(null); // {path, label} | null
   const [looks, setLooks] = useState([]);
-  // Full-mode common sections (create-everything amendment): the raw
-  // fields/terms/drawTerms response parts, held until a look is ADOPTED —
-  // then assembled into review rows against the pre-look doc, so they
-  // survive pick/keep/revert cycles.
+  // Full-mode common sections (create-everything amendment, extended by the
+  // eligibility-gates amendment): the raw fields/terms/gates/verification/
+  // drawTerms response parts, held until a look is ADOPTED — then assembled
+  // into review rows against the pre-look doc, so they survive pick/keep/
+  // revert cycles.
   const [commonSections, setCommonSections] = useState(null);
   const [proposal, setProposal] = useState(null); // {prev:{doc}, look, keep, adopted}
   const [mediaHint, setMediaHint] = useState(null); // {kind, note} | null
@@ -215,6 +216,20 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
         ...(drawFacts ? { deterministic: true } : {}),
       });
     }
+    // Eligibility-gates amendment. Both rows are dropped when they match the
+    // doc already: an Accept button that changes nothing reads as a pending
+    // decision, and these two are exactly the rows an operator must be able to
+    // trust at a glance.
+    const proposed = [];
+    if (data?.gates && typeof data.gates === 'object') {
+      proposed.push({ path: 'form.gates', label: 'Eligibility gates', section: 'Form', kind: 'gates', value: data.gates });
+    }
+    if (data?.verification === 'sms' || data?.verification === 'whatsapp') {
+      proposed.push({ path: 'form.verification', label: 'Verification channel', section: 'Form', kind: 'verification', value: data.verification });
+    }
+    for (const row of proposed) {
+      if (!rowValuesEqual(rowCurrentValue(base, row), row.value)) rows.push(row);
+    }
     return annotateRows(rows, base);
   }, [annotateRows]);
 
@@ -338,6 +353,13 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       return row.value.map((f) => ({ id: f.id, visible: f.visible !== false, required: f.required === true, row: null }));
     }
     if (row.kind === 'terms') return { template: row.value.template || 'default', html: row.value.html || '' };
+    // Gates MERGE into the live object — the AI proposes only sgPr and
+    // advisorExclusion, so a whole-object write would silently clear the
+    // operator-owned DNC gate.
+    if (row.kind === 'gates') {
+      const cur = docRef.current?.form?.gates;
+      return { ...(cur && typeof cur === 'object' ? cur : {}), ...row.value };
+    }
     return row.value;
   };
 
@@ -367,7 +389,13 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       const row = sugsRef.current[index];
       if (!row || row.state === 'kept') return;
       if (row.state === 'applied' && rowValuesEqual(rowCurrentValue(docRef.current, row), row.value)) {
-        setPath(row.path, row.oldAbsent ? undefined : row.old);
+        // Gates restore through the same MERGE as apply: `old` holds only the
+        // two AI-proposed keys, so a whole-object write here would delete the
+        // operator's DNC gate on the way back out.
+        const restore = row.kind === 'gates' && !row.oldAbsent
+          ? { ...(docRef.current?.form?.gates || {}), ...row.old }
+          : row.oldAbsent ? undefined : row.old;
+        setPath(row.path, restore);
       }
       patchRow(index, { state: 'kept' });
     },
@@ -381,7 +409,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
   const regenRow = useCallback(
     async (index) => {
       const row = sugsRef.current[index];
-      if (!row || row.kind === 'pick' || row.kind === 'fields' || row.kind === 'terms' || !campaign?.id) return;
+      if (!row || row.kind === 'pick' || row.kind === 'fields' || row.kind === 'terms' || row.kind === 'gates' || row.kind === 'verification' || !campaign?.id) return;
       const { generation, signal } = startRequest();
       const n = (regensRef.current[row.path] || 0) + 1;
       noteCall();
@@ -427,8 +455,10 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
 
   /** Apply every remaining OPEN row (each re-gated), optionally limited to one
    * section. Recommendations are NEVER part of this — advisory by contract.
-   * Copy writes can't change any gate (gates hang off toggles/enums, never
-   * copy paths), so re-gating against the pre-batch doc is sound. */
+   * No row kind in the batch can flip another row's availability
+   * (rowDisabledReason keys on media/quiz/template/inheritance only — never on
+   * form.gates or form.verification), so re-gating against the pre-batch doc
+   * stays sound. */
   const applyOpenRows = useCallback((section) => {
     const patches = sugsRef.current.map((row) => {
       if (row.state !== 'open') return null;
@@ -530,7 +560,13 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       );
       if (generation !== generationRef.current) return;
       setLooks(Array.isArray(data.proposals) ? data.proposals : []);
-      setCommonSections({ fields: data.fields || null, terms: data.terms || null, drawTerms: data.drawTerms || null });
+      setCommonSections({
+        fields: data.fields || null,
+        terms: data.terms || null,
+        gates: data.gates || null,
+        verification: data.verification || null,
+        drawTerms: data.drawTerms || null,
+      });
       setPhase('looks');
     } catch (err) {
       if (generation !== generationRef.current) return;
@@ -565,7 +601,13 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
       );
       if (generation !== generationRef.current) return;
       setLooks(Array.isArray(data.proposals) ? data.proposals : []);
-      setCommonSections({ fields: data.fields || null, terms: data.terms || null, drawTerms: data.drawTerms || null });
+      setCommonSections({
+        fields: data.fields || null,
+        terms: data.terms || null,
+        gates: data.gates || null,
+        verification: data.verification || null,
+        drawTerms: data.drawTerms || null,
+      });
       setPhase('looks');
     } catch (err) {
       if (generation !== generationRef.current) return;

@@ -97,6 +97,15 @@ export function rowCurrentValue(doc, row) {
     if (!v || typeof v !== 'object') return '';
     return { template: v.template || 'default', html: typeof v.html === 'string' ? v.html : '' };
   }
+  // Gates read through the PROPOSAL's key set (never a local copy of the
+  // server's AI_GATE_IDS): the row is the server's answer, so the shapes stay
+  // aligned by construction — and dncCheck, which the AI never proposes, is
+  // absent from both sides instead of showing up as a phantom "off".
+  if (row?.kind === 'gates') {
+    const v = getAtPath(doc, row.path);
+    const cur = v && typeof v === 'object' ? v : {};
+    return Object.fromEntries(Object.keys(row.value || {}).map((k) => [k, cur[k] === true]));
+  }
   return currentValueAt(doc, row?.path || '');
 }
 

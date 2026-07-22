@@ -983,3 +983,78 @@ describe('create-everything amendment — fields + terms rows, beginFull', () =>
     expect(apiClient.post.mock.calls[0][1].brief.topic).toBe('Voucher Blast');
   });
 });
+
+describe('useStudioAi — eligibility gates + verification are review-gated WRITES', () => {
+  const withCommon = (over = {}) => ({
+    success: true,
+    data: { draft: [DRAFT[0]], gates: { sgPr: true, advisorExclusion: false }, verification: 'sms', ...over },
+  });
+
+  it('a gates row appears and Accept MERGES, leaving the operator-owned DNC gate alone', async () => {
+    const campaign = v2Campaign();
+    campaign.design_config.form.gates = { sgPr: false, advisorExclusion: false, dncCheck: true };
+    const { result } = renderAi(campaign);
+    await generateReady(result, withCommon());
+
+    const idx = result.current.ai.sugs.findIndex((r) => r.kind === 'gates');
+    expect(idx).toBeGreaterThan(-1);
+    expect(result.current.ai.sugs[idx]).toMatchObject({
+      path: 'form.gates',
+      section: 'Form',
+      value: { sgPr: true, advisorExclusion: false },
+      old: { sgPr: false, advisorExclusion: false },
+    });
+
+    act(() => result.current.ai.acceptRow(idx));
+    // dncCheck SURVIVES — the AI never proposed it and must not clear it.
+    expect(result.current.docApi.doc.form.gates).toEqual({ sgPr: true, advisorExclusion: false, dncCheck: true });
+  });
+
+  it('keep-mine restores the AI keys without wiping the DNC gate', async () => {
+    const campaign = v2Campaign();
+    campaign.design_config.form.gates = { sgPr: false, advisorExclusion: false, dncCheck: true };
+    const { result } = renderAi(campaign);
+    await generateReady(result, withCommon());
+    const idx = result.current.ai.sugs.findIndex((r) => r.kind === 'gates');
+
+    act(() => result.current.ai.acceptRow(idx));
+    act(() => result.current.ai.keepRow(idx));
+    expect(result.current.docApi.doc.form.gates).toEqual({ sgPr: false, advisorExclusion: false, dncCheck: true });
+    expect(result.current.ai.sugs[idx].state).toBe('kept');
+  });
+
+  it('a no-op proposal never becomes a row (nothing to decide, so nothing to click)', async () => {
+    const { result } = renderAi(); // doc already sgPr:false, advisorExclusion:false, verification 'sms'
+    await generateReady(result, withCommon({ gates: { sgPr: false, advisorExclusion: false }, verification: 'sms' }));
+    expect(result.current.ai.sugs.some((r) => r.kind === 'gates')).toBe(false);
+    expect(result.current.ai.sugs.some((r) => r.kind === 'verification')).toBe(false);
+  });
+
+  it('a verification row applies as a plain enum write', async () => {
+    const { result } = renderAi();
+    await generateReady(result, withCommon({ verification: 'whatsapp' }));
+    const idx = result.current.ai.sugs.findIndex((r) => r.kind === 'verification');
+    expect(result.current.ai.sugs[idx]).toMatchObject({ path: 'form.verification', value: 'whatsapp', old: 'sms' });
+    act(() => result.current.ai.acceptRow(idx));
+    expect(result.current.docApi.doc.form.verification).toBe('whatsapp');
+  });
+
+  it('neither row offers a per-row regenerate (their scopes are not server-writable)', async () => {
+    const { result } = renderAi();
+    await generateReady(result, withCommon({ verification: 'whatsapp' }));
+    const gatesIdx = result.current.ai.sugs.findIndex((r) => r.kind === 'gates');
+    apiClient.post.mockClear();
+    await act(async () => {
+      await result.current.ai.regenRow(gatesIdx);
+    });
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it('apply-all writes the gates row along with the copy rows', async () => {
+    const { result } = renderAi();
+    await generateReady(result, withCommon());
+    act(() => result.current.ai.applyAll());
+    expect(result.current.docApi.doc.form.gates.sgPr).toBe(true);
+    expect(result.current.docApi.doc.content.headline).toBe('Fresh AI headline');
+  });
+});
