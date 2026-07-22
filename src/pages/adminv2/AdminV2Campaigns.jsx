@@ -5,12 +5,13 @@
  * and design stay on the existing flows (workspace / designer) — this screen
  * observes and navigates, it does not fork the editing surface.
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { getMarketplaceListedFromDoc } from '@/lib/designConfigV2';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useCampaignLeaderboard, useAttention } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtSGD, fmtDate, daysUntil } from '@/lib/adminV2/format';
 import { Chip, PageHeader, PeriodSwitch, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
+import CampaignTypeSelectionDialog from '@/components/campaigns/CampaignTypeSelectionDialog';
 
 const STATUS_TONE = { active: 'ok', draft: '', paused: 'warn', completed: '', archived: '' };
 const TYPE_LABELS = {
@@ -43,6 +44,14 @@ export default function AdminV2Campaigns() {
   const setPeriod = (p) => patch({ period: p === '30d' ? null : p });
   const setStatusFilter = (v) => patch({ status: v || null });
   const navigate = useNavigate();
+  // "+ New campaign" opens the type chooser first — the v2 rebuild had linked
+  // straight to the workspace, silently defaulting every campaign to
+  // lead_generation (the workspace honors ?type=; classic always sent it).
+  const [typeSelectOpen, setTypeSelectOpen] = useState(false);
+  const handleCreateCampaign = (type) => {
+    setTypeSelectOpen(false);
+    navigate(`${newCampaignHref()}?type=${type}`);
+  };
   const campaigns = useCampaignLeaderboard(period);
   const attention = useAttention();
   const zeroCommitIds = useMemo(
@@ -62,9 +71,13 @@ export default function AdminV2Campaigns() {
     <div>
       <PageHeader title="Campaigns" meta={`${fmtNumber(rows.length)} SHOWN${campaigns.data?.total > (campaigns.data?.rows || []).length ? ` OF ${fmtNumber(campaigns.data.total)} (NEWEST FIRST)` : ''} · SORTED BY LEADS · LAST ${period.toUpperCase()}`}>
         <PeriodSwitch value={period} onChange={setPeriod} />
-        <Link to={newCampaignHref()} className="av2-btn av2-btn--primary" style={{ textDecoration: 'none' }}>
+        <button
+          type="button"
+          className="av2-btn av2-btn--primary"
+          onClick={() => setTypeSelectOpen(true)}
+        >
           + New campaign
-        </Link>
+        </button>
       </PageHeader>
 
       {attention.isError && (
@@ -139,6 +152,11 @@ export default function AdminV2Campaigns() {
           );
         })}
       </div>
+      <CampaignTypeSelectionDialog
+        open={typeSelectOpen}
+        onOpenChange={setTypeSelectOpen}
+        onSelect={handleCreateCampaign}
+      />
     </div>
   );
 }
