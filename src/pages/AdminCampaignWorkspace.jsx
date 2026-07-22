@@ -17,6 +17,7 @@ import CampaignQRManager from '@/components/qrcodes/CampaignQRManager';
 import CampaignDetailsTab from '@/components/campaigns/workspace/CampaignDetailsTab';
 import CampaignDeliveryPoolTab from '@/components/campaigns/workspace/CampaignDeliveryPoolTab';
 import CampaignLaunchTab from '@/components/campaigns/workspace/CampaignLaunchTab';
+import { generateCampaignDesign } from '@/components/campaigns/workspace/autoDesign';
 
 const TABS = [
   { id: 'details', label: 'Details' },
@@ -44,6 +45,10 @@ export default function AdminCampaignWorkspace() {
     !isCreate && TAB_IDS.includes(tabParam) ? tabParam : 'details'
   );
   const [savingDetails, setSavingDetails] = useState(false);
+  // Distinct from savingDetails: the post-create AI page-design pass. Drives a
+  // separate "Designing…" button label so the many-second AI call never reads
+  // as a stuck Create.
+  const [designingPage, setDesigningPage] = useState(false);
 
   const { data: campaign, isLoading } = useCampaign(id);
   const launchMutation = useSetCampaignLaunchState(id);
@@ -62,7 +67,35 @@ export default function AdminCampaignWorkspace() {
     }
   };
 
-  const handleSaveDetails = async (payload) => {
+  // Post-create AI page-design pass. Self-contained + never throws: on ANY
+  // failure (provider off, rate-limited, network, no usable look) it just warns
+  // and returns, leaving the created draft intact for the manual Studio button.
+  const autoDesignCampaign = async (newId, designConfig, brief) => {
+    setDesigningPage(true);
+    const toastId = toast.loading('Designing your campaign page…');
+    try {
+      const nextDoc = await generateCampaignDesign({
+        campaign: { id: newId, design_config: designConfig },
+        brief,
+      });
+      if (!nextDoc) {
+        toast.warning('Draft created — open the Design tab and click “Fill everything with AI” to design the page.', { id: toastId });
+        return;
+      }
+      // Same save + cache-invalidation the manual design save does, so the
+      // Design tab renders the freshly generated document.
+      await Campaign.update(newId, { design_config: nextDoc });
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns', 'detail', newId] });
+      toast.success('Page designed', { id: toastId });
+    } catch {
+      toast.warning('Draft created, but the page wasn’t auto-designed — open the Design tab and click “Fill everything with AI”.', { id: toastId });
+    } finally {
+      setDesigningPage(false);
+    }
+  };
+
+  const handleSaveDetails = async (payload, brief) => {
     setSavingDetails(true);
     try {
       if (isCreate) {
@@ -72,6 +105,14 @@ export default function AdminCampaignWorkspace() {
         const newId = created?.id || created?.campaign?.id;
         queryClient.invalidateQueries({ queryKey: ['campaigns'] });
         toast.success('Draft created');
+        // One brief → also design the whole page (the Studio's "Fill everything
+        // with AI", run headlessly here). Best-effort ONLY: the draft is already
+        // saved, so any AI failure just lands the operator on the Design tab with
+        // the manual button — it must never undo or block the create.
+        const trimmedBrief = typeof brief === 'string' ? brief.trim() : '';
+        if (newId && trimmedBrief) {
+          await autoDesignCampaign(newId, created?.design_config ?? payload.design_config, trimmedBrief);
+        }
         if (newId) navigate(`/admin/campaigns/${newId}/workspace?tab=design`);
         else navigate('/AdminCampaigns');
       } else {
@@ -212,6 +253,7 @@ export default function AdminCampaignWorkspace() {
               draw={isDrawCreate}
               isEdit={!isCreate}
               saving={savingDetails}
+              designing={designingPage}
               onSubmit={handleSaveDetails}
             />
           </div>
