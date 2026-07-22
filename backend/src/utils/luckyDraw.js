@@ -20,7 +20,7 @@
  * (legacy campaigns are byte-identical).
  */
 
-import { AppError } from '../middleware/errorHandler.js';
+import { AppError } from '../middleware/appError.js';
 
 const MAX_PRIZE = 80; // legacy manual `prize` cap — unchanged so stored rows never drift
 const MAX_PRIZE_NAME = 80;

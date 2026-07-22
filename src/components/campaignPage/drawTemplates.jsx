@@ -27,6 +27,7 @@ import {
 } from './CampaignPageRenderer';
 import { MediaBlock } from './templates';
 import { accentTextOn, resolveTheme } from '@/lib/designConfigV2';
+import { DRAW_RECORD_PHRASE } from '@/lib/drawCopy';
 
 const SANS = "'Albert Sans', system-ui, sans-serif";
 const SERIF = "'Fraunces', Georgia, serif";
@@ -84,11 +85,11 @@ function drawStrings(luckyDraw, campaignName) {
     closesMono: closesFull ? closesFull.toUpperCase() : '',
     boostFull,
     kicker: (campaignName || '').toUpperCase(),
-    boostBody: `Meet a consultant for a complimentary 20-minute financial review before ${boostFull} — they scan your entry pass at the session and your 1 entry becomes ${m}.`,
+    boostBody: `Meet a consultant for a complimentary 20-minute financial review before ${boostFull} — when ${DRAW_RECORD_PHRASE}, your 1 entry becomes ${m}.`,
     steps: [
       'Your entry pass arrives by WhatsApp and email.',
       `Book your complimentary ~20-min financial review — any time before ${boostFull}.`,
-      `Your consultant meets you and scans your pass — your 1 entry becomes ${m} entries.`,
+      `Meet your consultant — when they record your completed session, your 1 entry becomes ${m} entries.`,
     ],
     closedBody: winners > 1
       ? `The ${winners} winners are being drawn in a witnessed process and will be contacted directly by phone or SMS.`

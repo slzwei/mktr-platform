@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { AlertCircle, CheckCircle2, Loader2, Store } from 'lucide-react';
 import { apiClient } from '@/api/client';
+import { marketplaceInheritEnabled, deriveListingPreview } from '@/lib/listingDerivation';
 
 /**
  * Marketplace panel — authors the design_config marketplace keys
@@ -42,6 +43,12 @@ function Section({ title, hint, children }) {
 
 export default function MarketplacePanel({ currentDesign, onDesignChange, campaign }) {
   const dc = currentDesign || {};
+  // The classic editor deliberately strips luckyDraw from currentDesign — the
+  // CAMPAIGN row is the truth for draw detection (Phase B finding 2), and the
+  // preview doc recombines it so the inherited rows derive correctly.
+  const storedLucky = campaign?.design_config?.luckyDraw;
+  const isDrawCampaign = storedLucky?.enabled === true;
+  const inheritPreviewDoc = marketplaceInheritEnabled() ? { ...dc, luckyDraw: storedLucky } : null;
   const activation = dc.activation || {};
   const sponsor = dc.sponsor || null;
   const blocks = dc.content_blocks || {};
@@ -155,8 +162,25 @@ export default function MarketplacePanel({ currentDesign, onDesignChange, campai
         </div>
       </Section>
 
-      <Section title="Consumer listing" hint="What browsers see on cards and the offer page. The title falls back to the campaign name.">
-        <Input value={dc.name || ''} placeholder="Consumer-facing title (optional override)" onChange={(e) => onDesignChange('name', e.target.value)} />
+      {inheritPreviewDoc && (
+        <Section title="Inherited from the campaign page" hint="One door: edit these in the designer; they reflect on redeem.sg after saving.">
+          <div data-testid="classic-inherited-preview" className="space-y-1">
+            {deriveListingPreview(inheritPreviewDoc, campaign?.name).map((row) => (
+              <div key={row.label} className="flex gap-2 text-xs">
+                <span className="w-24 shrink-0 text-muted-foreground">{row.label}</span>
+                <span className="flex-1 min-w-0 truncate">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      <Section title="Consumer listing" hint={marketplaceInheritEnabled()
+        ? 'Single door: title, value line, image alt and (for draws) the prize list inherit the campaign page — edit them in the designer/Studio.'
+        : 'What browsers see on cards and the offer page. The title falls back to the campaign name.'}>
+        {!marketplaceInheritEnabled() && (
+          <Input value={dc.name || ''} placeholder="Consumer-facing title (optional override)" onChange={(e) => onDesignChange('name', e.target.value)} />
+        )}
         <div className="grid grid-cols-2 gap-2">
           <Select value={dc.category || ''} onValueChange={(v) => onDesignChange('category', v)}>
             <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
@@ -178,15 +202,21 @@ export default function MarketplacePanel({ currentDesign, onDesignChange, campai
               {MODES.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Input value={dc.image_label || ''} placeholder="Image alt label" onChange={(e) => onDesignChange('image_label', e.target.value)} />
+          {!marketplaceInheritEnabled() ? (
+            <Input value={dc.image_label || ''} placeholder="Image alt label" onChange={(e) => onDesignChange('image_label', e.target.value)} />
+          ) : <div />}
         </div>
-        <Input value={dc.value_line || ''} placeholder='Value line override (blank = "Worth S$<retail> · free…")' onChange={(e) => onDesignChange('value_line', e.target.value)} />
-        <Textarea
-          rows={3}
-          value={(dc.inclusions || []).join('\n')}
-          placeholder={'What’s included — one item per line'}
-          onChange={(e) => onDesignChange('inclusions', e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))}
-        />
+        {!marketplaceInheritEnabled() && (
+          <Input value={dc.value_line || ''} placeholder='Value line override (blank = "Worth S$<retail> · free…")' onChange={(e) => onDesignChange('value_line', e.target.value)} />
+        )}
+        {!(marketplaceInheritEnabled() && isDrawCampaign) && (
+          <Textarea
+            rows={3}
+            value={(dc.inclusions || []).join('\n')}
+            placeholder={'What’s included — one item per line'}
+            onChange={(e) => onDesignChange('inclusions', e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))}
+          />
+        )}
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">Show remaining capacity to consumers</span>
           <Switch checked={dc.showCapacity === true} onCheckedChange={(v) => onDesignChange('showCapacity', v === true)} />

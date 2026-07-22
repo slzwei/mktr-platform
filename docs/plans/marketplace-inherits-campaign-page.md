@@ -101,3 +101,17 @@ Phase A: M · Phase B: M–L (two editors + AI contract + twin) · Phase C: S. E
 | 7 | MAJOR | Adopted — derived value_line clamps to the 80-char cap; full names live in `prize_breakdown`. |
 | 8 | MAJOR | Adopted — script rewritten: listed-gate filter, full key-union DTO diff incl. effective title + card image, separate featured-drop title diff for every enabled drop. |
 | 9 | MAJOR | Adopted (backend half) — toDto-level flag on/off tests, cache mode/generation tests, featured-title rule tests, media-kind positives incl. v1, value-cap and "Sign Up"-is-valid cases. Endpoint-level matrix + script fixture noted for Phase B/C hardening. |
+
+## 9c. Phase-B diff review — Codex (gpt-5.6-sol, xhigh), 2026-07-22, 7 findings + two-flag matrix
+
+| # | Sev | Disposition |
+|---|---|---|
+| 1 | MAJOR | Adopted — the client twin mirrors the backend prize normalizer exactly (trim+cap names WITHOUT whitespace-collapse, qty 1–99 coerce, ≤8 rows, summary from normalized rows); the lockstep now builds its server input through the REAL `publicLuckyDraw` and pins dirty-row + all-media-kind fixtures. The lockstep caught one genuine drift (whitespace collapse) before merge — working as designed. |
+| 2 | MAJOR | Adopted — the classic editor detects draws from the CAMPAIGN row (its doc strips luckyDraw), hides the inclusions box correctly, and gains the read-only inherited preview (recombined preview doc). |
+| 3 | MAJOR | Adopted — Fill-everything omits draw inclusions end to end under inheritance (prompt meta, strict schema, result assembly), stored derived-copy echoes go blank in the model context, and the Studio apply path refuses the four derived paths + draw inclusions at receipt AND apply (`rowDisabledReason`). |
+| 4 | MAJOR | **Adopted by DOCUMENTATION** — the neutral "records your completed session" wording is a deliberate COPY BUG FIX (virtual-session entrants were told a scan is mandatory), unconditional like Phase A's featured-drops freshness fix. The tracking-name unification (content_name = listing title when one serves) is likewise deliberate and flag-independent; real-world flag-off delta is nil today (no live campaign has a stored listing title that differs from its headline). |
+| 5 | MAJOR | Adopted — the featured-drop canvas previews the derived tile title via the client twin; the generic-headline readiness warning now also covers featured-only campaigns. |
+| 6 | MINOR | Adopted — `regulatory_line` renders after the FAQ, at the true bottom of the door column. |
+| 7 | MINOR | Adopted in part — lockstep dirty/media fixtures, canvas flag-on tests, AI everything-mode omission test added; full tracking-payload + classic-panel render matrix noted for Phase C hardening. |
+
+**Two-flag matrix (runbook):** both flags flip together. Off/Off = legacy reads + legacy editors (wording/tracking fixes stay, deliberately). On/On = single-door. Off/On = editors preview inheritance while the server still serves stored copy (harmless, temporary). On/Off = served copy is inherited while editors still show dead inputs (avoid; flip frontend first is the safe order: VITE first, backend second — or same deploy).

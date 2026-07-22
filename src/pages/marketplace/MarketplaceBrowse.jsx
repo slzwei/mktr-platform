@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { listingTitleOf } from '@/lib/listingDerivation';
 import { Link, useParams } from 'react-router-dom';
 import MarketplaceLayout from './MarketplaceLayout';
 import OfferCard from './OfferCard';
@@ -88,7 +89,7 @@ function ExplorePage() {
         if (!ar || !(ar.min <= r[1] && ar.max >= r[0])) return false;
       }
       if (q) {
-        const hay = `${dc.name || c.name} ${c.ops?.partner?.name || ''} ${categoryLabel(dc.category)}`.toLowerCase();
+        const hay = `${listingTitleOf(c)} ${c.ops?.partner?.name || ''} ${categoryLabel(dc.category)}`.toLowerCase();
         if (!hay.includes(q.toLowerCase())) return false;
       }
       return true;

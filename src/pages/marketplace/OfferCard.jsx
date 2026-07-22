@@ -1,5 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { composeValueLine, ageLabelOf, fmtDateShort, isDrawCampaign, boostOf, offerUnavailability } from './content';
+import { listingTitleOf } from '@/lib/listingDerivation';
+import { DRAW_RECORD_PHRASE } from '@/lib/drawCopy';
 
 /**
  * Marketplace offer card (OfferCardV2 spec): reads the two-layer campaign DTO
@@ -21,6 +23,10 @@ export default function OfferCard({ campaign }) {
   const metaLine = [ageLabelOf(dc), locLabel, modeLabel].filter(Boolean).join(' · ');
   const inc = dc.inclusions || [];
   const incLine = inc.slice(0, 3).join(', ') + (inc.length > 3 ? ` +${inc.length - 3}` : '');
+  // Draw prize rows (inherited listings): rendered as PRIZES, never "Includes".
+  const prizeRows = Array.isArray(dc.prize_breakdown) ? dc.prize_breakdown : [];
+  const prizeLine = prizeRows.slice(0, 3).map((p) => (p.qty === 1 ? p.name : `${p.qty}× ${p.name}`)).join(', ')
+    + (prizeRows.length > 3 ? ` +${prizeRows.length - 3}` : '');
 
   const facts = [];
   if (isDraw) {
@@ -46,7 +52,7 @@ export default function OfferCard({ campaign }) {
       }}
     >
       <div className="rm-offercard-img">
-        {dc.imageUrl && <img src={dc.imageUrl} alt={dc.image_label || dc.name || campaign.name} loading="lazy" />}
+        {dc.imageUrl && <img src={dc.imageUrl} alt={dc.image_label || listingTitleOf(campaign)} loading="lazy" />}
         {isDraw && (
           <span style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', fontFamily: 'var(--rm-mono)', fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', background: 'var(--rm-apr)', color: '#2A1608', borderRadius: 999, padding: '5px 12px', whiteSpace: 'nowrap' }}>
             Lucky draw
@@ -59,16 +65,20 @@ export default function OfferCard({ campaign }) {
           <span className="rm-mono-label" style={{ fontSize: 10 }}>{partner.name}</span>
           {partner.verified && <span className="rm-verified">Verified</span>}
         </div>
-        <div className="rm-serif" style={{ fontSize: 19, fontWeight: 600, lineHeight: 1.22 }}>{dc.name || campaign.name}</div>
+        <div className="rm-serif" style={{ fontSize: 19, fontWeight: 600, lineHeight: 1.22 }}>{listingTitleOf(campaign)}</div>
         {metaLine && <div className="rm-mono-note">{metaLine}</div>}
-        {incLine && <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--rm-sub)' }}>Includes: {incLine}</div>}
+        {isDraw && prizeLine ? (
+          <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--rm-sub)' }}>Prizes: {prizeLine}</div>
+        ) : incLine ? (
+          <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--rm-sub)' }}>Includes: {incLine}</div>
+        ) : null}
         {isDraw ? (
           <div className="rm-draw-box">
             <span style={{ display: 'inline-block', width: 9, height: 12, borderRadius: '5px 5px 1px 1px', background: 'var(--rm-apr)', marginTop: 2, flexShrink: 0 }} />
             <span style={{ fontSize: 11.5, lineHeight: 1.45, color: '#6B3A1B' }}>
               <strong style={{ fontFamily: 'var(--rm-mono)', fontSize: 9.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Lucky draw</strong>
               <br />
-              Verified sign-up = 1 chance{boost ? ` · boost ×${boost.multiplier} by completing the activation step` : ''}.
+              Verified sign-up = 1 chance{boost ? ` · ×${boost.multiplier} when ${DRAW_RECORD_PHRASE}` : ''}.
             </span>
           </div>
         ) : act.required ? (

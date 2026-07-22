@@ -3,6 +3,7 @@ import { apiClient } from '@/api/client';
 import { GATE_LABELS } from '../studioReadiness';
 import { CATEGORY_OPTIONS, OFFER_TYPES, MODES } from '../marketplaceOptions';
 import { makeBind, PanelSection, TextField, TextAreaField, Seg, ToggleRow, WarnNote, FieldLabel, SuggestButton } from './panelKit';
+import { marketplaceInheritEnabled, deriveListingPreview } from '@/lib/listingDerivation';
 
 /**
  * Distribution panel (Studio PR 3) — customer domain, featured drop
@@ -52,6 +53,11 @@ export default function DistributionPanel({
   const drop = doc.distribution?.featuredDrop || {};
   const mk = doc.distribution?.marketplace || {};
   const gate = marketplacePreview?.gate || null;
+  // Single-door mode (plan §3B): derived listing copy is edited on the PAGE
+  // panel; here it renders read-only with its sources. The legacy copy inputs
+  // return if the emergency brake is pulled (both flags off together).
+  const inherit = marketplaceInheritEnabled();
+  const isDraw = doc?.luckyDraw?.enabled === true;
 
   const storedSlug = campaign?.slug || '';
   const slugValue = slugDraft !== null ? slugDraft : storedSlug;
@@ -128,7 +134,14 @@ export default function DistributionPanel({
         />
         {drop.enabled === true ? (
           <>
-            <TextField id="studio-drop-title" label="Drop title" bind={bind('distribution.featuredDrop.title', 40)} onSuggest={suggest('distribution.featuredDrop.title', 'Drop title')} />
+            {!inherit && (
+              <TextField id="studio-drop-title" label="Drop title" bind={bind('distribution.featuredDrop.title', 40)} onSuggest={suggest('distribution.featuredDrop.title', 'Drop title')} />
+            )}
+            {inherit && (
+              <p style={{ margin: 0, fontSize: 10.5, color: 'var(--ink-3, #9BA0AB)' }}>
+                Tile title inherits the campaign headline (Page panel).
+              </p>
+            )}
             <div style={{ display: 'flex', gap: 8 }}>
               <div style={{ flex: 1 }}>
                 <TextField id="studio-drop-value" label="Value label" bind={bind('distribution.featuredDrop.valueLabel', 12)} placeholder="$10" />
@@ -185,7 +198,9 @@ export default function DistributionPanel({
         ) : (
           <p style={{ margin: 0, fontSize: 10.5, color: 'var(--ink-3)' }}>Publication gate loads from the server…</p>
         )}
-        <TextField id="studio-mk-title" label="Consumer title" bind={bind('distribution.marketplace.title', 120)} onSuggest={suggest('distribution.marketplace.title', 'Consumer title')} />
+        {!inherit && (
+          <TextField id="studio-mk-title" label="Consumer title" bind={bind('distribution.marketplace.title', 120)} onSuggest={suggest('distribution.marketplace.title', 'Consumer title')} />
+        )}
         <div>
           <FieldLabel htmlFor="studio-mk-category">Category</FieldLabel>
           <select id="studio-mk-category" style={selectStyle} value={mk.category || ''} onChange={(e) => setMk({ category: e.target.value || undefined })}>
@@ -221,8 +236,10 @@ export default function DistributionPanel({
             </select>
           </div>
         </div>
-        <TextField id="studio-mk-value" label="Value line" bind={bind('distribution.marketplace.valueLine', 80)} onSuggest={suggest('distribution.marketplace.valueLine', 'Value line')} />
-        <div>
+        {!inherit && (
+          <TextField id="studio-mk-value" label="Value line" bind={bind('distribution.marketplace.valueLine', 80)} onSuggest={suggest('distribution.marketplace.valueLine', 'Value line')} />
+        )}
+        <div style={{ display: inherit && isDraw ? 'none' : undefined }} data-testid="dist-inclusions-block">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <FieldLabel htmlFor="studio-mk-inclusions">Inclusions (one per line, max 8)</FieldLabel>
             <SuggestButton onSuggest={suggest('distribution.marketplace.inclusions', 'Inclusions')} label="Inclusions" />
@@ -247,7 +264,9 @@ export default function DistributionPanel({
       </PanelSection>
 
       <PanelSection title="MORE LISTING DETAILS">
-        <TextField id="studio-mk-alt" label="Image alt text" bind={bind('distribution.marketplace.imageAlt', 120)} />
+        {!inherit && (
+          <TextField id="studio-mk-alt" label="Image alt text" bind={bind('distribution.marketplace.imageAlt', 120)} />
+        )}
         <ToggleRow id="studio-mk-cap" label="Show capacity" checked={mk.showCapacity === true} onChange={(v) => setMk({ showCapacity: v })} />
         <ToggleRow id="studio-mk-dsa" label="DSA-related" checked={mk.dsaRelated === true} onChange={(v) => setMk({ dsaRelated: v })} />
         <div style={{ display: 'flex', gap: 8 }}>
@@ -288,6 +307,26 @@ export default function DistributionPanel({
           disclosure · FAQ. Marketplace expiry comes from the live activation window, not this document.
         </WarnNote>
       </PanelSection>
+
+      {inherit && (
+        <PanelSection title="INHERITED FROM THE CAMPAIGN PAGE">
+          <div data-testid="dist-inherited-preview" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {deriveListingPreview(doc, campaign?.name).map((row) => (
+              <div key={row.label} style={{ display: 'flex', gap: 8, fontSize: 11.5, lineHeight: 1.45 }}>
+                <span style={{ width: 96, flexShrink: 0, color: 'var(--ink-3, #9BA0AB)' }}>{row.label}</span>
+                <span style={{ flex: 1, minWidth: 0, color: 'var(--ink-2, #5B616E)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {row.value}
+                  <span style={{ display: 'block', fontSize: 9.5, color: 'var(--ink-3, #9BA0AB)' }}>{row.source}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+          <WarnNote tone="info">
+            One door: edit these on the Page panel (and draw facts in ops). Saves reach redeem.sg
+            immediately on the offer page and within a minute on the homepage/explore grids.
+          </WarnNote>
+        </PanelSection>
+      )}
 
       <PanelSection title="URL SLUG — CAMPAIGN FACT, OWN SAVE">
         <div>

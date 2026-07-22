@@ -116,16 +116,7 @@ export const errorHandler = (err, req, res, _next) => {
 };
 
 // Custom error class
-export class AppError extends Error {
-  constructor(message, statusCode, details = null) {
-    super(message);
-    this.statusCode = statusCode;
-    this.details = details;
-    this.isOperational = true;
-
-    Error.captureStackTrace(this, this.constructor);
-  }
-}
+export { AppError } from './appError.js';
 
 // Async error wrapper
 export const asyncHandler = (fn) => (req, res, next) => {

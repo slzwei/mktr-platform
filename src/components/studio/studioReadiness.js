@@ -1,4 +1,5 @@
 import { resolveTheme } from '@/lib/designConfigV2';
+import { marketplaceInheritEnabled, deriveListingTitle } from '@/lib/listingDerivation';
 import { colorContrastRatio } from '@/lib/contrast';
 import { isValidYmd } from './useStudioDoc';
 
@@ -82,6 +83,13 @@ export function computeDesignChecks({ campaign, doc, marketplacePreview }) {
     if (!isValidYmd(doc.luckyDraw?.closesAt)) {
       out.push({ sev: 'block', sec: 'form', msg: 'Lucky draw needs a valid close date on the draw record (server invariant).' });
     }
+  }
+  if (
+    marketplaceInheritEnabled() &&
+    (doc.distribution?.marketplace?.listed === true || doc.distribution?.featuredDrop?.enabled === true) &&
+    !deriveListingTitle(doc)
+  ) {
+    out.push({ sev: 'warn', sec: 'page', msg: 'Headline is empty or the template default — it IS the marketplace listing title now; write a real one (the internal campaign name shows until then).' });
   }
   if ((doc.content?.heroCtaLabel || '').trim() && (doc.content?.media?.kind || 'none') === 'none') {
     out.push({ sev: 'warn', sec: 'page', msg: 'Hero button label is set but there is no media — it will not render.' });

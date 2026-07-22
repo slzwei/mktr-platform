@@ -152,3 +152,78 @@ describe('Canvas subjects', () => {
     expect(screen.queryByText(/disagrees with the live draw record/)).toBeNull();
   });
 });
+
+describe('DistributionPanel — single-door mode (inheritance flag on)', () => {
+  it('hides the derived-copy inputs, keeps picks, and shows the inherited preview', () => {
+    vi.stubEnv('VITE_MARKETPLACE_INHERIT_ENABLED', 'true');
+    render(
+      <PanelHarness
+        v1={{
+          formHeadline: 'Win a 4D3N Tokyo Getaway',
+          storyText: 'Story here.',
+          marketplaceListed: true,
+          customerHost: 'redeem',
+        }}
+      />
+    );
+    // Derived-copy inputs gone…
+    expect(screen.queryByLabelText('Consumer title')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Value line')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Image alt text')).not.toBeInTheDocument();
+    // …picks stay…
+    expect(screen.getByLabelText('Category')).toBeInTheDocument();
+    expect(screen.getByLabelText('Audience age min')).toBeInTheDocument();
+    // …and the inherited preview names the sources.
+    const preview = screen.getByTestId('dist-inherited-preview');
+    expect(preview).toHaveTextContent('Win a 4D3N Tokyo Getaway');
+    expect(preview).toHaveTextContent('Page → headline');
+    vi.unstubAllEnvs();
+  });
+
+  it('flag off keeps the legacy copy inputs (emergency-brake UI)', () => {
+    render(<PanelHarness v1={{ marketplaceListed: true, customerHost: 'redeem' }} />);
+    expect(screen.getByLabelText('Consumer title')).toBeInTheDocument();
+    expect(screen.getByLabelText('Value line')).toBeInTheDocument();
+    expect(screen.queryByTestId('dist-inherited-preview')).not.toBeInTheDocument();
+  });
+});
+
+
+describe('canvas subjects — single-door previews (flag on)', () => {
+  it('the marketplace card previews the UNSAVED doc through the client twin', () => {
+    vi.stubEnv('VITE_MARKETPLACE_INHERIT_ENABLED', 'true');
+    render(
+      <MemoryRouter>
+        <CanvasMarketplaceSubject
+          campaign={{ id: 'c1', name: 'Internal Name', slug: 's' }}
+          doc={{
+            version: 2,
+            content: { headline: 'Win a 4D3N Tokyo Getaway', story: 'S', media: { kind: 'none', src: '' }, footer: {} },
+            distribution: { marketplace: { listed: true, title: 'STORED TITLE' } },
+          }}
+          preview={null}
+          previewStatus="success"
+        />
+      </MemoryRouter>
+    );
+    expect(screen.getByText('Win a 4D3N Tokyo Getaway')).toBeInTheDocument();
+    expect(screen.queryByText('STORED TITLE')).not.toBeInTheDocument();
+    vi.unstubAllEnvs();
+  });
+
+  it('the drop tile previews the derived headline, never the stored title', () => {
+    vi.stubEnv('VITE_MARKETPLACE_INHERIT_ENABLED', 'true');
+    render(
+      <CanvasDropSubject
+        doc={{
+          version: 2,
+          content: { headline: 'Win a 4D3N Tokyo Getaway', media: { kind: 'none', src: '' }, footer: {} },
+          distribution: { featuredDrop: { enabled: true, title: 'STORED DROP TITLE' } },
+        }}
+      />
+    );
+    expect(screen.getByText('Win a 4D3N Tokyo Getaway')).toBeInTheDocument();
+    expect(screen.queryByText('STORED DROP TITLE')).not.toBeInTheDocument();
+    vi.unstubAllEnvs();
+  });
+});

@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { listingTitleOf } from '@/lib/listingDerivation';
+import { DRAW_RECORD_PHRASE } from '@/lib/drawCopy';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import MarketplaceLayout from './MarketplaceLayout';
 import OfferCard from './OfferCard';
@@ -57,7 +59,7 @@ export default function MarketplaceOffer() {
           'ViewContent',
           {
             content_ids: [campaign.id],
-            content_name: campaign.name,
+            content_name: listingTitleOf(campaign),
             content_category: campaign.design_config?.category || 'marketplace',
           },
           { eventID: vc.eventId }
@@ -70,7 +72,7 @@ export default function MarketplaceOffer() {
       if (ttPixelId) {
         initTikTokPixel(ttPixelId);
         trackTikTokViewContent(
-          { content_name: campaign.name, content_type: 'marketplace' },
+          { content_name: listingTitleOf(campaign), content_type: 'marketplace' },
           vc.eventId
         );
         markVcFired(campaign.id, 'tiktok');
@@ -127,7 +129,7 @@ export default function MarketplaceOffer() {
           {' / '}
           <Link to={`/c/${dc.category}`} style={{ color: 'var(--rm-mut)' }}>{categoryLabel(dc.category)}</Link>
           {' / '}
-          <span style={{ color: 'var(--rm-ink)' }}>{dc.name || campaign.name}</span>
+          <span style={{ color: 'var(--rm-ink)' }}>{listingTitleOf(campaign)}</span>
         </nav>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,340px),1fr))', gap: 28, alignItems: 'start' }}>
@@ -135,11 +137,35 @@ export default function MarketplaceOffer() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
             <div className="rm-arch" style={{ height: 300 }}>
               {dc.imageUrl ? (
-                <img src={dc.imageUrl} alt={dc.image_label || dc.name || campaign.name} />
+                <img src={dc.imageUrl} alt={dc.image_label || listingTitleOf(campaign)} />
               ) : (
                 <span className="rm-arch-tag">{dc.image_label || 'experience photo'}</span>
               )}
             </div>
+
+            {dc.description && (
+              <div className="rm-card rm-card--pad" data-testid="offer-description">
+                <div className="rm-mono-label" style={{ marginBottom: 10 }}>About this offer</div>
+                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.65, color: 'var(--rm-sub)', whiteSpace: 'pre-line' }}>{dc.description}</p>
+              </div>
+            )}
+
+            {Array.isArray(dc.prize_breakdown) && dc.prize_breakdown.length > 0 && (
+              <div className="rm-card rm-card--pad" data-testid="offer-prizes">
+                <div className="rm-mono-label" style={{ marginBottom: 12 }}>Prizes</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                  {dc.prize_breakdown.map((row, i) => (
+                    <div key={`${row.name}-${i}`} style={{ display: 'flex', gap: 10, fontSize: 14, alignItems: 'baseline' }}>
+                      <span className="rm-mono-note" style={{ fontSize: 11, color: 'var(--rm-apr2)', fontWeight: 700, width: 30, flexShrink: 0 }}>{row.qty}×</span>
+                      <span>{row.name}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="rm-mono-note" style={{ fontSize: 10, borderTop: '1px dashed var(--rm-line)', marginTop: 12, paddingTop: 10 }}>
+                  Awarded in this order — one prize per winning entry.
+                </div>
+              </div>
+            )}
 
             {(dc.inclusions || []).length > 0 && (
               <div className="rm-card rm-card--pad">
@@ -198,7 +224,7 @@ export default function MarketplaceOffer() {
                   <DrawStep n="1">Sign up and verify your number — that's one chance in the draw.</DrawStep>
                   {boost && (
                     <DrawStep n="2">
-                      <strong>Boost:</strong> complete the activation step before {fmtDateLong(boost.boostClosesAt)} and your entry counts ×{boost.multiplier}.
+                      <strong>Boost:</strong> your entry counts ×{boost.multiplier} when {DRAW_RECORD_PHRASE} — any time before {fmtDateLong(boost.boostClosesAt)}.
                     </DrawStep>
                   )}
                   <DrawStep n={boost ? '3' : '2'}>
@@ -239,6 +265,12 @@ export default function MarketplaceOffer() {
                 ))}
               </div>
             )}
+
+            {dc.regulatory_line && (
+              <div className="rm-mono-note" data-testid="offer-regulatory" style={{ fontSize: 10, lineHeight: 1.6, letterSpacing: '0.05em' }}>
+                {dc.regulatory_line}
+              </div>
+            )}
           </div>
 
           {/* Right column */}
@@ -248,7 +280,7 @@ export default function MarketplaceOffer() {
                 <span className="rm-mono-label" style={{ fontSize: 10.5 }}>{partner.name}</span>
                 {partner.verified && <span className="rm-verified">Verified</span>}
               </div>
-              <h1 className="rm-serif" style={{ margin: '10px 0 0', fontSize: 'clamp(26px,2.8vw,33px)', lineHeight: 1.15 }}>{dc.name || campaign.name}</h1>
+              <h1 className="rm-serif" style={{ margin: '10px 0 0', fontSize: 'clamp(26px,2.8vw,33px)', lineHeight: 1.15 }}>{listingTitleOf(campaign)}</h1>
               {valueLine && <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--rm-pine)', marginTop: 10 }}>{valueLine}</div>}
               <div className="rm-mono-note" style={{ fontSize: 11, marginTop: 6 }}>
                 {[ageLabel, unavailable ? UNAVAILABLE_COPY[unavailable].cta : dc.showCapacity && ops?.capacity ? `${ops.capacity.remaining} of ${ops.capacity.total} slots left` : 'Available'].filter(Boolean).join(' · ')}
@@ -299,7 +331,7 @@ export default function MarketplaceOffer() {
       {/* Mobile sticky CTA */}
       <div className="rm-sticky-cta">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dc.name || campaign.name}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{listingTitleOf(campaign)}</div>
           {valueLine && <div style={{ fontSize: 11.5, color: 'var(--rm-pine)', fontWeight: 600 }}>{valueLine}</div>}
         </div>
         <button
