@@ -238,3 +238,29 @@ describe('computeDesignChecks — draw T&Cs drifting from the campaign settings'
     expect(items.filter((i) => i.sev === 'warn')).toHaveLength(0);
   });
 });
+
+describe('computeDesignChecks — an age floor is only real if DOB is captured', () => {
+  const drawWithDob = (dob) => docWith({}, {
+    luckyDraw: { enabled: true, closesAt: '2026-09-02' },
+    form: {
+      verification: 'sms',
+      terms: { template: 'default', html: '<p>Open to Singapore residents aged 21 and above. Use the one-time SMS code.</p>' },
+      fields: [{ id: 'name', visible: true, required: true }, { id: 'dob', ...dob }],
+    },
+  });
+
+  it('optional DOB on a draw → warn (the floor is unenforceable)', () => {
+    const items = computeDesignChecks({ campaign: { ...CAMPAIGN, min_age: 21 }, doc: drawWithDob({ visible: true, required: false }) });
+    expect(items).toContainEqual(expect.objectContaining({ sev: 'warn', msg: expect.stringContaining('is optional') }));
+  });
+
+  it('hidden DOB says hidden', () => {
+    const items = computeDesignChecks({ campaign: { ...CAMPAIGN, min_age: 21 }, doc: drawWithDob({ visible: false, required: false }) });
+    expect(items).toContainEqual(expect.objectContaining({ msg: expect.stringContaining('is hidden') }));
+  });
+
+  it('required DOB → no warning', () => {
+    const items = computeDesignChecks({ campaign: { ...CAMPAIGN, min_age: 21 }, doc: drawWithDob({ visible: true, required: true }) });
+    expect(items.filter((i) => /age limit in the T&Cs/.test(i.msg || ''))).toHaveLength(0);
+  });
+});

@@ -316,6 +316,69 @@ describe('DOB and postal code mapping', () => {
     expect(demographics.age).toBeLessThanOrEqual(37)
   })
 
+  it('a REQUIRED dob that is missing is rejected — the age gate cannot be skipped by leaving it blank', async () => {
+    const gated = await createTestCampaign(adminUser.id, {
+      min_age: 21,
+      max_age: 65,
+      design_config: { requiredFields: { dob: true } },
+    })
+    const res = await postProspect({
+      firstName: 'NoDob',
+      lastName: 'User',
+      email: `nodob-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: gated.id,
+    })
+    expect(res.status).toBe(422)
+    expect(res.body.message).toMatch(/Date of birth is required/i)
+  })
+
+  it('an OPTIONAL dob that is missing still passes — no new friction on funnels set up to allow it', async () => {
+    const open = await createTestCampaign(adminUser.id, { min_age: 21, max_age: 65 })
+    const res = await postProspect({
+      firstName: 'OptionalDob',
+      lastName: 'User',
+      email: `optdob-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: open.id,
+    })
+    expect(res.status).toBe(201)
+  })
+
+  it('an underage entrant is still rejected on the value, required or not', async () => {
+    const gated = await createTestCampaign(adminUser.id, { min_age: 21, max_age: 65 })
+    const res = await postProspect({
+      firstName: 'TooYoung',
+      lastName: 'User',
+      email: `young-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: gated.id,
+      date_of_birth: `${new Date().getFullYear() - 15}-01-15`,
+    })
+    expect(res.status).toBe(422)
+    expect(res.body.message).toMatch(/at least 21/i)
+  })
+
+  it('a REQUIRED dob that is unparseable is rejected, not silently dropped', async () => {
+    const gated = await createTestCampaign(adminUser.id, {
+      min_age: 21,
+      design_config: { requiredFields: { dob: true } },
+    })
+    const res = await postProspect({
+      firstName: 'BadDob',
+      lastName: 'User',
+      email: `baddob-${Date.now()}@test.com`,
+      phone: `+65${Date.now().toString().slice(-8)}`,
+      leadSource: 'qr_code',
+      campaignId: gated.id,
+      date_of_birth: 'not-a-date',
+    })
+    expect(res.status).toBe(422)
+  })
+
   it('maps postal_code to location.postalCode', async () => {
     const res = await postProspect({
       firstName: 'PostalTest',
