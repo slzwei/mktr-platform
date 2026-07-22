@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { Loader2, Gift } from 'lucide-react';
+import { Loader2, Gift, Plus, X } from 'lucide-react';
 import { buildDrawTermsHtml, formatLongDate } from './drawTermsTemplate';
 
 const toDateInput = (v) => {
@@ -12,6 +12,23 @@ const toDateInput = (v) => {
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
 };
+
+const MAX_PRIZE_ROWS = 8; // mirrors backend utils/luckyDraw.js
+
+const clampQty = (v) => {
+  const n = Math.floor(Number(v));
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(99, Math.max(1, n));
+};
+
+/** Rows worth submitting: named, qty coerced to 1..99. Empty extra rows drop. */
+const cleanPrizeRows = (rows) =>
+  rows
+    .filter((r) => r.name.trim())
+    .map((r) => ({ qty: clampQty(r.qty), name: r.name.trim() }));
+
+const prizeSummary = (rows) =>
+  rows.map((p) => (p.qty === 1 ? p.name : `${p.qty}× ${p.name}`)).join(' + ');
 
 /**
  * Details tab — core campaign metadata + the previously-hidden delivery controls
@@ -33,23 +50,41 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
     metaPixelId: initial?.metaPixelId || '',
     tiktokPixelId: initial?.tiktokPixelId || '',
     // Lucky-draw create flow only (draw prop) — never shown on edit.
-    drawPrize: '',
+    drawPrizes: [{ qty: '1', name: '' }],
     drawClosesAt: '',
     drawBoostClosesAt: '',
     drawMultiplier: 10,
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const setPrizeRow = (i, key, value) =>
+    setForm((f) => ({
+      ...f,
+      drawPrizes: f.drawPrizes.map((row, idx) => (idx === i ? { ...row, [key]: value } : row)),
+    }));
+  const addPrizeRow = () =>
+    setForm((f) =>
+      f.drawPrizes.length >= MAX_PRIZE_ROWS ? f : { ...f, drawPrizes: [...f.drawPrizes, { qty: '1', name: '' }] }
+    );
+  const removePrizeRow = (i) =>
+    setForm((f) => ({ ...f, drawPrizes: f.drawPrizes.filter((_, idx) => idx !== i) }));
+
+  const prizeRows = cleanPrizeRows(form.drawPrizes);
+  const totalPrizeQty = prizeRows.reduce((sum, p) => sum + p.qty, 0);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    if (draw && (!form.drawPrize.trim() || !form.drawClosesAt)) return; // inputs are required; belt for non-native submits
+    if (draw && (prizeRows.length === 0 || !form.drawClosesAt)) return; // row 1 + close date are required; belt for non-native submits
     const drawConfig = draw
       ? {
           design_config: {
             luckyDraw: {
               enabled: true,
-              prize: form.drawPrize.trim(),
+              // prizes[] is canonical (award order); the summary `prize` and
+              // winners count are re-derived server-side (utils/luckyDraw.js),
+              // this copy just keeps the payload self-consistent.
+              prizes: prizeRows,
+              prize: prizeSummary(prizeRows),
               closesAt: form.drawClosesAt,
               boostClosesAt: form.drawBoostClosesAt || form.drawClosesAt,
               multiplier: Number(form.drawMultiplier) || 10,
@@ -59,7 +94,7 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
             // edits mint a new version, entrants keep what they accepted.
             termsContent: buildDrawTermsHtml({
               campaignName: form.name.trim(),
-              prize: form.drawPrize.trim(),
+              prizes: prizeRows,
               closesAt: form.drawClosesAt,
               boostClosesAt: form.drawBoostClosesAt || form.drawClosesAt,
               multiplier: Number(form.drawMultiplier) || 10,
@@ -124,8 +159,50 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="draw_prize">Prize</Label>
-              <Input id="draw_prize" value={form.drawPrize} onChange={(e) => set('drawPrize', e.target.value)} placeholder="e.g. One (1) iPhone 17 Pro 256GB" required maxLength={80} />
+              <Label htmlFor="draw_prize_name_0">Prizes</Label>
+              {form.drawPrizes.map((row, i) => (
+                <div key={i} className="flex items-center gap-2" data-testid="draw-prize-row">
+                  <Input
+                    id={`draw_prize_qty_${i}`}
+                    aria-label={`Prize ${i + 1} quantity`}
+                    type="number"
+                    min={1}
+                    max={99}
+                    className="w-20 shrink-0"
+                    value={row.qty}
+                    onChange={(e) => setPrizeRow(i, 'qty', e.target.value)}
+                    onBlur={(e) => setPrizeRow(i, 'qty', String(clampQty(e.target.value)))}
+                  />
+                  <span className="text-muted-foreground text-sm shrink-0">×</span>
+                  <Input
+                    id={`draw_prize_name_${i}`}
+                    aria-label={`Prize ${i + 1} name`}
+                    value={row.name}
+                    onChange={(e) => setPrizeRow(i, 'name', e.target.value)}
+                    placeholder={i === 0 ? 'e.g. iPhone 17 Pro 256GB' : 'e.g. $100 FairPrice Voucher'}
+                    required={i === 0}
+                    maxLength={80}
+                  />
+                  {form.drawPrizes.length > 1 && (
+                    <Button type="button" variant="ghost" size="icon" aria-label={`Remove prize ${i + 1}`} onClick={() => removePrizeRow(i)}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-2">
+                {form.drawPrizes.length < MAX_PRIZE_ROWS ? (
+                  <Button type="button" variant="outline" size="sm" onClick={addPrizeRow} data-testid="add-prize-row">
+                    <Plus className="w-4 h-4 mr-1" /> Add prize
+                  </Button>
+                ) : <span />}
+                <p className="text-xs text-muted-foreground">Row order is award order — top prize first.</p>
+              </div>
+              {totalPrizeQty > 1 && (
+                <p className="text-xs text-amber-600 dark:text-amber-500" data-testid="multi-prize-note">
+                  Multi-prize draws save as drafts — going live needs the multi-winner draw engine (Phase 3). A single-prize draw launches as usual.
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -145,7 +222,7 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
             </div>
             {form.drawClosesAt ? (
               <p className="text-xs text-muted-foreground">
-                Closes {formatLongDate(form.drawClosesAt)}, 23:59 SGT · boost until {formatLongDate(form.drawBoostClosesAt || form.drawClosesAt)} · ×{Number(form.drawMultiplier) || 10} after a scanned session.
+                Closes {formatLongDate(form.drawClosesAt)}, 23:59 SGT · boost until {formatLongDate(form.drawBoostClosesAt || form.drawClosesAt)} · ×{Number(form.drawMultiplier) || 10} after a scanned session.{totalPrizeQty > 1 ? ` · ${totalPrizeQty} winners` : ''}
               </p>
             ) : null}
           </CardContent>

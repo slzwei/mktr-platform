@@ -8,7 +8,7 @@ import {
 } from '@/lib/consentCopy';
 import { apiClient } from '@/api/client';
 import { getMarketplaceCampaign } from '@/api/marketplace';
-import { composeValueLine, fmtDateLong, isDrawCampaign, boostOf, offerUnavailability, UNAVAILABLE_COPY } from './content';
+import { composeValueLine, fmtDateLong, isDrawCampaign, boostOf, offerUnavailability, UNAVAILABLE_COPY, winnersDrawnSentence } from './content';
 import { formatDateInput, getAgeValidationError } from '@/components/campaigns/signup/dateUtils';
 import {
   shouldTrack, generateEventId, captureFbcFromUrl, captureUtmsFromUrl,
@@ -931,7 +931,7 @@ function Confirmation({ campaign, isDraw, boost, needAck, actSummary, result, pa
                 </Step>
               )}
               <Step n={boost ? '3' : '2'} apricot>
-                Entries close on {fmtDateLong(dc.luckyDraw?.closesAt)};{dc.luckyDraw?.winners ? ` ${dc.luckyDraw.winners}` : ''} winners are drawn within seven days.
+                Entries close on {fmtDateLong(dc.luckyDraw?.closesAt)}; {winnersDrawnSentence(dc.luckyDraw?.winners, { capitalize: false })}
               </Step>
               <Step n={boost ? '4' : '3'} apricot>
                 Winners are contacted at the number you verified and listed on the <Link to="/winners" className="rm-underline">winners page</Link>.

@@ -81,8 +81,13 @@ describe('CampaignDetailsTab', () => {
 describe('CampaignDetailsTab — lucky-draw create flow', () => {
   const fillBasics = () => {
     fireEvent.change(screen.getByLabelText('Campaign name'), { target: { value: 'iPhone Lucky Draw' } });
-    fireEvent.change(screen.getByLabelText('Prize'), { target: { value: 'One (1) iPhone 17 Pro' } });
+    fireEvent.change(screen.getByLabelText('Prize 1 name'), { target: { value: 'iPhone 17 Pro' } });
     fireEvent.change(screen.getByLabelText('Entries close'), { target: { value: '2026-08-31' } });
+  };
+  const addSecondPrize = (qty, name) => {
+    fireEvent.click(screen.getByTestId('add-prize-row'));
+    fireEvent.change(screen.getByLabelText('Prize 2 quantity'), { target: { value: String(qty) } });
+    fireEvent.change(screen.getByLabelText('Prize 2 name'), { target: { value: name } });
   };
 
   it('renders the draw card only when draw is set', () => {
@@ -97,7 +102,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     expect(screen.getByTestId('draw-setup-card')).toBeInTheDocument();
   });
 
-  it('arms design_config.luckyDraw + seeded terms on submit; boost defaults to close; end_date follows the close', () => {
+  it('arms structured prizes + seeded terms on submit; boost defaults to close; end_date follows the close', () => {
     const onSubmit = vi.fn();
     render(
       <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={onSubmit} />
@@ -109,18 +114,73 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     expect(payload.type).toBe('lead_generation');
     expect(payload.design_config.luckyDraw).toEqual({
       enabled: true,
-      prize: 'One (1) iPhone 17 Pro',
+      prizes: [{ qty: 1, name: 'iPhone 17 Pro' }],
+      prize: 'iPhone 17 Pro',
       closesAt: '2026-08-31',
       boostClosesAt: '2026-08-31',
       multiplier: 10,
     });
     expect(payload.design_config.termsContent).toContain('iPhone Lucky Draw');
-    expect(payload.design_config.termsContent).toContain('One (1) iPhone 17 Pro');
+    expect(payload.design_config.termsContent).toContain('iPhone 17 Pro');
+    expect(payload.design_config.termsContent).toContain('One winner is drawn at random');
     expect(payload.design_config.termsContent).toContain('31 August 2026');
     expect(payload.design_config.termsContent).toContain('10 entries instead of one');
     expect(payload.design_config.termsContent).toContain('never ask you to pay a fee');
     // end_date empty → aligned to the draw close
     expect(payload.end_date).toBe(new Date('2026-08-31').toISOString());
+  });
+
+  it('multiple prize rows arm ordered prizes, a derived summary, and N-winner terms', () => {
+    const onSubmit = vi.fn();
+    render(
+      <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={onSubmit} />
+    );
+    fillBasics();
+    addSecondPrize(3, '$100 FairPrice Voucher');
+    expect(screen.getByTestId('multi-prize-note')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
+    const dc = onSubmit.mock.calls[0][0].design_config;
+    expect(dc.luckyDraw.prizes).toEqual([
+      { qty: 1, name: 'iPhone 17 Pro' },
+      { qty: 3, name: '$100 FairPrice Voucher' },
+    ]);
+    expect(dc.luckyDraw.prize).toBe('iPhone 17 Pro + 3× $100 FairPrice Voucher');
+    expect(dc.termsContent).toContain('One (1) &times; iPhone 17 Pro');
+    expect(dc.termsContent).toContain('Three (3) &times; $100 FairPrice Voucher');
+    expect(dc.termsContent).toContain('Four (4) winners are drawn at random');
+    expect(dc.termsContent).toContain('Each verified mobile number can win at most one prize');
+  });
+
+  it('empty extra rows are dropped and out-of-range quantities clamp on blur', () => {
+    const onSubmit = vi.fn();
+    render(
+      <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={onSubmit} />
+    );
+    fillBasics();
+    fireEvent.click(screen.getByTestId('add-prize-row')); // row 2 left empty
+    fireEvent.click(screen.getByTestId('add-prize-row'));
+    fireEvent.change(screen.getByLabelText('Prize 3 quantity'), { target: { value: '150' } });
+    fireEvent.blur(screen.getByLabelText('Prize 3 quantity'));
+    expect(screen.getByLabelText('Prize 3 quantity').value).toBe('99');
+    fireEvent.change(screen.getByLabelText('Prize 3 name'), { target: { value: 'Voucher' } });
+    fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
+    expect(onSubmit.mock.calls[0][0].design_config.luckyDraw.prizes).toEqual([
+      { qty: 1, name: 'iPhone 17 Pro' },
+      { qty: 99, name: 'Voucher' },
+    ]);
+  });
+
+  it('remove buttons drop a row; the cap stops at 8 rows', () => {
+    render(
+      <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={vi.fn()} />
+    );
+    for (let i = 0; i < 10; i += 1) {
+      const btn = screen.queryByTestId('add-prize-row');
+      if (btn) fireEvent.click(btn);
+    }
+    expect(screen.getAllByTestId('draw-prize-row')).toHaveLength(8);
+    fireEvent.click(screen.getByLabelText('Remove prize 8'));
+    expect(screen.getAllByTestId('draw-prize-row')).toHaveLength(7);
   });
 
   it('a distinct boost deadline and multiplier flow through', () => {
@@ -137,7 +197,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     expect(ld.multiplier).toBe(20);
   });
 
-  it('refuses to submit without a prize or close date', () => {
+  it('refuses to submit without a named prize row or close date', () => {
     const onSubmit = vi.fn();
     render(
       <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={onSubmit} />

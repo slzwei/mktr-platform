@@ -45,7 +45,7 @@ export default function CampaignTypeSelectionDialog({ open, onOpenChange, onSele
  <div>
  <h3 className="font-semibold text-foreground">Lucky Draw Campaign</h3>
  <p className="text-sm text-muted-foreground font-normal mt-1 text-wrap">
- One prize, verified entries. SMS-verified signups earn one chance; completing a review session multiplies it. Server-enforced entries, witnessed draw, masked results.
+ Your prizes, verified entries. SMS-verified signups earn one chance; completing a review session multiplies it. Server-enforced entries, witnessed draw, masked results.
  </p>
  </div>
  </div>

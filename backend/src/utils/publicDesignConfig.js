@@ -43,6 +43,7 @@ export function publicLuckyDraw(raw) {
   return {
     enabled: true,
     ...(ld.prize ? { prize: ld.prize } : {}),
+    ...(ld.prizes ? { prizes: ld.prizes } : {}),
     ...(ld.closesAt ? { closesAt: ld.closesAt } : {}),
     ...(ld.boostClosesAt ? { boostClosesAt: ld.boostClosesAt } : {}),
     ...(ld.drawOn ? { drawOn: ld.drawOn } : {}),

@@ -46,6 +46,7 @@
  * @param {boolean} facts.drawCloseMismatch      LIVE record cutoff ≠ doc closesAt (instant-exact)
  * @param {string}  facts.docDrawClosesAt        display YMD (doc)
  * @param {string}  facts.drawRecordClosesAt     display YMD (record, SGT)
+ * @param {number}  facts.drawTotalPrizes        Σqty of structured luckyDraw.prizes (0 = unstructured)
  * @returns {{ applicable: boolean, ready: boolean, issues: Array<{level,code,message}> }}
  */
 export function computeReadiness(facts) {
@@ -75,6 +76,7 @@ export function computeReadiness(facts) {
     drawCloseMismatch = false,
     docDrawClosesAt = null,
     drawRecordClosesAt = null,
+    drawTotalPrizes = 0,
   } = facts || {};
 
   // Brand-awareness (PHV tablet) campaigns don't capture leads → readiness N/A.
@@ -204,6 +206,19 @@ export function computeReadiness(facts) {
     });
   }
 
+  // CRITICAL — the draw engine resolves exactly one claimed winner today, so a
+  // multi-prize draw would collect entries under T&Cs the platform cannot
+  // honour. The service layer 422s activation regardless
+  // (DRAW_MULTI_PRIZE_UNSUPPORTED, non-forceable) — this row is the visible
+  // reason in the Launch tab. Phase 3 (multi-winner engine) removes both.
+  if (drawEnabled && drawTotalPrizes > 1) {
+    issues.push({
+      level: 'critical',
+      code: 'draw_multi_prize_unsupported',
+      message: `This draw lists ${drawTotalPrizes} prizes, but multi-winner draw execution isn't live yet — the campaign can be saved and reviewed as a draft, not activated.`,
+    });
+  }
+
   // INFO — not yet live.
   if (!isActive) {
     issues.push({
@@ -220,7 +235,7 @@ export function computeReadiness(facts) {
 // Model-free static imports — the pure export above must stay import-light
 // (utils only, no model graph).
 import { readLegacyViewSafe, getStoredLuckyDraw } from '../utils/designConfigV2Clamp.js';
-import { normalizeLuckyDraw } from '../utils/luckyDraw.js';
+import { normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 
 /** Display YMD (SGT) for a draw record's exclusive cutoff instant — minus 1ms
@@ -359,6 +374,7 @@ export async function loadCampaignReadiness(campaignId) {
     drawCloseMismatch,
     docDrawClosesAt,
     drawRecordClosesAt,
+    drawTotalPrizes: totalPrizeQuantity(ld),
   });
 
   return {

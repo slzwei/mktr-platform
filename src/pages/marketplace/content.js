@@ -309,6 +309,17 @@ export const UNAVAILABLE_COPY = {
   unserviceable: { cta: 'Currently unavailable', title: "This offer isn't available right now", body: 'It may have ended or been paused. Plenty of other offers are live.' },
 };
 
+/**
+ * Verb-agreed winners sentence for draw copy: "4 winners are drawn within
+ * seven days." / "1 winner is drawn within seven days." / countless fallback
+ * "Winners are drawn within seven days." (capitalize:false for mid-sentence).
+ */
+export function winnersDrawnSentence(n, { capitalize = true } = {}) {
+  const c = Number.isInteger(n) && n > 0 ? n : null;
+  if (c) return `${c} ${c === 1 ? 'winner is' : 'winners are'} drawn within seven days.`;
+  return `${capitalize ? 'W' : 'w'}inners are drawn within seven days.`;
+}
+
 /** Boost tier facts — luckyDraw (authored dates) + ops.draw (live Draw row). */
 export function boostOf(campaign) {
   const ld = campaign?.design_config?.luckyDraw;

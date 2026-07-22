@@ -70,10 +70,16 @@ function drawStrings(luckyDraw, campaignName) {
   const m = draw?.multiplier || 10;
   const closesFull = draw ? formatDrawDateFull(draw.closesAt) : '';
   const boostFull = draw ? formatDrawDateFull(draw.boostClosesAt || draw.closesAt) : '';
+  // Winner-count-aware copy: `winners` is derived from structured prizes on
+  // the server (Σqty) and defaults to 1 for legacy single-prize draws — the
+  // singular strings below stay byte-identical when winners ≤ 1.
+  const winners = Number.isInteger(draw?.winners) && draw.winners > 1 ? draw.winners : 1;
   return {
     draw,
     multiplier: m,
     prize: draw?.prize || '',
+    winners,
+    winnersLine: winners > 1 ? `${winners} winners, drawn in a witnessed process.` : 'One winner, drawn in a witnessed process.',
     closesFull,
     closesMono: closesFull ? closesFull.toUpperCase() : '',
     boostFull,
@@ -84,7 +90,9 @@ function drawStrings(luckyDraw, campaignName) {
       `Book your complimentary ~20-min financial review — any time before ${boostFull}.`,
       `Your consultant meets you and scans your pass — your 1 entry becomes ${m} entries.`,
     ],
-    closedBody: 'The winner is being drawn in a witnessed process and will be contacted directly by phone or SMS.',
+    closedBody: winners > 1
+      ? `The ${winners} winners are being drawn in a witnessed process and will be contacted directly by phone or SMS.`
+      : 'The winner is being drawn in a witnessed process and will be contacted directly by phone or SMS.',
     freeSessionLine: `FREE SESSION · NO PAYMENT EVER · BEFORE ${boostFull.toUpperCase()}`,
   };
 }
@@ -205,7 +213,7 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
   };
   const facts = s.draw ? [
     <><strong style={{ color: PC.ink }}>One verified entry.</strong> SMS code confirms your number — one entry per person, no bots.</>,
-    <><strong style={{ color: PC.ink }}>Entries close {s.closesFull},</strong> 23:59 SGT. One winner, drawn in a witnessed process.</>,
+    <><strong style={{ color: PC.ink }}>Entries close {s.closesFull},</strong> 23:59 SGT. {s.winnersLine}</>,
     <><strong style={{ color: PC.ink }}>Make it ×{s.multiplier}.</strong> {s.boostBody}</>,
   ] : [];
   const hero = (
@@ -507,7 +515,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         )}
         {s.draw && (
           <div style={{ fontSize: 12.5, color: NF.mut }}>
-            Winner contacted directly. Masked results at <WinnersLink color="#fff" />.
+            {s.winners > 1 ? 'Winners contacted directly.' : 'Winner contacted directly.'} Masked results at <WinnersLink color="#fff" />.
           </div>
         )}
         <div style={{ fontSize: 11, color: NF.faint }}>{content.regulatory}</div>
@@ -730,7 +738,7 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
       {spineStep('s2', circle('2', 'outline'), 'Verify with an SMS code', 'One entry per verified number — no bots, no multiple entries. Free, 18+.')}
       {spineStep('s3', circle('3', 'outline'), s.draw ? "You're in the draw" : "You're in",
         s.draw
-          ? `Your entry pass arrives by WhatsApp and email. One winner drawn after ${s.closesFull} in a witnessed process.`
+          ? `Your entry pass arrives by WhatsApp and email. ${s.winners > 1 ? `${s.winners} winners` : 'One winner'} drawn after ${s.closesFull} in a witnessed process.`
           : 'Your details are received securely and confirmed by email.',
         { last: !boostInline })}
       {boostInline && spineStep('s4', circle('+', 'plus'), `Bonus: make it ×${s.multiplier}`, s.boostBody, { last: true })}
@@ -767,7 +775,7 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ display: 'flex', gap: 14 }}>{circle('1', 'filled')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>Drop your details</strong> in the form.</div></div>
               <div style={{ display: 'flex', gap: 14 }}>{circle('2', 'outline')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>Verify with an SMS code</strong> — one entry per verified number.</div></div>
-              <div style={{ display: 'flex', gap: 14 }}>{circle('3', 'outline')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>{s.draw ? "You're in." : 'Done.'}</strong> {s.draw ? `Pass by WhatsApp/email; winner drawn after ${s.closesFull}.` : 'Your details are received securely.'}</div></div>
+              <div style={{ display: 'flex', gap: 14 }}>{circle('3', 'outline')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>{s.draw ? "You're in." : 'Done.'}</strong> {s.draw ? `Pass by WhatsApp/email; ${s.winners > 1 ? `${s.winners} winners` : 'winner'} drawn after ${s.closesFull}.` : 'Your details are received securely.'}</div></div>
               {s.draw && <div style={{ display: 'flex', gap: 14 }}>{circle('+', 'plus')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>Bonus ×{s.multiplier}:</strong> {s.boostBody}</div></div>}
             </div>
             {s.draw && (

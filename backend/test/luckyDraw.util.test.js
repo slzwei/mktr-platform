@@ -4,7 +4,7 @@
  * Mirrors featuredDrop.util.test.js — these values gate PUBLIC signup
  * enforcement, so the clamp is the security boundary.
  */
-import { normalizeLuckyDraw, applyLuckyDrawPolicy } from '../src/utils/luckyDraw.js';
+import { normalizeLuckyDraw, applyLuckyDrawPolicy, derivePrizeSummary, totalPrizeQuantity } from '../src/utils/luckyDraw.js';
 import { sgtDayEndExclusiveMs } from '../src/utils/sgtTime.js';
 
 const UUID = '123e4567-e89b-42d3-a456-426614174000';
@@ -79,6 +79,107 @@ describe('normalizeLuckyDraw — bookingUrl (draw success CTA)', () => {
     // The 300-char cap truncates into an invalid URL with whitespace-free tail — still http ok:
     const long = `https://redeem.sg/${'a'.repeat(400)}`;
     expect(normalizeLuckyDraw({ enabled: true, bookingUrl: long }).bookingUrl.length).toBeLessThanOrEqual(300);
+  });
+});
+
+describe('normalizeLuckyDraw — structured prizes', () => {
+  const ROWS = [{ qty: 1, name: 'iPhone 17 Pro' }, { qty: 3, name: '$100 FairPrice Voucher' }];
+
+  it('keeps valid rows and derives prize + winners from them (overwriting client input)', () => {
+    const out = normalizeLuckyDraw({ enabled: true, prizes: ROWS, prize: 'LIES', winners: 100 });
+    expect(out.prizes).toEqual(ROWS);
+    expect(out.prize).toBe('iPhone 17 Pro + 3× $100 FairPrice Voucher');
+    expect(out.winners).toBe(4);
+  });
+
+  it('drops junk rows, coerces bad qty to 1, trims/caps names, caps at 8 rows', () => {
+    const out = normalizeLuckyDraw({
+      enabled: true,
+      prizes: [
+        { qty: 'x', name: '  Prize A  ' },
+        { qty: 0, name: 'B' },
+        { qty: 2.5, name: 'C' },
+        { qty: 100, name: 'D' },
+        'not-an-object',
+        { qty: 2, name: '   ' },
+        { qty: 2 },
+        { qty: 2, name: 'E'.repeat(200) },
+      ],
+    });
+    expect(out.prizes).toEqual([
+      { qty: 1, name: 'Prize A' },
+      { qty: 1, name: 'B' },
+      { qty: 1, name: 'C' },
+      { qty: 1, name: 'D' },
+      { qty: 2, name: 'E'.repeat(80) },
+    ]);
+    const nine = Array.from({ length: 9 }, (_, i) => ({ qty: 1, name: `P${i}` }));
+    expect(normalizeLuckyDraw({ enabled: true, prizes: nine }).prizes).toHaveLength(8);
+  });
+
+  it('empty/invalid prizes fall back to legacy manual fields (read-safe)', () => {
+    const out = normalizeLuckyDraw({ enabled: true, prizes: [], prize: 'Manual', winners: 5 });
+    expect(out.prizes).toBeUndefined();
+    expect(out.prize).toBe('Manual');
+    expect(out.winners).toBe(5);
+  });
+
+  it('legacy manual prize keeps its 80-char cap (no drift for stored rows)', () => {
+    const out = normalizeLuckyDraw({ enabled: true, prize: 'Z'.repeat(200) });
+    expect(out.prize).toBe('Z'.repeat(80));
+  });
+
+  it('long multi-prize summaries are NOT cut at the legacy 80-char cap', () => {
+    const rows = Array.from({ length: 8 }, (_, i) => ({ qty: 99, name: `${'N'.repeat(78)}${i}` }));
+    const out = normalizeLuckyDraw({ enabled: true, prizes: rows });
+    expect(out.prize.length).toBeGreaterThan(80);
+    expect(out.prize.length).toBeLessThanOrEqual(700);
+    expect(out.winners).toBe(8 * 99);
+  });
+
+  it('is idempotent: normalize(normalize(x)) === normalize(x)', () => {
+    const once = normalizeLuckyDraw({ enabled: true, prizes: ROWS, closesAt: '2026-10-30', multiplier: 10 });
+    expect(normalizeLuckyDraw(once)).toEqual(once);
+  });
+
+  it('derivePrizeSummary / totalPrizeQuantity helpers', () => {
+    expect(derivePrizeSummary([{ qty: 1, name: 'A' }])).toBe('A');
+    expect(derivePrizeSummary(ROWS)).toBe('iPhone 17 Pro + 3× $100 FairPrice Voucher');
+    expect(totalPrizeQuantity(normalizeLuckyDraw({ enabled: true, prizes: ROWS }))).toBe(4);
+    expect(totalPrizeQuantity(normalizeLuckyDraw({ enabled: true, prize: 'Manual', winners: 9 }))).toBe(0);
+    expect(totalPrizeQuantity(undefined)).toBe(0);
+  });
+});
+
+describe('applyLuckyDrawPolicy — structured prizes write guard', () => {
+  const storedStructured = { enabled: true, prizes: [{ qty: 1, name: 'A' }, { qty: 3, name: 'B' }] };
+
+  it('admin sending a prizes key that normalizes empty is a 422 (DRAW_PRIZES_INVALID), not a silent downgrade', () => {
+    for (const bad of [[], [{ qty: 2 }], [{ name: '   ' }], 'garbage', 42]) {
+      let thrown;
+      try {
+        applyLuckyDrawPolicy({ incoming: { enabled: true, prizes: bad }, stored: storedStructured, role: 'admin' });
+      } catch (e) { thrown = e; }
+      expect(thrown?.statusCode).toBe(422);
+      expect(thrown?.data?.code).toBe('DRAW_PRIZES_INVALID');
+    }
+  });
+
+  it('admin omitting the prizes key replaces wholesale (documented incoming-wins semantics)', () => {
+    const out = applyLuckyDrawPolicy({ incoming: { enabled: true, prize: 'Manual' }, stored: storedStructured, role: 'admin' });
+    expect(out.prizes).toBeUndefined();
+    expect(out.prize).toBe('Manual');
+  });
+
+  it('non-admin incoming garbage prizes never throws and never lands', () => {
+    const out = applyLuckyDrawPolicy({ incoming: { enabled: true, prizes: [] }, stored: storedStructured, role: 'agent' });
+    expect(out.prizes).toEqual(storedStructured.prizes);
+  });
+
+  it('stored-side garbage prizes (direct-DB) reads as legacy, never throws', () => {
+    const out = applyLuckyDrawPolicy({ incoming: undefined, stored: { enabled: true, prizes: [], prize: 'Manual' }, role: 'admin' });
+    expect(out.prizes).toBeUndefined();
+    expect(out.prize).toBe('Manual');
   });
 });
 

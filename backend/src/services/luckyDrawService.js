@@ -8,6 +8,7 @@ import {
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
+import { normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
 
 /**
  * Lucky-draw lifecycle (docs/plans/lucky-draw-10x.md §4.2–§4.3).
@@ -139,6 +140,18 @@ export function makeLuckyDrawService(overrides = {}) {
     const ld = campaign.design_config?.luckyDraw;
     if (ld?.enabled !== true) {
       throw new AppError('Campaign has no enabled luckyDraw config (designer → luckyDraw)', 422);
+    }
+    // Fail-closed until the multi-winner engine ships: this engine resolves
+    // exactly ONE claimed winner per draw (a claimed attempt is terminal), so
+    // a multi-prize config must not mint a record it cannot deliver.
+    const totalPrizes = totalPrizeQuantity(normalizeLuckyDraw(ld));
+    if (totalPrizes > 1) {
+      const err = new AppError(
+        `This draw promises ${totalPrizes} prizes, but multi-winner draw execution isn't live yet.`,
+        422
+      );
+      err.data = { code: 'DRAW_MULTI_PRIZE_UNSUPPORTED' };
+      throw err;
     }
     const closesAtMs = ld.closesAt ? sgtDayEndExclusiveMs(ld.closesAt) : null;
     if (closesAtMs === null) {
