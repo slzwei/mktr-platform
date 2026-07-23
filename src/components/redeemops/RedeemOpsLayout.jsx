@@ -16,6 +16,7 @@ import Users from 'lucide-react/icons/users';
 import Compass from 'lucide-react/icons/compass';
 import Kanban from 'lucide-react/icons/kanban';
 import ListChecks from 'lucide-react/icons/list-checks';
+import Zap from 'lucide-react/icons/zap';
 import Phone from 'lucide-react/icons/phone';
 import Gift from 'lucide-react/icons/gift';
 import Megaphone from 'lucide-react/icons/megaphone';
@@ -45,6 +46,11 @@ const NAV = [
     : []),
   { title: 'Pipeline', url: '/redeem-ops/pipeline', icon: Kanban, capability: 'pipeline.view_team' },
   { title: 'Tasks', url: '/redeem-ops/tasks', icon: ListChecks, capability: 'tasks.manage' },
+  // Cadence authoring — same flag as its routes. tasks.manage mirrors the API's
+  // authoring gate, so BDMs and outreach execs get it, not just settings admins.
+  ...(import.meta.env.VITE_REDEEM_OPS_CADENCES_ENABLED === 'true'
+    ? [{ title: 'Cadences', url: '/redeem-ops/cadences', icon: Zap, capability: 'tasks.manage' }]
+    : []),
   // "Call Lists" (pools) + "Campaign Rewards" (activations): ops-facing names
   // per the Redemptions-Campaign-Stacks design; URLs and internal terms unchanged.
   { title: 'Call Lists', url: '/redeem-ops/pools', icon: Phone, capability: 'pools.claim_next' },

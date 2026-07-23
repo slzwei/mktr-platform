@@ -141,6 +141,7 @@ const RedeemOpsRedemptions = lazy(() => import('./redeemops/RedemptionsPage'));
 const RedeemOpsAnalytics = lazy(() => import('./redeemops/AnalyticsPage'));
 const RedeemOpsProfile = lazy(() => import('./redeemops/ProfilePage'));
 const RedeemOpsSettings = lazy(() => import('./redeemops/SettingsPage'));
+const RedeemOpsCadences = lazy(() => import('./redeemops/CadencesPage'));
 const RedeemOpsCadenceEditor = lazy(() => import('./redeemops/CadenceEditorPage'));
 
 // ops.redeem.sg — dedicated staff surface (docs/redeem-ops/
@@ -176,10 +177,11 @@ function redeemOpsRouteElements() {
     { path: '/redeem-ops/analytics', capability: 'analytics.view_own', Page: RedeemOpsAnalytics },
     { path: '/redeem-ops/profile', capability: null, Page: RedeemOpsProfile },
     { path: '/redeem-ops/settings', capability: 'settings.manage', Page: RedeemOpsSettings },
-    // Full-page cadence editor (a dialog was too cramped for a step editor).
-    // tasks.manage: any rep can author — unpublished saves stay private drafts
-    // (creator + admins); the service enforces per-row edit rights.
+    // Cadence authoring home + full-page editor (a dialog was too cramped for
+    // a step editor). tasks.manage: any rep can author — unpublished saves stay
+    // private drafts (creator + admins); the service enforces per-row edit rights.
     ...(CADENCES_ENABLED ? [
+      { path: '/redeem-ops/cadences', capability: 'tasks.manage', Page: RedeemOpsCadences },
       { path: '/redeem-ops/cadences/new', capability: 'tasks.manage', Page: RedeemOpsCadenceEditor },
       { path: '/redeem-ops/cadences/:cadenceId/edit', capability: 'tasks.manage', Page: RedeemOpsCadenceEditor },
     ] : []),

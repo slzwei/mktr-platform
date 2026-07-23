@@ -7,7 +7,7 @@
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
@@ -43,6 +43,7 @@ vi.mock('sonner', () => ({ toast: toastMock }));
 import { CadenceOutcomeButton, CadenceChip, CadencePanel } from '../cadence';
 import { toBuilderSteps } from '../cadenceBuilder';
 import CadenceEditorPage from '@/pages/redeemops/CadenceEditorPage';
+import { useAuthStore } from '@/stores/authStore';
 
 function wrap(ui) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -235,6 +236,62 @@ describe('CadenceEditorPage (full-page builder)', () => {
     expect(api.suggestCadence).not.toHaveBeenCalled();
     expect(screen.getByPlaceholderText(/beauty salons/i)).toHaveValue('Hand-built name');
     confirmSpy.mockRestore();
+  });
+});
+
+describe('CadenceEditorPage — per-row edit rights (mirror of canAuthorRow)', () => {
+  const teamCadence = {
+    id: 'c-team', name: 'Team chase', version: 2,
+    publishedAt: '2026-07-01T00:00:00.000Z', createdBy: 'u-other',
+    steps: [{ id: 's1', stepOrder: 1, channel: 'call', title: 'Intro call', scriptTemplate: null, priority: 'medium' }],
+    transitions: [{ fromStepId: null, disposition: '*', toStepId: 's1', delayDays: 0, timeWindow: 'any' }],
+  };
+
+  function renderEdit() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/redeem-ops/cadences/c-team/edit']}>
+          <Routes>
+            <Route path="/redeem-ops/cadences/:cadenceId/edit" element={<CadenceEditorPage />} />
+            <Route path="/redeem-ops/cadences" element={<p>cadences page</p>} />
+            <Route path="/redeem-ops/settings" element={<p>settings page</p>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+  }
+
+  afterEach(() => {
+    useAuthStore.setState({ user: null });
+  });
+
+  it("someone else's cadence opens read-only — no save buttons, Back instead of Cancel", async () => {
+    useAuthStore.setState({ user: { id: 'u-bd', role: 'user', redeemOpsRole: 'bdm' } });
+    api.listCadences.mockResolvedValue({ cadences: [teamCadence], aiEnabled: false });
+    renderEdit();
+
+    expect(await screen.findByText(/read-only — only the creator or an admin/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /save as v/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /save draft/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /back/i })).toHaveAttribute('href', '/redeem-ops/cadences');
+  });
+
+  it('the creator edits their own cadence normally', async () => {
+    useAuthStore.setState({ user: { id: 'u-other', role: 'user', redeemOpsRole: 'bdm' } });
+    api.listCadences.mockResolvedValue({ cadences: [teamCadence], aiEnabled: false });
+    renderEdit();
+
+    expect(await screen.findByRole('button', { name: /save as v3/i })).toBeInTheDocument();
+    expect(screen.queryByText(/read-only/i)).not.toBeInTheDocument();
+  });
+
+  it('a settings.manage admin can edit anything', async () => {
+    useAuthStore.setState({ user: { id: 'u-admin', role: 'user', redeemOpsRole: 'ops_admin' } });
+    api.listCadences.mockResolvedValue({ cadences: [teamCadence], aiEnabled: false });
+    renderEdit();
+
+    expect(await screen.findByRole('button', { name: /save as v3/i })).toBeInTheDocument();
   });
 });
 

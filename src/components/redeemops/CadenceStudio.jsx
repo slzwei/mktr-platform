@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 import Plus from 'lucide-react/icons/plus';
 import Pencil from 'lucide-react/icons/pencil';
 import { redeemOpsApi } from '@/api/redeemOps';
+import { useAuthStore } from '@/stores/authStore';
+import { hasCapability } from '@/lib/redeemOpsPermissions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CADENCES_ENABLED } from '@/components/redeemops/cadence';
@@ -16,6 +18,12 @@ import { CHANNEL_LABEL } from '@/components/redeemops/cadenceBuilder';
  */
 export default function CadenceStudio() {
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  // UI mirror of the service's canAuthorRow: the settings.manage tier manages
+  // every row; everyone else only the cadences they created. The API enforces
+  // this regardless — the point is never offering a button that would 403.
+  const canAuthorRow = (c) =>
+    hasCapability(user, 'settings.manage') || (!!user && c.createdBy === user.id);
 
   const listQuery = useQuery({
     queryKey: ['redeem-ops', 'cadences'],
@@ -53,7 +61,8 @@ export default function CadenceStudio() {
           <CardDescription>
             The outreach sequences your team can enroll businesses into. Editing creates a new
             version — businesses mid-cadence finish on the version they started. Drafts are
-            visible only to their creator and admins until published.
+            visible only to their creator and admins until published, and only the creator or
+            an admin can edit, publish, or retire a cadence.
           </CardDescription>
         </div>
         <Button size="sm" asChild>
@@ -81,27 +90,31 @@ export default function CadenceStudio() {
                 {(c.steps || []).length} steps — {(c.steps || []).map((s) => CHANNEL_LABEL[s.channel] || s.channel).join(' → ')}
               </p>
             </div>
-            {!c.publishedAt && (
-              <Button
-                size="sm" variant="outline"
-                disabled={publishMutation.isPending}
-                onClick={() => publishMutation.mutate(c.id)}
-              >
-                Publish
-              </Button>
+            {canAuthorRow(c) && (
+              <>
+                {!c.publishedAt && (
+                  <Button
+                    size="sm" variant="outline"
+                    disabled={publishMutation.isPending}
+                    onClick={() => publishMutation.mutate(c.id)}
+                  >
+                    Publish
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" aria-label={`Edit ${c.name}`} asChild>
+                  <Link to={`/redeem-ops/cadences/${c.id}/edit`}>
+                    <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                  </Link>
+                </Button>
+                <Button
+                  size="sm" variant="ghost"
+                  disabled={retireMutation.isPending}
+                  onClick={() => retireMutation.mutate(c.id)}
+                >
+                  Retire
+                </Button>
+              </>
             )}
-            <Button size="sm" variant="ghost" aria-label={`Edit ${c.name}`} asChild>
-              <Link to={`/redeem-ops/cadences/${c.id}/edit`}>
-                <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
-              </Link>
-            </Button>
-            <Button
-              size="sm" variant="ghost"
-              disabled={retireMutation.isPending}
-              onClick={() => retireMutation.mutate(c.id)}
-            >
-              Retire
-            </Button>
           </div>
         ))}
         {!listQuery.isLoading && cadences.length === 0 && (

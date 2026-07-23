@@ -137,6 +137,7 @@ build as the whole app; never in the consumer `redeem` build. All wrapped in
 | `/redeem-ops/analytics` | Analytics (outreach/category/reward/activation) | 7 | Insights |
 | `/redeem-ops/team` | Team & access | 1 | Admin |
 | `/redeem-ops/audit` | Audit log | 1 (write) / 2 (UI) | Admin |
+| `/redeem-ops/cadences` (+`/new`, `/:id/edit`) | Cadence authoring home + full-page editor. `tasks.manage` — every rep authors; rows are creator-or-admin (service `canAuthorRow`) | 9 | Outreach |
 | `/redeem-ops/settings` | Settings (category taxonomy: add/rename/merge/retire; more config later) | 8 | Admin |
 
 Not-yet-built modules stay **out of the nav** (brief §30) rather than shipping as placeholders.

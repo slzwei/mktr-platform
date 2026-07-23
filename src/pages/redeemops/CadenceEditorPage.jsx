@@ -163,9 +163,15 @@ export default function CadenceEditorPage() {
   const base = isNew ? null : (listQuery.data?.cadences || []).find((c) => c.id === cadenceId);
   const aiEnabled = listQuery.data?.aiEnabled === true;
   const baseIsDraft = !!base && !base.publishedAt;
-  // Non-admins can't open Settings — send them back to their queue instead.
+  // Admins go home to their Settings embed; every other author (tasks.manage)
+  // has the Cadences page.
   const user = useAuthStore((s) => s.user);
-  const backTo = hasCapability(user, 'settings.manage') ? '/redeem-ops/settings' : '/redeem-ops/queue';
+  const isCadenceAdmin = hasCapability(user, 'settings.manage');
+  const backTo = isCadenceAdmin ? '/redeem-ops/settings' : '/redeem-ops/cadences';
+  // UI mirror of the service's canAuthorRow — a non-owner gets a read-only
+  // view instead of a 403 after reworking the whole form. (Foreign drafts
+  // never reach here: the list endpoint hides them → the not-found bounce.)
+  const canAuthor = isNew || !base || isCadenceAdmin || base.createdBy === user?.id;
 
   useEffect(() => {
     if (base && loadedFrom !== base.id) {
@@ -203,6 +209,7 @@ export default function CadenceEditorPage() {
   // publish=false keeps it a private draft; on a published base the flag is
   // moot (the server never unpublishes).
   const save = (publish) => {
+    if (!canAuthor) return null; // buttons are hidden; belt and braces
     if (!name.trim()) return toast.error('Give the cadence a name');
     if (steps.some((s) => !s.title.trim())) return toast.error('Every step needs a title');
     return saveMutation.mutate({ ...toPayload({ name, description, steps }), publish });
@@ -251,24 +258,30 @@ export default function CadenceEditorPage() {
         title={isNew ? 'New cadence' : `Edit — ${base?.name || ''}${baseIsDraft ? ' (draft)' : ''}`}
         sub={isNew
           ? 'Each step becomes a task in the owner’s queue at the right time. Replies and “not interested” always end the cadence early.'
-          : `Saving creates v${(base?.version || 1) + 1}. Businesses already enrolled keep following v${base?.version}.${
-            baseIsDraft ? ' This cadence is an unpublished draft — only you and admins can see it.' : ''}`}
+          : !canAuthor
+            ? `Read-only — only the creator or an admin can edit this cadence. You’re viewing v${base?.version}.`
+            : `Saving creates v${(base?.version || 1) + 1}. Businesses already enrolled keep following v${base?.version}.${
+              baseIsDraft ? ' This cadence is an unpublished draft — only you and admins can see it.' : ''}`}
         actions={(
           <span className="inline-flex gap-2">
             <Button variant="outline" asChild>
-              <Link to={backTo}>Cancel</Link>
+              <Link to={backTo}>{canAuthor ? 'Cancel' : 'Back'}</Link>
             </Button>
-            {(isNew || baseIsDraft) && (
-              <Button variant="outline" disabled={saveMutation.isPending} onClick={() => save(false)}>
-                {isNew ? 'Save as draft' : 'Save draft'}
-              </Button>
+            {canAuthor && (
+              <>
+                {(isNew || baseIsDraft) && (
+                  <Button variant="outline" disabled={saveMutation.isPending} onClick={() => save(false)}>
+                    {isNew ? 'Save as draft' : 'Save draft'}
+                  </Button>
+                )}
+                <Button disabled={saveMutation.isPending} onClick={() => save(true)}>
+                  {saveMutation.isPending ? 'Saving…'
+                    : isNew ? 'Create & publish'
+                      : baseIsDraft ? 'Save & publish'
+                        : `Save as v${(base?.version || 1) + 1}`}
+                </Button>
+              </>
             )}
-            <Button disabled={saveMutation.isPending} onClick={() => save(true)}>
-              {saveMutation.isPending ? 'Saving…'
-                : isNew ? 'Create & publish'
-                  : baseIsDraft ? 'Save & publish'
-                    : `Save as v${(base?.version || 1) + 1}`}
-            </Button>
           </span>
         )}
       />

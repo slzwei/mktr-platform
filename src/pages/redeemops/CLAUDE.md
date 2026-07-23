@@ -31,7 +31,7 @@ and Outreach-style cadences. **Not** customer-facing.
 - **ops.redeem.sg** needs Render rewrites; its Cloudflare CNAME must be **DNS-only** (not proxied).
 - **Google login on the ops origin** derives `redirect_uri` from the request origin; the Google OAuth client lives in the GCloud project **"MKTR Platform"** (not "MKTR Leads").
 - **Discover**: Apify-backed partner sourcing with enrichment loop, fuzzy dup badge, category fail-fast, profile quotas, retention purge; AI keyword suggest is live. IG-hashtag discovery is a separate pilot behind `DISCOVERY_IG_ENABLED`.
-- **Cadences**: Outreach-style sequencing engine; AI drafts live (both flags on). P2 = pool/Discover claim-and-enroll.
+- **Cadences**: Outreach-style sequencing engine; AI drafts live (both flags on). Authoring home `/redeem-ops/cadences` + editor are `tasks.manage` (BDM/outreach exec, not just admins); row actions are creator-or-admin (`canAuthorRow`), mirrored in CadenceStudio/CadenceEditorPage. P2 = pool/Discover claim-and-enroll.
 - **Testing backend**: run jest from `backend/` with a throwaway pg on 5433 (`unix_socket_directories=''`). `sync({force:true})` clobbers migration indexes → declare partial-unique indexes on the models too.
 
 For live deploy state, flag values, and the running project log, see the
