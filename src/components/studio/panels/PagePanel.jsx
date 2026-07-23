@@ -3,6 +3,14 @@ import { toast } from 'sonner';
 import { UploadFile } from '@/api/integrations';
 import { MAX_UPLOAD_SIZE_MB } from '@/lib/uploadLimits';
 import { TEMPLATE_IDS, DRAW_TEMPLATE_IDS, youTubeIdFrom, resolveTheme } from '@/lib/designConfigV2';
+import {
+  DRAW_TRUST_ROW_DEFAULT,
+  DRAW_SCAM_LINE_DEFAULT,
+  drawWinnersNoteDefault,
+  drawCtaSublineDefault,
+  drawBoostBodyDefault,
+} from '@/lib/drawCopy';
+import { formatDrawDateFull } from '@/components/campaignPage/drawTemplates';
 import { makeBind, PanelSection, TextField, TextAreaField, Seg, ToggleRow, WarnNote, FieldLabel } from './panelKit';
 
 /**
@@ -357,6 +365,35 @@ export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHi
         <TextField id="studio-emphasis" label="Emphasis line" bind={bind('content.emphasis', 160)} onSuggest={suggest('content.emphasis', 'Emphasis line')} />
         <TextField id="studio-submit-label" label="Submit button label" bind={bind('content.submitLabel', 40)} placeholder="Submit Now" onSuggest={suggest('content.submitLabel', 'Submit button label')} />
       </PanelSection>
+
+      {doc.luckyDraw?.enabled === true && (() => {
+        // Placeholders = the exact composed defaults an untouched campaign
+        // renders (src/lib/drawCopy.js) — leaving a field empty keeps them.
+        const m = doc.luckyDraw.multiplier || 10;
+        const boostFull = formatDrawDateFull(doc.luckyDraw.boostClosesAt || doc.luckyDraw.closesAt) || 'the boost deadline';
+        const winners = Number.isInteger(doc.luckyDraw.winners) && doc.luckyDraw.winners > 1 ? doc.luckyDraw.winners : 1;
+        return (
+          <PanelSection title="DRAW COPY">
+            <WarnNote tone="info">
+              Overrides are static text — they will NOT follow later changes to
+              the draw settings (×{m}, dates). Empty = the default shown in the
+              field.
+            </WarnNote>
+            <TextField id="studio-draw-trustrow" label="Trust row" bind={bind('content.drawCopy.trustRow', 80)} placeholder={DRAW_TRUST_ROW_DEFAULT} />
+            <TextField id="studio-draw-scamline" label="Anti-scam line" bind={bind('content.drawCopy.scamLine', 120)} placeholder={DRAW_SCAM_LINE_DEFAULT} />
+            <TextField id="studio-draw-winnersnote" label="Winners note (Nightfall)" bind={bind('content.drawCopy.winnersNote', 120)} placeholder={drawWinnersNoteDefault(winners)} />
+            <TextField id="studio-draw-ctasubline" label="Under-CTA line (Nightfall)" bind={bind('content.drawCopy.ctaSubline', 90)} placeholder={drawCtaSublineDefault(m)} />
+            <div>
+              <TextField id="studio-draw-freeentry" label="Free-entry chip" bind={bind('content.drawCopy.freeEntryTag', 40)} placeholder="FREE ENTRY" />
+              <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--ink-3, #9BA0AB)' }}>
+                Replaces every chip in the family verbatim — the defaults vary
+                by spot: FREE ENTRY, LUCKY DRAW · FREE ENTRY, ADMIT 1 ENTRY.
+              </p>
+            </div>
+            <TextAreaField id="studio-draw-boostbody" label="Boost box body" bind={bind('content.drawCopy.boostBody', 280)} rows={4} placeholder={drawBoostBodyDefault(m, boostFull)} />
+          </PanelSection>
+        );
+      })()}
 
       <PanelSection title="HERO MEDIA">
         {mediaHint?.note ? (

@@ -151,6 +151,42 @@ describe('preview interactivity survives the wrapper', () => {
   });
 });
 
+describe('success jump on draw campaigns', () => {
+  const drawDoc = (templateId) => {
+    const doc = docFor(templateId);
+    doc.luckyDraw = { enabled: true, prize: 'P', closesAt: '2099-12-30', boostClosesAt: '2099-12-30', multiplier: 10, winners: 1 };
+    return doc;
+  };
+
+  it('renders the DESIGNED draw success page (LeadCapture branch mirror), clickable', () => {
+    const cb = vi.fn();
+    const { container } = render(
+      <MemoryRouter>
+        <CanvasPageSubject campaign={CAMPAIGN} doc={drawDoc('nightfall')} jump="success" onEditTarget={cb} />
+      </MemoryRouter>
+    );
+    // The designed page, not the generic harness outcome card
+    expect(container.querySelector('[data-studio-outcome]')).toBeNull();
+    expect(screen.getByText(/ENTRY VERIFIED|Entry confirmed/i)).toBeInTheDocument();
+    // Production parity: share sheet OPEN + the fixture phone masked into copy
+    expect(screen.getByRole('dialog', { name: 'Share campaign' })).toBeInTheDocument();
+    expect(container.textContent).toContain('9••• 4312');
+    const scam = container.querySelector('[data-se="content.drawCopy.scamLine"]');
+    expect(scam).toBeTruthy();
+    fireEvent.click(scam);
+    expect(cb).toHaveBeenCalledWith('content.drawCopy.scamLine');
+  });
+
+  it('non-draw success keeps the generic harness outcome', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <CanvasPageSubject campaign={CAMPAIGN} doc={docFor('editorial')} jump="success" onEditTarget={vi.fn()} />
+      </MemoryRouter>
+    );
+    expect(container.querySelector('[data-studio-outcome="success"]')).toBeTruthy();
+  });
+});
+
 describe('cross-root path (DeviceFrame iframe → parent callback)', () => {
   it('a click inside the frame document reaches onEditTarget, and the hint line shows', async () => {
     const cb = vi.fn();
@@ -245,8 +281,10 @@ describe('map ↔ PagePanel contract', () => {
     // unconditional in PagePanel. Every current target lives in the Page
     // panel — a target declaring another section MUST extend this test with
     // that section's panel harness (diff review #4).
+    const doc = docFor('express');
+    doc.luckyDraw = { enabled: true, prize: 'P', closesAt: '2099-12-30', boostClosesAt: '2099-12-30', multiplier: 10, winners: 1 };
     const { container } = render(
-      <PagePanel doc={docFor('express')} setPath={vi.fn()} mut={vi.fn()} />
+      <PagePanel doc={doc} setPath={vi.fn()} mut={vi.fn()} />
     );
     for (const [path, target] of Object.entries(STUDIO_EDIT_TARGETS)) {
       expect(STUDIO_SECTIONS.map(([id]) => id)).toContain(target.section);

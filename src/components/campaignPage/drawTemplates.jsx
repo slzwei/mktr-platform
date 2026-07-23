@@ -5,9 +5,10 @@
  * the design file, never its markup.
  *
  * Unlike the six generic templates (templates.jsx), these are ART-DIRECTED:
- * each carries its own fixed neutral palette and the Fraunces / Albert Sans /
- * JetBrains Mono stack (all loaded globally via index.css); only the ACCENT
- * follows the campaign theme (design proof: accent swap across all five).
+ * each carries its own fixed neutral palette; body copy stays Albert Sans and
+ * chrome stays JetBrains Mono (all loaded globally via index.css), while the
+ * ACCENT and the DISPLAY (serif) type follow the campaign theme — the display
+ * stack is the Theme font (t.fontStack), falling back to Fraunces.
  * The funnel form inside still renders with the campaign's funnelTheme —
  * pick light presets for these templates.
  *
@@ -27,19 +28,30 @@ import {
 } from './CampaignPageRenderer';
 import { MediaBlock } from './templates';
 import { accentTextOn, resolveTheme } from '@/lib/designConfigV2';
-import { DRAW_RECORD_PHRASE } from '@/lib/drawCopy';
+import {
+  DRAW_TRUST_ROW_DEFAULT,
+  DRAW_SCAM_LINE_DEFAULT,
+  drawWinnersNoteDefault,
+  drawCtaSublineDefault,
+  drawBoostBodyDefault,
+} from '@/lib/drawCopy';
+import { heroFontStack } from '@/lib/heroFonts';
 
 const SANS = "'Albert Sans', system-ui, sans-serif";
 const SERIF = "'Fraunces', Georgia, serif";
 const MONO = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace";
 
-const TRUST_ROW = 'SMS-VERIFIED · ONE ENTRY PER NUMBER · FREE TO ENTER';
-const SCAM_LINE = 'We never ask for payment to release a prize.';
+// Trust/anti-scam defaults live in src/lib/drawCopy.js — one module feeds the
+// templates AND the Studio DRAW COPY panel placeholders. Campaigns override
+// them per-key via content.drawCopy (sanitized in deriveCampaignPageContent).
 const WINNERS_URL = 'https://redeem.sg/winners';
 
 const mono = (fontSize, extra = {}) => ({ fontFamily: MONO, fontSize, ...extra });
-const serifItalic = (fontSize, extra = {}) => ({
-  fontFamily: SERIF, fontStyle: 'italic', fontWeight: 600, fontSize, ...extra,
+/** Display type follows the campaign's Theme font (t.fontStack); Fraunces is
+ * the fallback when no stack is threaded (and the art-directed default). Body
+ * (Albert Sans) and mono (JetBrains) stay fixed. */
+const serifItalic = (fontSize, extra = {}, stack = SERIF) => ({
+  fontFamily: stack, fontStyle: 'italic', fontWeight: 600, fontSize, ...extra,
 });
 
 /** '2026-10-30' → '30 Oct 2026' (string split — closesAt is an SGT calendar date). */
@@ -66,7 +78,10 @@ export function maskSgPhone(phone) {
 }
 
 /** All the derived draw strings the three states share. */
-function drawStrings(luckyDraw, campaignName) {
+function drawStrings(luckyDraw, campaignName, drawCopy = {}) {
+  // deriveCampaignPageContent already sanitized drawCopy (trimmed, non-empty),
+  // but re-guard here so direct callers can never render a blank rail.
+  const ov = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
   const draw = luckyDraw?.enabled === true ? luckyDraw : null;
   const m = draw?.multiplier || 10;
   const closesFull = draw ? formatDrawDateFull(draw.closesAt) : '';
@@ -85,7 +100,14 @@ function drawStrings(luckyDraw, campaignName) {
     closesMono: closesFull ? closesFull.toUpperCase() : '',
     boostFull,
     kicker: (campaignName || '').toUpperCase(),
-    boostBody: `Meet a consultant for a complimentary 20-minute financial review before ${boostFull} — when ${DRAW_RECORD_PHRASE}, your 1 entry becomes ${m}.`,
+    boostBody: ov(drawCopy.boostBody) || drawBoostBodyDefault(m, boostFull),
+    trustRow: ov(drawCopy.trustRow) || DRAW_TRUST_ROW_DEFAULT,
+    scamLine: ov(drawCopy.scamLine) || DRAW_SCAM_LINE_DEFAULT,
+    winnersNote: ov(drawCopy.winnersNote) || drawWinnersNoteDefault(winners),
+    ctaSubline: ov(drawCopy.ctaSubline) || drawCtaSublineDefault(m),
+    /** Site default varies (FREE ENTRY / LUCKY DRAW · FREE ENTRY / ADMIT 1
+     * ENTRY) — one override replaces every chip in the family verbatim. */
+    freeEntryTag: (siteDefault) => ov(drawCopy.freeEntryTag) || siteDefault,
     steps: [
       'Your entry pass arrives by WhatsApp and email.',
       `Book your complimentary 20-minute financial review — any time before ${boostFull}.`,
@@ -165,13 +187,13 @@ function WinnersLink({ color }) {
 }
 
 /** scam + winners + regulatory stack used by every open state's footer. */
-function DrawFootnotes({ draw, linkColor, mutedColor, faintColor, content, center = false }) {
+function DrawFootnotes({ draw, scamLine, linkColor, mutedColor, faintColor, content, center = false }) {
   const align = center ? 'center' : 'left';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, textAlign: align }}>
       {draw && (
-        <div style={{ fontSize: 13.5, color: mutedColor, fontFamily: SANS }}>
-          {SCAM_LINE} Masked results at <WinnersLink color={linkColor} />.
+        <div data-se="content.drawCopy.scamLine" style={{ fontSize: 13.5, color: mutedColor, fontFamily: SANS }}>
+          {scamLine || DRAW_SCAM_LINE_DEFAULT} Masked results at <WinnersLink color={linkColor} />.
         </div>
       )}
       <div data-se="content.footer.regulatory" style={{ fontSize: 11, color: faintColor, fontFamily: SANS }}>
@@ -190,10 +212,10 @@ function DrawFootnotes({ draw, linkColor, mutedColor, faintColor, content, cente
 
 // ───────────────────────── shared SUCCESS building blocks ─────────────────────────
 
-function ChancesRow({ accent, accentLabel, inkColor, mutedColor, multiplier }) {
+function ChancesRow({ accent, accentLabel, inkColor, mutedColor, multiplier, serifStack = SERIF }) {
   const cell = (big, label, color, labelColor) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 38, lineHeight: 1, color }}>{big}</div>
+      <div style={{ fontFamily: serifStack, fontWeight: 600, fontSize: 38, lineHeight: 1, color }}>{big}</div>
       <div style={mono(11.5, { letterSpacing: 1.2, color: labelColor })}>{label}</div>
     </div>
   );
@@ -244,7 +266,7 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
   const accent = t.accent;
   const PC = drawPalette('postcard', t);
   const accentInk = accentTextOn(accent, PC.bg);
-  const s = drawStrings(luckyDraw, campaignName);
+  const s = drawStrings(luckyDraw, campaignName, content.drawCopy);
   const flush = params.cardStyle === 'flush';
   const cardFrame = {
     background: PC.card,
@@ -260,7 +282,7 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
   const facts = s.draw ? [
     <><strong style={{ color: PC.ink }}>One verified entry.</strong> SMS code confirms your number — one entry per person, no bots.</>,
     <><strong style={{ color: PC.ink }}>Entries close {s.closesFull},</strong> 23:59 SGT. {s.winnersLine}</>,
-    <><strong style={{ color: PC.ink }}>Make it ×{s.multiplier}.</strong> {s.boostBody}</>,
+    <span key="boost" data-se="content.drawCopy.boostBody"><strong style={{ color: PC.ink }}>Make it ×{s.multiplier}.</strong> {s.boostBody}</span>,
   ] : [];
   const hero = (
     <div style={{ position: 'relative', height: mobile ? 300 : 'auto', minHeight: mobile ? 300 : '100%', flexShrink: 0, background: PC.heroInk }}>
@@ -268,10 +290,10 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
       <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(18,19,28,.15) 40%, rgba(18,19,28,.68))' }} />
       <div style={{ position: 'absolute', top: 16, left: 20, right: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 17, color: '#fff', fontFamily: SANS }}>{content.wordmark}</div>
-        {s.draw && <div style={mono(10.5, { letterSpacing: 1.5, color: 'rgba(255,255,255,.85)' })}>LUCKY DRAW · FREE ENTRY</div>}
+        {s.draw && <div data-se="content.drawCopy.freeEntryTag" style={mono(10.5, { letterSpacing: 1.5, color: 'rgba(255,255,255,.85)' })}>{s.freeEntryTag('LUCKY DRAW · FREE ENTRY')}</div>}
       </div>
       <div style={{ position: 'absolute', left: 20, right: 20, bottom: mobile ? 56 : 36, color: '#fff' }}>
-        <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: mobile ? 33 : 46, lineHeight: 1.12 }}>{content.headline}</div>
+        <div data-se="content.headline" style={{ fontFamily: t.fontStack, fontWeight: 600, fontSize: mobile ? 33 : 46, lineHeight: 1.12 }}>{content.headline}</div>
         {content.subheadline && (
           <div data-se="content.subheadline" style={{ marginTop: 6, fontSize: mobile ? 14 : 17, color: 'rgba(255,255,255,.88)', fontFamily: SANS, whiteSpace: 'pre-line' }}>{content.subheadline}</div>
         )}
@@ -309,7 +331,7 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
         )
       )}
       <div style={{ borderTop: `1px solid ${PC.line}`, paddingTop: 14 }}>
-        <DrawFootnotes draw={s.draw} linkColor={accentInk} mutedColor={PC.mut} faintColor={PC.faint} content={content} t={t} />
+        <DrawFootnotes draw={s.draw} scamLine={s.scamLine} linkColor={accentInk} mutedColor={PC.mut} faintColor={PC.faint} content={content} t={t} />
       </div>
     </div>
   );
@@ -318,7 +340,7 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
       {cardHeader}
       <ReferredBadge t={t} referrerName={referrerName} />
       {funnel}
-      {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: PC.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+      {s.draw && <div data-se="content.drawCopy.trustRow" style={mono(11, { letterSpacing: 0.8, color: PC.mut, textAlign: 'center' })}>{s.trustRow}</div>}
     </div>
   );
   if (!mobile) {
@@ -330,12 +352,12 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
           <ReferredBadge t={t} referrerName={referrerName} />
           {funnel}
         </div>
-        {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: PC.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+        {s.draw && <div data-se="content.drawCopy.trustRow" style={mono(11, { letterSpacing: 0.8, color: PC.mut, textAlign: 'center' })}>{s.trustRow}</div>}
         {content.paragraphs.map((p, i) => (
           <div key={i} data-se="content.story" style={{ fontSize: 13.5, lineHeight: 1.55, color: PC.body, fontFamily: SANS }}>{p}</div>
         ))}
         <div style={{ marginTop: 'auto' }}>
-          <DrawFootnotes draw={s.draw} linkColor={accentInk} mutedColor={PC.mut} faintColor={PC.faint} content={content} t={t} />
+          <DrawFootnotes draw={s.draw} scamLine={s.scamLine} linkColor={accentInk} mutedColor={PC.mut} faintColor={PC.faint} content={content} t={t} />
         </div>
       </div>
     );
@@ -344,7 +366,7 @@ function Postcard({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile
       <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(18,19,28,.1) 40%, rgba(18,19,28,.7))' }} />
       <div data-se="content.wordmark" style={{ position: 'absolute', top: 26, left: 32, fontWeight: 800, fontSize: 20, color: '#fff', fontFamily: SANS }}>{content.wordmark}</div>
       <div style={{ position: 'absolute', left: 32, right: 32, bottom: 36, color: '#fff', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 46, lineHeight: 1.1 }}>{content.headline}</div>
+        <div data-se="content.headline" style={{ fontFamily: t.fontStack, fontWeight: 600, fontSize: 46, lineHeight: 1.1 }}>{content.headline}</div>
         {content.subheadline && <div data-se="content.subheadline" style={{ fontSize: 17, color: 'rgba(255,255,255,.88)', fontFamily: SANS, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
       </div>
     </div>;
@@ -392,7 +414,7 @@ function Gazette({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile,
   const accent = t.accent;
   const GZ = drawPalette('gazette', t);
   const accentInk = accentTextOn(accent, GZ.bg);
-  const s = drawStrings(luckyDraw, campaignName);
+  const s = drawStrings(luckyDraw, campaignName, content.drawCopy);
   const dense = params.ruleDensity === 'dense';
   const rowPad = dense ? '6px 0' : '10px 0';
   const linkColor = params.accentUse === 'text' ? GZ.ink : accentInk;
@@ -427,11 +449,11 @@ function Gazette({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile,
       </div>
       <ReferredBadge t={t} referrerName={referrerName} />
       {funnel}
-      {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: GZ.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+      {s.draw && <div data-se="content.drawCopy.trustRow" style={mono(11, { letterSpacing: 0.8, color: GZ.mut, textAlign: 'center' })}>{s.trustRow}</div>}
     </div>
   );
   const footnotes = (
-    <DrawFootnotes draw={s.draw} linkColor={linkColor} mutedColor={GZ.mut} faintColor={GZ.faint} content={content} t={t} center={mobile} />
+    <DrawFootnotes draw={s.draw} scamLine={s.scamLine} linkColor={linkColor} mutedColor={GZ.mut} faintColor={GZ.faint} content={content} t={t} center={mobile} />
   );
   if (!mobile) {
     return (
@@ -439,13 +461,13 @@ function Gazette({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile,
         <GazetteMasthead content={content} kickerText={`OFFICIAL ENTRY FORM${s.kicker ? ` · ${s.kicker}` : ''}`} inkColor={GZ.ink} mutedColor={GZ.mut} />
         <div style={{ display: 'flex', gap: 56 }}>
           <div style={{ flex: 1.1, display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 52, lineHeight: 1.08 }}>{content.headline}</div>
+            <div data-se="content.headline" style={{ fontFamily: t.fontStack, fontWeight: 600, fontSize: 52, lineHeight: 1.08 }}>{content.headline}</div>
             {content.paragraphs.map((p, i) => (
               <div key={i} data-se="content.story" style={{ fontSize: 16, lineHeight: 1.55, color: GZ.mut }}>{p}</div>
             ))}
             {photoPlate}
             {factTable}
-            {content.emphasis && <div data-se="content.emphasis" style={serifItalic(19, { color: GZ.ink })}>{content.emphasis}</div>}
+            {content.emphasis && <div data-se="content.emphasis" style={serifItalic(19, { color: GZ.ink }, t.fontStack)}>{content.emphasis}</div>}
             {footnotes}
           </div>
           <div style={{ width: 400, flexShrink: 0 }}>{formBox}</div>
@@ -458,7 +480,7 @@ function Gazette({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile,
       <GazetteMasthead content={content} kickerText="OFFICIAL ENTRY FORM" inkColor={GZ.ink} mutedColor={GZ.mut} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18, paddingTop: 20 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 36, lineHeight: 1.1 }}>{content.headline}</div>
+          <div data-se="content.headline" style={{ fontFamily: t.fontStack, fontWeight: 600, fontSize: 36, lineHeight: 1.1 }}>{content.headline}</div>
           {content.subheadline && <div data-se="content.subheadline" style={{ fontSize: 14, lineHeight: 1.5, color: GZ.mut, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
         </div>
         {photoPlate}
@@ -476,7 +498,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
   const accent = t.accent;
   const NF = drawPalette('nightfall', t);
   const accentInk = accentTextOn(accent, NF.bg);
-  const s = drawStrings(luckyDraw, campaignName);
+  const s = drawStrings(luckyDraw, campaignName, content.drawCopy);
   const [sheetOpen, setSheetOpen] = useState(formJumpActive);
   const days = s.draw && params.showCountdown !== false ? drawDaysLeft(s.draw.closesAt) : null;
   const scrim = params.overlayTone === 'dusk'
@@ -489,7 +511,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
     </div>
   );
   const trustLine = s.draw && (
-    <div style={mono(11, { letterSpacing: 0.8, color: 'rgba(255,255,255,.65)' })}>{TRUST_ROW}</div>
+    <div data-se="content.drawCopy.trustRow" style={mono(11, { letterSpacing: 0.8, color: 'rgba(255,255,255,.65)' })}>{s.trustRow}</div>
   );
   if (!mobile) {
     return (
@@ -498,22 +520,22 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(100deg, rgba(20,22,31,.9) 34%, rgba(20,22,31,.35))' }} />
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', padding: '26px 40px' }}>
           <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 20, color: '#fff' }}>{content.wordmark}</div>
-          {s.draw && <div style={mono(11, { letterSpacing: 1.6, color: 'rgba(255,255,255,.8)' })}>FREE ENTRY</div>}
+          {s.draw && <div data-se="content.drawCopy.freeEntryTag" style={mono(11, { letterSpacing: 1.6, color: 'rgba(255,255,255,.8)' })}>{s.freeEntryTag('FREE ENTRY')}</div>}
         </div>
         <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', gap: 60, padding: '0 56px 40px' }}>
           <div style={{ flex: 1, color: '#fff', display: 'flex', flexDirection: 'column', gap: 16 }}>
             {countdownChip}
-            <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 58, lineHeight: 1.06 }}>{content.headline}</div>
+            <div data-se="content.headline" style={{ fontFamily: t.fontStack, fontWeight: 600, fontSize: 58, lineHeight: 1.06 }}>{content.headline}</div>
             {content.subheadline && <div data-se="content.subheadline" style={{ fontSize: 18, lineHeight: 1.5, color: 'rgba(255,255,255,.85)', maxWidth: 440, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
             {trustLine}
             {s.draw && (
               <div style={{ fontSize: 13.5, color: 'rgba(255,255,255,.6)' }}>
-                {SCAM_LINE} Masked results at <WinnersLink color="#fff" />.
+                <span data-se="content.drawCopy.scamLine">{s.scamLine}</span> Masked results at <WinnersLink color="#fff" />.
               </div>
             )}
           </div>
           <div ref={formAnchorRef} style={{ width: 400, flexShrink: 0, background: NF.card, borderRadius: 16, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,.45)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {content.emphasis && <div data-se="content.emphasis" style={{ ...serifItalic(20), color: NF.ink }}>{content.emphasis}</div>}
+            {content.emphasis && <div data-se="content.emphasis" style={{ ...serifItalic(20, {}, t.fontStack), color: NF.ink }}>{content.emphasis}</div>}
             <ReferredBadge t={t} referrerName={referrerName} />
             {funnel}
           </div>
@@ -528,12 +550,12 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: scrim }} />
         <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px' }}>
           <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 17, color: '#fff' }}>{content.wordmark}</div>
-          {s.draw && <div style={mono(10.5, { letterSpacing: 1.5, color: 'rgba(255,255,255,.8)' })}>FREE ENTRY</div>}
+          {s.draw && <div data-se="content.drawCopy.freeEntryTag" style={mono(10.5, { letterSpacing: 1.5, color: 'rgba(255,255,255,.8)' })}>{s.freeEntryTag('FREE ENTRY')}</div>}
         </div>
         <div style={{ position: 'relative', flex: 1 }} />
         <div style={{ position: 'relative', padding: '0 22px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {countdownChip}
-          <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 40, lineHeight: 1.08, color: '#fff' }}>{content.headline}</div>
+          <div data-se="content.headline" style={{ fontFamily: t.fontStack, fontWeight: 600, fontSize: 40, lineHeight: 1.08, color: '#fff' }}>{content.headline}</div>
           {content.subheadline && <div data-se="content.subheadline" style={{ fontSize: 15, lineHeight: 1.5, color: 'rgba(255,255,255,.85)', whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
           {trustLine}
           <button
@@ -545,26 +567,26 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
           </button>
           {s.draw && (
             <div style={mono(11, { letterSpacing: 0.8, color: 'rgba(255,255,255,.65)', textAlign: 'center' })}>
-              {`THEN MEET A CONSULTANT · PASS SCANNED · ENTRY ×${s.multiplier}`}
+              <span data-se="content.drawCopy.ctaSubline">{s.ctaSubline}</span>
             </div>
           )}
-          {s.draw && <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,.6)', textAlign: 'center' }}>{SCAM_LINE}</div>}
+          {s.draw && <div data-se="content.drawCopy.scamLine" style={{ fontSize: 12.5, color: 'rgba(255,255,255,.6)', textAlign: 'center' }}>{s.scamLine}</div>}
         </div>
       </div>
       <div style={{ padding: '26px 22px 30px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {content.emphasis && <div data-se="content.emphasis" style={{ ...serifItalic(20), color: NF.ink }}>{content.emphasis}</div>}
+        {content.emphasis && <div data-se="content.emphasis" style={{ ...serifItalic(20, {}, t.fontStack), color: NF.ink }}>{content.emphasis}</div>}
         {content.paragraphs.map((p, i) => (
           <div key={i} data-se="content.story" style={{ fontSize: 14, lineHeight: 1.6, color: NF.mut }}>{p}</div>
         ))}
         {s.draw && (
           <div style={{ border: `1px solid ${NF.border}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={mono(11, { letterSpacing: 1.5, color: accentInk, fontWeight: 600 })}>{`MAKE IT ×${s.multiplier}`}</div>
-            <div style={{ fontSize: 13.5, lineHeight: 1.55, color: NF.body }}>{s.boostBody}</div>
+            <div data-se="content.drawCopy.boostBody" style={{ fontSize: 13.5, lineHeight: 1.55, color: NF.body }}>{s.boostBody}</div>
           </div>
         )}
         {s.draw && (
           <div style={{ fontSize: 13.5, color: NF.mut }}>
-            {s.winners > 1 ? 'Winners contacted directly.' : 'Winner contacted directly.'} Masked results at <WinnersLink color={NF.ink} />.
+            <span data-se="content.drawCopy.winnersNote">{s.winnersNote}</span> Masked results at <WinnersLink color={NF.ink} />.
           </div>
         )}
         <div data-se="content.footer.regulatory" style={{ fontSize: 11, color: NF.faint }}>{content.regulatory}</div>
@@ -601,7 +623,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
           {/* Fallback provenance: with no emphasis the sheet shows the HEADLINE,
               so the click-to-edit target follows what is actually rendered. */}
-          <div data-se={content.emphasis ? 'content.emphasis' : 'content.headline'} style={serifItalic(19, { color: NF.ink })}>{content.emphasis || content.headline}</div>
+          <div data-se={content.emphasis ? 'content.emphasis' : 'content.headline'} style={serifItalic(19, { color: NF.ink }, t.fontStack)}>{content.emphasis || content.headline}</div>
           <button
             type="button"
             onClick={() => setSheetOpen(false)}
@@ -615,7 +637,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
           <ReferredBadge t={t} referrerName={referrerName} />
           {funnel}
         </div>
-        {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: NF.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+        {s.draw && <div data-se="content.drawCopy.trustRow" style={mono(11, { letterSpacing: 0.8, color: NF.mut, textAlign: 'center' })}>{s.trustRow}</div>}
       </div>
     </div>
   );
@@ -637,11 +659,11 @@ function Perforation({ children, notchColor, dashColor }) {
 
 /** Also the header of the stub + checklist closed states, so the muted tone
  *  arrives as a prop instead of being read off one frozen palette. */
-function StubHeader({ content, mutedColor }) {
+function StubHeader({ content, mutedColor, draw = null, freeEntry = 'FREE ENTRY' }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
       <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 17, fontFamily: SANS }}>{content.wordmark}</div>
-      <div style={mono(10.5, { letterSpacing: 1.5, color: mutedColor })}>FREE ENTRY</div>
+      <div data-se={draw ? 'content.drawCopy.freeEntryTag' : undefined} style={mono(10.5, { letterSpacing: 1.5, color: mutedColor })}>{draw ? freeEntry : 'FREE ENTRY'}</div>
     </div>
   );
 }
@@ -650,7 +672,7 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
   const accent = t.accent;
   const ST = drawPalette('stub', t);
   const accentInk = accentTextOn(accent, ST.bg);
-  const s = drawStrings(luckyDraw, campaignName);
+  const s = drawStrings(luckyDraw, campaignName, content.drawCopy);
   const accentTone = params.ticketTone === 'accent';
   const hasMedia = content.media.kind !== 'none' && !!content.media.src;
   // The `paper` head is a hardcoded dark plate (white type is right on it); the
@@ -662,9 +684,9 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
       {!accentTone && <div data-se="content.media" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(rgba(23,24,27,.34), rgba(23,24,27,.62))' }} />}
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', gap: 10, opacity: 0.92 }}>
         <div data-se={s.kicker ? undefined : 'content.wordmark'} style={mono(10.5, { letterSpacing: 1.6, color: headInk, fontWeight: 600 })}>{s.kicker || content.wordmark.toUpperCase()}</div>
-        {s.draw && <div style={mono(10.5, { letterSpacing: 1.6, color: headInk, fontWeight: 600 })}>ADMIT 1 ENTRY</div>}
+        {s.draw && <div data-se="content.drawCopy.freeEntryTag" style={mono(10.5, { letterSpacing: 1.6, color: headInk, fontWeight: 600 })}>{s.freeEntryTag('ADMIT 1 ENTRY')}</div>}
       </div>
-      <div data-se="content.headline" style={{ position: 'relative', fontFamily: SERIF, fontWeight: 600, fontSize: mobile ? 29 : 36, lineHeight: 1.12, color: headInk }}>{content.headline}</div>
+      <div data-se="content.headline" style={{ position: 'relative', fontFamily: t.fontStack, fontWeight: 600, fontSize: mobile ? 29 : 36, lineHeight: 1.12, color: headInk }}>{content.headline}</div>
       {content.subheadline && <div data-se="content.subheadline" style={{ position: 'relative', fontSize: mobile ? 13.5 : 14.5, color: headInk, opacity: 0.88, fontFamily: SANS, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
     </div>
   );
@@ -685,7 +707,7 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
       <div style={{ minHeight: '100vh', background: ST.bg, padding: '34px 0', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, fontFamily: SANS, color: ST.ink }}>
         <div style={{ width: 760, maxWidth: 'calc(100vw - 48px)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 20 }}>{content.wordmark}</div>
-          <div style={mono(11, { letterSpacing: 1.5, color: ST.mut })}>FREE ENTRY</div>
+          <div data-se={s.draw ? 'content.drawCopy.freeEntryTag' : undefined} style={mono(11, { letterSpacing: 1.5, color: ST.mut })}>{s.draw ? s.freeEntryTag('FREE ENTRY') : 'FREE ENTRY'}</div>
         </div>
         <div style={{ width: 760, maxWidth: 'calc(100vw - 48px)', background: ST.card, borderRadius: 14, boxShadow: '0 10px 30px rgba(27,26,23,.09)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {ticketHead}
@@ -695,7 +717,7 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
               {s.draw && <div style={mono(10.5, { letterSpacing: 1, fontWeight: 600 })}>{`CLOSES ${s.closesMono}`}<br />23:59 SGT</div>}
               {s.draw && (
                 <div style={{ fontSize: 12.5, lineHeight: 1.55, color: ST.body }}>
-                  <strong>Make it ×{s.multiplier}.</strong> {s.boostBody}
+                  <span data-se="content.drawCopy.boostBody"><strong>Make it ×{s.multiplier}.</strong> {s.boostBody}</span>
                 </div>
               )}
               {params.showSerial !== false && <div style={{ marginTop: 'auto', ...mono(10.5, { color: ST.mut }) }}>NO. 0000001</div>}
@@ -703,8 +725,8 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
           </div>
         </div>
         <div style={{ width: 760, maxWidth: 'calc(100vw - 48px)', display: 'flex', flexDirection: 'column', gap: 8, textAlign: 'center' }}>
-          {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: ST.mut })}>{TRUST_ROW}</div>}
-          <DrawFootnotes draw={s.draw} linkColor={accentInk} mutedColor={ST.mut} faintColor={ST.faint} content={content} t={t} center />
+          {s.draw && <div data-se="content.drawCopy.trustRow" style={mono(11, { letterSpacing: 0.8, color: ST.mut })}>{s.trustRow}</div>}
+          <DrawFootnotes draw={s.draw} scamLine={s.scamLine} linkColor={accentInk} mutedColor={ST.mut} faintColor={ST.faint} content={content} t={t} center />
         </div>
       </div>
     );
@@ -728,13 +750,13 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
   );
   return (
     <div style={{ minHeight: '100vh', background: ST.bg, display: 'flex', flexDirection: 'column', padding: '18px 16px 26px', boxSizing: 'border-box', gap: 14, fontFamily: SANS, color: ST.ink }}>
-      <StubHeader content={content} mutedColor={ST.mut} />
+      <StubHeader content={content} mutedColor={ST.mut} draw={s.draw} freeEntry={s.freeEntryTag('FREE ENTRY')} />
       {ticket}
-      {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: ST.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+      {s.draw && <div data-se="content.drawCopy.trustRow" style={mono(11, { letterSpacing: 0.8, color: ST.mut, textAlign: 'center' })}>{s.trustRow}</div>}
       {s.draw && (
         <div style={{ background: ST.card, borderRadius: 12, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={mono(11, { letterSpacing: 1.5, color: accentInk, fontWeight: 600 })}>{`MAKE IT ×${s.multiplier}`}</div>
-          <div style={{ fontSize: 13.5, lineHeight: 1.55, color: ST.body }}>{s.boostBody}</div>
+          <div data-se="content.drawCopy.boostBody" style={{ fontSize: 13.5, lineHeight: 1.55, color: ST.body }}>{s.boostBody}</div>
         </div>
       )}
       {content.paragraphs.map((p, i) => (
@@ -742,7 +764,7 @@ function Stub({ t, content, params, luckyDraw, funnel, formAnchorRef, mobile, re
       ))}
       {content.emphasis && <div data-se="content.emphasis" style={{ fontSize: 15, fontWeight: 700, color: ST.ink, padding: '0 6px' }}>{content.emphasis}</div>}
       <div style={{ borderTop: `1px solid ${ST.line}`, padding: '12px 6px 0' }}>
-        <DrawFootnotes draw={s.draw} linkColor={accentInk} mutedColor={ST.mut} faintColor={ST.faint} content={content} t={t} />
+        <DrawFootnotes draw={s.draw} scamLine={s.scamLine} linkColor={accentInk} mutedColor={ST.mut} faintColor={ST.faint} content={content} t={t} />
       </div>
     </div>
   );
@@ -764,7 +786,7 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
   const accent = t.accent;
   const CL = drawPalette('checklist', t);
   const accentInk = accentTextOn(accent, CL.bg);
-  const s = drawStrings(luckyDraw, campaignName);
+  const s = drawStrings(luckyDraw, campaignName, content.drawCopy);
   const hasMedia = content.media.kind !== 'none' && !!content.media.src;
   const showBand = params.heroBand !== false && hasMedia;
   const rail = params.railStyle === 'dots'
@@ -814,19 +836,19 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
           ? `Your entry pass arrives by WhatsApp and email. ${s.winners > 1 ? `${s.winners} winners` : 'One winner'} drawn after ${s.closesFull} in a witnessed process.`
           : 'Your details are received securely and confirmed by email.',
         { last: !boostInline })}
-      {boostInline && spineStep('s4', circle('+', 'plus'), `Bonus: make it ×${s.multiplier}`, s.boostBody, { last: true })}
+      {boostInline && spineStep('s4', circle('+', 'plus'), `Bonus: make it ×${s.multiplier}`, <span data-se="content.drawCopy.boostBody">{s.boostBody}</span>, { last: true })}
     </div>
   );
   const footnote = s.draw && params.boostStep === 'footnote' && (
     <div style={{ fontSize: 12.5, lineHeight: 1.55, color: CL.mut, fontFamily: SANS }}>
-      <strong style={{ color: CL.ink }}>{`Bonus ×${s.multiplier}:`}</strong> {s.boostBody}
+      <span data-se="content.drawCopy.boostBody"><strong style={{ color: CL.ink }}>{`Bonus ×${s.multiplier}:`}</strong> {s.boostBody}</span>
     </div>
   );
   const footer = (
     <div style={{ borderTop: `1px solid ${CL.line}`, paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: CL.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+      {s.draw && <div data-se="content.drawCopy.trustRow" style={mono(11, { letterSpacing: 0.8, color: CL.mut, textAlign: 'center' })}>{s.trustRow}</div>}
       {footnote}
-      <DrawFootnotes draw={s.draw} linkColor={accentInk} mutedColor={CL.mut} faintColor={CL.faint} content={content} t={t} center />
+      <DrawFootnotes draw={s.draw} scamLine={s.scamLine} linkColor={accentInk} mutedColor={CL.mut} faintColor={CL.faint} content={content} t={t} center />
     </div>
   );
   if (!mobile) {
@@ -841,7 +863,7 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         )}
         <div style={{ display: 'flex', gap: 56 }}>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 48, lineHeight: 1.08 }}>{content.headline}</div>
+            <div data-se="content.headline" style={{ fontFamily: t.fontStack, fontWeight: 600, fontSize: 48, lineHeight: 1.08 }}>{content.headline}</div>
             {content.paragraphs.map((p, i) => (
               <div key={i} data-se="content.story" style={{ fontSize: 16, lineHeight: 1.55, color: CL.mut }}>{p}</div>
             ))}
@@ -849,11 +871,11 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
               <div style={{ display: 'flex', gap: 14 }}>{circle('1', 'filled')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>Drop your details</strong> in the form.</div></div>
               <div style={{ display: 'flex', gap: 14 }}>{circle('2', 'outline')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>Verify with an SMS code</strong> — one entry per verified number.</div></div>
               <div style={{ display: 'flex', gap: 14 }}>{circle('3', 'outline')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>{s.draw ? "You're in." : 'Done.'}</strong> {s.draw ? `Pass by WhatsApp/email; ${s.winners > 1 ? `${s.winners} winners` : 'winner'} drawn after ${s.closesFull}.` : 'Your details are received securely.'}</div></div>
-              {s.draw && <div style={{ display: 'flex', gap: 14 }}>{circle('+', 'plus')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><strong>Bonus ×{s.multiplier}:</strong> {s.boostBody}</div></div>}
+              {s.draw && <div style={{ display: 'flex', gap: 14 }}>{circle('+', 'plus')}<div style={{ fontSize: 14.5, lineHeight: 1.5, color: CL.body, paddingTop: 3 }}><span data-se="content.drawCopy.boostBody"><strong>Bonus ×{s.multiplier}:</strong> {s.boostBody}</span></div></div>}
             </div>
             {s.draw && (
               <div style={{ fontSize: 13, color: CL.mut }}>
-                {SCAM_LINE} Masked results at <WinnersLink color={accentInk} />.
+                <span data-se="content.drawCopy.scamLine">{s.scamLine}</span> Masked results at <WinnersLink color={accentInk} />.
               </div>
             )}
           </div>
@@ -861,12 +883,12 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
             <div ref={formAnchorRef} style={{ background: CL.card, border: `1px solid ${CL.line}`, borderRadius: 14, padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <ReferredBadge t={t} referrerName={referrerName} />
               {funnel}
-              {s.draw && <div style={mono(11, { letterSpacing: 0.8, color: CL.mut, textAlign: 'center' })}>{TRUST_ROW}</div>}
+              {s.draw && <div data-se="content.drawCopy.trustRow" style={mono(11, { letterSpacing: 0.8, color: CL.mut, textAlign: 'center' })}>{s.trustRow}</div>}
             </div>
           </div>
         </div>
         <div style={{ marginTop: 'auto', borderTop: `1px solid ${CL.line}`, paddingTop: 12 }}>
-          <DrawFootnotes draw={null} linkColor={accentInk} mutedColor={CL.mut} faintColor={CL.faint} content={content} t={t} />
+          <DrawFootnotes draw={null} scamLine={s.scamLine} linkColor={accentInk} mutedColor={CL.mut} faintColor={CL.faint} content={content} t={t} />
         </div>
       </div>
     );
@@ -881,7 +903,7 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
         </div>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div data-se="content.headline" style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 34, lineHeight: 1.12 }}>{content.headline}</div>
+        <div data-se="content.headline" style={{ fontFamily: t.fontStack, fontWeight: 600, fontSize: 34, lineHeight: 1.12 }}>{content.headline}</div>
         {content.subheadline && <div data-se="content.subheadline" style={{ fontSize: 14, lineHeight: 1.5, color: CL.mut, whiteSpace: 'pre-line' }}>{content.subheadline}</div>}
       </div>
       {spine}
@@ -900,9 +922,10 @@ function Checklist({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
 export function DrawSuccessPage({ campaign, submittedPhone = null }) {
   const doc = campaign?.design_config || {};
   const theme = resolveTheme(doc.theme || {});
+  const fontStack = heroFontStack(theme.fontId);
   const accent = theme.accent;
   const content = deriveCampaignPageContent(doc);
-  const s = drawStrings(doc.luckyDraw, campaign?.name);
+  const s = drawStrings(doc.luckyDraw, campaign?.name, content.drawCopy);
   const templateId = DRAW_TEMPLATE_IDS.includes(doc.template?.id) ? doc.template.id : 'postcard';
   const sub = successSubOf(submittedPhone);
   const bookingUrl = s.draw?.bookingUrl || null;
@@ -951,7 +974,7 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
   const chances = (
     <div style={{ ...chrome.box, padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={mono(12, { letterSpacing: 1.5, color: templateId === 'gazette' ? pal.ink : accentOnBox, fontWeight: 600 })}>CHANCES</div>
-      <ChancesRow accent={chrome.tenX} accentLabel={accentTextOn(chrome.tenX, chrome.pageBg)} inkColor={chrome.ink} mutedColor={monoMut} multiplier={s.multiplier} />
+      <ChancesRow accent={chrome.tenX} accentLabel={accentTextOn(chrome.tenX, chrome.pageBg)} inkColor={chrome.ink} mutedColor={monoMut} multiplier={s.multiplier} serifStack={fontStack} />
     </div>
   );
   const nextSteps = (
@@ -981,13 +1004,13 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
       ) : (
         <div style={{ width: 14, height: 14, borderRadius: '50%', background: chrome.dot }} />
       )}
-      <div style={serifItalic(42, { color: chrome.ink })}>{chrome.title}</div>
+      <div style={serifItalic(42, { color: chrome.ink }, fontStack)}>{chrome.title}</div>
       <div style={{ fontSize: 16, lineHeight: 1.55, color: chrome.body, fontFamily: SANS }}>{sub}</div>
     </div>
   );
   const footerLine = (
     <div style={{ marginTop: 'auto', fontSize: 13.5, color: pal.mut, borderTop: `1px solid ${chrome.divider}`, paddingTop: 14, fontFamily: SANS }}>
-      {SCAM_LINE} Results at <WinnersLink color={theme.dark ? pal.ink : accentOnPage} />.
+      <span data-se="content.drawCopy.scamLine">{s.scamLine}</span> Results at <WinnersLink color={theme.dark ? pal.ink : accentOnPage} />.
     </div>
   );
 
@@ -995,16 +1018,16 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
   if (chrome.ticket) {
     body = (
       <>
-        <StubHeader content={content} mutedColor={pal.mut} />
+        <StubHeader content={content} mutedColor={pal.mut} draw={s.draw} freeEntry={s.freeEntryTag('FREE ENTRY')} />
         <div style={{ background: pal.card, borderRadius: 12, boxShadow: '0 6px 22px rgba(27,26,23,.08)', overflow: 'hidden', marginTop: 20 }}>
           <div style={{ background: accentSoftOf(accent), padding: 18, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ width: 14, height: 14, borderRadius: '50%', background: accent }} />
-            <div style={serifItalic(38, { color: pal.ink })}>{chrome.title}</div>
+            <div style={serifItalic(38, { color: pal.ink }, fontStack)}>{chrome.title}</div>
             <div style={{ fontSize: 16, lineHeight: 1.55, color: pal.body, fontFamily: SANS }}>{sub}</div>
           </div>
           <div style={{ padding: '16px 18px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={mono(12, { letterSpacing: 1.5, color: accentOnCard, fontWeight: 600 })}>CHANCES</div>
-            <ChancesRow accent={accentOnCard} accentLabel={accentTextOn(accentOnCard, pal.card)} inkColor={pal.ink} mutedColor={monoMut} multiplier={s.multiplier} />
+            <ChancesRow accent={accentOnCard} accentLabel={accentTextOn(accentOnCard, pal.card)} inkColor={pal.ink} mutedColor={monoMut} multiplier={s.multiplier} serifStack={fontStack} />
           </div>
           <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
             <NextSteps s={s} accent={accent} accentText={accentOnCard} onAccent={theme.onAccent} stepBg={accentSoftOf(accent)} stepColor={accentOnCard} bodyColor={pal.body} lastColor={pal.ink} mutedColor={monoMut} label={label} bookingUrl={bookingUrl} />
@@ -1015,7 +1038,7 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
             </Perforation>
           )}
         </div>
-        <div style={{ marginTop: 'auto', fontSize: 13.5, color: pal.mut, padding: '0 6px', fontFamily: SANS }}>{SCAM_LINE}</div>
+        <div data-se="content.drawCopy.scamLine" style={{ marginTop: 'auto', fontSize: 13.5, color: pal.mut, padding: '0 6px', fontFamily: SANS }}>{s.scamLine}</div>
       </>
     );
   } else {
@@ -1057,7 +1080,7 @@ export function DrawSuccessPage({ campaign, submittedPhone = null }) {
  */
 export function DrawClosedPage({ templateId, t, content, luckyDraw, campaignName }) {
   const accent = t.accent;
-  const s = drawStrings(luckyDraw, campaignName);
+  const s = drawStrings(luckyDraw, campaignName, content.drawCopy);
   const pal = drawPalette(templateId, t);
   const chrome = {
     postcard: { pageBg: pal.bg, ink: pal.ink, body: pal.body, mut: pal.mut, faint: pal.faint, divider: pal.line, cta: 'fill', wordmark: true },
@@ -1087,10 +1110,10 @@ export function DrawClosedPage({ templateId, t, content, luckyDraw, campaignName
   const core = (
     <>
       <div style={mono(11, { letterSpacing: 2, color: chrome.mut })}>{s.kicker}</div>
-      <div style={serifItalic(42, { color: chrome.ink })}>Entries closed.</div>
+      <div style={serifItalic(42, { color: chrome.ink }, t.fontStack)}>Entries closed.</div>
       {s.closesMono && <div style={mono(12.5, { letterSpacing: 1, color: chrome.mut })}>{`${s.closesMono} · 23:59 SGT`}</div>}
       <div style={{ fontSize: 15.5, lineHeight: 1.55, color: chrome.body, fontFamily: SANS }}>{s.closedBody}</div>
-      <div style={{ fontSize: 13, color: scamMut, fontFamily: SANS }}>{SCAM_LINE}</div>
+      <div data-se="content.drawCopy.scamLine" style={{ fontSize: 13, color: scamMut, fontFamily: SANS }}>{s.scamLine}</div>
     </>
   );
   return (
@@ -1101,7 +1124,7 @@ export function DrawClosedPage({ templateId, t, content, luckyDraw, campaignName
     >
       <div style={{ width: '100%', maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
         {chrome.masthead && <GazetteMasthead content={content} kickerText="OFFICIAL ENTRY FORM" inkColor={pal.ink} mutedColor={pal.mut} />}
-        {chrome.header && <StubHeader content={content} mutedColor={pal.mut} />}
+        {chrome.header && <StubHeader content={content} mutedColor={pal.mut} draw={s.draw} freeEntry={s.freeEntryTag('FREE ENTRY')} />}
         {chrome.wordmark && <div data-se="content.wordmark" style={{ fontWeight: 800, fontSize: 17, color: chrome.ink, fontFamily: SANS }}>{content.wordmark}</div>}
         {chrome.card ? (
           <div style={{ background: pal.card, borderRadius: 12, boxShadow: '0 6px 22px rgba(27,26,23,.08)', padding: '22px 18px', display: 'flex', flexDirection: 'column', gap: 12, marginTop: 26 }}>

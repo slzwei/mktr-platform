@@ -8,7 +8,8 @@
  * build on any divergence (constants structurally, functions behaviorally over
  * the shared fixture corpus). Edit them together, backend first.
  *
- * Everything else about the contract, the canonicalization loss ledger (L1-L5),
+ * Everything else about the contract, the canonicalization loss ledger (L1-L5;
+ * L6: content.drawCopy is v2-only — upgrade never creates it, downgrade drops it),
  * and the no-clamping rule is documented in the backend twin's header.
  */
 
@@ -83,6 +84,9 @@ export const LIMITS = {
   quizIntroS: 160, quizStart: 40, qPrompt: 140, qOption: 80, pTitle: 40,
   pDesc: 400, pCta: 40, pAngle: 80,
   mediaAlt: 120, formWidthMin: 300, formWidthMax: 600, trustLine: 80,
+  // Draw-chrome copy overrides (content.drawCopy — v2-only, dropped on downgrade)
+  drawTrustRow: 80, drawScamLine: 120, drawWinnersNote: 120,
+  drawCtaSubline: 90, drawFreeEntryTag: 40, drawBoostBody: 280,
 };
 
 /** v2 field ids (array order = render order) and the v1 long-id mapping. */

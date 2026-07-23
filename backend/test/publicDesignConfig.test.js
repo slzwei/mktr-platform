@@ -203,3 +203,28 @@ describe('buildPublicDesignConfig — v2 documents', () => {
     expect(out.futureTopLevel).toBeUndefined();
   });
 });
+
+describe('buildPublicDesignConfig — content.drawCopy overrides', () => {
+  it('serves the six override keys to the public page and strips junk', () => {
+    const out = buildPublicDesignConfig({
+      version: 2,
+      content: {
+        headline: 'H',
+        drawCopy: {
+          trustRow: 'VERIFIED · ONE EACH', scamLine: 'No payment.', winnersNote: 'We call.',
+          ctaSubline: 'DO IT', freeEntryTag: 'COSTS NOTHING', boostBody: 'Multiplies.',
+          internal: 'never',
+        },
+      },
+    });
+    expect(out.content.drawCopy).toEqual({
+      trustRow: 'VERIFIED · ONE EACH', scamLine: 'No payment.', winnersNote: 'We call.',
+      ctaSubline: 'DO IT', freeEntryTag: 'COSTS NOTHING', boostBody: 'Multiplies.',
+    });
+  });
+
+  it('omits drawCopy when absent', () => {
+    const out = buildPublicDesignConfig({ version: 2, content: { headline: 'H' } });
+    expect(out.content.drawCopy).toBeUndefined();
+  });
+});

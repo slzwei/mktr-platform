@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import CampaignPageRenderer from '@/components/campaignPage/CampaignPageRenderer';
+import { DrawSuccessPage } from '@/components/campaignPage/drawTemplates';
 import { HARNESS_JUMPS } from '@/components/campaignPage/previewJumpFixtures';
+import { DRAW_TEMPLATE_IDS } from '@/lib/designConfigV2';
 import { STUDIO_EDIT_TARGETS } from './studioEditTargets';
 import { SuccessState, ErrorState } from '@/components/campaigns/LeadCaptureOutcomes';
 import ShareCampaignDialog from '@/components/campaigns/ShareCampaignDialog';
@@ -100,6 +102,30 @@ function HarnessOutcome({ campaign, doc, jump }) {
  *    fixtures (previewJumpFixtures) — the Studio remounts this subject keyed
  *    on jump + resetKey, so fixtures are pure initial state.
  */
+/** The "Success + share sheet" jump for DRAW campaigns — the designed
+ * DrawSuccessPage (the exact LeadCapture post-submit branch) with the share
+ * sheet OPEN beside it, exactly like the generic harness outcome. The fixture
+ * phone feeds the masked confirmation line (maskSgPhone), zero network. */
+function DrawSuccessHarness({ campaign, doc }) {
+  const [shareOpen, setShareOpen] = useState(true);
+  const host = resolveCustomerHost(doc?.distribution?.host);
+  const shareUrl = customerLeadCaptureUrl(campaign?.id, {}, host);
+  return (
+    <>
+      <DrawSuccessPage campaign={{ ...campaign, design_config: doc }} submittedPhone="91234312" />
+      <ShareCampaignDialog
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        campaignName={campaign?.name}
+        campaignId={campaign?.id}
+        serverShareUrl={shareUrl}
+        longShareUrl={shareUrl}
+        emailedLink={false}
+      />
+    </>
+  );
+}
+
 /** Hover affordance for click-to-edit — rendered INSIDE the DeviceFrame tree,
  * so the rules land in the frame document and never ship to live pages
  * (which carry the inert `data-se` attributes but no scope wrapper). */
@@ -118,7 +144,19 @@ const EDIT_HOVER_CSS = `
 
 export default function CanvasPageSubject({ campaign, doc, jump = null, onEditTarget = null }) {
   if (!doc) return null; // the page mounts the canvas only once the doc seeds — belt & braces
-  const subject = HARNESS_JUMPS.includes(jump) ? (
+  // Draw campaigns on the five draw templates show the DESIGNED success page —
+  // the exact branch LeadCapture takes post-submit — so draw-copy overrides
+  // and the theme display font are previewable (and clickable) there too.
+  // Production mounts the share dialog beside it and has the submitted phone,
+  // so the harness mirrors both (fixture phone → masked confirmation copy).
+  // Duplicate/error keep the generic harness outcome, mirroring production.
+  const isDrawSuccess =
+    jump === 'success' &&
+    doc.luckyDraw?.enabled === true &&
+    DRAW_TEMPLATE_IDS.includes(doc.template?.id);
+  const subject = isDrawSuccess ? (
+    <DrawSuccessHarness campaign={campaign} doc={doc} />
+  ) : HARNESS_JUMPS.includes(jump) ? (
     <HarnessOutcome campaign={campaign} doc={doc} jump={jump} />
   ) : (
     <CampaignPageRenderer

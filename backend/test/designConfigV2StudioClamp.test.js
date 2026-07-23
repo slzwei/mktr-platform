@@ -157,3 +157,43 @@ describe('qrLanding survives the save clamp (the v1/v2 enum trap)', () => {
     }
   });
 });
+
+describe('content.drawCopy — draw-chrome copy overrides (v2-only)', () => {
+  const save = (drawCopy) => clampDesignConfigV2({
+    version: 2,
+    content: { headline: 'H', drawCopy },
+  }, undefined, 'admin');
+  const read = (doc) => doc.content?.drawCopy;
+
+  it('keeps every recognized key, trimmed', () => {
+    const out = read(save({
+      trustRow: '  VERIFIED · ONE EACH ', scamLine: 'No payment.', winnersNote: 'We call you.',
+      ctaSubline: 'DO THE THING', freeEntryTag: 'COSTS NOTHING', boostBody: 'Session multiplies it.',
+    }));
+    expect(out).toEqual({
+      trustRow: 'VERIFIED · ONE EACH', scamLine: 'No payment.', winnersNote: 'We call you.',
+      ctaSubline: 'DO THE THING', freeEntryTag: 'COSTS NOTHING', boostBody: 'Session multiplies it.',
+    });
+  });
+
+  it('drops empty and whitespace-only values (empty = composed default)', () => {
+    expect(read(save({ trustRow: '', scamLine: '   ', boostBody: 'kept' }))).toEqual({ boostBody: 'kept' });
+  });
+
+  it('drops unknown keys and non-strings; omits the object entirely when nothing survives', () => {
+    expect(read(save({ bogus: 'x', trustRow: 42 }))).toBeUndefined();
+    expect(read(save('not-an-object'))).toBeUndefined();
+    expect(read(save(undefined))).toBeUndefined();
+  });
+
+  it('caps lengths at the LIMITS twins', () => {
+    const out = read(save({ boostBody: 'x'.repeat(1000) }));
+    expect(out.boostBody).toHaveLength(280);
+  });
+
+  it('is idempotent across repeated saves', () => {
+    let doc = save({ trustRow: 'VERIFIED' });
+    for (let i = 0; i < 3; i += 1) doc = clampDesignConfigV2(doc, undefined, 'admin');
+    expect(read(doc)).toEqual({ trustRow: 'VERIFIED' });
+  });
+});

@@ -103,6 +103,10 @@ function buildPublicDesignConfigV2(dc) {
   ]) || {};
   const footer = pick(dc.content?.footer, ['regulatory', 'brand']);
   if (footer) content.footer = footer;
+  const drawCopy = pick(dc.content?.drawCopy, [
+    'trustRow', 'scamLine', 'winnersNote', 'ctaSubline', 'freeEntryTag', 'boostBody',
+  ]);
+  if (drawCopy) content.drawCopy = drawCopy;
   // media WITHOUT the internal legacy shadow (v1-URL bookkeeping for downgrade).
   const media = pick(dc.content?.media, ['kind', 'src', 'alt']);
   if (media) content.media = media;

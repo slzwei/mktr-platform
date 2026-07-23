@@ -29,6 +29,8 @@
  *     appended in default order.
  *  L4 mediaType absent → media.kind derived ('image' iff imageUrl else 'none',
  *     the renderer's own default); downgrade emits the derived kind explicitly.
+ *  L6 content.drawCopy (draw-chrome copy overrides) is v2-ONLY: upgrade never
+ *     creates it and downgrade DROPS it — the v1 renderer has no draw chrome.
  *  L5 quiz / guidedReview / luckyDraw / unknown top-level keys (incl. legacy
  *     dead style keys) pass through VERBATIM in both directions — never
  *     restructured, never dropped.
@@ -105,6 +107,9 @@ export const LIMITS = {
   quizIntroS: 160, quizStart: 40, qPrompt: 140, qOption: 80, pTitle: 40,
   pDesc: 400, pCta: 40, pAngle: 80,
   mediaAlt: 120, formWidthMin: 300, formWidthMax: 600, trustLine: 80,
+  // Draw-chrome copy overrides (content.drawCopy — v2-only, dropped on downgrade)
+  drawTrustRow: 80, drawScamLine: 120, drawWinnersNote: 120,
+  drawCtaSubline: 90, drawFreeEntryTag: 40, drawBoostBody: 280,
 };
 
 /** v2 field ids (array order = render order) and the v1 long-id mapping. */

@@ -84,6 +84,13 @@ afterEach(() => setViewport(1024));
 
 // The reused funnel form contributes these on EVERY template (h2 + promo <p>).
 const FORM = ['content.headline', 'content.subheadline'];
+// Draw-chrome override markers (content.drawCopy.*) — draw-enabled docs only.
+const DC_T = 'content.drawCopy.trustRow';
+const DC_S = 'content.drawCopy.scamLine';
+const DC_F = 'content.drawCopy.freeEntryTag';
+const DC_B = 'content.drawCopy.boostBody';
+const DC_W = 'content.drawCopy.winnersNote';
+const DC_C = 'content.drawCopy.ctaSubline';
 const sorted = (arr) => [...new Set(arr)].sort();
 
 /** Expected editable-path set per template and viewport (the truth table). */
@@ -116,29 +123,29 @@ const EXPECTED = {
   },
   // Postcard renders emphasis only in the mobile below-card body.
   postcard: {
-    mobile: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.emphasis', 'content.footer.regulatory', 'content.footer.brand'],
-    desktop: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.footer.regulatory', 'content.footer.brand'],
+    mobile: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.emphasis', 'content.footer.regulatory', 'content.footer.brand', DC_T, DC_S, DC_F, DC_B],
+    desktop: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.footer.regulatory', 'content.footer.brand', DC_T, DC_S],
   },
   // Gazette renders story/emphasis only in the desktop left column.
   gazette: {
-    mobile: [...FORM, 'content.wordmark', 'content.media', 'content.footer.regulatory', 'content.footer.brand'],
-    desktop: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.emphasis', 'content.footer.regulatory', 'content.footer.brand'],
+    mobile: [...FORM, 'content.wordmark', 'content.media', 'content.footer.regulatory', 'content.footer.brand', DC_T, DC_S],
+    desktop: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.emphasis', 'content.footer.regulatory', 'content.footer.brand', DC_T, DC_S],
   },
   // Nightfall desktop has no story/footer sites; mobile has regulatory but no
   // brand line (drawTemplates.jsx renders content.regulatory directly).
   nightfall: {
-    mobile: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.emphasis', 'content.footer.regulatory'],
-    desktop: [...FORM, 'content.wordmark', 'content.media', 'content.emphasis'],
+    mobile: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.emphasis', 'content.footer.regulatory', DC_T, DC_S, DC_F, DC_B, DC_W, DC_C],
+    desktop: [...FORM, 'content.wordmark', 'content.media', 'content.emphasis', DC_T, DC_S, DC_F],
   },
   // Stub renders story/emphasis only in the mobile body.
   stub: {
-    mobile: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.emphasis', 'content.footer.regulatory', 'content.footer.brand'],
-    desktop: [...FORM, 'content.wordmark', 'content.media', 'content.footer.regulatory', 'content.footer.brand'],
+    mobile: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.emphasis', 'content.footer.regulatory', 'content.footer.brand', DC_T, DC_S, DC_F, DC_B],
+    desktop: [...FORM, 'content.wordmark', 'content.media', 'content.footer.regulatory', 'content.footer.brand', DC_T, DC_S, DC_F, DC_B],
   },
   // Checklist has no emphasis site at all; story is desktop-only.
   checklist: {
-    mobile: [...FORM, 'content.wordmark', 'content.media', 'content.footer.regulatory', 'content.footer.brand'],
-    desktop: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.footer.regulatory', 'content.footer.brand'],
+    mobile: [...FORM, 'content.wordmark', 'content.media', 'content.footer.regulatory', 'content.footer.brand', DC_T, DC_S, DC_B],
+    desktop: [...FORM, 'content.wordmark', 'content.media', 'content.story', 'content.footer.regulatory', 'content.footer.brand', DC_T, DC_S, DC_B],
   },
 };
 
@@ -193,6 +200,101 @@ describe('data-se site matrix', () => {
     await waitFor(() => {
       expect(container.querySelectorAll('[data-se="content.emphasis"]').length).toBe(2);
     });
+  });
+
+  it('nightfall mobile keeps BOTH trust-row sites (hero + body)', async () => {
+    setViewport(390);
+    const { container } = renderTemplate(fullDoc('nightfall'));
+    await waitFor(() => {
+      expect(container.querySelectorAll(`[data-se="${DC_T}"]`).length).toBe(2);
+    });
+  });
+
+  it('stub keeps BOTH free-entry chips (header + ADMIT) on each viewport', async () => {
+    for (const w of [390, 1024]) {
+      setViewport(w);
+      const { container, unmount } = renderTemplate(fullDoc('stub'));
+      await waitFor(() => {
+        expect(container.querySelectorAll(`[data-se="${DC_F}"]`).length).toBe(2);
+      });
+      unmount();
+    }
+  });
+});
+
+describe('draw-copy overrides', () => {
+  const OVERRIDES = {
+    trustRow: 'VERIFIED BY US · ONE SHOT EACH',
+    scamLine: 'No payment, ever.',
+    winnersNote: 'We call the winner ourselves.',
+    ctaSubline: 'THEN DO THE THING · X10',
+    freeEntryTag: 'COSTS NOTHING',
+    boostBody: 'Do the session and your entry multiplies.',
+  };
+
+  it('nightfall mobile renders every override verbatim', async () => {
+    setViewport(390);
+    const { container } = renderTemplate(fullDoc('nightfall', { drawCopy: OVERRIDES }));
+    await waitFor(() => {
+      for (const text of Object.values(OVERRIDES)) {
+        expect(container.textContent).toContain(text);
+      }
+      expect(container.textContent).not.toContain('SMS-VERIFIED');
+      expect(container.textContent).not.toContain('We never ask for payment');
+    });
+  });
+
+  it('empty/whitespace overrides fall back to the composed defaults', async () => {
+    setViewport(390);
+    const { container } = renderTemplate(
+      fullDoc('nightfall', { drawCopy: { trustRow: '', scamLine: '   ' } })
+    );
+    await waitFor(() => {
+      expect(container.textContent).toContain('SMS-VERIFIED · ONE ENTRY PER NUMBER · FREE TO ENTER');
+      expect(container.textContent).toContain('We never ask for payment to release a prize.');
+    });
+  });
+
+  it('non-draw stub keeps its FREE ENTRY chips untagged (no dead edit target)', async () => {
+    setViewport(390);
+    const doc = fullDoc('stub');
+    doc.luckyDraw = { enabled: false };
+    const { container } = renderTemplate(doc);
+    await waitFor(() => {
+      expect(container.querySelector('form')).toBeTruthy();
+    });
+    expect(container.querySelectorAll('[data-se^="content.drawCopy."]').length).toBe(0);
+    expect(container.textContent).toContain('FREE ENTRY');
+  });
+});
+
+describe('display font follows the theme', () => {
+  it('nightfall headline + emphasis render the Theme font, not hardcoded Fraunces', async () => {
+    setViewport(390);
+    const doc = fullDoc('nightfall');
+    doc.theme = { ...doc.theme, font: 'playfair' };
+    const { container } = renderTemplate(doc);
+    await waitFor(() => {
+      const headline = container.querySelector('[data-se="content.headline"]');
+      expect(headline.style.fontFamily).toMatch(/Playfair/);
+      const emphasis = container.querySelector('[data-se="content.emphasis"]');
+      expect(emphasis.style.fontFamily).toMatch(/Playfair/);
+    });
+  });
+
+  it('the draw-closed page title follows the Theme font too', () => {
+    const doc = fullDoc('nightfall');
+    doc.theme = { ...doc.theme, font: 'playfair' };
+    const { container } = render(
+      <CampaignPageRenderer
+        campaign={{ id: 'camp-edit', name: 'N', is_active: true, design_config: doc }}
+        previewMode
+        jump="draw-closed"
+        onSubmit={() => {}}
+      />
+    );
+    const title = Array.from(container.querySelectorAll('div')).find((d) => d.textContent === 'Entries closed.');
+    expect(title.style.fontFamily).toMatch(/Playfair/);
   });
 });
 

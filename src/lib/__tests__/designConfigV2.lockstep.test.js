@@ -149,3 +149,29 @@ describe('designConfigV2 twins — seeded deterministic fuzz corpus', () => {
     }
   });
 });
+
+describe('L6 — content.drawCopy is v2-only in BOTH twins', () => {
+  const v2WithDrawCopy = () => {
+    const doc = mirror.upgradeDesignConfig({ formHeadline: 'H', customerHost: 'redeem' });
+    doc.content = { ...doc.content, drawCopy: { trustRow: 'VERIFIED', boostBody: 'Custom body.' } };
+    return doc;
+  };
+
+  it('downgrade DROPS drawCopy identically in both twins', () => {
+    for (const twin of [mirror, backend]) {
+      const v1 = twin.downgradeDesignConfig(v2WithDrawCopy());
+      const flat = JSON.stringify(v1);
+      expect(flat).not.toContain('drawCopy');
+      expect(flat).not.toContain('VERIFIED');
+      expect(flat).not.toContain('Custom body.');
+    }
+  });
+
+  it('upgrade never CREATES drawCopy in either twin', () => {
+    for (const twin of [mirror, backend]) {
+      for (const v1 of Object.values(V1_DOCS)) {
+        expect(twin.upgradeDesignConfig(v1).content?.drawCopy).toBeUndefined();
+      }
+    }
+  });
+});

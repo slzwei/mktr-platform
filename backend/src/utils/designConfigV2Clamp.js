@@ -231,6 +231,23 @@ function clampContent(raw) {
     if (brand !== undefined) footer.brand = brand;
     if (Object.keys(footer).length) out.footer = footer;
   }
+  // Draw-chrome copy overrides — each key optional; whitespace-only or empty
+  // strings are DROPPED (empty = "use the composed default", so a cleared
+  // field can never blank a trust/anti-scam line into nothing).
+  if (isPlainObject(c.drawCopy)) {
+    const drawCopy = {};
+    const dcStr = (key, max) => {
+      const v = cleanString(c.drawCopy[key], max);
+      if (v !== undefined && v.trim()) drawCopy[key] = v.trim();
+    };
+    dcStr('trustRow', LIMITS.drawTrustRow);
+    dcStr('scamLine', LIMITS.drawScamLine);
+    dcStr('winnersNote', LIMITS.drawWinnersNote);
+    dcStr('ctaSubline', LIMITS.drawCtaSubline);
+    dcStr('freeEntryTag', LIMITS.drawFreeEntryTag);
+    dcStr('boostBody', LIMITS.drawBoostBody);
+    if (Object.keys(drawCopy).length) out.drawCopy = drawCopy;
+  }
   const m = isPlainObject(c.media) ? c.media : {};
   let kind = cleanEnum(m.kind, ['none', 'image', 'video', 'youtube'], 'none');
   const src = typeof m.src === 'string' ? m.src.slice(0, 2048) : '';

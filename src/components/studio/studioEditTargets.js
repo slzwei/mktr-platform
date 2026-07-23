@@ -24,6 +24,14 @@ export const STUDIO_EDIT_TARGETS = {
   'content.footer.regulatory': { section: 'page', id: 'studio-regulatory' },
   'content.footer.brand': { section: 'page', id: 'studio-brand-footer' },
   'template.params.express.trustLine': { section: 'page', id: 'studio-trustline' },
+  // Draw-chrome overrides — their fields render only when luckyDraw is
+  // enabled, and the markers are emitted only on draw pages (same condition).
+  'content.drawCopy.trustRow': { section: 'page', id: 'studio-draw-trustrow' },
+  'content.drawCopy.scamLine': { section: 'page', id: 'studio-draw-scamline' },
+  'content.drawCopy.winnersNote': { section: 'page', id: 'studio-draw-winnersnote' },
+  'content.drawCopy.ctaSubline': { section: 'page', id: 'studio-draw-ctasubline' },
+  'content.drawCopy.freeEntryTag': { section: 'page', id: 'studio-draw-freeentry' },
+  'content.drawCopy.boostBody': { section: 'page', id: 'studio-draw-boostbody' },
 };
 
 /** Scroll + focus (caret at end) + flash one inspector field, by target. */

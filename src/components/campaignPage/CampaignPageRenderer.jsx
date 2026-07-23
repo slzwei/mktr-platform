@@ -71,6 +71,22 @@ export function formatDrawDate(ymd) {
 
 /** Derive the page-chrome content slots from a v2 doc (same rules as
  * leadCaptureContent.js derives them from v1 keys). */
+const DRAW_COPY_KEYS = ['trustRow', 'scamLine', 'winnersNote', 'ctaSubline', 'freeEntryTag', 'boostBody'];
+
+/** Overrides are honored ONLY as trimmed non-empty strings — the Studio binder
+ * writes '' into the unsaved doc while a field is being cleared, and an empty
+ * override must fall back to the composed default, never blank the line. */
+function sanitizeDrawCopy(raw) {
+  const out = {};
+  if (raw && typeof raw === 'object') {
+    for (const key of DRAW_COPY_KEYS) {
+      const v = raw[key];
+      if (typeof v === 'string' && v.trim()) out[key] = v.trim();
+    }
+  }
+  return out;
+}
+
 export function deriveCampaignPageContent(doc) {
   const content = doc.content || {};
   const host = doc.distribution?.host === 'mktr' ? 'mktr' : 'redeem';
@@ -83,6 +99,7 @@ export function deriveCampaignPageContent(doc) {
     host,
     wordmark,
     headline: content.headline || 'Get Started',
+    drawCopy: sanitizeDrawCopy(content.drawCopy),
     subheadline: content.subheadline || '',
     paragraphs,
     emphasis: content.emphasis || '',
