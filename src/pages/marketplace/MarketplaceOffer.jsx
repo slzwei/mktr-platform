@@ -115,7 +115,7 @@ export default function MarketplaceOffer() {
   const valueLine = composeValueLine(campaign);
   const days = (dc.availability?.days || []).join(' · ');
   const slots = (dc.availability?.slots || []).join(' / ');
-  const ageLabel = ageLabelOf(dc);
+  const ageLabel = ageLabelOf(dc, campaign);
   const locNames = (partner.locations || []).map((l) => l.name).filter(Boolean).join(' · ') || (dc.mode === 'online' ? 'Online — enter from anywhere' : '—');
   const otpLabel = dc.otpChannel === 'whatsapp' ? 'WhatsApp' : 'SMS';
   const relatedCards = related.filter((c) => c.slug !== slug).slice(0, 3);
