@@ -77,6 +77,8 @@ export function computeReadiness(facts) {
     docDrawClosesAt = null,
     drawRecordClosesAt = null,
     drawTotalPrizes = 0,
+    drawMultiplier = 1,
+    drawHasActiveActivation = true, // SILENT default: absent fact must not cry wolf
   } = facts || {};
 
   // Brand-awareness (PHV tablet) campaigns don't capture leads → readiness N/A.
@@ -219,6 +221,20 @@ export function computeReadiness(facts) {
     });
   }
 
+  // WARNING — the ×N session boost is promised in the draw T&Cs, on the
+  // campaign page, in the marketplace and in the confirmation email, but it is
+  // only awarded against reward entitlements, which hang off a live Activation.
+  // No activation ⇒ every entry seals at one chance and the promise silently
+  // breaks, with `boosted: 0` in the seal log as the only signal — after
+  // entries have closed.
+  if (drawEnabled && drawMultiplier > 1 && !drawHasActiveActivation) {
+    issues.push({
+      level: 'warning',
+      code: 'draw_boost_no_activation',
+      message: `This draw promises ${drawMultiplier}x entries for completing a session, but the campaign has no active Activation — session completions cannot be counted and every entry will seal at one chance. Create/activate the reward activation in Redeem Ops before entries close.`,
+    });
+  }
+
   // INFO — not yet live.
   if (!isActive) {
     issues.push({
@@ -251,7 +267,7 @@ const sgtYmdFromExclusiveInstant = (instant) => {
  * Read-only. Lazy-imports models so the pure export above stays import-light.
  */
 export async function loadCampaignReadiness(campaignId) {
-  const { Campaign, LeadPackage, LeadPackageAssignment, User, Draw } = await import('../models/index.js');
+  const { Campaign, LeadPackage, LeadPackageAssignment, User, Draw, Activation } = await import('../models/index.js');
   const { Op } = await import('sequelize');
 
   const campaign = await Campaign.findByPk(campaignId, {
@@ -328,6 +344,7 @@ export async function loadCampaignReadiness(campaignId) {
   let hasLiveDraw = false;
   let drawIntakeOpen = false;
   let drawCloseMismatch = false;
+  let drawHasActiveActivation = true;
   let docDrawClosesAt = null;
   let drawRecordClosesAt = null;
   if (drawEnabled) {
@@ -337,6 +354,12 @@ export async function loadCampaignReadiness(campaignId) {
       attributes: ['id', 'status', 'closesAt'],
     });
     hasDrawRecord = !!record;
+    // Boost deliverability: entitlements (the boost evidence) hang off a live
+    // Activation, so no activation means the multiplier can never be awarded.
+    drawHasActiveActivation = !!(await Activation.findOne({
+      where: { campaignId, status: 'active' },
+      attributes: ['id'],
+    }));
     hasLiveDraw = !!record && ['open', 'frozen', 'sealed', 'drawn'].includes(record.status);
     const docEndMs = ld?.closesAt ? sgtDayEndExclusiveMs(ld.closesAt) : null;
     docDrawClosesAt = ld?.closesAt || null;
@@ -375,6 +398,8 @@ export async function loadCampaignReadiness(campaignId) {
     docDrawClosesAt,
     drawRecordClosesAt,
     drawTotalPrizes: totalPrizeQuantity(ld),
+    drawMultiplier: Number.isInteger(ld?.multiplier) ? ld.multiplier : 1,
+    drawHasActiveActivation,
   });
 
   return {

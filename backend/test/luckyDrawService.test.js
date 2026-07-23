@@ -119,7 +119,7 @@ function buildDeps({ draw = null, prospects = [], entries = [], attempts = [], r
       Draw, DrawEntry, DrawAttempt, DrawBoostReview,
       Campaign: { findByPk: jest.fn().mockResolvedValue(null) },
       Prospect: { findAll: jest.fn().mockResolvedValue(prospects) },
-      Activation: { findByPk: jest.fn().mockResolvedValue(null) },
+      Activation: { findByPk: jest.fn().mockResolvedValue(null), findOne: jest.fn().mockResolvedValue(null) },
       RewardEntitlement: { findAll: jest.fn().mockResolvedValue(entitlements), findByPk: jest.fn().mockResolvedValue({ id: 'ent-x', prospectId: 'pros-x' }) },
       RedemptionEvent: { findAll: jest.fn().mockResolvedValue(events) },
       sequelize: { transaction: jest.fn().mockImplementation(async (cb) => cb({})) },
@@ -528,5 +528,46 @@ describe('verifyDraw', () => {
     // …but the attempt's committed eligible set visibly changed.
     expect(report.ok).toBe(false);
     expect(report.checks.some((c) => c.check.includes('eligibleSet') && !c.ok)).toBe(true);
+  });
+});
+
+describe('session boost — the activation link that was never written', () => {
+  it('createDraw auto-resolves the campaign live activation when the config names none', async () => {
+    const { deps } = buildDeps();
+    deps.Campaign.findByPk.mockResolvedValue({
+      id: CAMPAIGN_ID,
+      design_config: { luckyDraw: { enabled: true, closesAt: '2026-09-02', multiplier: 10 } },
+    });
+    deps.Activation.findOne.mockResolvedValue({ id: 'act-auto', campaignId: CAMPAIGN_ID });
+    const svc = makeLuckyDrawService(deps);
+    const draw = await svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN);
+    expect(deps.Activation.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { campaignId: CAMPAIGN_ID, status: 'active' } })
+    );
+    expect(draw.activationId).toBe('act-auto');
+  });
+
+  it('no active activation still creates the draw (activationId stays null)', async () => {
+    const { deps } = buildDeps();
+    deps.Campaign.findByPk.mockResolvedValue({
+      id: CAMPAIGN_ID,
+      design_config: { luckyDraw: { enabled: true, closesAt: '2026-09-02', multiplier: 10 } },
+    });
+    deps.Activation.findOne.mockResolvedValue(null);
+    const svc = makeLuckyDrawService(deps);
+    const draw = await svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN);
+    expect(draw.activationId).toBe(null);
+  });
+
+  it('an EXPLICIT activationId still wins and is still ownership-checked', async () => {
+    const { deps } = buildDeps();
+    deps.Campaign.findByPk.mockResolvedValue({
+      id: CAMPAIGN_ID,
+      design_config: { luckyDraw: { enabled: true, closesAt: '2026-09-02', activationId: 'act-9' } },
+    });
+    deps.Activation.findByPk.mockResolvedValue({ id: 'act-9', campaignId: 'SOMEONE-ELSE' });
+    const svc = makeLuckyDrawService(deps);
+    await expect(svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN)).rejects.toMatchObject({ statusCode: 422 });
+    expect(deps.Activation.findOne).not.toHaveBeenCalled();
   });
 });

@@ -236,3 +236,45 @@ describe('campaignReadinessService.computeReadiness', () => {
     expect(complete.issues).toHaveLength(0);
   });
 });
+
+describe('draw boost deliverability (draw_boost_no_activation)', () => {
+  // Local fixture — the suite's `healthy` is scoped to the describe above.
+  const healthy = {
+    type: 'lead_generation',
+    isActive: true,
+    assignableAgents: 3,
+    agentsMissingPhone: 0,
+    webhookEnabled: true,
+    verificationChannel: 'sms',
+    smsOtpConfigured: true,
+  };
+  const drawBase = { ...healthy, drawEnabled: true, drawMultiplier: 10 };
+
+  it('a multiplier with no active Activation warns — the boost cannot be awarded', () => {
+    const r = computeReadiness({ ...drawBase, drawHasActiveActivation: false });
+    const issue = r.issues.find((i) => i.code === 'draw_boost_no_activation');
+    expect(issue).toBeDefined();
+    expect(issue.level).toBe('warning');
+    expect(issue.message).toContain('10x entries');
+  });
+
+  it('an active Activation is silent', () => {
+    const r = computeReadiness({ ...drawBase, drawHasActiveActivation: true });
+    expect(r.issues.find((i) => i.code === 'draw_boost_no_activation')).toBeUndefined();
+  });
+
+  it('a 1x draw has no boost to promise, so no warning', () => {
+    const r = computeReadiness({ ...drawBase, drawMultiplier: 1, drawHasActiveActivation: false });
+    expect(r.issues.find((i) => i.code === 'draw_boost_no_activation')).toBeUndefined();
+  });
+
+  it('a missing fact stays SILENT rather than crying wolf on every draw', () => {
+    const r = computeReadiness({ ...drawBase }); // drawHasActiveActivation absent
+    expect(r.issues.find((i) => i.code === 'draw_boost_no_activation')).toBeUndefined();
+  });
+
+  it('non-draw campaigns are unaffected', () => {
+    const r = computeReadiness({ ...healthy, drawMultiplier: 10, drawHasActiveActivation: false });
+    expect(r.issues.find((i) => i.code === 'draw_boost_no_activation')).toBeUndefined();
+  });
+});

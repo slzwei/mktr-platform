@@ -169,6 +169,16 @@ export function makeLuckyDrawService(overrides = {}) {
         throw new AppError('luckyDraw.activationId does not belong to this campaign', 422);
       }
       activationId = activation.id;
+    } else {
+      // Auto-resolve the campaign's live activation, exactly as entitlement
+      // issuance does. NOTHING in the product ever wrote
+      // design_config.luckyDraw.activationId — no editor, no create flow, no
+      // script — so every draw ever created has had a null activationId, and
+      // collectBoostEvidence short-circuits on that: the ×N session boost was
+      // promised in the T&Cs, on the page, in the marketplace and in the
+      // confirmation email, and awarded nothing.
+      const activation = await d.Activation.findOne({ where: { campaignId, status: 'active' } });
+      if (activation) activationId = activation.id;
     }
 
     try {
@@ -285,13 +295,21 @@ export function makeLuckyDrawService(overrides = {}) {
    * `auto_on_capture` (voucher issued without any meeting) NEVER boosts.
    */
   async function collectBoostEvidence(draw, entries) {
-    if (!draw.activationId) return { byProspect: new Map(), undecidedButtons: [] };
+    // Late-resolve fallback: draws created before their activation existed —
+    // which, until this change, was EVERY draw — carry a null activationId.
+    // Reading the campaign's live activation here rescues those records at
+    // seal/freeze time instead of silently awarding one chance to entrants who
+    // completed a session. Can only ever ADD promised boosts, never remove one.
+    const activationId = draw.activationId
+      || (await d.Activation.findOne({ where: { campaignId: draw.campaignId, status: 'active' } }))?.id
+      || null;
+    if (!activationId) return { byProspect: new Map(), undecidedButtons: [] };
     const prospectIds = entries.map((e) => e.prospectId).filter(Boolean);
     if (prospectIds.length === 0) return { byProspect: new Map(), undecidedButtons: [] };
 
     const entitlements = await d.RewardEntitlement.findAll({
       where: {
-        activationId: draw.activationId,
+        activationId,
         prospectId: { [Op.in]: prospectIds },
         issuedVia: { [Op.ne]: 'manual' },
       },
