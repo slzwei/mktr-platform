@@ -216,12 +216,27 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
       <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={onSubmit} />
     );
     fillBasics();
-    fireEvent.change(screen.getByLabelText('Session boost deadline'), { target: { value: '2026-08-15' } });
+    // AFTER the close (fillBasics sets 2026-08-31): an entrant may complete
+    // their session after entries close — that is the whole point of a
+    // separate boost deadline, and the engine requires boost >= close.
+    fireEvent.change(screen.getByLabelText('Session boost deadline'), { target: { value: '2026-09-15' } });
     fireEvent.change(screen.getByLabelText('Session multiplier'), { target: { value: '20' } });
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     const ld = onSubmit.mock.calls[0][0].design_config.luckyDraw;
-    expect(ld.boostClosesAt).toBe('2026-08-15');
+    expect(ld.boostClosesAt).toBe('2026-09-15');
     expect(ld.multiplier).toBe(20);
+  });
+
+  it('a boost deadline BEFORE the close is refused instead of 422-ing at draw creation', () => {
+    const onSubmit = vi.fn();
+    render(
+      <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={onSubmit} />
+    );
+    fillBasics();
+    fireEvent.change(screen.getByLabelText('Session boost deadline'), { target: { value: '2026-08-15' } });
+    expect(screen.getByText(/must be on or after 31 August 2026/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it('refuses to submit without a named prize row or close date', () => {

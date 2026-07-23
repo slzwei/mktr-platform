@@ -83,9 +83,19 @@ export function derivePrizeSummary(prizes) {
     .slice(0, MAX_PRIZE_SUMMARY);
 }
 
-/** Σqty of a NORMALIZED luckyDraw's prizes; 0 when unstructured (legacy). */
+/**
+ * Σqty of a NORMALIZED luckyDraw's prizes — the number of winners this draw
+ * promises. Legacy docs carry no `prizes[]` but CAN carry a hand-set
+ * `winners` (normalizeLuckyDraw accepts 1..1000 in that branch), and the
+ * consumer page renders it verbatim ("3 winners, drawn in a witnessed
+ * process"). Returning 0 there let a legacy multi-winner draw walk straight
+ * past both multi-prize guards — assertDrawActivatable and createDraw — and
+ * activate, even though the engine is terminal after ONE claimed winner. The
+ * identical config expressed as prizes:[{qty:3}] was correctly refused.
+ */
 export function totalPrizeQuantity(ld) {
-  if (!ld || !Array.isArray(ld.prizes)) return 0;
+  if (!ld) return 0;
+  if (!Array.isArray(ld.prizes)) return Number.isInteger(ld.winners) ? ld.winners : 0;
   return ld.prizes.reduce((sum, p) => sum + (Number.isInteger(p?.qty) ? p.qty : 0), 0);
 }
 
