@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { UploadFile } from '@/api/integrations';
 import { MAX_UPLOAD_SIZE_MB } from '@/lib/uploadLimits';
-import { TEMPLATE_IDS, DRAW_TEMPLATE_IDS, youTubeIdFrom, resolveTheme } from '@/lib/designConfigV2';
+import { TEMPLATE_IDS, DRAW_TEMPLATE_IDS, LIMITS, youTubeIdFrom, resolveTheme } from '@/lib/designConfigV2';
 import {
   DRAW_TRUST_ROW_DEFAULT,
   DRAW_SCAM_LINE_DEFAULT,
@@ -53,6 +53,11 @@ export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHi
 
   const templateId = doc.template?.id || 'editorial';
   const params = doc.template?.params?.[templateId] || {};
+  // Absent = the funnel's default 16px; the slider writes an explicit px value.
+  const submitFontSizeRaw = doc.content?.submitFontSize;
+  const submitFontSize = typeof submitFontSizeRaw === 'number' && Number.isFinite(submitFontSizeRaw)
+    ? Math.min(LIMITS.submitFontSizeMax, Math.max(LIMITS.submitFontSizeMin, Math.round(submitFontSizeRaw)))
+    : 16;
   const media = doc.content?.media || { kind: 'none', src: '', alt: '' };
   const t = resolveTheme(doc.theme || {});
 
@@ -364,6 +369,19 @@ export default function PagePanel({ doc, setPath, mut, onSuggest = null, mediaHi
         <TextAreaField id="studio-story" label="Hero story" bind={bind('content.story', 1200)} rows={6} onSuggest={suggest('content.story', 'Hero story')} />
         <TextField id="studio-emphasis" label="Emphasis line" bind={bind('content.emphasis', 160)} onSuggest={suggest('content.emphasis', 'Emphasis line')} />
         <TextField id="studio-submit-label" label="Submit button label" bind={bind('content.submitLabel', 40)} placeholder="Submit Now" onSuggest={suggest('content.submitLabel', 'Submit button label')} />
+        <div>
+          <FieldLabel htmlFor="studio-submit-size">Submit button text size · {submitFontSize}px</FieldLabel>
+          <input
+            id="studio-submit-size"
+            type="range"
+            min={LIMITS.submitFontSizeMin}
+            max={LIMITS.submitFontSizeMax}
+            step={1}
+            value={submitFontSize}
+            onChange={(e) => setPath('content.submitFontSize', Number(e.target.value))}
+            style={{ width: '100%' }}
+          />
+        </div>
       </PanelSection>
 
       {doc.luckyDraw?.enabled === true && (() => {

@@ -12,6 +12,7 @@ import {
   isSponsoredCampaign, sponsorNameLine,
 } from '@/lib/consentCopy';
 import { formatDateInput, getAgeValidationError, getAgeRestrictionHint, displayPhone } from '@/components/campaigns/signup/dateUtils';
+import { LIMITS } from '@/lib/designConfigV2';
 
 /**
  * Public lead-capture form. Visual style is locked to the warm-cream/Fraunces
@@ -35,6 +36,11 @@ export default function CampaignSignupForm({
   campaign,
   termsContent,
   ctaLabel,
+  // v2 (Campaign Studio) content.submitFontSize — px size for the submit CTA
+  // label. Guarded to the shared LIMITS range here too: the Studio preview
+  // feeds the UNSAVED doc, which can carry junk mid-edit. Absent → 16 (the
+  // frozen v1 size).
+  ctaFontSize,
   previewMode = false,
   // v2 (Campaign Studio) content.advertiserName — the DNC gate's advertiser
   // display; defaults to the campaign name exactly as v1 behaves.
@@ -46,6 +52,9 @@ export default function CampaignSignupForm({
 }) {
   const { tokens: TOKENS, radius: RADIUS, onAccent } = useCampaignTheme();
   const accent = themeColor || TOKENS.accent;
+  const submitFontSize = typeof ctaFontSize === 'number' && Number.isFinite(ctaFontSize)
+    ? Math.min(LIMITS.submitFontSizeMax, Math.max(LIMITS.submitFontSizeMin, Math.round(ctaFontSize)))
+    : 16;
   const visibleFields = campaign?.design_config?.visibleFields || {};
   const requiredFields = campaign?.design_config?.requiredFields || {};
   const fieldOrder = campaign?.design_config?.fieldOrder || ['name', 'phone', 'email', 'dob', 'postal_code', 'education_level', 'monthly_income'];
@@ -973,11 +982,14 @@ export default function CampaignSignupForm({
           </ConsentCheckbox>
         </div>
 
-        {/* Submit button — pill, left-aligned narrower (Goodies SG pattern) */}
+        {/* Submit button — pill, centered, narrower than the fields */}
         <button
           type="submit"
           disabled={submitDisabled}
           style={{
+            display: 'block',
+            marginLeft: 'auto',
+            marginRight: 'auto',
             height: 56,
             paddingLeft: 36,
             paddingRight: 36,
@@ -988,7 +1000,7 @@ export default function CampaignSignupForm({
             cursor: submitDisabled ? 'not-allowed' : 'pointer',
             fontFamily: 'Albert Sans, system-ui, sans-serif',
             fontWeight: 600,
-            fontSize: 16,
+            fontSize: submitFontSize,
             letterSpacing: '0.005em',
             boxShadow: submitDisabled ? 'none' : `0 4px 14px ${TOKENS.accentShadow || 'rgba(209, 112, 41, 0.18)'}`,
             transition: 'background-color 200ms ease, opacity 200ms ease, transform 120ms ease',

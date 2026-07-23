@@ -561,7 +561,7 @@ function Nightfall({ t, content, params, luckyDraw, funnel, formAnchorRef, mobil
           <button
             type="button"
             onClick={() => setSheetOpen(true)}
-            style={{ background: accent, color: t.onAccent, border: 'none', borderRadius: ctaRadius, padding: 16, fontSize: 16, fontWeight: 700, fontFamily: SANS, cursor: 'pointer' }}
+            style={{ background: accent, color: t.onAccent, border: 'none', borderRadius: ctaRadius, padding: 16, fontSize: content.submitFontSize, fontWeight: 700, fontFamily: SANS, cursor: 'pointer' }}
           >
             {content.submitLabel}
           </button>

@@ -95,6 +95,17 @@ describe('open states', () => {
     expect(screen.getByRole('button', { name: 'Close entry form' })).toBeInTheDocument();
   });
 
+  it('the nightfall (mobile) hero CTA follows content.submitFontSize, default 16', async () => {
+    setViewport(390);
+    const def = render(<CampaignPageRenderer campaign={drawCampaign('nightfall')} previewMode onSubmit={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Submit Now' }).style.fontSize).toBe('16px');
+    def.unmount();
+    const campaign = drawCampaign('nightfall');
+    campaign.design_config.content.submitFontSize = 21;
+    render(<CampaignPageRenderer campaign={campaign} previewMode onSubmit={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Submit Now' }).style.fontSize).toBe('21px');
+  });
+
   it('stub renders the ticket stub line with serial, and hides the serial via param', () => {
     const { unmount } = render(<CampaignPageRenderer campaign={drawCampaign('stub')} previewMode onSubmit={vi.fn()} />);
     expect(screen.getByText('ADMIT 1 ENTRY')).toBeInTheDocument();

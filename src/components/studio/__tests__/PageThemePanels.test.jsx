@@ -69,6 +69,19 @@ describe('PagePanel — doc round-trips', () => {
     expect(latestDoc.template.params.editorial.formWidth).toBe(560);
   });
 
+  it('the submit-button size slider defaults to 16 and writes content.submitFontSize', () => {
+    render(<Harness v1={BASE_V1} Panel={PagePanel} />);
+    const slider = screen.getByLabelText(/Submit button text size/);
+    expect(slider).toHaveValue('16'); // absent in the doc → the funnel default
+    expect(latestDoc.content?.submitFontSize).toBeUndefined(); // rendering ≠ writing
+    slider.focus();
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    nativeInputValueSetter.call(slider, '21');
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    slider.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(latestDoc.content.submitFontSize).toBe(21);
+  });
+
   it('media-kind changes PRESERVE the legacy shadow (exact-downgrade contract)', async () => {
     const user = userEvent.setup();
     render(<Harness v1={BASE_V1} Panel={PagePanel} />);

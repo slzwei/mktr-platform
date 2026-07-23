@@ -50,6 +50,35 @@ describe('CampaignSignupForm — phone is always required/visible', () => {
   });
 });
 
+describe('CampaignSignupForm — submit CTA centering + editable size', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('centers the submit button (block + auto side margins)', () => {
+    renderForm();
+    const submit = screen.getByRole('button', { name: 'Submit Now' });
+    expect(submit.style.display).toBe('block');
+    expect(submit.style.marginLeft).toBe('auto');
+    expect(submit.style.marginRight).toBe('auto');
+  });
+
+  it('defaults the label to 16px and honors an in-range ctaFontSize', () => {
+    const first = renderForm();
+    expect(screen.getByRole('button', { name: 'Submit Now' }).style.fontSize).toBe('16px');
+    first.unmount();
+    renderForm({ ctaFontSize: 21 });
+    expect(screen.getByRole('button', { name: 'Submit Now' }).style.fontSize).toBe('21px');
+  });
+
+  it('clamps out-of-range sizes and falls back to 16 on junk (incl. null)', () => {
+    const big = renderForm({ ctaFontSize: 96 });
+    expect(screen.getByRole('button', { name: 'Submit Now' }).style.fontSize).toBe('24px');
+    big.unmount();
+    const junk = renderForm({ ctaFontSize: null });
+    expect(screen.getByRole('button', { name: 'Submit Now' }).style.fontSize).toBe('16px');
+    junk.unmount();
+  });
+});
+
 describe('CampaignSignupForm — responsive combined rows', () => {
   beforeEach(() => vi.clearAllMocks());
 

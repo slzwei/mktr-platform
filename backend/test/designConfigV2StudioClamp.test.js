@@ -197,3 +197,33 @@ describe('content.drawCopy — draw-chrome copy overrides (v2-only)', () => {
     expect(read(doc)).toEqual({ trustRow: 'VERIFIED' });
   });
 });
+
+describe('content.submitFontSize — submit CTA size (v2-only, L7)', () => {
+  const save = (submitFontSize) => clampDesignConfigV2({
+    version: 2,
+    content: { headline: 'H', submitFontSize },
+  }, undefined, 'admin');
+  const read = (doc) => doc.content?.submitFontSize;
+
+  it('keeps an in-range number, rounded to an integer', () => {
+    expect(read(save(18))).toBe(18);
+    expect(read(save(17.6))).toBe(18);
+  });
+
+  it('clamps to the LIMITS twins range', () => {
+    expect(read(save(6))).toBe(12);
+    expect(read(save(96))).toBe(24);
+  });
+
+  it('drops non-numbers (incl. the Number()-coercible junk) — absent stays absent', () => {
+    for (const junk of ['18', '', null, true, [], [18], {}, NaN, Infinity, undefined]) {
+      expect(read(save(junk))).toBeUndefined();
+    }
+  });
+
+  it('is idempotent across repeated saves', () => {
+    let doc = save(21);
+    for (let i = 0; i < 3; i += 1) doc = clampDesignConfigV2(doc, undefined, 'admin');
+    expect(read(doc)).toBe(21);
+  });
+});

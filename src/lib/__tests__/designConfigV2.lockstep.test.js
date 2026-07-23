@@ -175,3 +175,26 @@ describe('L6 — content.drawCopy is v2-only in BOTH twins', () => {
     }
   });
 });
+
+describe('L7 — content.submitFontSize is v2-only in BOTH twins', () => {
+  const v2WithSize = () => {
+    const doc = mirror.upgradeDesignConfig({ formHeadline: 'H', customerHost: 'redeem' });
+    doc.content = { ...doc.content, submitFontSize: 21 };
+    return doc;
+  };
+
+  it('downgrade DROPS submitFontSize identically in both twins', () => {
+    for (const twin of [mirror, backend]) {
+      const v1 = twin.downgradeDesignConfig(v2WithSize());
+      expect(JSON.stringify(v1)).not.toContain('submitFontSize');
+    }
+  });
+
+  it('upgrade never CREATES submitFontSize in either twin', () => {
+    for (const twin of [mirror, backend]) {
+      for (const v1 of Object.values(V1_DOCS)) {
+        expect(twin.upgradeDesignConfig(v1).content?.submitFontSize).toBeUndefined();
+      }
+    }
+  });
+});

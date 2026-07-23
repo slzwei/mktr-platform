@@ -99,7 +99,7 @@ function buildPublicDesignConfigV2(dc) {
 
   const content = pick(dc.content, [
     'wordmark', 'headline', 'subheadline', 'story', 'emphasis',
-    'heroCtaLabel', 'submitLabel', 'advertiserName',
+    'heroCtaLabel', 'submitLabel', 'submitFontSize', 'advertiserName',
   ]) || {};
   const footer = pick(dc.content?.footer, ['regulatory', 'brand']);
   if (footer) content.footer = footer;

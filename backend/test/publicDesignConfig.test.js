@@ -228,3 +228,15 @@ describe('buildPublicDesignConfig — content.drawCopy overrides', () => {
     expect(out.content.drawCopy).toBeUndefined();
   });
 });
+
+describe('buildPublicDesignConfig — content.submitFontSize', () => {
+  it('serves the submit CTA size to the public page', () => {
+    const out = buildPublicDesignConfig({ version: 2, content: { headline: 'H', submitFontSize: 18 } });
+    expect(out.content.submitFontSize).toBe(18);
+  });
+
+  it('omits it when absent', () => {
+    const out = buildPublicDesignConfig({ version: 2, content: { headline: 'H' } });
+    expect(out.content.submitFontSize).toBeUndefined();
+  });
+});

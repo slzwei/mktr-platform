@@ -31,6 +31,9 @@
  *     the renderer's own default); downgrade emits the derived kind explicitly.
  *  L6 content.drawCopy (draw-chrome copy overrides) is v2-ONLY: upgrade never
  *     creates it and downgrade DROPS it — the v1 renderer has no draw chrome.
+ *  L7 content.submitFontSize (submit CTA size, px) is v2-ONLY under the same
+ *     rule: upgrade never creates it, downgrade drops it — the v1 renderer's
+ *     CTA size is fixed.
  *  L5 quiz / guidedReview / luckyDraw / unknown top-level keys (incl. legacy
  *     dead style keys) pass through VERBATIM in both directions — never
  *     restructured, never dropped.
@@ -110,6 +113,8 @@ export const LIMITS = {
   // Draw-chrome copy overrides (content.drawCopy — v2-only, dropped on downgrade)
   drawTrustRow: 80, drawScamLine: 120, drawWinnersNote: 120,
   drawCtaSubline: 90, drawFreeEntryTag: 40, drawBoostBody: 280,
+  // Submit CTA font size in px (content.submitFontSize — v2-only, L7)
+  submitFontSizeMin: 12, submitFontSizeMax: 24,
 };
 
 /** v2 field ids (array order = render order) and the v1 long-id mapping. */

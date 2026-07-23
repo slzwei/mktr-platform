@@ -12,7 +12,15 @@ import CanvasPageSubject from './CanvasPageSubject';
  * the top bar stay loyal to the SAVED state (guarded).
  */
 
-const FRAME_H = 800;
+/** The device viewport HEIGHT is elastic: the frame fills the stage's vertical
+ * space (Shawn 2026-07-23 — the mock phone should take up the whole preview
+ * section), like resizing a real browser window. Floor/ceiling keep the
+ * emulated viewport sane on tiny or ultra-tall stages; below the floor the
+ * frame scales down instead (the old fit-to-height behavior). */
+const FRAME_MIN_H = 480;
+const FRAME_MAX_H = 1600;
+/** Stage top padding (18) + the URL/honesty caption block under the frame. */
+const STAGE_RESERVED_V = 88;
 const DEVICES = [
   { id: 'mobile', label: 'Mobile · 390', width: 390 },
   { id: 'desktop', label: 'Desktop · 1280', width: 1280 },
@@ -71,7 +79,12 @@ export default function StudioCanvas({
   }, []);
 
   const frameW = DEVICES.find((d) => d.id === device)?.width || 390;
-  const scale = Math.min((stageSize.w - 60) / frameW, (stageSize.h - 152) / FRAME_H, 1);
+  const widthScale = Math.min((stageSize.w - 60) / frameW, 1);
+  const availH = Math.max(240, stageSize.h - STAGE_RESERVED_V);
+  // Viewport height chosen so height × scale === availH exactly (full-bleed
+  // vertical fill) whenever the floor/ceiling clamps don't kick in.
+  const frameH = Math.min(FRAME_MAX_H, Math.max(FRAME_MIN_H, Math.round(availH / widthScale)));
+  const scale = Math.min(widthScale, availH / frameH);
   const unsavedHost = resolveCustomerHost(doc?.distribution?.host);
   const urlChip = customerLeadCaptureUrl(campaign?.id, {}, unsavedHost);
 
@@ -145,7 +158,7 @@ export default function StudioCanvas({
       >
         {subject === 'page' ? (
           <>
-            <DeviceFrame width={frameW} height={FRAME_H} scale={scale} ariaLabel="Campaign page preview">
+            <DeviceFrame width={frameW} height={frameH} scale={scale} ariaLabel="Campaign page preview">
               {/* Keyed on jump + resetKey: every jump/reset is a coherent REMOUNT
                   (fixtures are initial state); doc edits re-render WITHOUT
                   remounting so in-progress funnel state survives typing. */}

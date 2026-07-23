@@ -20,6 +20,7 @@
  */
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { brand } from '@/lib/brand';
+import { LIMITS } from '@/lib/designConfigV2';
 import { heroFontStack } from '@/lib/heroFonts';
 import { QuizGate } from '@/components/campaigns/CampaignQuiz';
 import CampaignSignupForm from '@/components/campaigns/CampaignSignupForm';
@@ -87,6 +88,14 @@ function sanitizeDrawCopy(raw) {
   return out;
 }
 
+/** Submit-CTA size (px) with the same real-number guard the funnel form and
+ * the save clamp apply — the Studio feeds the UNSAVED doc, so junk mid-edit
+ * must fall back to 16 (and Number() coercion would turn null into 12). */
+function sanitizeSubmitFontSize(raw) {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return 16;
+  return Math.min(LIMITS.submitFontSizeMax, Math.max(LIMITS.submitFontSizeMin, Math.round(raw)));
+}
+
 export function deriveCampaignPageContent(doc) {
   const content = doc.content || {};
   const host = doc.distribution?.host === 'mktr' ? 'mktr' : 'redeem';
@@ -106,6 +115,7 @@ export function deriveCampaignPageContent(doc) {
     media: content.media || { kind: 'none', src: '', alt: '' },
     heroCtaLabel: (content.heroCtaLabel || '').trim(),
     submitLabel: content.submitLabel || 'Submit Now',
+    submitFontSize: sanitizeSubmitFontSize(content.submitFontSize),
     regulatory: content.footer?.regulatory || brand.defaultRegulatory,
     // "MKTR" substring auto-links to mktr.sg (renderBrandFooter semantics).
     brandPre: mktrIdx >= 0 ? brandLine.slice(0, mktrIdx) : brandLine,

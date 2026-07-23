@@ -47,6 +47,8 @@ export function deriveFunnelProps(adapted, { onSubmit, previewMode = false, prev
     onSubmit,
     termsContent: legacy.termsContent,
     ctaLabel: legacy.ctaText || 'Submit Now',
+    // v2-only (ledger L7) — the form itself clamps junk and defaults to 16.
+    ctaFontSize: isV2Doc ? doc.content?.submitFontSize : undefined,
     previewMode,
     advertiserName: isV2Doc ? (doc.content?.advertiserName || campaign?.name) : undefined,
     // Studio jump fixture (preview-only; the form gates consumption on

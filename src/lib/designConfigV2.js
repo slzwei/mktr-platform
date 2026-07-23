@@ -9,8 +9,9 @@
  * the shared fixture corpus). Edit them together, backend first.
  *
  * Everything else about the contract, the canonicalization loss ledger (L1-L5;
- * L6: content.drawCopy is v2-only — upgrade never creates it, downgrade drops it),
- * and the no-clamping rule is documented in the backend twin's header.
+ * L6: content.drawCopy and L7: content.submitFontSize are v2-only — upgrade
+ * never creates them, downgrade drops them), and the no-clamping rule is
+ * documented in the backend twin's header.
  */
 
 export const DESIGN_CONFIG_VERSION = 2;
@@ -87,6 +88,8 @@ export const LIMITS = {
   // Draw-chrome copy overrides (content.drawCopy — v2-only, dropped on downgrade)
   drawTrustRow: 80, drawScamLine: 120, drawWinnersNote: 120,
   drawCtaSubline: 90, drawFreeEntryTag: 40, drawBoostBody: 280,
+  // Submit CTA font size in px (content.submitFontSize — v2-only, L7)
+  submitFontSizeMin: 12, submitFontSizeMax: 24,
 };
 
 /** v2 field ids (array order = render order) and the v1 long-id mapping. */

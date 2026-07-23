@@ -248,6 +248,16 @@ function clampContent(raw) {
     dcStr('boostBody', LIMITS.drawBoostBody);
     if (Object.keys(drawCopy).length) out.drawCopy = drawCopy;
   }
+  // Submit CTA font size (px) — a real number only (Number() coercion would
+  // turn null/''/[] into 0 → clamped 12, i.e. junk becoming a tiny CTA),
+  // rounded and clamped to the shared range; anything else is dropped
+  // (absent = the funnel's default size).
+  if (typeof c.submitFontSize === 'number' && Number.isFinite(c.submitFontSize)) {
+    out.submitFontSize = Math.min(
+      LIMITS.submitFontSizeMax,
+      Math.max(LIMITS.submitFontSizeMin, Math.round(c.submitFontSize))
+    );
+  }
   const m = isPlainObject(c.media) ? c.media : {};
   let kind = cleanEnum(m.kind, ['none', 'image', 'video', 'youtube'], 'none');
   const src = typeof m.src === 'string' ? m.src.slice(0, 2048) : '';
