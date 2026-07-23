@@ -153,7 +153,11 @@ export const importPartners = asyncHandler(async (req, res) => {
 });
 
 export const deletePartner = asyncHandler(async (req, res) => {
-  await partnerService.deletePartner(req.params.id, req.user, req.id);
+  // force=true cascades the fulfilment chain (admin cleanup) — same
+  // partners.delete capability; the service enforces the draw hard-stop.
+  await partnerService.deletePartner(req.params.id, req.user, req.id, {
+    force: req.query.force === 'true',
+  });
   res.json({ success: true, message: 'Business deleted' });
 });
 

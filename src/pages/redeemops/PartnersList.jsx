@@ -69,7 +69,9 @@ export default function PartnersList() {
 
   const [search, setSearch] = useState('');
   const [stage, setStage] = useState('all');
-  const [owner, setOwner] = useState('all');
+  // Reps live in their own book — default to it; the dropdown flips to the
+  // whole database ("Any owner") in one click.
+  const [owner, setOwner] = useState('me');
   const [category, setCategory] = useState('all');
   const [page, setPage] = useState(1);
   const debouncedSearch = useDebounced(search);
@@ -210,12 +212,19 @@ export default function PartnersList() {
   const partnerName = (p) => p.tradingName || p.brandName || p.legalName;
   const partnerMeta = (p) => [p.category, p.instagramHandle && `@${p.instagramHandle}`, p.primaryPhone]
     .filter(Boolean).slice(0, 2).join(' · ');
+  const emptyCopy = owner === 'me'
+    ? 'No businesses in your book yet — switch Owner to “Any owner” to browse and claim.'
+    : 'No businesses match. Add the first one.';
 
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto space-y-5">
       <RoPageHeader
         title="Partners"
-        sub={pagination ? `${pagination.total} business${pagination.total === 1 ? '' : 'es'} on the books — search before you add, claim before you contact.` : 'The shared business database — search before you add, claim before you contact.'}
+        sub={pagination
+          ? owner === 'me'
+            ? `${pagination.total} business${pagination.total === 1 ? '' : 'es'} in your book — switch Owner to see the whole database.`
+            : `${pagination.total} business${pagination.total === 1 ? '' : 'es'} on the books — search before you add, claim before you contact.`
+          : 'The shared business database — search before you add, claim before you contact.'}
         actions={(
           <>
             {canImport && (
@@ -287,7 +296,7 @@ export default function PartnersList() {
           ))}
           {!listQuery.isLoading && partners.length === 0 && (
             <p className="text-sm text-center py-10 m-0" style={{ color: 'var(--ro-text-2)' }}>
-              No businesses match. Add the first one.
+              {emptyCopy}
             </p>
           )}
         </div>
@@ -340,7 +349,7 @@ export default function PartnersList() {
               {!listQuery.isLoading && partners.length === 0 && (
                 <tr className="border-t border-border">
                   <td colSpan={5} className="text-center py-12" style={{ color: 'var(--ro-text-2)' }}>
-                    No businesses match. Add the first one.
+                    {emptyCopy}
                   </td>
                 </tr>
               )}

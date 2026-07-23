@@ -435,14 +435,26 @@ export default function PartnerDetail() {
   });
   const setEdit = (k) => (e) => setEditForm((f) => ({ ...f, [k]: e.target.value }));
 
+  // Two-step delete: plain first; a 409 with `forceable` escalates the dialog
+  // into force mode (type-the-name confirm) showing exactly what cascades.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBlockers, setDeleteBlockers] = useState(null); // null = plain confirm
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const deleteMutation = useMutation({
-    mutationFn: () => redeemOpsApi.deletePartner(id),
+    mutationFn: ({ force }) => redeemOpsApi.deletePartner(id, { force }),
     onSuccess: () => {
       toast.success('Business deleted');
+      setDeleteOpen(false);
       queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'partners'] });
       navigate('/redeem-ops/partners');
     },
-    onError: (err) => toast.error('Could not delete', { description: err.message }),
+    onError: (err) => {
+      if (err.status === 409 && err.data?.forceable) {
+        setDeleteBlockers(err.data.blockers || {});
+        return;
+      }
+      toast.error('Could not delete', { description: err.message });
+    },
   });
 
   const [contactForm, setContactForm] = useState(EMPTY_CONTACT);
@@ -843,25 +855,86 @@ export default function PartnerDetail() {
               </Button>
             </div>
           )}
-          {hasCapability(user, 'partners.delete') && partner.pipelineStage !== 'PARTNERED' && (
+          {hasCapability(user, 'partners.delete') && (
             <div className="pt-1">
               <Button
                 variant="ghost"
                 size="sm"
                 className="text-destructive hover:text-destructive"
                 disabled={deleteMutation.isPending}
-                onClick={() => {
-                  if (window.confirm(`Permanently delete "${name}"? Only for businesses created by mistake — its contacts, tasks and activity go with it. Real duplicates should be merged instead.`)) {
-                    deleteMutation.mutate();
-                  }
-                }}
+                onClick={() => { setDeleteOpen(true); setDeleteBlockers(null); setDeleteConfirmText(''); }}
               >
-                {deleteMutation.isPending ? 'Deleting…' : 'Delete business'}
+                Delete business
               </Button>
             </div>
           )}
         </div>
       </div>
+
+      <Dialog open={deleteOpen} onOpenChange={(open) => { if (!open) setDeleteOpen(false); }}>
+        <DialogContent className="max-w-md">
+          {deleteBlockers === null ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Delete “{name}”?</DialogTitle>
+                <DialogDescription>
+                  Only for businesses created by mistake — its contacts, tasks and activity go
+                  with it. Real duplicates should be merged instead.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+                <Button
+                  variant="destructive"
+                  disabled={deleteMutation.isPending}
+                  onClick={() => deleteMutation.mutate({ force: false })}
+                >
+                  {deleteMutation.isPending ? 'Deleting…' : 'Delete business'}
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Delete everything attached too?</DialogTitle>
+                <DialogDescription>
+                  “{name}”{deleteBlockers.stage === 'PARTNERED' ? ' is a Partnered business and' : ''} carries{' '}
+                  {[
+                    deleteBlockers.offers > 0 && `${deleteBlockers.offers} reward offer${deleteBlockers.offers === 1 ? '' : 's'}`,
+                    deleteBlockers.activations > 0 && `${deleteBlockers.activations} campaign activation${deleteBlockers.activations === 1 ? '' : 's'}`,
+                    deleteBlockers.entitlements > 0 && `${deleteBlockers.entitlements} reservation${deleteBlockers.entitlements === 1 ? '' : 's'}/voucher${deleteBlockers.entitlements === 1 ? '' : 's'}`,
+                    deleteBlockers.redemptions > 0 && `${deleteBlockers.redemptions} redemption${deleteBlockers.redemptions === 1 ? '' : 's'}`,
+                  ].filter(Boolean).join(', ') || 'fulfilment history'}.
+                  Deleting removes all of it — customers’ voucher records included. This cannot
+                  be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-1.5 py-1">
+                <Label htmlFor="delete-confirm-name">Type the business name to confirm</Label>
+                <Input
+                  id="delete-confirm-name"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder={name}
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+                <Button
+                  variant="destructive"
+                  disabled={
+                    deleteMutation.isPending
+                    || deleteConfirmText.trim().toLowerCase() !== String(name || '').trim().toLowerCase()
+                  }
+                  onClick={() => deleteMutation.mutate({ force: true })}
+                >
+                  {deleteMutation.isPending ? 'Deleting…' : 'Delete everything'}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
         <DialogContent>

@@ -6,12 +6,16 @@
  */
 process.env.REDEEM_OPS_ENABLED = 'true';
 
+import { randomBytes } from 'crypto';
 import request from 'supertest';
 import { getApp, closeDb, createTestUser, seedRedeemOpsCategory } from './helpers.js';
 import {
   PartnerOrganisation, PartnerContact, OutreachActivity,
+  RewardOffer, Activation, RewardEntitlement, Redemption, RewardInventoryEvent,
+  RedeemOpsAuditEvent,
 } from '../src/models/index.js';
 import { makeClaimService } from '../src/services/redeemOps/claimService.js';
+import { makePartnerService } from '../src/services/redeemOps/partnerService.js';
 
 let app;
 let admin, execA, execB, bdm;
@@ -405,5 +409,104 @@ describe('merge preserves everything', () => {
       .get(`/api/redeem-ops/partners/${duplicateId}`)
       .set(auth(admin.token));
     expect(detail.status).toBe(404);
+  });
+});
+
+describe('delete — plain vs force cascade', () => {
+  async function makePartnerRow(name) {
+    const res = await createPartner(admin.token, { tradingName: name });
+    expect(res.status).toBe(201);
+    return res.body.data.partner;
+  }
+
+  // The fulfilment chain hangs off ON DELETE RESTRICT edges — built directly
+  // (the API flow needs verified phones, unlock policies, inventory…) since
+  // the subject here is deletion order, not issuance.
+  async function attachChain(partnerId) {
+    const offer = await RewardOffer.create({
+      partnerOrganisationId: partnerId, title: 'Free trial class', createdBy: admin.user.id,
+    });
+    const activation = await Activation.create({
+      partnerOrganisationId: partnerId, rewardOfferId: offer.id, createdBy: admin.user.id,
+    });
+    const entitlement = await RewardEntitlement.create({
+      rewardOfferId: offer.id, activationId: activation.id,
+      // unique per chain — uq_re_presentation_token
+      presentationTokenHash: randomBytes(32).toString('hex'),
+    });
+    const redemption = await Redemption.create({
+      entitlementId: entitlement.id, rewardOfferId: offer.id,
+      activationId: activation.id, partnerOrganisationId: partnerId,
+    });
+    await RewardInventoryEvent.create({
+      rewardOfferId: offer.id, type: 'committed', quantity: 5, actorUserId: admin.user.id,
+    });
+    return { offer, activation, entitlement, redemption };
+  }
+
+  test('plain delete removes a clean business', async () => {
+    const p = await makePartnerRow('Delete Me Clean');
+    const res = await request(app).delete(`/api/redeem-ops/partners/${p.id}`).set(auth(admin.token));
+    expect(res.status).toBe(200);
+    expect(await PartnerOrganisation.findByPk(p.id)).toBeNull();
+  });
+
+  test('plain delete with fulfilment history → 409 carrying blocker counts', async () => {
+    const p = await makePartnerRow('Delete Me Loaded');
+    await attachChain(p.id);
+    const res = await request(app).delete(`/api/redeem-ops/partners/${p.id}`).set(auth(admin.token));
+    expect(res.status).toBe(409);
+    expect(res.body.data.forceable).toBe(true);
+    expect(res.body.data.blockers).toMatchObject({
+      offers: 1, activations: 1, entitlements: 1, redemptions: 1,
+    });
+    expect(await PartnerOrganisation.findByPk(p.id)).not.toBeNull();
+  });
+
+  test('force delete cascades the whole chain and audits the counts', async () => {
+    const p = await makePartnerRow('Delete Me Fully');
+    const chain = await attachChain(p.id);
+    const res = await request(app)
+      .delete(`/api/redeem-ops/partners/${p.id}?force=true`).set(auth(admin.token));
+    expect(res.status).toBe(200);
+    expect(await PartnerOrganisation.findByPk(p.id)).toBeNull();
+    expect(await RewardOffer.findByPk(chain.offer.id)).toBeNull();
+    expect(await Activation.findByPk(chain.activation.id)).toBeNull();
+    expect(await RewardEntitlement.findByPk(chain.entitlement.id)).toBeNull();
+    expect(await Redemption.findByPk(chain.redemption.id)).toBeNull();
+    const audit = await RedeemOpsAuditEvent.findOne({
+      where: { action: 'partner.deleted', entityId: p.id },
+    });
+    expect(audit.reason).toContain('force cascade: 1 offers, 1 activations, 1 entitlements, 1 redemptions');
+  });
+
+  test('PARTNERED blocks plain delete but yields to force', async () => {
+    const p = await makePartnerRow('Delete Me Partnered');
+    // Stage set directly — the machine requires contacts for PARTNERED entry,
+    // which is not the subject here.
+    await PartnerOrganisation.update({ pipelineStage: 'PARTNERED' }, { where: { id: p.id } });
+    const plain = await request(app).delete(`/api/redeem-ops/partners/${p.id}`).set(auth(admin.token));
+    expect(plain.status).toBe(409);
+    expect(plain.body.data.forceable).toBe(true);
+    expect(plain.body.data.blockers.stage).toBe('PARTNERED');
+    const forced = await request(app)
+      .delete(`/api/redeem-ops/partners/${p.id}?force=true`).set(auth(admin.token));
+    expect(forced.status).toBe(200);
+    expect(await PartnerOrganisation.findByPk(p.id)).toBeNull();
+  });
+
+  test('force refuses when a lucky draw hangs off an activation', async () => {
+    const p = await makePartnerRow('Delete Me Draw');
+    await attachChain(p.id);
+    const svc = makePartnerService({ Draw: { count: async () => 1 } });
+    await expect(svc.deletePartner(p.id, admin.user, null, { force: true }))
+      .rejects.toThrow(/lucky draw/i);
+    expect(await PartnerOrganisation.findByPk(p.id)).not.toBeNull();
+  });
+
+  test('delete stays behind partners.delete (outreach exec → 403)', async () => {
+    const p = await makePartnerRow('Delete Me Capability');
+    const res = await request(app).delete(`/api/redeem-ops/partners/${p.id}`).set(auth(execA.token));
+    expect(res.status).toBe(403);
   });
 });

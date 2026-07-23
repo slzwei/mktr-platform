@@ -150,8 +150,8 @@ export const redeemOpsApi = {
     const res = await apiClient.post(`/redeem-ops/partners/${survivorId}/merge`, { duplicateId, reason });
     return res.data?.partner;
   },
-  async deletePartner(id) {
-    const res = await apiClient.delete(`/redeem-ops/partners/${id}`);
+  async deletePartner(id, { force = false } = {}) {
+    const res = await apiClient.delete(`/redeem-ops/partners/${id}${force ? '?force=true' : ''}`);
     return res;
   },
   async claimPartner(id) {

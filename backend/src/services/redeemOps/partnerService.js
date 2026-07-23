@@ -3,6 +3,7 @@ import {
   PartnerOrganisation, PartnerLocation, PartnerContact, PartnerAssignmentEvent,
   PartnerStageEvent, OutreachActivity, OutreachTask, ProspectingPoolMember,
   PartnerOnboardingItem, RewardOffer, Activation,
+  RewardEntitlement, Redemption, RewardInventoryEvent, Draw,
   RedeemOpsAuditEvent, User, sequelize,
 } from '../../models/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
@@ -36,6 +37,7 @@ export function makePartnerService(overrides = {}) {
     PartnerOrganisation, PartnerLocation, PartnerContact, PartnerAssignmentEvent,
     PartnerStageEvent, OutreachActivity, OutreachTask, ProspectingPoolMember,
     PartnerOnboardingItem, RewardOffer, Activation,
+    RewardEntitlement, Redemption, RewardInventoryEvent, Draw,
     RedeemOpsAuditEvent, User, sequelize, logger,
     audit: makeRedeemOpsAuditService(),
     dedupe: makeDedupeService(),
@@ -819,33 +821,104 @@ export function makePartnerService(overrides = {}) {
   }
 
   /**
-   * Hard-delete a mistakenly created business (docs case: typo duplicate with
-   * no history). Guarded: PARTNERED rows and anything carrying reward offers
-   * or activations are refused (the DB backs this with ON DELETE RESTRICT) —
-   * merge or disqualify those instead. Children (contacts, locations, events,
-   * activities, tasks, pool memberships) cascade at the DB level. The audit
-   * row is written in the same transaction, before the destroy.
+   * Hard-delete a business — two tiers behind the same partners.delete
+   * capability. Plain (the docs case: typo duplicate, no history) refuses
+   * PARTNERED rows and anything carrying reward offers, activations, or
+   * redemptions; the 409 carries the blocker counts so the UI can offer the
+   * escalation. Force (admin cleanup, `{ force: true }`) deletes the whole
+   * fulfilment chain first — redemptions → entitlements → activations →
+   * inventory ledger → offers — in FK-safe order (those edges are ON DELETE
+   * RESTRICT by design); CRM children (contacts, locations, events,
+   * activities, tasks, pool memberships, cadence enrollments) cascade at the
+   * DB level either way. The one hard stop even under force: a lucky draw on
+   * any of its activations — draw entries and winners are consumer-facing
+   * records that must never bulk-die with a CRM row. The audit row is written
+   * in the same transaction, before the destroy.
    */
-  async function deletePartner(id, user, requestId = null) {
+  async function deletePartner(id, user, requestId = null, { force = false } = {}) {
     return d.sequelize.transaction(async (t) => {
       const partner = await getLivePartner(id, { transaction: t, lock: t.LOCK.UPDATE });
-      if (partner.pipelineStage === 'PARTNERED') {
-        throw new AppError('Partnered businesses cannot be deleted — merge duplicates or disqualify instead', 409);
-      }
-      const [offers, activations] = await Promise.all([
-        d.RewardOffer.count({ where: { partnerOrganisationId: id }, transaction: t }),
-        d.Activation.count({ where: { partnerOrganisationId: id }, transaction: t }),
+
+      const [offerRows, activationRows] = await Promise.all([
+        d.RewardOffer.findAll({
+          where: { partnerOrganisationId: id }, attributes: ['id'], transaction: t, raw: true,
+        }),
+        d.Activation.findAll({
+          where: { partnerOrganisationId: id }, attributes: ['id'], transaction: t, raw: true,
+        }),
       ]);
-      if (offers > 0 || activations > 0) {
-        throw new AppError('This business has rewards or activations attached — it cannot be deleted', 409);
+      const offerIds = offerRows.map((r) => r.id);
+      const activationIds = activationRows.map((r) => r.id);
+      // Entitlements FK both the offer and the activation — cover either edge.
+      const entitlementWhere = {
+        [Op.or]: [
+          ...(activationIds.length ? [{ activationId: { [Op.in]: activationIds } }] : []),
+          ...(offerIds.length ? [{ rewardOfferId: { [Op.in]: offerIds } }] : []),
+        ],
+      };
+      const hasChain = offerIds.length > 0 || activationIds.length > 0;
+      const [entitlements, redemptions] = await Promise.all([
+        hasChain ? d.RewardEntitlement.count({ where: entitlementWhere, transaction: t }) : 0,
+        d.Redemption.count({ where: { partnerOrganisationId: id }, transaction: t }),
+      ]);
+      const blockers = {
+        stage: partner.pipelineStage,
+        offers: offerIds.length,
+        activations: activationIds.length,
+        entitlements,
+        redemptions,
+      };
+
+      if (!force) {
+        if (partner.pipelineStage === 'PARTNERED') {
+          const err = new AppError('Partnered businesses cannot be deleted — merge duplicates or disqualify instead', 409);
+          err.data = { blockers, forceable: true };
+          throw err;
+        }
+        if (hasChain || redemptions > 0) {
+          const err = new AppError('This business has rewards or activations attached — it cannot be deleted', 409);
+          err.data = { blockers, forceable: true };
+          throw err;
+        }
+      } else if (activationIds.length > 0) {
+        const draws = await d.Draw.count({
+          where: { activationId: { [Op.in]: activationIds } }, transaction: t,
+        });
+        if (draws > 0) {
+          throw new AppError(
+            'This business backs a lucky draw — draw entries and winners cannot be bulk-deleted. Remove the draw first.',
+            409
+          );
+        }
       }
+
+      if (force && hasChain) {
+        if (redemptions > 0) {
+          await d.Redemption.destroy({ where: { partnerOrganisationId: id }, transaction: t });
+        }
+        if (entitlements > 0) {
+          await d.RewardEntitlement.destroy({ where: entitlementWhere, transaction: t });
+        }
+        if (activationIds.length > 0) {
+          await d.Activation.destroy({ where: { id: { [Op.in]: activationIds } }, transaction: t });
+        }
+        if (offerIds.length > 0) {
+          await d.RewardInventoryEvent.destroy({ where: { rewardOfferId: { [Op.in]: offerIds } }, transaction: t });
+          await d.RewardOffer.destroy({ where: { id: { [Op.in]: offerIds } }, transaction: t });
+        }
+      }
+
       const snapshot = partner.toJSON();
       await d.audit.recordAuditEvent({
         actorUser: user, action: 'partner.deleted', entityType: 'partner_organisation',
-        entityId: id, before: snapshot, after: null, requestId, transaction: t,
+        entityId: id, before: snapshot, after: null,
+        reason: force
+          ? `force cascade: ${blockers.offers} offers, ${blockers.activations} activations, ${blockers.entitlements} entitlements, ${blockers.redemptions} redemptions`
+          : null,
+        requestId, transaction: t,
       });
       await partner.destroy({ transaction: t });
-      return snapshot;
+      return { ...snapshot, cascade: force ? blockers : null };
     });
   }
 
