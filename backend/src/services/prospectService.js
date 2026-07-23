@@ -18,6 +18,7 @@ import { deductLeadCredit, chargeLeadCredit, deductExternalLeadBalance } from '.
 import { decideAssignment } from './leadQuota.js';
 import { dncEnforcement, formatDncNumber, checkAndRecord as dncCheckAndRecord } from './dncService.js';
 import { gateHeldDncLead } from './dncGate.js';
+import { SCREENING_REASONS } from './screeningConstants.js';
 import { hasValidExternalConsent, buildExternalConsentEvidence } from './externalConsent.js';
 import { buildDncConsentEvidence } from './dncConsent.js';
 import { repeatSignupDetail, repeatSignupCounts } from './repeatSignup.js';
@@ -121,7 +122,11 @@ function parseProspectSort(sort) {
 // distinct from 'no_funded_agent' so returned leads never surface in the EXTERNAL
 // held queue (listDispatchableOrphans) or its release path (releaseHeldProspect),
 // both of which filter on 'no_funded_agent'.
-const RELEASABLE_HOLD_REASONS = ['no_funded_agent', 'returned_by_admin'];
+// Screening holds are admin-releasable as a DELIBERATE override (skip / undo the
+// AI verdict — same trust level as the self/admin quota exemption). The deduct
+// double-charge guard for capture-charged screening leads lives at both release
+// call sites (single assign + bulk). DNC/external stay fenced.
+const RELEASABLE_HOLD_REASONS = ['no_funded_agent', 'returned_by_admin', ...SCREENING_REASONS];
 
 const PROSPECT_UPDATE_FIELDS = [
   'firstName',
@@ -163,6 +168,13 @@ const defaultDeps = {
   formatDncNumber,
   dncCheckAndRecord,
   gateHeldDncLead,
+  // Screening deps are LAZY dynamic imports (not top-level): existing unit
+  // suites mock this module's import graph tightly, and a static edge into the
+  // screening services would force every one of them to mock that whole graph.
+  // DI tests override these with plain jest.fn()s (await tolerates sync).
+  screeningConfig: async () => (await import('./screeningGate.js')).screeningConfig(),
+  screeningApplies: async (args, cfg) => (await import('./screeningGate.js')).screeningApplies(args, cfg),
+  startScreeningAttempt: async (prospect, opts) => (await import('./retellScreeningService.js')).startScreeningAttempt(prospect, opts),
   buildProspectWhere,
   dispatchEvent,
   persistEventDeliveries,
@@ -586,6 +598,16 @@ export function makeProspectService(overrides = {}) {
     const dncFlagApplies = dncMode === 'flag' && !!dncNumber;
     const dncWillCheck = dncBlockApplies || dncFlagApplies;
 
+    // AI screening gate (docs/plans/retell-screening-calls.md §5): evaluated on
+    // the INCOMING payload (the verified stamp was just written above iff the
+    // OTP marker was live — raw unverified POSTs can never dial, Codex #1).
+    // When DNC block-mode also applies, DNC holds first and hands off on clear.
+    const screeningCfg = await d.screeningConfig();
+    const screeningWanted = await d.screeningApplies(
+      { campaign: sourceCampaign, prospect: { ...incoming, externalAgentId: null } },
+      screeningCfg
+    );
+
     // Enforce: a phone can register once per campaign, but can register for different campaigns
     if (incoming.phone && incoming.campaignId) {
       const existing = await m.Prospect.findOne({
@@ -852,6 +874,8 @@ export function makeProspectService(overrides = {}) {
     let dncHeld = false;
     let dncIntendedAgentId = null;
     let dncAlreadyCharged = false;
+    // Screening hold bookkeeping (plan §5.2) — mirrors the DNC shape.
+    let screeningHeld = false;
     const runCreateTx = () => d.sequelize.transaction(async (t) => {
       // The internal quota gate applies ONLY to the internal path. For external
       // leads default to a plain "assign" directive so the shared activity/deduct
@@ -881,6 +905,19 @@ export function makeProspectService(overrides = {}) {
         dncAlreadyCharged = decision.charged === true;
         dncHeld = true;
         decision = { action: 'quarantine', quarantineReason: 'dnc_pending', charged: dncAlreadyCharged, via: routeVia };
+      }
+
+      // Screening gate (plan §5.2): a normally-assignable INTERNAL lead is HELD
+      // pending the AI screening call. Sits AFTER the DNC block on purpose —
+      // when both gates apply the lead is born dnc_pending and dncGate hands
+      // off to screening on clear (never dial an unscrubbed number, §6).
+      let screeningIntendedAgentId = null;
+      let screeningAlreadyCharged = false;
+      if (screeningWanted && decision.action !== 'quarantine' && !externalAgentId) {
+        screeningIntendedAgentId = decision.assignedAgentId ?? assignedAgentId ?? null;
+        screeningAlreadyCharged = decision.charged === true;
+        screeningHeld = true;
+        decision = { action: 'quarantine', quarantineReason: 'screening_pending', charged: screeningAlreadyCharged, via: routeVia };
       }
 
       quarantined = decision.action === 'quarantine';
@@ -916,6 +953,9 @@ export function makeProspectService(overrides = {}) {
           // stash the intended agent so the post-commit clear-release knows who to deliver to.
           ...(dncWillCheck ? { dncStatus: 'pending' } : {}),
           ...(dncHeld ? { dncMetadata: { intendedAgentId: dncIntendedAgentId, alreadyCharged: dncAlreadyCharged } } : {}),
+          ...(screeningHeld
+            ? { screeningMetadata: { intendedAgentId: screeningIntendedAgentId, alreadyCharged: screeningAlreadyCharged, attempts: {} } }
+            : {}),
         },
         { transaction: t }
       );
@@ -977,7 +1017,9 @@ export function makeProspectService(overrides = {}) {
                 ? 'Held — no funded MKTR Leads (external) buyer'
                 : decision.quarantineReason === 'dnc_pending'
                   ? 'Held — pending DNC (Do Not Call) check'
-                  : 'Held — no funded agent (lead quota)',
+                  : decision.quarantineReason === 'screening_pending'
+                    ? 'Held — pending AI screening call'
+                    : 'Held — no funded agent (lead quota)',
             metadata: { quarantined: true, reason: decision.quarantineReason, via: routeVia },
           },
           { transaction: t }
@@ -1201,7 +1243,10 @@ export function makeProspectService(overrides = {}) {
     // Redeem Ops failure must never fail or slow lead capture). No-op unless
     // bootstrap registered the callback (module flag on). Idempotent downstream
     // via the unique (activationId, prospectId) anchor.
-    if (!quarantined) {
+    // Screening holds ARE reward-eligible (plan D8): the consumer earned the
+    // signup reward by verified signup — screening gates AGENT delivery, not
+    // consumer rewards. Quota/DNC/external holds stay excluded as before.
+    if (!quarantined || heldReason === 'screening_pending') {
       try {
         const hookResult = d.onLeadCaptured?.(prospect);
         if (hookResult && typeof hookResult.catch === 'function') {
@@ -1252,6 +1297,17 @@ export function makeProspectService(overrides = {}) {
           err: err?.message,
         });
       }
+    }
+
+    // AI screening dial trigger (plan §5.3) — LAST on purpose: after the CAPI
+    // dispatches (capture-time events must see the prospect exactly as today)
+    // and the entitlement hook. Fire-and-forget; any failure leaves the held
+    // row for the sweep. DNC-held leads are NOT triggered here — dncGate hands
+    // off and dials on clear (§6).
+    if (screeningHeld) {
+      d.startScreeningAttempt(prospect, { campaign: sourceCampaign }).catch((err) =>
+        d.logger.error('[Screening] capture dial trigger error', { error: err?.message || String(err) })
+      );
     }
 
     return { prospect, assignedAgentId, assignedAgent, prospectWithCampaign, quarantined, shareUrl };
@@ -1614,6 +1670,16 @@ export function makeProspectService(overrides = {}) {
     // lead.created is a silent no-op — so a returned-to-held lead released via
     // lead.created would never re-surface in the agent's app.
     if (prospect.quarantinedAt) {
+      // Screening override bookkeeping (plan §9.5) — captured BEFORE the claim
+      // clears quarantineReason. A capture-charged, un-refunded screening lead
+      // must not be deducted AGAIN on release (Codex #2); a refunded one
+      // (screening_failed override) deducts normally like any release.
+      const screeningOverride = SCREENING_REASONS.includes(prospect.quarantineReason);
+      const screeningCaptureCharged =
+        screeningOverride &&
+        prospect.screeningMetadata?.alreadyCharged === true &&
+        prospect.screeningMetadata?.chargeRefunded !== true;
+
       const [releaseRows] = await d.sequelize.query(
         `UPDATE prospects
             SET "assignedAgentId" = :agentId, "lastContactDate" = NOW(),
@@ -1637,12 +1703,19 @@ export function makeProspectService(overrides = {}) {
         type: 'assigned',
         actorUserId: user?.id || null,
         description: `Released from hold and assigned to ${agent.firstName} ${agent.lastName}`.trim(),
-        metadata: { assignedAgentId: agentId, previousAgentId, released: true },
+        metadata: {
+          assignedAgentId: agentId,
+          previousAgentId,
+          released: true,
+          ...(screeningOverride ? { screeningOverride: true } : {}),
+        },
       });
 
-      await d
-        .deductLeadCredit({ agentId, campaignId: prospect.campaignId || null })
-        .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
+      if (!screeningCaptureCharged) {
+        await d
+          .deductLeadCredit({ agentId, campaignId: prospect.campaignId || null })
+          .catch((err) => d.logger.error('Failed to deduct credit', { error: err?.message || String(err) }));
+      }
 
       const prospectWithCampaign = await m.Prospect.findByPk(prospect.id, {
         include: [
@@ -1798,7 +1871,9 @@ export function makeProspectService(overrides = {}) {
     await d.sequelize.transaction(async (transaction) => {
       const locked = await m.Prospect.findAll({
         where: whereConditions,
-        attributes: ['id', 'assignedAgentId', 'campaignId', 'quarantinedAt'],
+        // quarantineReason + screeningMetadata ride along so the deduct below
+        // can skip capture-charged screening releases (double-charge guard §9.5).
+        attributes: ['id', 'assignedAgentId', 'campaignId', 'quarantinedAt', 'quarantineReason', 'screeningMetadata'],
         transaction,
         lock: true,
       });
@@ -1842,6 +1917,15 @@ export function makeProspectService(overrides = {}) {
     if (affectedCount > 0) {
       const countsByCampaign = new Map();
       for (const row of affectedRows) {
+        // Capture-charged, un-refunded screening leads already paid at capture
+        // — releasing them must not deduct a second credit (Codex #2).
+        const pre = lockedById.get(row.id);
+        const screeningCaptureCharged =
+          pre &&
+          SCREENING_REASONS.includes(pre.quarantineReason) &&
+          pre.screeningMetadata?.alreadyCharged === true &&
+          pre.screeningMetadata?.chargeRefunded !== true;
+        if (screeningCaptureCharged) continue;
         const cId = row.campaignId || null;
         countsByCampaign.set(cId, (countsByCampaign.get(cId) || 0) + 1);
       }
@@ -2098,6 +2182,9 @@ export function makeProspectService(overrides = {}) {
 
     const { count, rows: prospects } = await m.Prospect.findAndCountAll({
       where: whereConditions,
+      // Screening evidence (call transcripts/summaries) is detail-only — never
+      // shipped in list projections (plan §4, Codex #16).
+      attributes: { exclude: ['screeningMetadata'] },
       limit: limitNum,
       offset,
       order: parseProspectSort(sort),
@@ -2218,6 +2305,7 @@ export function makeProspectService(overrides = {}) {
 
     const { count, rows } = await m.Prospect.findAndCountAll({
       where,
+      attributes: { exclude: ['screeningMetadata'] },
       include: [{ association: 'campaign', attributes: ['id', 'name'] }],
       order: [['quarantinedAt', 'ASC']], // FIFO — oldest held first (the release order)
       limit,
@@ -2267,6 +2355,7 @@ export function makeProspectService(overrides = {}) {
 
     const { count, rows } = await m.Prospect.findAndCountAll({
       where,
+      attributes: { exclude: ['screeningMetadata'] },
       include: [
         { association: 'campaign', attributes: ['id', 'name'] },
         // qrTag drives the "QR code" source label for a bound-QR lead whose leadSource isn't

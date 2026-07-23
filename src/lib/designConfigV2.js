@@ -134,7 +134,7 @@ export const V1_CONSUMED_KEYS = [
   'heroCtaLabel', 'ctaText', 'regulatoryFooter', 'brandFooter',
   'imageUrl', 'videoUrl', 'mediaType', 'themeColor', 'heroFont', 'formWidth',
   'termsContent', 'customerHost', 'otpChannel',
-  'sgPrOnly', 'excludeAdvisors', 'dncCheckAtSubmit',
+  'sgPrOnly', 'excludeAdvisors', 'dncCheckAtSubmit', 'screeningCallAtSubmit',
   'visibleFields', 'requiredFields', 'fieldOrder',
   'featuredDrop', 'marketplaceListed',
   'name', 'category', 'offer_type', 'mode', 'qr_entry', 'age_range',
@@ -480,6 +480,7 @@ export function upgradeDesignConfig(doc) {
       sgPr: dc.sgPrOnly === true,
       advisorExclusion: dc.excludeAdvisors === true,
       dncCheck: dc.dncCheckAtSubmit === true,
+      screeningCall: dc.screeningCallAtSubmit === true,
     },
     ...(dc.termsContent !== undefined
       ? { terms: { template: 'default', html: clone(dc.termsContent) } }
@@ -575,6 +576,7 @@ export function downgradeDesignConfig(doc) {
   out.sgPrOnly = gates.sgPr === true;
   out.excludeAdvisors = gates.advisorExclusion === true;
   out.dncCheckAtSubmit = gates.dncCheck === true;
+  out.screeningCallAtSubmit = gates.screeningCall === true;
   if (isPlainObject(form.terms) && form.terms.html !== undefined) out.termsContent = clone(form.terms.html);
 
   const distribution = isPlainObject(doc.distribution) ? doc.distribution : {};

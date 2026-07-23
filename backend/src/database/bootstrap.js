@@ -323,6 +323,27 @@ export async function bootstrapDatabase() {
       logger.info(`[DNC] backfill scheduled (${intervalMin}m interval)`);
     }
 
+    // AI screening sweep (docs/plans/retell-screening-calls.md §10) — the
+    // restart-safe net for the screening-call gate: qualified-delivery retries,
+    // stale in-flight resolution, TTL, drain, due re-dials. ALWAYS scheduled
+    // (not env-gated like the DNC backfill): the sweep itself is drain-aware —
+    // feature off + no screening rows ⇒ one cheap COUNT and out; feature off +
+    // rows pending (kill switch mid-flight) ⇒ it releases them unscreened.
+    {
+      const intervalMin = Math.max(2, Number(process.env.SCREENING_SWEEP_INTERVAL_MINUTES) || 5);
+      const runScreeningSweepSafe = async () => {
+        try {
+          const { runScreeningSweep } = await import('../services/screeningSweepService.js');
+          await runScreeningSweep();
+        } catch (err) {
+          logger.warn('[Screening] sweep run failed (non-fatal)', { error: err?.message });
+        }
+      };
+      setTimeout(runScreeningSweepSafe, 120_000);
+      setInterval(runScreeningSweepSafe, intervalMin * 60 * 1000);
+      logger.info(`[Screening] sweep scheduled (${intervalMin}m interval, drain-aware)`);
+    }
+
     // rate_counters hygiene. Expired rows are already inert (bump resets them in
     // the same statement), but the limiter writes one row per client per 15-min
     // window and those keys are never revisited — without a sweep the table grows

@@ -145,7 +145,10 @@ async function getAdminStats(startDate, endDate, period = '30d') {
 
 // ---- Admin attention / series / funnel (Phase B — the Switchboard rebuild's data) ----
 
-const KNOWN_HOLD_REASONS = ['no_funded_agent', 'no_funded_external_buyer', 'dnc_pending', 'dnc_registered', 'returned_by_admin'];
+const KNOWN_HOLD_REASONS = [
+  'no_funded_agent', 'no_funded_external_buyer', 'dnc_pending', 'dnc_registered', 'returned_by_admin',
+  'screening_pending', 'screening_failed', 'screening_unreachable',
+];
 
 /**
  * Structured aggregates behind the dashboard's needs-attention rail. The UI

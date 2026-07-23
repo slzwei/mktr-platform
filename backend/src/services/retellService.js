@@ -45,6 +45,10 @@ const defaultDeps = {
   formatDncNumber,
   dncCheckAndRecord,
   gateHeldDncLead,
+  // Lazy (dynamic import) so existing unit suites that mock this module's
+  // graph don't have to know the screening services. DI-overridable.
+  handleScreeningWebhook: async (payload, event) =>
+    (await import('./retellScreeningService.js')).handleScreeningWebhook(payload, event),
   dispatchEvent,
   sendLeadAssignmentEmail,
   AppError,
@@ -154,7 +158,17 @@ export function makeRetellService(overrides = {}) {
    * @param {object} payload - parsed Retell webhook JSON
    * @returns {{ status: string, prospectId?: string }}
    */
-  async function processRetellCall(payload) {
+  async function processRetellCall(payload, { event = null } = {}) {
+    // ── Screening branch fence (docs/plans/retell-screening-calls.md §8.2) ──
+    // Our own OUTBOUND screening calls must NEVER reach the create path below:
+    // it would mint a duplicate call_bot prospect from the consumer's number,
+    // and the call_successful===false skip would swallow negative verdicts.
+    // This fence sits ABOVE every legacy guard on purpose. The legacy inbound
+    // path continues to handle direction ∈ {inbound, undefined} untouched.
+    if (payload?.metadata?.mktr?.kind === 'screening' || payload?.direction === 'outbound') {
+      return d.handleScreeningWebhook(payload, event);
+    }
+
     const {
       call_id,
       call_status,

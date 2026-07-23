@@ -205,6 +205,13 @@ export default function FormPanel({ doc, setPath, mut, whatsappOtpConfigured }) 
           checked={gates.dncCheck === true}
           onChange={(v) => setPath('form.gates.dncCheck', v)}
         />
+        <ToggleRow
+          id="studio-gate-screening"
+          label="AI screening call"
+          hint="Retell calls the lead after signup; only qualified leads reach an agent"
+          checked={gates.screeningCall === true}
+          onChange={(v) => setPath('form.gates.screeningCall', v)}
+        />
         <TextField
           id="studio-advertiser-name"
           label="Advertiser display name (DNC gate)"

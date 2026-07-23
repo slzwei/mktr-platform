@@ -43,6 +43,24 @@ export function validateEnv() {
     console.warn(`⚠️ Pipeline-critical variables not set (leads will NOT reach Lyfe): ${missingPipeline.join(', ')}`);
   }
 
+  // AI screening-call gate (docs/plans/retell-screening-calls.md §3.1): when the
+  // master flag is on, every dial precondition must be present — otherwise
+  // opted-in campaigns silently capture-and-hold with no dial ever happening
+  // (the drain sweep would release them unscreened, defeating the feature).
+  if (String(process.env.RETELL_SCREENING_ENABLED || 'false').toLowerCase() === 'true') {
+    const screeningRequired = ['RETELL_API_KEY', 'RETELL_WEBHOOK_SECRET', 'RETELL_SCREENING_AGENT_ID', 'RETELL_SCREENING_FROM_NUMBER'];
+    const missingScreening = screeningRequired.filter(key => !process.env[key]);
+    if (missingScreening.length > 0) {
+      console.warn(`⚠️ RETELL_SCREENING_ENABLED=true but missing: ${missingScreening.join(', ')} — screening dials cannot start; held leads will drain unscreened`);
+    }
+    if (process.env.RETELL_SCREENING_AGENT_ID && !/^agent_[a-z0-9]{10,64}$/i.test(process.env.RETELL_SCREENING_AGENT_ID.trim())) {
+      console.warn('⚠️ RETELL_SCREENING_AGENT_ID does not look like a Retell agent id (agent_…) — dials will be skipped');
+    }
+    if (process.env.RETELL_SCREENING_FROM_NUMBER && !/^\+[1-9]\d{9,14}$/.test(process.env.RETELL_SCREENING_FROM_NUMBER.trim())) {
+      console.warn('⚠️ RETELL_SCREENING_FROM_NUMBER is not E.164 (+65…) — dials will be skipped');
+    }
+  }
+
   if (process.env.WEBHOOK_ENABLED && String(process.env.WEBHOOK_ENABLED).toLowerCase() !== 'true') {
     console.warn(`⚠️ WEBHOOK_ENABLED is "${process.env.WEBHOOK_ENABLED}" (not "true") — webhook delivery is disabled, leads will not reach Lyfe`);
   }

@@ -552,6 +552,17 @@ export default function ContentPanel({ currentDesign, onDesignChange, campaignNa
           </div>
           <div className="flex items-center justify-between gap-3 py-1">
             <div className="flex flex-col">
+              <span className="text-sm text-foreground">AI screening call after signup</span>
+              <span className="text-xs text-muted-foreground">Retell AI calls each verified lead to qualify them. Qualified leads go to an agent; unqualified leads stay in the held queue and are never assigned.</span>
+            </div>
+            <Switch
+              aria-label="AI screening call after signup"
+              checked={currentDesign.screeningCallAtSubmit === true}
+              onCheckedChange={(checked) => onDesignChange('screeningCallAtSubmit', checked)}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3 py-1">
+            <div className="flex flex-col">
               <span className="text-sm text-foreground">Third-party disclosure clause</span>
               <span className="text-xs text-muted-foreground">Shows only on campaigns with a NAMED sponsor configured; this switch is the kill-switch. The agree-all block then includes sharing contact details with that named representative.</span>
             </div>

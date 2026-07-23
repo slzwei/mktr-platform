@@ -52,7 +52,9 @@ export const handleWebhook = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Missing call_id' });
   }
 
-  const result = await processRetellCall(callData);
+  // Event type rides alongside the unwrapped call: the screening branch acts
+  // on call_ended vs call_analyzed differently (verdicts live on analyzed).
+  const result = await processRetellCall(callData, { event: payload.event || null });
 
   logger.info('[Retell] Webhook result', { call_id: callId, ...result });
 

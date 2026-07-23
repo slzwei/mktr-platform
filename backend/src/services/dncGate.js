@@ -7,6 +7,36 @@ import { hasValidDncConsent } from './dncConsent.js';
 import { logger } from '../utils/logger.js';
 
 /**
+ * Screening handoff (docs/plans/retell-screening-calls.md §6): a DNC-
+ * deliverable lead on a screening campaign transitions to the NEXT gate
+ * (screening_pending) instead of releasing. Everything is dynamically imported
+ * HERE so dncGate's static graph is untouched; on any failure (module load,
+ * campaign fetch, lost fence) it returns { handled: false } and the caller
+ * falls through to the normal DNC release.
+ */
+async function defaultScreeningHandoff(prospect, { intendedAgentId, alreadyCharged }, log) {
+  try {
+    if (!prospect.campaignId) return { handled: false };
+    const [{ Campaign }, gateMod, dialerMod] = await Promise.all([
+      import('../models/index.js'),
+      import('./screeningGate.js'),
+      import('./retellScreeningService.js'),
+    ]);
+    const campaign = await Campaign.findByPk(prospect.campaignId).catch(() => null);
+    if (!campaign || !gateMod.screeningApplies({ campaign, prospect })) return { handled: false };
+    const handoff = await gateMod.transitionDncToScreening(prospect, { intendedAgentId, alreadyCharged });
+    if (!handoff.transitioned) return { handled: false };
+    dialerMod.startScreeningAttempt(prospect, { campaign }).catch((err) =>
+      log?.error?.('[Screening] post-DNC dial trigger error', { error: err?.message || String(err) })
+    );
+    return { handled: true };
+  } catch (err) {
+    log?.warn?.('[Screening] DNC handoff unavailable — plain release', { error: err?.message || String(err) });
+    return { handled: false };
+  }
+}
+
+/**
  * dncGate — the "born-held-pending, release-on-clear" state machine for the create path.
  * Design: docs/plans/dnc-scrubbing.md §5.3–§5.5. Modeled on releaseSweep.js (atomic
  * reason-scoped claim + in-tx authoritative charge + persistEventDeliveries outbox + flush),
@@ -18,6 +48,11 @@ const defaultDeps = {
   Prospect,
   ProspectActivity,
   User,
+  // Lazy screening handoff (plan §6): resolved by dynamic import at call time
+  // so this module's import graph stays exactly what existing unit-suite mocks
+  // expect. Injectable for tests; any load/handoff failure degrades to the
+  // plain DNC release below.
+  screeningHandoff: defaultScreeningHandoff,
   chargeLeadCredit,
   persistEventDeliveries,
   flushDeliveries,
@@ -166,6 +201,17 @@ export async function gateHeldDncLead(prospect, overrides = {}) {
   if (deliver) {
     if (consentOverride) {
       d.logger.info('[DNC] registered lead released on documented consent (override)', { prospectId: prospect.id });
+    }
+    // Screening handoff (plan §6): gate on ⇒ next hold instead of release.
+    // Gate off / feature dark / handoff race lost ⇒ byte-identical DNC release.
+    const handoff = await d.screeningHandoff(prospect, { intendedAgentId, alreadyCharged }, d.logger);
+    if (handoff?.handled) {
+      return {
+        outcome: 'held',
+        status: result.status,
+        screeningHandoff: true,
+        ...(consentOverride ? { consentOverride: true } : {}),
+      };
     }
     const rel = await d.releaseDncClearedLead({ prospect, agentId: intendedAgentId, alreadyCharged }, overrides);
     return {

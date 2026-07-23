@@ -523,7 +523,9 @@ describe('prospectAssignment (unit)', () => {
       ]);
       expect(where[Op.and][0][Op.or]).toEqual([
         { quarantinedAt: null },
-        { quarantineReason: { [Op.in]: ['no_funded_agent', 'returned_by_admin'] } },
+        // Screening holds joined the bulk-releasable set (deliberate admin
+        // override — docs/plans/retell-screening-calls.md §9.5).
+        { quarantineReason: { [Op.in]: ['no_funded_agent', 'returned_by_admin', 'screening_pending', 'screening_failed', 'screening_unreachable'] } },
       ]);
       expect(mocks.deductLeadCredit).not.toHaveBeenCalled();
     });

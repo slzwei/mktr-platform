@@ -182,6 +182,49 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
             {held && <div className="av2-kv"><span>held since</span><span>{fmtDateTime(p.quarantinedAt)}</span></div>}
             {held && <div className="av2-kv"><span>reason</span><span>{HELD_REASON_LABELS[p.quarantineReason] || p.quarantineReason || '—'}</span></div>}
           </section>
+          {(p.screeningVerdict || p.screeningMetadata || String(p.quarantineReason || '').startsWith('screening_')) && (() => {
+            const sm = p.screeningMetadata || {};
+            const verdictDetail = sm.verdictDetail || {};
+            const attempts = Object.values(sm.attempts || {})
+              .filter((a) => a && a.startedAt)
+              .sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
+            return (
+              <section>
+                <div className="av2-microcaps" style={{ marginBottom: 6 }}>AI Screening</div>
+                <div className="av2-kv">
+                  <span>verdict</span>
+                  <span>
+                    {p.screeningVerdict === 'qualified' ? 'Qualified'
+                      : p.screeningVerdict === 'not_qualified' ? 'Not qualified'
+                        : sm.unreachable ? 'Unreachable' : 'Pending'}
+                  </span>
+                </div>
+                {verdictDetail.reason && <div className="av2-kv"><span>reason</span><span>{verdictDetail.reason}</span></div>}
+                {verdictDetail.sentiment && <div className="av2-kv"><span>sentiment</span><span>{verdictDetail.sentiment}</span></div>}
+                <div className="av2-kv"><span>attempts</span><span>{p.screeningAttemptCount || attempts.length || 0}</span></div>
+                {verdictDetail.summary && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+                    {String(verdictDetail.summary).slice(0, 600)}
+                  </div>
+                )}
+                {attempts.some((a) => a.recordingUrl) && (
+                  <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
+                    {attempts.filter((a) => a.recordingUrl).map((a, i) => (
+                      <a
+                        key={a.token || i}
+                        href={a.recordingUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontSize: 12, color: 'var(--ink)', textDecoration: 'underline' }}
+                      >
+                        Recording — attempt {i + 1} ({fmtDateTime(a.startedAt)})
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })()}
           <section>
             <div className="av2-microcaps" style={{ marginBottom: 6 }}>Consent</div>
             <div className="av2-kv"><span>marketing</span><span>{p.sourceMetadata?.consent_contact === true ? 'yes' : p.sourceMetadata?.consent_contact === false ? 'no' : '—'}</span></div>

@@ -61,6 +61,30 @@ export function externalIdForDestination(agent, destination) {
  * outbound contact per channel. Returns null when the lead has no DNC data (scrubbing off
  * or not yet checked), so payloads are byte-for-byte unchanged when DNC is disabled.
  */
+/**
+ * AI-screening block for delivery payloads (plan §9.6). Null when the lead was
+ * never screened. `qualified: null` + `unreachable: true` = released unscreened
+ * after the retry policy exhausted.
+ */
+export function screeningPayloadBlock(prospect) {
+  if (!prospect) return null;
+  const meta = prospect.screeningMetadata;
+  if (!meta && !prospect.screeningVerdict) return null;
+  const detail = meta?.verdictDetail || {};
+  return {
+    qualified: prospect.screeningVerdict === 'qualified' ? true
+      : prospect.screeningVerdict === 'not_qualified' ? false
+        : null,
+    ...(meta?.unreachable === true ? { unreachable: true } : {}),
+    reason: detail.reason || null,
+    summary: detail.summary || null,
+    sentiment: detail.sentiment || null,
+    recordingUrl: detail.recordingUrl || null,
+    attempts: prospect.screeningAttemptCount || 0,
+    decidedAt: detail.decidedAt || null,
+  };
+}
+
 export function dncPayloadBlock(prospect) {
   if (!prospect || prospect.dncStatus == null) return null;
   return {
@@ -102,6 +126,7 @@ export function buildLeadCreatedPayload(prospect, routingMode, agentForWebhook, 
         recordingUrl: prospect.sourceMetadata?.recordingUrl || null,
         transcript: prospect.sourceMetadata?.retellCallId ? prospect.notes : null,
         dnc: dncPayloadBlock(prospect),
+        screening: screeningPayloadBlock(prospect),
         createdAt: prospect.createdAt
       },
       routing: {
@@ -164,6 +189,7 @@ export function buildLeadAssignedPayload(prospect, agent, prospectWithCampaign, 
         recordingUrl: meta.recordingUrl || null,
         transcript: meta.retellCallId ? prospect.notes : null,
         dnc: dncPayloadBlock(prospect),
+        screening: screeningPayloadBlock(prospect),
         createdAt: prospect.createdAt
       },
       routing: {

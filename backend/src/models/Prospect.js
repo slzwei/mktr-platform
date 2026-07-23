@@ -283,6 +283,37 @@ const Prospect = sequelize.define('Prospect', {
     type: DataTypes.JSONB,
     allowNull: true,
     comment: 'DNC check evidence (transactionId, createdTime, rawMsg, statusCode, checkOnBehalf, numberChecked).'
+  },
+  // --- AI screening-call gate (docs/plans/retell-screening-calls.md, migration 088) ---
+  // Discrete fence columns: every state transition is a single conditional UPDATE
+  // fencing on these — NEVER read-modify-write. NOTE: prospects.retellCallId is an
+  // ORIGIN discriminator (call_bot leads; suppresses CAPI via shouldFireCapi) and is
+  // never written for screened web leads.
+  screeningActiveCallId: {
+    type: DataTypes.STRING(80),
+    allowNull: true,
+    comment: "In-flight dial fence: 'pend_<token>' after claim, Retell call_id once bound. NULL = no active attempt."
+  },
+  screeningAttemptCount: {
+    type: DataTypes.SMALLINT,
+    allowNull: false,
+    defaultValue: 0,
+    comment: 'Dial attempts started (incl. dispatch failures).'
+  },
+  screeningNextAttemptAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'Sweep retry schedule (backoff / call-window deferral).'
+  },
+  screeningVerdict: {
+    type: DataTypes.STRING(16),
+    allowNull: true,
+    comment: "AI verdict: 'qualified' | 'not_qualified'. Qualified + still screening_pending = delivery-retry state."
+  },
+  screeningMetadata: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'Evidence only (state lives in the discrete columns): { intendedAgentId, alreadyCharged, chargeRefunded, attempts: {<token>: {…}}, verdictDetail }. Excluded from list projections (transcripts are detail-only).'
   }
 }, {
   tableName: 'prospects',

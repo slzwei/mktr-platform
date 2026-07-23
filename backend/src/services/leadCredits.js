@@ -254,7 +254,80 @@ export function makeLeadCreditsService(overrides = {}) {
     }
   }
 
-  return { deductLeadCredit, deductExternalLeadBalance, chargeLeadCredit };
+  /**
+   * Return ONE previously-charged credit to an agent (inverse of chargeLeadCredit).
+   * Used by the screening gate when a capture-charged lead terminalizes without
+   * delivery (screening_failed / screening_unreachable) — a funded agent must
+   * never pay for a lead they never received (plan §9.3).
+   *
+   * Refund target mirrors the charge tiers in reverse: the newest package
+   * assignment for THIS campaign (reactivating a just-completed one if needed),
+   * else the campaign-agnostic owed_leads_count bucket. Exact charge-row
+   * provenance is not tracked, so this is an accounting-level refund, not a
+   * row-level undo. Returns true if a credit was returned. Never throws when it
+   * owns the transaction; surfaces errors when the caller owns it (so the
+   * caller's state flip rolls back rather than refunding on a poisoned tx).
+   */
+  async function refundLeadCredit(agentId, campaignId, externalTransaction = null) {
+    if (!agentId) return false;
+
+    const ownTransaction = !externalTransaction;
+    const t = externalTransaction || await d.sequelize.transaction();
+    try {
+      let refunded = false;
+
+      if (campaignId) {
+        const [pkgRows] = await d.sequelize.query(
+          `WITH picked AS (
+               SELECT a.id
+                 FROM lead_package_assignments a
+                 JOIN lead_packages p ON p.id = a."leadPackageId"
+                WHERE a."agentId" = :agentId
+                  AND a.status IN ('active', 'completed')
+                  AND p."campaignId" = :campaignId
+                ORDER BY a."purchaseDate" DESC
+                LIMIT 1
+                FOR UPDATE OF a SKIP LOCKED
+           )
+           UPDATE lead_package_assignments lpa
+              SET "leadsRemaining" = lpa."leadsRemaining" + 1,
+                  status = 'active',
+                  "updatedAt" = NOW()
+             FROM picked
+            WHERE lpa.id = picked.id
+            RETURNING lpa.id`,
+          { replacements: { agentId, campaignId }, transaction: t }
+        );
+        refunded = Array.isArray(pkgRows) && pkgRows.length > 0;
+      }
+
+      if (!refunded) {
+        const [owedRows] = await d.sequelize.query(
+          `UPDATE users
+              SET owed_leads_count = owed_leads_count + 1, "updatedAt" = NOW()
+            WHERE id = :agentId
+            RETURNING id`,
+          { replacements: { agentId }, transaction: t }
+        );
+        refunded = Array.isArray(owedRows) && owedRows.length > 0;
+      }
+
+      if (ownTransaction) await t.commit();
+      if (refunded) {
+        d.logger.info('Lead credit refunded', { agentId, campaignId: campaignId || null });
+      }
+      return refunded;
+    } catch (error) {
+      d.logger.error('Error refunding lead credit', { error: error?.message || String(error), agentId, campaignId });
+      if (ownTransaction) {
+        await t.rollback().catch(() => {});
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  return { deductLeadCredit, deductExternalLeadBalance, chargeLeadCredit, refundLeadCredit };
 }
 
 // --- Backward-compatible named exports (house pattern) ---
@@ -262,3 +335,4 @@ const _default = makeLeadCreditsService();
 export const deductLeadCredit = _default.deductLeadCredit;
 export const deductExternalLeadBalance = _default.deductExternalLeadBalance;
 export const chargeLeadCredit = _default.chargeLeadCredit;
+export const refundLeadCredit = _default.refundLeadCredit;

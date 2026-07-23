@@ -306,6 +306,7 @@ function clampForm(raw) {
       sgPr: gates.sgPr === true,
       advisorExclusion: gates.advisorExclusion === true,
       dncCheck: gates.dncCheck === true,
+      screeningCall: gates.screeningCall === true,
     },
   };
   if (isPlainObject(f.terms)) {

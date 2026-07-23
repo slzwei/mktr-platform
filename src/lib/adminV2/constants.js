@@ -53,6 +53,9 @@ export const HELD_REASON_LABELS = {
   dnc_pending: 'DNC check pending',
   dnc_registered: 'DNC-registered',
   returned_by_admin: 'Returned by admin',
+  screening_pending: 'Screening call',
+  screening_failed: 'Screening: not qualified',
+  screening_unreachable: 'Screening: unreachable',
   other: 'Other',
 };
 

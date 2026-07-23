@@ -12,6 +12,7 @@ import { mintToken, hashToken, tokenHintOf } from './tokens.js';
 import { canEmailProspect, makeFulfilmentNotify } from './fulfilmentNotify.js';
 import { canWhatsAppProspect, waEnabled, waRecipient } from './whatsappService.js';
 import { isSendBlocked } from '../consentService.js';
+import { SCREENING_REASONS } from '../screeningConstants.js';
 
 const DEFAULT_RESERVATION_DAYS = 30;
 const DEFAULT_REDEMPTION_DAYS = 90;
@@ -233,7 +234,10 @@ export function makeEntitlementService(overrides = {}) {
     };
     try {
       if (!activationId && !prospect?.campaignId) return { entitlement: null, reason: 'no_campaign' };
-      if (prospect?.quarantinedAt) return fail('quarantined');
+      // Screening holds are reward-eligible (screening plan D8): the reward was
+      // earned by verified signup; the AI gate withholds AGENT delivery only.
+      // Quota / DNC / external holds stay excluded.
+      if (prospect?.quarantinedAt && !SCREENING_REASONS.includes(prospect.quarantineReason)) return fail('quarantined');
       if (!verificationStampOf(prospect)) return fail('phone_not_verified');
 
       let activation;
@@ -740,7 +744,8 @@ export function makeEntitlementService(overrides = {}) {
       const prospects = await d.Prospect.findAll({
         where: {
           campaignId: activation.campaignId,
-          quarantinedAt: null,
+          // Screening holds included (D8) — same eligibility as the hook.
+          [Op.or]: [{ quarantinedAt: null }, { quarantineReason: { [Op.in]: SCREENING_REASONS } }],
           createdAt: { [Op.gt]: new Date(Date.now() - sinceHours * 3600 * 1000) },
           id: {
             [Op.notIn]: d.sequelize.literal(
