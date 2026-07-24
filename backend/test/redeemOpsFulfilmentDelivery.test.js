@@ -384,6 +384,72 @@ describe('sweeps deliver', () => {
   });
 });
 
+describe('draw-rail recovery (2026-07-25 regression: the sweep must never mint a voucher on a draw session)', () => {
+  let drawCampaign, drawActivation;
+
+  beforeAll(async () => {
+    drawCampaign = await createTestCampaign(admin.user.id, {
+      name: 'Draw Recovery Campaign',
+      design_config: { luckyDraw: { enabled: true, closesAt: '2027-06-30', multiplier: 10 } },
+    });
+    drawActivation = await Activation.create({
+      partnerOrganisationId: partner.id, rewardOfferId: offer.id, campaignId: drawCampaign.id,
+      campaignNameSnapshot: drawCampaign.name, allocatedQuantity: 5, status: 'active',
+      unlockPolicy: 'agent_unlock', createdBy: admin.user.id,
+    });
+  });
+
+  test('recovery of an issued draw session resends the boost receipt — no token mint, no voucher event', async () => {
+    const prospect = await makeProspect({ campaignId: drawCampaign.id });
+    const issue = await svc.issueForProspect(prospect);
+    expect(issue.reason).toBeNull();
+    expect(issue.entitlement.activationId).toBe(drawActivation.id);
+    await settle();
+
+    // Draw unlock: issued + token-free; arm the boost-receipt email to FAIL
+    // so the sweep sees a stranded delivery.
+    sendEmailMock.mockClear();
+    sendEmailMock.mockResolvedValueOnce({ success: false, message: 'mailer down' });
+    const unlock = await svc.unlockEntitlement(
+      { presentationToken: issue.presentationToken }, agentExt.user, 'agent_scan'
+    );
+    expect(unlock.drawBoost).toMatchObject({ multiplier: 10 });
+    expect(unlock.voucherToken).toBeNull();
+    await settle();
+
+    const failed = await RedemptionEvent.findAll({
+      where: { entitlementId: issue.entitlement.id, type: 'notify_failed' },
+    });
+    expect(failed.map((e) => e.metadata?.kind)).toContain('boost_receipt');
+
+    await backdateHistory(issue.entitlement.id, 15);
+    // The sweep's in-flight window for issued rows keys off unlockedAt.
+    await sequelize.query(
+      `UPDATE reward_entitlements SET "unlockedAt" = NOW() - INTERVAL '15 minutes' WHERE id = :id`,
+      { replacements: { id: issue.entitlement.id } }
+    );
+    sendEmailMock.mockClear();
+
+    const recovered = await svc.reconcileMissedDeliveries();
+    expect(recovered).toBeGreaterThanOrEqual(1);
+    await settle();
+
+    // The resent email is the ×N receipt for THIS prospect…
+    const mine = sendEmailMock.mock.calls.map((c) => c[0]).find((m) => m.to === prospect.email);
+    expect(mine).toBeTruthy();
+    // …and the row NEVER acquired voucher credentials.
+    const row = await RewardEntitlement.findByPk(issue.entitlement.id);
+    expect(row.status).toBe('issued');
+    expect(row.tokenHash).toBeNull();
+    expect(row.tokenHint).toBeNull();
+
+    const events = await RedemptionEvent.findAll({ where: { entitlementId: issue.entitlement.id } });
+    expect(events.filter((e) => e.metadata?.kind === 'voucher')).toHaveLength(0);
+    const resend = events.find((e) => e.type === 'manual_override' && e.metadata?.action === 'auto_resend');
+    expect(resend?.metadata?.kind).toBe('boost_receipt');
+  });
+});
+
 describe('resend / share', () => {
   async function issueBackdated(overrides = {}) {
     const prospect = await makeProspect(overrides);

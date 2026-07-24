@@ -35,7 +35,15 @@ export function boostDeadlineLong(ymd) {
 }
 
 export function makeDrawLink(overrides = {}) {
-  const d = { Activation, Campaign, ...overrides };
+  // Drop undefined override VALUES: a caller forwarding a dep it doesn't have
+  // (`{ Campaign: d.Campaign }` with no Campaign in its deps) must fall back
+  // to the real model, not clobber it — that exact shape took down every
+  // production unlock on 2026-07-25. Deliberate absence in a hermetic test
+  // should use a throwing stub or null, never undefined.
+  const definedOverrides = Object.fromEntries(
+    Object.entries(overrides ?? {}).filter(([, value]) => value !== undefined)
+  );
+  const d = { Activation, Campaign, ...definedOverrides };
 
   /** @returns {Promise<null | {campaignId, drawName, multiplier, boostClosesAt, boostCutoffMs}>} */
   async function drawContextForActivation(activationOrId) {
