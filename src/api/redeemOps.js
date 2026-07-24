@@ -346,6 +346,13 @@ export const redeemOpsApi = {
     // Full response returned — the toast needs the server's message.
     return apiClient.post(`/redeem-ops/entitlements/${id}/resend-pass`, { channel });
   },
+  async undoSession(id, { reason } = {}) {
+    // PR-4 (CX23): reverses a recorded lucky-draw session — the entry drops
+    // back to 1× (append-only unlock_reversed event); a genuine re-scan
+    // records again. Draw rails only; server refuses after boostClosesAt.
+    const res = await apiClient.post(`/redeem-ops/entitlements/${id}/undo-session`, { reason });
+    return res.data;
+  },
   async cancelEntitlement(id, { reason } = {}) {
     // Voids an eligible/issued entitlement: the QR/link dies, inventory is
     // returned to the activation pool, and the one-live-reward-per-phone slot

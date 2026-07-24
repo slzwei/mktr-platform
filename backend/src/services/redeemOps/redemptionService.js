@@ -26,6 +26,9 @@ export function makeRedemptionService(overrides = {}) {
     inventory: makeInventoryService(),
     audit: makeRedeemOpsAuditService(),
     redemptionOutcome: makeRedemptionOutcomeService(),
+    // PR-4/CX22: draw rails are never partner-redeemable — lazy import keeps
+    // the static graph unchanged for existing unit mocks.
+    drawContextForActivation: async (id) => (await import('./drawLink.js')).drawContextForActivation(id),
     ...overrides,
   };
 
@@ -76,6 +79,38 @@ export function makeRedemptionService(overrides = {}) {
     if (!entitlement) {
       throw new AppError('Voucher not found', 404);
     }
+    // Draw rails (PR-4/CX22): nothing on them is a partner voucher. An
+    // ELIGIBLE pass verifies as the scannable "record session" affordance
+    // (the ops scanner's happy path); a recorded one reports ×N-confirmed.
+    // Neither is redeemable — complete() refuses below.
+    const drawCtx = await d.drawContextForActivation(entitlement.activationId).catch(() => null);
+    if (drawCtx) {
+      await writeEvent(null, {
+        entitlementId: entitlement.id, type: 'verify_attempt', actorType,
+        actorUserId: actor?.id || null, metadata: { draw: true },
+      });
+      const windowOpen = !drawCtx.boostCutoffMs || Date.now() < drawCtx.boostCutoffMs;
+      return {
+        entitlement,
+        valid: false, // never partner-redeemable
+        drawLinked: true,
+        drawMultiplier: drawCtx.multiplier,
+        state: entitlement.status === 'eligible'
+          ? 'draw_pass'
+          : entitlement.status === 'issued' ? 'draw_session_recorded' : entitlement.status,
+        canRecordSession: entitlement.status === 'eligible' && windowOpen,
+        boostWindowOpen: windowOpen,
+        reward: {
+          title: entitlement.rewardOffer?.publicTitle || entitlement.rewardOffer?.title,
+          tokenHint: null,
+          expiresAt: entitlement.expiresAt,
+        },
+        // Same identity shape as the voucher path (redemptions.verify unmasks)
+        holder: entitlement.prospect
+          ? { firstName: entitlement.prospect.firstName, lastName: entitlement.prospect.lastName, phone: entitlement.prospect.phone }
+          : null,
+      };
+    }
     if (entitlement._matchedViaPresentation && entitlement.status === 'eligible') {
       await writeEvent(null, {
         entitlementId: entitlement.id, type: 'rejected', actorType,
@@ -110,6 +145,15 @@ export function makeRedemptionService(overrides = {}) {
   async function complete(token, { locationId = null, method = 'code', notes = null } = {}, actor, { actorType = 'staff' } = {}) {
     const entitlement = await findByVoucherToken(token);
     if (!entitlement) throw new AppError('Voucher not found', 404);
+    // Draw rails (PR-4/CX22): a recorded session is BOOST EVIDENCE, not a
+    // voucher — completing a "redemption" on it would consume inventory for a
+    // reward nobody hands over and mark ×N evidence as spent.
+    const completeDrawCtx = await d.drawContextForActivation(entitlement.activationId).catch(() => null);
+    if (completeDrawCtx) {
+      const err = new AppError('Lucky-draw session passes have no partner redemption — the scan already recorded the ×N boost.', 409);
+      err.data = { code: 'DRAW_PASS_NOT_REDEEMABLE' };
+      throw err;
+    }
     if (entitlement._matchedViaPresentation && entitlement.status === 'eligible') {
       throw new AppError('This is a reservation pass, not a voucher — the reward unlocks at the financial review.', 422);
     }

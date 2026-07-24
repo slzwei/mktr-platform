@@ -25,6 +25,8 @@ router.post('/entitlements/unlock', requireRedeemOps('entitlements.issue_manual'
 // Resend/share: re-mints the current credential (old QR dies — deliberate) and
 // emails it, or returns the link once for staff to WhatsApp themselves.
 router.post('/entitlements/:id/resend-pass', requireRedeemOps('entitlements.issue_manual'), ctrl.resendPass);
+// PR-4 (CX23): undo a recorded draw session — draw rails only, pre-cutoff only.
+router.post('/entitlements/:id/undo-session', requireRedeemOps('entitlements.issue_manual'), ctrl.undoSessionUnlock);
 router.patch('/entitlements/:id/cancel', requireRedeemOps('entitlements.issue_manual'), ctrl.cancelEntitlement);
 
 // Redemption console (voucher verify → complete; unmasked holder identity here only)

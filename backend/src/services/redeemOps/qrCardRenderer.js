@@ -122,6 +122,11 @@ export async function renderQrCardPng({
   shortCode,
   expiresAt,
   wordmark = 'Redeem.',
+  // PR-4 (D5): lucky-draw voice — {multiplier, boostDeadlineLong}. The frame
+  // strings swap to the D5 line-set ("LUCKY DRAW PASS" / "You're in." / plain
+  // "Nx your chances…"); everything trial-shaped stays byte-identical when
+  // absent.
+  draw = null,
 }) {
   if (state !== 'pass' && state !== 'voucher') throw new Error(`unknown card state: ${state}`);
   if (!qrContent) throw new Error('qrContent required');
@@ -148,15 +153,26 @@ export async function renderQrCardPng({
   const markBase = mark.endsWith('.') ? mark.slice(0, -1) : mark;
 
   const isPass = state === 'pass';
-  const kicker = isPass ? 'RESERVATION PASS' : 'VOUCHER · UNLOCKED';
-  const displayWord = isPass ? 'Reserved.' : 'Unlocked.';
-  const statusLine = isPass
-    ? `Held for ${first} — unlock at your appointment`
-    : 'Unlocked — present once to redeem';
-  const codeLine = isPass
-    ? 'CODE · REVEALED ON UNLOCK'
-    : (code ? `CODE ${code}` : 'ONE-TIME VOUCHER');
-  const expiryLine = expiry ? (isPass ? `EXPIRES ${expiry}` : `VALID TILL ${expiry}`).toUpperCase() : null;
+  const isDraw = !!draw;
+  const drawMult = isDraw && Number.isInteger(draw.multiplier) ? draw.multiplier : 10;
+  const kicker = isDraw ? 'LUCKY DRAW PASS' : isPass ? 'RESERVATION PASS' : 'VOUCHER · UNLOCKED';
+  const displayWord = isDraw ? "You're in." : isPass ? 'Reserved.' : 'Unlocked.';
+  const statusLine = isDraw
+    ? `Held for ${first} — 1 chance in the draw now`
+    : isPass
+      ? `Held for ${first} — unlock at your appointment`
+      : 'Unlocked — present once to redeem';
+  const codeLine = isDraw
+    ? `${drawMult}X YOUR CHANCES WHEN YOU MEET A CONSULTANT`
+    : isPass
+      ? 'CODE · REVEALED ON UNLOCK'
+      : (code ? `CODE ${code}` : 'ONE-TIME VOUCHER');
+  // One-date-per-surface (#252): the draw card carries the USER-relevant
+  // deadline (complete the review by boostClosesAt); the internal reservation
+  // expiry never prints on it.
+  const expiryLine = isDraw
+    ? (draw.boostDeadlineLong ? `COMPLETE YOUR REVIEW BY ${String(draw.boostDeadlineLong).toUpperCase()}` : null)
+    : expiry ? (isPass ? `EXPIRES ${expiry}` : `VALID TILL ${expiry}`).toUpperCase() : null;
 
   const card = el(
     {

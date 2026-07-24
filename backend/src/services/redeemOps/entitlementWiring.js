@@ -25,6 +25,9 @@ export function makeWiredEntitlementService(overrides = {}) {
     notifyUnlock: (args) => notify.sendVoucherEmail(args),
     notifyReservationWa: (args) => wa.sendReservationWhatsApp(args),
     notifyUnlockWa: (args) => wa.sendVoucherWhatsApp(args),
+    // PR-4: "×N confirmed" receipt at a recorded draw session (email-only —
+    // no approved WA template for it yet).
+    notifyBoostReceipt: (args) => notify.sendBoostReceiptEmail(args),
     ...overrides,
   });
 }
