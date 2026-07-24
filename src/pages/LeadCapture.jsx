@@ -41,6 +41,8 @@ import {
   trackTikTokLead,
 } from '../lib/tiktokPixel';
 import { getOrCreateVcState, markVcFired } from '../lib/pixelSession';
+import { resolveMetaPixelId, resolveTikTokPixelId } from '../lib/pixelIds';
+import { trackFunnelEvent } from '../lib/pixelCustom';
 
 export default function LeadCapture() {
   const location = useLocation();
@@ -114,8 +116,8 @@ export default function LeadCapture() {
     const vc = getOrCreateVcState(campaign.id);
     viewEventIdRef.current = vc.eventId;
 
-    if (!viewContentFiredRef.current && !vc.firedMeta && shouldTrack(trackCtx)) {
-      const pixelId = campaign.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
+    const pixelId = resolveMetaPixelId(campaign);
+    if (!viewContentFiredRef.current && !vc.firedMeta && shouldTrack({ ...trackCtx, pixelId })) {
       if (pixelId) {
         initPixel(pixelId);
         // Establish _fbp now (gated by shouldTrack above) so the Lead submit — and
@@ -131,8 +133,8 @@ export default function LeadCapture() {
       }
     }
 
-    if (!ttViewContentFiredRef.current && !vc.firedTiktok && shouldTrackTikTok(trackCtx)) {
-      const ttPixelId = campaign?.tiktokPixelId || import.meta.env.VITE_TIKTOK_PIXEL_ID;
+    const ttPixelId = resolveTikTokPixelId(campaign);
+    if (!ttViewContentFiredRef.current && !vc.firedTiktok && shouldTrackTikTok({ ...trackCtx, pixelId: ttPixelId })) {
       if (ttPixelId) {
         initTikTokPixel(ttPixelId);
         trackTikTokViewContent(
@@ -153,8 +155,8 @@ export default function LeadCapture() {
     const trackCtx = { campaign, pathname: location.pathname, search: location.search };
     const status = result?.title || result?.profileId || undefined;
 
-    if (shouldTrack(trackCtx)) {
-      const pixelId = campaign?.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
+    const pixelId = resolveMetaPixelId(campaign);
+    if (shouldTrack({ ...trackCtx, pixelId })) {
       if (pixelId) {
         initPixel(pixelId);
         trackCompleteRegistration(
@@ -164,8 +166,8 @@ export default function LeadCapture() {
       }
     }
 
-    if (shouldTrackTikTok(trackCtx)) {
-      const ttPixelId = campaign?.tiktokPixelId || import.meta.env.VITE_TIKTOK_PIXEL_ID;
+    const ttPixelId = resolveTikTokPixelId(campaign);
+    if (shouldTrackTikTok({ ...trackCtx, pixelId: ttPixelId })) {
       if (ttPixelId) {
         initTikTokPixel(ttPixelId);
         trackTikTokCompleteRegistration(
@@ -377,26 +379,25 @@ export default function LeadCapture() {
         // gate is enforced upstream in CampaignSignupForm; reaching this branch
         // means the conversion is real.
         const trackCtx = { campaign, pathname: location.pathname, search: location.search };
-        if (shouldTrack(trackCtx)) {
-          const pixelId = campaign?.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
+        // No value/currency: a hardcoded 0 told Meta every lead was worth
+        // SGD 0.00 and desynced from CAPI (which sends none). Real value ships
+        // browser+server together as a fast-follow.
+        const pixelId = resolveMetaPixelId(campaign);
+        if (shouldTrack({ ...trackCtx, pixelId })) {
           if (pixelId) {
             initPixel(pixelId);
             trackLead(
-              {
-                content_name: campaign?.name,
-                value: 0,
-                currency: 'SGD',
-              },
+              { content_name: campaign?.name },
               leadEventIdRef.current
             );
           }
         }
-        if (shouldTrackTikTok(trackCtx)) {
-          const ttPixelId = campaign?.tiktokPixelId || import.meta.env.VITE_TIKTOK_PIXEL_ID;
+        const ttPixelId = resolveTikTokPixelId(campaign);
+        if (shouldTrackTikTok({ ...trackCtx, pixelId: ttPixelId })) {
           if (ttPixelId) {
             initTikTokPixel(ttPixelId);
             trackTikTokLead(
-              { content_name: campaign?.name, value: 0, currency: 'SGD' },
+              { content_name: campaign?.name },
               leadEventIdRef.current
             );
           }
@@ -408,7 +409,15 @@ export default function LeadCapture() {
       }
     } catch (err) {
       const msg = err?.message || '';
-      if (/already signed up for this campaign/i.test(msg)) {
+      // Structured 409 first (the backend sets data.alreadyRegistered); the
+      // copy regex stays only as a fallback so a wording/i18n change can't
+      // silently break the duplicate UX.
+      const isDuplicate =
+        (err?.status === 409 && err?.data?.alreadyRegistered === true) ||
+        /already signed up for this campaign/i.test(msg);
+      if (isDuplicate) {
+        // Preview/demo routes are already suppressed inside the shared gate.
+        trackFunnelEvent('duplicate_blocked', { campaign });
         setDuplicateDetected(true);
         setDuplicateCountdown(5);
         setSubmitted(false);

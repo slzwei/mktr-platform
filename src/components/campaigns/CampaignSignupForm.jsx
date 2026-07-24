@@ -13,6 +13,7 @@ import {
 } from '@/lib/consentCopy';
 import { formatDateInput, getAgeValidationError, getAgeRestrictionHint, displayPhone } from '@/components/campaigns/signup/dateUtils';
 import { LIMITS } from '@/lib/designConfigV2';
+import { trackFunnelEvent } from '@/lib/pixelCustom';
 
 /**
  * Public lead-capture form. Visual style is locked to the warm-cream/Fraunces
@@ -175,6 +176,10 @@ export default function CampaignSignupForm({
         { skipAuth: true }
       );
       if (response.success) {
+        // Funnel diagnostic — fired HERE (not in OTPVerification) because this
+        // is where send-success is actually known, and because every funnel
+        // variant (classic, quiz, guided_review, v2) reuses this form.
+        trackFunnelEvent('otp_sent', { campaign, previewMode });
         setOtpState('pending');
         setResendCooldown(30);
       } else {
@@ -222,6 +227,7 @@ export default function CampaignSignupForm({
       );
       const verified = response.success && (response.data?.verified === true || response.data?.status === 'approved');
       if (verified) {
+        trackFunnelEvent('otp_verified', { campaign, previewMode });
         setLoading(null);
         setError('');
         setShowSuccessTick(true); // panel plays the success/collapse animation, then calls onVerified()

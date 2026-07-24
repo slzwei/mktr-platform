@@ -47,6 +47,21 @@ describe('shouldTrack', () => {
     expect(shouldTrack({ pathname: '/LeadCapture' })).toBe(false);
   });
 
+  it('an explicit per-campaign pixelId satisfies the gate even with no env id', () => {
+    vi.stubEnv('VITE_META_PIXEL_ID', '');
+    expect(shouldTrack({ pathname: '/LeadCapture', pixelId: 'campaign-pixel-1' })).toBe(true);
+  });
+
+  it('an empty explicit pixelId blocks the gate even when the env id is set', () => {
+    expect(shouldTrack({ pathname: '/LeadCapture', pixelId: '' })).toBe(false);
+  });
+
+  it('an explicit pixelId does NOT bypass route/preview suppression', () => {
+    expect(shouldTrack({ pathname: '/preview', pixelId: 'campaign-pixel-1' })).toBe(false);
+    expect(shouldTrack({ pathname: '/LeadCapture', search: '?preview=true', pixelId: 'x' })).toBe(false);
+    expect(shouldTrack({ pathname: '/LeadCapture', campaign: { is_test_data: true }, pixelId: 'x' })).toBe(false);
+  });
+
   it('returns false on /preview', () => {
     expect(shouldTrack({ pathname: '/preview' })).toBe(false);
   });

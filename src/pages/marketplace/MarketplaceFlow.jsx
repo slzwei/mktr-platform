@@ -14,11 +14,13 @@ import { composeValueLine, fmtDateLong, isDrawCampaign, boostOf, offerUnavailabi
 import { formatDateInput, getAgeValidationError } from '@/components/campaigns/signup/dateUtils';
 import {
   shouldTrack, generateEventId, captureFbcFromUrl, captureUtmsFromUrl,
-  readFbc, readFbp, readUtms, ensureFbp, initPixel, trackEvent, trackLead, trackCustomEvent,
+  readFbc, readFbp, readUtms, ensureFbp, initPixel, trackEvent, trackLead,
 } from '@/lib/metaPixel';
+import { resolveMetaPixelId, resolveTikTokPixelId } from '@/lib/pixelIds';
+import { trackFunnelEvent } from '@/lib/pixelCustom';
 import {
   shouldTrackTikTok, captureTtclidFromUrl, readTtclid, readTtp,
-  initTikTokPixel, trackTikTokViewContent, trackTikTokEvent, trackTikTokLead,
+  initTikTokPixel, trackTikTokViewContent, trackTikTokLead,
 } from '@/lib/tiktokPixel';
 import { getOrCreateVcState, markVcFired } from '@/lib/pixelSession';
 
@@ -152,8 +154,8 @@ export default function MarketplaceFlow() {
     if (!campaign) return;
     const trackCtx = { campaign, pathname: window.location.pathname, search: window.location.search };
     const vc = getOrCreateVcState(campaign.id);
-    if (!vc.firedMeta && shouldTrack(trackCtx)) {
-      const pixelId = campaign.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
+    const pixelId = resolveMetaPixelId(campaign);
+    if (!vc.firedMeta && shouldTrack({ ...trackCtx, pixelId })) {
       if (pixelId) {
         initPixel(pixelId);
         ensureFbp();
@@ -165,8 +167,8 @@ export default function MarketplaceFlow() {
         markVcFired(campaign.id, 'meta');
       }
     }
-    if (!vc.firedTiktok && shouldTrackTikTok(trackCtx)) {
-      const ttPixelId = campaign.tiktokPixelId || import.meta.env.VITE_TIKTOK_PIXEL_ID;
+    const ttPixelId = resolveTikTokPixelId(campaign);
+    if (!vc.firedTiktok && shouldTrackTikTok({ ...trackCtx, pixelId: ttPixelId })) {
       if (ttPixelId) {
         initTikTokPixel(ttPixelId);
         trackTikTokViewContent({ content_name: listingTitleOf(campaign), content_type: 'marketplace' }, vc.eventId);
@@ -198,11 +200,9 @@ export default function MarketplaceFlow() {
   const boost = boostOf(campaign);
   const act = dc.activation || {};
   const needAck = act.required === true;
-  const trackCustom = (name, params = {}) => {
-    const trackCtx = { campaign, pathname: window.location.pathname, search: window.location.search };
-    if (shouldTrack(trackCtx)) trackCustomEvent(name, params);
-    if (shouldTrackTikTok(trackCtx)) trackTikTokEvent(name, params);
-  };
+  // Shared with the classic funnel (CampaignSignupForm) so both emit the same
+  // diagnostics through the same gate.
+  const trackCustom = (name, params = {}) => trackFunnelEvent(name, { campaign, params });
 
   const steps = useMemo(() => {
     if (!campaign) return [];
@@ -314,8 +314,9 @@ export default function MarketplaceFlow() {
         try {
           const d = await apiClient.post('/dnc/check', { phone: form.phone, countryCode: '+65', campaignId: campaign.id }, { skipAuth: true });
           const hit = d?.data?.registered === true;
+          // No pixel event here: a person's DNC-registry status is not
+          // something we send to ad platforms, and it bought no ads value.
           setDnc({ checked: true, hit, consent: false });
-          if (hit) trackCustom('dnc_gate_shown');
         } catch {
           setDnc({ checked: true, hit: false, consent: false }); // fails open, like production
         }
@@ -380,13 +381,13 @@ export default function MarketplaceFlow() {
       const resp = await apiClient.post('/prospects', payload, { skipAuth: true });
       if (resp?.success) {
         const trackCtx = { campaign, pathname: window.location.pathname, search: window.location.search };
-        if (shouldTrack(trackCtx)) {
+        if (shouldTrack({ ...trackCtx, pixelId: resolveMetaPixelId(campaign) })) {
           trackLead(
             { content_ids: [campaign.id], content_name: listingTitleOf(campaign), content_category: dc.category || 'marketplace' },
             leadEventIdRef.current
           );
         }
-        if (shouldTrackTikTok(trackCtx)) {
+        if (shouldTrackTikTok({ ...trackCtx, pixelId: resolveTikTokPixelId(campaign) })) {
           trackTikTokLead({ content_name: listingTitleOf(campaign) }, leadEventIdRef.current);
         }
         if (isDraw) trackCustom('draw_entry_confirmed');
@@ -783,7 +784,6 @@ export default function MarketplaceFlow() {
                 onClick={() => {
                   const next = !dnc.consent;
                   setDnc((p) => ({ ...p, consent: next }));
-                  if (next) trackCustom('dnc_consent_given');
                 }}
               >
                 <span className="rm-check-box">{dnc.consent ? '✓' : ''}</span>
