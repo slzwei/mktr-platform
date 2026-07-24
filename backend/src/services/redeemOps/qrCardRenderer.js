@@ -1,25 +1,29 @@
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
+import { loadEngine, el, txt, clean, renderSquarePng } from './cardEngine.js';
+import { renderDrawPassPng } from './drawPassRenderer.js';
+import { longDate } from '../../utils/sgtTime.js';
 
 /**
  * Editorial voucher-card compositor — wraps the reward QR in the branded
  * "Editorial" frame (claude.ai/design "QR Card Frames" family 1c) so the PNG
  * that lands in WhatsApp / email reads as a voucher, not a bare code.
  *
- * Two states of one card: 'pass' (cream, gold "Reserved.") before unlock,
+ * Two states of one card: 'pass' (cream, gold "Reserved.") before unlock and
  * 'voucher' (full terracotta, "Unlocked.") after. 1080×1080, QR on a 594px
  * white panel (55% width, quiet zone ≥4 modules) with the title and QR inside
  * the middle band WhatsApp's chat-bubble crop preserves.
  *
+ * THIS FRAME IS FOR TRIAL REWARDS. A lucky-draw entitlement is a different
+ * promise — no partner, no voucher, a multiplier instead of a code — so when a
+ * `draw` context is present every state routes to the dark "Vault" frame in
+ * drawPassRenderer.js instead. Callers keep ONE entry point; the branch lives
+ * here so no sender has to know which artwork it is asking for.
+ *
  * Pipeline: satori (layout + text→paths with the bundled Tropic fonts, so no
  * system-font dependency) → resvg (SVG→PNG). Engine + fonts load lazily and
- * cache; senders treat any throw here as "fall back to the bare QR", so a
- * broken native dep degrades delivery quality, never delivery.
+ * cache (cardEngine.js); senders treat any throw here as "fall back to the
+ * bare QR", so a broken native dep degrades delivery quality, never delivery.
  */
-
-const FONT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../assets/fonts');
 
 const PALETTE = {
   pass: {
@@ -58,41 +62,6 @@ const PALETTE = {
   },
 };
 
-let enginePromise = null;
-async function loadEngine() {
-  if (!enginePromise) {
-    enginePromise = (async () => {
-      const [{ default: satori }, { Resvg }] = await Promise.all([
-        import('satori'),
-        import('@resvg/resvg-js'),
-      ]);
-      const font = (file) => readFile(path.join(FONT_DIR, file));
-      const fonts = [
-        { name: 'Fraunces', data: await font('fraunces-600.ttf'), weight: 600, style: 'normal' },
-        { name: 'Fraunces', data: await font('fraunces-italic-400.ttf'), weight: 400, style: 'italic' },
-        { name: 'Fraunces', data: await font('fraunces-italic-600.ttf'), weight: 600, style: 'italic' },
-        { name: 'Albert Sans', data: await font('albertsans-400.ttf'), weight: 400, style: 'normal' },
-        { name: 'Albert Sans', data: await font('albertsans-600.ttf'), weight: 600, style: 'normal' },
-        { name: 'Albert Sans', data: await font('albertsans-800.ttf'), weight: 800, style: 'normal' },
-        { name: 'JetBrains Mono', data: await font('jetbrainsmono-600.ttf'), weight: 600, style: 'normal' },
-      ];
-      return { satori, Resvg, fonts };
-    })();
-    // A transient failure (e.g. fonts unreadable mid-deploy) must not poison the cache.
-    enginePromise.catch(() => { enginePromise = null; });
-  }
-  return enginePromise;
-}
-
-const el = (style, children) => ({ type: 'div', props: { style: { display: 'flex', ...style }, children } });
-const txt = (style, text) => ({ type: 'div', props: { style, children: text } });
-
-/** Meta/WhatsApp-safe single-line text: collapse whitespace, cap length. */
-function clean(value, max, fallback = '') {
-  const s = String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
-  return s || fallback;
-}
-
 function formatExpiry(expiresAt) {
   if (!expiresAt) return null;
   const d = new Date(expiresAt);
@@ -101,17 +70,19 @@ function formatExpiry(expiresAt) {
 }
 
 /**
- * Renders the Editorial QR card as a 1080×1080 PNG buffer.
+ * Renders the consumer credential card as a 1080×1080 PNG buffer — the
+ * Editorial frame for trial rewards, the Vault frame when `draw` is present.
  *
  * @param {object} opts
- * @param {'pass'|'voucher'} opts.state
- * @param {string} opts.qrContent    encoded verbatim (claim link for the pass, raw token for the voucher)
+ * @param {'pass'|'voucher'|'boost'} opts.state  'boost' is draw-only (the receipt at a recorded session)
+ * @param {string} [opts.qrContent]  encoded verbatim (claim link for the pass, raw token for the voucher); unused and optional for 'boost'
  * @param {string} [opts.rewardName]
  * @param {string} [opts.partnerName]
  * @param {string} [opts.customerFirstName]
  * @param {string} [opts.shortCode]  voucher manual-fallback code (tokenHint)
  * @param {Date|string|null} [opts.expiresAt]
  * @param {string} [opts.wordmark]   brand wordmark incl. trailing period, e.g. 'Redeem.'
+ * @param {null|{multiplier, prize, boostClosesAt, drawOn, passTheme}} [opts.draw]
  */
 export async function renderQrCardPng({
   state,
@@ -122,13 +93,37 @@ export async function renderQrCardPng({
   shortCode,
   expiresAt,
   wordmark = 'Redeem.',
-  // PR-4 (D5): lucky-draw voice — {multiplier, boostDeadlineLong}. The frame
-  // strings swap to the D5 line-set ("LUCKY DRAW PASS" / "You're in." / plain
-  // "Nx your chances…"); everything trial-shaped stays byte-identical when
+  // Lucky-draw context. Presence routes the whole render to the Vault frame
+  // (drawPassRenderer.js); everything trial-shaped stays byte-identical when
   // absent.
   draw = null,
 }) {
-  if (state !== 'pass' && state !== 'voucher') throw new Error(`unknown card state: ${state}`);
+  if (state !== 'pass' && state !== 'voucher' && state !== 'boost') {
+    throw new Error(`unknown card state: ${state}`);
+  }
+
+  if (draw) {
+    // 'voucher' cannot happen on a draw rail (a boost mints no redeemable
+    // token) — if it ever does, the entry pass is the honest artwork.
+    return renderDrawPassPng({
+      variant: state === 'boost' ? 'boost' : 'pass',
+      qrContent,
+      multiplier: draw.multiplier,
+      prize: draw.prize,
+      firstName: customerFirstName,
+      // Accept either the raw YMD or a pre-formatted long date, so callers that
+      // already formatted for their own copy don't have to unformat.
+      deadlineLong: draw.boostDeadlineLong || longDate(draw.boostClosesAt) || null,
+      drawDateLong: draw.drawDateLong || longDate(draw.drawOn) || null,
+      theme: draw.passTheme,
+      wordmark,
+    });
+  }
+
+  // 'boost' only exists on the draw rails — reaching here means a caller lost
+  // its draw context, and a terracotta "Boosted." card would be a lie about a
+  // partner voucher. Throw so the sender ships without an image instead.
+  if (state === 'boost') throw new Error('boost cards require a draw context');
   if (!qrContent) throw new Error('qrContent required');
   const { satori, Resvg, fonts } = await loadEngine();
   const c = PALETTE[state];
@@ -153,26 +148,15 @@ export async function renderQrCardPng({
   const markBase = mark.endsWith('.') ? mark.slice(0, -1) : mark;
 
   const isPass = state === 'pass';
-  const isDraw = !!draw;
-  const drawMult = isDraw && Number.isInteger(draw.multiplier) ? draw.multiplier : 10;
-  const kicker = isDraw ? 'LUCKY DRAW PASS' : isPass ? 'RESERVATION PASS' : 'VOUCHER · UNLOCKED';
-  const displayWord = isDraw ? "You're in." : isPass ? 'Reserved.' : 'Unlocked.';
-  const statusLine = isDraw
-    ? `Held for ${first} — 1 chance in the draw now`
-    : isPass
-      ? `Held for ${first} — unlock at your appointment`
-      : 'Unlocked — present once to redeem';
-  const codeLine = isDraw
-    ? `${drawMult}X YOUR CHANCES WHEN YOU MEET A CONSULTANT`
-    : isPass
-      ? 'CODE · REVEALED ON UNLOCK'
-      : (code ? `CODE ${code}` : 'ONE-TIME VOUCHER');
-  // One-date-per-surface (#252): the draw card carries the USER-relevant
-  // deadline (complete the review by boostClosesAt); the internal reservation
-  // expiry never prints on it.
-  const expiryLine = isDraw
-    ? (draw.boostDeadlineLong ? `COMPLETE YOUR REVIEW BY ${String(draw.boostDeadlineLong).toUpperCase()}` : null)
-    : expiry ? (isPass ? `EXPIRES ${expiry}` : `VALID TILL ${expiry}`).toUpperCase() : null;
+  const kicker = isPass ? 'RESERVATION PASS' : 'VOUCHER · UNLOCKED';
+  const displayWord = isPass ? 'Reserved.' : 'Unlocked.';
+  const statusLine = isPass
+    ? `Held for ${first} — unlock at your appointment`
+    : 'Unlocked — present once to redeem';
+  const codeLine = isPass
+    ? 'CODE · REVEALED ON UNLOCK'
+    : (code ? `CODE ${code}` : 'ONE-TIME VOUCHER');
+  const expiryLine = expiry ? (isPass ? `EXPIRES ${expiry}` : `VALID TILL ${expiry}`).toUpperCase() : null;
 
   const card = el(
     {
@@ -238,9 +222,7 @@ export async function renderQrCardPng({
     ],
   );
 
-  const svg = await satori(card, { width: 1080, height: 1080, fonts });
-  const png = new Resvg(svg, { fitTo: { mode: 'original' } }).render().asPng();
-  return Buffer.from(png);
+  return renderSquarePng(card, 1080, { satori, Resvg, fonts });
 }
 
 export default { renderQrCardPng };

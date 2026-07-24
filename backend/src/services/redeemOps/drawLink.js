@@ -1,7 +1,7 @@
 import { Activation, Campaign } from '../../models/index.js';
 import { getStoredLuckyDraw } from '../../utils/designConfigV2Clamp.js';
 import { normalizeLuckyDraw } from '../../utils/luckyDraw.js';
-import { sgtDayEndExclusiveMs } from '../../utils/sgtTime.js';
+import { sgtDayEndExclusiveMs, longDate } from '../../utils/sgtTime.js';
 
 /**
  * drawLink — the ONE way every fulfilment surface answers "is this
@@ -21,18 +21,8 @@ import { sgtDayEndExclusiveMs } from '../../utils/sgtTime.js';
  * and terms template use), so `now >= boostCutoffMs` ⇒ window closed.
  */
 
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-/** '2026-09-30' → '30 September 2026' (WA/email/card display). */
-export function boostDeadlineLong(ymd) {
-  const m = typeof ymd === 'string' ? ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
-  if (!m) return '';
-  const month = MONTHS[Number(m[2]) - 1];
-  return month ? `${Number(m[3])} ${month} ${m[1]}` : '';
-}
+/** '2026-09-30' → '30 September 2026' (WA/email/card display). @see utils/sgtTime.longDate */
+export const boostDeadlineLong = longDate;
 
 export function makeDrawLink(overrides = {}) {
   // Drop undefined override VALUES: a caller forwarding a dep it doesn't have
@@ -45,7 +35,7 @@ export function makeDrawLink(overrides = {}) {
   );
   const d = { Activation, Campaign, ...definedOverrides };
 
-  /** @returns {Promise<null | {campaignId, drawName, multiplier, boostClosesAt, boostCutoffMs}>} */
+  /** @returns {Promise<null | {campaignId, drawName, multiplier, prize, drawOn, passTheme, boostClosesAt, boostCutoffMs}>} */
   async function drawContextForActivation(activationOrId) {
     const activation = typeof activationOrId === 'object' && activationOrId !== null
       ? activationOrId
@@ -68,6 +58,14 @@ export function makeDrawLink(overrides = {}) {
       campaignId: campaign.id,
       drawName: campaign.name || 'the lucky draw',
       multiplier: Number.isInteger(ld.multiplier) ? ld.multiplier : 10,
+      // Card/email facts. `prize` is the normalizer's display summary; `drawOn`
+      // is the ONLY honest "draw date" — it is deliberately NOT defaulted to
+      // boostClosesAt (the boost deadline promises nothing about draw day), so
+      // a campaign without one simply renders no date. `passTheme` is already
+      // clamped to the enum by utils/luckyDraw.js.
+      prize: ld.prize || null,
+      drawOn: ld.drawOn || null,
+      passTheme: ld.passTheme || null,
       boostClosesAt: anchor,
       boostCutoffMs,
     };

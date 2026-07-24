@@ -122,6 +122,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
       closesAt: '2026-08-31',
       boostClosesAt: '2026-08-31',
       multiplier: 10,
+      passTheme: 'titanium',
     });
     expect(payload.design_config.termsContent).toContain('iPhone Lucky Draw');
     expect(payload.design_config.termsContent).toContain('iPhone 17 Pro');
@@ -131,6 +132,17 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     expect(payload.design_config.termsContent).toContain('never ask you to pay a fee');
     // end_date empty → aligned to the draw close
     expect(payload.end_date).toBe(new Date('2026-08-31').toISOString());
+  });
+
+  it('arms the chosen pass colourway — one choice paints the WhatsApp pass and the email', () => {
+    const onSubmit = vi.fn();
+    render(
+      <CampaignDetailsTab initial={null} type="lead_generation" draw isEdit={false} saving={false} onSubmit={onSubmit} />
+    );
+    fillBasics();
+    fireEvent.click(screen.getByRole('button', { name: /gold/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
+    expect(onSubmit.mock.calls[0][0].design_config.luckyDraw.passTheme).toBe('gold');
   });
 
   it('the seeded eligibility clause states THIS campaign age floor, not the template default', () => {

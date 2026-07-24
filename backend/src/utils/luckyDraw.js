@@ -21,6 +21,7 @@
  */
 
 import { AppError } from '../middleware/appError.js';
+import { PASS_THEMES } from './drawTheme.js';
 
 const MAX_PRIZE = 80; // legacy manual `prize` cap — unchanged so stored rows never drift
 const MAX_PRIZE_NAME = 80;
@@ -121,6 +122,14 @@ export function normalizeLuckyDraw(raw) {
     Number.isInteger(multiplier) && multiplier >= MIN_MULTIPLIER && multiplier <= MAX_MULTIPLIER
       ? multiplier
       : DEFAULT_MULTIPLIER;
+
+  // Colourway for the customer-facing draw surfaces — the Vault WhatsApp pass
+  // and the Onyx confirmation email (utils/drawTheme.js). Display-only: no draw
+  // mechanic reads it. Clamped to the enum HERE so no render path ever
+  // interpolates campaign JSON into a palette lookup; absent stays absent so
+  // legacy rows round-trip byte-identical and the renderers apply the default.
+  const passTheme = cleanString(raw.passTheme, 16)?.toLowerCase();
+  if (passTheme && PASS_THEMES.includes(passTheme)) out.passTheme = passTheme;
 
   // Session-booking link for the success screen's "Book your 20-min review"
   // CTA (drawTemplates.jsx). Display-only — no draw mechanics read it. Absent

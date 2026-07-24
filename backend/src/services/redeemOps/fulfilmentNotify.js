@@ -36,7 +36,21 @@ export function makeFulfilmentNotify(overrides = {}) {
   };
 
   /**
-   * Editorial voucher-card PNG for the email's inline QR; a renderer failure
+   * The facts the Vault draw card renders. One place, so the pass and the boost
+   * receipt can never disagree about the prize, the colourway or the draw day.
+   */
+  function drawCardFacts(drawCtx) {
+    return {
+      multiplier: drawCtx.multiplier,
+      prize: drawCtx.prize,
+      drawOn: drawCtx.drawOn,
+      passTheme: drawCtx.passTheme,
+      boostDeadlineLong: boostDeadlineLong(drawCtx.boostClosesAt),
+    };
+  }
+
+  /**
+   * Credential-card PNG for the email's inline image; a renderer failure
    * degrades to the plain QR so delivery itself never rides on the compositor.
    */
   async function cardOrBareQr({ state, qrContent, entitlement, prospect, rewardName, partnerName, shortCode, hostChoice, draw = null }) {
@@ -107,7 +121,7 @@ export function makeFulfilmentNotify(overrides = {}) {
 
     const qrPng = await cardOrBareQr({
       state: 'pass', qrContent: link, entitlement, prospect, rewardName, partnerName, hostChoice,
-      draw: drawCtx ? { multiplier: drawCtx.multiplier, boostDeadlineLong: boostDeadlineLong(drawCtx.boostClosesAt) } : null,
+      draw: drawCtx ? drawCardFacts(drawCtx) : null,
     });
     // Draw voice (PR-4, F13/D5): an entrant who just joined a lucky draw must
     // read DRAW copy — "1 chance now, ×N when you meet the consultant" — not
@@ -150,12 +164,30 @@ export function makeFulfilmentNotify(overrides = {}) {
     if (!canEmailProspect(prospect)) return { sent: false, skipped: 'no_email' };
     const m = drawCtx?.multiplier || 10;
     const drawName = drawCtx?.drawName || 'the lucky draw';
+    // The Vault 'boost' card — the same image the WhatsApp twin carries, so a
+    // person on both channels sees one artefact twice, not two designs. There
+    // is no QR to fall back to here, so a renderer failure simply drops the
+    // image: the receipt itself must still land.
+    let cardPng = null;
+    if (drawCtx) {
+      try {
+        cardPng = await d.renderQrCard({
+          state: 'boost',
+          rewardName: drawName,
+          customerFirstName: prospect?.firstName,
+          draw: drawCardFacts(drawCtx),
+        });
+      } catch (err) {
+        d.logger.warn('redeem_ops.fulfilment.boost_card_skipped', { entitlementId: entitlement?.id, error: err?.message });
+      }
+    }
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
         <h2 style="margin:0 0 8px">×${m} confirmed 🎉</h2>
         <p>Hi ${escapeHtml(prospect.firstName || 'there')},</p>
         <p>Your consultant has recorded your completed review — your entry to
         <strong>${escapeHtml(drawName)}</strong> now holds <strong>${m} chances</strong> instead of one.</p>
+        ${cardPng ? '<p style="text-align:center;margin:20px 0"><img src="cid:boost-card" width="320" height="320" style="max-width:100%" alt="Boost unlocked"/></p>' : ''}
         <p style="color:#6b7280;font-size:12px">Nothing else to do — winners are contacted directly after the draw.
         We never ask you to pay to release a prize.</p>
       </div>`;
@@ -165,6 +197,7 @@ export function makeFulfilmentNotify(overrides = {}) {
       html,
       text: `Your completed review has been recorded — your entry to ${drawName} now holds ${m} chances instead of one.`,
       context: 'redeem',
+      ...(cardPng ? { attachments: [{ filename: 'boost-unlocked.png', content: cardPng, cid: 'boost-card' }] } : {}),
     }, prospect.email);
   }
 

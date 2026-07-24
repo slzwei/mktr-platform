@@ -1,25 +1,10 @@
 import nodemailer from 'nodemailer';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import { logger } from '../utils/logger.js';
 import { maskEmail } from '../utils/redactTokens.js';
 import { normalizeCustomerHostChoice, customerHostOrigin } from '../utils/customerHost.js';
 import { getOrCreateProspectShareLink } from './shortlinkService.js';
 import { ensureUnsubToken } from './consentService.js';
-
-// Lead-capture confirmation email: the designer's production, table-based HTML email
-// (design_handoff_lead_confirmation_email). Read once at boot from the co-located copy so it
-// ships with the backend regardless of the deploy root. Do NOT reformat or sanitize it; the
-// inline styles and MSO conditional comments are deliberate email-client requirements.
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const CONFIRMATION_EMAIL_HTML = readFileSync(join(__dirname, 'email-templates/confirmation-email.html'), 'utf8');
-const CONFIRMATION_EMAIL_TXT = readFileSync(join(__dirname, 'email-templates/confirmation-email.txt'), 'utf8');
-// Lucky-draw variant (docs/plans/lucky-draw-10x.md §4.5): draw campaigns must
-// not promise the generic "gift + call within 24 hours" — they confirm the
-// entry and pitch the ×N session multiplier instead.
-const CONFIRMATION_EMAIL_DRAW_HTML = readFileSync(join(__dirname, 'email-templates/confirmation-email-draw.html'), 'utf8');
-const CONFIRMATION_EMAIL_DRAW_TXT = readFileSync(join(__dirname, 'email-templates/confirmation-email-draw.txt'), 'utf8');
+import { renderLeadConfirmation } from './email-templates/leadConfirmation.js';
 
 // D12: per-origin from-address. Lead-capture confirmations sent from the
 // redeem.sg flow use noreply@redeem.sg; admin / agent emails keep the
@@ -253,15 +238,6 @@ function getModernTemplate(title, content, action, options = {}) {
   `;
 }
 
-function escapeHtml(value) {
-  if (value == null) return '';
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOverride } = {}) {
   if (!prospect?.email) {
@@ -296,15 +272,6 @@ export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOv
   const hostChoice = normalizeCustomerHostChoice(prospect.campaign?.design_config?.customerHost);
   const isMktrHost = hostChoice === 'mktr';
   const brandName = isMktrHost ? 'MKTR' : 'Redeem';
-  const brandWordmark = isMktrHost ? 'MKTR' : 'Redeem.';
-  const footerEntity = isMktrHost
-    ? 'MKTR PTE. LTD. (UEN 202507548M)'
-    : 'Redeem, a service of MKTR PTE. LTD. (UEN 202507548M)';
-  // heroLogo is the only brand-conditional merge field that is HTML (Redeem = Fraunces text
-  // wordmark, MKTR = the hosted wordmark image), so it is NOT escaped in the substitution.
-  const heroLogo = isMktrHost
-    ? '<img src="https://mktr.sg/email/new-mktr-wordmark-light.png" width="150" height="53" alt="MKTR" style="display:block;margin:0 auto;border:0;outline:none;">'
-    : '<span style="font-family:\'Fraunces\',Georgia,\'Times New Roman\',serif;font-size:38px;line-height:42px;font-weight:600;letter-spacing:0.005em;color:#FFFCF7;">RedeemSG</span>';
 
   // Referral link: prefer the canonical shareUrl minted at prospect creation (identical to
   // the in-app share dialog). Only self-derive as a fallback when the caller didn't pass it
@@ -325,11 +292,6 @@ export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOv
       shareUrl = `${origin}/LeadCapture?campaign_id=${prospect.campaign.id}&ref=${prospect.id}`;
     }
   }
-  // Render the designer's production template (design_handoff_lead_confirmation_email) by
-  // substituting merge fields. firstName, campaignName and shareUrl are user or operator
-  // derived, so they are HTML-escaped exactly as before; heroLogo is intentional markup and
-  // the brand literals and year are controlled, so they pass through raw. The plain-text part
-  // is never escaped. Unknown placeholders are left intact so a render check can flag them.
   // Unsubscribe plumbing (PR B, plan §3.4): consumer-linked leads get a
   // working List-Unsubscribe header pair + footer link. The deterministic
   // token means every email rebuilds the same URL, and the URL carries ONLY
@@ -346,9 +308,6 @@ export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOv
       logger.warn('Unsubscribe link mint failed (email sends without it)', { err: err?.message });
     }
   }
-  const unsubscribeLine = unsubscribeUrl
-    ? `<a href="${escapeHtml(unsubscribeUrl)}" style="color:inherit;text-decoration:underline;">Unsubscribe from marketing messages</a>`
-    : '';
   const unsubscribeTextLine = unsubscribeUrl
     ? `Unsubscribe from marketing messages: ${unsubscribeUrl}`
     : '';
@@ -359,30 +318,9 @@ export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOv
       }
     : undefined;
 
-  const fields = {
-    firstName,
-    campaignName,
-    shareUrl: shareUrl || '',
-    unsubscribeLine,
-    unsubscribeTextLine,
-    brandName,
-    brandWordmark,
-    footerEntity,
-    year: new Date().getFullYear(),
-    heroLogo,
-    ...(isDraw
-      ? { prize: luckyDraw.prize || campaignName, multiplier: luckyDraw.multiplier || 10 }
-      : {}),
-  };
-  const escapeFields = new Set(['firstName', 'campaignName', 'shareUrl', 'prize']);
-  const htmlTemplate = isDraw ? CONFIRMATION_EMAIL_DRAW_HTML : CONFIRMATION_EMAIL_HTML;
-  const textTemplate = isDraw ? CONFIRMATION_EMAIL_DRAW_TXT : CONFIRMATION_EMAIL_TXT;
-  const html = htmlTemplate.replace(/\{\{(\w+)\}\}/g, (_, k) =>
-    k in fields ? (escapeFields.has(k) ? escapeHtml(fields[k]) : String(fields[k])) : `{{${k}}}`
-  );
-  const text = textTemplate.replace(/\{\{(\w+)\}\}/g, (_, k) =>
-    k in fields ? String(fields[k]) : `{{${k}}}`
-  );
+  const { html, text } = renderLeadConfirmation({
+    firstName, campaignName, luckyDraw, isMktrHost, shareUrl, unsubscribeUrl, unsubscribeTextLine,
+  });
 
   logger.info('Sending lead confirmation email', { to: prospect.email, prospectId: prospect.id, campaign: campaignName, brand: brandName });
 

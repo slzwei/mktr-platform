@@ -4,7 +4,13 @@ Hello {{firstName}},
 
 Your entry for {{campaignName}} is in — you're in the running for {{prize}}.
 
+RIGHT NOW: 1x    AFTER YOUR REVIEW: {{multiplier}}x
+{{multiplier}}x chances to win {{prize}}.
+
 Want {{multiplier}}x the chances? Complete your complimentary financial review session — when your consultant records it, your entry is multiplied.
+
+Entrant: {{firstName}}
+Status: In the draw{{stat3Text}}
 
 If you win, we contact you directly after the draw — and we never ask for payment to release a prize.
 
