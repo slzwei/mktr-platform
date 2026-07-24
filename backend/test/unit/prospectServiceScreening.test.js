@@ -168,6 +168,60 @@ describe('createProspect — screening gate decision table', () => {
   });
 });
 
+describe('createProspect — provenance-aware hold-target bake (PR-1, draw-launch-integrity §9.1)', () => {
+  const fallbackRoute = () => ({
+    resolveLeadRouting: jest.fn().mockResolvedValue({ agentId: 'sys-1', via: 'fallback' }),
+    decideAssignment: jest.fn().mockResolvedValue({ action: 'assign', assignedAgentId: 'sys-1', charged: false, via: 'fallback' }),
+  });
+
+  it('fallback route + provenance-less System Agent → intendedAgentId baked NULL (release re-resolves; self-healing)', async () => {
+    const deps = buildDeps(fallbackRoute());
+    deps.models.User.findByPk.mockResolvedValue({ id: 'sys-1', lyfeId: null, mktrLeadsId: null });
+    const svc = makeProspectService(deps);
+    await svc.createProspect({ ...baseBody }, null, {});
+    expect(deps.createdProspects[0].quarantineReason).toBe('screening_pending');
+    expect(deps.createdProspects[0].screeningMetadata.intendedAgentId).toBeNull();
+  });
+
+  it('fallback route + provenance-carrying DEFAULT_AGENT → bake KEPT (regression guard: CX3+ nuance)', async () => {
+    const deps = buildDeps(fallbackRoute());
+    deps.models.User.findByPk.mockResolvedValue({ id: 'sys-1', lyfeId: 'lyfe-9', mktrLeadsId: null });
+    const svc = makeProspectService(deps);
+    await svc.createProspect({ ...baseBody }, null, {});
+    expect(deps.createdProspects[0].screeningMetadata.intendedAgentId).toBe('sys-1');
+  });
+
+  it('non-fallback (package) route never pays the provenance lookup and bakes verbatim', async () => {
+    const deps = buildDeps(); // default: via 'package', agent-1
+    const svc = makeProspectService(deps);
+    await svc.createProspect({ ...baseBody }, null, {});
+    expect(deps.createdProspects[0].screeningMetadata.intendedAgentId).toBe('agent-1');
+    expect(deps.models.User.findByPk).not.toHaveBeenCalled();
+  });
+
+  it('DNC mirror gets the same rule: fallback + no provenance → dncMetadata.intendedAgentId NULL', async () => {
+    const deps = buildDeps({
+      ...fallbackRoute(),
+      screeningApplies: jest.fn().mockResolvedValue(false),
+      dncEnforcement: jest.fn().mockReturnValue('block'),
+      formatDncNumber: jest.fn().mockReturnValue('+6591234567'),
+      gateHeldDncLead: jest.fn().mockResolvedValue({ outcome: 'held', status: 'pending' }),
+    });
+    // The DNC gate arms off the campaign's own design flag — the suite default
+    // only opts into screening.
+    deps.models.Campaign.findByPk.mockResolvedValue({
+      ...CAMPAIGN,
+      design_config: { screeningCallAtSubmit: false, dncCheckAtSubmit: true },
+    });
+    deps.models.User.findByPk.mockResolvedValue({ id: 'sys-1', lyfeId: null, mktrLeadsId: null });
+    const svc = makeProspectService(deps);
+    await svc.createProspect({ ...baseBody }, null, {});
+    const row = deps.createdProspects[0];
+    expect(row.quarantineReason).toBe('dnc_pending');
+    expect(row.dncMetadata.intendedAgentId).toBeNull();
+  });
+});
+
 describe('assignProspect — screening release override (deduct-skip, Codex #2)', () => {
   function heldProspect(screeningMetadata) {
     return {

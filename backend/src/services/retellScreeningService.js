@@ -172,7 +172,12 @@ export function makeRetellScreeningService(overrides = {}) {
       if (!screeningApplies({ campaign: camp, prospect }, cfg)) {
         return { status: 'skipped', reason: 'gate_not_applicable' };
       }
-      if (camp && !['active'].includes(String(camp.status || 'active')) && camp.is_active === false) {
+      // Either signal alone stops NEW dials (PR-1, Codex R1 CX20 — the old
+      // `&&` let an archived campaign that kept is_active=true keep dialing).
+      // Delivery of already-QUALIFIED holds is deliberately state-independent
+      // (drain philosophy): dialing is new spend + a customer touch on a
+      // stopped campaign; releasing a captured, qualified lead is fulfilment.
+      if (camp && (String(camp.status || 'active') !== 'active' || camp.is_active === false)) {
         return { status: 'skipped', reason: 'campaign_inactive' };
       }
       if (prospect.quarantineReason !== 'screening_pending' || prospect.screeningActiveCallId || prospect.screeningVerdict) {

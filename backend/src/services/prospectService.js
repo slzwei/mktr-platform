@@ -901,12 +901,30 @@ export function makeProspectService(overrides = {}) {
         });
       }
 
+      // Hold-target bake rule (PR-1, draw-launch-integrity §9.1 CX3+): a
+      // fallback-routed hold may only bake a target that can actually be
+      // DELIVERED to later. The System Agent has no lyfeId/mktrLeadsId, so a
+      // release to it default-denies (null destination) and the lead loops
+      // held forever — the 07-24 prod incident. A provenance-carrying
+      // DEFAULT_AGENT_ID also arrives via='fallback' and MUST keep its bake
+      // (it delivers fine), so the rule is provenance-based, not via-based.
+      // Null bake ⇒ release-time re-resolution ⇒ the hold self-heals the
+      // moment a funded package appears. Non-fallback routes are untouched.
+      const bakeIntendedAgentId = async (candidateId) => {
+        if (!candidateId || routeVia !== 'fallback') return candidateId ?? null;
+        const u = await m.User.findByPk(candidateId, {
+          attributes: ['id', 'lyfeId', 'mktrLeadsId'],
+          transaction: t,
+        }).catch(() => null);
+        return u && (u.lyfeId || u.mktrLeadsId) ? candidateId : null;
+      };
+
       // DNC block-mode gate: a normally-assignable INTERNAL lead is HELD pending a DNC
       // check (released post-commit on clear). Never overrides an existing quarantine
       // (quota / external) or an external-buyer route. The credit is charged on release
       // (unless decideAssignment already charged a funded gated route → dncAlreadyCharged).
       if (dncBlockApplies && decision.action !== 'quarantine' && !externalAgentId) {
-        dncIntendedAgentId = decision.assignedAgentId ?? assignedAgentId ?? null;
+        dncIntendedAgentId = await bakeIntendedAgentId(decision.assignedAgentId ?? assignedAgentId ?? null);
         dncAlreadyCharged = decision.charged === true;
         dncHeld = true;
         decision = { action: 'quarantine', quarantineReason: 'dnc_pending', charged: dncAlreadyCharged, via: routeVia };
@@ -919,7 +937,7 @@ export function makeProspectService(overrides = {}) {
       let screeningIntendedAgentId = null;
       let screeningAlreadyCharged = false;
       if (screeningWanted && decision.action !== 'quarantine' && !externalAgentId) {
-        screeningIntendedAgentId = decision.assignedAgentId ?? assignedAgentId ?? null;
+        screeningIntendedAgentId = await bakeIntendedAgentId(decision.assignedAgentId ?? assignedAgentId ?? null);
         screeningAlreadyCharged = decision.charged === true;
         screeningHeld = true;
         decision = { action: 'quarantine', quarantineReason: 'screening_pending', charged: screeningAlreadyCharged, via: routeVia };

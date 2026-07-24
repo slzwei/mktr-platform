@@ -142,6 +142,9 @@ describe('releaseDncClearedLead', () => {
         buildLeadCreatedPayload: jest.fn(() => ({ event: 'lead.created' })),
         destinationForAgent: jest.fn(() => 'lyfe'),
         externalIdForDestination: jest.fn(() => 'L1'),
+        // PR-1: null-agent releases re-resolve; default to an unfundable pool
+        // (fallback) so pre-PR-1 cases keep their exact outcomes hermetically.
+        resolveLeadRouting: jest.fn().mockResolvedValue({ agentId: 'sys', via: 'fallback' }),
         logger: baseLogger,
         ...over,
       },
@@ -159,11 +162,30 @@ describe('releaseDncClearedLead', () => {
     expect(deps.flushDeliveries).toHaveBeenCalled();
   });
 
-  it('no intended agent → not released, no transaction opened', async () => {
+  it('no intended agent + only the fallback pool → not released, no transaction opened', async () => {
     const { deps } = mkDeps();
     const res = await gate.releaseDncClearedLead({ prospect: prospect(), agentId: null }, deps);
     expect(res).toMatchObject({ released: false, reason: 'no_intended_agent' });
+    expect(deps.resolveLeadRouting).toHaveBeenCalledTimes(1); // PR-1: it DID try to re-resolve
     expect(deps.sequelize.transaction).not.toHaveBeenCalled();
+  });
+
+  it('PR-1 (CX1): null-baked agent + funded package appeared → re-resolves, charges, releases', async () => {
+    const { tx, deps } = mkDeps({
+      resolveLeadRouting: jest.fn().mockResolvedValue({ agentId: 'a9', via: 'package' }),
+    });
+    const res = await gate.releaseDncClearedLead({ prospect: prospect(), agentId: null, alreadyCharged: false }, deps);
+    expect(res).toEqual({ released: true });
+    expect(deps.chargeLeadCredit).toHaveBeenCalledWith('a9', 'c1', tx);
+    expect(deps.sequelize.query.mock.calls[0][1].replacements.agentId).toBe('a9');
+    expect(tx.commit).toHaveBeenCalled();
+  });
+
+  it('PR-1 (CX1): re-resolution never resurrects the System-Agent fallback', async () => {
+    const { deps } = mkDeps(); // default routing mock IS the fallback
+    const res = await gate.releaseDncClearedLead({ prospect: prospect(), agentId: null }, deps);
+    expect(res).toMatchObject({ released: false, reason: 'no_intended_agent' });
+    expect(deps.chargeLeadCredit).not.toHaveBeenCalled();
   });
 
   it('lost claim (already released) → rolls back', async () => {

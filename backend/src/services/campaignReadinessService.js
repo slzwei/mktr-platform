@@ -73,10 +73,20 @@ export function computeReadiness(facts) {
     hasDrawRecord = false,
     hasLiveDraw = false,
     drawIntakeOpen = false,
+    drawClosesPastDue = false,
     drawCloseMismatch = false,
     docDrawClosesAt = null,
     drawRecordClosesAt = null,
     drawTotalPrizes = 0,
+    // Screening facts (PR-1, draw-launch-integrity §2.3) default SILENT — the
+    // row only means anything when the feature is configured AND the campaign
+    // opted in.
+    screeningConfigured = false,
+    screeningGateOn = false,
+    // Funded-pool credit facts (PR-1): sums over the same assignments that
+    // produce assignableAgents. Default 0/0 = row silent.
+    poolCreditsRemaining = 0,
+    poolCreditsTotal = 0,
   } = facts || {};
 
   // Brand-awareness (PHV tablet) campaigns don't capture leads → readiness N/A.
@@ -96,6 +106,36 @@ export function computeReadiness(facts) {
       code: 'no_agent_pool',
       message:
         'No agent has an active lead package for this campaign — leads will sit with the System Agent, undelivered, until a package is assigned (they stay in MKTR and can be reassigned later). Fine for reward-only or test campaigns; assign a package before real ad spend.',
+    });
+  }
+
+  // Screening × funding (PR-1, Codex R1 CX3+/CX19 — specializes no_agent_pool,
+  // never duplicates it silently): with the screening gate on and NO funded
+  // agent, every entrant is dialed and qualified into a hold nobody can
+  // receive. Since PR-1's provenance-aware bake the hold SELF-HEALS once a
+  // package is funded, so pre-launch this is a warning; on a LIVE campaign it
+  // is the top go-live risk and shows critical. Deliberately NOT a launch
+  // 422 (decision D7): the pre-launch level is warning, so activation is never
+  // newly blocked.
+  if (screeningConfigured && screeningGateOn && assignableAgents === 0) {
+    issues.push({
+      level: isActive ? 'critical' : 'warning',
+      code: 'screening_no_funded_route',
+      message: isActive
+        ? 'AI screening is ON but no agent has a funded lead package — entrants are being called and qualified into a held queue nobody can receive. Fund a package now; held leads auto-deliver within ~5 minutes once funded.'
+        : 'AI screening is ON but no agent has a funded lead package yet — qualified leads will wait held (they auto-deliver once a package is funded). Fund one before real traffic.',
+    });
+  }
+
+  // WARNING — funded pool is nearly dry on a screening/draw campaign. At zero
+  // the rows above take over; this is the tripwire BEFORE the dead-end re-arms
+  // (Codex R1 G26: the 07-24 fix wears off silently at 0 credits).
+  if ((screeningGateOn || drawEnabled) && poolCreditsTotal > 0 && poolCreditsRemaining > 0
+      && poolCreditsRemaining * 5 < poolCreditsTotal) {
+    issues.push({
+      level: 'warning',
+      code: 'lead_credits_low',
+      message: `The funded lead pool is nearly exhausted (${poolCreditsRemaining} of ${poolCreditsTotal} credits left). At zero, new screened/draw leads hold undelivered until a package is topped up.`,
     });
   }
 
@@ -198,6 +238,17 @@ export function computeReadiness(facts) {
         'The lucky draw is enabled but no draw record exists. Entries are being accepted, but ops cannot freeze the pool or pick a winner until a draw is created (Redeem Ops → Draws).',
     });
   }
+  // ESCALATION (PR-1, CX19): past the close date with still no (non-void) draw
+  // record, the T&C's promised witnessed draw cannot run — entries have closed
+  // into nothing. Critical so it cannot be missed; hasDrawRecord already
+  // excludes void records (a voided draw does not satisfy the promise).
+  if (drawEnabled && !hasDrawRecord && drawClosesPastDue) {
+    issues.push({
+      level: 'critical',
+      code: 'draw_record_missing',
+      message: `Entries closed${docDrawClosesAt ? ` on ${docDrawClosesAt}` : ''} but NO draw record exists — the witnessed draw promised in the T&C cannot run. Create and freeze it now (backend/scripts/run-lucky-draw.js).`,
+    });
+  }
   if (drawEnabled && hasLiveDraw && drawCloseMismatch) {
     issues.push({
       level: 'warning',
@@ -255,7 +306,7 @@ export async function loadCampaignReadiness(campaignId) {
   const { Op } = await import('sequelize');
 
   const campaign = await Campaign.findByPk(campaignId, {
-    attributes: ['id', 'name', 'type', 'is_active', 'design_config'],
+    attributes: ['id', 'name', 'type', 'is_active', 'status', 'design_config'],
   });
   if (!campaign) {
     return {
@@ -272,12 +323,14 @@ export async function loadCampaignReadiness(campaignId) {
   const assignments = await LeadPackageAssignment.findAll({
     where: { status: 'active', leadsRemaining: { [Op.gt]: 0 } },
     include: [{ model: LeadPackage, as: 'package', where: { campaignId }, required: true, attributes: [] }],
-    attributes: ['agentId'],
+    attributes: ['agentId', 'leadsRemaining', 'leadsTotal'],
   });
   const candidateIds = [...new Set(assignments.map((a) => a.agentId))];
 
   let assignableAgents = 0;
   let agentsMissingPhone = 0;
+  let poolCreditsRemaining = 0;
+  let poolCreditsTotal = 0;
   if (candidateIds.length > 0) {
     const agents = await User.findAll({
       where: { id: candidateIds, role: 'agent', isActive: true },
@@ -285,6 +338,14 @@ export async function loadCampaignReadiness(campaignId) {
     });
     assignableAgents = agents.length;
     agentsMissingPhone = agents.filter((a) => !a.phone || String(a.phone).trim() === '').length;
+    // Credit sums over the SAME pool the router draws from (active-agent
+    // assignments only) — the lead_credits_low tripwire (PR-1).
+    const activeIds = new Set(agents.map((a) => a.id));
+    for (const a of assignments) {
+      if (!activeIds.has(a.agentId)) continue;
+      poolCreditsRemaining += Number(a.leadsRemaining) || 0;
+      poolCreditsTotal += Number(a.leadsTotal) || 0;
+    }
   }
 
   // v2-safe as-is: quiz + guidedReview are top-level verbatim-passthrough keys
@@ -307,7 +368,16 @@ export async function loadCampaignReadiness(campaignId) {
     );
   });
   const webhookEnabled = process.env.WEBHOOK_ENABLED === 'true';
-  const isActive = campaign.is_active !== false;
+  // BOTH signals (PR-1, Codex R1 CX19): archive flips `status` but not always
+  // `is_active` — reading the flag alone showed archived campaigns as live.
+  const isActive = campaign.is_active !== false
+    && (campaign.status == null || String(campaign.status) === 'active');
+
+  // Screening facts (PR-1): feature-configured (env) × campaign gate (design).
+  // Lazy import keeps the pure export's import graph model-free.
+  const { screeningConfig } = await import('./screeningGate.js');
+  const screeningConfigured = screeningConfig().configured === true;
+  const screeningGateOn = readLegacyViewSafe(design, {}).screeningCallAtSubmit === true;
 
   // OTP send-path facts (PR 5). Channel byte-mirrors verificationService's
   // resolution; cred booleans are explicitly coerced — raw env strings must
@@ -330,9 +400,12 @@ export async function loadCampaignReadiness(campaignId) {
   let drawCloseMismatch = false;
   let docDrawClosesAt = null;
   let drawRecordClosesAt = null;
+  let drawClosesPastDue = false;
   if (drawEnabled) {
+    // Void records don't count (PR-1, CX19): a voided draw does not satisfy the
+    // "witnessed draw" promise, so it must not suppress draw_record_missing.
     const record = await Draw.findOne({
-      where: { campaignId },
+      where: { campaignId, status: { [Op.ne]: 'void' } },
       order: [['createdAt', 'DESC']],
       attributes: ['id', 'status', 'closesAt'],
     });
@@ -341,6 +414,7 @@ export async function loadCampaignReadiness(campaignId) {
     const docEndMs = ld?.closesAt ? sgtDayEndExclusiveMs(ld.closesAt) : null;
     docDrawClosesAt = ld?.closesAt || null;
     drawIntakeOpen = docEndMs !== null && docEndMs > Date.now();
+    drawClosesPastDue = docEndMs !== null && docEndMs <= Date.now();
     if (hasLiveDraw && docEndMs !== null) {
       const recordMs = new Date(record.closesAt).getTime();
       drawCloseMismatch = Number.isFinite(recordMs) && recordMs !== docEndMs;
@@ -371,10 +445,15 @@ export async function loadCampaignReadiness(campaignId) {
     hasDrawRecord,
     hasLiveDraw,
     drawIntakeOpen,
+    drawClosesPastDue,
     drawCloseMismatch,
     docDrawClosesAt,
     drawRecordClosesAt,
     drawTotalPrizes: totalPrizeQuantity(ld),
+    screeningConfigured,
+    screeningGateOn,
+    poolCreditsRemaining,
+    poolCreditsTotal,
   });
 
   return {
