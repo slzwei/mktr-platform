@@ -13,7 +13,7 @@ import { useCampaignLookup } from"@/hooks/queries/useCampaignsQuery";
 import useRowSelection from"@/hooks/useRowSelection";
 import BulkActionBar from"@/components/bulk/BulkActionBar";
 import BulkAssignDialog from"@/components/bulk/BulkAssignDialog";
-import { holdReasonLabel } from"@/constants/holdReasons";
+import { holdLabelFor } from"@/constants/holdReasons";
 import { Card, CardContent, CardHeader } from"@/components/ui/card";
 import { Button } from"@/components/ui/button";
 import { Input } from"@/components/ui/input";
@@ -501,8 +501,8 @@ export default function AdminProspects() {
  )}
  {prospect.quarantinedAt ? (
  <span
- className="block text-xs font-medium mt-0.5 text-amber-700 dark:text-amber-400" title={holdReasonLabel(prospect.quarantineReason)}>
- Held — {holdReasonLabel(prospect.quarantineReason)}
+ className="block text-xs font-medium mt-0.5 text-amber-700 dark:text-amber-400" title={holdLabelFor(prospect)}>
+ Held — {holdLabelFor(prospect)}
  </span>
  ) : prospect.assigned_agent_name ? (
  <span className="block text-xs text-muted-foreground font-normal mt-0.5">

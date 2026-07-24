@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { composeAttentionRows, composeHealthStrip, SEVERITY_ORDER } from '../attention.js';
 import { prospectsToCsv } from '../csv.js';
 import { fmtSGD, fmtSGDExact, fmtDateTime, fmtRelative, daysUntil, fmtNumber, fmtDay } from '../format.js';
-import { HELD_REASON_LABELS, STATUS_LABELS, STATUS_CHIP_CLASS, SOURCE_LABELS, LEAD_STATUSES, LEAD_SOURCES } from '../constants.js';
+import { HELD_REASON_LABELS, STATUS_LABELS, STATUS_CHIP_CLASS, SOURCE_LABELS, LEAD_STATUSES, LEAD_SOURCES, heldLabel } from '../constants.js';
 
 describe('constants — vocabulary completeness', () => {
   it('every real lead status has a label and a chip mapping', () => {
@@ -19,6 +19,32 @@ describe('constants — vocabulary completeness', () => {
   it('all five real quarantine reasons + other have operator copy', () => {
     for (const r of ['no_funded_agent', 'no_funded_external_buyer', 'dnc_pending', 'dnc_registered', 'returned_by_admin', 'other']) {
       expect(HELD_REASON_LABELS[r]).toBeTruthy();
+    }
+  });
+});
+
+describe('heldLabel — a decided verdict outranks the hold reason', () => {
+  it('a qualified lead awaiting delivery never reads as "still calling"', () => {
+    const label = heldLabel({ quarantineReason: 'screening_pending', screeningVerdict: 'qualified' });
+    expect(label.short).toBe('Qualified');
+    expect(label.full).toMatch(/qualified/i);
+    expect(label.full).not.toMatch(/call/i);
+  });
+
+  it('an undecided screening hold still reads as a call in progress', () => {
+    expect(heldLabel({ quarantineReason: 'screening_pending', screeningVerdict: null }).short).toBe('Screening call');
+  });
+
+  it('short forms never truncate mid-phrase into nonsense', () => {
+    expect(heldLabel({ quarantineReason: 'screening_failed' }).short).toBe('Not qualified');
+    expect(heldLabel({ quarantineReason: 'screening_unreachable' }).short).toBe('Unreachable');
+  });
+
+  it('every reason yields a non-empty short and full, unknowns included', () => {
+    for (const r of [...Object.keys(HELD_REASON_LABELS), 'some_future_reason', null]) {
+      const { short, full } = heldLabel({ quarantineReason: r });
+      expect(short).toBeTruthy();
+      expect(full).toBeTruthy();
     }
   });
 });

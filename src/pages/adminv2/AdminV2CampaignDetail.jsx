@@ -9,7 +9,7 @@ import { Link, useParams } from 'react-router-dom';
 import { getMarketplaceListedFromDoc } from '@/lib/designConfigV2';
 import { useCampaignSummary, useAttention } from '@/hooks/queries/useAdminV2';
 import { fmtNumber, fmtSGD, fmtDate, fmtDateTime, fmtRelative, daysUntil } from '@/lib/adminV2/format';
-import { STATUS_LABELS, STATUS_CHIP_CLASS, HELD_REASON_LABELS } from '@/lib/adminV2/constants';
+import { STATUS_LABELS, STATUS_CHIP_CLASS, heldLabel } from '@/lib/adminV2/constants';
 import { Card, Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
 import { SeriesBarChart } from '@/components/adminv2/charts';
 
@@ -130,7 +130,7 @@ export default function AdminV2CampaignDetail() {
               <div key={p.id} className="av2-qrow" style={{ cursor: 'default' }}>
                 <span style={{ flex: 1, fontSize: 13, fontWeight: 700 }}>{p.firstName} {p.lastName}</span>
                 {p.quarantinedAt
-                  ? <Chip tone="hold" glyph="◆">{HELD_REASON_LABELS[p.quarantineReason] || 'Held'}</Chip>
+                  ? <Chip tone="hold" glyph="◆">{heldLabel(p).short}</Chip>
                   : <Chip tone={STATUS_CHIP_CLASS[p.leadStatus]?.replace('av2-chip--', '') || ''}>{STATUS_LABELS[p.leadStatus] || p.leadStatus}</Chip>}
                 <span className="av2-mono" style={{ fontSize: 10.5, color: 'var(--ink-3)', width: 70, textAlign: 'right' }} title={fmtDateTime(p.createdAt)}>{fmtRelative(p.createdAt)}</span>
               </div>

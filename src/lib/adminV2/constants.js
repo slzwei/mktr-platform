@@ -59,6 +59,35 @@ export const HELD_REASON_LABELS = {
   other: 'Other',
 };
 
+// List chips are a fixed-width nowrap column, so long labels were truncated to
+// their first two words — which turned 'Screening: not qualified' into the
+// nonsense 'Screening: not'. Reasons needing a purpose-built short form say so
+// here; everything else keeps the two-word rule.
+const HELD_REASON_SHORT = {
+  screening_failed: 'Not qualified',
+  screening_unreachable: 'Unreachable',
+};
+
+/**
+ * Operator-facing hold label for a lead, as { short, full }.
+ *
+ * A qualified lead is STILL held until its release lands (that transition is
+ * atomic: assign + charge + queue delivery, all-or-nothing), so the row keeps
+ * quarantineReason 'screening_pending'. Labelling it by reason alone reads as
+ * "we're still calling them" — the opposite of the truth, and it hides a lead
+ * that is waiting on a human. A decided verdict therefore wins the label; the
+ * ◆ hold glyph already carries "held", so the short form spends its width on
+ * the verdict instead of repeating it.
+ */
+export function heldLabel(prospect) {
+  const reason = prospect?.quarantineReason || null;
+  if (reason === 'screening_pending' && prospect?.screeningVerdict === 'qualified') {
+    return { short: 'Qualified', full: 'Screening: qualified — awaiting delivery' };
+  }
+  const full = HELD_REASON_LABELS[reason] || 'Held';
+  return { short: HELD_REASON_SHORT[reason] || full.split(' ').slice(0, 2).join(' '), full };
+}
+
 // utm_source → display label (matches the tracked ad platforms).
 export const UTM_LABELS = {
   fb: 'Facebook',

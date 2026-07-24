@@ -30,6 +30,20 @@ export function holdReasonLabel(reason) {
   return HOLD_REASON_LABELS[reason] || 'Held';
 }
 
+/**
+ * Label a held lead by its DECIDED state, not just its hold reason. A screened
+ * lead stays `screening_pending` until release lands (assign + charge + queue
+ * delivery is one atomic step), so a qualified-but-undelivered lead would
+ * otherwise read as "AI screening call in progress" — it isn't; it's waiting
+ * on a human. Mirrors heldLabel() in @/lib/adminV2/constants.
+ */
+export function holdLabelFor(prospect) {
+  if (prospect?.quarantineReason === 'screening_pending' && prospect?.screeningVerdict === 'qualified') {
+    return 'AI screening: qualified — awaiting delivery';
+  }
+  return holdReasonLabel(prospect?.quarantineReason);
+}
+
 export function isReleasableHold(prospect) {
   return Boolean(prospect?.quarantinedAt) && RELEASABLE_HOLD_REASONS.includes(prospect?.quarantineReason);
 }

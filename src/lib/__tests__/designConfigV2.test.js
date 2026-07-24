@@ -93,7 +93,7 @@ describe('upgrade — migration table rows (editorial baseline)', () => {
   });
 
   it('gates + verification map explicitly', () => {
-    expect(v2.form.gates).toEqual({ sgPr: true, advisorExclusion: false, dncCheck: true });
+    expect(v2.form.gates).toEqual({ sgPr: true, advisorExclusion: false, dncCheck: true, screeningCall: false });
     expect(v2.form.verification).toBe('sms');
   });
 });

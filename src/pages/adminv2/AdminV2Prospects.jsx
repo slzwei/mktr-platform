@@ -13,7 +13,7 @@ import { useProspects, useProspectDetail, useAgentOptions } from '@/hooks/querie
 import { bulkAssign, bulkReturnToHeld, bulkDelete } from '@/api/adminV2';
 import {
   LEAD_STATUSES, LEAD_SOURCES, STATUS_LABELS, STATUS_CHIP_CLASS,
-  SOURCE_LABELS, HELD_REASON_LABELS, UTM_LABELS, PAGE_SIZE,
+  SOURCE_LABELS, heldLabel, UTM_LABELS, PAGE_SIZE,
 } from '@/lib/adminV2/constants';
 import { fmtDateTime, fmtRelative } from '@/lib/adminV2/format';
 import { prospectsToCsv, downloadCsv } from '@/lib/adminV2/csv';
@@ -107,7 +107,7 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
           </SheetTitle>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <Chip tone={STATUS_CHIP_CLASS[p.leadStatus]?.replace('av2-chip--', '') || ''}>{STATUS_LABELS[p.leadStatus] || p.leadStatus}</Chip>
-            {held && <Chip tone="hold" glyph="◆">{HELD_REASON_LABELS[p.quarantineReason] || 'Held'}</Chip>}
+            {held && <Chip tone="hold" glyph="◆">{heldLabel(p).full}</Chip>}
             {!held && !p.assignedAgent && <Chip tone="warn">Unassigned</Chip>}
             {p.priority && <Chip>{p.priority}</Chip>}
             {Number.isFinite(Number(p.score)) && p.score !== null && <Chip>score {p.score}</Chip>}
@@ -180,7 +180,7 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
             <div className="av2-microcaps" style={{ marginBottom: 6 }}>Routing</div>
             <div className="av2-kv"><span>agent</span><span>{p.assignedAgent ? `${p.assignedAgent.firstName || ''} ${p.assignedAgent.lastName || ''}`.trim() : p.externalAgentId ? 'external buyer' : held ? 'held' : 'unassigned'}</span></div>
             {held && <div className="av2-kv"><span>held since</span><span>{fmtDateTime(p.quarantinedAt)}</span></div>}
-            {held && <div className="av2-kv"><span>reason</span><span>{HELD_REASON_LABELS[p.quarantineReason] || p.quarantineReason || '—'}</span></div>}
+            {held && <div className="av2-kv"><span>reason</span><span>{heldLabel(p).full || p.quarantineReason || '—'}</span></div>}
           </section>
           {(p.screeningVerdict || p.screeningMetadata || String(p.quarantineReason || '').startsWith('screening_')) && (() => {
             const sm = p.screeningMetadata || {};
@@ -551,7 +551,7 @@ export default function AdminV2Prospects() {
               <span className="av2-mono" style={{ width: 110, flex: 'none', fontSize: 11, color: 'var(--ink-2)' }}>{p.phone || '—'}</span>
               <span style={{ width: 130, flex: 'none' }}>
                 {held
-                  ? <Chip tone="hold" glyph="◆">{HELD_REASON_LABELS[p.quarantineReason]?.split(' ').slice(0, 2).join(' ') || 'Held'}</Chip>
+                  ? <Chip tone="hold" glyph="◆">{heldLabel(p).short}</Chip>
                   : <Chip tone={STATUS_CHIP_CLASS[p.leadStatus]?.replace('av2-chip--', '') || ''}>{STATUS_LABELS[p.leadStatus] || p.leadStatus}</Chip>}
               </span>
               <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.campaign?.name || '—'}</span>

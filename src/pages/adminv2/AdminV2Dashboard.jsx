@@ -15,7 +15,7 @@ import { useAttention, useSeries, useFunnel, useCampaignLeaderboard, useProspect
 import { fetchProspects } from '@/api/adminV2';
 import { composeAttentionRows, composeHealthStrip, SEVERITY_GLYPH } from '@/lib/adminV2/attention';
 import { fmtNumber, fmtSGD, fmtRelative, fmtAgoShort, daysUntil } from '@/lib/adminV2/format';
-import { HELD_REASON_LABELS } from '@/lib/adminV2/constants';
+import { heldLabel } from '@/lib/adminV2/constants';
 import { prospectsToCsv, downloadCsv } from '@/lib/adminV2/csv';
 import { Card, PeriodSwitch, Skeleton, ErrorState } from '@/components/adminv2/primitives';
 import { SeriesLineChart } from '@/components/adminv2/charts';
@@ -256,7 +256,7 @@ function RecentLeads() {
                 <span style={{ width: 126, flex: 'none', display: 'flex', justifyContent: 'flex-end' }}>
                   {held ? (
                     <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--hold-soft)', color: 'var(--hold)', borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>
-                      ◆ {HELD_REASON_LABELS[p.quarantineReason] ? `Held · ${HELD_REASON_LABELS[p.quarantineReason]}` : 'Held'}
+                      ◆ Held · {heldLabel(p).short}
                     </span>
                   ) : agent ? (
                     <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agent}</span>
