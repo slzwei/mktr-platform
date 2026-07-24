@@ -8,6 +8,7 @@
 process.env.REDEEM_OPS_ENABLED = 'true';
 process.env.REDEEM_OPS_ENTITLEMENTS_ENABLED = 'true'; // mounts /api/reward-claim + unlock surfaces
 
+import { jest } from '@jest/globals';
 import request from 'supertest';
 import { getApp, closeDb, createTestUser, createTestCampaign } from './helpers.js';
 import {
@@ -203,6 +204,37 @@ describe('redemption — exactly once', () => {
       .set(auth(redemptionOps.token))
       .send({ token: 'not-a-real-token-000000' });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('redemption → Meta CAPI wiring (VoucherRedeemed)', () => {
+  test('complete() fires the outcome hook on the FRESH redemption AND on replays, with the activation campaignId loaded', async () => {
+    const processRedemption = jest.fn().mockResolvedValue({ dispatched: 'VoucherRedeemed' });
+    const wired = makeRedemptionService({ redemptionOutcome: { processRedemption } });
+
+    const prospect = await makeVerifiedProspect();
+    const issued = await entitlements.issueForProspect(prospect);
+    expect(issued.reason).toBeNull();
+    const unlocked = await entitlements.unlockEntitlement(
+      { presentationToken: issued.presentationToken }, agentA.user, 'agent_scan'
+    );
+
+    const fresh = await wired.complete(unlocked.voucherToken, {}, redemptionOps.user);
+    expect(fresh.already).toBe(false);
+    expect(processRedemption).toHaveBeenCalledTimes(1);
+
+    // Replay ALSO fires — that's the crash-recovery path (marker/event_id
+    // make it idempotent downstream).
+    const replay = await wired.complete(unlocked.voucherToken, {}, redemptionOps.user);
+    expect(replay.already).toBe(true);
+    expect(processRedemption).toHaveBeenCalledTimes(2);
+
+    // R1 #1 regression guard: the entitlement handed to the hook carries the
+    // activation's campaignId (the include selects it), so the outcome
+    // service scopes consent/pixel/custom_data without a reload.
+    const { entitlement } = processRedemption.mock.calls[0][0];
+    expect(entitlement.activation).toBeTruthy();
+    expect(entitlement.activation.campaignId).toBe(campaign.id);
   });
 });
 

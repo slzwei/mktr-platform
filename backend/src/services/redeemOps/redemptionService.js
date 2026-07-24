@@ -7,6 +7,7 @@ import { AppError } from '../../middleware/errorHandler.js';
 import { logger } from '../../utils/logger.js';
 import { makeInventoryService } from './inventoryService.js';
 import { makeRedeemOpsAuditService } from './auditService.js';
+import { makeRedemptionOutcomeService } from '../redemptionOutcomeService.js';
 import { hashToken } from './tokens.js';
 
 /**
@@ -24,6 +25,7 @@ export function makeRedemptionService(overrides = {}) {
     PartnerOrganisation, PartnerLocation, Prospect, User, sequelize, logger,
     inventory: makeInventoryService(),
     audit: makeRedeemOpsAuditService(),
+    redemptionOutcome: makeRedemptionOutcomeService(),
     ...overrides,
   };
 
@@ -56,7 +58,10 @@ export function makeRedemptionService(overrides = {}) {
       where: { [Op.or]: [{ tokenHash: hash }, { presentationTokenHash: hash }] },
       include: [
         { model: d.RewardOffer, as: 'rewardOffer', attributes: ['id', 'title', 'publicTitle', 'partnerOrganisationId'] },
-        { model: d.Activation, as: 'activation', attributes: ['id', 'campaignNameSnapshot', 'partnerOrganisationId'] },
+        // campaignId rides for the CAPI redemption event's activation-campaign
+        // scope — without it the association is "loaded" but the field is
+        // undefined and the outcome service would mis-scope (Codex R1 #1).
+        { model: d.Activation, as: 'activation', attributes: ['id', 'campaignNameSnapshot', 'partnerOrganisationId', 'campaignId'] },
         { model: d.Prospect, as: 'prospect', attributes: ['id', 'firstName', 'lastName', 'phone'] },
       ],
     });
@@ -109,8 +114,27 @@ export function makeRedemptionService(overrides = {}) {
       throw new AppError('This is a reservation pass, not a voucher — the reward unlocks at the financial review.', 422);
     }
 
+    // Meta CAPI VoucherRedeemed — fire-and-forget on EVERY redeemed
+    // resolution, replays included: the marker + deterministic event_id make
+    // it idempotent, and a replay is exactly how a send lost to a crash
+    // between commit and dispatch gets recovered (Codex R1 #2). A reporting
+    // failure must never fail or slow the counter flow.
+    const fireCapi = () => {
+      try {
+        const p = d.redemptionOutcome?.processRedemption({ entitlement });
+        if (p && typeof p.catch === 'function') {
+          p.catch((err) => d.logger.warn({ entitlementId: entitlement.id, error: err?.message || String(err) },
+            'redemption.capi.dispatch_error'));
+        }
+      } catch (err) {
+        d.logger.warn({ entitlementId: entitlement.id, error: err?.message || String(err) },
+          'redemption.capi.dispatch_error');
+      }
+    };
+
     if (entitlement.status === 'redeemed') {
       const existing = await d.Redemption.findOne({ where: { entitlementId: entitlement.id } });
+      fireCapi();
       return { redemption: existing, entitlement, already: true };
     }
     if (entitlement.status !== 'issued') {
@@ -166,14 +190,17 @@ export function makeRedemptionService(overrides = {}) {
         });
         return created;
       });
+      fireCapi();
       return { redemption, entitlement, already: false };
     } catch (err) {
       if (err?._already) {
         const existing = await d.Redemption.findOne({ where: { entitlementId: entitlement.id } });
+        fireCapi();
         return { redemption: existing, entitlement, already: true };
       }
       if (err?.name === 'SequelizeUniqueConstraintError') {
         const existing = await d.Redemption.findOne({ where: { entitlementId: entitlement.id } });
+        fireCapi();
         return { redemption: existing, entitlement, already: true };
       }
       throw err;
