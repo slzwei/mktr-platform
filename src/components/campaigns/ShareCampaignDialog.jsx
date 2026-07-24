@@ -97,7 +97,7 @@ export default function ShareCampaignDialog({ open, onOpenChange, campaignName, 
  <div className="flex items-center justify-between px-5 pt-5 pb-3">
  <div className="flex-1">
  <h2 className="text-lg font-bold text-foreground">Invite Friends</h2>
- <p className="text-sm text-muted-foreground mt-0.5">Share"{campaignName}"with others.</p>
+ <p className="text-sm text-muted-foreground mt-0.5">Share "{campaignName}" with others.</p>
  </div>
  <button onClick={close} className="ml-3 p-1.5 rounded-full hover:bg-muted text-muted-foreground">
  <X className="w-5 h-5"/>
