@@ -58,7 +58,10 @@ const defaultDeps = {
 /**
  * Verify the Retell webhook signature (HMAC-SHA256).
  * Retell sends: x-retell-signature: v=<timestamp>,d=<hmac_hex>
- * The HMAC is computed over: "<timestamp>.<raw_body>"
+ * The HMAC is computed over "<raw_body><timestamp>" — body FIRST, millisecond
+ * timestamp appended, NO separator — keyed by the workspace API key
+ * (retell-sdk webhook_auth.js: sign = hmac(input + timestamp)). Any other
+ * arrangement 401s every webhook.
  *
  * @param {Buffer} rawBody - raw request body
  * @param {string} signatureHeader - value of x-retell-signature header
@@ -83,11 +86,9 @@ export function verifyRetellSignature(rawBody, signatureHeader) {
     return false;
   }
 
-  // Reject replays older than 5 minutes. Retell sends the timestamp in seconds
-  // (Stripe-style "<t>.<body>" signing); normalize to milliseconds for the window
-  // comparison while keeping the raw `timestamp` string for the HMAC below. A
-  // value below 1e12 is treated as seconds (a millisecond epoch is ~1.7e12 today),
-  // so this also tolerates a millisecond timestamp without double-scaling.
+  // Reject replays older than 5 minutes. Retell timestamps are milliseconds
+  // (Date.now() on their side); a value below 1e12 is treated as seconds so a
+  // second-resolution timestamp can't be double-scaled out of the window.
   const tsNum = Number(timestamp);
   if (Number.isNaN(tsNum)) return false;
   const tsMs = tsNum < 1e12 ? tsNum * 1000 : tsNum;
@@ -95,9 +96,8 @@ export function verifyRetellSignature(rawBody, signatureHeader) {
     return false;
   }
 
-  // Retell docs: HMAC-SHA256 over "<timestamp>.<raw_body>" using API key
   const bodyStr = rawBody.toString();
-  const expected = crypto.createHmac('sha256', secret).update(`${timestamp}.${bodyStr}`).digest('hex');
+  const expected = crypto.createHmac('sha256', secret).update(`${bodyStr}${timestamp}`).digest('hex');
   try {
     return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'));
   } catch {

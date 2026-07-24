@@ -164,7 +164,8 @@ describe('Retell webhook replay protection (verifyRetellSignature)', () => {
   function makeValidSignature(body, timestampMs) {
     const ts = String(timestampMs);
     const bodyStr = body.toString();
-    const hmac = crypto.createHmac('sha256', SECRET).update(`${ts}.${bodyStr}`).digest('hex');
+    // retell-sdk contract: hmac over body + ms timestamp, no separator
+    const hmac = crypto.createHmac('sha256', SECRET).update(`${bodyStr}${ts}`).digest('hex');
     return `v=${ts},d=${hmac}`;
   }
 

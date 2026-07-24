@@ -163,22 +163,34 @@ describe('retellService (unit)', () => {
       expect(result).toBe(false);
     });
 
-    it('returns true with valid v=timestamp,d=hmac format', () => {
+    it('accepts a signature produced exactly like retell-sdk sign()', () => {
       const secret = 'test-secret';
       process.env.RETELL_WEBHOOK_SECRET = secret;
       const body = Buffer.from('{"event":"call_ended"}');
-      // Retell sends the timestamp in seconds. It must be current: the verifier
-      // normalizes it to ms and rejects anything outside a ±5-minute replay window.
-      const timestamp = Math.floor(Date.now() / 1000).toString();
+      const timestamp = Date.now();
 
-      // Canonical format: HMAC-SHA256 over "${timestamp}.${bodyStr}"
+      // Contract (retell-sdk webhook_auth.js): `v=${ts},d=${hmac(body + ts)}`
+      // — body first, ms timestamp appended, no separator.
       const hmac = crypto.createHmac('sha256', secret)
-        .update(`${timestamp}.${body.toString()}`)
+        .update(`${body.toString()}${timestamp}`)
         .digest('hex');
 
       const sig = `v=${timestamp},d=${hmac}`;
       const result = verifyRetellSignature(body, sig);
       expect(result).toBe(true);
+    });
+
+    it('rejects the pre-2026-07 "<timestamp>.<body>" arrangement (the 401-everything bug)', () => {
+      const secret = 'test-secret';
+      process.env.RETELL_WEBHOOK_SECRET = secret;
+      const body = Buffer.from('{"event":"call_ended"}');
+      const timestamp = Date.now();
+
+      const hmac = crypto.createHmac('sha256', secret)
+        .update(`${timestamp}.${body.toString()}`)
+        .digest('hex');
+
+      expect(verifyRetellSignature(body, `v=${timestamp},d=${hmac}`)).toBe(false);
     });
 
     it('returns false with invalid signature', () => {
