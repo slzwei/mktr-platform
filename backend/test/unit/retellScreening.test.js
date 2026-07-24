@@ -174,13 +174,17 @@ describe('startScreeningAttempt', () => {
     const seq = fakeSequelize(happyDialQueries());
     const deps = dialerDeps(seq);
     const svc = makeRetellScreeningService(deps);
-    const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: screeningCampaign(), cfg: CFG });
+    const camp = { ...screeningCampaign(), min_age: 25, max_age: 60 };
+    const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: camp, cfg: CFG });
     expect(out.status).toBe('dialed');
     expect(deps.retellClient.createPhoneCall).toHaveBeenCalledWith(expect.objectContaining({
       from_number: CFG.fromNumber,
       to_number: '+6591234567',
       override_agent_id: CFG.agentId,
       metadata: { mktr: expect.objectContaining({ kind: 'screening', attemptToken: expect.stringMatching(/^att_/) }) },
+      // Campaign age gate flows into the script's {{age_min}}/{{age_max}};
+      // absent gate falls back to the column defaults (18/65) as strings.
+      retell_llm_dynamic_variables: expect.objectContaining({ age_min: '25', age_max: '60' }),
     }));
     const claim = seq.calls[3];
     expect(claim.sql).toContain(`"screeningActiveCallId" IS NULL`);

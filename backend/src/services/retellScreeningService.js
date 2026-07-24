@@ -293,6 +293,11 @@ export function makeRetellScreeningService(overrides = {}) {
           retell_llm_dynamic_variables: {
             name: String(prospect.firstName || '').slice(0, 60) || 'there',
             campaign_name: String(camp?.name || '').slice(0, 120),
+            // Campaign age gate → the agent's age question ({{age_min}}–{{age_max}}
+            // in the Retell prompt). Falls back to the campaign-column defaults so
+            // the script never speaks a literal placeholder. Strings per Retell.
+            age_min: String(Number.isInteger(camp?.min_age) ? camp.min_age : 18),
+            age_max: String(Number.isInteger(camp?.max_age) ? camp.max_age : 65),
           },
         });
 
@@ -390,6 +395,9 @@ export function makeRetellScreeningService(overrides = {}) {
         summary: analysis.call_summary || null,
         sentiment: analysis.user_sentiment || null,
         recordingUrl: call.recording_url || null,
+        // Full per-check evidence (sg_pr / age_in_range / meet_consultant …) —
+        // small object; lets the admin drawer show WHICH check failed.
+        checks: analysis.custom_analysis_data || null,
       };
       if (rawQualified === true || rawQualified === 'true') {
         return d.gate.applyQualifiedVerdict(prospect, { callId, detail });
