@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/node';
-import { hashEmail, hashPhone, hashExternalId } from '../utils/piiHashing.js';
+import { hashEmail, hashPhone, hashExternalId, hashName, hashCountry } from '../utils/piiHashing.js';
 import { logger } from '../utils/logger.js';
 
 const META_GRAPH_VERSION = 'v21.0';
@@ -9,7 +9,10 @@ const META_GRAPH_VERSION = 'v21.0';
  *
  * Excludes:
  *   - Master switch off
- *   - Missing credentials
+ *   - Missing access token (the pixel id is resolved LATE in
+ *     sendConversionEvent — ctx.pixelIdOverride || META_PIXEL_ID — so a
+ *     per-campaign pixel can fire even when the env id is unset, mirroring
+ *     tiktokEventsService)
  *   - Retell-source prospects (no ad-attribution chain)
  *   - Meta Lead Ads-source prospects (originated inside Meta; CAPI here would double-count)
  *
@@ -23,7 +26,6 @@ const META_GRAPH_VERSION = 'v21.0';
 export function shouldFireCapi(prospect) {
   if (process.env.META_CAPI_ENABLED !== 'true') return false;
   if (!process.env.META_CAPI_ACCESS_TOKEN) return false;
-  if (!process.env.META_PIXEL_ID) return false;
   if (!prospect) return false;
   if (prospect.leadSource === 'call_bot') return false;
   if (prospect.retellCallId) return false;
@@ -40,11 +42,11 @@ export function shouldFireCapi(prospect) {
  * the SAME id the browser Pixel fired with so Meta deduplicates Pixel↔CAPI.
  *
  * PII consent rule (3sites — ledger-based):
- *   - hashed em/ph are included only when ctx.marketingConsent === true. The
- *     CALLER derives that flag from the consent ledger (canMarketTo with the
- *     prospect's campaignId) at dispatch time; this builder no longer reads
- *     the frozen sourceMetadata.consent_contact boolean. Absent flag → no
- *     em/ph — FAIL CLOSED.
+ *   - hashed em/ph/fn/ln/country are included only when ctx.marketingConsent
+ *     === true. The CALLER derives that flag from the consent ledger
+ *     (canMarketTo with the prospect's campaignId) at dispatch time; this
+ *     builder no longer reads the frozen sourceMetadata.consent_contact
+ *     boolean. Absent flag → none of them — FAIL CLOSED.
  *   - fbp/fbc/ip/ua/external_id are always included regardless of marketing consent
  *     (they identify the browser/session, not the person's contact info)
  */
@@ -52,6 +54,9 @@ export function _buildPayload(prospect, ctx, options) {
   const meta = prospect.sourceMetadata || {};
   const marketingConsent = ctx?.marketingConsent === true;
   const eventName = options?.eventName || 'Lead';
+  // Where the conversion action happened. Submit-time and down-funnel events
+  // are 'website'; voucher redemption at a partner counter is 'physical_store'.
+  const actionSource = ctx.actionSource || 'website';
 
   const userData = {
     fbp: ctx.fbp || meta.fbp,
@@ -64,6 +69,11 @@ export function _buildPayload(prospect, ctx, options) {
   if (marketingConsent) {
     userData.em = hashEmail(prospect.email);
     userData.ph = hashPhone(prospect.phone);
+    // EMQ enrichment — same consent gate as em/ph (they identify the person).
+    // Country is constant: the funnel is Singapore-only.
+    userData.fn = hashName(prospect.firstName);
+    userData.ln = hashName(prospect.lastName);
+    userData.country = hashCountry('sg');
   }
 
   // Strip undefined/null/empty so we don't send placeholder hashes
@@ -79,11 +89,16 @@ export function _buildPayload(prospect, ctx, options) {
     // events (Lead/CompleteRegistration) omit ctx.eventTime → now.
     event_time: ctx.eventTime || Math.floor(Date.now() / 1000),
     event_id: ctx.eventId,
-    action_source: 'website',
-    event_source_url: ctx.eventSourceUrl || meta.eventSourceUrl || undefined,
+    action_source: actionSource,
+    // A non-website event (physical_store redemption) must not carry the
+    // months-old landing URL captured at signup — omit it entirely.
+    event_source_url:
+      actionSource === 'website' ? ctx.eventSourceUrl || meta.eventSourceUrl || undefined : undefined,
     user_data: cleanUserData,
     custom_data: {
-      campaign_id: prospect.campaignId,
+      // Redemption events scope to the ACTIVATION's campaign, which manual
+      // issuance allows to differ from the prospect's signup campaign.
+      campaign_id: ctx.campaignIdOverride || prospect.campaignId,
       lead_source: prospect.leadSource,
     },
   };
@@ -105,7 +120,7 @@ export function _buildPayload(prospect, ctx, options) {
  * Never throws to the caller. Errors land in Sentry + structured logs.
  *
  * @param {object} prospect           Sequelize prospect instance (or plain object with same shape)
- * @param {object} ctx                Request context: { eventId, fbp, fbc, clientIp, clientUserAgent, eventSourceUrl, pixelIdOverride, eventTime, marketingConsent }
+ * @param {object} ctx                Request context: { eventId, fbp, fbc, clientIp, clientUserAgent, eventSourceUrl, pixelIdOverride, eventTime, marketingConsent, actionSource, campaignIdOverride }
  * @param {object} [options]          { eventName }  — defaults to 'Lead'
  * @param {object} [deps]             Injected dependencies for testing: { fetch }
  * @returns {Promise<object>}         { sent: boolean, ...details }
@@ -120,7 +135,12 @@ export async function sendConversionEvent(prospect, ctx = {}, options = {}, deps
     return { sent: false, reason: 'guarded' };
   }
 
+  // Late pixel-id resolution (mirrors tiktokEventsService): a per-campaign
+  // override can fire even when the env id is unset; bail only if neither.
   const pixelId = ctx.pixelIdOverride || process.env.META_PIXEL_ID;
+  if (!pixelId) {
+    return { sent: false, reason: 'no_pixel_id' };
+  }
   const accessToken = process.env.META_CAPI_ACCESS_TOKEN;
   const testEventCode = process.env.META_TEST_EVENT_CODE || undefined;
 

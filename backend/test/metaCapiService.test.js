@@ -1,4 +1,7 @@
 import { jest } from '@jest/globals';
+import { createHash } from 'crypto';
+
+const sha256 = (v) => createHash('sha256').update(v).digest('hex');
 
 // Mock @sentry/node BEFORE the SUT is imported. Jest ESM requires
 // unstable_mockModule + dynamic import for mocked modules.
@@ -48,6 +51,8 @@ const webProspect = (overrides = {}) => ({
   id: 'prospect-uuid-1',
   email: 'shawn@mktr.sg',
   phone: '+6581234567',
+  firstName: 'Shawn',
+  lastName: "O'Neil-Tan",
   campaignId: 'campaign-uuid-1',
   leadSource: 'qr_code',
   retellCallId: null,
@@ -85,9 +90,9 @@ describe('shouldFireCapi', () => {
     expect(shouldFireCapi(webProspect())).toBe(false);
   });
 
-  it('returns false when META_PIXEL_ID is missing', () => {
+  it('stays true when META_PIXEL_ID is missing — the pixel id resolves LATE in sendConversionEvent', () => {
     delete process.env.META_PIXEL_ID;
-    expect(shouldFireCapi(webProspect())).toBe(false);
+    expect(shouldFireCapi(webProspect())).toBe(true);
   });
 
   it('returns false for null/undefined prospect', () => {
@@ -158,6 +163,49 @@ describe('_buildPayload', () => {
     expect(ctxWins.data[0].user_data.em).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it('EMQ: hashes fn/ln/country with consent, using Meta-normalized inputs (lowercase, strip whitespace+punctuation, keep digits/UTF-8)', () => {
+    const payload = _buildPayload(
+      webProspect({ firstName: '  Shawn 3 ', lastName: "O'Neil-Tan" }),
+      { ...ctx, marketingConsent: true },
+      {}
+    );
+    const ud = payload.data[0].user_data;
+    expect(ud.fn).toBe(sha256('shawn3')); // digits kept, whitespace stripped
+    expect(ud.ln).toBe(sha256('oneiltan')); // apostrophe + hyphen stripped
+    expect(ud.country).toBe(sha256('sg'));
+  });
+
+  it('EMQ: keeps UTF-8 letters in name hashes', () => {
+    const payload = _buildPayload(
+      webProspect({ firstName: 'José', lastName: 'Müller' }),
+      { ...ctx, marketingConsent: true },
+      {}
+    );
+    const ud = payload.data[0].user_data;
+    expect(ud.fn).toBe(sha256('josé'));
+    expect(ud.ln).toBe(sha256('müller'));
+  });
+
+  it('EMQ: omits fn/ln/country without consent — same FAIL-CLOSED gate as em/ph', () => {
+    for (const ctxVariant of [ctx, { ...ctx, marketingConsent: false }]) {
+      const ud = _buildPayload(webProspect(), ctxVariant, {}).data[0].user_data;
+      expect(ud.fn).toBeUndefined();
+      expect(ud.ln).toBeUndefined();
+      expect(ud.country).toBeUndefined();
+    }
+  });
+
+  it('EMQ: name-less prospects with consent omit fn/ln (no placeholder hashes)', () => {
+    const ud = _buildPayload(
+      webProspect({ firstName: null, lastName: '' }),
+      { ...ctx, marketingConsent: true },
+      {}
+    ).data[0].user_data;
+    expect(ud.fn).toBeUndefined();
+    expect(ud.ln).toBeUndefined();
+    expect(ud.country).toBe(sha256('sg')); // country rides with consent regardless of names
+  });
+
   it('always includes fbp/fbc/ip/ua/external_id regardless of consent', () => {
     const payload = _buildPayload(webProspect(), { ...ctx, marketingConsent: false }, {});
     const ud = payload.data[0].user_data;
@@ -222,6 +270,27 @@ describe('_buildPayload', () => {
     expect(event.event_name).toBe('Lead');
   });
 
+  it('ctx.actionSource overrides action_source AND suppresses event_source_url for non-website events', () => {
+    const event = _buildPayload(
+      webProspect(),
+      { ...ctx, actionSource: 'physical_store' },
+      { eventName: 'VoucherRedeemed' }
+    ).data[0];
+    expect(event.action_source).toBe('physical_store');
+    // A counter redemption must not carry the months-old landing URL.
+    expect(event).not.toHaveProperty('event_source_url');
+    expect(event.event_name).toBe('VoucherRedeemed');
+  });
+
+  it('ctx.campaignIdOverride replaces prospect.campaignId in custom_data (activation-scoped redemption)', () => {
+    const event = _buildPayload(
+      webProspect(),
+      { ...ctx, campaignIdOverride: 'activation-campaign-uuid' },
+      {}
+    ).data[0];
+    expect(event.custom_data.campaign_id).toBe('activation-campaign-uuid');
+  });
+
   it('defaults event_name to Lead when options.eventName is absent', () => {
     const event = _buildPayload(webProspect(), ctx, { testEventCode: 'X' }).data[0];
     expect(event.event_name).toBe('Lead');
@@ -273,6 +342,28 @@ describe('sendLeadEvent', () => {
     const result = await sendLeadEvent(webProspect(), { eventId: 'evt-1' }, { fetch: fetchSpy });
     expect(result).toEqual({ sent: false, reason: 'guarded' });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns { sent: false, reason: "no_pixel_id" } when neither override nor env pixel id exists; does NOT call fetch', async () => {
+    delete process.env.META_PIXEL_ID;
+    const fetchSpy = okFetch();
+    const result = await sendLeadEvent(webProspect(), { eventId: 'evt-1' }, { fetch: fetchSpy });
+    expect(result).toEqual({ sent: false, reason: 'no_pixel_id' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('a per-campaign pixelIdOverride fires even when META_PIXEL_ID is unset (late resolution, mirrors TikTok)', async () => {
+    delete process.env.META_PIXEL_ID;
+    const fetchSpy = okFetch();
+    const result = await sendLeadEvent(
+      webProspect(),
+      { eventId: 'evt-1', pixelIdOverride: '999888777666555' },
+      { fetch: fetchSpy }
+    );
+    expect(result.sent).toBe(true);
+    expect(fetchSpy.mock.calls[0][0]).toBe(
+      'https://graph.facebook.com/v21.0/999888777666555/events?access_token=TEST_TOKEN'
+    );
   });
 
   it('calls fetch with the correct URL, method, headers, and body on a happy path', async () => {

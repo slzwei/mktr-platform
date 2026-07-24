@@ -543,12 +543,19 @@ describe('3sites — delayed down-funnel CAPI re-checks the ledger at send time'
     expect(last[2].eventName).toBe('ClosedWon');
     expect(last[1].marketingConsent).toBe(false);
 
-    // And the flag is what actually strips em/ph from the wire payload.
+    // And the flag is what actually strips ALL five contact-PII fields from
+    // the wire payload (em/ph plus the EMQ trio fn/ln/country).
     const withConsent = buildMetaPayload(prospect, { eventId: 'e1', marketingConsent: true }, {});
     expect(withConsent.data[0].user_data.ph).toMatch(/^[a-f0-9]{64}$/);
+    expect(withConsent.data[0].user_data.fn).toMatch(/^[a-f0-9]{64}$/);
+    expect(withConsent.data[0].user_data.ln).toMatch(/^[a-f0-9]{64}$/);
+    expect(withConsent.data[0].user_data.country).toMatch(/^[a-f0-9]{64}$/);
     const withoutConsent = buildMetaPayload(prospect, { eventId: 'e1', marketingConsent: false }, {});
     expect(withoutConsent.data[0].user_data.ph).toBeUndefined();
     expect(withoutConsent.data[0].user_data.em).toBeUndefined();
+    expect(withoutConsent.data[0].user_data.fn).toBeUndefined();
+    expect(withoutConsent.data[0].user_data.ln).toBeUndefined();
+    expect(withoutConsent.data[0].user_data.country).toBeUndefined();
   });
 });
 
