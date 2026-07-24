@@ -63,6 +63,7 @@ function mkWorld({ draw = true, status = 'eligible', drawOver = {} } = {}) {
     notifyReservation: jest.fn(async () => ({ sent: true })),
     notifyUnlockWa: null,
     notifyReservationWa: null,
+    notifyBoostReceiptWa: jest.fn(async () => ({ sent: true, to: '••••9089' })),
     logger: silentLogger,
   };
   return { deps, row, entitlement, updates, events, svc: makeEntitlementService(deps) };
@@ -87,6 +88,9 @@ describe('unlockEntitlement — draw rail (CX22/CX7)', () => {
     await flushDeliveries();
     expect(w.deps.notifyBoostReceipt).toHaveBeenCalledTimes(1);
     expect(w.deps.notifyUnlock).not.toHaveBeenCalled();
+    // WhatsApp twin (draw_boost_receipt template) rides the same unlock.
+    expect(w.deps.notifyBoostReceiptWa).toHaveBeenCalledTimes(1);
+    expect(w.deps.notifyBoostReceiptWa.mock.calls[0][0].drawCtx).toMatchObject({ multiplier: 10 });
   });
 
   it('trial rails are byte-unchanged: voucher minted, redemption window set, voucher email', async () => {
@@ -100,6 +104,7 @@ describe('unlockEntitlement — draw rail (CX22/CX7)', () => {
     await flushDeliveries();
     expect(w.deps.notifyUnlock).toHaveBeenCalledTimes(1);
     expect(w.deps.notifyBoostReceipt).not.toHaveBeenCalled();
+    expect(w.deps.notifyBoostReceiptWa).not.toHaveBeenCalled();
   });
 
   it('REFUSES truthfully after the boost window closes — no unearned ×N confirmation (CX7)', async () => {
