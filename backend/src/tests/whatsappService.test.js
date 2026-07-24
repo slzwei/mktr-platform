@@ -65,9 +65,12 @@ function enableWithCreds() {
   process.env.WHATSAPP_PHONE_NUMBER_ID = '555000111';
 }
 
-function makeSvc({ fetch, qr = qrRecorder(), card = cardRecorder(), RewardOffer = offerFake } = {}) {
+function makeSvc({ fetch, qr = qrRecorder(), card = cardRecorder(), RewardOffer = offerFake, isSendBlocked } = {}) {
   // Inject a no-op sleep so graphFetch's backoff doesn't slow tests.
-  return makeWhatsappService({ RewardOffer, fetch, QRCode: qr, renderQrCard: card, logger: silentLogger, sleep: async () => {} });
+  return makeWhatsappService({
+    RewardOffer, fetch, QRCode: qr, renderQrCard: card, logger: silentLogger, sleep: async () => {},
+    ...(isSendBlocked ? { isSendBlocked } : {}),
+  });
 }
 
 /**
@@ -104,13 +107,20 @@ describe('waRecipient — Graph API recipient normalization', () => {
   });
 });
 
-describe('canWhatsAppProspect — capability + D2 safe-default consent gate', () => {
-  it('true only with a WA-able phone AND consent_contact === true (D2 pending)', () => {
-    expect(canWhatsAppProspect(consented)).toBe(true);
-    expect(canWhatsAppProspect({ ...consented, sourceMetadata: {} })).toBe(false);
-    expect(canWhatsAppProspect({ ...consented, sourceMetadata: { consent_contact: false } })).toBe(false);
-    expect(canWhatsAppProspect({ firstName: 'S', sourceMetadata: { consent_contact: true } })).toBe(false);
-    expect(canWhatsAppProspect(null)).toBe(false);
+describe('canWhatsAppProspect — ledger-based purpose gate (3sites, D2 resolved)', () => {
+  it('transactional: any WA-able phone passes — the frozen consent boolean no longer gates', async () => {
+    // DB-less runs exercise isSendBlocked's documented fail-OPEN-for-transactional posture.
+    expect(await canWhatsAppProspect(consented)).toBe(true);
+    // D2 resolved: an unticked/absent contact box does NOT block credential delivery…
+    expect(await canWhatsAppProspect({ ...consented, sourceMetadata: {} })).toBe(true);
+    expect(await canWhatsAppProspect({ ...consented, sourceMetadata: { consent_contact: false } })).toBe(true);
+    // …but the phone capability arm still gates.
+    expect(await canWhatsAppProspect({ firstName: 'S', sourceMetadata: { consent_contact: true } })).toBe(false);
+    expect(await canWhatsAppProspect(null)).toBe(false);
+  });
+
+  it('marketing: fails CLOSED without a resolvable verified grant (DB-less → false)', async () => {
+    expect(await canWhatsAppProspect(consented, { purpose: 'marketing' })).toBe(false);
   });
 });
 
@@ -123,15 +133,39 @@ describe('gates fire before any network call', () => {
     expect(fetch.calls.length).toBe(0);
   });
 
-  it('flag on but no consent → skipped no_whatsapp, no fetch', async () => {
+  it('flag on but no usable phone → skipped no_whatsapp, no fetch', async () => {
     enableWithCreds();
     const fetch = fetchRecorder();
     const svc = makeSvc({ fetch });
     const r = await svc.sendReservationWhatsApp({
-      entitlement, prospect: { ...consented, sourceMetadata: {} }, presentationToken: 'ptok',
+      entitlement, prospect: { ...consented, phone: null }, presentationToken: 'ptok',
     });
     expect(r).toEqual({ sent: false, skipped: 'no_whatsapp' });
     expect(fetch.calls.length).toBe(0);
+  });
+
+  it('flag on but ledger-suppressed (erasure) → skipped suppressed, no fetch', async () => {
+    enableWithCreds();
+    const fetch = fetchRecorder();
+    const svc = makeSvc({ fetch, isSendBlocked: async () => true });
+    const r = await svc.sendReservationWhatsApp({ entitlement, prospect: consented, presentationToken: 'ptok' });
+    expect(r).toEqual({ sent: false, skipped: 'suppressed' });
+    expect(fetch.calls.length).toBe(0);
+  });
+
+  it('gate order: disabled beats phone beats suppression (no early ledger reads)', async () => {
+    const fetch = fetchRecorder();
+    let ledgerReads = 0;
+    const svc = makeSvc({ fetch, isSendBlocked: async () => { ledgerReads += 1; return false; } });
+    // Flag off → 'disabled' without ever consulting phone or ledger.
+    let r = await svc.sendReservationWhatsApp({ entitlement, prospect: { ...consented, phone: null }, presentationToken: 'p' });
+    expect(r).toEqual({ sent: false, skipped: 'disabled' });
+    expect(ledgerReads).toBe(0);
+    // Flag on + no phone → 'no_whatsapp' without a ledger read.
+    enableWithCreds();
+    r = await svc.sendReservationWhatsApp({ entitlement, prospect: { ...consented, phone: null }, presentationToken: 'p' });
+    expect(r).toEqual({ sent: false, skipped: 'no_whatsapp' });
+    expect(ledgerReads).toBe(0);
   });
 
   it('flag on but creds missing → error result (receipt-worthy), no fetch', async () => {

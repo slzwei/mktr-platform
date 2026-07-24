@@ -39,15 +39,18 @@ export function shouldFireCapi(prospect) {
  * at the result reveal. The event_id always comes from ctx.eventId — callers pass
  * the SAME id the browser Pixel fired with so Meta deduplicates Pixel↔CAPI.
  *
- * PII consent rule:
- *   - hashed em/ph are included only when prospect has marketing consent
- *     (sourceMetadata.consent_contact === true)
+ * PII consent rule (3sites — ledger-based):
+ *   - hashed em/ph are included only when ctx.marketingConsent === true. The
+ *     CALLER derives that flag from the consent ledger (canMarketTo with the
+ *     prospect's campaignId) at dispatch time; this builder no longer reads
+ *     the frozen sourceMetadata.consent_contact boolean. Absent flag → no
+ *     em/ph — FAIL CLOSED.
  *   - fbp/fbc/ip/ua/external_id are always included regardless of marketing consent
  *     (they identify the browser/session, not the person's contact info)
  */
 export function _buildPayload(prospect, ctx, options) {
   const meta = prospect.sourceMetadata || {};
-  const marketingConsent = meta.consent_contact === true;
+  const marketingConsent = ctx?.marketingConsent === true;
   const eventName = options?.eventName || 'Lead';
 
   const userData = {
@@ -102,7 +105,7 @@ export function _buildPayload(prospect, ctx, options) {
  * Never throws to the caller. Errors land in Sentry + structured logs.
  *
  * @param {object} prospect           Sequelize prospect instance (or plain object with same shape)
- * @param {object} ctx                Request context: { eventId, fbp, fbc, clientIp, clientUserAgent, eventSourceUrl, pixelIdOverride, eventTime }
+ * @param {object} ctx                Request context: { eventId, fbp, fbc, clientIp, clientUserAgent, eventSourceUrl, pixelIdOverride, eventTime, marketingConsent }
  * @param {object} [options]          { eventName }  — defaults to 'Lead'
  * @param {object} [deps]             Injected dependencies for testing: { fetch }
  * @returns {Promise<object>}         { sent: boolean, ...details }

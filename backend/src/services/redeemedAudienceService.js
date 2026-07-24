@@ -4,6 +4,7 @@ import { Prospect } from '../models/index.js';
 import { hashEmail, hashPhone } from '../utils/piiHashing.js';
 import { logger } from '../utils/logger.js';
 import { sendEmail } from './mailer.js';
+import { contactGrantAllows } from './contactConsent.js';
 
 /**
  * Redeemed-audience sync — pushes redeemers (hashed email + phone) from our own
@@ -64,14 +65,15 @@ export function chunk(arr, size) {
 }
 
 /**
- * Select redeemers: every non-bot prospect (form submitters). Consent + synthetic
- * filtering happens in buildUserRows so the SQL stays simple and the JSON consent
- * read mirrors metaCapiService (which treats consent_contact as a JS boolean).
+ * Select redeemers: every non-bot prospect (form submitters). Consent +
+ * synthetic filtering happens in buildUserRows so the SQL stays simple;
+ * campaignId rides along because the ledger grant check is campaign-scoped
+ * (3sites — the legacy sourceMetadata.consent_contact read is gone).
  */
 export async function selectRedeemers(deps = {}) {
   const d = { ...defaultDeps, ...deps };
   return d.Prospect.findAll({
-    attributes: ['email', 'phone', 'sourceMetadata'],
+    attributes: ['email', 'phone', 'campaignId'],
     where: { leadSource: { [Op.ne]: 'call_bot' } },
     raw: true,
   });
@@ -80,16 +82,23 @@ export async function selectRedeemers(deps = {}) {
 /**
  * Turn prospect rows into hashed multi-key audience rows `[emailHash, phoneHash]`.
  * - Drops synthetic Retell emails (@calls.mktr.sg).
- * - When consent is required, drops rows without consent_contact === true.
- * - Drops SUPPRESSED people (PR B): matched BY PHONE so rows the consumer
- *   spine failed to link still suppress — fail-closed, never by FK.
+ * - When consent is required, keeps ONLY rows whose latest ledger `contact`
+ *   event in scope {row's campaign, global} is granted && verified (3sites):
+ *   `grantMap` = consentService.getMarketableGrantMap(), keyed BY PHONE so
+ *   spine-unlinked rows still enforce. No map / no phone / no entry →
+ *   excluded — FAIL CLOSED. (Erased consumers have no map entry either.)
+ * - Drops SUPPRESSED people (PR B) unconditionally: matched BY PHONE so rows
+ *   the consumer spine failed to link still suppress — fail-closed, never by FK.
  * - Drops rows with neither a usable email nor phone.
  * - Missing key → empty string (Meta multi-key allows blanks).
  */
-export function buildUserRows(prospects, { requireConsent = true, suppressedPhones = null } = {}) {
+export function buildUserRows(
+  prospects,
+  { requireConsent = true, suppressedPhones = null, grantMap = null } = {}
+) {
   const rows = [];
   for (const p of prospects || []) {
-    if (requireConsent && p?.sourceMetadata?.consent_contact !== true) continue;
+    if (requireConsent && !contactGrantAllows(grantMap?.get(p?.phone), p?.campaignId || null)) continue;
     if (suppressedPhones && p?.phone && suppressedPhones.has(p.phone)) continue;
     const email =
       p?.email && !String(p.email).toLowerCase().endsWith(SYNTHETIC_EMAIL_SUFFIX)
@@ -180,14 +189,18 @@ export async function syncRedeemedAudience(deps = {}) {
   const version = graphVersion();
   const mode = (process.env.REDEEMED_AUDIENCE_SYNC_MODE || 'add').toLowerCase();
   const requireConsent = requireConsentEnabled();
-  // Fail-closed by construction: if the suppression lookup throws, the sync
-  // run aborts — we never upload while blind to withdrawals (Codex R1 #12).
-  const { getSuppressedPhoneSet } = await import('./consentService.js');
-  const suppressedPhones = await getSuppressedPhoneSet();
 
   try {
+    // Fail-closed by construction: if either ledger lookup throws, the sync
+    // run aborts — we never upload while blind to withdrawals (Codex R1 #12).
+    // Inside the try (3sites) so an abort is observable: Sentry + alert email,
+    // not a silent escape into the bootstrap cron's warn.
+    const { getSuppressedPhoneSet, getMarketableGrantMap } = await import('./consentService.js');
+    const suppressedPhones = await getSuppressedPhoneSet();
+    const grantMap = requireConsent ? await getMarketableGrantMap() : null;
+
     const prospects = await selectRedeemers(d);
-    const rows = buildUserRows(prospects, { requireConsent, suppressedPhones });
+    const rows = buildUserRows(prospects, { requireConsent, suppressedPhones, grantMap });
     logger.info(
       { selected: prospects.length, eligible: rows.length, requireConsent, mode },
       'redeemed_audience.sync.start'

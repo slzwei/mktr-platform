@@ -9,8 +9,8 @@ import { makeEntitlementService, flushDeliveries } from '../services/redeemOps/e
 //   3. receipts are truthful per channel; `skipped` writes none.
 
 const entitlement = { id: 'ent-1' };
-const emailable = { email: 'sarah@example.com', phone: '+6591234567', sourceMetadata: { consent_contact: true } };
-const retellLead = { email: null, phone: '+6591234567', sourceMetadata: { consent_contact: true } };
+const emailable = { email: 'sarah@example.com', phone: '+6591234567' };
+const retellLead = { email: null, phone: '+6591234567' };
 const silentLogger = { error: () => {}, warn: () => {}, info: () => {} };
 
 function makeSvc({ events, email = null, wa = null, emailReservation = null, waReservation = null }) {

@@ -83,3 +83,18 @@ export function isKnownConsentCopyVersion(version) {
   return typeof version === 'string'
     && Object.prototype.hasOwnProperty.call(CONTACT_CONSENT_VERSIONS, version);
 }
+
+/**
+ * Resolve one phone's grant-map entry for a campaign scope (3sites migration).
+ * `scopes` is one value of consentService.getMarketableGrantMap():
+ *   '*'    → latest GLOBAL contact event is granted && verified
+ *   <uuid> → latest contact event in scope {that campaign, global} is
+ *            granted && verified (cross-scope recency folded in by the builder)
+ * Missing map / missing entry → false — FAIL CLOSED. Kept here (dependency-
+ * free) so model-mocked test suites can import it without dragging Sequelize.
+ */
+export function contactGrantAllows(scopes, campaignId) {
+  if (!(scopes instanceof Map)) return false;
+  if (campaignId && scopes.has(campaignId)) return scopes.get(campaignId) === true;
+  return scopes.get('*') === true;
+}

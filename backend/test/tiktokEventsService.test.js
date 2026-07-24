@@ -122,23 +122,37 @@ describe('_buildPayload', () => {
     expect(_buildPayload(webProspect(), { eventId: 'evt-xyz' }, {}).data[0].event_id).toBe('evt-xyz');
   });
 
-  it('hashes email and phone when marketing consent is true', () => {
-    const user = _buildPayload(webProspect(), ctx, {}).data[0].user;
+  it('hashes email and phone when ctx.marketingConsent is true (ledger-derived by the caller)', () => {
+    const user = _buildPayload(webProspect(), { ...ctx, marketingConsent: true }, {}).data[0].user;
     expect(user.email).toMatch(/^[a-f0-9]{64}$/);
     expect(user.phone).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it('omits email and phone when marketing consent is false/missing', () => {
-    const u1 = _buildPayload(webProspect({ sourceMetadata: { consent_contact: false } }), ctx, {}).data[0].user;
+  it('omits email and phone when ctx.marketingConsent is false or absent — FAIL CLOSED', () => {
+    const u1 = _buildPayload(webProspect(), { ...ctx, marketingConsent: false }, {}).data[0].user;
     expect(u1.email).toBeUndefined();
     expect(u1.phone).toBeUndefined();
-    const u2 = _buildPayload(webProspect({ sourceMetadata: {} }), ctx, {}).data[0].user;
+    const u2 = _buildPayload(webProspect(), ctx, {}).data[0].user;
     expect(u2.email).toBeUndefined();
     expect(u2.phone).toBeUndefined();
   });
 
+  it('3sites: the stored consent_contact boolean is IGNORED — only the ctx flag gates', () => {
+    // webProspect() carries sourceMetadata.consent_contact:true; without the
+    // ctx flag the identifiers must not ride…
+    const stored = _buildPayload(webProspect({ sourceMetadata: { consent_contact: true } }), ctx, {}).data[0].user;
+    expect(stored.email).toBeUndefined();
+    // …and the ctx flag licenses them even when the stored boolean says false.
+    const ctxWins = _buildPayload(
+      webProspect({ sourceMetadata: { consent_contact: false } }),
+      { ...ctx, marketingConsent: true },
+      {}
+    ).data[0].user;
+    expect(ctxWins.email).toMatch(/^[a-f0-9]{64}$/);
+  });
+
   it('always includes ttclid/ttp/ip/user_agent/external_id regardless of consent', () => {
-    const user = _buildPayload(webProspect({ sourceMetadata: { consent_contact: false } }), ctx, {}).data[0].user;
+    const user = _buildPayload(webProspect(), { ...ctx, marketingConsent: false }, {}).data[0].user;
     expect(user.ttclid).toBe('ttclid-abc');
     expect(user.ttp).toBe('ttp-xyz');
     expect(user.ip).toBe('203.0.113.1');
@@ -212,6 +226,16 @@ describe('sendTikTokLeadEvent', () => {
     const result = await sendTikTokLeadEvent(webProspect(), { eventId: 'evt-1' }, { fetch: okFetch() });
     expect(result.sent).toBe(true);
     expect(result.status).toBe(200);
+  });
+
+  it('threads ctx.marketingConsent through to the wire payload (email rides only with the flag)', async () => {
+    const withFlag = okFetch();
+    await sendTikTokLeadEvent(webProspect(), { eventId: 'evt-1', marketingConsent: true }, { fetch: withFlag });
+    expect(JSON.parse(withFlag.mock.calls[0][1].body).data[0].user.email).toMatch(/^[a-f0-9]{64}$/);
+
+    const withoutFlag = okFetch();
+    await sendTikTokLeadEvent(webProspect(), { eventId: 'evt-1' }, { fetch: withoutFlag });
+    expect(JSON.parse(withoutFlag.mock.calls[0][1].body).data[0].user.email).toBeUndefined();
   });
 
   it('treats a non-zero TikTok `code` on HTTP 200 as a failure (+ Sentry)', async () => {

@@ -223,9 +223,10 @@ export const schemas = {
     // server-side TikTok Events API. Whitelisted here so they don't 400.
     ttclid: Joi.string().max(512).optional(),
     ttp: Joi.string().max(255).optional(),
-    // PDPA consent flags from the lead-capture form. Stashed in sourceMetadata.
-    // consent_contact gates hashed PII (em/ph) in the CAPI payload — see
-    // metaCapiService._buildPayload's `marketingConsent` check.
+    // PDPA consent flags from the lead-capture form. Stashed in sourceMetadata
+    // and recorded as consent-ledger evidence at capture. Since 3sites the
+    // LEDGER (not this boolean) gates hashed PII (em/ph) in CAPI payloads —
+    // see consentService.canMarketTo / metaCapiService._buildPayload.
     consent_contact: Joi.boolean().optional(),
     consent_terms: Joi.boolean().optional(),
     // Third-party-disclosure consent (separate opt-in checkbox added to the

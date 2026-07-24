@@ -40,7 +40,7 @@ import {
   recomputeConsumersByPhone,
   getConsumerJourney,
 } from './consumerService.js';
-import { recordCaptureConsentEventsTx } from './consentService.js';
+import { recordCaptureConsentEventsTx, canMarketTo } from './consentService.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 
@@ -190,6 +190,7 @@ const defaultDeps = {
   recomputeConsumersByPhone,
   getConsumerJourney,
   recordCaptureConsentEventsTx,
+  canMarketTo,
   onLeadCaptured: (prospect) => (_leadCapturedHook ? _leadCapturedHook(prospect) : null),
   AppError,
   logger,
@@ -1186,6 +1187,26 @@ export function makeProspectService(overrides = {}) {
       });
     }
 
+    // em/ph gate for every submit-time CAPI dispatch (Meta + TikTok), derived
+    // from the consent ledger ONCE — the capture txn just committed, so the
+    // capture-hook contact event (with its OTP `verified` stamp) is visible.
+    // FAIL CLOSED on any lookup error: the events still fire, without em/ph.
+    // The stored consent_contact boolean keeps being WRITTEN at capture
+    // (evidence/backfill) but is no longer read here (3sites).
+    let capiMarketingConsent = false;
+    try {
+      capiMarketingConsent = (await d.canMarketTo({
+        consumerId: prospect.consumerId || null,
+        phone: prospect.phone || null,
+        channel: 'all',
+        campaignId: prospect.campaignId || null,
+      })) === true;
+    } catch (err) {
+      d.logger.warn('[CAPI] canMarketTo failed — omitting em/ph (fail-closed)', {
+        error: err?.message || String(err),
+      });
+    }
+
     // Meta CAPI dispatch (fire-and-forget; post-commit; guard inside sendLeadEvent)
     d.sendLeadEvent(prospect, {
       eventId,
@@ -1195,6 +1216,7 @@ export function makeProspectService(overrides = {}) {
       clientIp,
       clientUserAgent,
       pixelIdOverride: sourceCampaign?.metaPixelId || undefined,
+      marketingConsent: capiMarketingConsent,
     }).catch((err) => {
       d.logger.error('[CAPI] sendLeadEvent error', { error: err?.message || String(err) });
     });
@@ -1212,6 +1234,7 @@ export function makeProspectService(overrides = {}) {
         clientIp,
         clientUserAgent,
         pixelIdOverride: sourceCampaign?.metaPixelId || undefined,
+        marketingConsent: capiMarketingConsent,
       }).catch((err) => {
         d.logger.error('[CAPI] sendCompleteRegistrationEvent error', { error: err?.message || String(err) });
       });
@@ -1229,6 +1252,7 @@ export function makeProspectService(overrides = {}) {
       clientIp,
       clientUserAgent,
       pixelIdOverride: sourceCampaign?.tiktokPixelId || undefined,
+      marketingConsent: capiMarketingConsent,
     };
     d.sendTikTokLeadEvent(prospect, { eventId, ...tiktokCtxBase }).catch((err) => {
       d.logger.error('[TikTok] sendTikTokLeadEvent error', { error: err?.message || String(err) });

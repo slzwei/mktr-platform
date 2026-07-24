@@ -581,7 +581,7 @@ export function makeEntitlementService(overrides = {}) {
     if (wantEmail && !canEmailProspect(prospect)) {
       throw new AppError('No usable email on file — use WhatsApp or the copy-link option instead', 409);
     }
-    if (wantWa && !(waEnabled() && canWhatsAppProspect(prospect))) {
+    if (wantWa && !(waEnabled() && (await canWhatsAppProspect(prospect)))) {
       throw new AppError('WhatsApp delivery is not available for this customer — use email or the copy-link option', 409);
     }
 
@@ -909,10 +909,10 @@ export function makeEntitlementService(overrides = {}) {
     const masked = rows.map((r) => {
       const j = r.toJSON();
       j.emailDeliverable = canEmailProspect(j.prospect);
-      // Capability only (the list projection carries no sourceMetadata, so the
-      // D2 consent arm can't be evaluated here) — send-time canWhatsAppProspect
-      // stays authoritative. Flag off ⇒ false everywhere, so the console never
-      // offers a channel that can't fire.
+      // Capability only (waEnabled + a WA-able phone; no ledger read in the
+      // bulk list projection) — the ledger-based send-time gate (erasure-only
+      // for transactional, 3sites) stays authoritative. Flag off ⇒ false
+      // everywhere, so the console never offers a channel that can't fire.
       j.whatsappDeliverable = waEnabled() && Boolean(waRecipient(j.prospect?.phone));
       const em = latestReceipt.get(`${j.id}:email`);
       const wa = latestReceipt.get(`${j.id}:whatsapp`);

@@ -441,9 +441,9 @@ export function makeConsentService(overrides = {}) {
   }
 
   /**
-   * Async send gate for channel senders (WhatsApp today; the sync capability
-   * checks like canWhatsAppProspect stay sync — this runs at the actual send
-   * choke point). Transactional sends pass unless erased.
+   * Async send gate for channel senders (WhatsApp today — both the send choke
+   * point and the async capability check canWhatsAppProspect ride this since
+   * 3sites). Transactional sends pass unless erased.
    */
   async function isSendBlocked(prospect, { channel, purpose = 'transactional' }) {
     try {
@@ -471,6 +471,72 @@ export function makeConsentService(overrides = {}) {
         WHERE c.phone IS NOT NULL`
     );
     return new Set(rows.map((r) => r.phone));
+  }
+
+  /**
+   * Bulk marketing-grant map for audience uploads (3sites), keyed BY PHONE —
+   * fail-closed for spine-unlinked prospect rows, mirroring
+   * getSuppressedPhoneSet.
+   *
+   * Shape: Map<phoneE164, Map<scopeKey, boolean>> where scopeKey is a campaign
+   * UUID or '*' (global). Each scoped value already folds in the global row's
+   * recency — latest wins across {campaign, global} with getConsentState's
+   * exact tie-break — so a later global withdrawal beats an earlier scoped
+   * grant. Read entries with contactConsent.contactGrantAllows(). true =
+   * latest in-scope contact event is granted AND verified.
+   *
+   * Suppression/erasure are NOT encoded here: erased consumers get no entry
+   * (fail-closed) and callers must keep their unconditional suppressed-phone
+   * drop. grant map + suppressed set together cover canMarketTo per row.
+   *
+   * No try/catch by design: a throw must abort the caller's whole run — never
+   * upload while blind to withdrawals.
+   */
+  async function getMarketableGrantMap() {
+    const [rows] = await d.sequelize.query(
+      `SELECT c.phone,
+              l."campaignId"             AS campaign_id,
+              (l.granted AND l.verified) AS ok,
+              l."occurredAt"             AS occurred_at,
+              l."createdAt"              AS created_at,
+              l.id
+         FROM (SELECT DISTINCT ON (ce."consumerId", ce."campaignId")
+                      ce."consumerId", ce."campaignId", ce.granted, ce.verified,
+                      ce."occurredAt", ce."createdAt", ce.id
+                 FROM consent_events ce
+                WHERE ce.kind = 'contact'
+                ORDER BY ce."consumerId", ce."campaignId",
+                         ce."occurredAt" DESC, ce."createdAt" DESC, ce.id DESC) l
+         JOIN consumers c ON c.id = l."consumerId"
+        WHERE c.phone IS NOT NULL
+          AND c."erasedAt" IS NULL`
+    );
+    // (occurredAt, createdAt, id) DESC — getConsentState's tie-break.
+    const newer = (a, b) => {
+      const at = new Date(a.occurred_at) - new Date(b.occurred_at);
+      if (at !== 0) return at > 0 ? a : b;
+      const ct = new Date(a.created_at) - new Date(b.created_at);
+      if (ct !== 0) return ct > 0 ? a : b;
+      return String(a.id) > String(b.id) ? a : b;
+    };
+    const byPhone = new Map();
+    for (const r of rows) {
+      if (!byPhone.has(r.phone)) byPhone.set(r.phone, []);
+      byPhone.get(r.phone).push(r);
+    }
+    const map = new Map();
+    for (const [phone, entries] of byPhone) {
+      const global = entries.find((r) => r.campaign_id == null) || null;
+      const scopes = new Map();
+      if (global) scopes.set('*', global.ok === true);
+      for (const r of entries) {
+        if (r.campaign_id == null) continue;
+        const winner = global ? newer(r, global) : r;
+        scopes.set(r.campaign_id, winner.ok === true);
+      }
+      map.set(phone, scopes);
+    }
+    return map;
   }
 
   /**
@@ -536,6 +602,7 @@ export function makeConsentService(overrides = {}) {
     canMarketTo,
     isSendBlocked,
     getSuppressedPhoneSet,
+    getMarketableGrantMap,
     ensureUnsubToken,
     findConsumerByUnsubToken,
     applyUnsubscribe,
@@ -551,6 +618,7 @@ export const isSuppressed = _default.isSuppressed;
 export const canMarketTo = _default.canMarketTo;
 export const isSendBlocked = _default.isSendBlocked;
 export const getSuppressedPhoneSet = _default.getSuppressedPhoneSet;
+export const getMarketableGrantMap = _default.getMarketableGrantMap;
 export const ensureUnsubToken = _default.ensureUnsubToken;
 export const findConsumerByUnsubToken = _default.findConsumerByUnsubToken;
 export const applyUnsubscribe = _default.applyUnsubscribe;

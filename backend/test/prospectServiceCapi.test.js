@@ -55,6 +55,8 @@ function buildDeps(overrides = {}) {
     deductLeadCredit: jest.fn().mockResolvedValue(),
     buildProspectWhere: jest.fn(),
     dispatchEvent: jest.fn().mockResolvedValue(),
+    // Ledger gate for CAPI em/ph (3sites) — default false = fail-closed baseline.
+    canMarketTo: jest.fn().mockResolvedValue(false),
     sendLeadEvent: jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' }),
     sendCompleteRegistrationEvent: jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' }),
     sendTikTokLeadEvent: jest.fn().mockResolvedValue({ sent: false, reason: 'guarded' }),
@@ -194,6 +196,7 @@ describe('prospectService.createProspect → CAPI wire-up (Phase 2)', () => {
       eventSourceUrl: 'https://mktr.sg/x',
       clientIp: '203.0.113.42',
       clientUserAgent: 'Mozilla/5.0',
+      marketingConsent: false, // ledger stub denies by default (3sites)
     });
   });
 
@@ -237,6 +240,7 @@ describe('prospectService.createProspect → CAPI wire-up (Phase 2)', () => {
       eventSourceUrl: undefined,
       clientIp: undefined,
       clientUserAgent: undefined,
+      marketingConsent: false, // ledger stub denies by default (3sites)
     });
   });
 });
@@ -619,5 +623,67 @@ describe('createProspect → TikTok Events API wire-up (Phase 6)', () => {
         { meta: { eventId: 'lead-evt', registrationEventId: 'reg-1' } }
       )
     ).resolves.toBeDefined();
+  });
+});
+
+describe('createProspect → ledger-derived em/ph gate threading (3sites)', () => {
+  const baseBody = {
+    firstName: 'Jane',
+    lastName: 'Doe',
+    email: 'jane@example.com',
+    leadSource: 'website',
+    campaignId: '11111111-1111-1111-1111-111111111111',
+  };
+
+  it('computes canMarketTo ONCE with the prospect identity and campaign scope', async () => {
+    const deps = buildDeps();
+    const svc = makeProspectService(deps);
+
+    await svc.createProspect(
+      { ...baseBody, phone: '+6581234567' },
+      { id: 'admin-1', role: 'admin' },
+      { meta: { eventId: 'lead-evt', registrationEventId: 'reg-1' } }
+    );
+
+    expect(deps.canMarketTo).toHaveBeenCalledTimes(1);
+    expect(deps.canMarketTo).toHaveBeenCalledWith({
+      consumerId: null, // stubbed capture path links no consumer
+      phone: '+6581234567',
+      channel: 'all',
+      campaignId: '11111111-1111-1111-1111-111111111111',
+    });
+  });
+
+  it('threads marketingConsent:true into ALL FOUR senders when the ledger grants', async () => {
+    const deps = buildDeps({ canMarketTo: jest.fn().mockResolvedValue(true) });
+    const svc = makeProspectService(deps);
+
+    await svc.createProspect(
+      { ...baseBody },
+      { id: 'admin-1', role: 'admin' },
+      { meta: { eventId: 'lead-evt', registrationEventId: 'reg-1' } }
+    );
+
+    expect(deps.sendLeadEvent.mock.calls[0][1].marketingConsent).toBe(true);
+    expect(deps.sendCompleteRegistrationEvent.mock.calls[0][1].marketingConsent).toBe(true);
+    expect(deps.sendTikTokLeadEvent.mock.calls[0][1].marketingConsent).toBe(true);
+    expect(deps.sendTikTokCompleteRegistrationEvent.mock.calls[0][1].marketingConsent).toBe(true);
+  });
+
+  it('fails CLOSED when canMarketTo rejects — capture resolves, senders get false', async () => {
+    const deps = buildDeps({ canMarketTo: jest.fn().mockRejectedValue(new Error('ledger down')) });
+    const svc = makeProspectService(deps);
+
+    await expect(
+      svc.createProspect(
+        { ...baseBody },
+        { id: 'admin-1', role: 'admin' },
+        { meta: { eventId: 'lead-evt' } }
+      )
+    ).resolves.toBeDefined();
+
+    expect(deps.sendLeadEvent).toHaveBeenCalledTimes(1);
+    expect(deps.sendLeadEvent.mock.calls[0][1].marketingConsent).toBe(false);
+    expect(deps.sendTikTokLeadEvent.mock.calls[0][1].marketingConsent).toBe(false);
   });
 });

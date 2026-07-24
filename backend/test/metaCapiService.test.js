@@ -123,41 +123,43 @@ describe('_buildPayload', () => {
     eventSourceUrl: 'https://mktr.sg/LeadCapture',
   };
 
-  it('hashes email and phone when marketing consent is true', () => {
-    const payload = _buildPayload(webProspect(), ctx, {});
+  it('hashes email and phone when ctx.marketingConsent is true (ledger-derived by the caller)', () => {
+    const payload = _buildPayload(webProspect(), { ...ctx, marketingConsent: true }, {});
     const ud = payload.data[0].user_data;
     expect(ud.em).toMatch(/^[a-f0-9]{64}$/);
     expect(ud.ph).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it('omits email and phone when marketing consent is false', () => {
-    const payload = _buildPayload(
-      webProspect({ sourceMetadata: { consent_contact: false } }),
-      ctx,
-      {}
-    );
+  it('omits email and phone when ctx.marketingConsent is false', () => {
+    const payload = _buildPayload(webProspect(), { ...ctx, marketingConsent: false }, {});
     const ud = payload.data[0].user_data;
     expect(ud.em).toBeUndefined();
     expect(ud.ph).toBeUndefined();
   });
 
-  it('omits email and phone when consent_contact is missing', () => {
-    const payload = _buildPayload(
-      webProspect({ sourceMetadata: {} }),
-      ctx,
-      {}
-    );
+  it('omits email and phone when ctx.marketingConsent is absent — FAIL CLOSED', () => {
+    const payload = _buildPayload(webProspect(), ctx, {});
     const ud = payload.data[0].user_data;
     expect(ud.em).toBeUndefined();
     expect(ud.ph).toBeUndefined();
+  });
+
+  it('3sites: the stored consent_contact boolean is IGNORED — only the ctx flag gates', () => {
+    // webProspect() carries sourceMetadata.consent_contact:true; without the
+    // ledger-derived ctx flag the identifiers must not ride.
+    const stored = _buildPayload(webProspect({ sourceMetadata: { consent_contact: true } }), ctx, {});
+    expect(stored.data[0].user_data.em).toBeUndefined();
+    // And the ctx flag licenses em/ph even when the stored boolean says false.
+    const ctxWins = _buildPayload(
+      webProspect({ sourceMetadata: { consent_contact: false } }),
+      { ...ctx, marketingConsent: true },
+      {}
+    );
+    expect(ctxWins.data[0].user_data.em).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('always includes fbp/fbc/ip/ua/external_id regardless of consent', () => {
-    const payload = _buildPayload(
-      webProspect({ sourceMetadata: { consent_contact: false } }),
-      ctx,
-      {}
-    );
+    const payload = _buildPayload(webProspect(), { ...ctx, marketingConsent: false }, {});
     const ud = payload.data[0].user_data;
     expect(ud.fbp).toBe('fb.1.123.fbp_value');
     expect(ud.fbc).toBe('fb.1.456.fbc_value');
@@ -292,6 +294,16 @@ describe('sendLeadEvent', () => {
     expect(result.sent).toBe(true);
     expect(result.status).toBe(200);
     expect(result.body.events_received).toBe(1);
+  });
+
+  it('threads ctx.marketingConsent through to the wire payload (em rides only with the flag)', async () => {
+    const withFlag = okFetch();
+    await sendLeadEvent(webProspect(), { eventId: 'evt-1', marketingConsent: true }, { fetch: withFlag });
+    expect(JSON.parse(withFlag.mock.calls[0][1].body).data[0].user_data.em).toMatch(/^[a-f0-9]{64}$/);
+
+    const withoutFlag = okFetch();
+    await sendLeadEvent(webProspect(), { eventId: 'evt-1' }, { fetch: withoutFlag });
+    expect(JSON.parse(withoutFlag.mock.calls[0][1].body).data[0].user_data.em).toBeUndefined();
   });
 
   it('returns { sent: false } and captures Sentry on non-2xx', async () => {
