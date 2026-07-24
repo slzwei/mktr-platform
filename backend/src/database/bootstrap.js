@@ -314,6 +314,10 @@ export async function bootstrapDatabase() {
             await svc.reconcileMissedLeads();
             await svc.reconcileMissedDeliveries();
             await svc.purgeIssuanceSkips(); // 30-day retention on the skip log
+            // Draw-boost auto-top-up (PR-2, D1 "effectively unlimited"):
+            // active draw rails under 20% remaining get another default block.
+            const { topUpDrawBoostAllocations } = await import('../services/redeemOps/drawBoostProvisioningService.js');
+            await topUpDrawBoostAllocations();
           } catch (err) {
             logger.warn('[RedeemOps] fulfilment sweep failed (non-fatal)', { error: err?.message });
           }

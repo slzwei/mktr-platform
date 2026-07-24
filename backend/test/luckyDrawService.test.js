@@ -28,6 +28,8 @@ function verifiedProspect(id, first, last, phone, createdAt = '2026-08-01T00:00:
     id, firstName: first, lastName: last, phone,
     createdAt: new Date(createdAt),
     sourceMetadata: { phoneVerifiedAt: '2026-08-01T00:00:00Z', phoneVerifiedFor: sha(phone) },
+    // PR-2 (CX18): pool membership also requires pinned draw-terms acceptance.
+    consentMetadata: { drawTerms: { termsVersionId: 'tv-1', acceptedAt: '2026-08-01T00:00:00Z' } },
   };
 }
 
@@ -119,7 +121,10 @@ function buildDeps({ draw = null, prospects = [], entries = [], attempts = [], r
       Draw, DrawEntry, DrawAttempt, DrawBoostReview,
       Campaign: { findByPk: jest.fn().mockResolvedValue(null) },
       Prospect: { findAll: jest.fn().mockResolvedValue(prospects) },
-      Activation: { findByPk: jest.fn().mockResolvedValue(null) },
+      Activation: { findByPk: jest.fn().mockResolvedValue(null), findOne: jest.fn().mockResolvedValue(null) },
+      // PR-2 (CX18): freeze validates each entrant's pinned terms version
+      // against this campaign's version set.
+      DrawTermsVersion: { findAll: jest.fn().mockResolvedValue([{ id: 'tv-1' }]) },
       RewardEntitlement: { findAll: jest.fn().mockResolvedValue(entitlements), findByPk: jest.fn().mockResolvedValue({ id: 'ent-x', prospectId: 'pros-x' }) },
       RedemptionEvent: { findAll: jest.fn().mockResolvedValue(events) },
       sequelize: { transaction: jest.fn().mockImplementation(async (cb) => cb({})) },
@@ -209,7 +214,7 @@ describe('createDraw', () => {
     });
   });
 
-  it('a single structured prize (one row, qty 1) still creates the draw', async () => {
+  it('a single structured prize (one row, qty 1) still creates the draw — stamp-absent resolves the active rail (F3)', async () => {
     const { deps } = buildDeps();
     deps.Campaign.findByPk.mockResolvedValue({
       id: CAMPAIGN_ID,
@@ -217,9 +222,11 @@ describe('createDraw', () => {
         luckyDraw: { enabled: true, closesAt: '2026-08-31', prizes: [{ qty: 1, name: 'iPhone 17 Pro' }] },
       },
     });
+    deps.Activation.findOne.mockResolvedValue({ id: 'act-1', campaignId: CAMPAIGN_ID, unlockPolicy: 'agent_unlock' });
     const svc = makeLuckyDrawService(deps);
     const draw = await svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN);
     expect(draw.status).toBe('open');
+    expect(draw.activationId).toBe('act-1');
   });
 
   it('derives fixed SGT-exclusive instants and persists config', async () => {
@@ -228,12 +235,41 @@ describe('createDraw', () => {
       id: CAMPAIGN_ID,
       design_config: { luckyDraw: { enabled: true, closesAt: '2026-08-31', boostClosesAt: '2026-09-10', multiplier: 10 } },
     });
+    deps.Activation.findOne.mockResolvedValue({ id: 'act-1', campaignId: CAMPAIGN_ID, unlockPolicy: 'agent_unlock' });
     const svc = makeLuckyDrawService(deps);
     const draw = await svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN);
     expect(new Date(draw.closesAt).getTime()).toBe(sgtDayEndExclusiveMs('2026-08-31'));
     expect(new Date(draw.boostClosesAt).getTime()).toBe(sgtDayEndExclusiveMs('2026-09-10'));
     expect(draw.status).toBe('open');
     expect(draw.createdBy).toBe(ADMIN.id);
+  });
+
+  it('PR-2 (F3): stamp absent + NO active rail → 422 DRAW_BOOST_RAIL_MISSING; --allow-no-boost mints a 1×-only draw', async () => {
+    const { deps } = buildDeps();
+    deps.Campaign.findByPk.mockResolvedValue({
+      id: CAMPAIGN_ID,
+      design_config: { luckyDraw: { enabled: true, closesAt: '2026-08-31' } },
+    });
+    const svc = makeLuckyDrawService(deps);
+    await expect(svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN)).rejects.toMatchObject({
+      statusCode: 422, data: { code: 'DRAW_BOOST_RAIL_MISSING' },
+    });
+    const draw = await svc.createDraw({ campaignId: CAMPAIGN_ID, allowNoBoost: true }, ADMIN);
+    expect(draw.status).toBe('open');
+    expect(draw.activationId ?? null).toBeNull();
+  });
+
+  it('PR-2 (F3): an active on_capture rail is refused — its issuance never boosts', async () => {
+    const { deps } = buildDeps();
+    deps.Campaign.findByPk.mockResolvedValue({
+      id: CAMPAIGN_ID,
+      design_config: { luckyDraw: { enabled: true, closesAt: '2026-08-31' } },
+    });
+    deps.Activation.findOne.mockResolvedValue({ id: 'act-2', campaignId: CAMPAIGN_ID, unlockPolicy: 'on_capture' });
+    const svc = makeLuckyDrawService(deps);
+    await expect(svc.createDraw({ campaignId: CAMPAIGN_ID }, ADMIN)).rejects.toMatchObject({
+      statusCode: 422, data: { code: 'DRAW_BOOST_RAIL_CONFLICT' },
+    });
   });
 });
 
@@ -273,6 +309,27 @@ describe('freezeDraw', () => {
     const { deps } = buildDeps({ draw: { ...openDraw, status: 'frozen' } });
     const svc = makeLuckyDrawService(deps);
     await expect(svc.freezeDraw(DRAW_ID, ADMIN)).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it('PR-2 (CX18): a verified entrant with NO pinned draw-terms acceptance is EXCLUDED and counted; cohorts surfaced', async () => {
+    const accepted = verifiedProspect('p1', 'Jane', 'Doe', '+6591234567');
+    const acceptedOldVersion = {
+      ...verifiedProspect('p2', 'Early', 'Bird', '+6592222222'),
+      consentMetadata: { drawTerms: { termsVersionId: 'tv-0' } }, // a DIFFERENT valid version
+    };
+    const neverAccepted = { ...verifiedProspect('p3', 'Pre', 'Draw', '+6593333333'), consentMetadata: {} };
+    const foreignVersion = {
+      ...verifiedProspect('p4', 'Wrong', 'Camp', '+6594444444'),
+      consentMetadata: { drawTerms: { termsVersionId: 'tv-OTHER-CAMPAIGN' } },
+    };
+    const { deps, state } = buildDeps({ draw: { ...openDraw }, prospects: [accepted, acceptedOldVersion, neverAccepted, foreignVersion] });
+    deps.DrawTermsVersion.findAll.mockResolvedValue([{ id: 'tv-1' }, { id: 'tv-0' }]);
+    const svc = makeLuckyDrawService(deps);
+
+    const result = await svc.freezeDraw(DRAW_ID, ADMIN);
+    expect(result).toMatchObject({ candidates: 4, entries: 2, excludedNoConsent: 2 });
+    expect(result.termsCohorts).toEqual({ 'tv-1': 1, 'tv-0': 1 });
+    expect(state.entries.map((e) => e.prospectId).sort()).toEqual(['p1', 'p2']);
   });
 });
 

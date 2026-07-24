@@ -3,6 +3,7 @@ import { Op } from 'sequelize';
 import {
   Draw, DrawEntry, DrawAttempt, DrawBoostReview,
   Campaign, Prospect, Activation, RewardEntitlement, RedemptionEvent,
+  DrawTermsVersion,
   sequelize,
 } from '../models/index.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -106,6 +107,7 @@ export function makeLuckyDrawService(overrides = {}) {
   const d = {
     Draw, DrawEntry, DrawAttempt, DrawBoostReview,
     Campaign, Prospect, Activation, RewardEntitlement, RedemptionEvent,
+    DrawTermsVersion,
     sequelize, logger,
     now: () => new Date(),
     mintSeed: () => crypto.randomBytes(32).toString('hex'),
@@ -134,7 +136,7 @@ export function makeLuckyDrawService(overrides = {}) {
    * fixed UTC instants HERE (SGT end-of-day exclusive) — later steps compare
    * against the stored instants, never against config or wall-clock choices.
    */
-  async function createDraw({ campaignId }, user) {
+  async function createDraw({ campaignId, allowNoBoost = false }, user) {
     const campaign = await d.Campaign.findByPk(campaignId);
     if (!campaign) throw new AppError('Campaign not found', 404);
     const ld = campaign.design_config?.luckyDraw;
@@ -169,6 +171,36 @@ export function makeLuckyDrawService(overrides = {}) {
         throw new AppError('luckyDraw.activationId does not belong to this campaign', 422);
       }
       activationId = activation.id;
+    } else {
+      // Stamp-absent fallback (PR-2, old-plan F3 / Codex R1 CX6): the stamp is
+      // save-fragile (any pre-provisioning editor tab can wipe it), so the
+      // draw record resolves the campaign's ACTIVE rail itself — the draw row
+      // is the snapshot seal reads, and it must not be born blind. A live
+      // wrong-policy rail is a 422 (auto_on_capture never boosts); NO rail is
+      // a 422 unless the operator explicitly runs the CLI with
+      // --allow-no-boost (emergency: a 1×-only draw, every entrant equal).
+      const active = await d.Activation.findOne({
+        where: { campaignId, status: 'active' },
+        order: [['createdAt', 'ASC']],
+      });
+      if (active) {
+        if (active.unlockPolicy !== 'agent_unlock') {
+          const err = new AppError(
+            `The campaign's active activation (${active.id}) has unlockPolicy='${active.unlockPolicy}' — its issuance never counts as boost evidence. Fix the rail before creating the draw.`,
+            422
+          );
+          err.data = { code: 'DRAW_BOOST_RAIL_CONFLICT' };
+          throw err;
+        }
+        activationId = active.id;
+      } else if (!allowNoBoost) {
+        const err = new AppError(
+          'No boost rail: the campaign has no luckyDraw.activationId stamp and no active activation. Launch the campaign (auto-provisions the rail) or pass --allow-no-boost to run a 1×-only draw.',
+          422
+        );
+        err.data = { code: 'DRAW_BOOST_RAIL_MISSING' };
+        throw err;
+      }
     }
 
     try {
@@ -216,6 +248,8 @@ export function makeLuckyDrawService(overrides = {}) {
     // createdAt < closesAt — the boundary instant is exclusive (sgtTime.js).
     let candidates = 0;
     let rows = [];
+    let termsCohorts = {};
+    let excludedNoConsent = 0;
     await d.sequelize.transaction(async (t) => {
       await transition(draw.id, 'open', 'frozen', {}, t);
 
@@ -225,19 +259,54 @@ export function makeLuckyDrawService(overrides = {}) {
           phone: { [Op.ne]: null },
           createdAt: { [Op.lt]: draw.closesAt },
         },
-        attributes: ['id', 'firstName', 'lastName', 'phone', 'sourceMetadata', 'createdAt'],
+        attributes: ['id', 'firstName', 'lastName', 'phone', 'sourceMetadata', 'consentMetadata', 'createdAt'],
         transaction: t,
       });
       candidates = prospects.length;
 
+      // Draw-terms consent gate (PR-2, Codex R1 CX18): an entrant is in the
+      // pool ONLY with pinned acceptance evidence of one of THIS campaign's
+      // terms versions (consentMetadata.drawTerms, written by the capture
+      // gate). Verified-but-consentless prospects (e.g. captured before the
+      // draw was enabled) are excluded and counted — they never accepted any
+      // draw terms, so they cannot be in a draw run under them.
+      const versionRows = await d.DrawTermsVersion.findAll({
+        where: { campaignId: draw.campaignId },
+        attributes: ['id'],
+        transaction: t,
+      });
+      const validVersionIds = new Set(versionRows.map((v) => String(v.id).toLowerCase()));
+
       const eligible = prospects.filter((p) => {
         const sm = p.sourceMetadata || {};
+        const dt = p.consentMetadata?.drawTerms;
         return (
           typeof sm.phoneVerifiedAt === 'string' &&
           typeof sm.phoneVerifiedFor === 'string' &&
-          sm.phoneVerifiedFor === sha256Hex(p.phone)
+          sm.phoneVerifiedFor === sha256Hex(p.phone) &&
+          typeof dt?.termsVersionId === 'string' &&
+          validVersionIds.has(dt.termsVersionId.toLowerCase())
         );
       });
+
+      // Version-cohort audit (CX18): entrants may have accepted DIFFERENT
+      // pinned versions (terms were corrected mid-flight). Surfaced, never
+      // silently absorbed — ops decides whether a materially-different cohort
+      // needs re-consent before seal.
+      termsCohorts = {};
+      for (const p of eligible) {
+        const v = String(p.consentMetadata.drawTerms.termsVersionId).toLowerCase();
+        termsCohorts[v] = (termsCohorts[v] || 0) + 1;
+      }
+      excludedNoConsent = prospects.filter((p) => {
+        const sm = p.sourceMetadata || {};
+        const verified =
+          typeof sm.phoneVerifiedAt === 'string' &&
+          typeof sm.phoneVerifiedFor === 'string' &&
+          sm.phoneVerifiedFor === sha256Hex(p.phone);
+        const dt = p.consentMetadata?.drawTerms;
+        return verified && !(typeof dt?.termsVersionId === 'string' && validVersionIds.has(dt.termsVersionId.toLowerCase()));
+      }).length;
 
       rows = eligible.map((p) => ({
         drawId: draw.id,
@@ -265,11 +334,17 @@ export function makeLuckyDrawService(overrides = {}) {
       });
     }
 
+    const cohortCount = Object.keys(termsCohorts).length;
+    if (excludedNoConsent > 0 || cohortCount > 1) {
+      d.logger.warn('lucky_draw.terms_cohorts', {
+        drawId: draw.id, excludedNoConsent, termsCohorts,
+      });
+    }
     d.logger.info('lucky_draw.frozen', {
       drawId: draw.id, campaignId: draw.campaignId,
-      candidates, entries: rows.length,
+      candidates, entries: rows.length, excludedNoConsent,
     });
-    return { drawId: draw.id, candidates, entries: rows.length, termsDrift };
+    return { drawId: draw.id, candidates, entries: rows.length, termsDrift, termsCohorts, excludedNoConsent };
   }
 
   /**

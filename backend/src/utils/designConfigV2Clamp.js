@@ -405,9 +405,16 @@ export function clampDesignConfigV2(incoming, storedConfig, role) {
   });
   const marketplace = clampMarketplace(distributionIn.marketplace);
 
+  // F9 (PR-2): draw campaigns' homepage cards must not outlive the draw — an
+  // endsAt-less featuredDrop inherits luckyDraw.closesAt. Explicit endsAt wins.
+  const featuredDropOut =
+    featuredDrop?.enabled === true && !featuredDrop.endsAt && luckyDraw?.enabled === true && luckyDraw.closesAt
+      ? { ...featuredDrop, endsAt: luckyDraw.closesAt }
+      : featuredDrop;
+
   out.distribution = {
     host,
-    ...(featuredDrop !== undefined ? { featuredDrop } : {}),
+    ...(featuredDropOut !== undefined ? { featuredDrop: featuredDropOut } : {}),
     ...(marketplace !== undefined || listed !== undefined
       ? { marketplace: { ...(marketplace || {}), ...(listed !== undefined ? { listed } : {}) } }
       : {}),

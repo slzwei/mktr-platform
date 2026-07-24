@@ -203,6 +203,31 @@ describe('applyLuckyDrawPolicy', () => {
     expect(applyLuckyDrawPolicy({ incoming: undefined, stored: undefined, role: 'admin' })).toBeUndefined();
     expect(applyLuckyDrawPolicy({ incoming: { enabled: true }, stored: undefined, role: 'agent' })).toBeUndefined();
   });
+
+  describe('activationId stamp carry-forward (PR-2, old-plan F5)', () => {
+    const ACT = '92dd875f-4293-4305-9a5f-293f8930bd61';
+    const storedStamped = { enabled: true, prize: 'iPhone', activationId: ACT };
+
+    it('admin save whose luckyDraw OMITS activationId keeps the stored stamp (stale-tab save)', () => {
+      const out = applyLuckyDrawPolicy({ incoming: { enabled: true, prize: 'iPhone' }, stored: storedStamped, role: 'admin' });
+      expect(out.activationId).toBe(ACT);
+    });
+
+    it('an EXPLICIT activationId key clears/replaces (deliberate unlink or restamp)', () => {
+      const cleared = applyLuckyDrawPolicy({ incoming: { enabled: true, activationId: null }, stored: storedStamped, role: 'admin' });
+      expect(cleared.activationId).toBeUndefined();
+      const OTHER = '11111111-2222-4333-8444-555555555555';
+      const restamped = applyLuckyDrawPolicy({ incoming: { enabled: true, activationId: OTHER }, stored: storedStamped, role: 'admin' });
+      expect(restamped.activationId).toBe(OTHER);
+    });
+
+    it('no stored stamp → nothing to carry; non-admin path untouched (stored wins wholesale)', () => {
+      const out = applyLuckyDrawPolicy({ incoming: { enabled: true }, stored: { enabled: true }, role: 'admin' });
+      expect(out.activationId).toBeUndefined();
+      const nonAdmin = applyLuckyDrawPolicy({ incoming: { enabled: false }, stored: storedStamped, role: 'agent' });
+      expect(nonAdmin.activationId).toBe(ACT);
+    });
+  });
 });
 
 describe('sgtDayEndExclusiveMs', () => {
