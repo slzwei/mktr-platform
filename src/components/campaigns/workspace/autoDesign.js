@@ -50,6 +50,7 @@ function applyCommonSections(doc, data) {
         boostClosesAt: facts.boostClosesAt || undefined,
         multiplier: facts.multiplier,
         minAge: facts.minAge,
+        maxAge: facts.maxAge ?? null,
         // The APPLIED channel, not the stored one: the same pass may have just
         // switched the campaign to WhatsApp, and terms that promise an SMS
         // code the funnel never sends are wrong the moment they are written.

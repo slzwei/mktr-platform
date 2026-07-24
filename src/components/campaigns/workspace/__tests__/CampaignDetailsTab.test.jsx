@@ -142,8 +142,11 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     fireEvent.change(screen.getByLabelText('Min age'), { target: { value: '21' } });
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
     const terms = onSubmit.mock.calls[0][0].design_config.termsContent;
-    expect(terms).toContain('aged 21 and above');
-    expect(terms).not.toContain('aged 18 and above');
+    // D8 (PR-3): the form's max_age (default 65, enforced at capture) now
+    // rides into the clause — BOTH bounds, never a ceilingless promise.
+    expect(terms).toContain('aged 21 to 65');
+    expect(terms).not.toContain('aged 18');
+    expect(terms).not.toContain('and above');
   });
 
   it('a below-floor min age still seeds the legal 18+ clause', () => {
@@ -154,7 +157,7 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     fillBasics();
     fireEvent.change(screen.getByLabelText('Min age'), { target: { value: '16' } });
     fireEvent.click(screen.getByRole('button', { name: /Create draft/i }));
-    expect(onSubmit.mock.calls[0][0].design_config.termsContent).toContain('aged 18 and above');
+    expect(onSubmit.mock.calls[0][0].design_config.termsContent).toContain('aged 18 to 65');
   });
 
   it('multiple prize rows arm ordered prizes, a derived summary, and N-winner terms', () => {

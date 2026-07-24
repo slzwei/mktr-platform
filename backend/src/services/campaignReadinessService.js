@@ -85,6 +85,14 @@ export function computeReadiness(facts) {
     screeningGateOn = false,
     // Boost-rail fact (PR-2): an ACTIVE agent_unlock activation is linked.
     railActive = false,
+    // Promise-consistency results (PR-3) — computed by the loader with the
+    // pure drawConsistency util; arrays of {code,message}. Default silent.
+    drawHardIssues = [],
+    drawSoftIssues = [],
+    drawDriftIssues = [],
+    // 'critical' | 'warning' | null — DOB-required invariant for age-gated
+    // draws (D8/CX14: the age gate only enforces when a DOB was submitted).
+    drawDobGate = null,
     // Funded-pool credit facts (PR-1): sums over the same assignments that
     // produce assignableAgents. Default 0/0 = row silent.
     poolCreditsRemaining = 0,
@@ -254,6 +262,45 @@ export function computeReadiness(facts) {
     });
   }
 
+  // Promise-consistency rows (PR-3). HARD contradictions on a LIVE campaign
+  // are critical — entrants are accepting terms that contradict the page/
+  // enforcement RIGHT NOW (the save gate blocks new drift; this row surfaces
+  // pre-existing drift without waiting for a save).
+  if (drawEnabled && drawHardIssues.length > 0) {
+    issues.push({
+      level: isActive ? 'critical' : 'warning',
+      code: 'draw_promise_inconsistent',
+      message: `${drawHardIssues[0].message}${drawHardIssues.length > 1 ? ` (+${drawHardIssues.length - 1} more contradiction${drawHardIssues.length > 2 ? 's' : ''})` : ''} Fix by regenerating the T&Cs from the campaign facts.`,
+    });
+  }
+  if (drawEnabled && drawSoftIssues.length > 0) {
+    issues.push({
+      level: 'warning',
+      code: 'draw_promise_review',
+      message: `T&C cross-checks need a human eye: ${drawSoftIssues.map((i) => i.code).join(', ')}. ${drawSoftIssues[0].message}`,
+    });
+  }
+  // CX17: the live draw RECORD is the engine's truth; config drift against it
+  // is always critical — what the operator sees is not what will run.
+  if (drawEnabled && drawDriftIssues.length > 0) {
+    issues.push({
+      level: 'critical',
+      code: 'draw_live_record_drift',
+      message: drawDriftIssues.map((i) => i.message).join(' '),
+    });
+  }
+  // D8/CX14: age bounds are only enforced when a DOB is collected — an
+  // age-gated draw with an optional DOB field promises a gate it cannot apply.
+  if (drawEnabled && drawDobGate) {
+    issues.push({
+      level: drawDobGate,
+      code: 'draw_age_gate_unenforceable',
+      message: drawDobGate === 'critical'
+        ? 'This draw enforces a maximum age but the Date of Birth field is not required — over-age entrants can enter, win, and be disqualified only at claim time. Make DOB required (Studio → Form).'
+        : 'This draw has an age gate but the Date of Birth field is not required — entrants who leave it blank bypass the gate entirely. Make DOB required (Studio → Form).',
+    });
+  }
+
   // ESCALATION (PR-1, CX19): past the close date with still no (non-void) draw
   // record, the T&C's promised witnessed draw cannot run — entries have closed
   // into nothing. Critical so it cannot be missed; hasDrawRecord already
@@ -301,9 +348,10 @@ export function computeReadiness(facts) {
 
 // Model-free static imports — the pure export above must stay import-light
 // (utils only, no model graph).
-import { readLegacyViewSafe, getStoredLuckyDraw } from '../utils/designConfigV2Clamp.js';
+import { readLegacyViewSafe, getStoredLuckyDraw, getStoredTermsHtml } from '../utils/designConfigV2Clamp.js';
 import { normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
+import { checkDrawConsistency, checkDrawRecordDrift } from '../utils/drawConsistency.js';
 
 /** Display YMD (SGT) for a draw record's exclusive cutoff instant — minus 1ms
  * lands on the inclusive last entry day. */
@@ -322,7 +370,7 @@ export async function loadCampaignReadiness(campaignId) {
   const { Op } = await import('sequelize');
 
   const campaign = await Campaign.findByPk(campaignId, {
-    attributes: ['id', 'name', 'type', 'is_active', 'status', 'design_config'],
+    attributes: ['id', 'name', 'type', 'is_active', 'status', 'design_config', 'min_age', 'max_age'],
   });
   if (!campaign) {
     return {
@@ -418,6 +466,10 @@ export async function loadCampaignReadiness(campaignId) {
   let drawRecordClosesAt = null;
   let drawClosesPastDue = false;
   let railActive = false;
+  let drawHardIssues = [];
+  let drawSoftIssues = [];
+  let drawDriftIssues = [];
+  let drawDobGate = null;
   if (drawEnabled) {
     // Boost-rail fact (PR-2): one live activation per campaign (partial
     // unique), so a single active-status probe answers it.
@@ -433,7 +485,7 @@ export async function loadCampaignReadiness(campaignId) {
     const record = await Draw.findOne({
       where: { campaignId, status: { [Op.ne]: 'void' } },
       order: [['createdAt', 'DESC']],
-      attributes: ['id', 'status', 'closesAt'],
+      attributes: ['id', 'status', 'closesAt', 'boostClosesAt', 'multiplier', 'activationId', 'termsVersionId'],
     });
     hasDrawRecord = !!record;
     hasLiveDraw = !!record && ['open', 'frozen', 'sealed', 'drawn'].includes(record.status);
@@ -445,6 +497,27 @@ export async function loadCampaignReadiness(campaignId) {
       const recordMs = new Date(record.closesAt).getTime();
       drawCloseMismatch = Number.isFinite(recordMs) && recordMs !== docEndMs;
       drawRecordClosesAt = sgtYmdFromExclusiveInstant(record.closesAt);
+    }
+
+    // Promise-consistency facts (PR-3) — the same pure lint the save gate
+    // runs, so pre-existing drift on a live campaign is visible WITHOUT a
+    // save; plus the CX17 live-record drift compare and the D8 DOB invariant.
+    const view = readLegacyViewSafe(design, {});
+    const lint = checkDrawConsistency({
+      minAge: Number.isInteger(campaign.min_age) ? campaign.min_age : null,
+      maxAge: Number.isInteger(campaign.max_age) ? campaign.max_age : null,
+      luckyDraw: ld,
+      termsHtml: getStoredTermsHtml(design),
+      contentHeadline: design?.content?.headline ?? view.formHeadline ?? '',
+      contentStory: design?.content?.story ?? view.storyText ?? '',
+    });
+    drawHardIssues = lint.hard;
+    drawSoftIssues = lint.soft;
+    if (hasLiveDraw) drawDriftIssues = checkDrawRecordDrift({ luckyDraw: ld, drawRow: record });
+    const dobRequired = view.requiredFields?.dob === true;
+    if (!dobRequired) {
+      if (Number.isInteger(campaign.max_age)) drawDobGate = isActive ? 'critical' : 'warning';
+      else if (Number.isInteger(campaign.min_age) && campaign.min_age > 18) drawDobGate = 'warning';
     }
   }
 
@@ -479,6 +552,10 @@ export async function loadCampaignReadiness(campaignId) {
     screeningConfigured,
     screeningGateOn,
     railActive,
+    drawHardIssues,
+    drawSoftIssues,
+    drawDriftIssues,
+    drawDobGate,
     poolCreditsRemaining,
     poolCreditsTotal,
   });

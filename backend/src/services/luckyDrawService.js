@@ -376,7 +376,11 @@ export function makeLuckyDrawService(overrides = {}) {
     const entitlementById = new Map(entitlements.map((e) => [String(e.id), e]));
 
     // Exclusive boundary: an event AT the boundary instant is past the window.
-    const cutoff = draw.boostClosesAt || d.now();
+    // CX17 (PR-3): a boost-less record defaults its evidence window to the
+    // ENTRY cutoff — the terms template words the deadline as closesAt when
+    // boostClosesAt is unset, and the old seal-time fallback silently widened
+    // the window past what entrants were told.
+    const cutoff = draw.boostClosesAt || draw.closesAt;
     const events = await d.RedemptionEvent.findAll({
       where: {
         entitlementId: { [Op.in]: entitlements.map((e) => e.id) },

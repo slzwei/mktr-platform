@@ -66,9 +66,13 @@ function cleanRows(prizes) {
  * @param {string} [opts.boostClosesAt]  YYYY-MM-DD; defaults to closesAt
  * @param {number} [opts.multiplier]     default 10
  * @param {number} [opts.minAge]         default 18 (defaults keep legacy output byte-identical)
+ * @param {number} [opts.maxAge]         optional ceiling — when set (and sane), the eligibility
+ *                                       clause reads "aged N to M" (D8: the capture gate DOES
+ *                                       enforce max_age when a DOB is collected, so the terms
+ *                                       must state both bounds, never "and above")
  * @param {'sms'|'whatsapp'} [opts.verification]  default 'sms'
  */
-export function buildDrawTermsHtml({ campaignName, prizes, prize, closesAt, boostClosesAt, multiplier = 10, minAge = 18, verification = 'sms' }) {
+export function buildDrawTermsHtml({ campaignName, prizes, prize, closesAt, boostClosesAt, multiplier = 10, minAge = 18, maxAge = null, verification = 'sms' }) {
   const name = escapeHtml((campaignName || '').trim() || 'Lucky Draw');
   const rows = cleanRows(prizes);
   const legacyRows = rows.length ? rows : cleanRows(prize ? [{ qty: 1, name: prize }] : []);
@@ -100,7 +104,12 @@ export function buildDrawTermsHtml({ campaignName, prizes, prize, closesAt, boos
     `<h3>Redeem &times; MKTR &mdash; ${name}</h3>`,
     '<p><strong>Promoter:</strong> MKTR PTE. LTD. (UEN 202507548M), Singapore. Redeem is a service of MKTR PTE. LTD.</p>',
     prizeClause,
-    `<p><strong>Eligibility &amp; entry:</strong> Open to Singapore residents aged ${Number.isInteger(minAge) && minAge > 18 ? minAge : 18} and above. Entry is free. Complete the form and verify your mobile number with the one-time ${verification === 'whatsapp' ? 'WhatsApp' : 'SMS'} code &mdash; one entry per verified mobile number.</p>`,
+    (() => {
+      const minEff = Number.isInteger(minAge) && minAge > 18 ? minAge : 18;
+      const maxEff = Number.isInteger(maxAge) && maxAge > minEff && maxAge < 130 ? maxAge : null;
+      const ageClause = maxEff ? `aged ${minEff} to ${maxEff}` : `aged ${minEff} and above`;
+      return `<p><strong>Eligibility &amp; entry:</strong> Open to Singapore residents ${ageClause}. Entry is free. Complete the form and verify your mobile number with the one-time ${verification === 'whatsapp' ? 'WhatsApp' : 'SMS'} code &mdash; one entry per verified mobile number.</p>`;
+    })(),
     `<p><strong>Entry period:</strong> Entries close at 23:59 (SGT) on ${closesLong}. Entries received after that time are not eligible.</p>`,
     drawClause,
     notifyClause,

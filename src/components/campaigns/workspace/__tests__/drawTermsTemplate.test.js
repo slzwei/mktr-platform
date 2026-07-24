@@ -119,3 +119,19 @@ describe('buildDrawTermsHtml — minAge + verification facts (create-everything 
     expect(buildDrawTermsHtml(base)).toContain('one-time SMS code');
   });
 });
+
+describe('buildDrawTermsHtml — bounded age (D8, PR-3)', () => {
+  const base = { campaignName: 'D', prize: 'iPhone 17 Pro 256GB', closesAt: '2026-09-30' };
+
+  it('maxAge writes BOTH bounds; omitted maxAge keeps the legacy open-ended clause byte-for-byte', () => {
+    expect(buildDrawTermsHtml({ ...base, minAge: 25, maxAge: 65 })).toContain('aged 25 to 65');
+    expect(buildDrawTermsHtml({ ...base, minAge: 25 })).toContain('aged 25 and above');
+    expect(buildDrawTermsHtml({ ...base, minAge: 25, maxAge: null })).toBe(buildDrawTermsHtml({ ...base, minAge: 25 }));
+  });
+
+  it('insane ceilings are ignored (≤min, ≥130, non-integer) — never a nonsense clause', () => {
+    expect(buildDrawTermsHtml({ ...base, minAge: 25, maxAge: 20 })).toContain('aged 25 and above');
+    expect(buildDrawTermsHtml({ ...base, minAge: 25, maxAge: 200 })).toContain('aged 25 and above');
+    expect(buildDrawTermsHtml({ ...base, minAge: 25, maxAge: 65.5 })).toContain('aged 25 and above');
+  });
+});
