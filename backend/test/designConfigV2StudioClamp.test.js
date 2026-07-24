@@ -227,3 +227,29 @@ describe('content.submitFontSize — submit CTA size (v2-only, L7)', () => {
     expect(read(doc)).toBe(21);
   });
 });
+
+describe('featuredDrop.endsAt inherits luckyDraw.closesAt (PR-2, F9)', () => {
+  it('an endsAt-less drop on a draw campaign inherits the close date; explicit endsAt wins; non-draw untouched', () => {
+    const doc = studioDoc();
+    delete doc.distribution.featuredDrop.endsAt;
+    const clamped = clampDesignConfigV2(doc, undefined, 'admin');
+    expect(clamped.distribution.featuredDrop.endsAt).toBe('2026-10-30'); // = luckyDraw.closesAt
+
+    const explicit = studioDoc(); // endsAt '2026-10-30' set explicitly
+    explicit.distribution.featuredDrop.endsAt = '2026-11-15';
+    expect(clampDesignConfigV2(explicit, undefined, 'admin').distribution.featuredDrop.endsAt).toBe('2026-11-15');
+
+    const nonDraw = studioDoc();
+    delete nonDraw.distribution.featuredDrop.endsAt;
+    nonDraw.luckyDraw = { enabled: false };
+    expect(clampDesignConfigV2(nonDraw, undefined, 'admin').distribution.featuredDrop.endsAt).toBeUndefined();
+  });
+
+  it('the inherit is idempotent (no phantom Studio dirty)', () => {
+    const doc = studioDoc();
+    delete doc.distribution.featuredDrop.endsAt;
+    const once = clampDesignConfigV2(doc, undefined, 'admin');
+    const twice = clampDesignConfigV2(once, undefined, 'admin');
+    expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
+  });
+});

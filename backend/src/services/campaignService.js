@@ -20,6 +20,30 @@ import { invalidateMarketplaceCache } from './marketplaceCache.js';
 import { invalidateFeaturedDropsCache } from './featuredDropsService.js';
 import { refundCampaignCommitments } from './walletService.js';
 
+/**
+ * Boost-rail ensure hook (PR-2, draw-launch-integrity §5.1 / old-plan F2).
+ * Lazy dynamic import: campaignService's static graph feeds many unit suites
+ * that never touch draws — the redeemOps model surface must not enter it.
+ * Overridable seam for tests.
+ */
+let _ensureDrawBoostRail = null;
+export function setEnsureDrawBoostRail(fn) {
+  _ensureDrawBoostRail = typeof fn === 'function' ? fn : null;
+}
+async function ensureRail(args) {
+  if (_ensureDrawBoostRail) return _ensureDrawBoostRail(args);
+  const mod = await import('./redeemOps/drawBoostProvisioningService.js');
+  return mod.ensureDrawBoostRail(args);
+}
+/** Write the ensured activationId into the doc's stored luckyDraw (both doc
+ * versions keep `luckyDraw` top-level — loss-ledger L5). No-op on null. */
+function stampRailActivationId(designConfig, activationId) {
+  if (!activationId || !designConfig || typeof designConfig !== 'object') return designConfig;
+  if (!designConfig.luckyDraw || typeof designConfig.luckyDraw !== 'object') return designConfig;
+  return { ...designConfig, luckyDraw: { ...designConfig.luckyDraw, activationId } };
+}
+const drawEnabledIn = (doc) => normalizeLuckyDraw(getStoredLuckyDraw(doc))?.enabled === true;
+
 const SLUG_RE = /^[a-z0-9-]{3,80}$/;
 
 /** Wallet commit price: null/'' clears; else a positive integer in cents. */
@@ -82,6 +106,12 @@ export function clampDesignConfig(incoming, storedConfig, role) {
   });
   if (luckyDraw === undefined) delete clamped.luckyDraw;
   else clamped.luckyDraw = luckyDraw;
+  // F9 (PR-2): a draw campaign's homepage card must not outlive its draw — an
+  // endsAt-less featuredDrop inherits luckyDraw.closesAt. Explicit endsAt wins.
+  if (clamped.featuredDrop?.enabled === true && !clamped.featuredDrop.endsAt
+      && luckyDraw?.enabled === true && luckyDraw.closesAt) {
+    clamped.featuredDrop = { ...clamped.featuredDrop, endsAt: luckyDraw.closesAt };
+  }
 
   // Marketplace content keys: normalized wholesale (echoed on public
   // /offers pages — see utils/marketplaceContent.js). Raw values replaced.
@@ -471,7 +501,20 @@ export async function createCampaign(body, user) {
   invalidateFeaturedDropsCache();
 
   if (campaignData.design_config?.luckyDraw?.enabled === true) {
-    const withTerms = await ensureDrawTermsVersion(campaignData.design_config, campaign.id, user.id);
+    let withTerms = await ensureDrawTermsVersion(campaignData.design_config, campaign.id, user.id);
+    // Born-active draw arms its boost rail NOW (old-plan F2: the campaign row
+    // must exist first, so this is ensure-after-create with a compensating
+    // revert — a failed rail never leaves a live draw promising an unissuable
+    // pass; the campaign survives as a draft with the typed 422 explaining).
+    if (campaignData.is_active) {
+      try {
+        const rail = await ensureRail({ campaign, designConfig: withTerms, user });
+        withTerms = stampRailActivationId(withTerms, rail.activationId);
+      } catch (err) {
+        await campaign.update({ is_active: false, status: 'draft', design_config: withTerms }).catch(() => {});
+        throw err;
+      }
+    }
     await campaign.update({ design_config: withTerms });
   }
 
@@ -604,6 +647,23 @@ export async function updateCampaign(id, body, req) {
     );
   }
 
+  // Boost-rail ensure (PR-2 §5.1) — BEFORE the flip commits (F2, fail-closed:
+  // the 422 aborts the save, nothing to compensate). Scoped to the two arming
+  // transitions ONLY — inactive→active with a draw, or the draw turning on
+  // under an active campaign. Routine saves of a live draw campaign never
+  // re-enter (a transient rail 422 must not block unrelated edits — CX16).
+  {
+    const nextDoc = updateData.design_config !== undefined ? updateData.design_config : campaign.design_config;
+    const becomingActive = willBeActive && campaign.is_active !== true;
+    const drawTurningOn =
+      willBeActive && drawEnabledIn(nextDoc) && !drawEnabledIn(campaign.design_config);
+    if ((becomingActive && drawEnabledIn(nextDoc)) || drawTurningOn) {
+      const rail = await ensureRail({ campaign, designConfig: nextDoc, user: req.user });
+      const stamped = stampRailActivationId(nextDoc, rail.activationId);
+      if (stamped !== nextDoc) updateData.design_config = stamped;
+    }
+  }
+
   try {
     await campaign.update(updateData);
   } catch (err) {
@@ -732,10 +792,21 @@ export async function setCampaignLaunchState(id, state, req) {
   // readiness on force) — the multi-prize gate must hold here regardless.
   if (state === 'active') assertDrawActivatable(campaign.design_config);
 
+  // Boost-rail ensure (PR-2 §5.1) — BEFORE the flip (F2). `force` skips
+  // readiness, never this: an armed draw with no rail is the exact silent
+  // failure this exists to prevent.
+  let stampedDoc = null;
+  if (state === 'active' && drawEnabledIn(campaign.design_config)) {
+    const rail = await ensureRail({ campaign, designConfig: campaign.design_config, user: req.user });
+    const stamped = stampRailActivationId(campaign.design_config, rail.activationId);
+    if (stamped !== campaign.design_config) stampedDoc = stamped;
+  }
+
   const isActive = state === 'active';
   await campaign.update({
     is_active: isActive,
     status: isActive ? 'active' : 'paused',
+    ...(stampedDoc ? { design_config: stampedDoc } : {}),
     ...(isActive && !campaign.firstActivatedAt ? { firstActivatedAt: new Date() } : {}),
   });
   invalidateMarketplaceCache();

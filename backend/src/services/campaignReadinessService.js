@@ -83,6 +83,8 @@ export function computeReadiness(facts) {
     // opted in.
     screeningConfigured = false,
     screeningGateOn = false,
+    // Boost-rail fact (PR-2): an ACTIVE agent_unlock activation is linked.
+    railActive = false,
     // Funded-pool credit facts (PR-1): sums over the same assignments that
     // produce assignableAgents. Default 0/0 = row silent.
     poolCreditsRemaining = 0,
@@ -238,6 +240,20 @@ export function computeReadiness(facts) {
         'The lucky draw is enabled but no draw record exists. Entries are being accepted, but ops cannot freeze the pool or pick a winner until a draw is created (Redeem Ops → Draws).',
     });
   }
+  // Boost rail (PR-2, old-plan Phase 1): a LIVE draw with no active
+  // agent_unlock activation cannot issue entry passes and every field scan
+  // would earn nothing — today's silent-detached state becomes visible.
+  // Pre-launch it is informational: launch auto-provisions the rail.
+  if (drawEnabled && !railActive) {
+    issues.push({
+      level: isActive ? 'critical' : 'warning',
+      code: 'draw_boost_rail_missing',
+      message: isActive
+        ? 'The draw has NO active reward rail (agent_unlock activation) — entry passes cannot issue and consultant sessions cannot earn the ×N boost. Relaunch the campaign (auto-provisions) or fix the activation in Redeem Ops.'
+        : 'The ×N boost rail will be armed automatically when this campaign launches.',
+    });
+  }
+
   // ESCALATION (PR-1, CX19): past the close date with still no (non-void) draw
   // record, the T&C's promised witnessed draw cannot run — entries have closed
   // into nothing. Critical so it cannot be missed; hasDrawRecord already
@@ -302,7 +318,7 @@ const sgtYmdFromExclusiveInstant = (instant) => {
  * Read-only. Lazy-imports models so the pure export above stays import-light.
  */
 export async function loadCampaignReadiness(campaignId) {
-  const { Campaign, LeadPackage, LeadPackageAssignment, User, Draw } = await import('../models/index.js');
+  const { Campaign, LeadPackage, LeadPackageAssignment, User, Draw, Activation } = await import('../models/index.js');
   const { Op } = await import('sequelize');
 
   const campaign = await Campaign.findByPk(campaignId, {
@@ -401,6 +417,16 @@ export async function loadCampaignReadiness(campaignId) {
   let docDrawClosesAt = null;
   let drawRecordClosesAt = null;
   let drawClosesPastDue = false;
+  let railActive = false;
+  if (drawEnabled) {
+    // Boost-rail fact (PR-2): one live activation per campaign (partial
+    // unique), so a single active-status probe answers it.
+    const rail = await Activation.findOne({
+      where: { campaignId, status: 'active' },
+      attributes: ['id', 'unlockPolicy'],
+    });
+    railActive = !!rail && rail.unlockPolicy === 'agent_unlock';
+  }
   if (drawEnabled) {
     // Void records don't count (PR-1, CX19): a voided draw does not satisfy the
     // "witnessed draw" promise, so it must not suppress draw_record_missing.
@@ -452,6 +478,7 @@ export async function loadCampaignReadiness(campaignId) {
     drawTotalPrizes: totalPrizeQuantity(ld),
     screeningConfigured,
     screeningGateOn,
+    railActive,
     poolCreditsRemaining,
     poolCreditsTotal,
   });

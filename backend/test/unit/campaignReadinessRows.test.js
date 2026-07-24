@@ -66,14 +66,16 @@ describe('lead_credits_low', () => {
 });
 
 describe('draw_record_missing escalation', () => {
+  const DRAW = { ...BASE, railActive: true }; // isolate from the PR-2 rail row
+
   it('intake open + no record → the existing WARNING (unchanged)', () => {
-    const r = computeReadiness({ ...BASE, drawEnabled: true, hasDrawRecord: false, drawIntakeOpen: true });
+    const r = computeReadiness({ ...DRAW, drawEnabled: true, hasDrawRecord: false, drawIntakeOpen: true });
     expect(codes(r)).toContain('warning:draw_record_missing');
     expect(r.ready).toBe(true);
   });
 
   it('PAST DUE + still no record → CRITICAL (the witnessed-draw promise cannot run)', () => {
-    const r = computeReadiness({ ...BASE, drawEnabled: true, hasDrawRecord: false, drawIntakeOpen: false, drawClosesPastDue: true, docDrawClosesAt: '2026-09-30' });
+    const r = computeReadiness({ ...DRAW, drawEnabled: true, hasDrawRecord: false, drawIntakeOpen: false, drawClosesPastDue: true, docDrawClosesAt: '2026-09-30' });
     const row = r.issues.find((i) => i.code === 'draw_record_missing');
     expect(row.level).toBe('critical');
     expect(row.message).toContain('2026-09-30');
@@ -81,7 +83,29 @@ describe('draw_record_missing escalation', () => {
   });
 
   it('a record existing silences both levels', () => {
-    const r = computeReadiness({ ...BASE, drawEnabled: true, hasDrawRecord: true, drawClosesPastDue: true });
+    const r = computeReadiness({ ...DRAW, drawEnabled: true, hasDrawRecord: true, drawClosesPastDue: true });
     expect(codes(r).join()).not.toContain('draw_record_missing');
+  });
+});
+
+describe('draw_boost_rail_missing (PR-2)', () => {
+  it('LIVE draw with no active agent_unlock rail → CRITICAL', () => {
+    const r = computeReadiness({ ...BASE, drawEnabled: true, railActive: false, hasDrawRecord: true });
+    expect(codes(r)).toContain('critical:draw_boost_rail_missing');
+    expect(r.ready).toBe(false);
+  });
+
+  it('pre-launch → informational WARNING ("armed automatically at launch")', () => {
+    const r = computeReadiness({ ...BASE, isActive: false, drawEnabled: true, railActive: false, hasDrawRecord: true });
+    const row = r.issues.find((i) => i.code === 'draw_boost_rail_missing');
+    expect(row.level).toBe('warning');
+    expect(row.message).toContain('automatically');
+  });
+
+  it('silent with an active rail, and for non-draw campaigns', () => {
+    const withRail = computeReadiness({ ...BASE, drawEnabled: true, railActive: true, hasDrawRecord: true });
+    const nonDraw = computeReadiness({ ...BASE, railActive: false });
+    expect(codes(withRail).join()).not.toContain('draw_boost_rail_missing');
+    expect(codes(nonDraw).join()).not.toContain('draw_boost_rail_missing');
   });
 });

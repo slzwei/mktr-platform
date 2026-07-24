@@ -161,6 +161,7 @@ function buildMocks() {
     AppError,
     logger,
     processLeadOutcome: jest.fn().mockResolvedValue({ dispatched: [] }),
+    cancelLiveEntitlementsForProspectTx: jest.fn().mockResolvedValue({ cancelled: 0 }),
   };
 }
 
@@ -178,6 +179,8 @@ function makeService(mocks) {
     AppError: mocks.AppError,
     logger: mocks.logger,
     processLeadOutcome: mocks.processLeadOutcome,
+    // PR-2 (CX13): stub the lazy default — the real one reaches the live DB.
+    cancelLiveEntitlementsForProspectTx: mocks.cancelLiveEntitlementsForProspectTx,
   });
 }
 
@@ -1128,6 +1131,22 @@ describe('prospectService (unit)', () => {
       await service.deleteProspect('prospect-1', user);
 
       expect(prospect.destroy).toHaveBeenCalled();
+    });
+
+    it('PR-2 (CX13): cancels the prospect’s live reward passes inside the delete transaction', async () => {
+      const prospect = {
+        ...mocks.mockProspect,
+        id: 'prospect-1',
+        destroy: jest.fn().mockResolvedValue(true),
+      };
+      mocks.models.Prospect.findOne.mockResolvedValue(prospect);
+
+      await service.deleteProspect('prospect-1', user);
+
+      expect(mocks.cancelLiveEntitlementsForProspectTx).toHaveBeenCalledTimes(1);
+      const [calledId, , opts] = mocks.cancelLiveEntitlementsForProspectTx.mock.calls[0];
+      expect(calledId).toBe('prospect-1');
+      expect(opts).toMatchObject({ reason: 'prospect_deleted' });
     });
   });
 });

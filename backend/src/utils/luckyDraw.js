@@ -164,7 +164,17 @@ export function applyLuckyDrawPolicy({ incoming, stored, role }) {
       err.data = { code: 'DRAW_PRIZES_INVALID' };
       throw err;
     }
-    return normalizeLuckyDraw(incoming);
+    const normalized = normalizeLuckyDraw(incoming);
+    // F5 stamp carry-forward (PR-2, old-plan F5 / Codex R1 CX6): activationId
+    // is an OPERATIONAL stamp the editors never render — a Studio tab loaded
+    // before provisioning omits the key on its next save, and incoming-wins
+    // would silently wipe the rail link. Omitted key ⇒ stored stamp survives;
+    // an EXPLICIT `activationId: null` still clears (deliberate unlink).
+    if (normalized && isPlainObject(incoming) && !('activationId' in incoming) && !normalized.activationId) {
+      const storedStamp = normalizeLuckyDraw(stored)?.activationId;
+      if (storedStamp) normalized.activationId = storedStamp;
+    }
+    return normalized;
   }
   return normalizeLuckyDraw(stored);
 }

@@ -934,13 +934,56 @@ export function makeEntitlementService(overrides = {}) {
     return { entitlements: masked, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
   }
 
+  /**
+   * Cancel every LIVE entitlement of a prospect INSIDE the caller's
+   * transaction (PR-2, Codex R1 CX13): prospect deletion previously SET-NULL
+   * orphaned live passes — still scannable, phone slot still held, inventory
+   * never returned. Called from prospectService.deleteProspect so the cancel
+   * commits (or rolls back) WITH the delete; bulk delete loops single and
+   * inherits. Mirrors cancelEntitlement's effects row-for-row (status flip +
+   * inventory reversal + issuedCount decrement + redemption_event) with
+   * actorType 'system' — no audit-console actor exists for a cascade.
+   */
+  async function cancelLiveEntitlementsForProspectTx(prospectId, t, { reason = 'prospect_deleted' } = {}) {
+    const live = await d.RewardEntitlement.findAll({
+      where: { prospectId, status: { [Op.in]: ['eligible', 'issued'] } },
+      transaction: t,
+      lock: t.LOCK ? t.LOCK.UPDATE : undefined,
+    });
+    let cancelled = 0;
+    for (const ent of live) {
+      const [count] = await d.RewardEntitlement.update(
+        { status: 'cancelled' },
+        { where: { id: ent.id, status: { [Op.in]: ['eligible', 'issued'] } }, transaction: t }
+      );
+      if (count === 0) continue; // raced a redemption/cancel — leave as-is
+      await d.inventory.reverseIssued({
+        offerId: ent.rewardOfferId, activationId: ent.activationId,
+        entitlementId: ent.id, type: 'cancelled', actorType: 'system', reason, transaction: t,
+      });
+      await d.sequelize.query(
+        `UPDATE activations SET "issuedCount" = "issuedCount" - 1, "updatedAt" = NOW()
+          WHERE id = :id AND "issuedCount" > 0`,
+        { replacements: { id: ent.activationId }, transaction: t }
+      );
+      await writeEvent(t, {
+        entitlementId: ent.id, type: 'manual_override', actorType: 'system',
+        metadata: { action: 'cancelled', reason },
+      });
+      cancelled += 1;
+    }
+    return { cancelled };
+  }
+
   return {
     issueForProspect, unlockEntitlement, issueManual, cancelEntitlement, resendDelivery,
     expireReservations, reconcileMissedLeads, reconcileMissedDeliveries, purgeIssuanceSkips,
     listEntitlements, verificationStampOf,
+    cancelLiveEntitlementsForProspectTx,
     queueDelivery, // exported for tests: the per-channel fan-out contract (PR E)
   };
 }
 
 const _default = makeEntitlementService();
+export const cancelLiveEntitlementsForProspectTx = (...a) => _default.cancelLiveEntitlementsForProspectTx(...a);
 export default _default;

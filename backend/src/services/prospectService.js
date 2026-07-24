@@ -177,6 +177,10 @@ const defaultDeps = {
   // DI tests override these with plain jest.fn()s (await tolerates sync).
   screeningConfig: async () => (await import('./screeningGate.js')).screeningConfig(),
   screeningApplies: async (args, cfg) => (await import('./screeningGate.js')).screeningApplies(args, cfg),
+  // Lazy (PR-2, CX13): live-pass cancellation on prospect delete — dynamic so
+  // the redeemOps model surface stays out of this module's static graph.
+  cancelLiveEntitlementsForProspectTx: async (...a) =>
+    (await import('./redeemOps/entitlementService.js')).cancelLiveEntitlementsForProspectTx(...a),
   startScreeningAttempt: async (prospect, opts) => (await import('./retellScreeningService.js')).startScreeningAttempt(prospect, opts),
   buildProspectWhere,
   dispatchEvent,
@@ -1622,6 +1626,12 @@ export function makeProspectService(overrides = {}) {
         });
         destination = destinationForAgent(agent);
       }
+
+      // Live reward passes die WITH their prospect (PR-2, Codex R1 CX13): the
+      // SET-NULL FK alone left orphaned, still-scannable passes holding the
+      // phone's anti-farm slot and never returning inventory. Same tx as the
+      // destroy — all-or-nothing.
+      await d.cancelLiveEntitlementsForProspectTx(prospect.id, t, { reason: 'prospect_deleted' });
 
       if (destination === 'mktr_leads') {
         deliveryPairs = await d.persistEventDeliveries(

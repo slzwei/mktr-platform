@@ -63,7 +63,12 @@ async function main() {
   switch (command) {
     case 'create': {
       const user = await resolveUser(flags.as);
-      const draw = await svc.createDraw({ campaignId: flags.campaign }, user);
+      // --allow-no-boost: emergency 1×-only draw (PR-2 F3) — without it a
+      // campaign with no active boost rail refuses to mint a record.
+      const draw = await svc.createDraw(
+        { campaignId: flags.campaign, allowNoBoost: 'allow-no-boost' in flags },
+        user
+      );
       out({ created: { id: draw.id, status: draw.status, closesAt: draw.closesAt, boostClosesAt: draw.boostClosesAt, multiplier: draw.multiplier } });
       break;
     }
