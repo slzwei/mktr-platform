@@ -1,7 +1,7 @@
 import { Op } from 'sequelize';
 import {
   RewardEntitlement, RedemptionEvent, Redemption, Activation, ActivationIssuanceSkip, RewardOffer,
-  PartnerOrganisation, Prospect, User, Consumer, sequelize,
+  PartnerOrganisation, Prospect, User, Consumer, Campaign, sequelize,
 } from '../../models/index.js';
 import { phoneVerificationIsCurrent } from '../consumerService.js';
 import { AppError } from '../../middleware/errorHandler.js';
@@ -63,7 +63,7 @@ export async function flushDeliveries() {
 export function makeEntitlementService(overrides = {}) {
   const d = {
     RewardEntitlement, RedemptionEvent, Redemption, Activation, ActivationIssuanceSkip, RewardOffer,
-    PartnerOrganisation, Prospect, User, Consumer, sequelize, logger,
+    PartnerOrganisation, Prospect, User, Consumer, Campaign, sequelize, logger,
     inventory: makeInventoryService(),
     audit: makeRedeemOpsAuditService(),
     notifyUnlock: null, // injected by entitlementWiring (voucher email) — null-safe
@@ -898,7 +898,10 @@ export function makeEntitlementService(overrides = {}) {
    * to `maxAttempts` per kind; rows younger than `minAgeMinutes` are skipped so
    * an in-flight fire-and-forget send isn't pointlessly rotated. Requires the
    * notify deps to be wired — a bare instance returns 0 (never rotate a
-   * credential we cannot deliver).
+   * credential we cannot deliver). Issued DRAW sessions are token-free by
+   * design: their recovery is the "×N confirmed" boost receipt, never a
+   * voucher mint, and draw classification fails closed (skip, retry next
+   * sweep) so a lookup error can never reclassify a draw rail.
    */
   async function reconcileMissedDeliveries({ maxAttempts = 3, minAgeMinutes = 10 } = {}) {
     const cutoff = new Date(Date.now() - minAgeMinutes * 60 * 1000);
@@ -914,11 +917,24 @@ export function makeEntitlementService(overrides = {}) {
     let recovered = 0;
     for (const ent of candidates) {
       try {
-        const kind = ent.status === 'eligible' ? 'pass' : 'voucher';
-        const fn = kind === 'voucher' ? d.notifyUnlock : d.notifyReservation;
+        // Draw classification comes BEFORE the kind decision, and it fails
+        // CLOSED: an issued draw session's missed delivery is the ×N boost
+        // receipt — recovering it as a voucher would mint the redeemable
+        // credential draw rails must never carry (the 2026-07-25 clobber
+        // outage nearly did exactly that). A lookup error skips the row
+        // (retried next sweep) rather than risking that misclassification.
+        let drawCtx;
+        try {
+          drawCtx = await d.drawLink.drawContextForEntitlement(ent);
+        } catch (err) {
+          d.logger.warn('redeem_ops.delivery.recover_draw_lookup_failed', { id: ent.id, error: err?.message });
+          continue;
+        }
+        const kind = ent.status === 'eligible' ? 'pass' : drawCtx ? 'boost_receipt' : 'voucher';
+        const fn = kind === 'voucher' ? d.notifyUnlock : kind === 'boost_receipt' ? d.notifyBoostReceipt : d.notifyReservation;
         if (typeof fn !== 'function') continue; // unwired — never rotate undeliverably
         if (!canEmailProspect(ent.prospect)) continue; // link-channel-only customer
-        const stateSince = kind === 'voucher' ? (ent.unlockedAt || ent.createdAt) : ent.createdAt;
+        const stateSince = kind === 'pass' ? ent.createdAt : (ent.unlockedAt || ent.createdAt);
         if (new Date(stateSince) > cutoff) continue; // give the in-flight send its window
 
         const receipts = await d.RedemptionEvent.findAll({
@@ -930,34 +946,44 @@ export function makeEntitlementService(overrides = {}) {
         if (forKind.some((e) => e.type === 'notified')) continue; // delivered
         if (forKind.length >= maxAttempts) continue; // gave up — visible on the console
 
-        const fresh = mintToken();
-        const fields = kind === 'pass'
-          ? { presentationTokenHash: fresh.hash }
-          : { tokenHash: fresh.hash, tokenHint: tokenHintOf(fresh.raw) };
-        let rotated = false;
-        await d.sequelize.transaction(async (t) => {
-          const [count] = await d.RewardEntitlement.update(fields, {
-            where: {
-              id: ent.id,
-              status: ent.status,
-              [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: d.sequelize.literal('NOW()') } }],
-            },
-            transaction: t,
+        // boost_receipt carries NO credential — nothing to rotate. Its resend
+        // is the informational "×N confirmed" email plus the same audit row;
+        // pass/voucher keep the rotate-inside-a-guarded-transaction shape.
+        const fresh = kind === 'boost_receipt' ? null : mintToken();
+        if (fresh) {
+          const fields = kind === 'pass'
+            ? { presentationTokenHash: fresh.hash }
+            : { tokenHash: fresh.hash, tokenHint: tokenHintOf(fresh.raw) };
+          let rotated = false;
+          await d.sequelize.transaction(async (t) => {
+            const [count] = await d.RewardEntitlement.update(fields, {
+              where: {
+                id: ent.id,
+                status: ent.status,
+                [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: d.sequelize.literal('NOW()') } }],
+              },
+              transaction: t,
+            });
+            if (count === 0) return;
+            rotated = true;
+            await writeEvent(t, {
+              entitlementId: ent.id, type: 'manual_override', actorType: 'system',
+              metadata: { action: 'auto_resend', kind, channel: 'email' },
+            });
           });
-          if (count === 0) return;
-          rotated = true;
-          await writeEvent(t, {
+          if (!rotated) continue;
+          await ent.reload();
+        } else {
+          await writeEvent(null, {
             entitlementId: ent.id, type: 'manual_override', actorType: 'system',
             metadata: { action: 'auto_resend', kind, channel: 'email' },
           });
-        });
-        if (!rotated) continue;
-        await ent.reload();
+        }
         queueDelivery({
           entitlement: ent, prospect: ent.prospect, kind,
-          presentationToken: kind === 'pass' ? fresh.raw : null,
-          voucherToken: kind === 'voucher' ? fresh.raw : null,
-          drawCtx: await d.drawLink.drawContextForEntitlement(ent).catch(() => null),
+          presentationToken: kind === 'pass' && fresh ? fresh.raw : null,
+          voucherToken: kind === 'voucher' && fresh ? fresh.raw : null,
+          drawCtx,
         });
         recovered += 1;
       } catch (err) {
