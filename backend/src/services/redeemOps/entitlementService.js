@@ -71,6 +71,7 @@ export function makeEntitlementService(overrides = {}) {
     notifyUnlockWa: null, // injected by entitlementWiring (voucher WhatsApp, PR E) — null-safe
     notifyReservationWa: null, // injected by entitlementWiring (reservation-pass WhatsApp, PR E) — null-safe
     notifyBoostReceipt: null, // injected by entitlementWiring (PR-4 "×N confirmed" email) — null-safe
+    notifyBoostReceiptWa: null, // injected by entitlementWiring ("×N confirmed" WhatsApp) — null-safe
     drawLink: null, // PR-4: built AFTER the merge from the service's OWN models (DI-hermetic)
     builders: null, // share/claim-URL builders; defaults lazily to makeFulfilmentNotify()
     isSendBlocked, // PR C: erasure stop at the send choke point (transactional purpose)
@@ -195,8 +196,7 @@ export function makeEntitlementService(overrides = {}) {
     };
 
     if (channels.includes('whatsapp')) {
-      // boost_receipt has no approved WA template yet — email-only (PR-4).
-      const waFn = kind === 'voucher' ? d.notifyUnlockWa : kind === 'boost_receipt' ? null : d.notifyReservationWa;
+      const waFn = kind === 'voucher' ? d.notifyUnlockWa : kind === 'boost_receipt' ? d.notifyBoostReceiptWa : d.notifyReservationWa;
       if (typeof waFn === 'function') fire(waFn, 'whatsapp');
     }
 
@@ -564,7 +564,7 @@ export function makeEntitlementService(overrides = {}) {
     // the "×N confirmed" receipt for draw rails (F13 — never the partner-
     // redemption voucher email a draw entrant can do nothing with).
     const emailQueued = drawCtx
-      ? queueDelivery({ entitlement, prospect, kind: 'boost_receipt', drawCtx, channels: ['email'] })
+      ? queueDelivery({ entitlement, prospect, kind: 'boost_receipt', drawCtx })
       : queueDelivery({ entitlement, prospect, kind: 'voucher', voucherToken: voucher.raw });
     return {
       entitlement, already: false, voucherToken: drawCtx ? null : voucher.raw, emailQueued,

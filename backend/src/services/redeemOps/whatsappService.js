@@ -334,7 +334,24 @@ export function makeWhatsappService(overrides = {}) {
     });
   }
 
-  return { sendReservationWhatsApp, sendVoucherWhatsApp };
+  /** "×N confirmed" receipt at a recorded draw session — the WA twin of
+   * sendBoostReceiptEmail, same register as the email body. Body-only
+   * APPROVED UTILITY template `draw_boost_receipt` (no header on purpose:
+   * the pass is consumed, there is nothing left to scan); 3 params =
+   * name, draw name, multiplier. */
+  async function sendBoostReceiptWhatsApp({ prospect, drawCtx }) {
+    return sendTemplate({
+      prospect,
+      templateName: process.env.WHATSAPP_TEMPLATE_DRAW_BOOST || 'draw_boost_receipt',
+      params: [
+        cleanParam(prospect?.firstName, 'there'),
+        cleanParam(drawCtx?.drawName, 'the lucky draw'),
+        String(drawCtx?.multiplier || 10),
+      ],
+    });
+  }
+
+  return { sendReservationWhatsApp, sendVoucherWhatsApp, sendBoostReceiptWhatsApp };
 }
 
 const _default = makeWhatsappService();
