@@ -364,6 +364,39 @@ describe('sealDraw', () => {
     await expect(svc.sealDraw(DRAW_ID, ADMIN)).rejects.toMatchObject({ statusCode: 409 });
   });
 
+  it('PR-3 (CX17): a boost-less record cuts evidence at the ENTRY close, not seal time', async () => {
+    // boostScenario's events are dated Sep 1–2 — AFTER the Aug-31 entry
+    // close. With boostClosesAt null the query cutoff must fall back to
+    // closesAt (what the terms told entrants); the old seal-time fallback
+    // (NOW = Sep-15) silently widened the window. The harness mock filters
+    // by the where-clause here so the DB-level cutoff actually applies.
+    const sc = boostScenario();
+    sc.state.draw.boostClosesAt = null;
+    const allEvents = [
+      { id: 'ev-early', entitlementId: 'ent-1', metadata: { via: 'agent_scan' }, createdAt: new Date('2026-08-15T00:00:00Z') },
+      { id: 'ev-late', entitlementId: 'ent-2', metadata: { via: 'agent_button' }, createdAt: new Date('2026-09-02T00:00:00Z') },
+    ];
+    sc.deps.RedemptionEvent.findAll.mockImplementation(async ({ where }) => {
+      const ltSym = where?.createdAt ? Object.getOwnPropertySymbols(where.createdAt)[0] : null;
+      const lt = ltSym ? where.createdAt[ltSym] : null;
+      return allEvents.filter((e) => !lt || e.createdAt < lt);
+    });
+    const svc = makeLuckyDrawService(sc.deps);
+    const result = await svc.sealDraw(DRAW_ID, ADMIN);
+
+    // The query cutoff was the ENTRY close instant, not "now".
+    const where = sc.deps.RedemptionEvent.findAll.mock.calls[0][0].where;
+    const cutoffSym = Object.getOwnPropertySymbols(where.createdAt)[0];
+    expect(new Date(where.createdAt[cutoffSym]).getTime()).toBe(CLOSES_AT.getTime());
+
+    // ev-early (pre-close scan) boosts; ev-late (post-close button) is OUT of
+    // the window — no undecided-review block, no boost.
+    const byId = Object.fromEntries(sc.state.entries.map((e) => [e.id, e.chances]));
+    expect(byId.e1).toBe(10);
+    expect(byId.e2).toBe(1);
+    expect(result.totalChances).toBe(13);
+  });
+
   it('blocks sealing while a button unlock is undecided, listing it', async () => {
     const { deps } = boostScenario();
     const svc = makeLuckyDrawService(deps);

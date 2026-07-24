@@ -265,6 +265,12 @@ export function buildCampaignContext(campaign, gate = null) {
           boostClosesAt: draw.boostClosesAt || null,
           multiplier: Number.isInteger(draw.multiplier) ? draw.multiplier : 10,
           minAge: Math.max(18, Number.isInteger(campaign.min_age) ? campaign.min_age : 18),
+          // D8 (PR-3): BOTH bounds — max_age IS enforced at capture when a DOB
+          // is collected, so ceilingless terms on a bounded campaign contradict
+          // the gate (the 21-vs-25/65 incident).
+          maxAge: Number.isInteger(campaign.max_age) && campaign.max_age > 0 && campaign.max_age < 130
+            ? campaign.max_age
+            : null,
           verification: legacy.otpChannel === 'whatsapp' ? 'whatsapp' : 'sms',
         }
       : null,

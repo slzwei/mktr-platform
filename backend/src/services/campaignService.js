@@ -9,6 +9,7 @@ import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
 import { applyLuckyDrawPolicy, normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
 import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/marketplaceContent.js';
+import { checkDrawConsistency } from '../utils/drawConsistency.js';
 import {
   classifyDesignConfigVersion,
   clampDesignConfigV2,
@@ -43,6 +44,40 @@ function stampRailActivationId(designConfig, activationId) {
   return { ...designConfig, luckyDraw: { ...designConfig.luckyDraw, activationId } };
 }
 const drawEnabledIn = (doc) => normalizeLuckyDraw(getStoredLuckyDraw(doc))?.enabled === true;
+
+/**
+ * Promise-consistency gate (PR-3, draw-launch-integrity §3 / Codex R1
+ * CX15/CX16): HARD contradictions between the campaign's facts and its
+ * pinned-at-save T&Cs (prize, age bounds) 422 the ARMING and fact-touching
+ * saves — the iPad-vs-iPhone / 21-vs-25 incident becomes unshippable. SOFT
+ * findings (unparseable/ambiguous clauses, marketing divergence) surface via
+ * readiness only, never block. Remediation is always regeneration through
+ * the terms flow (a new pinned version) — `fix: 'regenerate_terms'`.
+ */
+function assertDrawPromiseConsistency({ minAge, maxAge, designConfig }) {
+  const ld = normalizeLuckyDraw(getStoredLuckyDraw(designConfig));
+  if (ld?.enabled !== true) return;
+  const content = designConfig?.content || {};
+  const { hard } = checkDrawConsistency({
+    minAge: Number.isInteger(minAge) ? minAge : null,
+    maxAge: Number.isInteger(maxAge) ? maxAge : null,
+    luckyDraw: ld,
+    termsHtml: getStoredTermsHtml(designConfig),
+    contentHeadline: content.headline ?? designConfig?.formHeadline ?? '',
+    contentStory: content.story ?? designConfig?.storyText ?? '',
+  });
+  if (hard.length > 0) {
+    const err = new AppError(hard[0].message, 422);
+    err.data = { code: hard[0].code, fix: 'regenerate_terms', issues: hard };
+    throw err;
+  }
+}
+
+/** Material draw facts for the fact-touching-save detector (PR-3/CX16). */
+const drawFactsOf = (doc) => {
+  const ld = normalizeLuckyDraw(getStoredLuckyDraw(doc)) || {};
+  return JSON.stringify([ld.enabled, ld.prize, ld.prizes, ld.closesAt, ld.boostClosesAt, ld.multiplier]);
+};
 
 const SLUG_RE = /^[a-z0-9-]{3,80}$/;
 
@@ -487,6 +522,13 @@ export async function createCampaign(body, user) {
   // multi-prize draw must be an explicit draft (the workspace sends
   // is_active:false), never born active.
   if (campaignData.is_active) assertDrawActivatable(campaignData.design_config);
+  // Born-active draws must not launch with self-contradicting promises
+  // (PR-3): runs BEFORE the row exists — nothing to compensate.
+  if (campaignData.is_active) {
+    assertDrawPromiseConsistency({
+      minAge: campaignData.min_age, maxAge: campaignData.max_age, designConfig: campaignData.design_config,
+    });
+  }
 
   let campaign;
   try {
@@ -657,7 +699,30 @@ export async function updateCampaign(id, body, req) {
     const becomingActive = willBeActive && campaign.is_active !== true;
     const drawTurningOn =
       willBeActive && drawEnabledIn(nextDoc) && !drawEnabledIn(campaign.design_config);
-    if ((becomingActive && drawEnabledIn(nextDoc)) || drawTurningOn) {
+    const arming = (becomingActive && drawEnabledIn(nextDoc)) || drawTurningOn;
+
+    // Promise-consistency gate (PR-3/CX16): arming transitions AND active
+    // saves that MODIFY a compared fact (ages, terms, material draw fields).
+    // Unrelated saves of a live-but-drifted campaign pass — readiness owns
+    // the standing complaint, the gate owns the change.
+    if (willBeActive && drawEnabledIn(nextDoc)) {
+      const ageChanged =
+        (min_age !== undefined && Number(min_age) !== campaign.min_age) ||
+        (max_age !== undefined && Number(max_age) !== campaign.max_age);
+      const docChanged = updateData.design_config !== undefined;
+      const termsChanged = docChanged
+        && getStoredTermsHtml(updateData.design_config).trim() !== getStoredTermsHtml(campaign.design_config).trim();
+      const factsChanged = docChanged && drawFactsOf(updateData.design_config) !== drawFactsOf(campaign.design_config);
+      if (arming || ageChanged || termsChanged || factsChanged) {
+        assertDrawPromiseConsistency({
+          minAge: min_age !== undefined ? Number(min_age) : campaign.min_age,
+          maxAge: max_age !== undefined ? Number(max_age) : campaign.max_age,
+          designConfig: nextDoc,
+        });
+      }
+    }
+
+    if (arming) {
       const rail = await ensureRail({ campaign, designConfig: nextDoc, user: req.user });
       const stamped = stampRailActivationId(nextDoc, rail.activationId);
       if (stamped !== nextDoc) updateData.design_config = stamped;
@@ -794,9 +859,13 @@ export async function setCampaignLaunchState(id, state, req) {
 
   // Boost-rail ensure (PR-2 §5.1) — BEFORE the flip (F2). `force` skips
   // readiness, never this: an armed draw with no rail is the exact silent
-  // failure this exists to prevent.
+  // failure this exists to prevent. The promise-consistency gate (PR-3) rides
+  // the same arming moment — a contradiction-carrying draw cannot launch.
   let stampedDoc = null;
   if (state === 'active' && drawEnabledIn(campaign.design_config)) {
+    assertDrawPromiseConsistency({
+      minAge: campaign.min_age, maxAge: campaign.max_age, designConfig: campaign.design_config,
+    });
     const rail = await ensureRail({ campaign, designConfig: campaign.design_config, user: req.user });
     const stamped = stampRailActivationId(campaign.design_config, rail.activationId);
     if (stamped !== campaign.design_config) stampedDoc = stamped;

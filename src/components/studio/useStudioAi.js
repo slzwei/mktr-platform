@@ -211,6 +211,7 @@ export default function useStudioAi({ campaign, doc, setPath, replaceDoc, onPick
           boostClosesAt: drawFacts.boostClosesAt || undefined,
           multiplier: drawFacts.multiplier,
           minAge: drawFacts.minAge,
+          maxAge: drawFacts.maxAge ?? null,
           verification: proposedChannel,
         }),
       };

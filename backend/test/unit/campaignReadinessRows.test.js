@@ -88,6 +88,39 @@ describe('draw_record_missing escalation', () => {
   });
 });
 
+describe('promise-consistency rows (PR-3)', () => {
+  const DRAW = { ...BASE, drawEnabled: true, railActive: true, hasDrawRecord: true };
+  const HARD = [{ code: 'DRAW_PRIZE_MISMATCH', message: 'Prize clause disagrees.' }];
+  const SOFT = [{ code: 'DRAW_TERMS_AGE_UNPARSEABLE', message: 'No age clause found.' }];
+  const DRIFT = [{ code: 'DRAW_LIVE_RECORD_DRIFT', field: 'multiplier', message: 'multiplier drifted.' }];
+
+  it('hard contradictions: CRITICAL live, warning as a draft', () => {
+    const live = computeReadiness({ ...DRAW, drawHardIssues: HARD });
+    expect(codes(live)).toContain('critical:draw_promise_inconsistent');
+    expect(live.ready).toBe(false);
+    const draft = computeReadiness({ ...DRAW, isActive: false, drawHardIssues: HARD });
+    expect(codes(draft)).toContain('warning:draw_promise_inconsistent');
+  });
+
+  it('soft findings: always a review warning; drift against a live record: always critical', () => {
+    const soft = computeReadiness({ ...DRAW, drawSoftIssues: SOFT });
+    expect(codes(soft)).toContain('warning:draw_promise_review');
+    const drift = computeReadiness({ ...DRAW, isActive: false, drawDriftIssues: DRIFT });
+    expect(codes(drift)).toContain('critical:draw_live_record_drift');
+  });
+
+  it('D8 DOB invariant passes through; silent when null / non-draw', () => {
+    const crit = computeReadiness({ ...DRAW, drawDobGate: 'critical' });
+    expect(codes(crit)).toContain('critical:draw_age_gate_unenforceable');
+    const warn = computeReadiness({ ...DRAW, drawDobGate: 'warning' });
+    expect(codes(warn)).toContain('warning:draw_age_gate_unenforceable');
+    const silent = computeReadiness({ ...DRAW });
+    expect(codes(silent).join()).not.toContain('draw_age_gate_unenforceable');
+    const nonDraw = computeReadiness({ ...BASE, drawDobGate: 'critical' });
+    expect(codes(nonDraw).join()).not.toContain('draw_age_gate_unenforceable');
+  });
+});
+
 describe('draw_boost_rail_missing (PR-2)', () => {
   it('LIVE draw with no active agent_unlock rail → CRITICAL', () => {
     const r = computeReadiness({ ...BASE, drawEnabled: true, railActive: false, hasDrawRecord: true });

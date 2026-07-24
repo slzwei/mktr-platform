@@ -156,11 +156,13 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
               closesAt: form.drawClosesAt,
               boostClosesAt: form.drawBoostClosesAt || form.drawClosesAt,
               multiplier: Number(form.drawMultiplier) || 10,
-              // The eligibility clause must state THIS campaign's floor, not
+              // The eligibility clause must state THIS campaign's bounds, not
               // the template default: seeding an 18+ clause onto a 21-65 draw
               // published terms that contradicted both the page copy and the
-              // age gate the server enforces.
+              // age gate the server enforces (D8: BOTH bounds — max_age is
+              // enforced at capture whenever a DOB is collected).
               minAge: Number(form.min_age) || 18,
+              maxAge: Number(form.max_age) || null,
             }),
           },
         }
