@@ -9,7 +9,7 @@ import * as retellClient from './retellClient.js';
 import { dncEnforcement } from './dncService.js';
 import { hasValidDncConsent } from './dncConsent.js';
 import { canMarketTo } from './consentService.js';
-import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
+import { readLegacyViewSafe, getStoredLuckyDraw } from '../utils/designConfigV2Clamp.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -92,6 +92,18 @@ export function nextRetryAt(cfg, attemptCount, now = new Date()) {
   const delayMs = cfg.retryMinutes * Math.pow(2, Math.max(0, attemptCount - 1)) * 60 * 1000;
   const candidate = new Date(now.getTime() + delayMs);
   return inCallWindow(cfg, candidate) ? candidate : nextWindowOpen(cfg, candidate);
+}
+
+/**
+ * Additional draw chances the consultant meet-up earns, from the campaign's
+ * stored luckyDraw.multiplier (mirrors normalizeLuckyDraw's default-10 /
+ * clamp-2..100 without importing the draw graph). Non-draw campaigns fall
+ * back to the default multiplier's 9.
+ */
+export function drawExtraChances(campaign) {
+  const raw = Number(getStoredLuckyDraw(campaign?.design_config)?.multiplier);
+  const multiplier = Number.isFinite(raw) ? Math.min(100, Math.max(2, Math.floor(raw))) : 10;
+  return multiplier - 1;
 }
 
 /** SGT midnight (UTC instant) for the daily dial budget. */
@@ -298,6 +310,12 @@ export function makeRetellScreeningService(overrides = {}) {
             // the script never speaks a literal placeholder. Strings per Retell.
             age_min: String(Number.isInteger(camp?.min_age) ? camp.min_age : 18),
             age_max: String(Number.isInteger(camp?.max_age) ? camp.max_age : 65),
+            // Draw reward → "{{extra_chances}} more chances" in the script.
+            // Driven by the SAME luckyDraw.multiplier the draw engine grants
+            // against (normalizeLuckyDraw default 10, clamp 2..100), so what
+            // Sarah promises can never diverge from what attendance earns:
+            // multiplier N ⇒ N−1 additional chances on top of the base entry.
+            extra_chances: String(drawExtraChances(camp)),
           },
         });
 

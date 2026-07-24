@@ -12,6 +12,7 @@ import {
   inCallWindow,
   nextWindowOpen,
   nextRetryAt,
+  drawExtraChances,
   UNANSWERED_REASONS,
 } from '../../src/services/retellScreeningService.js';
 import { runScreeningSweep } from '../../src/services/screeningSweepService.js';
@@ -174,7 +175,11 @@ describe('startScreeningAttempt', () => {
     const seq = fakeSequelize(happyDialQueries());
     const deps = dialerDeps(seq);
     const svc = makeRetellScreeningService(deps);
-    const camp = { ...screeningCampaign(), min_age: 25, max_age: 60 };
+    const camp = {
+      ...screeningCampaign({ luckyDraw: { multiplier: 5 } }),
+      min_age: 25,
+      max_age: 60,
+    };
     const out = await svc.startScreeningAttempt(pendingProspect(), { campaign: camp, cfg: CFG });
     expect(out.status).toBe('dialed');
     expect(deps.retellClient.createPhoneCall).toHaveBeenCalledWith(expect.objectContaining({
@@ -182,9 +187,9 @@ describe('startScreeningAttempt', () => {
       to_number: '+6591234567',
       override_agent_id: CFG.agentId,
       metadata: { mktr: expect.objectContaining({ kind: 'screening', attemptToken: expect.stringMatching(/^att_/) }) },
-      // Campaign age gate flows into the script's {{age_min}}/{{age_max}};
-      // absent gate falls back to the column defaults (18/65) as strings.
-      retell_llm_dynamic_variables: expect.objectContaining({ age_min: '25', age_max: '60' }),
+      // Campaign age gate → {{age_min}}/{{age_max}}; luckyDraw.multiplier →
+      // {{extra_chances}} (N−1). Absent values fall back to 18/65 and 9.
+      retell_llm_dynamic_variables: expect.objectContaining({ age_min: '25', age_max: '60', extra_chances: '4' }),
     }));
     const claim = seq.calls[3];
     expect(claim.sql).toContain(`"screeningActiveCallId" IS NULL`);
@@ -510,6 +515,30 @@ describe('screeningSweepService', () => {
     expect(out.drained).toBe(1);
     expect(deps.gate.releaseScreenedLead).toHaveBeenCalledWith(expect.objectContaining({ unscreened: true, via: 'screening_drain' }));
     expect(deps.dialer.startScreeningAttempt).not.toHaveBeenCalled(); // never dials while off
+  });
+});
+
+describe('drawExtraChances', () => {
+  it('multiplier N → N−1 extra chances; default 10 → 9; clamped to 2..100', () => {
+    expect(drawExtraChances({ design_config: { luckyDraw: { multiplier: 5 } } })).toBe(4);
+    expect(drawExtraChances({ design_config: {} })).toBe(9);             // no draw config
+    expect(drawExtraChances(null)).toBe(9);                              // no campaign
+    expect(drawExtraChances({ design_config: { luckyDraw: { multiplier: 1 } } })).toBe(1);   // clamp floor 2
+    expect(drawExtraChances({ design_config: { luckyDraw: { multiplier: 999 } } })).toBe(99); // clamp ceil 100
+    expect(drawExtraChances({ design_config: { luckyDraw: { multiplier: 'junk' } } })).toBe(9);
+  });
+
+  it('reads top-level luckyDraw on v2 docs too (admin-API-managed, editor-invisible)', () => {
+    const v2 = {
+      version: 2,
+      template: 't',
+      theme: {},
+      content: {},
+      form: {},
+      distribution: {},
+      luckyDraw: { multiplier: 3 },
+    };
+    expect(drawExtraChances({ design_config: v2 })).toBe(2);
   });
 });
 
