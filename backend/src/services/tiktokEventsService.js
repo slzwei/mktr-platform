@@ -38,15 +38,17 @@ export function shouldFireTikTok(prospect) {
  * event_id always comes from ctx.eventId — the same id the browser ttq pixel
  * fired with — so TikTok deduplicates Pixel↔Events-API.
  *
- * PII consent rule (identical to Meta CAPI):
- *   - hashed email/phone included only with marketing consent
- *     (sourceMetadata.consent_contact === true)
+ * PII consent rule (identical to Meta CAPI; 3sites — ledger-based):
+ *   - hashed email/phone included only when ctx.marketingConsent === true —
+ *     derived by the CALLER from the consent ledger (canMarketTo) at dispatch
+ *     time; the frozen sourceMetadata.consent_contact boolean is no longer
+ *     read here. Absent flag → no email/phone — FAIL CLOSED.
  *   - ttclid/ttp/ip/user_agent/external_id always included (browser/session ids,
  *     not the person's contact info)
  */
 export function _buildPayload(prospect, ctx, options) {
   const meta = prospect.sourceMetadata || {};
-  const marketingConsent = meta.consent_contact === true;
+  const marketingConsent = ctx?.marketingConsent === true;
   const eventName = options?.eventName || 'Lead';
   const pixelId = ctx.pixelIdOverride || process.env.TIKTOK_PIXEL_ID;
 

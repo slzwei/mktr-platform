@@ -9,6 +9,7 @@ import { composeValueLine, ageLabelOf, fmtDateLong, categoryLabel, isDrawCampaig
 import { shouldTrack, initPixel, ensureFbp, trackEvent, captureFbcFromUrl, captureUtmsFromUrl } from '@/lib/metaPixel';
 import { shouldTrackTikTok, initTikTokPixel, trackTikTokViewContent, captureTtclidFromUrl } from '@/lib/tiktokPixel';
 import { getOrCreateVcState, markVcFired } from '@/lib/pixelSession';
+import { resolveMetaPixelId, resolveTikTokPixelId } from '@/lib/pixelIds';
 
 /**
  * Offer detail (/offers/:slug) — the FIRST public content surface for
@@ -50,8 +51,8 @@ export default function MarketplaceOffer() {
     if (!campaign) return;
     const trackCtx = { campaign, pathname: window.location.pathname, search: window.location.search };
     const vc = getOrCreateVcState(campaign.id);
-    if (!vc.firedMeta && shouldTrack(trackCtx)) {
-      const pixelId = campaign.metaPixelId || import.meta.env.VITE_META_PIXEL_ID;
+    const pixelId = resolveMetaPixelId(campaign);
+    if (!vc.firedMeta && shouldTrack({ ...trackCtx, pixelId })) {
       if (pixelId) {
         initPixel(pixelId);
         ensureFbp();
@@ -67,8 +68,8 @@ export default function MarketplaceOffer() {
         markVcFired(campaign.id, 'meta');
       }
     }
-    if (!vc.firedTiktok && shouldTrackTikTok(trackCtx)) {
-      const ttPixelId = campaign.tiktokPixelId || import.meta.env.VITE_TIKTOK_PIXEL_ID;
+    const ttPixelId = resolveTikTokPixelId(campaign);
+    if (!vc.firedTiktok && shouldTrackTikTok({ ...trackCtx, pixelId: ttPixelId })) {
       if (ttPixelId) {
         initTikTokPixel(ttPixelId);
         trackTikTokViewContent(

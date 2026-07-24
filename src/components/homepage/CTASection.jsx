@@ -3,7 +3,6 @@ import { Link } from"react-router-dom";
 import { ArrowRight, Check } from"lucide-react";
 import { brand } from"@/lib/brand";
 import { apiClient } from"@/api/client";
-import { initPixel, trackSubscribe } from"@/lib/metaPixel";
 
 const CTASection = () => {
  const [email, setEmail] = useState("");
@@ -22,14 +21,6 @@ const CTASection = () => {
  // whether a notification email was sent.
  await apiClient.post("/waitlist", { email: email.trim(), source:"homepage"});
  setStatus("success");
-
- // Fire a dedicated Subscribe event (prod + pixel configured only), distinct
- // from the lead-capture Lead event so waitlist signups don't skew conversions.
- const pixelId = import.meta.env.VITE_META_PIXEL_ID;
- if (pixelId && import.meta.env.PROD) {
- initPixel(pixelId);
- trackSubscribe();
- }
  } catch (err) {
  setStatus("error");
  setError(err?.message ||"Something went wrong. Please try again.");

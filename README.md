@@ -70,7 +70,6 @@ Three Render services are deployed from this one repository (two static sites + 
 │            │  mktr-backend-jo6r       │  PostgreSQL + Sequelize · Pino · Sentry                  │
 │            └─────────┬────────────────┘                                                          │
 │   Retell AI ─webhook─▶│  POST /api/retell/webhook                                                │
-│   Meta Lead Ads ─────▶│  POST /api/meta/*                                                        │
 │   QR / Web form ─────▶│  POST /api/prospects                                                     │
 │                       │                                                                          │
 │   ┌───────────────────┴──────────── outbound, destination-aware, HMAC-signed ───────────────┐   │
@@ -165,7 +164,6 @@ The two Lyfe / mktr-leads webhook **subscribers are auto-registered/reconciled o
 | Integration | Direction | Where | Notes |
 |---|---|---|---|
 | **Retell AI** voice bot | inbound webhook | `routes/retell.js`, `retellService.js` | HMAC-SHA256 (`x-retell-signature: v=<ts>,d=<hex>`). Idempotent per `call_id` (24h TTL). Sentiment → priority. Resolves/auto-creates `[Retell] {name}` campaigns. Recording URLs fetched + cached on demand. |
-| **Meta Lead Ads** | inbound webhook | `routes/meta.js`, `metaLeadService.js` | Ingests FB/IG instant-form leads (verify-token handshake + signed payloads). |
 | **Meta Pixel + CAPI** | outbound | `src/lib/metaPixel.js`, `metaCapiService.js` | Browser Pixel + server CAPI with shared `event_id` for dedup; `_fbc`/`_fbp` capture. Suppressed on preview/demo/test routes. |
 | **Meta down-funnel CAPI** | inbound→outbound | `routes/lyfeLeadOutcome.js`, `leadOutcomeService.js` | Lyfe agent advances a lead → HMAC POST `/api/integrations/lyfe/lead-outcome` → fires `ConfirmedResident` (on `qualified`) / `ClosedWon` (on `won`), back-dated, mark-on-success, dedup by deterministic `event_id`. |
 | **TikTok Events API** | outbound | `src/lib/tiktokPixel.js`, `tiktokEventsService.js` | Mirrors the Meta CAPI pattern (`ttclid`/`ttp`); per-campaign `tiktokPixelId` override. |
@@ -299,7 +297,7 @@ Routes are **auto-discovered**: each file in `backend/src/routes/` exports `meta
 - `/api/lyfe` (Lyfe agent sync), `/api/mktr-leads` (mktr-leads agent admin)
 
 **Inbound integration webhooks** (raw-body HMAC-verified)
-- `POST /api/retell/webhook` · `/api/meta/*` · `/api/integrations/lyfe/lead-outcome` · `/api/integrations/lyfe/users-webhook`
+- `POST /api/retell/webhook` · `/api/integrations/lyfe/lead-outcome` · `/api/integrations/lyfe/users-webhook`
 - `/api/admin/webhooks` — outbound subscriber CRUD + delivery/DLQ admin
 
 **Dashboards & ops**
@@ -394,7 +392,6 @@ The backend runs migrations automatically on boot (and, in `NODE_ENV=test`, sync
 | Lyfe | `LYFE_WEBHOOK_URL`, `LYFE_WEBHOOK_SECRET`, `LYFE_SUPABASE_URL`, `LYFE_SUPABASE_SERVICE_ROLE_KEY`, `LYFE_USERS_WEBHOOK_SECRET` |
 | mktr-leads | `MKTR_LEADS_SUPABASE_URL`, `MKTR_LEADS_SUPABASE_SERVICE_ROLE_KEY`, `MKTR_LEADS_WEBHOOK_URL`, `MKTR_LEADS_WEBHOOK_SECRET`, `MKTR_LEADS_INVITE_SECRET` (all optional; unset = inert) |
 | Meta CAPI | `META_CAPI_ENABLED`, `META_PIXEL_ID`, `META_CAPI_ACCESS_TOKEN`, `META_TEST_EVENT_CODE` |
-| Meta Lead Ads | `META_APP_SECRET`, `META_PAGE_ACCESS_TOKEN`, `META_VERIFY_TOKEN` |
 | Down-funnel CAPI | `LYFE_LEAD_OUTCOME_SECRET`, `META_EVENT_QUALIFIED`, `META_EVENT_WON` |
 | TikTok | `TIKTOK_EVENTS_API_ENABLED`, `TIKTOK_PIXEL_ID`, `TIKTOK_ACCESS_TOKEN`, `TIKTOK_TEST_EVENT_CODE` |
 | OTP | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_SNS_SENDER_ID`; `WHATSAPP_PROVIDER`, `META_WA_PHONE_NUMBER_ID`, `META_WA_ACCESS_TOKEN`, `META_WA_BUSINESS_ACCOUNT_ID` |
@@ -463,7 +460,7 @@ Both static sites proxy `/api/*` and `/uploads/*` to the single backend, so camp
 The backend uses a deliberate **two-stage "Shell" boot** for resilience on Render:
 
 1. **`server.js` (Shell)** — initializes Sentry, then *immediately* binds the port and serves a `/health` endpoint (`mode: "shell"`) so the platform's health check passes even while the app is still loading. It then dynamically `import()`s `server_internal.js` and calls `init(app)`. If app initialization throws, the shell **stays listening** so logs remain reachable instead of crash-looping.
-2. **`server_internal.js`** — builds the real middleware stack: `requestId` → Helmet → compression (skips SSE) → CORS (mktr.sg/redeem.sg allowlist) → rate limiter (prod only, admins and `/api/integrations/lyfe/*` exempt) → `internalRouteHostGuard` → Pino HTTP logging → JSON/urlencoded body parsing (capturing **raw body** for `/api/retell`, `/api/meta`, `/api/integrations/lyfe`) → cookie-parser → `/uploads` static → health endpoints → Swagger (non-prod) → `leadCaptureBind` → **`loadRoutes()`** (auto-discovery) → `/t/:slug` fallback → `notFound` → Sentry → `errorHandler`.
+2. **`server_internal.js`** — builds the real middleware stack: `requestId` → Helmet → compression (skips SSE) → CORS (mktr.sg/redeem.sg allowlist) → rate limiter (prod only, admins and `/api/integrations/lyfe/*` exempt) → `internalRouteHostGuard` → Pino HTTP logging → JSON/urlencoded body parsing (capturing **raw body** for `/api/retell`, `/api/integrations/lyfe`) → cookie-parser → `/uploads` static → health endpoints → Swagger (non-prod) → `leadCaptureBind` → **`loadRoutes()`** (auto-discovery) → `/t/:slug` fallback → `notFound` → Sentry → `errorHandler`.
 3. **`bootstrapDatabase()`** — validates env, connects, runs migrations, then idempotently seeds runtime data: the **System Agent**, the **Lyfe** and **mktr-leads** webhook subscribers (reconciled from adapter env), and the **`[Retell]` campaigns**. It recovers pending webhook retries, then schedules recurring jobs: webhook recovery (60s), idempotency-key purge (hourly), **agent sync** for Lyfe + mktr-leads (10 min), and the **held-lead release sweep** (2 min).
 
 ---

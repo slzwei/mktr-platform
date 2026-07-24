@@ -23,8 +23,14 @@ import { isTrackableLeadCapture } from './pixelSuppression';
 const TTCLID_STORAGE_KEY = '_mktr_ttclid';
 const loadedPixelIds = new Set();
 
-export function shouldTrackTikTok({ campaign, pathname, search } = {}) {
-  if (!import.meta.env.VITE_TIKTOK_PIXEL_ID) return false;
+/**
+ * `pixelId` is the CALLER-RESOLVED id for this campaign (see lib/pixelIds.js) —
+ * pass it so a per-campaign override is honoured instead of being vetoed by the
+ * build env var. Omitted → falls back to the env id (unchanged behaviour).
+ */
+export function shouldTrackTikTok({ campaign, pathname, search, pixelId } = {}) {
+  const resolvedPixelId = pixelId ?? import.meta.env.VITE_TIKTOK_PIXEL_ID;
+  if (!resolvedPixelId) return false;
   if (!import.meta.env.PROD && !import.meta.env.VITE_TIKTOK_TEST_EVENT_CODE) return false;
   // Shared page/preview/test-data suppression (kept in lock-step with Meta).
   return isTrackableLeadCapture({ campaign, pathname, search });

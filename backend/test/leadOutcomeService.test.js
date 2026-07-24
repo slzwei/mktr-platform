@@ -29,13 +29,17 @@ function buildDeps(overrides = {}) {
     findByPk: jest.fn().mockResolvedValue({ id: 'campaign-uuid-1', metaPixelId: 'pixel-override-1' }),
   };
   const sendConversionEvent = overrides.sendConversionEvent ?? jest.fn().mockResolvedValue({ sent: true });
+  // Ledger gate for the em/ph ctx flag (3sites). Default true = "person has a
+  // verified grant" (the fixtures' old consent_contact:true, ledger-shaped).
+  const canMarketTo = overrides.canMarketTo ?? jest.fn().mockResolvedValue(true);
   const sleep = jest.fn().mockResolvedValue(undefined);
   return {
-    deps: { models: { Prospect, Campaign }, sendConversionEvent, logger: silentLogger, sleep, ...overrides.deps },
+    deps: { models: { Prospect, Campaign }, sendConversionEvent, canMarketTo, logger: silentLogger, sleep, ...overrides.deps },
     prospect,
     Prospect,
     Campaign,
     sendConversionEvent,
+    canMarketTo,
     sleep,
   };
 }
@@ -221,5 +225,55 @@ describe('leadOutcomeService.processLeadOutcome', () => {
       if (prev.w === undefined) delete process.env.META_EVENT_WON;
       else process.env.META_EVENT_WON = prev.w;
     }
+  });
+});
+
+describe('leadOutcomeService — ledger-derived em/ph gate (3sites)', () => {
+  it('computes canMarketTo from the prospect identity + campaign scope and threads it into ctx', async () => {
+    const prospect = makeProspect({ consumerId: 'consumer-uuid-1', phone: '+6581234567' });
+    const { deps, canMarketTo, sendConversionEvent } = buildDeps({ prospect });
+    const svc = makeLeadOutcomeService(deps);
+
+    await svc.processLeadOutcome(QUALIFIED);
+
+    expect(canMarketTo).toHaveBeenCalledTimes(1);
+    expect(canMarketTo).toHaveBeenCalledWith({
+      consumerId: 'consumer-uuid-1',
+      phone: '+6581234567',
+      channel: 'all',
+      campaignId: 'campaign-uuid-1',
+    });
+    expect(sendConversionEvent.mock.calls[0][1].marketingConsent).toBe(true);
+  });
+
+  it('threads marketingConsent:false when the ledger denies (withdrawal/unverified)', async () => {
+    const { deps, sendConversionEvent } = buildDeps({ canMarketTo: jest.fn().mockResolvedValue(false) });
+    const svc = makeLeadOutcomeService(deps);
+
+    const result = await svc.processLeadOutcome(QUALIFIED);
+
+    expect(result.dispatched).toEqual(['ConfirmedResident']); // event still fires
+    expect(sendConversionEvent.mock.calls[0][1].marketingConsent).toBe(false);
+  });
+
+  it('fails CLOSED when the ledger lookup rejects — event fires without em/ph consent', async () => {
+    const { deps, sendConversionEvent } = buildDeps({ canMarketTo: jest.fn().mockRejectedValue(new Error('ledger down')) });
+    const svc = makeLeadOutcomeService(deps);
+
+    const result = await svc.processLeadOutcome(QUALIFIED);
+
+    expect(result.dispatched).toEqual(['ConfirmedResident']);
+    expect(sendConversionEvent.mock.calls[0][1].marketingConsent).toBe(false);
+  });
+
+  it('dispatches the ORIGINAL prospect instance — the PR B clone hack is gone', async () => {
+    const { deps, prospect, sendConversionEvent } = buildDeps({ canMarketTo: jest.fn().mockResolvedValue(false) });
+    const svc = makeLeadOutcomeService(deps);
+
+    await svc.processLeadOutcome(QUALIFIED);
+
+    expect(sendConversionEvent.mock.calls[0][0]).toBe(prospect);
+    // stored evidence untouched (no consent_contact:false overwrite)
+    expect(prospect.sourceMetadata.consent_contact).toBe(true);
   });
 });

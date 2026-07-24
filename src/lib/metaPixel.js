@@ -25,8 +25,15 @@ const UTM_STORAGE_KEY = '_mktr_utm';
 const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
 const initialisedPixelIds = new Set();
 
-export function shouldTrack({ campaign, pathname, search } = {}) {
-  if (!import.meta.env.VITE_META_PIXEL_ID) return false;
+/**
+ * `pixelId` is the CALLER-RESOLVED id for this campaign (see lib/pixelIds.js) —
+ * pass it so a per-campaign override is honoured instead of being vetoed by the
+ * build env var. Omitted → falls back to the env id, preserving the original
+ * behaviour for any call site that hasn't been threaded through yet.
+ */
+export function shouldTrack({ campaign, pathname, search, pixelId } = {}) {
+  const resolvedPixelId = pixelId ?? import.meta.env.VITE_META_PIXEL_ID;
+  if (!resolvedPixelId) return false;
   if (!import.meta.env.PROD && !import.meta.env.VITE_META_TEST_EVENT_CODE) return false;
   // Shared page/preview/test-data suppression (kept in lock-step with TikTok).
   return isTrackableLeadCapture({ campaign, pathname, search });
@@ -157,14 +164,6 @@ export function trackLead(params = {}, eventId) {
  */
 export function trackCompleteRegistration(params = {}, eventId) {
   trackEvent('CompleteRegistration', params, eventId ? { eventID: eventId } : undefined);
-}
-
-/**
- * Standard Meta "Subscribe" event for the pre-launch homepage waitlist. Distinct
- * from `trackLead` so waitlist signups don't pollute lead-capture conversion stats.
- */
-export function trackSubscribe(params = {}) {
-  trackEvent('Subscribe', params);
 }
 
 /**

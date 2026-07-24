@@ -148,7 +148,6 @@ export const init = async (app) => {
   // Body parsing middleware
   // The verify callback captures the raw body for webhook signature verification.
   //   - /api/retell/         — Retell AI call webhooks (HMAC-signed)
-  //   - /api/meta/           — Meta CAPI signed callbacks
   //   - /api/integrations/lyfe/ — Lyfe→MKTR push (notify_mktr_user_change trigger; HMAC since 2026-05-12)
   //   - /api/external/       — MKTR Leads buyer app → lead outcomes (HMAC, body-only)
   app.use(
@@ -157,7 +156,6 @@ export const init = async (app) => {
       verify: (req, _res, buf) => {
         if (
           req.originalUrl.startsWith('/api/retell/') ||
-          req.originalUrl.startsWith('/api/meta/') ||
           req.originalUrl.startsWith('/api/integrations/lyfe/') ||
           req.originalUrl.startsWith('/api/external/')
         ) {

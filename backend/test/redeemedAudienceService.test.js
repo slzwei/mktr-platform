@@ -15,9 +15,23 @@ jest.unstable_mockModule('../src/utils/logger.js', () => ({
 
 // Mock models/index.js so importing the SUT does NOT open a DB connection
 // (the real module has top-level await + Sequelize setup → ECONNREFUSED in CI).
+// ShortLink/ShortLinkClick satisfy mailer → shortLinkService's static imports
+// (the edge PR #205 added via mailer → consentService/shortLinkService).
 jest.unstable_mockModule('../src/models/index.js', () => ({
   Prospect: { findAll: jest.fn() },
+  ShortLink: {},
+  ShortLinkClick: {},
   sequelize: { close: jest.fn() },
+}));
+
+// Mock consentService: satisfies mailer's static `ensureUnsubToken` import AND
+// makes the SUT's dynamic import of the two bulk ledger lookups deterministic.
+const suppressedMock = jest.fn();
+const grantMapMock = jest.fn();
+jest.unstable_mockModule('../src/services/consentService.js', () => ({
+  ensureUnsubToken: jest.fn(),
+  getSuppressedPhoneSet: suppressedMock,
+  getMarketableGrantMap: grantMapMock,
 }));
 
 let shouldSync, chunk, selectRedeemers, buildUserRows, uploadBatch, syncRedeemedAudience;
@@ -46,6 +60,9 @@ beforeEach(() => {
   process.env.META_ADS_MANAGEMENT_TOKEN = 'TEST_ADS_TOKEN';
   process.env.META_REDEEMED_AUDIENCE_ID = '52506028688033';
   captureExceptionMock.mockClear();
+  // Ledger defaults: nobody suppressed, nobody granted (fail-closed baseline).
+  suppressedMock.mockReset().mockResolvedValue(new Set());
+  grantMapMock.mockReset().mockResolvedValue(new Map());
 });
 
 afterEach(() => {
@@ -56,12 +73,18 @@ afterEach(() => {
 });
 
 // ---------- helpers ----------
+const CID = '11111111-1111-4111-8111-111111111111';
+const OTHER_CID = '22222222-2222-4222-8222-222222222222';
+
 const prospect = (overrides = {}) => ({
   email: 'shawn@mktr.sg',
   phone: '+6581234567',
-  sourceMetadata: { consent_contact: true },
+  campaignId: CID,
   ...overrides,
 });
+
+/** grantMap entry: Map<phone, Map<scopeKey('*'|campaignId), boolean>> */
+const grantFor = (phone, cid = CID, ok = true) => new Map([[phone, new Map([[cid, ok]])]]);
 
 const okFetch = (body = { num_received: 1, num_invalid_entries: 0, session_id: 'sess-1' }) =>
   jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => body });
@@ -103,35 +126,76 @@ describe('chunk', () => {
 });
 
 // ============================================================
-// buildUserRows
+// buildUserRows — consent arm is LEDGER-based (3sites): a row passes only when
+// its phone's latest contact event in scope {row's campaign, global} is
+// granted && verified (encoded as `true` in the grantMap by consentService).
 // ============================================================
 describe('buildUserRows', () => {
-  it('hashes email + phone into a multi-key row', () => {
-    const rows = buildUserRows([prospect()], { requireConsent: true });
+  it('hashes email + phone into a multi-key row (ledger grant present)', () => {
+    const rows = buildUserRows([prospect()], {
+      requireConsent: true,
+      grantMap: grantFor('+6581234567'),
+    });
     expect(rows).toHaveLength(1);
     expect(rows[0][0]).toMatch(/^[a-f0-9]{64}$/); // email hash
     expect(rows[0][1]).toMatch(/^[a-f0-9]{64}$/); // phone hash
   });
 
-  it('drops rows without consent when requireConsent=true', () => {
-    const rows = buildUserRows(
-      [prospect({ sourceMetadata: { consent_contact: false } }), prospect({ sourceMetadata: {} })],
-      { requireConsent: true }
-    );
+  it('drops rows whose latest in-scope event is not granted+verified (false entry)', () => {
+    const rows = buildUserRows([prospect()], {
+      requireConsent: true,
+      grantMap: grantFor('+6581234567', CID, false), // untick / unverified / withdrawn
+    });
     expect(rows).toHaveLength(0);
   });
 
-  it('keeps non-consenting rows when requireConsent=false', () => {
-    const rows = buildUserRows([prospect({ sourceMetadata: { consent_contact: false } })], {
-      requireConsent: false,
+  it('drops rows with no ledger entry at all (unknown person — fail closed)', () => {
+    const rows = buildUserRows([prospect()], {
+      requireConsent: true,
+      grantMap: new Map(),
     });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('drops everything when requireConsent=true and no grantMap was supplied (fail closed)', () => {
+    const rows = buildUserRows([prospect()], { requireConsent: true, grantMap: null });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('a grant in a DIFFERENT campaign does not license this row', () => {
+    const rows = buildUserRows([prospect({ campaignId: OTHER_CID })], {
+      requireConsent: true,
+      grantMap: grantFor('+6581234567', CID, true),
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('a global grant licenses a row with no scoped entry', () => {
+    const rows = buildUserRows([prospect()], {
+      requireConsent: true,
+      grantMap: grantFor('+6581234567', '*', true),
+    });
+    expect(rows).toHaveLength(1);
+  });
+
+  it('a scoped false (recency-folded) beats a global true — scope precedence', () => {
+    const scopes = new Map([['*', true], [CID, false]]);
+    const rows = buildUserRows([prospect()], {
+      requireConsent: true,
+      grantMap: new Map([['+6581234567', scopes]]),
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('keeps ungranted rows when requireConsent=false', () => {
+    const rows = buildUserRows([prospect()], { requireConsent: false });
     expect(rows).toHaveLength(1);
   });
 
   it('drops synthetic Retell emails but keeps the phone (blank email key)', () => {
     const rows = buildUserRows(
       [prospect({ email: 'retell-abc@calls.mktr.sg', phone: '+6591112222' })],
-      { requireConsent: true }
+      { requireConsent: true, grantMap: grantFor('+6591112222') }
     );
     expect(rows).toHaveLength(1);
     expect(rows[0][0]).toBe(''); // synthetic email dropped
@@ -141,13 +205,21 @@ describe('buildUserRows', () => {
   it('drops rows with neither a usable email nor phone', () => {
     const rows = buildUserRows(
       [prospect({ email: null, phone: null })],
-      { requireConsent: true }
+      { requireConsent: false }
     );
     expect(rows).toHaveLength(0);
   });
 
-  it('emits blank phone key when phone missing', () => {
-    const rows = buildUserRows([prospect({ phone: null })], { requireConsent: true });
+  it('phone-less rows are consent-excluded when required (grant is phone-keyed)…', () => {
+    const rows = buildUserRows([prospect({ phone: null })], {
+      requireConsent: true,
+      grantMap: grantFor('+6581234567'),
+    });
+    expect(rows).toHaveLength(0);
+  });
+
+  it('…but emit a blank phone key when consent is not required', () => {
+    const rows = buildUserRows([prospect({ phone: null })], { requireConsent: false });
     expect(rows[0][0]).toMatch(/^[a-f0-9]{64}$/);
     expect(rows[0][1]).toBe('');
   });
@@ -224,6 +296,10 @@ describe('syncRedeemedAudience', () => {
         prospect({ email: 'b@x.com', phone: '+6590000002' }),
       ]),
     };
+    grantMapMock.mockResolvedValue(new Map([
+      ['+6590000001', new Map([[CID, true]])],
+      ['+6590000002', new Map([[CID, true]])],
+    ]));
     const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
@@ -235,34 +311,67 @@ describe('syncRedeemedAudience', () => {
     expect(result).toEqual({ synced: true, eligible: 2, totalReceived: 2, totalInvalid: 0 });
   });
 
-  it('uploads nothing and reports zero when no eligible redeemers', async () => {
+  it('uploads nothing and reports zero when nobody has a ledger grant', async () => {
     const fetchSpy = okFetch();
-    const Prospect = {
-      findAll: jest.fn().mockResolvedValue([prospect({ sourceMetadata: { consent_contact: false } })]),
-    };
-    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
+    const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
+    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect }); // default: empty grant map
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(result).toEqual({ synced: true, eligible: 0, totalReceived: 0, totalInvalid: 0 });
+  });
+
+  it('drops SUPPRESSED phones even when the grant map licenses them', async () => {
+    const fetchSpy = okFetch();
+    const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
+    grantMapMock.mockResolvedValue(grantFor('+6581234567'));
+    suppressedMock.mockResolvedValue(new Set(['+6581234567']));
+    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result.eligible).toBe(0);
   });
 
   it('captures Sentry and returns { synced:false } on upload failure', async () => {
     const fetchSpy = jest.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
+    grantMapMock.mockResolvedValue(grantFor('+6581234567'));
     const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
     expect(result.synced).toBe(false);
     expect(result.error).toMatch(/HTTP 500/);
     expect(captureExceptionMock).toHaveBeenCalledTimes(1);
   });
 
-  it('honors REDEEMED_AUDIENCE_REQUIRE_CONSENT=false (uploads non-consenting)', async () => {
+  it('aborts the run observably (Sentry + alert + no upload) when the grant lookup throws', async () => {
+    process.env.REDEEMED_AUDIENCE_ALERT_EMAIL = 'ops@example.com';
+    const fetchSpy = okFetch();
+    const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
+    const sendEmail = jest.fn().mockResolvedValue({ success: true });
+    grantMapMock.mockRejectedValue(new Error('ledger unreachable'));
+    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect, sendEmail });
+    expect(result).toEqual({ synced: false, error: 'ledger unreachable' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(captureExceptionMock).toHaveBeenCalledTimes(1);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail.mock.calls[0][0].subject).toMatch(/FAILED/);
+  });
+
+  it('aborts the run observably when the suppression lookup throws (fail closed)', async () => {
+    const fetchSpy = okFetch();
+    const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
+    suppressedMock.mockRejectedValue(new Error('suppressions unreachable'));
+    const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
+    expect(result).toEqual({ synced: false, error: 'suppressions unreachable' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(captureExceptionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('honors REDEEMED_AUDIENCE_REQUIRE_CONSENT=false (uploads ungranted, skips the grant lookup)', async () => {
     process.env.REDEEMED_AUDIENCE_REQUIRE_CONSENT = 'false';
     const fetchSpy = okFetch({ num_received: 1, num_invalid_entries: 0 });
-    const Prospect = {
-      findAll: jest.fn().mockResolvedValue([prospect({ sourceMetadata: { consent_contact: false } })]),
-    };
+    const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
     const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(result.eligible).toBe(1);
+    expect(grantMapMock).not.toHaveBeenCalled();
+    expect(suppressedMock).toHaveBeenCalledTimes(1); // suppression drop stays unconditional
   });
 
   it('emails a failure alert when REDEEMED_AUDIENCE_ALERT_EMAIL is set', async () => {
@@ -270,6 +379,7 @@ describe('syncRedeemedAudience', () => {
     const fetchSpy = jest.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
     const sendEmail = jest.fn().mockResolvedValue({ success: true });
+    grantMapMock.mockResolvedValue(grantFor('+6581234567'));
     const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect, sendEmail });
     expect(result.synced).toBe(false);
     expect(sendEmail).toHaveBeenCalledTimes(1);
@@ -283,6 +393,7 @@ describe('syncRedeemedAudience', () => {
     const fetchSpy = jest.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
     const sendEmail = jest.fn();
+    grantMapMock.mockResolvedValue(grantFor('+6581234567'));
     await syncRedeemedAudience({ fetch: fetchSpy, Prospect, sendEmail });
     expect(sendEmail).not.toHaveBeenCalled();
   });
@@ -292,6 +403,7 @@ describe('syncRedeemedAudience', () => {
     const fetchSpy = okFetch({ num_received: 1, num_invalid_entries: 1 });
     const Prospect = { findAll: jest.fn().mockResolvedValue([prospect()]) };
     const sendEmail = jest.fn().mockResolvedValue({ success: true });
+    grantMapMock.mockResolvedValue(grantFor('+6581234567'));
     const result = await syncRedeemedAudience({ fetch: fetchSpy, Prospect, sendEmail });
     expect(result.synced).toBe(true);
     expect(result.totalInvalid).toBe(1);

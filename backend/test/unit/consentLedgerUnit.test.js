@@ -4,26 +4,64 @@ import { unsubTokenFor, unsubTokenHashOf } from '../../src/services/consentServi
 import {
   CONTACT_CONSENT_VERSION, CONTACT_CONSENT_COPY, CONTACT_CONSENT_COPY_HASH, CONTACT_CONSENT_CHANNELS,
   CONTACT_CONSENT_VERSIONS, AGREE_ALL_CONSENT_VERSION, isKnownConsentCopyVersion,
+  contactGrantAllows,
 } from '../../src/services/contactConsent.js';
 import { createHash } from 'crypto';
 
+const CID = '11111111-1111-4111-8111-111111111111';
+
 describe('audience rows — fail-closed suppression BY PHONE (Codex R1 #12)', () => {
-  const consented = (phone, email = 'a@b.co') => ({
-    phone, email, sourceMetadata: { consent_contact: true },
-  });
+  const granted = (phone, email = 'a@b.co') => ({ phone, email, campaignId: CID });
+  const grantMapFor = (...phones) =>
+    new Map(phones.map((p) => [p, new Map([[CID, true]])]));
 
   test('suppressed phones are dropped even when the row is spine-unlinked', () => {
     const suppressed = new Set(['+6591112222']);
     const rows = buildUserRows(
-      [consented('+6591112222'), consented('+6593334444')],
-      { requireConsent: true, suppressedPhones: suppressed }
+      [granted('+6591112222'), granted('+6593334444')],
+      {
+        requireConsent: true,
+        suppressedPhones: suppressed,
+        grantMap: grantMapFor('+6591112222', '+6593334444'), // grant beats nothing: suppression still drops
+      }
     );
     expect(rows).toHaveLength(1); // only the non-suppressed person survives
   });
 
-  test('no suppression set → behavior unchanged (back-compat)', () => {
-    const rows = buildUserRows([consented('+6591112222')], { requireConsent: true });
+  test('no suppression set → ledger grant alone admits the row (back-compat shape)', () => {
+    const rows = buildUserRows([granted('+6591112222')], {
+      requireConsent: true,
+      grantMap: grantMapFor('+6591112222'),
+    });
     expect(rows).toHaveLength(1);
+  });
+});
+
+describe('contactGrantAllows — pure scope predicate (3sites)', () => {
+  test('fail-closed on missing map / entry / malformed input', () => {
+    expect(contactGrantAllows(undefined, CID)).toBe(false);
+    expect(contactGrantAllows(null, CID)).toBe(false);
+    expect(contactGrantAllows({}, CID)).toBe(false); // not a Map
+    expect(contactGrantAllows(new Map(), CID)).toBe(false);
+  });
+
+  test('scoped entry wins over global (recency already folded by the builder)', () => {
+    const scopes = new Map([['*', true], [CID, false]]);
+    expect(contactGrantAllows(scopes, CID)).toBe(false);
+    expect(contactGrantAllows(new Map([['*', false], [CID, true]]), CID)).toBe(true);
+  });
+
+  test('falls back to the global entry when no scoped key exists', () => {
+    expect(contactGrantAllows(new Map([['*', true]]), CID)).toBe(true);
+    expect(contactGrantAllows(new Map([['*', false]]), CID)).toBe(false);
+    // null campaignId (prospect without campaign) → global only
+    expect(contactGrantAllows(new Map([['*', true]]), null)).toBe(true);
+    expect(contactGrantAllows(new Map([[CID, true]]), null)).toBe(false);
+  });
+
+  test('only literal true admits (defensive against truthy garbage)', () => {
+    expect(contactGrantAllows(new Map([[CID, 'yes']]), CID)).toBe(false);
+    expect(contactGrantAllows(new Map([[CID, 1]]), CID)).toBe(false);
   });
 });
 

@@ -49,8 +49,10 @@ const router = express.Router();
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,128}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// prospect MUST carry email + sourceMetadata — canEmailProspect/canWhatsAppProspect
-// read them; dropping either silently kills the channels computation.
+// prospect MUST carry phone + email — canEmailProspect and the ledger-based
+// canWhatsAppProspect (3sites: keyed by phone; needs no consumerId — the
+// consent resolver falls back to E.164 phone) read them. sourceMetadata is no
+// longer read by the WA gate but stays projected for the shared shape.
 const ENTITLEMENT_INCLUDE = [
   { model: RewardOffer, as: 'rewardOffer', attributes: ['id', 'title', 'publicTitle', 'fulfilmentMethod'] },
   {
@@ -103,15 +105,15 @@ function maskProspectPhone(phone) {
 }
 
 /** Deliverability CAPABILITY (never delivery confirmation). WA needs the feature flag too. */
-function channelsFor(prospect) {
+async function channelsFor(prospect) {
   const channels = [];
-  if (waEnabled() && canWhatsAppProspect(prospect)) channels.push('whatsapp');
+  if (waEnabled() && (await canWhatsAppProspect(prospect))) channels.push('whatsapp');
   if (canEmailProspect(prospect)) channels.push('email');
   return channels;
 }
 
 /** Shared projection for lookup/summary (+ reused by unlock enrichment). */
-function giftPayload(entitlement) {
+async function giftPayload(entitlement) {
   const offer = entitlement.rewardOffer;
   const activation = entitlement.activation;
   const prospect = entitlement.prospect;
@@ -124,7 +126,7 @@ function giftPayload(entitlement) {
     holderPhoneMasked: maskProspectPhone(prospect?.phone),
     campaignName: activation?.campaign?.name ?? activation?.campaignNameSnapshot ?? null,
     paused: activation?.status === 'paused',
-    channels: channelsFor(prospect),
+    channels: await channelsFor(prospect),
     expiresAt: entitlement.expiresAt,
     unlockedAt: entitlement.unlockedAt,
     // Token hint only once the voucher exists AND the state still warrants it.
@@ -181,7 +183,7 @@ router.post('/lookup', requireExternalHmac, asyncHandler(async (req, res) => {
     success: true,
     kind: entitlement.presentationTokenHash === hash ? 'pass' : 'voucher',
     prospectId: entitlement.prospectId,
-    ...giftPayload(entitlement),
+    ...(await giftPayload(entitlement)),
   });
 }));
 
@@ -225,7 +227,7 @@ router.post('/summary', requireExternalHmac, asyncHandler(async (req, res) => {
     redeemedAt = redemption?.redeemedAt ?? null;
   }
 
-  return res.json({ success: true, ...giftPayload(entitlement), redeemedAt });
+  return res.json({ success: true, ...(await giftPayload(entitlement)), redeemedAt });
 }));
 
 router.post('/unlock', requireExternalHmac, asyncHandler(async (req, res) => {
@@ -254,7 +256,7 @@ router.post('/unlock', requireExternalHmac, asyncHandler(async (req, res) => {
     // (ops console + Lyfe route consume it); the richer payload is safe on both
     // fresh and replay paths because the service now authorizes BEFORE replying.
     const full = await RewardEntitlement.findByPk(result.entitlement.id, { include: ENTITLEMENT_INCLUDE });
-    const p = full ? giftPayload(full) : null;
+    const p = full ? await giftPayload(full) : null;
 
     return res.json({
       success: true,
@@ -278,7 +280,9 @@ router.post('/unlock', requireExternalHmac, asyncHandler(async (req, res) => {
             prospectId: full.prospectId,
             unlockedByYou: full.unlockedByUserId === agent.id,
             // "Scheduled", never "sent" — WA delivery is fire-and-forget.
-            waScheduled: result.already !== true && waEnabled() && canWhatsAppProspect(full.prospect),
+            // Reuses the ledger read giftPayload just did (p.channels includes
+            // 'whatsapp' ⟺ waEnabled && canWhatsAppProspect) — no second query.
+            waScheduled: result.already !== true && p.channels.includes('whatsapp'),
           }
         : {}),
     });

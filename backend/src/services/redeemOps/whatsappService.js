@@ -37,16 +37,6 @@ import { isSendBlocked } from '../consentService.js';
 // Version aligned with verificationService.js / metaCapiService.js.
 const META_GRAPH_VERSION = process.env.META_GRAPH_API_VERSION || 'v21.0';
 
-/**
- * DECISION D2 (pending, Shawn): gate automated consumer WhatsApp on the
- * optional signup `consent_contact` tick, or document a transactional-delivery
- * basis (delivering the reward the lead just requested) that covers
- * non-consented rows. Until decided we default to the SAFE side — no consent
- * flag, no automated WhatsApp (staff still have the audited copy-link bridge).
- * Choosing "transactional" = flip this constant to false.
- */
-const WA_REQUIRES_CONTACT_CONSENT = true;
-
 export function waEnabled() {
   return String(process.env.REDEEM_OPS_WHATSAPP_ENABLED || '').toLowerCase() === 'true';
 }
@@ -73,15 +63,25 @@ export function waRecipient(phone) {
 }
 
 /**
- * Capability + policy gate for automated consumer WhatsApp. Phone gives the
- * capability; the consent arm is the D2 safe default above. Mirrors
- * canEmailProspect's role for the email channel — each channel decides its own
- * deliverability and neither suppresses the other.
+ * Capability + policy gate for automated consumer WhatsApp — ledger-based
+ * (3sites); the frozen sourceMetadata.consent_contact read is gone. Phone
+ * gives the capability; the consent ledger gives the policy:
+ *  - purpose 'transactional' (reservation pass, voucher, resend — every sender
+ *    that exists today): DECISION D2 RESOLVED 2026-07-21 — delivering the
+ *    credential the person claimed is performance of the service, not
+ *    marketing, so only an erasure-reason suppression blocks it. A marketing
+ *    unsubscribe/untick does NOT.
+ *  - purpose 'marketing' (future templates): full canMarketTo — verified
+ *    campaign-scoped grant + no suppression. Callers must pass a prospect
+ *    carrying campaignId (projections without it get a structural false).
+ * Error posture inherited from isSendBlocked: transactional fails OPEN
+ * (DB-less unit runs unaffected), marketing fails CLOSED.
+ * Mirrors canEmailProspect's role for the email channel — each channel decides
+ * its own deliverability and neither suppresses the other.
  */
-export function canWhatsAppProspect(prospect) {
+export async function canWhatsAppProspect(prospect, { purpose = 'transactional' } = {}) {
   if (!prospect || !waRecipient(prospect.phone)) return false;
-  if (WA_REQUIRES_CONTACT_CONSENT && prospect.sourceMetadata?.consent_contact !== true) return false;
-  return true;
+  return !(await isSendBlocked(prospect, { channel: 'whatsapp', purpose }));
 }
 
 /** `+6591234567` → `••••4567` — same masking idiom as the ops list payload. */
@@ -115,7 +115,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export function makeWhatsappService(overrides = {}) {
   const d = {
     RewardOffer, logger, QRCode, renderQrCard: renderQrCardPng,
-    fetch: (...args) => fetch(...args), sleep, ...overrides,
+    fetch: (...args) => fetch(...args), sleep, isSendBlocked, ...overrides,
   };
 
   /**
@@ -197,14 +197,17 @@ export function makeWhatsappService(overrides = {}) {
   /** One template send. Resolves normalized result, never throws. */
   async function sendTemplate({ prospect, templateName, params, qrContent, card }) {
     if (!waEnabled()) return { sent: false, skipped: 'disabled' };
-    if (!canWhatsAppProspect(prospect)) return { sent: false, skipped: 'no_whatsapp' };
+    // Capability inline (not via canWhatsAppProspect) so each send costs ONE
+    // ledger read and the receipt codes stay distinct: 'no_whatsapp' = phone
+    // capability, 'suppressed' = ledger block.
+    if (!prospect || !waRecipient(prospect.phone)) return { sent: false, skipped: 'no_whatsapp' };
     // PR B suppression gate: these sends are TRANSACTIONAL (delivering the
     // reward the person claimed) — only an erasure-reason suppression blocks
-    // them; a marketing unsubscribe does not. Future marketing templates must
-    // gate on consentService.canMarketTo with purpose:'marketing' instead.
-    // isSendBlocked fails OPEN for transactional on lookup errors, so DB-less
-    // unit runs are unaffected.
-    if (await isSendBlocked(prospect, { channel: 'whatsapp', purpose: 'transactional' })) {
+    // them; a marketing unsubscribe does not (D2 resolved — see
+    // canWhatsAppProspect). Future marketing templates must call with
+    // purpose:'marketing' instead. isSendBlocked fails OPEN for transactional
+    // on lookup errors, so DB-less unit runs are unaffected.
+    if (await d.isSendBlocked(prospect, { channel: 'whatsapp', purpose: 'transactional' })) {
       return { sent: false, skipped: 'suppressed' };
     }
 

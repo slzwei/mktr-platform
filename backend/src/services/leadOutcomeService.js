@@ -29,14 +29,18 @@
  *     one never re-fires. The marker doubles as a reporting timestamp.
  *   - Bounded retry on transient (5xx/network) failures.
  *
- * Match keys (fbp/fbc/IP/UA/external_id, consent-gated em/ph) are sourced from
- * the prospect's persisted sourceMetadata inside metaCapiService._buildPayload,
- * so we only pass the deterministic event_id, the back-dated event_time, and the
- * per-campaign pixel override here.
+ * Match keys (fbp/fbc/IP/UA/external_id) are sourced from the prospect's
+ * persisted sourceMetadata inside metaCapiService._buildPayload; em/ph ride
+ * only when ctx.marketingConsent is true — derived HERE at send time from the
+ * consent ledger (canMarketTo: verified campaign-scoped grant, no suppression,
+ * not erased), so a withdrawal after capture strips them (3sites). We pass the
+ * deterministic event_id, the back-dated event_time, the per-campaign pixel
+ * override, and that consent flag.
  */
 
 import { Prospect, Campaign } from '../models/index.js';
 import { sendConversionEvent as metaSendConversionEvent } from './metaCapiService.js';
+import { canMarketTo as ledgerCanMarketTo } from './consentService.js';
 import { logger } from '../utils/logger.js';
 
 // CAPI events keyed by a stable internal id (NOT the Lyfe status), so event_id +
@@ -68,6 +72,7 @@ const realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const defaultDeps = {
   models: { Prospect, Campaign },
   sendConversionEvent: metaSendConversionEvent,
+  canMarketTo: ledgerCanMarketTo,
   logger,
   sleep: realSleep,
   retries: 2, // total attempts = retries + 1
@@ -113,25 +118,24 @@ export function makeLeadOutcomeService(overrides = {}) {
     const prospect = await m.Prospect.findByPk(externalId);
     if (!prospect) return { skipped: 'no_prospect' };
 
-    // Send-time consent gate (PR B, Codex R1 #12): a withdrawal AFTER capture
-    // must strip contact identifiers from these DELAYED down-funnel events —
-    // the stored signup boolean alone is stale. On a positive suppression
-    // match we hand the dispatcher a clone with consent_contact:false, so
-    // metaCapiService omits em/ph (fbp/fbc/ip/ua/external_id still ride —
-    // browser/session identifiers, not contact PII). Lookup errors keep the
-    // stored behavior (byte-identical when consent tables are unreachable).
-    let sendProspect = prospect;
+    // Send-time em/ph gate (3sites, supersedes the PR B clone hack): derived
+    // from the consent ledger at dispatch time — canMarketTo requires a
+    // verified campaign-scoped grant, no marketing suppression, not erased —
+    // so a withdrawal OR an unverified/unticked signup strips em/ph from these
+    // DELAYED events (fbp/fbc/ip/ua/external_id still ride — browser/session
+    // identifiers, not contact PII). FAIL CLOSED on lookup error: em/ph are
+    // omitted (a deliberate tightening from PR B's keep-stored-behavior); the
+    // event itself still fires.
+    let marketingConsent = false;
     try {
-      const { isSuppressed } = await import('./consentService.js');
-      const suppressed = await isSuppressed({
-        consumerId: prospect.consumerId, phone: prospect.phone, channel: 'all', purpose: 'marketing',
-      });
-      if (suppressed) {
-        const plain = typeof prospect.get === 'function' ? prospect.get({ plain: true }) : { ...prospect };
-        sendProspect = { ...plain, sourceMetadata: { ...(plain.sourceMetadata || {}), consent_contact: false } };
-      }
+      marketingConsent = (await d.canMarketTo({
+        consumerId: prospect.consumerId,
+        phone: prospect.phone,
+        channel: 'all',
+        campaignId: prospect.campaignId || null,
+      })) === true;
     } catch (err) {
-      logger.warn('[lead-outcome] suppression lookup failed — sending with stored consent', {
+      d.logger.warn('[lead-outcome] canMarketTo failed — omitting em/ph (fail-closed)', {
         error: err?.message || String(err),
       });
     }
@@ -170,10 +174,11 @@ export function makeLeadOutcomeService(overrides = {}) {
         // Stable across qualified/won → Meta dedups any duplicate send.
         eventId: `${key}:${prospect.id}`,
         eventTime,
+        marketingConsent,
         ...(pixelIdOverride ? { pixelIdOverride } : {}),
       };
 
-      const result = await dispatchWithRetry(sendProspect, ctx, { eventName });
+      const result = await dispatchWithRetry(prospect, ctx, { eventName });
 
       if (result?.sent) {
         const capi = { ...(prospect.sourceMetadata?.capi || {}), [markerKey]: new Date().toISOString() };

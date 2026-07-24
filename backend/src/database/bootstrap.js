@@ -221,6 +221,25 @@ export async function bootstrapDatabase() {
       logger.info(`[RedeemedAudience] periodic sync scheduled (${intervalHours}h interval)`);
     }
 
+    // Redemption CAPI reconciliation sweep — the no-rescan safety net for
+    // VoucherRedeemed sends lost between the redemption commit and the
+    // fire-and-forget dispatch (process death). Marker-guarded + Meta event_id
+    // dedup ⇒ idempotent; single-instance backend ⇒ no double-fire. Rides the
+    // CAPI master switch — no separate flag.
+    if (process.env.META_CAPI_ENABLED === 'true') {
+      const runRedemptionCapiSweep = async () => {
+        try {
+          const { sweepUnmarkedRedemptions } = await import('../services/redemptionOutcomeService.js');
+          await sweepUnmarkedRedemptions();
+        } catch (err) {
+          logger.warn('[RedemptionCapi] periodic sweep failed (non-fatal)', { error: err?.message });
+        }
+      };
+      setTimeout(runRedemptionCapiSweep, 90_000);
+      setInterval(runRedemptionCapiSweep, 6 * 60 * 60 * 1000);
+      logger.info('[RedemptionCapi] reconciliation sweep scheduled (6h interval)');
+    }
+
     // Redeem Ops claim-inactivity sweep (docs/redeem-ops/ERD.md §6). Flags
     // at-risk (48h no first outreach) and stale (14d no meaningful activity)
     // partners — NEVER auto-releases; managers act on the flags. In-process like

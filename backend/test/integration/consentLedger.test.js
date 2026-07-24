@@ -6,7 +6,7 @@ import { markPhoneVerified } from '../../src/services/verifiedPhoneStore.js';
 import { reconcileConsumerSpine } from '../../src/services/consumerService.js';
 import {
   backfillConsentEvents, backfillGlobalGrants, getConsentState, canMarketTo,
-  isSendBlocked, ensureUnsubToken, unsubTokenFor,
+  isSendBlocked, ensureUnsubToken, unsubTokenFor, getMarketableGrantMap, getSuppressedPhoneSet,
 } from '../../src/services/consentService.js';
 import {
   CONTACT_CONSENT_VERSION, CONTACT_CONSENT_VERSIONS, AGREE_ALL_CONSENT_VERSION,
@@ -14,6 +14,12 @@ import {
 import {
   THIRD_PARTY_CONSENT_VERSION, AGREE_ALL_THIRD_PARTY_VERSION,
 } from '../../src/services/externalConsent.js';
+import { selectRedeemers, buildUserRows } from '../../src/services/redeemedAudienceService.js';
+import { canWhatsAppProspect, makeWhatsappService } from '../../src/services/redeemOps/whatsappService.js';
+import { makeLeadOutcomeService } from '../../src/services/leadOutcomeService.js';
+import { _buildPayload as buildMetaPayload } from '../../src/services/metaCapiService.js';
+import { hashPhone } from '../../src/utils/piiHashing.js';
+import { jest } from '@jest/globals';
 
 /**
  * Consent ledger — integration (PR B, plan §3). Real Postgres: the ledger's
@@ -441,5 +447,165 @@ describe('consent state reads', () => {
     expect(state.contact.granted).toBe(false);
     expect(state.contact.scope).toBe('global');
     expect(state.suppressions.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ————— 3sites migration: the three legacy gates, end-to-end on the ledger —————
+
+describe('3sites — redeemed-audience upload set (grant map + suppression set)', () => {
+  const phVerified = p8(21); // verified + granted → the ONLY survivor
+  const phUnverified = p8(22); // granted but no OTP marker
+  const phUnticked = p8(23); // explicit untick
+  const phUnsubbed = p8(24); // verified grant, then global unsubscribe
+  const e164 = (p) => `+65${p}`;
+
+  beforeAll(async () => {
+    markPhoneVerified(e164(phVerified));
+    markPhoneVerified(e164(phUnticked));
+    markPhoneVerified(e164(phUnsubbed));
+    await request(app).post('/api/prospects')
+      .send(capturePayload({ campaignId: campaign1.id, phone: phVerified, consent_contact: true, consent_terms: true }))
+      .expect(201);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({ campaignId: campaign1.id, phone: phUnverified, consent_contact: true, consent_terms: true }))
+      .expect(201);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({ campaignId: campaign1.id, phone: phUnticked, consent_contact: false, consent_terms: true }))
+      .expect(201);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({ campaignId: campaign1.id, phone: phUnsubbed, consent_contact: true, consent_terms: true }))
+      .expect(201);
+    const unsubbed = await Consumer.findOne({ where: { phone: e164(phUnsubbed) } });
+    const token = await ensureUnsubToken(unsubbed.id);
+    await request(app).post(`/api/unsubscribe?t=${token}`).type('form').send('').expect(200);
+  });
+
+  test('getMarketableGrantMap encodes verified-only grants with cross-scope recency', async () => {
+    const map = await getMarketableGrantMap();
+    expect(map.get(e164(phVerified)).get(campaign1.id)).toBe(true);
+    expect(map.get(e164(phUnverified)).get(campaign1.id)).toBe(false); // unverified never authorizes
+    expect(map.get(e164(phUnticked)).get(campaign1.id)).toBe(false); // explicit untick
+    // The LATER global withdrawal shadows the earlier verified scoped grant.
+    expect(map.get(e164(phUnsubbed)).get(campaign1.id)).toBe(false);
+    expect(map.get(e164(phUnsubbed)).get('*')).toBe(false);
+  });
+
+  test('selectRedeemers → buildUserRows keeps ONLY the verified-granted, unsuppressed person', async () => {
+    const mine = new Set([e164(phVerified), e164(phUnverified), e164(phUnticked), e164(phUnsubbed)]);
+    const prospects = (await selectRedeemers()).filter((p) => mine.has(p.phone));
+    expect(prospects).toHaveLength(4);
+
+    const rows = buildUserRows(prospects, {
+      requireConsent: true,
+      suppressedPhones: await getSuppressedPhoneSet(),
+      grantMap: await getMarketableGrantMap(),
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0][1]).toBe(hashPhone(e164(phVerified)));
+    // …and the unsubscribed phone is ALSO caught by the suppression set alone.
+    expect((await getSuppressedPhoneSet()).has(e164(phUnsubbed))).toBe(true);
+  });
+});
+
+describe('3sites — delayed down-funnel CAPI re-checks the ledger at send time', () => {
+  const ph = p8(25);
+  const phE164 = `+65${ph}`;
+  let prospect;
+
+  beforeAll(async () => {
+    markPhoneVerified(phE164);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({ campaignId: campaign1.id, phone: ph, consent_contact: true, consent_terms: true }))
+      .expect(201);
+    prospect = await Prospect.findOne({ where: { phone: phE164, campaignId: campaign1.id } });
+  });
+
+  test('grant present → em/ph flag true; after unsubscribe → false (real canMarketTo)', async () => {
+    const sendConversionEvent = jest.fn().mockResolvedValue({ sent: true });
+    const svc = makeLeadOutcomeService({ sendConversionEvent });
+    const outcome = (status) => ({
+      external_id: prospect.id, lead_id: 'lyfe-1', new_status: status,
+      old_status: 'contacted', agent_id: 'a1', occurred_at: new Date().toISOString(),
+    });
+
+    // Before withdrawal: the verified campaign grant licenses em/ph.
+    await svc.processLeadOutcome(outcome('qualified'));
+    expect(sendConversionEvent).toHaveBeenCalledTimes(1);
+    expect(sendConversionEvent.mock.calls[0][1].marketingConsent).toBe(true);
+
+    // Withdraw (global unsubscribe), then drive the next transition.
+    const consumer = await Consumer.findOne({ where: { phone: phE164 } });
+    const token = await ensureUnsubToken(consumer.id);
+    await request(app).post(`/api/unsubscribe?t=${token}`).type('form').send('').expect(200);
+
+    await svc.processLeadOutcome(outcome('won')); // ConfirmedResident dedupes; ClosedWon dispatches
+    const last = sendConversionEvent.mock.calls.at(-1);
+    expect(last[2].eventName).toBe('ClosedWon');
+    expect(last[1].marketingConsent).toBe(false);
+
+    // And the flag is what actually strips ALL five contact-PII fields from
+    // the wire payload (em/ph plus the EMQ trio fn/ln/country).
+    const withConsent = buildMetaPayload(prospect, { eventId: 'e1', marketingConsent: true }, {});
+    expect(withConsent.data[0].user_data.ph).toMatch(/^[a-f0-9]{64}$/);
+    expect(withConsent.data[0].user_data.fn).toMatch(/^[a-f0-9]{64}$/);
+    expect(withConsent.data[0].user_data.ln).toMatch(/^[a-f0-9]{64}$/);
+    expect(withConsent.data[0].user_data.country).toMatch(/^[a-f0-9]{64}$/);
+    const withoutConsent = buildMetaPayload(prospect, { eventId: 'e1', marketingConsent: false }, {});
+    expect(withoutConsent.data[0].user_data.ph).toBeUndefined();
+    expect(withoutConsent.data[0].user_data.em).toBeUndefined();
+    expect(withoutConsent.data[0].user_data.fn).toBeUndefined();
+    expect(withoutConsent.data[0].user_data.ln).toBeUndefined();
+    expect(withoutConsent.data[0].user_data.country).toBeUndefined();
+  });
+});
+
+describe('3sites — WhatsApp purpose matrix on the real ledger', () => {
+  const ph = p8(26);
+  const phE164 = `+65${ph}`;
+  let prospect;
+
+  beforeAll(async () => {
+    markPhoneVerified(phE164);
+    await request(app).post('/api/prospects')
+      .send(capturePayload({ campaignId: campaign1.id, phone: ph, consent_contact: true, consent_terms: true }))
+      .expect(201);
+    prospect = await Prospect.findOne({ where: { phone: phE164, campaignId: campaign1.id } });
+  });
+
+  test('transactional survives unsubscribe; marketing needs the verified grant; erasure blocks all', async () => {
+    // Verified scoped grant, no suppression: both purposes pass.
+    expect(await canWhatsAppProspect(prospect)).toBe(true);
+    expect(await canWhatsAppProspect(prospect, { purpose: 'marketing' })).toBe(true);
+
+    // Global unsubscribe: fulfilment keeps flowing, marketing stops.
+    const consumer = await Consumer.findOne({ where: { phone: phE164 } });
+    const token = await ensureUnsubToken(consumer.id);
+    await request(app).post(`/api/unsubscribe?t=${token}`).type('form').send('').expect(200);
+    expect(await canWhatsAppProspect(prospect)).toBe(true);
+    expect(await canWhatsAppProspect(prospect, { purpose: 'marketing' })).toBe(false);
+
+    // Erasure blocks even transactional — and the sender receipts 'suppressed'
+    // via its real default isSendBlocked before any credential/network work.
+    await ConsumerSuppression.create({ consumerId: consumer.id, channel: 'whatsapp', reason: 'erasure' });
+    expect(await canWhatsAppProspect(prospect)).toBe(false);
+
+    const prevFlag = process.env.REDEEM_OPS_WHATSAPP_ENABLED;
+    process.env.REDEEM_OPS_WHATSAPP_ENABLED = 'true';
+    try {
+      const svc = makeWhatsappService({
+        RewardOffer: { findByPk: async () => ({ publicTitle: 'Test Reward' }) },
+        fetch: async () => { throw new Error('must not reach the network'); },
+        logger: { info: () => {}, warn: () => {}, error: () => {} },
+      });
+      const r = await svc.sendReservationWhatsApp({
+        entitlement: { id: 'e-int-1', rewardOfferId: 'ro-1', expiresAt: new Date() },
+        prospect,
+        presentationToken: 'ptok',
+      });
+      expect(r).toEqual({ sent: false, skipped: 'suppressed' });
+    } finally {
+      if (prevFlag === undefined) delete process.env.REDEEM_OPS_WHATSAPP_ENABLED;
+      else process.env.REDEEM_OPS_WHATSAPP_ENABLED = prevFlag;
+    }
   });
 });
