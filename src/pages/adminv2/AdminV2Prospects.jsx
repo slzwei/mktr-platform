@@ -301,17 +301,38 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
                   </details>
                 )}
                 {attempts.some((a) => a.recordingUrl) && (
-                  <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
+                  <div style={{ marginTop: 6, display: 'grid', gap: 10 }}>
                     {attempts.filter((a) => a.recordingUrl).map((a, i) => (
-                      <a
-                        key={a.token || i}
-                        href={a.recordingUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ fontSize: 12, color: 'var(--ink)', textDecoration: 'underline' }}
-                      >
-                        Recording — attempt {i + 1} ({fmtDateTime(a.startedAt)})
-                      </a>
+                      <div key={a.token || i} style={{ display: 'grid', gap: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                          <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+                            Recording — attempt {i + 1} ({fmtDateTime(a.startedAt)})
+                          </span>
+                          {/* Download stays available; `download` is honoured for
+                              same-origin/blob, and for the cross-origin CDN URL the
+                              browser opens the file in a new tab — either way the raw
+                              file is one click away, separate from playback. */}
+                          <a
+                            href={a.recordingUrl}
+                            download={`screening-attempt-${i + 1}.wav`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ fontSize: 11, color: 'var(--ink)', textDecoration: 'underline', flex: 'none' }}
+                          >
+                            Download
+                          </a>
+                        </div>
+                        {/* Streams in-page; preload=none so opening the drawer
+                            never fetches audio until the operator hits play. */}
+                        <audio
+                          controls
+                          preload="none"
+                          src={a.recordingUrl}
+                          style={{ width: '100%', height: 34 }}
+                        >
+                          <a href={a.recordingUrl} target="_blank" rel="noreferrer">Play recording</a>
+                        </audio>
+                      </div>
                     ))}
                   </div>
                 )}
