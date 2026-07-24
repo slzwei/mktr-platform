@@ -8,10 +8,14 @@ import QRCode from 'qrcode';
  * "Editorial" frame (claude.ai/design "QR Card Frames" family 1c) so the PNG
  * that lands in WhatsApp / email reads as a voucher, not a bare code.
  *
- * Two states of one card: 'pass' (cream, gold "Reserved.") before unlock,
- * 'voucher' (full terracotta, "Unlocked.") after. 1080×1080, QR on a 594px
- * white panel (55% width, quiet zone ≥4 modules) with the title and QR inside
- * the middle band WhatsApp's chat-bubble crop preserves.
+ * Three states of one card: 'pass' (cream, gold "Reserved.") before unlock,
+ * 'voucher' (full terracotta, "Unlocked.") after, and 'boost' (terracotta,
+ * "Boosted.") for the recorded draw session — the ONLY QR-less state: the
+ * pass is consumed, so the white panel carries a giant ×N instead of a code
+ * (a scannable-looking image on a receipt would invite pointless scanning).
+ * 1080×1080, QR (or the ×N) on a 594px white panel (55% width, quiet zone
+ * ≥4 modules) with the title and panel inside the middle band WhatsApp's
+ * chat-bubble crop preserves.
  *
  * Pipeline: satori (layout + text→paths with the bundled Tropic fonts, so no
  * system-font dependency) → resvg (SVG→PNG). Engine + fonts load lazily and
@@ -57,6 +61,8 @@ const PALETTE = {
     powered: 'rgba(247,231,220,.8)',
   },
 };
+// The boost receipt celebrates like the voucher does — same terracotta frame.
+PALETTE.boost = PALETTE.voucher;
 
 let enginePromise = null;
 async function loadEngine() {
@@ -104,8 +110,8 @@ function formatExpiry(expiresAt) {
  * Renders the Editorial QR card as a 1080×1080 PNG buffer.
  *
  * @param {object} opts
- * @param {'pass'|'voucher'} opts.state
- * @param {string} opts.qrContent    encoded verbatim (claim link for the pass, raw token for the voucher)
+ * @param {'pass'|'voucher'|'boost'} opts.state
+ * @param {string} [opts.qrContent]  encoded verbatim (claim link for the pass, raw token for the voucher); unused and optional for 'boost'
  * @param {string} [opts.rewardName]
  * @param {string} [opts.partnerName]
  * @param {string} [opts.customerFirstName]
@@ -128,21 +134,28 @@ export async function renderQrCardPng({
   // absent.
   draw = null,
 }) {
-  if (state !== 'pass' && state !== 'voucher') throw new Error(`unknown card state: ${state}`);
-  if (!qrContent) throw new Error('qrContent required');
+  if (state !== 'pass' && state !== 'voucher' && state !== 'boost') {
+    throw new Error(`unknown card state: ${state}`);
+  }
+  const isBoost = state === 'boost';
+  if (!qrContent && !isBoost) throw new Error('qrContent required');
   const { satori, Resvg, fonts } = await loadEngine();
   const c = PALETTE[state];
 
   // QR as crisp vector modules; the 594px white panel supplies a ~72px quiet
-  // zone (>4 modules), so the QR itself renders margin-free at 450px.
-  const qrSvg = await QRCode.toString(qrContent, {
-    type: 'svg',
-    margin: 0,
-    color: { dark: '#1B1A17', light: '#FFFFFF' },
-  });
-  // qrcode emits a viewBox-only root; satori needs explicit intrinsic dimensions.
-  const qrSized = qrSvg.replace('<svg ', '<svg width="450" height="450" ');
-  const qrSrc = `data:image/svg+xml;base64,${Buffer.from(qrSized).toString('base64')}`;
+  // zone (>4 modules), so the QR itself renders margin-free at 450px. The
+  // boost receipt is QR-less by design — nothing left to scan.
+  let qrSrc = null;
+  if (!isBoost) {
+    const qrSvg = await QRCode.toString(qrContent, {
+      type: 'svg',
+      margin: 0,
+      color: { dark: '#1B1A17', light: '#FFFFFF' },
+    });
+    // qrcode emits a viewBox-only root; satori needs explicit intrinsic dimensions.
+    const qrSized = qrSvg.replace('<svg ', '<svg width="450" height="450" ');
+    qrSrc = `data:image/svg+xml;base64,${Buffer.from(qrSized).toString('base64')}`;
+  }
 
   const title = clean(rewardName, 70, 'Your reward');
   const partner = clean(partnerName, 48).toUpperCase();
@@ -155,24 +168,31 @@ export async function renderQrCardPng({
   const isPass = state === 'pass';
   const isDraw = !!draw;
   const drawMult = isDraw && Number.isInteger(draw.multiplier) ? draw.multiplier : 10;
-  const kicker = isDraw ? 'LUCKY DRAW PASS' : isPass ? 'RESERVATION PASS' : 'VOUCHER · UNLOCKED';
-  const displayWord = isDraw ? "You're in." : isPass ? 'Reserved.' : 'Unlocked.';
-  const statusLine = isDraw
-    ? `Held for ${first} — 1 chance in the draw now`
-    : isPass
-      ? `Held for ${first} — unlock at your appointment`
-      : 'Unlocked — present once to redeem';
-  const codeLine = isDraw
-    ? `${drawMult}X YOUR CHANCES WHEN YOU MEET A CONSULTANT`
-    : isPass
-      ? 'CODE · REVEALED ON UNLOCK'
-      : (code ? `CODE ${code}` : 'ONE-TIME VOUCHER');
+  const kicker = isBoost ? 'SESSION RECORDED' : isDraw ? 'LUCKY DRAW PASS' : isPass ? 'RESERVATION PASS' : 'VOUCHER · UNLOCKED';
+  const displayWord = isBoost ? 'Boosted.' : isDraw ? "You're in." : isPass ? 'Reserved.' : 'Unlocked.';
+  const statusLine = isBoost
+    ? `Recorded for ${first} — review completed`
+    : isDraw
+      ? `Held for ${first} — 1 chance in the draw now`
+      : isPass
+        ? `Held for ${first} — unlock at your appointment`
+        : 'Unlocked — present once to redeem';
+  const codeLine = isBoost
+    ? `WAS 1 CHANCE · NOW ${drawMult}`
+    : isDraw
+      ? `${drawMult}X YOUR CHANCES WHEN YOU MEET A CONSULTANT`
+      : isPass
+        ? 'CODE · REVEALED ON UNLOCK'
+        : (code ? `CODE ${code}` : 'ONE-TIME VOUCHER');
   // One-date-per-surface (#252): the draw card carries the USER-relevant
   // deadline (complete the review by boostClosesAt); the internal reservation
-  // expiry never prints on it.
-  const expiryLine = isDraw
-    ? (draw.boostDeadlineLong ? `COMPLETE YOUR REVIEW BY ${String(draw.boostDeadlineLong).toUpperCase()}` : null)
-    : expiry ? (isPass ? `EXPIRES ${expiry}` : `VALID TILL ${expiry}`).toUpperCase() : null;
+  // expiry never prints on it. The boost receipt carries NO date at all —
+  // the review is done, and boostClosesAt is not a promise about draw day.
+  const expiryLine = isBoost
+    ? null
+    : isDraw
+      ? (draw.boostDeadlineLong ? `COMPLETE YOUR REVIEW BY ${String(draw.boostDeadlineLong).toUpperCase()}` : null)
+      : expiry ? (isPass ? `EXPIRES ${expiry}` : `VALID TILL ${expiry}`).toUpperCase() : null;
 
   const card = el(
     {
@@ -219,7 +239,12 @@ export async function renderQrCardPng({
           alignItems: 'center',
           justifyContent: 'center',
         },
-        [{ type: 'img', props: { src: qrSrc, width: 450, height: 450, style: { width: 450, height: 450 } } }],
+        isBoost
+          ? [el({ flexDirection: 'column', alignItems: 'center' }, [
+              txt({ fontFamily: 'Fraunces', fontStyle: 'italic', fontWeight: 600, fontSize: 290, lineHeight: 1, color: '#1B1A17' }, `${drawMult}×`),
+              txt({ fontWeight: 600, fontSize: 30, letterSpacing: 6, color: '#6B6558', marginTop: 10 }, 'CHANCES IN THE DRAW'),
+            ])]
+          : [{ type: 'img', props: { src: qrSrc, width: 450, height: 450, style: { width: 450, height: 450 } } }],
       ),
       // Status line
       el({ marginTop: 10, justifyContent: 'center', alignItems: 'center' }, [
@@ -232,7 +257,7 @@ export async function renderQrCardPng({
         ...(expiryLine
           ? [txt({ fontWeight: 600, fontSize: 24, letterSpacing: 3.4, color: c.expiry, marginBottom: 5 }, expiryLine)]
           : []),
-        txt({ fontSize: 24, color: c.finePrint, marginBottom: 5 }, 'Present once. Non-transferable.'),
+        txt({ fontSize: 24, color: c.finePrint, marginBottom: 5 }, isBoost ? 'Winners are contacted after the draw closes.' : 'Present once. Non-transferable.'),
         txt({ fontFamily: 'JetBrains Mono', fontWeight: 600, fontSize: 24, letterSpacing: 2.9, color: c.powered }, 'POWERED BY MKTR'),
       ]),
     ],

@@ -223,9 +223,12 @@ export function makeWhatsappService(overrides = {}) {
       const components = [
         { type: 'body', parameters: params.map((text) => ({ type: 'text', text })) },
       ];
-      if (qrHeaderEnabled() && qrContent) {
+      if (qrHeaderEnabled() && (qrContent || card?.state === 'boost')) {
         // Editorial voucher card (branded frame around the QR); any renderer
         // failure degrades to the plain QR — the credential always ships.
+        // The boost receipt is the QR-less card state: with no qrContent
+        // there is no bare-QR fallback, so a renderer failure is a receipted
+        // send failure (an image-header template cannot send headerless).
         let png = null;
         try {
           png = await d.renderQrCard({
@@ -236,6 +239,7 @@ export function makeWhatsappService(overrides = {}) {
         } catch (err) {
           d.logger.warn('redeem_ops.whatsapp.qr_card_fallback', { template: templateName, error: err?.message });
         }
+        if (!png && !qrContent) throw new Error('boost card render failed — image-header template needs its header');
         if (!png) png = await d.QRCode.toBuffer(qrContent, { width: 512, margin: 2 });
         const mediaId = await uploadQrPng(phoneId, token, png);
         components.unshift({
@@ -335,14 +339,20 @@ export function makeWhatsappService(overrides = {}) {
   }
 
   /** "×N confirmed" receipt at a recorded draw session — the WA twin of
-   * sendBoostReceiptEmail, same register as the email body. Body-only
-   * APPROVED UTILITY template `draw_boost_receipt` (no header on purpose:
-   * the pass is consumed, there is nothing left to scan); 3 params =
-   * name, draw name, multiplier. */
+   * sendBoostReceiptEmail, same register as the email body. The
+   * `draw_boost_receipt` template carries the Editorial 'boost' card as its
+   * IMAGE header — the QR-less celebration state (giant ×N; the pass is
+   * consumed, nothing left to scan); 3 params = name, draw name, multiplier. */
   async function sendBoostReceiptWhatsApp({ prospect, drawCtx }) {
     return sendTemplate({
       prospect,
       templateName: process.env.WHATSAPP_TEMPLATE_DRAW_BOOST || 'draw_boost_receipt',
+      card: {
+        state: 'boost',
+        rewardName: cleanParam(drawCtx?.drawName, 'the lucky draw'),
+        partnerName: 'Lucky draw',
+        draw: { multiplier: drawCtx?.multiplier },
+      },
       params: [
         cleanParam(prospect?.firstName, 'there'),
         cleanParam(drawCtx?.drawName, 'the lucky draw'),
