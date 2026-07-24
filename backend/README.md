@@ -40,7 +40,7 @@ Migrations run automatically on boot. To run them explicitly: `npm run migrate`.
 A deliberate **two-stage "Shell" boot** keeps the service healthy on Render even if app init is slow or fails:
 
 1. **`src/server.js` (Shell)** — initializes Sentry, then *immediately* binds `PORT` and serves `/health` (`mode: "shell"`). It dynamically imports `server_internal.js` and calls `init(app)`. If init throws, the shell **stays listening** so logs remain reachable instead of crash-looping.
-2. **`src/server_internal.js`** — builds the middleware stack (requestId → Helmet → compression → CORS → rate limiter → `internalRouteHostGuard` → Pino → body parsing with **raw-body capture** for `/api/retell`, `/api/meta`, `/api/integrations/lyfe` → cookie-parser → `/uploads` static → health → Swagger → `leadCaptureBind` → auto-loaded routes → error handlers).
+2. **`src/server_internal.js`** — builds the middleware stack (requestId → Helmet → compression → CORS → rate limiter → `internalRouteHostGuard` → Pino → body parsing with **raw-body capture** for `/api/retell`, `/api/integrations/lyfe` → cookie-parser → `/uploads` static → health → Swagger → `leadCaptureBind` → auto-loaded routes → error handlers).
 3. **`src/database/bootstrap.js`** — validates env, connects, runs migrations, then idempotently seeds the **System Agent**, the **Lyfe** + **mktr-leads** webhook subscribers, and the **`[Retell]` campaigns**. It recovers pending webhook retries and schedules recurring jobs: webhook recovery (60s), idempotency-key purge (hourly), **agent sync** (10 min), and the **held-lead release sweep** (2 min).
 
 ### Auto-discovered routes
@@ -66,7 +66,7 @@ Base URL: `https://api.mktr.sg/api` (prod) · `http://localhost:3001/api` (dev).
 - `/api/lyfe` (Lyfe agent sync) · `/api/mktr-leads` (mktr-leads agent invite/activate/edit)
 
 **Inbound integration webhooks** (raw-body, HMAC-verified)
-- `POST /api/retell/webhook` · `/api/meta/*` (Meta Lead Ads) · `/api/integrations/lyfe/lead-outcome` · `/api/integrations/lyfe/users-webhook`
+- `POST /api/retell/webhook` · `/api/integrations/lyfe/lead-outcome` · `/api/integrations/lyfe/users-webhook`
 - `/api/admin/webhooks` (outbound subscriber CRUD + delivery / dead-letter admin)
 
 **Dashboards & ops**
@@ -104,7 +104,7 @@ The annotated source of truth is [`env.example`](./env.example) (and the fronten
 | Lyfe | `LYFE_WEBHOOK_URL`, `LYFE_WEBHOOK_SECRET`, `LYFE_SUPABASE_URL`, `LYFE_SUPABASE_SERVICE_ROLE_KEY`, `LYFE_USERS_WEBHOOK_SECRET`, `LYFE_LEAD_OUTCOME_SECRET` |
 | mktr-leads | `MKTR_LEADS_SUPABASE_URL`, `MKTR_LEADS_SUPABASE_SERVICE_ROLE_KEY`, `MKTR_LEADS_WEBHOOK_URL`, `MKTR_LEADS_WEBHOOK_SECRET`, `MKTR_LEADS_INVITE_SECRET` (all optional) |
 | Retell | `RETELL_WEBHOOK_SECRET`, `RETELL_API_KEY`, `RETELL_AGENTS`, `RETELL_CAMPAIGN_MAP` |
-| Meta | `META_CAPI_ENABLED`, `META_PIXEL_ID`, `META_CAPI_ACCESS_TOKEN`, `META_TEST_EVENT_CODE`; `META_APP_SECRET`, `META_PAGE_ACCESS_TOKEN`, `META_VERIFY_TOKEN`; `META_EVENT_QUALIFIED`, `META_EVENT_WON` |
+| Meta | `META_CAPI_ENABLED`, `META_PIXEL_ID`, `META_CAPI_ACCESS_TOKEN`, `META_TEST_EVENT_CODE`; `META_EVENT_QUALIFIED`, `META_EVENT_WON`, `META_EVENT_REDEEMED` |
 | TikTok | `TIKTOK_EVENTS_API_ENABLED`, `TIKTOK_PIXEL_ID`, `TIKTOK_ACCESS_TOKEN`, `TIKTOK_TEST_EVENT_CODE` |
 | OTP | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_SNS_SENDER_ID`; `SNS_AWS_ACCESS_KEY_ID` / `SNS_AWS_SECRET_ACCESS_KEY` (preferred SNS-only pair — set both or neither); `WHATSAPP_PROVIDER`, `META_WA_PHONE_NUMBER_ID`, `META_WA_ACCESS_TOKEN`, `META_WA_BUSINESS_ACCOUNT_ID` |
 | SMS caps (SSIR) | `SMS_DAILY_CAP_PER_PHONE` (7), `SMS_DAILY_GLOBAL_CAP` (500), `SMS_DAILY_ALERT_THRESHOLD` (250), `SMS_ALERT_EMAIL`, `SMS_QUOTA_SALT` — guard the registered `MKTR` sender ID; see `docs/reference/sms-sender-id-compliance.md` |

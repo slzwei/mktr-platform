@@ -1,7 +1,6 @@
 import { jest } from '@jest/globals';
 import '../setup.js';
 import { makeRetellService } from '../../src/services/retellService.js';
-import { makeMetaLeadService } from '../../src/services/metaLeadService.js';
 
 // Both inbound paths (Retell voice, Meta Lead Ads) route through the REAL
 // decideAssignment (not overridden) with an injected chargeLeadCredit, exactly like
@@ -101,66 +100,3 @@ describe('retellService.processRetellCall (lead quota)', () => {
   });
 });
 
-// ──────────────────────────────────────────────────────────────
-// Meta
-// ──────────────────────────────────────────────────────────────
-describe('metaLeadService.processMetaLead (lead quota)', () => {
-  beforeEach(() => { process.env.META_PAGE_ACCESS_TOKEN = 'test-token'; });
-
-  function svc(campaignOverrides = {}) {
-    const campaign = { id: 'camp-1', name: '[Meta] MyForm', is_active: true, enforceLeadQuota: true, ...campaignOverrides };
-    const deps = commonMocks(campaign, mockProspect());
-    deps.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        field_data: [
-          { name: 'full_name', values: ['Jane Doe'] },
-          { name: 'email', values: ['jane@x.com'] },
-          { name: 'phone_number', values: ['+6591234567'] },
-        ],
-        form_name: 'MyForm', platform: 'fb',
-      }),
-    });
-    return { service: makeMetaLeadService(deps), deps };
-  }
-
-  it('funded gated route → assigns, charges once, fires lead.created, status=created', async () => {
-    const { service, deps } = svc();
-    deps.resolveLeadRouting.mockResolvedValue({ agentId: 'agent-1', via: 'package' });
-    deps.chargeLeadCredit.mockResolvedValue(true);
-
-    const res = await service.processMetaLead('lead-1', 'page-1', 'form-1', 1700000000);
-
-    expect(deps.Prospect.create.mock.calls[0][0]).toMatchObject({ assignedAgentId: 'agent-1', quarantinedAt: null });
-    expect(deps.chargeLeadCredit).toHaveBeenCalledWith('agent-1', 'camp-1', deps.mockTx);
-    expect(deps.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
-    expect(res.status).toBe('created');
-  });
-
-  it('unfunded → quarantines: no agent, quarantinedAt set, NO lead.created, status=quarantined', async () => {
-    const { service, deps } = svc();
-    deps.resolveLeadRouting.mockResolvedValue({ agentId: 'agent-1', via: 'package' });
-    deps.chargeLeadCredit.mockResolvedValue(false);
-
-    const res = await service.processMetaLead('lead-1', 'page-1', 'form-1', 1700000000);
-
-    const arg = deps.Prospect.create.mock.calls[0][0];
-    expect(arg.assignedAgentId).toBeNull();
-    expect(arg.quarantinedAt).toBeInstanceOf(Date);
-    expect(arg.quarantineReason).toBe('no_funded_agent');
-    expect(deps.dispatchEvent).not.toHaveBeenCalled();
-    expect(res.status).toBe('quarantined');
-  });
-
-  it('soft campaign → assigns WITHOUT charging (meta never deducted), fires lead.created', async () => {
-    const { service, deps } = svc({ enforceLeadQuota: false });
-    deps.resolveLeadRouting.mockResolvedValue({ agentId: 'agent-1', via: 'package' });
-
-    const res = await service.processMetaLead('lead-1', 'page-1', 'form-1', 1700000000);
-
-    expect(deps.Prospect.create.mock.calls[0][0].assignedAgentId).toBe('agent-1');
-    expect(deps.chargeLeadCredit).not.toHaveBeenCalled();
-    expect(deps.dispatchEvent).toHaveBeenCalledWith('lead.created', expect.any(Function), expect.objectContaining({ destination: 'lyfe' }));
-    expect(res.status).toBe('created');
-  });
-});

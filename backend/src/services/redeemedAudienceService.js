@@ -18,7 +18,7 @@ import { contactGrantAllows } from './contactConsent.js';
  *  - Email/phone are pre-hashed here (SHA-256) via the shared piiHashing utils —
  *    the raw Graph API does NOT hash for us (unlike the Meta MCP). Raw PII never
  *    leaves this process; only hashes are sent, and only counts are logged.
- *  - Auth is an `Authorization: Bearer` header (precedent: metaLeadService.js),
+ *  - Auth is an `Authorization: Bearer` header (never `?access_token=`),
  *    never a `?access_token=` query string.
  *  - Two upload modes (REDEEMED_AUDIENCE_SYNC_MODE):
  *      'add'     → POST /{id}/users      (additive; VERIFIED working)  [default]

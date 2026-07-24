@@ -1,10 +1,8 @@
-import { jest } from '@jest/globals';
 import request from 'supertest';
 import { getApp, closeDb, createTestUser, createTestCampaign } from '../helpers.js';
 import { sequelize, Consumer, Prospect } from '../../src/models/index.js';
 import { markPhoneVerified } from '../../src/services/verifiedPhoneStore.js';
 import { reconcileConsumerSpine } from '../../src/services/consumerService.js';
-import { makeMetaLeadService } from '../../src/services/metaLeadService.js';
 
 /**
  * Consumer spine — integration (real Postgres; savepoint/ON CONFLICT semantics
@@ -272,40 +270,10 @@ describe('consumer spine — Codex R2 additions', () => {
     expect(await Prospect.count({ where: { phone: `+65${ph}` } })).toBe(1);
   });
 
-  test('Meta lead links to the same consumer as a web signup (unverified)', async () => {
-    // NOTE: the Prospect model validates E.164 at create, so Meta phones are
-    // ALWAYS stored E.164 or the create fails (pre-existing behavior — a raw
-    // 8-digit payload was tried here and correctly rejected). Realistic Meta
-    // payloads carry the profile number as +E.164.
-    const ph = p8(5);
-    await request(app).post('/api/prospects')
-      .send(capturePayload({ campaignId: campaign1.id, phone: ph, email: `meta-web-${RUN}@test.com` }))
-      .expect(201);
-
-    const metaSvc = makeMetaLeadService({
-      fetch: jest.fn(async () => ({
-        ok: true,
-        json: async () => ({
-          field_data: [
-            { name: 'full_name', values: ['Meta Person'] },
-            { name: 'phone_number', values: [`+65${ph}`] },
-            { name: 'email', values: [`meta-lead-${RUN}@test.com`] },
-          ],
-        }),
-      })),
-    });
-    process.env.META_PAGE_ACCESS_TOKEN = 'test-token';
-    const res = await metaSvc.processMetaLead(`lg-${RUN}`, 'page-1', null, Math.floor(RUN / 1000));
-    expect(res.status).toBe('created');
-
-    const metaProspect = await Prospect.findByPk(res.prospectId);
-    expect(metaProspect.phone).toBe(`+65${ph}`);
-    const c = await Consumer.findOne({ where: { phone: `+65${ph}` } });
-    expect(c.signupCount).toBe(2); // web + meta
-    expect(metaProspect.consumerId).toBe(c.id);
-    // Meta is never OTP-verified.
-    expect(c.verifiedSignupCount).toBe(0);
-  });
+  // (A "Meta Lead Ads links to the same consumer" case lived here until the
+  // native lead-ads ingestion stack was removed — 0 leads ever ingested, no
+  // native forms run. Consumer-spine linking for non-web sources stays
+  // covered by the Retell cases below.)
 
   test('PUT phone to blank clears the number AND the person link', async () => {
     const ph = p8(6);
