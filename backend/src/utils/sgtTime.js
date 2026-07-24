@@ -20,7 +20,7 @@ const MONTHS = [
  * pulling Sequelize into a PNG.
  */
 export function longDate(ymd) {
-  const m = typeof ymd === 'string' ? ymd.match(YMD_RE) && ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+  const m = typeof ymd === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd) : null;
   if (!m) return '';
   const month = MONTHS[Number(m[2]) - 1];
   return month ? `${Number(m[3])} ${month} ${m[1]}` : '';
