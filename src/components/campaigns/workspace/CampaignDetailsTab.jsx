@@ -18,6 +18,17 @@ const toDateInput = (v) => {
 
 const MAX_PRIZE_ROWS = 8; // mirrors backend utils/luckyDraw.js
 
+// The four draw colourways (backend utils/drawTheme.js). One choice paints both
+// customer surfaces: the Vault WhatsApp pass and the Onyx confirmation email.
+// The swatch is that palette's hero-numeral tone over its ground, so the chip
+// looks like the thing it produces. The backend clamps to this enum regardless.
+const PASS_THEMES = [
+  { id: 'titanium', swatch: 'linear-gradient(140deg,#e6e9ee,#8b9199 70%,#14161a)' },
+  { id: 'gold', swatch: 'linear-gradient(140deg,#f2d590,#b6853a 70%,#1d1708)' },
+  { id: 'emerald', swatch: 'linear-gradient(140deg,#c2ecd2,#5ea07d 70%,#0c1a13)' },
+  { id: 'sapphire', swatch: 'linear-gradient(140deg,#c6d6f2,#6f89bb 70%,#0f1729)' },
+];
+
 const clampQty = (v) => {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n)) return 1;
@@ -57,6 +68,7 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
     drawClosesAt: '',
     drawBoostClosesAt: '',
     drawMultiplier: 10,
+    drawPassTheme: 'titanium',
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -146,6 +158,7 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
               closesAt: form.drawClosesAt,
               boostClosesAt: form.drawBoostClosesAt || form.drawClosesAt,
               multiplier: Number(form.drawMultiplier) || 10,
+              passTheme: form.drawPassTheme,
             },
             // Starter T&C generated from these details; the server pins it as
             // draw_terms_versions v1. Edit in the designer before launch —
@@ -309,10 +322,32 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
                 <p className="text-xs text-muted-foreground">Empty = same as close date.</p>
               </div>
             </div>
-            <div className="space-y-2 max-w-[160px]">
-              <Label htmlFor="draw_multiplier">Session multiplier</Label>
-              <Input id="draw_multiplier" type="number" min={2} max={100} value={form.drawMultiplier} onChange={(e) => set('drawMultiplier', e.target.value)} />
-              <p className="text-xs text-muted-foreground">A completed, consultant-scanned review session multiplies the entry.</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2 max-w-[160px]">
+                <Label htmlFor="draw_multiplier">Session multiplier</Label>
+                <Input id="draw_multiplier" type="number" min={2} max={100} value={form.drawMultiplier} onChange={(e) => set('drawMultiplier', e.target.value)} />
+                <p className="text-xs text-muted-foreground">A completed, consultant-scanned review session multiplies the entry.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="draw_theme">Pass colourway</Label>
+                <div className="flex flex-wrap gap-2" id="draw_theme">
+                  {PASS_THEMES.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      aria-pressed={form.drawPassTheme === t.id}
+                      onClick={() => set('drawPassTheme', t.id)}
+                      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs capitalize transition ${
+                        form.drawPassTheme === t.id ? 'border-foreground' : 'border-input text-muted-foreground hover:border-foreground/40'
+                      }`}
+                    >
+                      <span className="h-3.5 w-3.5 rounded-full border border-black/20" style={{ background: t.swatch }} />
+                      {t.id}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">Colours the entry pass on WhatsApp and the confirmation email. Pick what suits the prize.</p>
+              </div>
             </div>
             {form.drawClosesAt ? (
               <p className="text-xs text-muted-foreground">

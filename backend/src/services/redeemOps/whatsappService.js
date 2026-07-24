@@ -292,7 +292,16 @@ export function makeWhatsappService(overrides = {}) {
         qrContent: passLink,
         card: {
           state: 'pass', rewardName, partnerName, expiresAt: entitlement.expiresAt,
-          draw: { multiplier: drawCtx.multiplier, boostDeadlineLong: boostDeadlineLong(drawCtx.boostClosesAt) },
+          // Presence of `draw` routes the render to the Vault frame; the prize,
+          // draw day and colourway are what make it this campaign's pass rather
+          // than a generic one.
+          draw: {
+            multiplier: drawCtx.multiplier,
+            prize: drawCtx.prize,
+            drawOn: drawCtx.drawOn,
+            passTheme: drawCtx.passTheme,
+            boostDeadlineLong: boostDeadlineLong(drawCtx.boostClosesAt),
+          },
         },
         params: [
           cleanParam(prospect?.firstName, 'there'),
@@ -340,9 +349,9 @@ export function makeWhatsappService(overrides = {}) {
 
   /** "×N confirmed" receipt at a recorded draw session — the WA twin of
    * sendBoostReceiptEmail, same register as the email body. The
-   * `draw_boost_receipt` template carries the Editorial 'boost' card as its
-   * IMAGE header — the QR-less celebration state (giant ×N; the pass is
-   * consumed, nothing left to scan); 3 params = name, draw name, multiplier. */
+   * `draw_boost_receipt` template carries the Vault 'boost' card as its IMAGE
+   * header — the QR-less celebration state (giant ×N; the pass is consumed,
+   * nothing left to scan); 3 params = name, draw name, multiplier. */
   async function sendBoostReceiptWhatsApp({ prospect, drawCtx }) {
     return sendTemplate({
       prospect,
@@ -351,7 +360,12 @@ export function makeWhatsappService(overrides = {}) {
         state: 'boost',
         rewardName: cleanParam(drawCtx?.drawName, 'the lucky draw'),
         partnerName: 'Lucky draw',
-        draw: { multiplier: drawCtx?.multiplier },
+        draw: {
+          multiplier: drawCtx?.multiplier,
+          prize: drawCtx?.prize,
+          drawOn: drawCtx?.drawOn,
+          passTheme: drawCtx?.passTheme,
+        },
       },
       params: [
         cleanParam(prospect?.firstName, 'there'),
