@@ -388,11 +388,30 @@ export function makeRetellScreeningService(overrides = {}) {
     const analysis = call.call_analysis || null;
 
     if (token) {
+      // Per-call economics + provenance, all straight off the Retell call
+      // object. costCents = call_cost.combined_cost (Retell bills in US cents);
+      // duration falls back to the connect→hangup span when cost is absent
+      // (e.g. a call_ended before billing settles). agentVersion attributes the
+      // call to a PUBLISHED script version so qualified-rate is comparable
+      // across A/B script changes. in_voicemail / call_successful live under
+      // call_analysis, so they land on the call_analyzed patch and merge in.
+      const cost = call.call_cost || {};
+      const durationSeconds = Number.isFinite(cost.total_duration_seconds)
+        ? cost.total_duration_seconds
+        : (Number.isFinite(call.start_timestamp) && Number.isFinite(call.end_timestamp)
+            ? Math.max(0, Math.round((call.end_timestamp - call.start_timestamp) / 1000))
+            : null);
       await patchAttempt(prospect.id, token, {
         callId,
         endedAt: call.end_timestamp ? new Date(call.end_timestamp).toISOString() : new Date().toISOString(),
         disconnectionReason: disconnection,
         ...(call.recording_url ? { recordingUrl: call.recording_url } : {}),
+        ...(Number.isFinite(cost.combined_cost) ? { costCents: cost.combined_cost } : {}),
+        ...(durationSeconds != null ? { durationSeconds } : {}),
+        ...(call.agent_id ? { agentId: call.agent_id } : {}),
+        ...(Number.isInteger(call.agent_version) ? { agentVersion: call.agent_version } : {}),
+        ...(analysis && typeof analysis.in_voicemail === 'boolean' ? { inVoicemail: analysis.in_voicemail } : {}),
+        ...(analysis && typeof analysis.call_successful === 'boolean' ? { callSuccessful: analysis.call_successful } : {}),
       });
     }
 

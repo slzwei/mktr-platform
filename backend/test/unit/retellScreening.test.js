@@ -372,6 +372,35 @@ describe('applyCallOutcome', () => {
     expect(deps2.gate.applyQualifiedVerdict.mock.calls[0][1].detail.transcript).toBeNull();
   });
 
+  it('captures per-call economics + provenance onto the attempt evidence', async () => {
+    const seq = fakeSequelize([[[{ id: 'p' }]]]);
+    const svc = makeRetellScreeningService(dialerDeps(seq));
+    await svc.applyCallOutcome(pendingProspect({ screeningActiveCallId: 'call_1' }), call({
+      agent_id: 'agent_x', agent_version: 4,
+      call_cost: { combined_cost: 13.02, total_duration_seconds: 63 },
+      call_analysis: { custom_analysis_data: { qualified: true }, in_voicemail: false, call_successful: true },
+    }), { cfg: CFG });
+    // patchAttempt is the first query; its jsonb patch rides replacements.patch.
+    const patchCall = seq.calls.find((c) => String(c.sql).includes('{attempts,'));
+    const patch = JSON.parse(patchCall.opts.replacements.patch);
+    expect(patch).toMatchObject({
+      costCents: 13.02, durationSeconds: 63, agentId: 'agent_x', agentVersion: 4,
+      inVoicemail: false, callSuccessful: true,
+    });
+  });
+
+  it('derives duration from timestamps when call_cost is absent', async () => {
+    const seq = fakeSequelize([[[{ id: 'p' }]]]);
+    const svc = makeRetellScreeningService(dialerDeps(seq));
+    await svc.applyCallOutcome(pendingProspect({ screeningActiveCallId: 'call_1' }), call({
+      start_timestamp: 1784892582109, end_timestamp: 1784892644817,
+      call_analysis: { custom_analysis_data: { qualified: true } },
+    }), { cfg: CFG });
+    const patch = JSON.parse(seq.calls.find((c) => String(c.sql).includes('{attempts,')).opts.replacements.patch);
+    expect(patch.durationSeconds).toBe(63);        // (644817-582109)/1000 ≈ 62.7 → 63
+    expect(patch.costCents).toBeUndefined();        // no cost field emitted
+  });
+
   it('qualified=false routes to markScreeningFailed; a missing verdict field retries (never sentiment-guessed)', async () => {
     const depsNo = dialerDeps(fakeSequelize([[[{ id: 'p' }]]]));
     const svcNo = makeRetellScreeningService(depsNo);

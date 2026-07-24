@@ -15,7 +15,7 @@ import {
   LEAD_STATUSES, LEAD_SOURCES, STATUS_LABELS, STATUS_CHIP_CLASS,
   SOURCE_LABELS, heldLabel, UTM_LABELS, PAGE_SIZE,
 } from '@/lib/adminV2/constants';
-import { fmtDateTime, fmtRelative } from '@/lib/adminV2/format';
+import { fmtDateTime, fmtRelative, fmtSGDExact } from '@/lib/adminV2/format';
 import { prospectsToCsv, downloadCsv } from '@/lib/adminV2/csv';
 import { Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -188,6 +188,14 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
             const attempts = Object.values(sm.attempts || {})
               .filter((a) => a && a.startedAt)
               .sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
+            // Cost is summed across every dial (the true per-lead screening
+            // spend); duration/version come from the latest call that carried
+            // them — the one that produced the verdict.
+            const costCents = attempts.reduce((s, a) => s + (Number(a.costCents) || 0), 0);
+            const hasCost = attempts.some((a) => Number.isFinite(a.costCents));
+            const lastWith = (key) => [...attempts].reverse().find((a) => a[key] != null);
+            const durationSeconds = lastWith('durationSeconds')?.durationSeconds ?? null;
+            const agentVersion = lastWith('agentVersion')?.agentVersion ?? null;
             return (
               <section>
                 <div className="av2-microcaps" style={{ marginBottom: 6 }}>AI Screening</div>
@@ -202,6 +210,13 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
                 {verdictDetail.reason && <div className="av2-kv"><span>reason</span><span>{verdictDetail.reason}</span></div>}
                 {verdictDetail.sentiment && <div className="av2-kv"><span>sentiment</span><span>{verdictDetail.sentiment}</span></div>}
                 <div className="av2-kv"><span>attempts</span><span>{p.screeningAttemptCount || attempts.length || 0}</span></div>
+                {hasCost && (
+                  <div className="av2-kv">
+                    <span>call cost</span>
+                    <span>{fmtSGDExact(costCents)}{durationSeconds != null ? ` · ${durationSeconds}s` : ''}</span>
+                  </div>
+                )}
+                {agentVersion != null && <div className="av2-kv"><span>script</span><span>v{agentVersion}</span></div>}
                 {verdictDetail.summary && (
                   <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.5 }}>
                     {String(verdictDetail.summary).slice(0, 600)}

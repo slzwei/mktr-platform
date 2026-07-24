@@ -148,6 +148,27 @@ describe('composeHealthStrip', () => {
     expect(strip[4]).toMatchObject({ value: '0', tone: 'neutral', detail: 'none inside 7 days' });
     expect(composeHealthStrip(null)).toEqual([]);
   });
+
+  const baseAttention = {
+    webhooks: { failedLast24h: 0, pending: 0, subscriberDisabled: false },
+    held: { total: 0, byReason: {} },
+    committed: { leads: 0, valueCents: 0, campaigns: 0 },
+    wallets: { total: 5, zero: [], low: [], floatCents: 50000 },
+    drawsClosing: [],
+  };
+
+  it('adds a screening cost/qualified segment only once screening is in use', () => {
+    const off = composeHealthStrip(baseAttention);
+    expect(off.map((s) => s.id)).not.toContain('screening');
+
+    const zeroUse = composeHealthStrip({ ...baseAttention, screening: { spendCents: 0, qualified: 0, costPerQualifiedCents: null } });
+    expect(zeroUse.map((s) => s.id)).not.toContain('screening');
+
+    const on = composeHealthStrip({ ...baseAttention, screening: { spendCents: 39, qualified: 3, costPerQualifiedCents: 13 } });
+    const seg = on.find((s) => s.id === 'screening');
+    expect(seg).toMatchObject({ value: 'S$0.13', href: '/AdminProspects' });
+    expect(seg.detail).toBe('3 qualified · S$0.39 spent');
+  });
 });
 
 describe('prospectsToCsv', () => {

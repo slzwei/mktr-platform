@@ -163,7 +163,8 @@ export async function getAttention() {
   const [
     webhookPending, webhookFailed24h, disabledSubscribers,
     heldRows, unassigned,
-    externalAgents, committedRows, activeCampaigns
+    externalAgents, committedRows, activeCampaigns,
+    screeningAgg
   ] = await Promise.all([
     safeCount(WebhookDelivery, { where: { status: 'pending' } }),
     safeCount(WebhookDelivery, { where: { status: 'failed', updatedAt: { [Op.gte]: cutoff24h } } }),
@@ -191,7 +192,22 @@ export async function getAttention() {
     Campaign.findAll({
       where: { status: 'active', is_active: true },
       attributes: ['id', 'name', 'end_date', 'leadPriceCents', 'design_config'],
-    }).catch(() => [])
+    }).catch(() => []),
+    // Screening economics. One row: total spend across every screening attempt
+    // (jsonb_each over the token-keyed attempts, summing costCents) and the
+    // qualified count. LEFT JOIN LATERAL keeps a qualified lead whose attempts
+    // predate cost-capture in the count while contributing 0 to spend. Screening
+    // is opt-in + dial-capped, so this scans a small slice; still guarded so a
+    // failure degrades to zeros rather than breaking the whole dashboard.
+    sequelize.query(
+      `SELECT
+         COALESCE(SUM((att.value->>'costCents')::numeric), 0)::float AS spend_cents,
+         COUNT(DISTINCT p.id) FILTER (WHERE p."screeningVerdict" = 'qualified')::int AS qualified
+       FROM prospects p
+       LEFT JOIN LATERAL jsonb_each(COALESCE(p."screeningMetadata"->'attempts', '{}'::jsonb)) att ON true
+       WHERE p."screeningMetadata" IS NOT NULL`,
+      { type: sequelize.QueryTypes.SELECT }
+    ).then((r) => r?.[0] || { spend_cents: 0, qualified: 0 }).catch(() => ({ spend_cents: 0, qualified: 0 }))
   ]);
 
   // Held, grouped over the real reason set; anything unknown/null reconciles into `other`.
@@ -275,6 +291,16 @@ export async function getAttention() {
     }
   }
 
+  // Screening cost-per-qualified. Spend counts EVERY dial (qualified, failed,
+  // unreachable) — the true acquisition cost — divided by qualified leads.
+  const scrSpendCents = Math.round(Number(screeningAgg?.spend_cents) || 0);
+  const scrQualified = Number(screeningAgg?.qualified) || 0;
+  const screening = {
+    spendCents: scrSpendCents,
+    qualified: scrQualified,
+    costPerQualifiedCents: scrQualified > 0 ? Math.round(scrSpendCents / scrQualified) : null,
+  };
+
   return {
     webhooks: { pending: webhookPending, failedLast24h: webhookFailed24h, subscriberDisabled: disabledSubscribers > 0 },
     held: { total: heldTotal, byReason },
@@ -282,6 +308,7 @@ export async function getAttention() {
     zeroCommitCampaigns,
     wallets: { total: externalAgents.length, zero, low, floatCents },
     committed: { leads: committedLeads, valueCents: committedValueCents, campaigns: fundedCampaignIds.size },
+    screening,
     drawsClosing,
     endingCampaigns,
   };

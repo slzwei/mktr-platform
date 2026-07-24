@@ -5,7 +5,7 @@
  * Every row deep-links pre-filtered — whole-row links, per the design.
  */
 import { HELD_REASON_LABELS } from './constants.js';
-import { fmtSGD, fmtNumber, daysUntil } from './format.js';
+import { fmtSGD, fmtSGDExact, fmtNumber, daysUntil } from './format.js';
 
 export const SEVERITY_ORDER = { incident: 0, held: 1, warning: 2, watch: 3 };
 
@@ -136,7 +136,7 @@ export function composeHealthStrip(data) {
   const firstDraw = draws[0];
   const firstDrawDays = firstDraw ? daysUntil(firstDraw.closesAt) : null;
 
-  return [
+  const strip = [
     {
       id: 'webhooks',
       href: '/AdminProspects',
@@ -190,4 +190,21 @@ export function composeHealthStrip(data) {
         : 'none inside 7 days',
     },
   ];
+
+  // Cost-per-qualified only surfaces once screening is actually running, so an
+  // AI gate nobody uses never adds a dead segment to the strip.
+  const scr = data.screening;
+  if (scr && (scr.qualified > 0 || scr.spendCents > 0)) {
+    strip.push({
+      id: 'screening',
+      href: '/AdminProspects',
+      shape: 'cir',
+      tone: 'ok',
+      value: scr.costPerQualifiedCents != null ? fmtSGDExact(scr.costPerQualifiedCents) : '—',
+      valueTone: null,
+      label: 'AI screen · cost/qualified',
+      detail: `${scr.qualified} qualified · ${fmtSGDExact(scr.spendCents || 0)} spent`,
+    });
+  }
+  return strip;
 }
