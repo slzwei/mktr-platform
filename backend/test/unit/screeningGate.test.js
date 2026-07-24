@@ -60,8 +60,11 @@ function releaseDeps(seq, over = {}) {
     Prospect: { findByPk: jest.fn().mockResolvedValue({ id: 'p1', campaign: { id: 'c1', name: 'Camp' } }) },
     ProspectActivity: { create: jest.fn().mockResolvedValue({}) },
     User: {
-      findByPk: jest.fn().mockResolvedValue({ id: 'a1', lyfeId: 'L1', phone: '+6super', email: 'a@x.co', firstName: 'A', lastName: 'G' }),
+      // role/isActive serve the PR-1 stale-route revalidation; the rest serves
+      // the webhook agent load. One mock, both reads.
+      findByPk: jest.fn().mockResolvedValue({ id: 'a1', role: 'agent', isActive: true, lyfeId: 'L1', phone: '+6super', email: 'a@x.co', firstName: 'A', lastName: 'G' }),
     },
+    notifyUndeliverableHold: jest.fn().mockResolvedValue({ alerted: false }),
     Campaign: { findByPk: jest.fn().mockResolvedValue({ id: 'c1', enforceLeadQuota: true, leadPriceCents: null }) },
     chargeLeadCredit: jest.fn().mockResolvedValue(true),
     refundLeadCredit: jest.fn().mockResolvedValue(true),
@@ -248,6 +251,78 @@ describe('releaseScreenedLead', () => {
     const p = prospectRow({ screeningMetadata: { intendedAgentId: null } });
     const out = await gate.releaseScreenedLead({ prospect: p });
     expect(out).toMatchObject({ released: true, agentId: 'a2' });
+  });
+
+  it('PR-1: null-baked lead AUTO-HEALS the moment a funded package appears (the 07-24 prod heal, as a test)', async () => {
+    const seq = fakeSequelize([[[{ id: 'p1' }]]]);
+    const deps = releaseDeps(seq, {
+      resolveLeadRouting: jest.fn().mockResolvedValue({ agentId: 'funded-1', via: 'package' }),
+      Campaign: { findByPk: jest.fn().mockResolvedValue({ id: 'c1', enforceLeadQuota: false, leadPriceCents: null }) },
+    });
+    const gate = makeScreeningGate(deps);
+    const p = prospectRow({ screeningMetadata: { intendedAgentId: null, alreadyCharged: false } });
+    const out = await gate.releaseScreenedLead({ prospect: p });
+    expect(out).toMatchObject({ released: true, agentId: 'funded-1' });
+    expect(deps.deductLeadCredit).toHaveBeenCalledTimes(1); // soft campaign: best-effort deduct
+    expect(deps.notifyUndeliverableHold).not.toHaveBeenCalled();
+  });
+
+  it('PR-1 (CX4): STALE stored agent (deactivated) on an UNCHARGED lead re-resolves instead of delivering blind', async () => {
+    const seq = fakeSequelize([[[{ id: 'p1' }]]]);
+    const deps = releaseDeps(seq, {
+      User: {
+        findByPk: jest.fn()
+          // 1st call = revalidation of stored a1 → deactivated
+          .mockResolvedValueOnce({ id: 'a1', role: 'agent', isActive: false })
+          // 2nd call = webhook load of the re-resolved agent
+          .mockResolvedValue({ id: 'a2', role: 'agent', isActive: true, lyfeId: 'L2', phone: '+65x', email: 'b@x.co', firstName: 'B', lastName: 'H' }),
+      },
+      resolveLeadRouting: jest.fn().mockResolvedValue({ agentId: 'a2', via: 'package' }),
+    });
+    const gate = makeScreeningGate(deps);
+    const out = await gate.releaseScreenedLead({ prospect: prospectRow() }); // intendedAgentId 'a1', uncharged
+    expect(out).toMatchObject({ released: true, agentId: 'a2' });
+    expect(seq.calls[0].opts.replacements.agentId).toBe('a2');
+  });
+
+  it('PR-1 (CX4): a CHARGED lead keeps its stored agent — revalidation is skipped (refund bookkeeping stays keyed)', async () => {
+    const seq = fakeSequelize([[[{ id: 'p1' }]]]);
+    const deps = releaseDeps(seq, {
+      // Role-less mock: if revalidation RAN it would null the agent and this
+      // release would fail — success proves the skip.
+      User: { findByPk: jest.fn().mockResolvedValue({ id: 'a1', lyfeId: 'L1', phone: '+65x', email: 'a@x.co', firstName: 'A', lastName: 'G' }) },
+    });
+    const gate = makeScreeningGate(deps);
+    const p = prospectRow({ screeningMetadata: { intendedAgentId: 'a1', alreadyCharged: true } });
+    const out = await gate.releaseScreenedLead({ prospect: p });
+    expect(out).toMatchObject({ released: true, agentId: 'a1' });
+    expect(deps.chargeLeadCredit).not.toHaveBeenCalled();
+    expect(deps.deductLeadCredit).not.toHaveBeenCalled();
+  });
+
+  it('PR-1 (§2.2): undeliverable outcomes fire the loud-failure notifier (both reasons), release path unchanged', async () => {
+    // no_intended_agent
+    const seq1 = fakeSequelize([]);
+    const deps1 = releaseDeps(seq1, {
+      resolveLeadRouting: jest.fn().mockResolvedValue({ agentId: 'sys', via: 'fallback' }),
+    });
+    const gate1 = makeScreeningGate(deps1);
+    const p1 = prospectRow({ screeningMetadata: { intendedAgentId: null } });
+    await gate1.releaseScreenedLead({ prospect: p1 });
+    expect(deps1.notifyUndeliverableHold).toHaveBeenCalledWith(
+      expect.objectContaining({ prospect: p1, reason: 'no_intended_agent' })
+    );
+
+    // no_subscriber (destination default-denied) → rollback + notify
+    const seq2 = fakeSequelize([[[{ id: 'p1' }]]]);
+    const deps2 = releaseDeps(seq2, { persistEventDeliveries: jest.fn().mockResolvedValue([]) });
+    const gate2 = makeScreeningGate(deps2);
+    const p2 = prospectRow();
+    const out2 = await gate2.releaseScreenedLead({ prospect: p2 });
+    expect(out2).toMatchObject({ released: false, reason: 'no_subscriber' });
+    expect(deps2.notifyUndeliverableHold).toHaveBeenCalledWith(
+      expect.objectContaining({ prospect: p2, reason: 'no_subscriber' })
+    );
   });
 
   it('unscreened release fences on verdict IS NULL and stamps unreachable', async () => {

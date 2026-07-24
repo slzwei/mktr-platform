@@ -65,6 +65,9 @@ const defaultDeps = {
   // Injectable so gateHeldDncLead can be unit-tested without the release tx (the real
   // function is hoisted and bound below).
   releaseDncClearedLead: (...args) => releaseDncClearedLead(...args),
+  // Lazy (dynamic-import) like screeningHandoff: dncGate's static import graph
+  // must stay untouched for the existing unit-suite mocks (PR-1, Codex R1 CX1).
+  resolveLeadRouting: async (args) => (await import('./systemAgent.js')).resolveLeadRouting(args),
 };
 
 /**
@@ -76,6 +79,18 @@ const defaultDeps = {
  */
 export async function releaseDncClearedLead({ prospect, agentId, alreadyCharged = false }, overrides = {}) {
   const d = { ...defaultDeps, ...overrides };
+  if (!agentId && prospect.campaignId) {
+    // PR-1 (draw-launch-integrity §9.1 CX1): a null-baked target (fallback
+    // route at capture — no deliverable agent existed) re-resolves at release
+    // time, exactly like screeningGate's release. Refuse fallback results: the
+    // provenance-less System Agent would fail delivery downstream anyway
+    // (destination null → default-deny). Held leads therefore AUTO-HEAL once a
+    // funded package appears — the DNC backfill retries this path.
+    const routing = await d.resolveLeadRouting({
+      reqUser: null, requestedAgentId: null, campaignId: prospect.campaignId, qrTagId: null,
+    }).catch(() => null);
+    if (routing?.agentId && routing.via !== 'fallback') agentId = routing.agentId;
+  }
   if (!agentId) {
     d.logger.warn('[DNC] cleared lead has no intended agent — left held for backfill/admin', { prospectId: prospect.id });
     return { released: false, reason: 'no_intended_agent' };

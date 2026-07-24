@@ -4,6 +4,7 @@ import { persistEventDeliveries, flushDeliveries } from './webhookService.js';
 import { buildLeadCreatedPayload, destinationForAgent, externalIdForDestination } from './prospectHelpers.js';
 import { resolveLeadRouting } from './systemAgent.js';
 import { phoneVerificationIsCurrent } from './consumerService.js';
+import { notifyUndeliverableHold } from './screeningAlerts.js';
 import { readLegacyViewSafe } from '../utils/designConfigV2Clamp.js';
 import { SCREENING_REASONS } from './screeningConstants.js';
 import { logger } from '../utils/logger.js';
@@ -45,6 +46,7 @@ const defaultDeps = {
   destinationForAgent,
   externalIdForDestination,
   resolveLeadRouting,
+  notifyUndeliverableHold,
   logger,
 };
 
@@ -187,10 +189,26 @@ export function makeScreeningGate(overrides = {}) {
   async function releaseScreenedLead({ prospect, unscreened = false, via = 'screening_qualified' }) {
     const meta = prospect.screeningMetadata || {};
     const campaign = await loadCampaignFor(prospect, d);
+    const alreadyCharged = meta.alreadyCharged === true && meta.chargeRefunded !== true;
 
     let agentId = meta.intendedAgentId || null;
+    // Stale-route revalidation (Codex R1 CX4): a target baked at capture may
+    // have been deactivated or role-changed since. Only for UNCHARGED leads —
+    // a charged lead's refund bookkeeping is keyed to its charged agent, so a
+    // stale-but-charged target keeps its id (PR-2's chargedAgentId split owns
+    // the recharge story).
+    if (agentId && !alreadyCharged) {
+      const current = await d.User.findByPk(agentId, { attributes: ['id', 'role', 'isActive'] }).catch(() => null);
+      if (!current || current.role !== 'agent' || current.isActive !== true) {
+        d.logger.warn('[Screening] release: stored agent no longer valid — re-resolving', {
+          prospectId: prospect.id, staleAgentId: agentId,
+        });
+        agentId = null;
+      }
+    }
     if (!agentId && prospect.campaignId) {
-      // Intended agent gone (deactivated, joined later, quota re-shuffle) —
+      // Intended agent gone (deactivated, joined later, quota re-shuffle) or
+      // deliberately null-baked at capture (fallback route, PR-1) —
       // re-resolve. Only a real funded route may receive the lead; the
       // System-Agent fallback would recreate the known delivery gap.
       const routing = await d.resolveLeadRouting({
@@ -200,10 +218,13 @@ export function makeScreeningGate(overrides = {}) {
     }
     if (!agentId) {
       d.logger.warn('[Screening] release: no deliverable agent — left held', { prospectId: prospect.id });
+      // Loud-failure surfacing (§2.2): once-per-lead activity + throttled ops
+      // email once the hold is stale. Fire-and-forget — alarms never block or
+      // reorder the release path.
+      Promise.resolve(d.notifyUndeliverableHold?.({ prospect, reason: 'no_intended_agent', campaign }))
+        .catch(() => {});
       return { released: false, reason: 'no_intended_agent' };
     }
-
-    const alreadyCharged = meta.alreadyCharged === true && meta.chargeRefunded !== true;
     const quotaEnforced = campaign?.enforceLeadQuota === true
       || (Number.isInteger(campaign?.leadPriceCents) && campaign.leadPriceCents > 0);
 
@@ -288,6 +309,10 @@ export function makeScreeningGate(overrides = {}) {
       if (!deliveryPairs || deliveryPairs.length === 0) {
         await t.rollback();
         d.logger.warn('[Screening] release: no delivery subscriber — re-holding', { prospectId: prospect.id, destination });
+        // Same loud-failure surfacing as no_intended_agent: this branch is the
+        // provenance-less-assignee dead-end (destination null → default-deny).
+        Promise.resolve(d.notifyUndeliverableHold?.({ prospect, reason: 'no_subscriber', campaign }))
+          .catch(() => {});
         return { released: false, reason: 'no_subscriber' };
       }
 

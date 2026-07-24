@@ -206,6 +206,16 @@ describe('startScreeningAttempt', () => {
     expect(deps.retellClient.createPhoneCall).not.toHaveBeenCalled();
   });
 
+  it('PR-1 (CX20): EITHER inactivity signal alone stops new dials — archived campaign with is_active=true no longer dials', async () => {
+    const deps = dialerDeps(fakeSequelize());
+    const svc = makeRetellScreeningService(deps);
+    const archivedButFlagOn = { ...screeningCampaign(), status: 'archived', is_active: true };
+    expect((await svc.startScreeningAttempt(pendingProspect(), { campaign: archivedButFlagOn, cfg: CFG })).reason).toBe('campaign_inactive');
+    const activeStatusFlagOff = { ...screeningCampaign(), status: 'active', is_active: false };
+    expect((await svc.startScreeningAttempt(pendingProspect(), { campaign: activeStatusFlagOff, cfg: CFG })).reason).toBe('campaign_inactive');
+    expect(deps.retellClient.createPhoneCall).not.toHaveBeenCalled();
+  });
+
   it('skips a lead that is not cleanly pending (active call / verdict / other reason)', async () => {
     const svc = makeRetellScreeningService(dialerDeps(fakeSequelize()));
     expect((await svc.startScreeningAttempt(pendingProspect({ screeningActiveCallId: 'call_x' }), { campaign: screeningCampaign(), cfg: CFG })).reason).toBe('not_pending');
