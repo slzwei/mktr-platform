@@ -90,6 +90,48 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
   // the detail enriches when it lands. Hook runs unconditionally (enabled
   // gate), so the early return below stays hooks-safe.
   const detail = useProspectDetail(prospect?.id);
+  // Row-level actions mirror the bulk bar but target this one lead. All hooks
+  // run BEFORE the null-guard return so hook order stays stable across
+  // open/close — the mutations simply never fire while `id` is undefined.
+  const queryClient = useQueryClient();
+  const agentOptions = useAgentOptions(!!prospect);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const id = prospect?.id;
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['adminV2', 'prospects'] });
+    queryClient.invalidateQueries({ queryKey: ['adminV2', 'prospectDetail'] });
+  };
+  const assignMutation = useMutation({
+    mutationFn: ({ agentId }) => bulkAssign([id], agentId),
+    onSuccess: (r, { agentName }) => {
+      const n = r?.data?.affectedCount ?? 0;
+      if (n > 0) toast.success(`Assigned to ${agentName}`);
+      else toast.warning('Not assigned — lead not eligible');
+      invalidate();
+    },
+    onError: (e) => toast.error(e?.message || 'Assign failed'),
+  });
+  const returnMutation = useMutation({
+    mutationFn: () => bulkReturnToHeld([id]),
+    onSuccess: (r) => {
+      const n = r?.data?.returned ?? 0;
+      if (n > 0) toast.success('Returned to held');
+      else toast.warning('Not returned — already held or not eligible');
+      invalidate();
+    },
+    onError: (e) => toast.error(e?.message || 'Return failed'),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: () => bulkDelete([id]),
+    onSuccess: (r) => {
+      const n = r?.data?.deleted ?? 0;
+      setConfirmDelete(false);
+      invalidate();
+      if (n > 0) { toast.success('Lead deleted'); onClose(); }
+      else toast.warning('Nothing deleted');
+    },
+    onError: (e) => { toast.error(e?.message || 'Delete failed'); setConfirmDelete(false); },
+  });
   if (!prospect) return null;
   const p = detail.data || prospect;
   const consumer = detail.data?.consumer || null;
@@ -98,8 +140,8 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
   const held = !!p.quarantinedAt;
   return (
     <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <SheetContent side="right" className="admin-v2" style={{ width: 432, maxWidth: '90vw', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderLeft: '1px solid var(--line)' }}>
-        <SheetHeader style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)' }}>
+      <SheetContent side="right" className="admin-v2" style={{ width: 432, maxWidth: '90vw', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 0 }}>
+        <SheetHeader style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
           <SheetTitle style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', fontFamily: 'var(--font-ui)', textAlign: 'left' }}>
             {(p.firstName || p.lastName)
               ? `${p.firstName || ''} ${p.lastName || ''}`.trim()
@@ -113,7 +155,7 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
             {Number.isFinite(Number(p.score)) && p.score !== null && <Chip>score {p.score}</Chip>}
           </div>
         </SheetHeader>
-        <div style={{ padding: 16, overflowY: 'auto', display: 'grid', gap: 18 }}>
+        <div style={{ padding: 16, overflowY: 'auto', display: 'grid', gap: 18, flex: 1, minHeight: 0 }}>
           {detail.isError && !p.phone && (
             <div className="av2-kv" style={{ color: 'var(--ink-2)' }}>
               Couldn&apos;t load this lead — it may have been deleted.
@@ -289,6 +331,47 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
             <div className="av2-kv"><span>converted</span><span>{fmtDateTime(p.conversionDate)}</span></div>
           </section>
         </div>
+        {/* ── Action footer (pinned; mirrors the bulk bar for this one lead) ── */}
+        <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderTop: '1px solid var(--line)', background: 'var(--surface)' }}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="av2-btn av2-btn--sm" disabled={assignMutation.isPending}>Assign to agent ▾</button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="admin-v2" align="start" side="top">
+              <DropdownMenuLabel>Assign to</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {(agentOptions.data || []).map((a) => (
+                <DropdownMenuItem key={a.id} onSelect={() => assignMutation.mutate({ agentId: a.id, agentName: a.name })}>
+                  {a.name}
+                </DropdownMenuItem>
+              ))}
+              {agentOptions.isLoading && <DropdownMenuItem disabled>Loading agents…</DropdownMenuItem>}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <button type="button" className="av2-btn av2-btn--sm" disabled={returnMutation.isPending} onClick={() => returnMutation.mutate()}>Return to held</button>
+          <span style={{ flex: 1 }} />
+          <button type="button" className="av2-btn av2-btn--sm" style={{ borderColor: 'var(--bad)', color: 'var(--bad)' }} onClick={() => setConfirmDelete(true)}>Delete</button>
+        </div>
+        <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+          <AlertDialogContent className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)' }}>
+            <AlertDialogHeader>
+              <AlertDialogTitle style={{ color: 'var(--ink)' }}>Delete this lead?</AlertDialogTitle>
+              <AlertDialogDescription style={{ color: 'var(--ink-2)' }}>
+                This permanently removes the lead and its activity history. It cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); deleteMutation.mutate(); }}
+                disabled={deleteMutation.isPending}
+                style={{ background: 'var(--bad)', color: '#fff' }}
+              >
+                {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </SheetContent>
     </Sheet>
   );
