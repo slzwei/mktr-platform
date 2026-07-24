@@ -683,10 +683,33 @@ export default function AdminV2Prospects() {
                 <span className="av2-mono" style={{ display: 'block', fontSize: 10, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email || '—'}</span>
               </span>
               <span className="av2-mono" style={{ width: 110, flex: 'none', fontSize: 11, color: 'var(--ink-2)' }}>{p.phone || '—'}</span>
-              <span style={{ width: 130, flex: 'none' }}>
+              <span style={{ width: 130, flex: 'none', display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
                 {held
                   ? <Chip tone="hold" glyph="◆">{heldLabel(p).short}</Chip>
                   : <Chip tone={STATUS_CHIP_CLASS[p.leadStatus]?.replace('av2-chip--', '') || ''}>{STATUS_LABELS[p.leadStatus] || p.leadStatus}</Chip>}
+                {/* AI-screening verdict — a permanent fact independent of the
+                    pipeline status. Skipped when the row is already a screening
+                    HOLD (the hold chip conveys it); the useful case is a
+                    RELEASED lead that passed, which otherwise reads only "New". */}
+                {p.screeningVerdict && !String(p.quarantineReason || '').startsWith('screening_') && (
+                  <span
+                    title={p.screeningVerdict === 'qualified'
+                      ? 'Passed the AI screening call — SG/PR, in age range, agreed to meet a consultant'
+                      : p.screeningVerdict === 'not_qualified'
+                        ? 'Did not pass the AI screening call'
+                        : 'AI screening result'}
+                    style={{ display: 'inline-flex' }}
+                  >
+                    <Chip
+                      tone={p.screeningVerdict === 'qualified' ? 'ok' : p.screeningVerdict === 'not_qualified' ? 'bad' : 'warn'}
+                      glyph={p.screeningVerdict === 'qualified' ? '✓' : p.screeningVerdict === 'not_qualified' ? '✗' : '☎'}
+                    >
+                      {p.screeningVerdict === 'qualified' ? 'AI qualified'
+                        : p.screeningVerdict === 'not_qualified' ? 'AI failed'
+                          : 'AI screen'}
+                    </Chip>
+                  </span>
+                )}
               </span>
               <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.campaign?.name || '—'}</span>
               <span style={{ width: 100, flex: 'none', fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
