@@ -119,7 +119,7 @@ export default function RewardClaim() {
     );
   }
 
-  const { state, reward, firstName, expiresAt, pass, voucher, bookingUrl } = data;
+  const { state, reward, firstName, expiresAt, pass, voucher, bookingUrl, draw } = data;
   const expiry = expiresAt ? new Date(expiresAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
   // Screen-reader announcement — the state can flip asynchronously (a merchant
   // scan elsewhere), so a live region voices the change without a visual cue.
@@ -139,7 +139,8 @@ export default function RewardClaim() {
   const unlocked = state === 'unlocked';
   const wordmarkBase = (brand.wordmark || 'Redeem.').replace(/\.$/, '');
   const kicker = {
-    reserved: 'RESERVATION PASS',
+    reserved: draw ? 'LUCKY DRAW PASS' : 'RESERVATION PASS',
+    boost_confirmed: 'SESSION RECORDED',
     unlocked: 'VOUCHER · UNLOCKED',
     redeemed: 'VOUCHER · REDEEMED',
   }[state] || 'REWARD';
@@ -167,31 +168,73 @@ export default function RewardClaim() {
 
         {state === 'reserved' && (
           <>
-            <p className="mt-3 text-center font-serif italic font-semibold text-4xl leading-none text-[#C89B3C]">Reserved.</p>
+            <p className="mt-3 text-center font-serif italic font-semibold text-4xl leading-none text-[#C89B3C]">
+              {draw ? "You're in." : 'Reserved.'}
+            </p>
             <div className="mt-4 flex items-center gap-3">
               <span className="h-px flex-1 bg-[#E6E0D1]" />
               <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#6B6558]">
-                {reward?.partnerName || 'Rewards'}
+                {draw ? 'LUCKY DRAW PASS' : (reward?.partnerName || 'Rewards')}
               </span>
               <span className="h-px flex-1 bg-[#E6E0D1]" />
             </div>
-            <h1 className="mt-2 text-center font-serif text-2xl font-semibold leading-tight">{reward?.title}</h1>
+            <h1 className="mt-2 text-center font-serif text-2xl font-semibold leading-tight">{draw?.name || reward?.title}</h1>
             {pass?.qrDataUrl && (
               <div className="mx-auto mt-4 flex h-64 w-64 max-w-full items-center justify-center border-2 border-[#E6E0D1] bg-white">
-                <img src={pass.qrDataUrl} alt="Reservation pass QR" className="h-52 w-52" />
+                <img src={pass.qrDataUrl} alt={draw ? 'Entry pass QR' : 'Reservation pass QR'} className="h-52 w-52" />
               </div>
             )}
             <div className="mt-4 flex items-center justify-center gap-2">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#C89B3C]" aria-hidden="true" />
-              <p className="font-serif italic">Held for {firstName || 'you'} — unlock at your appointment</p>
+              <p className="font-serif italic">
+                {draw
+                  ? `Held for ${firstName || 'you'} — 1 chance in the draw now`
+                  : `Held for ${firstName || 'you'} — unlock at your appointment`}
+              </p>
             </div>
             <div className="mt-5 space-y-1 text-center">
-              <p className="font-mono text-sm font-medium">CODE · REVEALED ON UNLOCK</p>
-              {expiry && (
+              <p className="font-mono text-sm font-medium">
+                {draw
+                  ? `${draw.multiplier || 10}X YOUR CHANCES WHEN YOU MEET A CONSULTANT`
+                  : 'CODE · REVEALED ON UNLOCK'}
+              </p>
+              {draw?.boostDeadline ? (
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6B6558]">
+                  Complete your review by {draw.boostDeadline}
+                </p>
+              ) : (!draw && expiry && (
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6B6558]">Expires {expiry}</p>
-              )}
+              ))}
               <p className="text-xs text-[#8B8477]">
-                This pass is not a voucher yet — only your consultant can activate it.
+                {draw
+                  ? 'Your consultant scans this pass at the session to add your extra chances.'
+                  : 'This pass is not a voucher yet — only your consultant can activate it.'}
+              </p>
+              <p className="font-mono text-[10px] tracking-[0.12em] text-[#8B8477]">POWERED BY MKTR</p>
+            </div>
+          </>
+        )}
+
+        {state === 'boost_confirmed' && (
+          <>
+            <p className="mt-3 text-center font-serif italic font-semibold text-4xl leading-none text-[#C89B3C]">
+              ×{draw?.multiplier || 10} confirmed.
+            </p>
+            <div className="mt-4 flex items-center gap-3">
+              <span className="h-px flex-1 bg-[#E6E0D1]" />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#6B6558]">LUCKY DRAW</span>
+              <span className="h-px flex-1 bg-[#E6E0D1]" />
+            </div>
+            <h1 className="mt-2 text-center font-serif text-2xl font-semibold leading-tight">{draw?.name || reward?.title}</h1>
+            <div className="mt-6 flex items-center justify-center gap-2">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#C89B3C]" aria-hidden="true" />
+              <p className="font-serif italic">
+                Your review is recorded — {firstName || 'you'} now hold{firstName ? 's' : ''} {draw?.multiplier || 10} chances in the draw.
+              </p>
+            </div>
+            <div className="mt-5 space-y-1 text-center">
+              <p className="text-xs text-[#8B8477]">
+                Nothing else to do — winners are contacted directly after the draw. We never ask you to pay to release a prize.
               </p>
               <p className="font-mono text-[10px] tracking-[0.12em] text-[#8B8477]">POWERED BY MKTR</p>
             </div>

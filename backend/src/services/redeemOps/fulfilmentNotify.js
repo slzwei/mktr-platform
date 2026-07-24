@@ -5,6 +5,7 @@ import { logger } from '../../utils/logger.js';
 import { maskEmail } from '../../utils/redactTokens.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../../utils/customerHost.js';
 import { renderQrCardPng } from './qrCardRenderer.js';
+import { boostDeadlineLong } from './drawLink.js';
 
 /**
  * Consumer voucher delivery on unlock (docs/redeem-ops/MKTR_INTEGRATION.md §2).
@@ -38,7 +39,7 @@ export function makeFulfilmentNotify(overrides = {}) {
    * Editorial voucher-card PNG for the email's inline QR; a renderer failure
    * degrades to the plain QR so delivery itself never rides on the compositor.
    */
-  async function cardOrBareQr({ state, qrContent, entitlement, prospect, rewardName, partnerName, shortCode, hostChoice }) {
+  async function cardOrBareQr({ state, qrContent, entitlement, prospect, rewardName, partnerName, shortCode, hostChoice, draw = null }) {
     try {
       return await d.renderQrCard({
         state,
@@ -49,6 +50,7 @@ export function makeFulfilmentNotify(overrides = {}) {
         shortCode,
         expiresAt: entitlement.expiresAt,
         wordmark: hostChoice === 'mktr' ? 'MKTR.' : 'Redeem.',
+        draw, // PR-4 (D5): draw-voiced frame strings on the card
       });
     } catch (err) {
       d.logger.warn('redeem_ops.fulfilment.qr_card_fallback', { entitlementId: entitlement.id, error: err?.message });
@@ -98,15 +100,28 @@ export function makeFulfilmentNotify(overrides = {}) {
   }
 
   /** Reservation-pass email at capture (agent_unlock policy). */
-  async function sendReservationEmail({ entitlement, prospect, presentationToken }) {
+  async function sendReservationEmail({ entitlement, prospect, presentationToken, drawCtx = null }) {
     if (!canEmailProspect(prospect)) return { sent: false, skipped: 'no_email' };
     const { activation, rewardName, partnerName } = await loadOfferContext(entitlement);
     const { link, hostChoice } = await buildClaimUrl(activation, presentationToken);
 
     const qrPng = await cardOrBareQr({
       state: 'pass', qrContent: link, entitlement, prospect, rewardName, partnerName, hostChoice,
+      draw: drawCtx ? { multiplier: drawCtx.multiplier, boostDeadlineLong: boostDeadlineLong(drawCtx.boostClosesAt) } : null,
     });
-    const html = `
+    // Draw voice (PR-4, F13/D5): an entrant who just joined a lucky draw must
+    // read DRAW copy — "1 chance now, ×N when you meet the consultant" — not
+    // partner-reward reservation copy (Shawn's D5 line, verbatim register).
+    const html = drawCtx ? `
+      <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
+        <h2 style="margin:0 0 8px">You're in the draw 🎉</h2>
+        <p>Hi ${escapeHtml(prospect.firstName || 'there')},</p>
+        <p>Your entry to <strong>${escapeHtml(drawCtx.drawName)}</strong> is confirmed — you hold <strong>1 chance</strong> in the draw right now.</p>
+        <p><strong>${drawCtx.multiplier}x your chances when you meet with a consultant:</strong> complete your complimentary 20-minute financial review and they will scan this pass at the session.</p>
+        <p style="text-align:center;margin:20px 0"><img src="cid:reservation-qr" width="320" height="320" style="max-width:100%" alt="Entry pass QR"/></p>
+        <p style="text-align:center"><a href="${link}" style="color:#2563eb">View your entry pass</a></p>
+        <p style="color:#6b7280;font-size:12px">Reviews must be completed by ${escapeHtml(boostDeadlineLong(drawCtx.boostClosesAt) || 'the close date')} to count. We never ask you to pay to release a prize.</p>
+      </div>` : `
       <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
         <h2 style="margin:0 0 8px">Your ${escapeHtml(rewardName)} is reserved 🎁</h2>
         <p>Hi ${escapeHtml(prospect.firstName || 'there')},</p>
@@ -119,11 +134,37 @@ export function makeFulfilmentNotify(overrides = {}) {
       </div>`;
     return deliver({
       to: prospect.email,
-      subject: `Reserved for you: ${rewardName}`,
+      subject: drawCtx ? `You're in the draw — ${drawCtx.drawName}` : `Reserved for you: ${rewardName}`,
       html,
-      text: `Your ${rewardName} from ${partnerName} is reserved. Show this link's QR to your consultant at your review to unlock it: ${link}`,
+      text: drawCtx
+        ? `Your entry to ${drawCtx.drawName} is confirmed — 1 chance now. ${drawCtx.multiplier}x your chances when you meet with a consultant (scan this pass at the session): ${link}`
+        : `Your ${rewardName} from ${partnerName} is reserved. Show this link's QR to your consultant at your review to unlock it: ${link}`,
       context: hostChoice === 'mktr' ? 'mktr' : 'redeem',
-      attachments: [{ filename: 'reservation.png', content: qrPng, cid: 'reservation-qr' }],
+      attachments: [{ filename: drawCtx ? 'entry-pass.png' : 'reservation.png', content: qrPng, cid: 'reservation-qr' }],
+    }, prospect.email);
+  }
+
+  /** "×N confirmed" receipt at a recorded draw session (PR-4, F13 — draw
+   * rails never get the partner-voucher email; there is nothing to redeem). */
+  async function sendBoostReceiptEmail({ entitlement, prospect, drawCtx }) {
+    if (!canEmailProspect(prospect)) return { sent: false, skipped: 'no_email' };
+    const m = drawCtx?.multiplier || 10;
+    const drawName = drawCtx?.drawName || 'the lucky draw';
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
+        <h2 style="margin:0 0 8px">×${m} confirmed 🎉</h2>
+        <p>Hi ${escapeHtml(prospect.firstName || 'there')},</p>
+        <p>Your consultant has recorded your completed review — your entry to
+        <strong>${escapeHtml(drawName)}</strong> now holds <strong>${m} chances</strong> instead of one.</p>
+        <p style="color:#6b7280;font-size:12px">Nothing else to do — winners are contacted directly after the draw.
+        We never ask you to pay to release a prize.</p>
+      </div>`;
+    return deliver({
+      to: prospect.email,
+      subject: `×${m} confirmed — your ${drawName} entries`,
+      html,
+      text: `Your completed review has been recorded — your entry to ${drawName} now holds ${m} chances instead of one.`,
+      context: 'redeem',
     }, prospect.email);
   }
 
@@ -180,7 +221,7 @@ export function makeFulfilmentNotify(overrides = {}) {
     return { link, waMessage, waUrl, waUnavailableReason: waUrl ? null : 'no_phone' };
   }
 
-  return { sendReservationEmail, sendVoucherEmail, buildClaimUrl, buildShareBundle };
+  return { sendReservationEmail, sendVoucherEmail, sendBoostReceiptEmail, buildClaimUrl, buildShareBundle };
 }
 
 function escapeHtml(s) {

@@ -28,7 +28,13 @@ export const unlockEntitlement = asyncHandler(async (req, res) => {
   );
   // Service enforces the consultant binding: non-admin callers must be the
   // lead's assigned consultant; role=admin overrides (audited as via=manual).
-  const result = await entitlementService.unlockEntitlement(body, req.user, 'manual');
+  // via derivation (PR-4, decision D2 / old-plan F4): a resolving
+  // presentationToken is token-backed evidence — the SAME standard the
+  // external HMAC route already trusts — and counts as agent_scan (instant
+  // ×N boost). prospectId-only and admin-override calls stay 'manual'
+  // (review-gated at seal).
+  const via = body.presentationToken ? 'agent_scan' : 'manual';
+  const result = await entitlementService.unlockEntitlement(body, req.user, via);
   const e = result.entitlement;
   res.json({
     success: true,
@@ -37,6 +43,9 @@ export const unlockEntitlement = asyncHandler(async (req, res) => {
       // Whether a voucher email was scheduled by THIS unlock — the toast must
       // not claim "email sent" for replays or no-email leads.
       emailQueued: result.emailQueued === true,
+      // Draw rails: the ×N the scan just recorded (null on trial rails) —
+      // the console toasts "Session recorded — ×N" instead of voucher copy.
+      drawBoost: result.drawBoost || null,
       // The raw voucher token is NOT returned here — it travels to the
       // consumer via the unlock email; staff see only the hint.
       entitlement: {
@@ -47,6 +56,23 @@ export const unlockEntitlement = asyncHandler(async (req, res) => {
         unlockedVia: e.unlockedVia,
       },
     },
+  });
+});
+
+/** Undo a recorded draw session (PR-4, CX23) — draw rails only, refuses at/
+ * after boostClosesAt (race-free vs seal by the window rule). */
+export const undoSessionUnlock = asyncHandler(async (req, res) => {
+  const body = validateBody(
+    Joi.object({ reason: Joi.string().max(200).allow('', null) }),
+    req.body || {}
+  );
+  const result = await entitlementService.undoSessionUnlock(
+    req.params.id, req.user, { reason: body.reason || null }, req.id
+  );
+  const e = result.entitlement;
+  res.json({
+    success: true,
+    data: { entitlement: { id: e.id, status: e.status, unlockedVia: e.unlockedVia } },
   });
 });
 

@@ -129,17 +129,35 @@ export default function RedemptionsPage() {
     mutationFn: (body) => redeemOpsApi.unlockEntitlement(body),
     onSuccess: (data) => {
       // Truthful toast: only claim an email went out when one was queued.
+      // Draw rails (PR-4): the scan RECORDED A SESSION (×N boost evidence) —
+      // there is no voucher and never voucher copy.
       toast.success(
-        data?.already
-          ? 'Already unlocked'
-          : data?.emailQueued
-            ? 'Voucher unlocked — email with QR sent to the customer'
-            : 'Voucher unlocked — no email on file; use Copy link to share the voucher'
+        data?.drawBoost
+          ? (data?.already
+            ? 'Session already recorded'
+            : `Session recorded — ×${data.drawBoost.multiplier} confirmed${data?.emailQueued ? ' (receipt emailed)' : ''}`)
+          : data?.already
+            ? 'Already unlocked'
+            : data?.emailQueued
+              ? 'Voucher unlocked — email with QR sent to the customer'
+              : 'Voucher unlocked — no email on file; use Copy link to share the voucher'
       );
       setActivateToken(null);
+      setVerified(null);
       queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'entitlements'] });
     },
     onError: (err) => toast.error('Unlock failed', { description: err.message }),
+  });
+
+  // PR-4 (CX23): undo a recorded draw session — the entry drops back to 1×;
+  // a genuine later re-scan records (and boosts) again. Pre-cutoff only.
+  const undoSessionMutation = useMutation({
+    mutationFn: (id) => redeemOpsApi.undoSession(id),
+    onSuccess: () => {
+      toast.success('Session undone — the entry is back to 1× and can be re-scanned');
+      queryClient.invalidateQueries({ queryKey: ['redeem-ops', 'entitlements'] });
+    },
+    onError: (err) => toast.error('Undo failed', { description: err.message }),
   });
 
   const resendMutation = useMutation({
@@ -308,11 +326,28 @@ export default function RedemptionsPage() {
       <Button
         size="sm"
         variant="outline"
-        aria-label={`Unlock — ${holderName}`}
+        aria-label={`${e.drawLinked ? 'Record session' : 'Unlock'} — ${holderName}`}
         disabled={unlockMutation.isPending}
         onClick={() => unlockMutation.mutate({ prospectId: e.prospect.id })}
       >
-        Unlock
+        {e.drawLinked ? 'Record session' : 'Unlock'}
+      </Button>
+    ) : null;
+    // PR-4 (CX23): a recorded draw session is reversible until the boost
+    // window closes; the server refuses after (seal territory).
+    const undoButton = !closed && e.canUndoSession ? (
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-label={`Undo session — ${holderName}`}
+        disabled={undoSessionMutation.isPending}
+        onClick={() => {
+          if (window.confirm(`Undo the recorded session for ${holderName}? Their entry drops back to 1× — a genuine re-scan can record it again.`)) {
+            undoSessionMutation.mutate(e.id);
+          }
+        }}
+      >
+        Undo session
       </Button>
     ) : null;
     // Cancel voids the reward (QR dies, inventory returns, phone slot frees).
@@ -413,6 +448,7 @@ export default function RedemptionsPage() {
             </Button>
           )}
           {unlockButton}
+          {undoButton}
           {cancelButton}
           {voidButton}
         </span>
@@ -459,12 +495,18 @@ export default function RedemptionsPage() {
           {verified && (
             <div
               className="rounded-xl p-4 space-y-2"
-              style={{ background: verified.valid ? 'var(--ro-tag-green-bg)' : 'var(--ro-tag-red-bg)' }}
+              style={{ background: verified.valid || verified.canRecordSession ? 'var(--ro-tag-green-bg)' : 'var(--ro-tag-red-bg)' }}
             >
               <div className="flex items-center justify-between">
                 <p className="font-semibold m-0">{verified.reward?.title}</p>
-                <RoTag tone={verified.valid ? 'redeemed' : 'void'}>
-                  {verified.valid ? 'Valid' : prettyEnum(verified.state)}
+                <RoTag tone={verified.valid || verified.canRecordSession ? 'redeemed' : 'void'}>
+                  {verified.valid
+                    ? 'Valid'
+                    : verified.state === 'draw_pass'
+                      ? (verified.canRecordSession ? 'Entry pass' : 'Boost window closed')
+                      : verified.state === 'draw_session_recorded'
+                        ? `Session recorded ×${verified.drawMultiplier || ''}`
+                        : prettyEnum(verified.state)}
                 </RoTag>
               </div>
               {verified.holder && (
@@ -485,6 +527,17 @@ export default function RedemptionsPage() {
                   onClick={() => completeMutation.mutate()}
                 >
                   {completeMutation.isPending ? 'Redeeming…' : 'Confirm redemption'}
+                </Button>
+              )}
+              {verified.canRecordSession && (
+                // PR-4 (F4/D2): the scan front door — token-backed evidence,
+                // instant ×N. This is the button that makes the boost earnable.
+                <Button
+                  size="sm"
+                  disabled={unlockMutation.isPending}
+                  onClick={() => unlockMutation.mutate({ presentationToken: (verified.token ?? token).trim() })}
+                >
+                  {unlockMutation.isPending ? 'Recording…' : `Record session (×${verified.drawMultiplier || 10})`}
                 </Button>
               )}
             </div>
@@ -876,10 +929,12 @@ export default function RedemptionsPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Activate this reward?</DialogTitle>
+            <DialogTitle>Record this scan?</DialogTitle>
             <DialogDescription>
-              This issues the customer&apos;s voucher now and sends it to them, drawing from the
-              campaign&apos;s allocation. You can cancel it afterwards if it was a mistake.
+              For a partner reward this issues the customer&apos;s voucher now and sends it to them
+              (drawing from the campaign&apos;s allocation). For a lucky-draw entry pass it records
+              their completed session — the ×N boost. Mistakes can be cancelled (voucher) or
+              undone (session) afterwards.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -894,7 +949,7 @@ export default function RedemptionsPage() {
               disabled={unlockMutation.isPending}
               onClick={() => unlockMutation.mutate({ presentationToken: activateToken })}
             >
-              {unlockMutation.isPending ? 'Activating…' : 'Activate reward'}
+              {unlockMutation.isPending ? 'Recording…' : 'Confirm'}
             </Button>
           </DialogFooter>
         </DialogContent>

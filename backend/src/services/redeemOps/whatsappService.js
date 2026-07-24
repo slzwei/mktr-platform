@@ -3,6 +3,7 @@ import { RewardOffer, PartnerOrganisation } from '../../models/index.js';
 import { logger } from '../../utils/logger.js';
 import { renderQrCardPng } from './qrCardRenderer.js';
 import { isSendBlocked } from '../consentService.js';
+import { boostDeadlineLong } from './drawLink.js';
 
 /**
  * Consumer WhatsApp delivery for reward credentials (trial-reward PR E,
@@ -273,13 +274,34 @@ export function makeWhatsappService(overrides = {}) {
     }
   }
 
-  /** Reservation pass at capture (agent_unlock policy). QR = the claim link. */
-  async function sendReservationWhatsApp({ entitlement, prospect, presentationToken }) {
+  /** Reservation pass at capture (agent_unlock policy). QR = the claim link.
+   * Draw rails (PR-4, F13): the APPROVED `draw_entry_pass` UTILITY template
+   * (id 2818476365205485) — receipt-tone body carrying Shawn's D5 line
+   * verbatim; 4 params = name, draw name, full pass link, boost deadline. */
+  async function sendReservationWhatsApp({ entitlement, prospect, presentationToken, drawCtx = null }) {
     const { rewardName, partnerName } = await offerContextOf(entitlement);
+    const passLink = `${claimOrigin()}/r/${presentationToken}`;
+    if (drawCtx) {
+      return sendTemplate({
+        prospect,
+        templateName: process.env.WHATSAPP_TEMPLATE_DRAW_PASS || 'draw_entry_pass',
+        qrContent: passLink,
+        card: {
+          state: 'pass', rewardName, partnerName, expiresAt: entitlement.expiresAt,
+          draw: { multiplier: drawCtx.multiplier, boostDeadlineLong: boostDeadlineLong(drawCtx.boostClosesAt) },
+        },
+        params: [
+          cleanParam(prospect?.firstName, 'there'),
+          cleanParam(drawCtx.drawName, 'the lucky draw'),
+          passLink,
+          cleanParam(boostDeadlineLong(drawCtx.boostClosesAt), 'the close date'),
+        ],
+      });
+    }
     return sendTemplate({
       prospect,
       templateName: process.env.WHATSAPP_TEMPLATE_PASS || 'reward_pass',
-      qrContent: `${claimOrigin()}/r/${presentationToken}`,
+      qrContent: passLink,
       card: { state: 'pass', rewardName, partnerName, expiresAt: entitlement.expiresAt },
       params: [
         cleanParam(prospect?.firstName, 'there'),

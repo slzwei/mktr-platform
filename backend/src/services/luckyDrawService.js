@@ -381,15 +381,26 @@ export function makeLuckyDrawService(overrides = {}) {
     // boostClosesAt is unset, and the old seal-time fallback silently widened
     // the window past what entrants were told.
     const cutoff = draw.boostClosesAt || draw.closesAt;
-    const events = await d.RedemptionEvent.findAll({
+    const allEvents = await d.RedemptionEvent.findAll({
       where: {
         entitlementId: { [Op.in]: entitlements.map((e) => e.id) },
-        type: 'unlocked',
+        type: { [Op.in]: ['unlocked', 'unlock_reversed'] },
         createdAt: { [Op.lt]: cutoff },
       },
-      attributes: ['id', 'entitlementId', 'metadata', 'createdAt'],
+      attributes: ['id', 'entitlementId', 'type', 'metadata', 'createdAt'],
       order: [['createdAt', 'ASC']],
     });
+    // Undo (PR-4, Codex R1 CX23): an `unlock_reversed` event kills EXACTLY the
+    // unlock it supersedes (explicit causal ref, never timestamp guessing); a
+    // later genuine re-scan is a fresh unlocked event and boosts again. Undo
+    // refuses at/after the cutoff and seal only runs at/after it, so every
+    // reversal is inside this window by construction.
+    const reversedEventIds = new Set(
+      allEvents
+        .filter((e) => e.type === 'unlock_reversed' && e.metadata?.supersedesEventId)
+        .map((e) => String(e.metadata.supersedesEventId))
+    );
+    const events = allEvents.filter((e) => e.type === 'unlocked' && !reversedEventIds.has(String(e.id)));
 
     const reviews = await d.DrawBoostReview.findAll({
       where: { drawId: draw.id },

@@ -13,6 +13,7 @@ import { canEmailProspect, makeFulfilmentNotify } from './fulfilmentNotify.js';
 import { canWhatsAppProspect, waEnabled, waRecipient } from './whatsappService.js';
 import { isSendBlocked } from '../consentService.js';
 import { SCREENING_REASONS } from '../screeningConstants.js';
+import { makeDrawLink } from './drawLink.js';
 
 const DEFAULT_RESERVATION_DAYS = 30;
 const DEFAULT_REDEMPTION_DAYS = 90;
@@ -69,10 +70,16 @@ export function makeEntitlementService(overrides = {}) {
     notifyReservation: null, // injected by entitlementWiring (reservation-pass email) — null-safe
     notifyUnlockWa: null, // injected by entitlementWiring (voucher WhatsApp, PR E) — null-safe
     notifyReservationWa: null, // injected by entitlementWiring (reservation-pass WhatsApp, PR E) — null-safe
+    notifyBoostReceipt: null, // injected by entitlementWiring (PR-4 "×N confirmed" email) — null-safe
+    drawLink: null, // PR-4: built AFTER the merge from the service's OWN models (DI-hermetic)
     builders: null, // share/claim-URL builders; defaults lazily to makeFulfilmentNotify()
     isSendBlocked, // PR C: erasure stop at the send choke point (transactional purpose)
     ...overrides,
   };
+  // Draw-rail detection built from the service's OWN (possibly DI'd) models —
+  // a suite that mocks Activation/Campaign gets a hermetic drawLink for free;
+  // an explicit drawLink override still wins.
+  if (!d.drawLink) d.drawLink = makeDrawLink({ Activation: d.Activation, Campaign: d.Campaign });
   const builders = () => {
     if (!d.builders) d.builders = makeFulfilmentNotify();
     return d.builders;
@@ -145,11 +152,14 @@ export function makeEntitlementService(overrides = {}) {
    */
   function queueDelivery({
     entitlement, prospect, kind, presentationToken = null, voucherToken = null,
+    drawCtx = null,
     channels = ['whatsapp', 'email'],
   }) {
     const args = kind === 'voucher'
       ? { entitlement, voucherToken }
-      : { entitlement, presentationToken };
+      : kind === 'boost_receipt'
+        ? { entitlement, drawCtx }
+        : { entitlement, presentationToken, drawCtx };
     const fire = (fn, channel) => {
       const delivery = Promise.resolve()
         .then(async () => {
@@ -185,12 +195,13 @@ export function makeEntitlementService(overrides = {}) {
     };
 
     if (channels.includes('whatsapp')) {
-      const waFn = kind === 'voucher' ? d.notifyUnlockWa : d.notifyReservationWa;
+      // boost_receipt has no approved WA template yet — email-only (PR-4).
+      const waFn = kind === 'voucher' ? d.notifyUnlockWa : kind === 'boost_receipt' ? null : d.notifyReservationWa;
       if (typeof waFn === 'function') fire(waFn, 'whatsapp');
     }
 
     if (!channels.includes('email')) return false;
-    const fn = kind === 'voucher' ? d.notifyUnlock : d.notifyReservation;
+    const fn = kind === 'voucher' ? d.notifyUnlock : kind === 'boost_receipt' ? d.notifyBoostReceipt : d.notifyReservation;
     if (typeof fn !== 'function' || !canEmailProspect(prospect)) return false;
     fire(fn, 'email');
     return true;
@@ -291,6 +302,19 @@ export function makeEntitlementService(overrides = {}) {
       const reservationDays = offer.claimExpiryDays || DEFAULT_RESERVATION_DAYS;
       const redemptionDays = offer.redemptionExpiryDays || DEFAULT_REDEMPTION_DAYS;
 
+      // Draw rails (PR-4, Codex R1 CX7): the pass must die WITH the boost
+      // window — a relative claim window crossing boostClosesAt would let
+      // post-cutoff scans "succeed" while earning nothing. Clamp only while
+      // the window is still open; a pass minted after it keeps the standard
+      // window (it is a plain review pass, no boost to protect).
+      // Fail-open to a standard window: a campaign-fetch hiccup must never
+      // block issuance — the clamp is protection, not a precondition.
+      const drawCtx = await d.drawLink.drawContextForActivation(activation).catch(() => null);
+      const relativeExpiryMs = Date.now() + (onCapture ? redemptionDays : reservationDays) * 24 * 3600 * 1000;
+      const expiryMs = !onCapture && drawCtx?.boostCutoffMs && drawCtx.boostCutoffMs > Date.now()
+        ? Math.min(relativeExpiryMs, drawCtx.boostCutoffMs)
+        : relativeExpiryMs;
+
       const presentation = mintToken();
       const voucher = onCapture ? mintToken() : null;
 
@@ -335,7 +359,7 @@ export function makeEntitlementService(overrides = {}) {
             status: onCapture ? 'issued' : 'eligible',
             unlockedAt: onCapture ? new Date() : null,
             unlockedVia: onCapture ? 'auto_on_capture' : null,
-            expiresAt: new Date(Date.now() + (onCapture ? redemptionDays : reservationDays) * 24 * 3600 * 1000),
+            expiresAt: new Date(expiryMs),
             presentationTokenHash: presentation.hash,
             tokenHash: voucher ? voucher.hash : null,
             tokenHint: voucher ? tokenHintOf(voucher.raw) : null,
@@ -360,6 +384,7 @@ export function makeEntitlementService(overrides = {}) {
         kind: onCapture ? 'voucher' : 'pass',
         presentationToken: onCapture ? null : presentation.raw,
         voucherToken: voucher ? voucher.raw : null,
+        drawCtx, // PR-4: draw-voiced pass (template/card/copy) instead of trial voice
       });
 
       // Raw tokens returned ONCE for delivery (email/link); only hashes persist.
@@ -457,9 +482,24 @@ export function makeEntitlementService(overrides = {}) {
       );
     }
 
+    // Draw rails (PR-4, Codex R1 CX22/CX7): "record session" appends boost
+    // evidence — it must NOT mint a redeemable voucher (no token, claim page
+    // shows "×N confirmed", partner redemption refuses), must NOT overwrite
+    // the pass expiry with a redemption window, and must REFUSE truthfully
+    // once the boost window has closed rather than confirm an unearned ×N.
+    const drawCtx = await d.drawLink.drawContextForEntitlement(entitlement);
+    if (drawCtx?.boostCutoffMs && Date.now() >= drawCtx.boostCutoffMs) {
+      const err = new AppError(
+        `The ×${drawCtx.multiplier} window for "${drawCtx.drawName}" closed on ${drawCtx.boostClosesAt} — this session no longer earns extra entries and must not be recorded as a boost.`,
+        409
+      );
+      err.data = { code: 'DRAW_BOOST_WINDOW_CLOSED', boostClosesAt: drawCtx.boostClosesAt };
+      throw err;
+    }
+
     const offer = await d.RewardOffer.findByPk(entitlement.rewardOfferId);
     const redemptionDays = offer?.redemptionExpiryDays || DEFAULT_REDEMPTION_DAYS;
-    const voucher = mintToken();
+    const voucher = drawCtx ? null : mintToken();
 
     let raced = false;
     await d.sequelize.transaction(async (t) => {
@@ -469,9 +509,17 @@ export function makeEntitlementService(overrides = {}) {
           unlockedAt: new Date(),
           unlockedByUserId: agentUser.id,
           unlockedVia: isAdmin && !prospect ? 'manual' : via,
-          tokenHash: voucher.hash,
-          tokenHint: tokenHintOf(voucher.raw),
-          expiresAt: new Date(Date.now() + redemptionDays * 24 * 3600 * 1000),
+          // Trial rails mint the redemption voucher + window; draw rails keep
+          // token fields null and the RESERVATION expiry untouched (there is
+          // no partner redemption to time-box — CX22, and the untouched
+          // expiry is what makes undoSessionUnlock restoration-free).
+          ...(drawCtx
+            ? {}
+            : {
+                tokenHash: voucher.hash,
+                tokenHint: tokenHintOf(voucher.raw),
+                expiresAt: new Date(Date.now() + redemptionDays * 24 * 3600 * 1000),
+              }),
         },
         {
           where: {
@@ -495,7 +543,8 @@ export function makeEntitlementService(overrides = {}) {
       }
       await writeEvent(t, {
         entitlementId: entitlement.id, type: 'unlocked',
-        actorType: 'agent', actorUserId: agentUser.id, metadata: { via },
+        actorType: 'agent', actorUserId: agentUser.id,
+        metadata: { via, ...(drawCtx ? { draw: true, multiplier: drawCtx.multiplier } : {}) },
       });
     });
     if (raced) {
@@ -505,17 +554,86 @@ export function makeEntitlementService(overrides = {}) {
       // (expiry passed, activation went non-active at commit time) stays 409.
       await entitlement.reload();
       if (['issued', 'redeemed'].includes(entitlement.status)) {
-        return { entitlement, already: true, voucherToken: null, emailQueued: false };
+        return { entitlement, already: true, voucherToken: null, emailQueued: false, drawBoost: drawCtx ? { multiplier: drawCtx.multiplier } : null };
       }
       throw new AppError('Reservation expired, already unlocked, or its activation is no longer active', 409);
     }
 
     await entitlement.reload();
-    // Fire-and-forget voucher email (receipt-tracked)
-    const emailQueued = queueDelivery({
-      entitlement, prospect, kind: 'voucher', voucherToken: voucher.raw,
+    // Fire-and-forget delivery (receipt-tracked): voucher for trial rails,
+    // the "×N confirmed" receipt for draw rails (F13 — never the partner-
+    // redemption voucher email a draw entrant can do nothing with).
+    const emailQueued = drawCtx
+      ? queueDelivery({ entitlement, prospect, kind: 'boost_receipt', drawCtx, channels: ['email'] })
+      : queueDelivery({ entitlement, prospect, kind: 'voucher', voucherToken: voucher.raw });
+    return {
+      entitlement, already: false, voucherToken: drawCtx ? null : voucher.raw, emailQueued,
+      drawBoost: drawCtx ? { multiplier: drawCtx.multiplier, boostClosesAt: drawCtx.boostClosesAt } : null,
+    };
+  }
+
+  /**
+   * Undo a recorded draw session (PR-4, Codex R1 CX23 + decision D2
+   * "reversible"). Draw rails ONLY — trial vouchers are money-shaped and keep
+   * their existing cancel/void paths. Race-free vs seal BY THE WINDOW RULE:
+   * undo refuses at/after boostClosesAt, and seal can only run at/after it,
+   * so the two can never interleave. Append-only: the reversal is an
+   * `unlock_reversed` event carrying the superseded unlock's event id —
+   * collectBoostEvidence skips superseded unlocks, and a LATER genuine
+   * re-scan mints a fresh unlocked event that boosts again. The status flip
+   * issued→eligible is restoration-free because the draw unlock never touched
+   * token fields or expiry.
+   */
+  async function undoSessionUnlock(id, user, { reason = null } = {}, requestId = null) {
+    const entitlement = await d.RewardEntitlement.findByPk(id);
+    if (!entitlement) throw new AppError('Entitlement not found', 404);
+    const drawCtx = await d.drawLink.drawContextForEntitlement(entitlement);
+    if (!drawCtx) {
+      throw new AppError('Undo applies to lucky-draw session records only — use Cancel/Void for partner vouchers', 409);
+    }
+    if (entitlement.status !== 'issued') {
+      throw new AppError(`Entitlement is ${entitlement.status} — nothing to undo`, 409);
+    }
+    if (drawCtx.boostCutoffMs && Date.now() >= drawCtx.boostCutoffMs) {
+      const err = new AppError(
+        `The boost window closed on ${drawCtx.boostClosesAt} — the pool is sealing/sealed and session records can no longer be undone.`,
+        409
+      );
+      err.data = { code: 'DRAW_BOOST_WINDOW_CLOSED' };
+      throw err;
+    }
+
+    const lastUnlock = await d.RedemptionEvent.findOne({
+      where: { entitlementId: id, type: 'unlocked' },
+      order: [['createdAt', 'DESC'], ['id', 'DESC']],
+      attributes: ['id'],
     });
-    return { entitlement, already: false, voucherToken: voucher.raw, emailQueued };
+
+    let undone = false;
+    await d.sequelize.transaction(async (t) => {
+      const [count] = await d.RewardEntitlement.update(
+        { status: 'eligible', unlockedAt: null, unlockedByUserId: null, unlockedVia: null },
+        { where: { id, status: 'issued' }, transaction: t }
+      );
+      if (count === 0) return; // raced a redemption/cancel — report below
+      await writeEvent(t, {
+        entitlementId: id, type: 'unlock_reversed', actorType: 'staff', actorUserId: user?.id || null,
+        metadata: {
+          supersedesEventId: lastUnlock?.id || null,
+          ...(reason ? { reason: String(reason).slice(0, 200) } : {}),
+        },
+      });
+      await d.audit.recordAuditEvent({
+        actorUser: user, action: 'entitlement.session_undone', entityType: 'reward_entitlement',
+        entityId: id, reason, requestId, transaction: t,
+      });
+      undone = true;
+    });
+    if (!undone) {
+      throw new AppError('Entitlement changed state — nothing was undone', 409);
+    }
+    await entitlement.reload();
+    return { entitlement, supersededEventId: lastUnlock?.id || null };
   }
 
   /** Manual issue by redemption_ops (requires an existing lead). */
@@ -568,6 +686,13 @@ export function makeEntitlementService(overrides = {}) {
     const kind = entitlement.status === 'eligible' ? 'pass'
       : entitlement.status === 'issued' ? 'voucher' : null;
     if (!kind) throw new AppError(`Entitlement is ${entitlement.status}`, 409);
+    // Draw rails (PR-4/CX22): a recorded session holds NO voucher — rotating
+    // tokenHash and mailing partner-redemption copy would mint the credential
+    // CX22 forbids. Re-sending the ENTRY PASS (eligible) stays fine.
+    const resendDrawCtx = await d.drawLink.drawContextForEntitlement(entitlement).catch(() => null);
+    if (kind === 'voucher' && resendDrawCtx) {
+      throw new AppError('This is a recorded lucky-draw session — there is no voucher to resend', 409);
+    }
     if (entitlement.expiresAt && new Date(entitlement.expiresAt) <= new Date()) {
       throw new AppError('Reward has expired — nothing to resend', 409);
     }
@@ -652,6 +777,7 @@ export function makeEntitlementService(overrides = {}) {
       entitlement, prospect, kind,
       presentationToken: kind === 'pass' ? fresh.raw : null,
       voucherToken: kind === 'voucher' ? fresh.raw : null,
+      drawCtx: resendDrawCtx,
       channels: [wantWa ? 'whatsapp' : null, wantEmail ? 'email' : null].filter(Boolean),
     });
     return { entitlement, kind, channel, emailQueued };
@@ -831,6 +957,7 @@ export function makeEntitlementService(overrides = {}) {
           entitlement: ent, prospect: ent.prospect, kind,
           presentationToken: kind === 'pass' ? fresh.raw : null,
           voucherToken: kind === 'voucher' ? fresh.raw : null,
+          drawCtx: await d.drawLink.drawContextForEntitlement(ent).catch(() => null),
         });
         recovered += 1;
       } catch (err) {
@@ -905,10 +1032,23 @@ export function makeEntitlementService(overrides = {}) {
       if (!latestReceipt.has(key)) latestReceipt.set(key, e); // DESC → first is latest
     }
 
+    // Draw-linkage per activation (PR-4) — one lookup per distinct activation,
+    // so the console can voice draw rows ("Session ×N") and offer Undo.
+    const drawByActivation = new Map();
+    for (const actId of [...new Set(rows.map((r) => r.activationId))]) {
+      drawByActivation.set(actId, await d.drawLink.drawContextForActivation(actId).catch(() => null));
+    }
+
     // Mask phones by default (redemptions.verify unmasks at the console)
+    const nowMs = Date.now();
     const masked = rows.map((r) => {
       const j = r.toJSON();
       j.emailDeliverable = canEmailProspect(j.prospect);
+      const dctx = drawByActivation.get(j.activationId) || null;
+      j.drawLinked = !!dctx;
+      j.drawMultiplier = dctx?.multiplier || null;
+      j.canUndoSession = !!dctx && j.status === 'issued'
+        && (!dctx.boostCutoffMs || nowMs < dctx.boostCutoffMs);
       // Capability only (waEnabled + a WA-able phone; no ledger read in the
       // bulk list projection) — the ledger-based send-time gate (erasure-only
       // for transactional, 3sites) stays authoritative. Flag off ⇒ false
@@ -976,7 +1116,7 @@ export function makeEntitlementService(overrides = {}) {
   }
 
   return {
-    issueForProspect, unlockEntitlement, issueManual, cancelEntitlement, resendDelivery,
+    issueForProspect, unlockEntitlement, undoSessionUnlock, issueManual, cancelEntitlement, resendDelivery,
     expireReservations, reconcileMissedLeads, reconcileMissedDeliveries, purgeIssuanceSkips,
     listEntitlements, verificationStampOf,
     cancelLiveEntitlementsForProspectTx,
@@ -986,4 +1126,5 @@ export function makeEntitlementService(overrides = {}) {
 
 const _default = makeEntitlementService();
 export const cancelLiveEntitlementsForProspectTx = (...a) => _default.cancelLiveEntitlementsForProspectTx(...a);
+export const undoSessionUnlock = (...a) => _default.undoSessionUnlock(...a);
 export default _default;

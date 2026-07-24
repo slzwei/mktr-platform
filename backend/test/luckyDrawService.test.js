@@ -349,10 +349,10 @@ function boostScenario({ reviews = [] } = {}) {
     // ent for p4 excluded by the issuedVia != manual query — emulate by not returning it.
   ];
   const events = [
-    { id: 'ev-1', entitlementId: 'ent-1', metadata: { via: 'agent_scan' }, createdAt: new Date('2026-09-01T00:00:00Z') },
-    { id: 'ev-2', entitlementId: 'ent-2', metadata: { via: 'agent_button' }, createdAt: new Date('2026-09-02T00:00:00Z') },
+    { id: 'ev-1', type: 'unlocked', entitlementId: 'ent-1', metadata: { via: 'agent_scan' }, createdAt: new Date('2026-09-01T00:00:00Z') },
+    { id: 'ev-2', type: 'unlocked', entitlementId: 'ent-2', metadata: { via: 'agent_button' }, createdAt: new Date('2026-09-02T00:00:00Z') },
     // p3's voucher was auto-unlocked at capture — NEVER session evidence.
-    { id: 'ev-3', entitlementId: 'ent-3', metadata: { via: 'auto_on_capture' }, createdAt: new Date('2026-09-02T00:00:00Z') },
+    { id: 'ev-3', type: 'unlocked', entitlementId: 'ent-3', metadata: { via: 'auto_on_capture' }, createdAt: new Date('2026-09-02T00:00:00Z') },
   ];
   return buildDeps({ draw: { ...openDraw, status: 'frozen' }, entries, entitlements, events, reviews });
 }
@@ -373,8 +373,8 @@ describe('sealDraw', () => {
     const sc = boostScenario();
     sc.state.draw.boostClosesAt = null;
     const allEvents = [
-      { id: 'ev-early', entitlementId: 'ent-1', metadata: { via: 'agent_scan' }, createdAt: new Date('2026-08-15T00:00:00Z') },
-      { id: 'ev-late', entitlementId: 'ent-2', metadata: { via: 'agent_button' }, createdAt: new Date('2026-09-02T00:00:00Z') },
+      { id: 'ev-early', type: 'unlocked', entitlementId: 'ent-1', metadata: { via: 'agent_scan' }, createdAt: new Date('2026-08-15T00:00:00Z') },
+      { id: 'ev-late', type: 'unlocked', entitlementId: 'ent-2', metadata: { via: 'agent_button' }, createdAt: new Date('2026-09-02T00:00:00Z') },
     ];
     sc.deps.RedemptionEvent.findAll.mockImplementation(async ({ where }) => {
       const ltSym = where?.createdAt ? Object.getOwnPropertySymbols(where.createdAt)[0] : null;
@@ -405,6 +405,29 @@ describe('sealDraw', () => {
     expect(err.data.undecided).toEqual([
       expect.objectContaining({ entitlementId: 'ent-2', prospectId: 'p2' }),
     ]);
+  });
+
+  it('PR-4 (CX23): an unlock_reversed event kills EXACTLY its unlock; a later genuine re-scan boosts again', async () => {
+    // ev-1 (scan) is reversed → e1 stays 1×; then a fresh scan ev-9 → ×10.
+    const undone = boostScenario({ reviews: [{ id: 'r1', drawId: DRAW_ID, entitlementId: 'ent-2', decision: 'rejected' }] });
+    undone.deps.RedemptionEvent.findAll.mockResolvedValue([
+      { id: 'ev-1', type: 'unlocked', entitlementId: 'ent-1', metadata: { via: 'agent_scan' }, createdAt: new Date('2026-09-01T00:00:00Z') },
+      { id: 'ev-r', type: 'unlock_reversed', entitlementId: 'ent-1', metadata: { supersedesEventId: 'ev-1' }, createdAt: new Date('2026-09-02T00:00:00Z') },
+    ]);
+    const sealed = await makeLuckyDrawService(undone.deps).sealDraw(DRAW_ID, ADMIN);
+    expect(Object.fromEntries(undone.state.entries.map((e) => [e.id, e.chances])).e1).toBe(1);
+    expect(sealed.totalChances).toBe(4);
+
+    const rescanned = boostScenario({ reviews: [{ id: 'r1', drawId: DRAW_ID, entitlementId: 'ent-2', decision: 'rejected' }] });
+    rescanned.deps.RedemptionEvent.findAll.mockResolvedValue([
+      { id: 'ev-1', type: 'unlocked', entitlementId: 'ent-1', metadata: { via: 'agent_scan' }, createdAt: new Date('2026-09-01T00:00:00Z') },
+      { id: 'ev-r', type: 'unlock_reversed', entitlementId: 'ent-1', metadata: { supersedesEventId: 'ev-1' }, createdAt: new Date('2026-09-02T00:00:00Z') },
+      { id: 'ev-9', type: 'unlocked', entitlementId: 'ent-1', metadata: { via: 'agent_scan' }, createdAt: new Date('2026-09-03T00:00:00Z') },
+    ]);
+    const sealed2 = await makeLuckyDrawService(rescanned.deps).sealDraw(DRAW_ID, ADMIN);
+    const byId2 = Object.fromEntries(rescanned.state.entries.map((e) => [e.id, e]));
+    expect(byId2.e1).toMatchObject({ chances: 10, boostEventId: 'ev-9' });
+    expect(sealed2.totalChances).toBe(13);
   });
 
   it('boosts scan automatically, approved button ×N, rejected button stays 1×, and commits poolHash', async () => {
@@ -444,7 +467,7 @@ describe('sealDraw', () => {
       reviews: [{ id: 'r1', drawId: DRAW_ID, entitlementId: 'ent-2', decision: 'rejected' }],
     });
     scenario.deps.RedemptionEvent.findAll = jest.fn().mockResolvedValue([
-      { id: 'ev-m', entitlementId: 'ent-1', metadata: { via: 'manual' }, createdAt: new Date('2026-09-01T00:00:00Z') },
+      { id: 'ev-m', type: 'unlocked', entitlementId: 'ent-1', metadata: { via: 'manual' }, createdAt: new Date('2026-09-01T00:00:00Z') },
     ]);
     const svc = makeLuckyDrawService(scenario.deps);
     const err = await svc.sealDraw(DRAW_ID, ADMIN).catch((e) => e);

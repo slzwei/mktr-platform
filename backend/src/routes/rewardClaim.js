@@ -8,6 +8,7 @@ import {
   RewardOfferLocation, RedemptionEvent,
 } from '../models/index.js';
 import { hashToken } from '../services/redeemOps/tokens.js';
+import { drawContextForActivation, boostDeadlineLong } from '../services/redeemOps/drawLink.js';
 
 /**
  * PUBLIC consumer reward view — backs redeem.sg/r/:token
@@ -88,12 +89,42 @@ router.get('/:token', claimLimiter, asyncHandler(async (req, res) => {
     expiresAt: entitlement.expiresAt,
   };
 
+  // Draw-rail voice (PR-4, F13/CX22): the page belongs to a LUCKY DRAW entry
+  // pass — its states are draw states, never partner-voucher states.
+  const drawCtx = await drawContextForActivation(entitlement.activationId).catch(() => null);
+
   // Locked reservation → the meeting pass (only when the link used the presentation token)
   if (entitlement.status === 'eligible' && entitlement.presentationTokenHash === hash && !expired) {
     const qrDataUrl = await QRCode.toDataURL(raw, { width: 280, margin: 1 });
     return res.json({
       success: true,
-      data: { ...base, state: 'reserved', pass: { qrDataUrl } },
+      data: {
+        ...base,
+        state: 'reserved',
+        pass: { qrDataUrl },
+        ...(drawCtx ? {
+          draw: {
+            name: drawCtx.drawName,
+            multiplier: drawCtx.multiplier,
+            boostDeadline: boostDeadlineLong(drawCtx.boostClosesAt) || null,
+          },
+        } : {}),
+      },
+    });
+  }
+
+  // Recorded draw session (PR-4/CX22): the "issued" state on a draw rail is
+  // "×N confirmed" — there is NO voucher, no redemption QR, nothing to spend
+  // at a partner. Rendering the trial voucher here is exactly the credential
+  // CX22 forbids.
+  if (drawCtx && entitlement.status === 'issued') {
+    return res.json({
+      success: true,
+      data: {
+        ...base,
+        state: 'boost_confirmed',
+        draw: { name: drawCtx.drawName, multiplier: drawCtx.multiplier },
+      },
     });
   }
 
