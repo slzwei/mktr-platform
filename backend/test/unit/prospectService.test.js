@@ -160,6 +160,7 @@ function buildMocks() {
     dispatchEvent,
     AppError,
     logger,
+    processLeadOutcome: jest.fn().mockResolvedValue({ dispatched: [] }),
   };
 }
 
@@ -176,6 +177,7 @@ function makeService(mocks) {
     dispatchEvent: mocks.dispatchEvent,
     AppError: mocks.AppError,
     logger: mocks.logger,
+    processLeadOutcome: mocks.processLeadOutcome,
   });
 }
 
@@ -797,6 +799,141 @@ describe('prospectService (unit)', () => {
 
       await expect(service.updateProspect('nonexistent', { leadStatus: 'contacted' }, user))
         .rejects.toThrow('Prospect not found or access denied');
+    });
+
+    // ── won-transition atomicity (Codex R1 #5) ──
+
+    it('a System-Agent-blocked won leaves the status UNCHANGED — validation precedes mutation', async () => {
+      mocks.getSystemAgentId.mockResolvedValue('system-agent-id');
+      const prospect = {
+        ...mocks.mockProspect,
+        leadStatus: 'contacted',
+        assignedAgentId: 'system-agent-id',
+        update: jest.fn().mockResolvedValue(true),
+        save: jest.fn().mockResolvedValue(true),
+        assignedAgent: { firstName: 'System', lastName: 'Agent', email: 'system@mktr.sg' },
+      };
+      mocks.models.Prospect.findOne.mockResolvedValue(prospect);
+
+      await expect(
+        service.updateProspect('prospect-1', { leadStatus: 'won' }, user)
+      ).rejects.toThrow('Lead must be assigned to a real agent before marking as won');
+
+      // The bug this replaces: update() ran first, so the lead persisted as
+      // 'won' with no commission and every retry was inert (oldStatus==='won').
+      expect(prospect.update).not.toHaveBeenCalled();
+      expect(mocks.models.Commission.create).not.toHaveBeenCalled();
+      expect(mocks.processLeadOutcome).not.toHaveBeenCalled();
+    });
+
+    it('won commits status + conversionDate + commission in ONE transaction', async () => {
+      const prospect = {
+        ...mocks.mockProspect,
+        leadStatus: 'contacted',
+        assignedAgentId: 'agent-1',
+        update: jest.fn().mockResolvedValue(true),
+        save: jest.fn().mockResolvedValue(true),
+        assignedAgent: null,
+      };
+      mocks.models.Prospect.findOne.mockResolvedValue(prospect);
+      mocks.getSystemAgentId.mockResolvedValue('system-agent-id');
+
+      await service.updateProspect('prospect-1', { leadStatus: 'won' }, user);
+
+      const [updateArg, updateOpts] = prospect.update.mock.calls[0];
+      expect(updateArg.leadStatus).toBe('won');
+      expect(updateArg.conversionDate).toBeInstanceOf(Date);
+      expect(updateOpts).toEqual({ transaction: mocks.mockTransaction });
+      expect(mocks.models.Commission.create).toHaveBeenCalledWith(
+        expect.anything(),
+        { transaction: mocks.mockTransaction }
+      );
+    });
+
+    // ── admin-recorded down-funnel CAPI hook (Phase 3) ──
+
+    it('fires the down-funnel hook when an admin sets qualified', async () => {
+      const prospect = {
+        ...mocks.mockProspect,
+        leadStatus: 'contacted',
+        assignedAgentId: 'agent-1',
+        update: jest.fn().mockResolvedValue(true),
+        assignedAgent: null,
+      };
+      mocks.models.Prospect.findOne.mockResolvedValue(prospect);
+
+      await service.updateProspect('prospect-1', { leadStatus: 'qualified' }, user);
+
+      expect(mocks.processLeadOutcome).toHaveBeenCalledWith({
+        external_id: 'prospect-1',
+        new_status: 'qualified',
+        occurred_at: expect.any(String),
+      });
+    });
+
+    it('fires the down-funnel hook when an admin sets won', async () => {
+      const prospect = {
+        ...mocks.mockProspect,
+        leadStatus: 'qualified',
+        assignedAgentId: 'agent-1',
+        update: jest.fn().mockResolvedValue(true),
+        save: jest.fn().mockResolvedValue(true),
+        assignedAgent: null,
+      };
+      mocks.models.Prospect.findOne.mockResolvedValue(prospect);
+      mocks.getSystemAgentId.mockResolvedValue('system-agent-id');
+
+      await service.updateProspect('prospect-1', { leadStatus: 'won' }, user);
+
+      expect(mocks.processLeadOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ external_id: 'prospect-1', new_status: 'won' })
+      );
+    });
+
+    it('does NOT re-fire when the status is already terminal (no real transition)', async () => {
+      const prospect = {
+        ...mocks.mockProspect,
+        leadStatus: 'won',
+        assignedAgentId: 'agent-1',
+        update: jest.fn().mockResolvedValue(true),
+        assignedAgent: null,
+      };
+      mocks.models.Prospect.findOne.mockResolvedValue(prospect);
+
+      await service.updateProspect('prospect-1', { leadStatus: 'won' }, user);
+
+      expect(mocks.processLeadOutcome).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fire for non-outcome statuses', async () => {
+      const prospect = {
+        ...mocks.mockProspect,
+        leadStatus: 'new',
+        assignedAgentId: 'agent-1',
+        update: jest.fn().mockResolvedValue(true),
+        assignedAgent: null,
+      };
+      mocks.models.Prospect.findOne.mockResolvedValue(prospect);
+
+      await service.updateProspect('prospect-1', { leadStatus: 'contacted' }, user);
+
+      expect(mocks.processLeadOutcome).not.toHaveBeenCalled();
+    });
+
+    it('a hook failure never breaks the update (fire-and-forget)', async () => {
+      mocks.processLeadOutcome.mockRejectedValue(new Error('CAPI exploded'));
+      const prospect = {
+        ...mocks.mockProspect,
+        leadStatus: 'contacted',
+        assignedAgentId: 'agent-1',
+        update: jest.fn().mockResolvedValue(true),
+        assignedAgent: null,
+      };
+      mocks.models.Prospect.findOne.mockResolvedValue(prospect);
+
+      await expect(
+        service.updateProspect('prospect-1', { leadStatus: 'qualified' }, user)
+      ).resolves.toBeTruthy();
     });
 
     it('only updates fields in the allowlist', async () => {

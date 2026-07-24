@@ -33,6 +33,9 @@ import {
   sendTikTokLeadEvent,
   sendTikTokCompleteRegistrationEvent,
 } from './tiktokEventsService.js';
+// Cycle-safe + graph-neutral: leadOutcomeService imports only models,
+// metaCapiService and consentService — all already in this module's graph.
+import { processLeadOutcome } from './leadOutcomeService.js';
 import { getOrCreateProspectShareLink } from './shortlinkService.js';
 import { isPhoneRecentlyVerified } from './verifiedPhoneStore.js';
 import {
@@ -184,6 +187,7 @@ const defaultDeps = {
   sendCompleteRegistrationEvent: metaSendCompleteRegistrationEvent,
   sendTikTokLeadEvent,
   sendTikTokCompleteRegistrationEvent,
+  processLeadOutcome,
   getOrCreateProspectShareLink,
   isPhoneRecentlyVerified,
   resolveConsumerForCaptureTx,
@@ -1476,8 +1480,45 @@ export function makeProspectService(overrides = {}) {
       safeUpdates.consumerId = null;
     }
 
+    // Won-transition precondition runs BEFORE any mutation (Codex R1 #5).
+    // Previously prospect.update() autocommitted the status and THEN the
+    // System-Agent rule threw — the lead stayed persisted as 'won' with no
+    // commission, and every retry saw oldStatus === 'won' so neither the
+    // commission nor any downstream hook could ever fire.
+    const becomingWon = oldStatus !== 'won' && safeUpdates.leadStatus === 'won';
+    if (becomingWon) {
+      const systemId = await d.getSystemAgentId();
+      if (prospect.assignedAgentId && prospect.assignedAgentId === systemId) {
+        throw new d.AppError('Lead must be assigned to a real agent before marking as won', 400);
+      }
+    }
+
     try {
-      await prospect.update(safeUpdates);
+      if (becomingWon) {
+        // Status, conversion date and commission commit or fail TOGETHER —
+        // no more autocommitted 'won' stranded without its commission.
+        await d.sequelize.transaction(async (t) => {
+          await prospect.update({ ...safeUpdates, conversionDate: new Date() }, { transaction: t });
+          if (prospect.assignedAgentId) {
+            const commissionAmount = parseFloat(process.env.DEFAULT_COMMISSION_AMOUNT || '50');
+            await m.Commission.create(
+              {
+                type: 'conversion',
+                amount: commissionAmount,
+                status: 'pending',
+                description: `Lead conversion: ${prospect.firstName} ${prospect.lastName}`,
+                agentId: prospect.assignedAgentId,
+                campaignId: prospect.campaignId,
+                prospectId: prospect.id,
+                earnedDate: new Date(),
+              },
+              { transaction: t }
+            );
+          }
+        });
+      } else {
+        await prospect.update(safeUpdates);
+      }
     } catch (err) {
       if (err?.name === 'SequelizeUniqueConstraintError') {
         // (campaignId, phone) partial unique — the edited number already has a
@@ -1498,39 +1539,26 @@ export function makeProspectService(overrides = {}) {
     // (Reassignment / unassignment is handled exclusively by assignProspect — see the
     // PROSPECT_UPDATE_FIELDS note — so PUT no longer needs unassignment side-effects.)
 
-    // If status changed to 'won', create commission and update metrics atomically
-    if (oldStatus !== 'won' && safeUpdates.leadStatus === 'won') {
-      // Block conversion if assigned to System Agent
-      const systemId = await d.getSystemAgentId();
-      if (prospect.assignedAgentId && prospect.assignedAgentId === systemId) {
-        throw new d.AppError('Lead must be assigned to a real agent before marking as won', 400);
-      }
-
-      await d.sequelize.transaction(async (t) => {
-        // Create commission for assigned agent
-        if (prospect.assignedAgentId) {
-          const commissionAmount = parseFloat(process.env.DEFAULT_COMMISSION_AMOUNT || '50');
-          await m.Commission.create(
-            {
-              type: 'conversion',
-              amount: commissionAmount,
-              status: 'pending',
-              description: `Lead conversion: ${prospect.firstName} ${prospect.lastName}`,
-              agentId: prospect.assignedAgentId,
-              campaignId: prospect.campaignId,
-              prospectId: prospect.id,
-              earnedDate: new Date(),
-            },
-            { transaction: t }
+    // Down-funnel CAPI for admin-recorded outcomes (plan Phase 3): qualified
+    // and won set in the mktr CRM fire the SAME processLeadOutcome the Lyfe +
+    // mktr-leads webhooks use — post-commit, fire-and-forget. Its
+    // mark-on-success markers dedup across all three paths, and a repeat
+    // transition never re-enters (oldStatus is already terminal).
+    if (['qualified', 'won'].includes(safeUpdates.leadStatus) && oldStatus !== safeUpdates.leadStatus) {
+      try {
+        const hook = d.processLeadOutcome({
+          external_id: prospect.id,
+          new_status: safeUpdates.leadStatus,
+          occurred_at: new Date().toISOString(),
+        });
+        if (hook && typeof hook.catch === 'function') {
+          hook.catch((err) =>
+            d.logger.error('[CAPI] admin lead-outcome hook error', { error: err?.message || String(err) })
           );
         }
-
-        // Campaign metrics are now computed from real data (no JSON blob to increment)
-
-        // Set conversion date
-        prospect.conversionDate = new Date();
-        await prospect.save({ transaction: t });
-      });
+      } catch (err) {
+        d.logger.error('[CAPI] admin lead-outcome hook error', { error: err?.message || String(err) });
+      }
     }
 
     return prospect;
