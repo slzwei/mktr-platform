@@ -413,6 +413,10 @@ export function makeRetellScreeningService(overrides = {}) {
         summary: analysis.call_summary || null,
         sentiment: analysis.user_sentiment || null,
         recordingUrl: call.recording_url || null,
+        // Verbatim turn-by-turn script Retell returns ("Agent: …\nUser: …").
+        // Capped so a pathologically long call can't bloat the jsonb row; the
+        // recording remains the unabridged source of truth. Admin-only surface.
+        transcript: typeof call.transcript === 'string' ? call.transcript.slice(0, 20000) : null,
         // Full per-check evidence (sg_pr / age_in_range / meet_consultant …) —
         // small object; lets the admin drawer show WHICH check failed.
         checks: analysis.custom_analysis_data || null,

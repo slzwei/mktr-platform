@@ -345,11 +345,31 @@ describe('applyCallOutcome', () => {
     await svc.applyCallOutcome(p, call({
       call_analysis: { custom_analysis_data: { qualified: true, qualification_reason: 'keen' }, call_summary: 'S', user_sentiment: 'Positive' },
       recording_url: 'https://r/1.wav',
+      transcript: 'Agent: Hi\nUser: Yes',
     }), { cfg: CFG });
     expect(deps.gate.applyQualifiedVerdict).toHaveBeenCalledWith(p, expect.objectContaining({
       callId: 'call_1',
-      detail: expect.objectContaining({ reason: 'keen', summary: 'S', recordingUrl: 'https://r/1.wav' }),
+      detail: expect.objectContaining({ reason: 'keen', summary: 'S', recordingUrl: 'https://r/1.wav', transcript: 'Agent: Hi\nUser: Yes' }),
     }));
+  });
+
+  it('captures the transcript as verdict evidence, capped, and null when absent', async () => {
+    const deps = dialerDeps(fakeSequelize([[[{ id: 'p' }]]]));
+    const svc = makeRetellScreeningService(deps);
+    const long = 'x'.repeat(25000);
+    await svc.applyCallOutcome(pendingProspect({ screeningActiveCallId: 'call_1' }), call({
+      call_analysis: { custom_analysis_data: { qualified: true } },
+      transcript: long,
+    }), { cfg: CFG });
+    const capped = deps.gate.applyQualifiedVerdict.mock.calls[0][1].detail.transcript;
+    expect(capped).toHaveLength(20000);
+
+    const deps2 = dialerDeps(fakeSequelize([[[{ id: 'p' }]]]));
+    const svc2 = makeRetellScreeningService(deps2);
+    await svc2.applyCallOutcome(pendingProspect({ screeningActiveCallId: 'call_1' }), call({
+      call_analysis: { custom_analysis_data: { qualified: true } },
+    }), { cfg: CFG });
+    expect(deps2.gate.applyQualifiedVerdict.mock.calls[0][1].detail.transcript).toBeNull();
   });
 
   it('qualified=false routes to markScreeningFailed; a missing verdict field retries (never sentiment-guessed)', async () => {

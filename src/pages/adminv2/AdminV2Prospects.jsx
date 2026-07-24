@@ -207,6 +207,42 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
                     {String(verdictDetail.summary).slice(0, 600)}
                   </div>
                 )}
+                {verdictDetail.transcript && (
+                  <details style={{ marginTop: 8 }}>
+                    <summary style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-2)', cursor: 'pointer', userSelect: 'none' }}>
+                      Call transcript
+                    </summary>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        maxHeight: 260,
+                        overflowY: 'auto',
+                        padding: '8px 10px',
+                        borderRadius: 8,
+                        background: 'var(--surface-2)',
+                        border: '1px solid var(--line)',
+                        fontSize: 12,
+                        lineHeight: 1.55,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        color: 'var(--ink-2)',
+                      }}
+                    >
+                      {String(verdictDetail.transcript).split('\n').map((line, i) => {
+                        const m = /^(Agent|User):\s?(.*)$/.exec(line);
+                        if (!m) return line ? <div key={i}>{line}</div> : <div key={i}>&nbsp;</div>;
+                        return (
+                          <div key={i} style={{ marginBottom: 3 }}>
+                            <span style={{ fontWeight: 700, color: m[1] === 'Agent' ? 'var(--accent-text)' : 'var(--ink)' }}>
+                              {m[1] === 'Agent' ? 'Sarah' : p.firstName || 'Lead'}:
+                            </span>{' '}
+                            {m[2]}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </details>
+                )}
                 {attempts.some((a) => a.recordingUrl) && (
                   <div style={{ marginTop: 6, display: 'grid', gap: 4 }}>
                     {attempts.filter((a) => a.recordingUrl).map((a, i) => (
