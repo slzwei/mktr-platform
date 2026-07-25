@@ -48,6 +48,7 @@ import { recordCaptureConsentEventsTx, canMarketTo } from './consentService.js';
 // imports only (models + sibling services); no cycle back into this module.
 import {
   enrichJourneyProfile, getSignupProfile, getSessionContext, getLyfeDelivery,
+  getProspectOutcomes,
 } from './leadProfileService.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
@@ -206,6 +207,7 @@ const defaultDeps = {
   getSignupProfile,
   getSessionContext,
   getLyfeDelivery,
+  getProspectOutcomes,
   recordCaptureConsentEventsTx,
   canMarketTo,
   onLeadCaptured: (prospect) => (_leadCapturedHook ? _leadCapturedHook(prospect) : null),
@@ -2346,6 +2348,25 @@ export function makeProspectService(overrides = {}) {
         prospects.map((p) => ({ id: p.id, phone: p.phone, email: p.email }))
       ).catch(() => new Map());
       for (const p of prospects) p.setDataValue('repeatSignupCount', counts.get(p.id) ?? null);
+    }
+
+    // Admin-only, OPT-IN (?include=outcome — the v2 list's STATUS column):
+    // per-row campaign outcome, the same contract discipline as
+    // ?include=profile. Byte-identical without the flag; agent MyProspects
+    // and the palette never pay for it. Resilient — a miss drops the chips,
+    // never the page.
+    const wantOutcome = user?.role === 'admin'
+      && String(params.include || '').split(',').map((s2) => s2.trim()).includes('outcome')
+      && prospects.length > 0;
+    if (wantOutcome) {
+      const outcomes = await d.getProspectOutcomes(prospects).catch(() => new Map());
+      for (const p of prospects) {
+        const o = outcomes.get(String(p.id));
+        if (o) {
+          p.setDataValue('draw', o.draw);
+          p.setDataValue('reward', o.reward);
+        }
+      }
     }
 
     return {

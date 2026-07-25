@@ -153,8 +153,9 @@ describe('AdminV2LeadProfile — person profile view', () => {
     // Name used per signup (mono meta line) + the variant flag.
     expect(screen.getByText(/AS SHAWN TAN/)).toBeInTheDocument();
     expect(screen.getByText('name variant')).toBeInTheDocument();
-    // Compact outcome chips — no outcome machinery on rows.
-    expect(screen.getByText(/open · closes 30 Oct/)).toBeInTheDocument();
+    // Compact outcome chips — no outcome machinery on rows; a boosted lead
+    // carries its multiplier (the ×N is already earned).
+    expect(screen.getByText(/×10 · closes 30 Oct/)).toBeInTheDocument();
     expect(screen.getByText('✓ redeemed')).toBeInTheDocument();
     expect(screen.queryByText('On track for ×10')).not.toBeInTheDocument();
     // Agent segment: unassigned is warn-voiced; external buyer named as such.

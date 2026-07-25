@@ -182,7 +182,7 @@ describe('prospectsToCsv', () => {
   it('quotes RFC-4180 style and joins with CRLF', () => {
     const csv = prospectsToCsv([lead]);
     const [header, row] = csv.split('\r\n');
-    expect(header).toBe('id,first_name,last_name,email,phone,status,source,campaign,agent,held_reason,created_at');
+    expect(header).toBe('id,first_name,last_name,email,phone,status,outcome,source,campaign,agent,held_reason,created_at');
     expect(row).toContain('"Tokyo, ""Getaway"""');
     expect(row).toContain('Melvin Tan');
   });

@@ -3,6 +3,7 @@
  * RFC-4180 quoting; formula-injection guarded (a leading =+-@ gets a ' prefix
  * so a hostile lead name can never execute in Excel/Sheets).
  */
+import { rowChipFor } from './outcome';
 
 function csvCell(value) {
   if (value === null || value === undefined) return '';
@@ -22,6 +23,7 @@ const COLUMNS = [
   ['email', (p) => p.email],
   ['phone', (p) => p.phone],
   ['status', (p) => p.leadStatus],
+  ['outcome', (p) => rowChipFor(p.draw, p.reward ? [p.reward] : [])?.label ?? ''],
   ['source', (p) => p.leadSource],
   ['campaign', (p) => p.campaign?.name ?? ''],
   ['agent', (p) => (p.assignedAgent ? `${p.assignedAgent.firstName || ''} ${p.assignedAgent.lastName || ''}`.trim() : '')],

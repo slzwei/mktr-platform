@@ -277,6 +277,113 @@ describe('enrichJourneyProfile', () => {
   });
 });
 
+// ── getProspectOutcomes (the list's STATUS column raw material) ─────────────
+
+describe('getProspectOutcomes', () => {
+  const listRows = [
+    { id: 'p1', campaignId: 'camp-1' },
+    { id: 'p2', campaignId: 'camp-2' },
+    { id: 'p3', campaignId: 'camp-2' },
+  ];
+
+  function outcomeDeps() {
+    return makeLeadProfileService({
+      logger: silentLogger,
+      now: () => NOW,
+      getProspectDrawStatus: jest.fn().mockResolvedValue(new Map([
+        ['p1', { state: 'provisional_in', chances: 10, boosted: true, multiplier: 10, drawHistory: [{ drawId: 'old' }] }],
+      ])),
+      getConsentState: jest.fn(),
+      Draw: { findAll: jest.fn().mockResolvedValue([{ activationId: 'rail-1' }]) },
+      Activation: { findOne: jest.fn() },
+      RewardOffer: {},
+      RewardEntitlement: {
+        findOne: jest.fn(),
+        findAll: jest.fn().mockResolvedValue([
+          // Newest first (DESC): p2's newest is a DRAW PASS (rail-1) — skipped;
+          // its older voucher wins. p3 has only a voucher.
+          { id: 'e3', prospectId: 'p2', status: 'issued', expiresAt: FUTURE, activationId: 'rail-1', createdAt: NOW, rewardOffer: null },
+          { id: 'e2', prospectId: 'p2', status: 'redeemed', expiresAt: null, activationId: 'act-v', createdAt: PAST, rewardOffer: { title: 'Latte', publicTitle: '1-for-1 latte' } },
+          { id: 'e1', prospectId: 'p3', status: 'eligible', expiresAt: FUTURE, activationId: 'act-v', createdAt: PAST, rewardOffer: { title: 'Latte', publicTitle: null } },
+        ]),
+      },
+      ConsumerSuppression: { findAll: jest.fn() },
+      EmailBroadcastRecipient: { findAll: jest.fn() },
+      SessionVisit: { findAll: jest.fn() },
+      sequelize: { query: jest.fn(), fn: jest.fn(), col: jest.fn() },
+    });
+  }
+
+  it('attaches draw standing (history-trimmed) and the newest non-draw-linked reward', async () => {
+    const svc = outcomeDeps();
+    const map = await svc.getProspectOutcomes(listRows);
+
+    // Draw lead: block passed through minus drawHistory.
+    expect(map.get('p1').draw).toMatchObject({ state: 'provisional_in', chances: 10, boosted: true });
+    expect(map.get('p1').draw.drawHistory).toBeUndefined();
+    expect(map.get('p1').reward).toBeNull();
+
+    // p2: the newer entitlement is a draw pass (rail activation) — the older
+    // VOUCHER speaks: redeemed, public title preferred.
+    expect(map.get('p2').reward).toEqual({ state: 'redeemed', rewardTitle: '1-for-1 latte' });
+    expect(map.get('p2').draw).toBeNull();
+
+    // p3: eligible + future expiry → presentState 'reserved'; title falls back.
+    expect(map.get('p3').reward).toEqual({ state: 'reserved', rewardTitle: 'Latte' });
+  });
+
+  it('returns an empty map for an empty page', async () => {
+    const svc = outcomeDeps();
+    expect((await svc.getProspectOutcomes([])).size).toBe(0);
+  });
+});
+
+// ── the ?include=outcome boundary on listProspects ──────────────────────────
+
+describe('prospectService.listProspects include gating', () => {
+  function listService() {
+    const getProspectOutcomes = jest.fn().mockResolvedValue(new Map([
+      ['p1', { draw: { state: 'provisional_in' }, reward: null }],
+    ]));
+    const row = () => {
+      const data = {};
+      return { id: 'p1', phone: '+6591234567', email: null, setDataValue: jest.fn((k, v) => { data[k] = v; }), _set: data };
+    };
+    const findAndCountAll = jest.fn();
+    const svc = makeProspectService({
+      getProspectOutcomes,
+      buildProspectWhere: jest.fn().mockResolvedValue({}),
+      sequelize: { query: jest.fn().mockResolvedValue([[]]) },
+      models: { Prospect: { findAndCountAll } },
+    });
+    return { svc, getProspectOutcomes, findAndCountAll, row };
+  }
+
+  it('non-admins never reach the enrichment, whatever they send', async () => {
+    const { svc, getProspectOutcomes, findAndCountAll, row } = listService();
+    findAndCountAll.mockResolvedValue({ count: 1, rows: [row()] });
+    await svc.listProspects({ id: 'agent-1', role: 'agent' }, { include: 'outcome' });
+    expect(getProspectOutcomes).not.toHaveBeenCalled();
+  });
+
+  it('admin WITHOUT include gets the classic payload', async () => {
+    const { svc, getProspectOutcomes, findAndCountAll, row } = listService();
+    findAndCountAll.mockResolvedValue({ count: 1, rows: [row()] });
+    await svc.listProspects({ id: 'admin-1', role: 'admin' }, {});
+    expect(getProspectOutcomes).not.toHaveBeenCalled();
+  });
+
+  it('admin + include=outcome attaches draw/reward per row', async () => {
+    const { svc, getProspectOutcomes, findAndCountAll, row } = listService();
+    const r = row();
+    findAndCountAll.mockResolvedValue({ count: 1, rows: [r] });
+    await svc.listProspects({ id: 'admin-1', role: 'admin' }, { include: 'outcome' });
+    expect(getProspectOutcomes).toHaveBeenCalled();
+    expect(r._set.draw).toEqual({ state: 'provisional_in' });
+    expect(r._set.reward).toBeNull();
+  });
+});
+
 // ── the ?include=profile boundary on getProspect ────────────────────────────
 
 describe('prospectService.getProspect include gating', () => {
