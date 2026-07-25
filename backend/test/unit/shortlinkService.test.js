@@ -33,6 +33,12 @@ function buildMocks() {
     literal: jest.fn((expr) => expr),
   };
 
+  // The service imports Prospect for getOrCreateProspectShareLinkById; a
+  // missing named export kills the whole ESM suite at import time.
+  const Prospect = {
+    findByPk: jest.fn().mockResolvedValue(null),
+  };
+
   const AppError = class extends Error {
     constructor(message, statusCode) {
       super(message);
@@ -40,7 +46,7 @@ function buildMocks() {
     }
   };
 
-  return { mockLink, ShortLink, ShortLinkClick, sequelize, AppError };
+  return { mockLink, ShortLink, ShortLinkClick, Prospect, sequelize, AppError };
 }
 
 let mocks;
@@ -52,6 +58,7 @@ beforeEach(async () => {
   jest.unstable_mockModule('../../src/models/index.js', () => ({
     ShortLink: mocks.ShortLink,
     ShortLinkClick: mocks.ShortLinkClick,
+    Prospect: mocks.Prospect,
     sequelize: mocks.sequelize,
   }));
 

@@ -32,6 +32,10 @@ function captureHarness() {
       },
     },
     ConsentEvent: { bulkCreate: async (rows) => { created.push(...rows); return rows; } },
+    // The resubscribe lift reads suppressions inside the capture txn — without
+    // this stub the REAL model runs against the fake transaction and the whole
+    // suite dies at import-adjacent depth. No suppression → no lift.
+    ConsumerSuppression: { findOne: async () => null },
     logger: { warn: () => {} },
   });
   return { svc, created };

@@ -78,9 +78,11 @@ describe('emailService (unit)', () => {
         html: '<p>Content</p>',
       });
 
+      // Recipient is PII-masked in logs (redactTokens.maskEmail) — assert the
+      // masked form so the test proves the redaction instead of fighting it.
       expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('Email not sent'),
-        expect.objectContaining({ to: 'test@example.com', subject: 'Test Subject' })
+        expect.objectContaining({ to: 't•••@example.com', subject: 'Test Subject' })
       );
     });
   });
