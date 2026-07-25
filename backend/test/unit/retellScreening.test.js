@@ -95,7 +95,8 @@ function dialerDeps(seq, over = {}) {
     sequelize: seq,
     Prospect: { findByPk: jest.fn(), findOne: jest.fn() },
     Campaign: { findByPk: jest.fn().mockResolvedValue(screeningCampaign()) },
-    IdempotencyKey: { create: jest.fn().mockResolvedValue({}) },
+    IdempotencyKey: { create: jest.fn().mockResolvedValue({}), findOne: jest.fn() },
+    ProspectActivity: { create: jest.fn().mockResolvedValue({}) },
     retellClient: {
       createPhoneCall: jest.fn().mockResolvedValue({ call_id: 'call_new1' }),
       getCall: jest.fn(),
@@ -111,9 +112,13 @@ function dialerDeps(seq, over = {}) {
       releaseScreenedLead: jest.fn().mockResolvedValue({ released: true }),
       transitionDncToScreening: jest.fn(),
     },
+    sendDrawCallbackOptin: jest.fn().mockResolvedValue({ sent: true, to: '••••4567' }),
     ...over,
   };
 }
+
+/** Flush the fire-and-forget WA-invite microtask chain. */
+const flushAsync = () => new Promise((r) => setTimeout(r, 0));
 
 // Happy-path query script for startScreeningAttempt:
 // [advisory lock], [budget count], [in-flight count], [claim], (commit), then post-dial swap.
@@ -562,6 +567,186 @@ describe('applyCallOutcome', () => {
       { cfg: CFG, finalIfNoAnalysis: true }
     );
     expect(outFinal).toMatchObject({ outcome: 'retry_scheduled', kind: 'no_verdict' });
+  });
+});
+
+describe('WhatsApp callback invite', () => {
+  const drawCampaign = () => ({
+    ...screeningCampaign({ luckyDraw: { multiplier: 10, prize: 'iPhone 17 Pro' } }),
+  });
+
+  it('verdict-less connected call (no voice booking) triggers the invite exactly once', async () => {
+    // resolveAttemptFailure: clear + defer; then the invite's claim + receipt patch.
+    const seq = fakeSequelize([
+      [[{ id: 'p' }]],                    // attempt evidence patch
+      [[{ screeningAttemptCount: 1 }]],   // fenced clear
+      [[{ id: 'p' }]],                    // deferAttempt
+      [[{ id: 'p' }]],                    // waCallback claim
+      [[{ id: 'p' }]],                    // receipt patch
+    ]);
+    const deps = dialerDeps(seq, { Campaign: { findByPk: jest.fn().mockResolvedValue(drawCampaign()) } });
+    const svc = makeRetellScreeningService(deps);
+    await svc.applyCallOutcome(
+      pendingProspect({ screeningActiveCallId: 'call_1', screeningAttemptCount: 1 }),
+      { call_id: 'call_1', metadata: { mktr: { kind: 'screening', attemptToken: 'att_abc' } },
+        call_analysis: { custom_analysis_data: { qualified: 'incomplete' } } },
+      { cfg: CFG }
+    );
+    await flushAsync();
+    expect(deps.sendDrawCallbackOptin).toHaveBeenCalledWith(expect.objectContaining({
+      drawName: 'Test Campaign',
+      multiplier: 10,
+      prize: 'iPhone 17 Pro',
+      token: expect.stringMatching(/^wcb_[a-f0-9]{32}$/),
+    }));
+    // Token row minted under the wa-callback scope, expiring with the 2× hold.
+    const tokenRow = deps.IdempotencyKey.create.mock.calls.find(([r]) => r.scope === 'screening:wa_callback');
+    expect(tokenRow[0].key).toMatch(/^wacb:wcb_/);
+    // The once-per-lead claim fences on the key's absence.
+    const claim = seq.calls.find((c) => String(c.sql).includes(`("screeningMetadata" -> 'waCallback') IS NULL`));
+    expect(claim).toBeTruthy();
+  });
+
+  it('a voice-booked callback suppresses the invite (the promise is already made)', async () => {
+    const seq = fakeSequelize([[[{ id: 'p' }]], [[{ screeningAttemptCount: 1 }]], [[{ id: 'p' }]]]);
+    const deps = dialerDeps(seq, { Campaign: { findByPk: jest.fn().mockResolvedValue(drawCampaign()) } });
+    const svc = makeRetellScreeningService(deps);
+    await svc.applyCallOutcome(
+      pendingProspect({ screeningActiveCallId: 'call_1', screeningAttemptCount: 1 }),
+      { call_id: 'call_1', metadata: { mktr: { kind: 'screening', attemptToken: 'att_abc' } },
+        call_analysis: { custom_analysis_data: { qualified: 'incomplete', callback_window: 'tomorrow' } } },
+      { cfg: CFG }
+    );
+    await flushAsync();
+    expect(deps.sendDrawCallbackOptin).not.toHaveBeenCalled();
+  });
+
+  it('unanswered dials: no invite on the 1st miss, invite on the 2nd', async () => {
+    const mkDeps = (results) => dialerDeps(fakeSequelize(results), { Campaign: { findByPk: jest.fn().mockResolvedValue(drawCampaign()) } });
+
+    const first = mkDeps([[[{ id: 'p' }]], [[{ screeningAttemptCount: 1 }]], [[{ id: 'p' }]]]);
+    await makeRetellScreeningService(first).applyCallOutcome(
+      pendingProspect({ screeningActiveCallId: 'call_1', screeningAttemptCount: 1 }),
+      { call_id: 'call_1', disconnection_reason: 'dial_no_answer', metadata: { mktr: { attemptToken: 'att_a' } } },
+      { cfg: CFG }
+    );
+    await flushAsync();
+    expect(first.sendDrawCallbackOptin).not.toHaveBeenCalled();
+
+    const second = mkDeps([
+      [[{ id: 'p' }]], [[{ screeningAttemptCount: 2 }]], [[{ id: 'p' }]],
+      [[{ id: 'p' }]], [[{ id: 'p' }]], // claim + receipt
+    ]);
+    await makeRetellScreeningService(second).applyCallOutcome(
+      pendingProspect({ screeningActiveCallId: 'call_1', screeningAttemptCount: 2 }),
+      { call_id: 'call_1', disconnection_reason: 'dial_no_answer', metadata: { mktr: { attemptToken: 'att_b' } } },
+      { cfg: CFG }
+    );
+    await flushAsync();
+    expect(second.sendDrawCallbackOptin).toHaveBeenCalled();
+  });
+
+  it('never sends for a non-draw campaign, a lead already invited, or without marketing consent', async () => {
+    // Non-draw: default screeningCampaign has no luckyDraw — zero queries run.
+    const nonDraw = dialerDeps(fakeSequelize([]));
+    const r1 = await makeRetellScreeningService(nonDraw).maybeSendWaCallbackInvite(pendingProspect(), { cfg: CFG });
+    expect(r1).toMatchObject({ sent: false, reason: 'not_a_draw' });
+
+    // Already invited: metadata short-circuit before any lookup.
+    const invited = dialerDeps(fakeSequelize([]));
+    const p = pendingProspect({ screeningMetadata: { attempts: {}, waCallback: { sentAt: 'x' } } });
+    const r2 = await makeRetellScreeningService(invited).maybeSendWaCallbackInvite(p, { cfg: CFG });
+    expect(r2).toMatchObject({ sent: false, reason: 'already_sent' });
+
+    // Consent refused.
+    const noConsent = dialerDeps(fakeSequelize([]), {
+      Campaign: { findByPk: jest.fn().mockResolvedValue(drawCampaign()) },
+      canMarketTo: jest.fn().mockResolvedValue(false),
+    });
+    const r3 = await makeRetellScreeningService(noConsent).maybeSendWaCallbackInvite(pendingProspect(), { cfg: CFG });
+    expect(r3).toMatchObject({ sent: false, reason: 'no_marketing_consent' });
+    expect(noConsent.sendDrawCallbackOptin).not.toHaveBeenCalled();
+  });
+
+  it('claim race: the loser never mints a token or sends', async () => {
+    const seq = fakeSequelize([[[]]]); // claim returns no rows
+    const deps = dialerDeps(seq, { Campaign: { findByPk: jest.fn().mockResolvedValue(drawCampaign()) } });
+    const out = await makeRetellScreeningService(deps).maybeSendWaCallbackInvite(pendingProspect(), { cfg: CFG });
+    expect(out).toMatchObject({ sent: false, reason: 'lost_claim' });
+    expect(deps.IdempotencyKey.create).not.toHaveBeenCalled();
+    expect(deps.sendDrawCallbackOptin).not.toHaveBeenCalled();
+  });
+});
+
+describe('WA callback tap (readWaCallbackContext / applyWaCallbackRequest)', () => {
+  const TOKEN = `wcb_${'a'.repeat(32)}`;
+  const tokenRow = (over = {}) => ({
+    key: `wacb:${TOKEN}`,
+    scope: 'screening:wa_callback',
+    responseBody: { prospectId: pendingProspect().id },
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    ...over,
+  });
+
+  function tapDeps(seq, { prospect = pendingProspect(), row = tokenRow(), campaign } = {}) {
+    return dialerDeps(seq, {
+      IdempotencyKey: { create: jest.fn(), findOne: jest.fn().mockResolvedValue(row) },
+      Prospect: { findByPk: jest.fn().mockResolvedValue(prospect), findOne: jest.fn() },
+      Campaign: { findByPk: jest.fn().mockResolvedValue(campaign ?? screeningCampaign({ luckyDraw: { multiplier: 10, prize: 'iPhone 17 Pro' } })) },
+    });
+  }
+
+  it('context: ready state carries first name, draw name, multiplier — nothing more', async () => {
+    const svc = makeRetellScreeningService(tapDeps(fakeSequelize([])));
+    const ctx = await svc.readWaCallbackContext(TOKEN);
+    expect(ctx).toEqual(expect.objectContaining({ state: 'ready', firstName: 'Jane', drawName: 'Test Campaign', multiplier: 10 }));
+    expect(ctx.phone).toBeUndefined();
+    expect(ctx.email).toBeUndefined();
+  });
+
+  it('context: bad/expired/unknown tokens are invalid; released leads read done; active call reads in_flight', async () => {
+    const svcBad = makeRetellScreeningService(tapDeps(fakeSequelize([])));
+    expect((await svcBad.readWaCallbackContext('nope')).state).toBe('invalid');
+
+    const svcExpired = makeRetellScreeningService(tapDeps(fakeSequelize([]), { row: tokenRow({ expiresAt: new Date(0) }) }));
+    expect((await svcExpired.readWaCallbackContext(TOKEN)).state).toBe('invalid');
+
+    const svcDone = makeRetellScreeningService(tapDeps(fakeSequelize([]), { prospect: pendingProspect({ quarantineReason: null }) }));
+    expect((await svcDone.readWaCallbackContext(TOKEN)).state).toBe('done');
+
+    const svcFlight = makeRetellScreeningService(tapDeps(fakeSequelize([]), { prospect: pendingProspect({ screeningActiveCallId: 'call_9' }) }));
+    expect((await svcFlight.readWaCallbackContext(TOKEN)).state).toBe('in_flight');
+  });
+
+  it('tap: schedules the chosen window, grants the callback bonus, logs an activity', async () => {
+    const seq = fakeSequelize([[[{ id: 'p' }]]]); // fenced schedule write
+    const deps = tapDeps(seq);
+    const svc = makeRetellScreeningService(deps);
+    const before = Date.now();
+    const out = await svc.applyWaCallbackRequest(TOKEN, 'asap', { cfg: CFG });
+    expect(out).toMatchObject({ ok: true, state: 'scheduled', window: 'asap' });
+    // asap ≈ +10 minutes (always-open test window, no clamping).
+    const at = new Date(out.scheduledFor).getTime();
+    expect(at - before).toBeGreaterThan(9 * 60 * 1000);
+    expect(at - before).toBeLessThan(11 * 60 * 1000);
+    const write = seq.calls[0];
+    expect(write.sql).toContain(`"screeningNextAttemptAt" = :at`);
+    expect(write.sql).toContain('"callbackGranted":true');
+    expect(write.sql).toContain(`"quarantineReason" = 'screening_pending'`);
+    expect(deps.ProspectActivity.create).toHaveBeenCalledWith(expect.objectContaining({
+      description: expect.stringContaining('requested a screening callback via WhatsApp (asap)'),
+    }));
+  });
+
+  it('tap: rejects unknown windows and reports the fresher state when the fence is lost', async () => {
+    const svc = makeRetellScreeningService(tapDeps(fakeSequelize([])));
+    expect((await svc.applyWaCallbackRequest(TOKEN, 'next_year', { cfg: CFG })).state).toBe('bad_window');
+
+    const lost = pendingProspect();
+    lost.reload = jest.fn().mockImplementation(() => { lost.screeningActiveCallId = 'call_5'; return Promise.resolve(); });
+    const svcLost = makeRetellScreeningService(tapDeps(fakeSequelize([[[]]]), { prospect: lost }));
+    const out = await svcLost.applyWaCallbackRequest(TOKEN, 'tomorrow', { cfg: CFG });
+    expect(out).toMatchObject({ ok: false, state: 'in_flight' });
   });
 });
 

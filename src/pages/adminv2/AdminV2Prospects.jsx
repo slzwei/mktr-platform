@@ -252,10 +252,20 @@ function LeadDrawer({ prospect, onClose, onOpenLead }) {
                 {verdictDetail.reason && <div className="av2-kv"><span>reason</span><span>{verdictDetail.reason}</span></div>}
                 {verdictDetail.sentiment && <div className="av2-kv"><span>sentiment</span><span>{verdictDetail.sentiment}</span></div>}
                 <div className="av2-kv"><span>attempts</span><span>{p.screeningAttemptCount || attempts.length || 0}</span></div>
-                {/* A time Sarah promised on the phone — the one screening date
-                    an operator must not silently miss. */}
+                {/* A time Sarah promised on the phone (or the customer picked
+                    via WhatsApp) — the one screening date an operator must not
+                    silently miss. */}
                 {sm.callbackGranted && p.screeningNextAttemptAt && (
                   <div className="av2-kv"><span>callback</span><span>{fmtDateTime(p.screeningNextAttemptAt)}</span></div>
+                )}
+                {sm.waCallback?.sentAt && (
+                  <div className="av2-kv">
+                    <span>wa invite</span>
+                    <span>
+                      {sm.waCallback.sent === false ? 'send failed' : fmtDateTime(sm.waCallback.sentAt)}
+                      {sm.waCallback.tappedAt ? ` · tapped (${String(sm.waCallback.window || '').replace(/_/g, ' ')})` : ''}
+                    </span>
+                  </div>
                 )}
                 {hasCost && (
                   <div className="av2-kv">

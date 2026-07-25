@@ -391,3 +391,54 @@ describe('graphFetch retry — transient failures self-heal (prod 2026-07-20 vou
     expect(msgCalls(fetch)).toBe(2);
   });
 });
+
+describe('sendDrawCallbackOptinWhatsApp — screening callback opt-in (§16.6)', () => {
+  const prospect = { firstName: 'Shawn', phone: '+6596989089', campaignId: 'c1', consumerId: 'u1' };
+  const args = { prospect, drawName: 'iPhone 17 Pro Lucky Draw', multiplier: 10, prize: 'iPhone 17 Pro', token: 'wcb_deadbeef' };
+
+  it('sends the 4-param body + dynamic URL button, no header, MARKETING purpose', async () => {
+    enableWithCreds();
+    const gate = [];
+    const fetch = scriptedFetch([sendOk]);
+    const svc = makeSvc({ fetch, isSendBlocked: async (_p, opts) => { gate.push(opts); return false; } });
+    const r = await svc.sendDrawCallbackOptinWhatsApp(args);
+    expect(r.sent).toBe(true);
+    expect(gate).toEqual([{ channel: 'whatsapp', purpose: 'marketing' }]);
+
+    const body = JSON.parse(fetch.calls[0].opts.body);
+    expect(body.template.name).toBe('draw_callback_optin');
+    const byType = Object.fromEntries(body.template.components.map((c) => [c.type, c]));
+    expect(byType.header).toBeUndefined(); // TEXT header lives in the template, not the send
+    expect(byType.body.parameters.map((p) => p.text)).toEqual([
+      'Shawn', 'iPhone 17 Pro Lucky Draw', '10', 'the iPhone 17 Pro',
+    ]);
+    expect(byType.button).toEqual({
+      type: 'button', sub_type: 'url', index: '0',
+      parameters: [{ type: 'text', text: 'callback?t=wcb_deadbeef&utm_source=wa_screening' }],
+    });
+  });
+
+  it('marketing suppression blocks the send (fail-closed lane)', async () => {
+    enableWithCreds();
+    const fetch = scriptedFetch([sendOk]);
+    const svc = makeSvc({ fetch, isSendBlocked: async () => true });
+    const r = await svc.sendDrawCallbackOptinWhatsApp(args);
+    expect(r).toEqual({ sent: false, skipped: 'suppressed' });
+    expect(fetch.calls.length).toBe(0);
+  });
+
+  it('prize label keeps an existing article and falls back when empty or URL-ish', async () => {
+    enableWithCreds();
+    const paramAt = async (over) => {
+      const fetch = scriptedFetch([sendOk]);
+      const svc = makeSvc({ fetch, isSendBlocked: async () => false });
+      await svc.sendDrawCallbackOptinWhatsApp({ ...args, ...over });
+      return JSON.parse(fetch.calls[0].opts.body).template.components
+        .find((c) => c.type === 'body').parameters[3].text;
+    };
+    expect(await paramAt({ prize: 'a 4D3N trip for two to Tokyo' })).toBe('a 4D3N trip for two to Tokyo');
+    expect(await paramAt({ prize: 'The Grand Bundle' })).toBe('The Grand Bundle');
+    expect(await paramAt({ prize: null })).toBe('the grand prize');
+    expect(await paramAt({ prize: 'https://evil.example' })).toBe('the grand prize');
+  });
+});

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { sequelize, Prospect, Campaign, IdempotencyKey } from '../models/index.js';
+import { sequelize, Prospect, Campaign, IdempotencyKey, ProspectActivity } from '../models/index.js';
 import {
   screeningConfig,
   screeningApplies,
@@ -27,6 +27,9 @@ import { logger } from '../utils/logger.js';
 const DIAL_LOCK_KEY = 'screening_dial';
 const BUDGET_SCOPE = 'screening:dial';
 const BUDGET_TTL_MS = 48 * 60 * 60 * 1000;
+// WhatsApp callback opt-in tokens (draw_callback_optin URL button) live in
+// idempotency_keys under this scope — key `wacb:<token>` → {prospectId}.
+const WA_CB_SCOPE = 'screening:wa_callback';
 const SGT_OFFSET_MS = 8 * 60 * 60 * 1000; // Asia/Singapore, no DST
 
 /** Retell disconnection reasons meaning "the consumer never conversed". */
@@ -46,12 +49,18 @@ const defaultDeps = {
   Prospect,
   Campaign,
   IdempotencyKey,
+  ProspectActivity,
   retellClient,
   dncEnforcement,
   hasValidDncConsent,
   canMarketTo,
   logger,
   gate: makeScreeningGate(),
+  // LAZY dynamic import (house pattern, prospectService.js:174): a top-level
+  // import would drag the whole redeemOps WhatsApp graph into every unit
+  // suite that mocks this module's deps.
+  sendDrawCallbackOptin: async (args) =>
+    (await import('./redeemOps/whatsappService.js')).sendDrawCallbackOptinWhatsApp(args),
 };
 
 // ---------------------------------------------------------------------------
@@ -101,6 +110,9 @@ export function nextRetryAt(cfg, attemptCount, now = new Date()) {
  * call ran, which is what the person meant.
  */
 const CALLBACK_DELAY_MINUTES = {
+  // 'asap' is never emitted by Retell (not in the analysis enum) — it exists
+  // for the WhatsApp tap page, where "call me now" is a live request.
+  asap: 10,
   later_today: 3 * 60,
   tomorrow: 12 * 60,
   this_week: 60 * 60,
@@ -418,7 +430,214 @@ export function makeRetellScreeningService(overrides = {}) {
       return { outcome: 'exhausted', kind, policy };
     }
     await deferAttempt(prospect, retryAt || nextRetryAt(cfg, attempts));
+    // WhatsApp callback invite (plan §16.6) — fire-and-forget, never on the
+    // webhook's critical path. Eligible when the lead is STILL HELD with
+    // attempts left (after exhaustion the release policy takes the row away)
+    // and either (a) a connected call ended with no verdict and NO voice-booked
+    // callback — "call me later" with no time, hung up early — or (b) the 2nd
+    // dial went unanswered (one dial before the release policy would fire).
+    // A voice-booked callback (retryAt) skips it: the promise is already made,
+    // and the template's "sorry we missed you" would misdescribe that call.
+    if (!retryAt && (kind === 'no_verdict' || attempts >= 2)) {
+      maybeSendWaCallbackInvite(prospect, { cfg }).catch(() => {});
+    }
     return { outcome: 'retry_scheduled', kind, attempts, ...(retryAt ? { callbackAt: retryAt.toISOString() } : {}) };
+  }
+
+  /**
+   * Send the draw_callback_optin WhatsApp AT MOST ONCE per lead. Cheap guards
+   * first (draw campaign, active, marketing consent — all no-query or mocked
+   * lookups), then a fenced metadata claim so replayed webhooks can't double-
+   * send, then token mint + send + receipt patch. Never throws.
+   */
+  async function maybeSendWaCallbackInvite(prospect, { cfg = screeningConfig() } = {}) {
+    try {
+      if (!cfg.configured || cfg.dryRun) return { sent: false, reason: 'not_configured' };
+      if (prospect.screeningMetadata?.waCallback) return { sent: false, reason: 'already_sent' };
+
+      const camp = prospect.campaignId ? await d.Campaign.findByPk(prospect.campaignId).catch(() => null) : null;
+      if (!camp || String(camp.status || 'active') !== 'active' || camp.is_active === false) {
+        return { sent: false, reason: 'campaign_inactive' };
+      }
+      // The approved template speaks draw language ("your lucky draw entry") —
+      // a non-draw screening campaign must never send it.
+      const ld = getStoredLuckyDraw(camp.design_config);
+      if (!ld) return { sent: false, reason: 'not_a_draw' };
+
+      // Same consent posture as the dialer; sendTemplate re-checks with
+      // purpose:'marketing' (fail-closed) at send time.
+      try {
+        const ok = await d.canMarketTo({
+          consumerId: prospect.consumerId || null,
+          phone: prospect.phone || null,
+          channel: 'whatsapp',
+          campaignId: prospect.campaignId || null,
+        });
+        if (ok !== true) return { sent: false, reason: 'no_marketing_consent' };
+      } catch {
+        return { sent: false, reason: 'consent_lookup_failed' };
+      }
+
+      // Fenced once-per-lead claim: the loser of a webhook-replay race no-ops.
+      const token = `wcb_${crypto.randomUUID().replace(/-/g, '')}`;
+      const now = new Date();
+      const [rows] = await d.sequelize.query(
+        `UPDATE prospects
+            SET "screeningMetadata" = jsonb_set(
+                  COALESCE("screeningMetadata", '{}'::jsonb),
+                  '{waCallback}', :seed::jsonb, true),
+                "updatedAt" = NOW()
+          WHERE id = :id AND "quarantineReason" = 'screening_pending'
+            AND ("screeningMetadata" -> 'waCallback') IS NULL
+          RETURNING id`,
+        { replacements: { id: prospect.id, seed: JSON.stringify({ token, sentAt: now.toISOString() }) } }
+      );
+      if (!Array.isArray(rows) || rows.length === 0) return { sent: false, reason: 'lost_claim' };
+
+      // Token row BEFORE the send: the tap must resolve even if our receipt
+      // patch later fails. Expiry = the same 2× hold ceiling the TTL sweep
+      // grants a promised callback — past that the lead has left the queue.
+      await d.IdempotencyKey.create({
+        key: `wacb:${token}`,
+        scope: WA_CB_SCOPE,
+        responseBody: { prospectId: prospect.id },
+        responseCode: 200,
+        expiresAt: new Date(now.getTime() + 2 * cfg.maxHoldHours * 60 * 60 * 1000),
+      });
+
+      const multiplier = drawExtraChances(camp) + 1;
+      const result = await d.sendDrawCallbackOptin({
+        prospect,
+        drawName: camp.name,
+        multiplier,
+        prize: ld.prize || null,
+        token,
+      });
+      await patchWaCallback(prospect.id, {
+        sent: result?.sent === true,
+        ...(result?.skipped ? { skipped: result.skipped } : {}),
+        ...(result?.error ? { error: String(result.error).slice(0, 200) } : {}),
+      });
+      d.logger.info('[Screening] WA callback invite', { prospectId: prospect.id, sent: result?.sent === true, skipped: result?.skipped || null });
+      return { sent: result?.sent === true, token };
+    } catch (err) {
+      d.logger.warn('[Screening] WA callback invite failed', { prospectId: prospect?.id, error: err?.message || String(err) });
+      return { sent: false, reason: 'error' };
+    }
+  }
+
+  /** Merge keys into screeningMetadata.waCallback (evidence only, non-fenced). */
+  async function patchWaCallback(prospectId, patch) {
+    await d.sequelize.query(
+      `UPDATE prospects
+          SET "screeningMetadata" = jsonb_set(
+                COALESCE("screeningMetadata", '{}'::jsonb),
+                '{waCallback}',
+                COALESCE("screeningMetadata" -> 'waCallback', '{}'::jsonb) || :patch::jsonb,
+                true),
+              "updatedAt" = NOW()
+        WHERE id = :id`,
+      { replacements: { id: prospectId, patch: JSON.stringify(patch) } }
+    ).catch((err) => d.logger.warn('[Screening] waCallback patch failed', { prospectId, error: err?.message }));
+  }
+
+  /** Resolve a wa-callback token → its prospect, or null. */
+  async function resolveWaCallbackToken(token) {
+    if (!/^wcb_[a-f0-9]{32}$/i.test(String(token || ''))) return null;
+    const row = await d.IdempotencyKey.findOne({ where: { key: `wacb:${token}`, scope: WA_CB_SCOPE } });
+    if (!row || (row.expiresAt && new Date(row.expiresAt) < new Date())) return null;
+    const prospectId = row.responseBody?.prospectId;
+    if (!UUID_RE.test(prospectId || '')) return null;
+    return d.Prospect.findByPk(prospectId);
+  }
+
+  function waCallbackStateOf(prospect) {
+    if (!prospect) return 'invalid';
+    if (prospect.quarantineReason !== 'screening_pending' || prospect.screeningVerdict) return 'done';
+    if (prospect.screeningActiveCallId) return 'in_flight';
+    return 'ready';
+  }
+
+  /**
+   * Page context for redeem.sg/callback?t=… — first name only, never full PII
+   * (reward-claim posture). `state`: ready | in_flight | done | invalid.
+   */
+  async function readWaCallbackContext(token) {
+    try {
+      const prospect = await resolveWaCallbackToken(token);
+      const state = waCallbackStateOf(prospect);
+      if (state === 'invalid') return { state };
+      if (state === 'done') return { state, firstName: prospect.firstName || null };
+      const camp = prospect.campaignId ? await d.Campaign.findByPk(prospect.campaignId).catch(() => null) : null;
+      const wa = prospect.screeningMetadata?.waCallback || {};
+      return {
+        state,
+        firstName: prospect.firstName || null,
+        drawName: camp?.name || 'the lucky draw',
+        multiplier: drawExtraChances(camp) + 1,
+        ...(wa.window ? { window: wa.window } : {}),
+        ...(prospect.screeningNextAttemptAt ? { scheduledFor: new Date(prospect.screeningNextAttemptAt).toISOString() } : {}),
+      };
+    } catch (err) {
+      d.logger.error('[Screening] readWaCallbackContext error', { error: err?.message || String(err) });
+      return { state: 'invalid' };
+    }
+  }
+
+  /**
+   * The tap (plan §16.6 step 3): consent to be called + a chosen window →
+   * fenced schedule write + the callback grant, then the sweep dials. Re-taps
+   * just move the time (the grant flag is already true — no extra attempt).
+   */
+  async function applyWaCallbackRequest(token, window, { cfg = screeningConfig(), ip = null } = {}) {
+    try {
+      const w = String(window || '').trim().toLowerCase();
+      if (!['asap', 'later_today', 'tomorrow', 'this_week'].includes(w)) {
+        return { ok: false, state: 'bad_window' };
+      }
+      const prospect = await resolveWaCallbackToken(token);
+      const state = waCallbackStateOf(prospect);
+      if (state !== 'ready') return { ok: false, state };
+
+      const at = callbackRetryAt(cfg, w, { quarantinedAt: prospect.quarantinedAt || null });
+      const waPatch = JSON.stringify({
+        tappedAt: new Date().toISOString(),
+        window: w,
+        scheduledFor: at.toISOString(),
+        ...(ip ? { ip: String(ip).slice(0, 45) } : {}),
+      });
+      const [rows] = await d.sequelize.query(
+        `UPDATE prospects
+            SET "screeningNextAttemptAt" = :at,
+                "screeningMetadata" = jsonb_set(
+                  COALESCE("screeningMetadata", '{}'::jsonb) || '{"callbackGranted":true}'::jsonb,
+                  '{waCallback}',
+                  COALESCE("screeningMetadata" -> 'waCallback', '{}'::jsonb) || :waPatch::jsonb,
+                  true),
+                "updatedAt" = NOW()
+          WHERE id = :id AND "quarantineReason" = 'screening_pending'
+            AND "screeningActiveCallId" IS NULL AND "screeningVerdict" IS NULL
+          RETURNING id`,
+        { replacements: { id: prospect.id, at, waPatch } }
+      );
+      if (!Array.isArray(rows) || rows.length === 0) {
+        // Fence lost between read and write — report the fresher state.
+        await prospect.reload().catch(() => {});
+        return { ok: false, state: waCallbackStateOf(prospect) };
+      }
+      await d.ProspectActivity.create({
+        prospectId: prospect.id,
+        type: 'updated',
+        actorUserId: null,
+        description: `Customer requested a screening callback via WhatsApp (${w}) — scheduled for ${at.toISOString()}`,
+        metadata: { waCallback: true, window: w, scheduledFor: at.toISOString() },
+      }).catch(() => {});
+      d.logger.info('[Screening] WA callback scheduled by customer', { prospectId: prospect.id, window: w, at: at.toISOString() });
+      return { ok: true, state: 'scheduled', scheduledFor: at.toISOString(), window: w };
+    } catch (err) {
+      d.logger.error('[Screening] applyWaCallbackRequest error', { error: err?.message || String(err) });
+      return { ok: false, state: 'error' };
+    }
   }
 
   /**
@@ -582,6 +801,9 @@ export function makeRetellScreeningService(overrides = {}) {
     resolveAttemptFailure,
     handleScreeningWebhook,
     dncDialClear,
+    maybeSendWaCallbackInvite,
+    readWaCallbackContext,
+    applyWaCallbackRequest,
   };
 }
 
@@ -590,3 +812,5 @@ const _default = makeRetellScreeningService();
 export const startScreeningAttempt = _default.startScreeningAttempt;
 export const applyCallOutcome = _default.applyCallOutcome;
 export const handleScreeningWebhook = _default.handleScreeningWebhook;
+export const readWaCallbackContext = _default.readWaCallbackContext;
+export const applyWaCallbackRequest = _default.applyWaCallbackRequest;
