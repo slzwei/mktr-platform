@@ -547,6 +547,58 @@ describe('campaignService (unit)', () => {
       expect(Device.findAll).toHaveBeenCalled();
     });
 
+    // The draw pass colourway is a NARROW top-level field, deliberately not a
+    // design_config write: a Studio-saved (v2) campaign rejects an untagged
+    // design_config, and routing a pure-display change through the doc would
+    // make it look like a draw-fact edit on a live campaign.
+    describe('drawPassTheme', () => {
+      const drawCampaign = (luckyDraw) => makeCampaignInstance({
+        is_active: false,
+        design_config: { luckyDraw, page: { hero: 'keep me' } },
+      });
+      const storedDraw = { enabled: true, prize: 'iPhone 17 Pro', multiplier: 10, closesAt: '2026-09-30', activationId: 'a1' };
+
+      it('merges into the stored draw without touching the rest of the design', async () => {
+        const inst = drawCampaign(storedDraw);
+        Campaign.findOne.mockResolvedValue(inst);
+
+        await campaignService.updateCampaign('camp-1', { drawPassTheme: 'gold' }, makeReq());
+
+        const saved = inst.update.mock.calls[0][0].design_config;
+        expect(saved.luckyDraw.passTheme).toBe('gold');
+        // Everything else survives — prize, multiplier, the rail stamp, the page.
+        expect(saved.luckyDraw).toMatchObject(storedDraw);
+        expect(saved.page).toEqual({ hero: 'keep me' });
+      });
+
+      it('rejects an off-enum colourway rather than writing it', async () => {
+        const inst = drawCampaign(storedDraw);
+        Campaign.findOne.mockResolvedValue(inst);
+
+        await expect(campaignService.updateCampaign('camp-1', { drawPassTheme: 'chartreuse' }, makeReq()))
+          .rejects.toThrow(/drawPassTheme must be one of/);
+        expect(inst.update).not.toHaveBeenCalled();
+      });
+
+      it('is admin-only, like every other luckyDraw change', async () => {
+        const inst = drawCampaign(storedDraw);
+        Campaign.findOne.mockResolvedValue(inst);
+
+        await campaignService.updateCampaign('camp-1', { drawPassTheme: 'gold' }, makeReq({ user: { id: 'u2', role: 'agent' } }));
+
+        expect(inst.update.mock.calls[0][0].design_config).toBeUndefined();
+      });
+
+      it('is a no-op on a campaign that is not a draw', async () => {
+        const inst = makeCampaignInstance({ design_config: { page: { hero: 'x' } } });
+        Campaign.findOne.mockResolvedValue(inst);
+
+        await campaignService.updateCampaign('camp-1', { drawPassTheme: 'gold' }, makeReq());
+
+        expect(inst.update.mock.calls[0][0].design_config).toBeUndefined();
+      });
+    });
+
     it('syncs agent assignments when assigned_agents provided', async () => {
       Campaign.findOne.mockResolvedValue(makeCampaignInstance());
 

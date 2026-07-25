@@ -134,6 +134,37 @@ describe('CampaignDetailsTab — lucky-draw create flow', () => {
     expect(payload.end_date).toBe(new Date('2026-08-31').toISOString());
   });
 
+  // Editing a live draw: the colourway is the only draw setting exposed, and it
+  // rides as a narrow top-level field (a design_config write would 409 against a
+  // Studio-saved campaign).
+  it('offers the colourway when editing an existing draw, seeded from the stored theme', () => {
+    const onSubmit = vi.fn();
+    render(
+      <CampaignDetailsTab
+        initial={{ name: 'iPhone 17 Pro Lucky Draw', design_config: { luckyDraw: { enabled: true, passTheme: 'gold' } } }}
+        type="lead_generation"
+        drawEdit
+        isEdit
+        saving={false}
+        onSubmit={onSubmit}
+      />
+    );
+    expect(screen.getByRole('button', { name: /gold/i })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /sapphire/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save details/i }));
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload.drawPassTheme).toBe('sapphire');
+    // Never a design_config write on this path.
+    expect(payload.design_config).toBeUndefined();
+  });
+
+  it('does not offer the colourway on a non-draw campaign', () => {
+    render(
+      <CampaignDetailsTab initial={{ name: 'Trial reward' }} type="lead_generation" isEdit saving={false} onSubmit={vi.fn()} />
+    );
+    expect(screen.queryByText(/Pass colourway/i)).toBeNull();
+  });
+
   it('arms the chosen pass colourway — one choice paints the WhatsApp pass and the email', () => {
     const onSubmit = vi.fn();
     render(
