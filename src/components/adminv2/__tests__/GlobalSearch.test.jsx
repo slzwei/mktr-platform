@@ -102,6 +102,14 @@ describe('GlobalSearch', () => {
     expect(screen.getByTestId('loc')).toHaveTextContent('/AdminWallets');
   });
 
+  it('the People directory rides the NAV-derived Pages group for free', async () => {
+    setup();
+    const input = openPalette();
+    fireEvent.change(input, { target: { value: 'people' } });
+    fireEvent.click(await screen.findByText('People'));
+    expect(screen.getByTestId('loc')).toHaveTextContent('/AdminPeople');
+  });
+
   it('arrow keys walk the flat list; the fallback row never dead-ends Enter', async () => {
     setup();
     const input = openPalette();

@@ -73,6 +73,7 @@ const ADMIN_V2 = import.meta.env.VITE_ADMIN_V2_ENABLED === 'true';
 const AdminV2Shell = lazy(() => import('@/components/adminv2/AdminV2Shell'));
 const AdminV2Dashboard = lazy(() => import('./adminv2/AdminV2Dashboard'));
 const AdminV2Prospects = lazy(() => import('./adminv2/AdminV2Prospects'));
+const AdminV2People = lazy(() => import('./adminv2/AdminV2People'));
 const AdminV2Cohorts = lazy(() => import('./adminv2/AdminV2Cohorts'));
 const AdminV2CohortDetail = lazy(() => import('./adminv2/AdminV2CohortDetail'));
 const AdminV2Broadcasts = lazy(() => import('./adminv2/AdminV2Broadcasts'));
@@ -362,6 +363,17 @@ function PagesContent() {
  <ProtectedRoute requiredRole="admin">
  <AdminV2Shell>
  <AdminV2LeadProfile />
+ </AdminV2Shell>
+ </ProtectedRoute>
+ }
+ />
+ )}
+ {ADMIN_V2 && (
+ <Route
+ path="/AdminPeople" element={
+ <ProtectedRoute requiredRole="admin">
+ <AdminV2Shell>
+ <AdminV2People />
  </AdminV2Shell>
  </ProtectedRoute>
  }

@@ -272,6 +272,10 @@ function GlyphTile({ family, size = 22 }) {
 
 // ── the page ────────────────────────────────────────────────────────────────
 
+/** Back-link origins the profile honors (admin-people-directory §3.4). */
+const FROM_LABELS = { '/AdminProspects': 'Prospects', '/AdminPeople': 'People' };
+const COHORT_FROM_RE = /^\/admin\/cohorts\/[0-9a-f-]{36}$/;
+
 export default function AdminV2LeadProfile() {
   const { prospectId } = useParams();
   const [searchParams] = useSearchParams();
@@ -279,11 +283,15 @@ export default function AdminV2LeadProfile() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const view = searchParams.get('view') === 'profile' ? 'profile' : 'signup';
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  // Assign menu: null | 'campaign' | 'agent'; target = the signup being assigned.
+  // Delete confirm: null | targetId — the picked signup, not always the URL's.
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  // Command picker: stage null | 'campaign' | 'agent', with the ACTION it is
+  // picking for — assign advances campaign→agent, return/delete act on the
+  // picked campaign directly (§3.5: person-origin mutations pick explicitly).
   const [menu, setMenu] = useState(null);
+  const [menuAction, setMenuAction] = useState(null);
   const [menuTarget, setMenuTarget] = useState(null);
-  useEffect(() => { setMenu(null); }, [prospectId, view]);
+  useEffect(() => { setMenu(null); setMenuAction(null); }, [prospectId, view]);
   useEffect(() => {
     if (!menu) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') setMenu(null); };
@@ -291,9 +299,23 @@ export default function AdminV2LeadProfile() {
     return () => window.removeEventListener('keydown', onKey);
   }, [menu]);
 
-  const from = typeof location.state?.from === 'string' && location.state.from.startsWith('/AdminProspects')
-    ? location.state.from
-    : '/AdminProspects';
+  // Canonical-equality validation: the raw state.from must equal its own
+  // parsed pathname+search (one comparison rules out dot segments,
+  // backslashes, //network-path refs and fragments — new URL() NORMALIZES
+  // dot segments, so an allowlist check alone could be walked into), then
+  // the pathname must match a known list page exactly.
+  const { from, fromLabel } = useMemo(() => {
+    const fallback = { from: '/AdminProspects', fromLabel: 'Prospects' };
+    const raw = location.state?.from;
+    if (typeof raw !== 'string' || !raw.startsWith('/')) return fallback;
+    let url;
+    try { url = new URL(raw, window.location.origin); } catch { return fallback; }
+    if (url.origin !== window.location.origin) return fallback;
+    if (raw !== `${url.pathname}${url.search}`) return fallback;
+    if (FROM_LABELS[url.pathname]) return { from: raw, fromLabel: FROM_LABELS[url.pathname] };
+    if (COHORT_FROM_RE.test(url.pathname)) return { from: raw, fromLabel: 'Cohort' };
+    return fallback;
+  }, [location.state]);
   const goSignup = useCallback((id) => navigate(`/admin/leads/${id}`, { state: { from } }), [navigate, from]);
   const goProfile = useCallback(() => navigate(`/admin/leads/${prospectId}?view=profile`, { state: { from } }), [navigate, prospectId, from]);
 
@@ -320,7 +342,7 @@ export default function AdminV2LeadProfile() {
     onError: (e) => toast.error(e?.message || 'Assign failed'),
   });
   const returnMutation = useMutation({
-    mutationFn: () => bulkReturnToHeld([prospectId]),
+    mutationFn: ({ targetId } = {}) => bulkReturnToHeld([targetId || prospectId]),
     onSuccess: (r) => {
       const n = r?.data?.returned ?? 0;
       if (n > 0) toast.success('Returned to held');
@@ -330,15 +352,19 @@ export default function AdminV2LeadProfile() {
     onError: (e) => toast.error(e?.message || 'Return failed'),
   });
   const deleteMutation = useMutation({
-    mutationFn: () => bulkDelete([prospectId]),
-    onSuccess: (r) => {
+    mutationFn: ({ targetId } = {}) => bulkDelete([targetId || prospectId]),
+    onSuccess: (r, vars) => {
       const n = r?.data?.deleted ?? 0;
-      setConfirmDelete(false);
+      setConfirmDelete(null);
       invalidate();
-      if (n > 0) { toast.success('Lead deleted'); navigate(from); }
-      else toast.warning('Nothing deleted');
+      if (n > 0) {
+        toast.success('Lead deleted');
+        // Leaving the page only makes sense when the URL's own anchor died;
+        // deleting a SIBLING signup from the profile view stays put.
+        if (!vars?.targetId || String(vars.targetId) === String(prospectId)) navigate(from);
+      } else toast.warning('Nothing deleted');
     },
-    onError: (e) => { toast.error(e?.message || 'Delete failed'); setConfirmDelete(false); },
+    onError: (e) => { toast.error(e?.message || 'Delete failed'); setConfirmDelete(null); },
   });
 
   // Rail rows: journey signups, else this prospect alone (consumer-less B4).
@@ -411,7 +437,7 @@ export default function AdminV2LeadProfile() {
   if (profile.isError || !p) {
     return (
       <div>
-        <Link to={from} className="av2-btn av2-btn--sm" style={{ textDecoration: 'none', marginBottom: 16, display: 'inline-flex' }}>← Prospects</Link>
+        <Link to={from} className="av2-btn av2-btn--sm" style={{ textDecoration: 'none', marginBottom: 16, display: 'inline-flex' }}>← {fromLabel}</Link>
         <ErrorState error={profile.error || new Error("Couldn't load this lead — it may have been deleted.")} onRetry={profile.refetch} />
       </div>
     );
@@ -432,12 +458,35 @@ export default function AdminV2LeadProfile() {
   const hasScreening = p.screeningVerdict || p.screeningMetadata || String(p.quarantineReason || '').startsWith('screening_');
 
   const assignButtonLabel = view === 'profile' ? 'Assign to agent ▾' : 'Assign this lead ▾';
-  const openAssign = () => {
-    if (menu) { setMenu(null); return; }
-    if (view === 'profile' && railSignups.length > 1) { setMenu('campaign'); setMenuTarget(null); }
-    else { setMenu('agent'); setMenuTarget(currentSignup?.prospectId || prospectId); }
+  // One opener for all three command-bar actions: in profile view with >1
+  // signup every action picks its campaign first (the URL's anchor is just
+  // the newest signup — not an operator choice); in drill-in the anchor IS
+  // the choice, so return/delete act directly and assign goes straight to
+  // the agent stage.
+  const openAction = (action) => {
+    if (menu) { setMenu(null); setMenuAction(null); return; }
+    if (view === 'profile' && railSignups.length > 1) {
+      setMenuAction(action); setMenu('campaign'); setMenuTarget(null);
+      return;
+    }
+    if (action === 'assign') {
+      setMenuAction('assign'); setMenu('agent');
+      setMenuTarget(currentSignup?.prospectId || prospectId);
+    } else if (action === 'return') {
+      returnMutation.mutate({ targetId: currentSignup?.prospectId || prospectId });
+    } else {
+      setConfirmDelete(currentSignup?.prospectId || prospectId);
+    }
+  };
+  const pickCampaign = (s) => {
+    if (menuAction === 'assign') { setMenu('agent'); setMenuTarget(s.prospectId); return; }
+    setMenu(null); setMenuAction(null);
+    if (menuAction === 'return') returnMutation.mutate({ targetId: s.prospectId });
+    else setConfirmDelete(s.prospectId);
   };
   const menuTargetSignup = railSignups.find((s) => String(s.prospectId) === String(menuTarget)) || null;
+  // Delete-confirm copy names the PICKED signup's campaign, not the URL's.
+  const confirmSignup = railSignups.find((s) => String(s.prospectId) === String(confirmDelete)) || currentSignup;
 
   const consentVersions = consent
     ? [...new Set(Object.values(consent).map((c) => c?.version).filter(Boolean))]
@@ -460,22 +509,29 @@ export default function AdminV2LeadProfile() {
     <div>
       {/* ── Sticky command bar (all views) ── */}
       <div style={{ position: 'sticky', top: 64, zIndex: 30, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', background: 'var(--canvas)', borderBottom: '1px solid var(--line)', marginBottom: 16 }}>
-        <Link to={from} style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--accent-text)', textDecoration: 'none', flex: 'none' }}>← Prospects</Link>
+        <Link to={from} style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--accent-text)', textDecoration: 'none', flex: 'none' }}>← {fromLabel}</Link>
         <span aria-hidden="true" style={{ width: 1, height: 16, background: 'var(--line-strong)', flex: 'none' }} />
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.08em', color: 'var(--ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {`${canonicalName.toUpperCase()}${phone ? ` · ${phone}` : ''}`}
         </span>
         <span style={{ flex: 1 }} />
-        <button type="button" className="av2-btn av2-btn--sm" style={{ borderColor: 'var(--line-strong)', color: 'var(--bad)' }} onClick={() => setConfirmDelete(true)}>Delete</button>
-        <button type="button" className="av2-btn av2-btn--sm" disabled={returnMutation.isPending} onClick={() => returnMutation.mutate()}>Return to held</button>
-        <div style={{ position: 'relative', flex: 'none' }}>
-          <button type="button" className="av2-btn av2-btn--sm av2-btn--primary" aria-haspopup="menu" aria-expanded={!!menu} disabled={assignMutation.isPending} onClick={openAssign}>
-            {assignButtonLabel}
-          </button>
+        <div style={{ position: 'relative', flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button type="button" className="av2-btn av2-btn--sm" style={{ borderColor: 'var(--line-strong)', color: 'var(--bad)' }} onClick={() => openAction('delete')}>Delete</button>
+          {/* Erased people cannot be re-dispatched — the backend bulk paths
+              don't fence this yet (tracker follow-up), so the controls that
+              would recreate operational records are suppressed here. */}
+          {!erased && (
+            <button type="button" className="av2-btn av2-btn--sm" disabled={returnMutation.isPending} onClick={() => openAction('return')}>Return to held</button>
+          )}
+          {!erased && (
+            <button type="button" className="av2-btn av2-btn--sm av2-btn--primary" aria-haspopup="menu" aria-expanded={!!menu} disabled={assignMutation.isPending} onClick={() => openAction('assign')}>
+              {assignButtonLabel}
+            </button>
+          )}
           {menu && (
             <>
               <div onClick={() => setMenu(null)} aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
-              <div role="menu" aria-label="Assign lead" style={{ position: 'absolute', right: 0, top: 40, zIndex: 70, width: 264, background: 'var(--surface)', border: '1px solid var(--line-strong)', borderRadius: 12, boxShadow: 'var(--shadow)', padding: 8, boxSizing: 'border-box' }}>
+              <div role="menu" aria-label={menuAction === 'return' ? 'Return lead' : menuAction === 'delete' ? 'Delete lead' : 'Assign lead'} style={{ position: 'absolute', right: 0, top: 40, zIndex: 70, width: 264, background: 'var(--surface)', border: '1px solid var(--line-strong)', borderRadius: 12, boxShadow: 'var(--shadow)', padding: 8, boxSizing: 'border-box' }}>
                 {menu === 'campaign' && (
                   <>
                     <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--ink-2)', padding: '4px 10px 6px' }}>Which campaign's lead?</div>
@@ -484,7 +540,7 @@ export default function AdminV2LeadProfile() {
                         key={s.prospectId}
                         type="button"
                         role="menuitem"
-                        onClick={() => { setMenu('agent'); setMenuTarget(s.prospectId); }}
+                        onClick={() => pickCampaign(s)}
                         style={{ display: 'block', width: '100%', boxSizing: 'border-box', textAlign: 'left', background: 'transparent', border: 'none', borderRadius: 8, padding: '8px 10px', cursor: 'pointer', fontFamily: 'var(--font-ui)' }}
                       >
                         <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{s.campaign?.name || 'No campaign'}</span>
@@ -872,18 +928,18 @@ export default function AdminV2LeadProfile() {
         </>
       )}
 
-      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+      <AlertDialog open={!!confirmDelete} onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}>
         <AlertDialogContent className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)' }}>
           <AlertDialogHeader>
             <AlertDialogTitle style={{ color: 'var(--ink)' }}>Delete this lead?</AlertDialogTitle>
             <AlertDialogDescription style={{ color: 'var(--ink-2)' }}>
-              This permanently removes the {currentSignup?.campaign?.name ? `${currentSignup.campaign.name} ` : ''}lead and its activity history. It cannot be undone.
+              This permanently removes the {confirmSignup?.campaign?.name ? `${confirmSignup.campaign.name} ` : ''}lead and its activity history. It cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); deleteMutation.mutate(); }}
+              onClick={(e) => { e.preventDefault(); deleteMutation.mutate({ targetId: confirmDelete }); }}
               disabled={deleteMutation.isPending}
               style={{ background: 'var(--bad)', color: '#fff' }}
             >

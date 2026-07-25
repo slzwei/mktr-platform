@@ -66,6 +66,26 @@ export async function fetchProspectProfile(id) {
   return resp?.data?.prospect ?? null;
 }
 
+/**
+ * People directory (/AdminPeople): the deduplicated person list. Rows carry
+ * latestProspectId, the profile click-through anchor. params: { q, page,
+ * limit, sort }.
+ */
+export async function fetchConsumers(params = {}) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, v);
+  }
+  const resp = await apiClient.get(`/consumers?${qs.toString()}`);
+  const data = resp?.data ?? {};
+  return {
+    rows: data.rows || [],
+    total: data.total ?? 0,
+    page: data.page ?? 1,
+    limit: data.limit ?? 25,
+  };
+}
+
 /** Campaign leaderboard source — extended admin list (B6). */
 export async function fetchCampaignsList(period) {
   const resp = await apiClient.get(`/campaigns?period=${encodeURIComponent(period)}&limit=100`);
