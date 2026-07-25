@@ -95,7 +95,7 @@ export default function GlobalSearch() {
             id: `av2-opt-lead-${p.id}`,
             title: name,
             sub: [p.phone, p.campaign?.name].filter(Boolean).join(' · ') || p.email || '',
-            to: `/AdminProspects?q=${encodeURIComponent(p.phone || p.email || name)}&lead=${encodeURIComponent(p.id)}`,
+            to: `/admin/leads/${encodeURIComponent(p.id)}`,
           };
         }),
       });

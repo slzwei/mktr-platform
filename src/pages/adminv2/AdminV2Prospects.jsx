@@ -1,24 +1,24 @@
 /**
  * Switchboard Prospects — the operator lead table. Filters live in the URL
  * (removable chips, shareable links, back/forward safe), pagination + sort are
- * server-side (Phase B contracts), the drawer tells the whole lead story, and
- * the bulk bar drives the REAL bulk endpoints (assign / return-to-held /
- * delete) plus a client-side CSV export.
+ * server-side (Phase B contracts), a row click opens the lead's full-page
+ * profile (/admin/leads/:id — the drawer's replacement), and the bulk bar
+ * drives the REAL bulk endpoints (assign / return-to-held / delete) plus a
+ * client-side CSV export.
  */
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { useProspects, useProspectDetail, useAgentOptions } from '@/hooks/queries/useAdminV2';
+import { useProspects, useAgentOptions } from '@/hooks/queries/useAdminV2';
 import { bulkAssign, bulkReturnToHeld, bulkDelete } from '@/api/adminV2';
 import {
   LEAD_STATUSES, LEAD_SOURCES, STATUS_LABELS, STATUS_CHIP_CLASS,
-  SOURCE_LABELS, heldLabel, UTM_LABELS, PAGE_SIZE,
+  SOURCE_LABELS, heldLabel, PAGE_SIZE,
 } from '@/lib/adminV2/constants';
-import { fmtDateTime, fmtRelative, fmtSGDExact } from '@/lib/adminV2/format';
+import { fmtDateTime, fmtRelative } from '@/lib/adminV2/format';
 import { prospectsToCsv, downloadCsv } from '@/lib/adminV2/csv';
 import { Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuCheckboxItem, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
@@ -82,361 +82,22 @@ function SortHeader({ label, field, sort, onSort, width, align }) {
   );
 }
 
-function LeadDrawer({ prospect, onClose, onOpenLead }) {
-  // Detail fetch on open (consumer spine): the list row is a thin projection —
-  // the detail endpoint adds the admin enrichments (repeatSignup, timeline,
-  // the `consumer` journey for the Person card) and lets ?lead= deep-links
-  // open leads that aren't on the current page. Row data paints instantly;
-  // the detail enriches when it lands. Hook runs unconditionally (enabled
-  // gate), so the early return below stays hooks-safe.
-  const detail = useProspectDetail(prospect?.id);
-  // Row-level actions mirror the bulk bar but target this one lead. All hooks
-  // run BEFORE the null-guard return so hook order stays stable across
-  // open/close — the mutations simply never fire while `id` is undefined.
-  const queryClient = useQueryClient();
-  const agentOptions = useAgentOptions(!!prospect);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const id = prospect?.id;
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['adminV2', 'prospects'] });
-    queryClient.invalidateQueries({ queryKey: ['adminV2', 'prospectDetail'] });
-  };
-  const assignMutation = useMutation({
-    mutationFn: ({ agentId }) => bulkAssign([id], agentId),
-    onSuccess: (r, { agentName }) => {
-      const n = r?.data?.affectedCount ?? 0;
-      if (n > 0) toast.success(`Assigned to ${agentName}`);
-      else toast.warning('Not assigned — lead not eligible');
-      invalidate();
-    },
-    onError: (e) => toast.error(e?.message || 'Assign failed'),
-  });
-  const returnMutation = useMutation({
-    mutationFn: () => bulkReturnToHeld([id]),
-    onSuccess: (r) => {
-      const n = r?.data?.returned ?? 0;
-      if (n > 0) toast.success('Returned to held');
-      else toast.warning('Not returned — already held or not eligible');
-      invalidate();
-    },
-    onError: (e) => toast.error(e?.message || 'Return failed'),
-  });
-  const deleteMutation = useMutation({
-    mutationFn: () => bulkDelete([id]),
-    onSuccess: (r) => {
-      const n = r?.data?.deleted ?? 0;
-      setConfirmDelete(false);
-      invalidate();
-      if (n > 0) { toast.success('Lead deleted'); onClose(); }
-      else toast.warning('Nothing deleted');
-    },
-    onError: (e) => { toast.error(e?.message || 'Delete failed'); setConfirmDelete(false); },
-  });
-  if (!prospect) return null;
-  const p = detail.data || prospect;
-  const consumer = detail.data?.consumer || null;
-  const otherSignups = consumer ? consumer.signups.filter((s) => s.prospectId !== p.id) : [];
-  const utm = p.sourceMetadata?.utm || {};
-  const held = !!p.quarantinedAt;
-  return (
-    <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <SheetContent side="right" className="admin-v2" style={{ width: 432, maxWidth: '90vw', padding: 0, background: 'var(--surface)', color: 'var(--ink)', borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 0 }}>
-        <SheetHeader style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)', flexShrink: 0 }}>
-          <SheetTitle style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', fontFamily: 'var(--font-ui)', textAlign: 'left' }}>
-            {(p.firstName || p.lastName)
-              ? `${p.firstName || ''} ${p.lastName || ''}`.trim()
-              : (detail.isLoading ? 'Loading…' : 'Lead')}
-          </SheetTitle>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <Chip tone={STATUS_CHIP_CLASS[p.leadStatus]?.replace('av2-chip--', '') || ''}>{STATUS_LABELS[p.leadStatus] || p.leadStatus}</Chip>
-            {held && <Chip tone="hold" glyph="◆">{heldLabel(p).full}</Chip>}
-            {!held && !p.assignedAgent && <Chip tone="warn">Unassigned</Chip>}
-            {p.priority && <Chip>{p.priority}</Chip>}
-            {Number.isFinite(Number(p.score)) && p.score !== null && <Chip>score {p.score}</Chip>}
-          </div>
-        </SheetHeader>
-        <div style={{ padding: 16, overflowY: 'auto', display: 'grid', gap: 18, flex: 1, minHeight: 0 }}>
-          {detail.isError && !p.phone && (
-            <div className="av2-kv" style={{ color: 'var(--ink-2)' }}>
-              Couldn&apos;t load this lead — it may have been deleted.
-            </div>
-          )}
-          <section>
-            <div className="av2-microcaps" style={{ marginBottom: 6 }}>Contact</div>
-            <div className="av2-kv"><span>phone</span><span>{p.phone || '—'}</span></div>
-            <div className="av2-kv"><span>email</span><span>{p.email || '—'}</span></div>
-          </section>
-          <section>
-            <div className="av2-microcaps" style={{ marginBottom: 6 }}>Attribution</div>
-            <div className="av2-kv"><span>source</span><span>{SOURCE_LABELS[p.leadSource] || p.leadSource}</span></div>
-            {utm.utm_source && <div className="av2-kv"><span>utm_source</span><span>{UTM_LABELS[utm.utm_source] || utm.utm_source}</span></div>}
-            {utm.utm_medium && <div className="av2-kv"><span>utm_medium</span><span>{utm.utm_medium}</span></div>}
-            {utm.utm_campaign && <div className="av2-kv"><span>utm_campaign</span><span>{utm.utm_campaign}</span></div>}
-            {p.qrTag && <div className="av2-kv"><span>qr tag</span><span>{p.qrTag.name}</span></div>}
-            <div className="av2-kv"><span>campaign</span><span>{p.campaign?.name || '—'}</span></div>
-          </section>
-          {consumer && (
-            <section>
-              <div className="av2-microcaps" style={{ marginBottom: 6 }}>Person</div>
-              <div className="av2-kv">
-                <span>signups</span>
-                <span>
-                  {consumer.consumer.signupCount}
-                  {consumer.consumer.verifiedSignupCount !== consumer.consumer.signupCount
-                    ? ` (${consumer.consumer.verifiedSignupCount} verified)` : ''}
-                </span>
-              </div>
-              <div className="av2-kv"><span>first seen</span><span>{fmtDateTime(consumer.consumer.firstSeenAt)}</span></div>
-              {consumer.entitlements.length > 0 && (
-                <div className="av2-kv">
-                  <span>rewards</span>
-                  <span>{consumer.entitlements.length} · {consumer.entitlements.filter((e) => e.redeemedAt).length} redeemed</span>
-                </div>
-              )}
-              {consumer.drawEntries > 0 && (
-                <div className="av2-kv"><span>draw entries</span><span>{consumer.drawEntries}</span></div>
-              )}
-              {otherSignups.length > 0 && (
-                <div style={{ marginTop: 8, display: 'grid', gap: 4 }}>
-                  <div className="av2-microcaps" style={{ color: 'var(--ink-2)' }}>Also in</div>
-                  {otherSignups.map((s) => (
-                    <button
-                      key={s.prospectId}
-                      type="button"
-                      onClick={() => onOpenLead?.(s.prospectId)}
-                      style={{
-                        textAlign: 'left', background: 'none', border: '1px solid var(--line)',
-                        borderRadius: 8, padding: '6px 8px', cursor: 'pointer', color: 'var(--ink)',
-                        fontFamily: 'var(--font-ui)', fontSize: 12,
-                      }}
-                    >
-                      {s.campaign?.name || 'No campaign'} · {fmtRelative(s.createdAt)}
-                      {!s.verified && <span style={{ color: 'var(--ink-2)' }}> · unverified</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-          <section>
-            <div className="av2-microcaps" style={{ marginBottom: 6 }}>Routing</div>
-            <div className="av2-kv"><span>agent</span><span>{p.assignedAgent ? `${p.assignedAgent.firstName || ''} ${p.assignedAgent.lastName || ''}`.trim() : p.externalAgentId ? 'external buyer' : held ? 'held' : 'unassigned'}</span></div>
-            {held && <div className="av2-kv"><span>held since</span><span>{fmtDateTime(p.quarantinedAt)}</span></div>}
-            {held && <div className="av2-kv"><span>reason</span><span>{heldLabel(p).full || p.quarantineReason || '—'}</span></div>}
-          </section>
-          {(p.screeningVerdict || p.screeningMetadata || String(p.quarantineReason || '').startsWith('screening_')) && (() => {
-            const sm = p.screeningMetadata || {};
-            const verdictDetail = sm.verdictDetail || {};
-            const attempts = Object.values(sm.attempts || {})
-              .filter((a) => a && a.startedAt)
-              .sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
-            // Cost is summed across every dial (the true per-lead screening
-            // spend); duration/version come from the latest call that carried
-            // them — the one that produced the verdict.
-            const costCents = attempts.reduce((s, a) => s + (Number(a.costCents) || 0), 0);
-            const hasCost = attempts.some((a) => Number.isFinite(a.costCents));
-            const lastWith = (key) => [...attempts].reverse().find((a) => a[key] != null);
-            const durationSeconds = lastWith('durationSeconds')?.durationSeconds ?? null;
-            const agentVersion = lastWith('agentVersion')?.agentVersion ?? null;
-            return (
-              <section>
-                <div className="av2-microcaps" style={{ marginBottom: 6 }}>AI Screening</div>
-                <div className="av2-kv">
-                  <span>verdict</span>
-                  <span>
-                    {p.screeningVerdict === 'qualified' ? 'Qualified'
-                      : p.screeningVerdict === 'not_qualified' ? 'Not qualified'
-                        : sm.unreachable ? 'Unreachable' : 'Pending'}
-                  </span>
-                </div>
-                {verdictDetail.reason && <div className="av2-kv"><span>reason</span><span>{verdictDetail.reason}</span></div>}
-                {verdictDetail.sentiment && <div className="av2-kv"><span>sentiment</span><span>{verdictDetail.sentiment}</span></div>}
-                <div className="av2-kv"><span>attempts</span><span>{p.screeningAttemptCount || attempts.length || 0}</span></div>
-                {/* A time Sarah promised on the phone (or the customer picked
-                    via WhatsApp) — the one screening date an operator must not
-                    silently miss. */}
-                {sm.callbackGranted && p.screeningNextAttemptAt && (
-                  <div className="av2-kv"><span>callback</span><span>{fmtDateTime(p.screeningNextAttemptAt)}</span></div>
-                )}
-                {sm.waCallback?.sentAt && (
-                  <div className="av2-kv">
-                    <span>wa invite</span>
-                    <span>
-                      {sm.waCallback.sent === false ? 'send failed' : fmtDateTime(sm.waCallback.sentAt)}
-                      {sm.waCallback.tappedAt ? ` · tapped (${String(sm.waCallback.window || '').replace(/_/g, ' ')})` : ''}
-                    </span>
-                  </div>
-                )}
-                {hasCost && (
-                  <div className="av2-kv">
-                    <span>call cost</span>
-                    <span>{fmtSGDExact(costCents)}{durationSeconds != null ? ` · ${durationSeconds}s` : ''}</span>
-                  </div>
-                )}
-                {agentVersion != null && <div className="av2-kv"><span>script</span><span>v{agentVersion}</span></div>}
-                {verdictDetail.summary && (
-                  <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-                    {String(verdictDetail.summary).slice(0, 600)}
-                  </div>
-                )}
-                {verdictDetail.transcript && (
-                  <details style={{ marginTop: 8 }}>
-                    <summary style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-2)', cursor: 'pointer', userSelect: 'none' }}>
-                      Call transcript
-                    </summary>
-                    <div
-                      style={{
-                        marginTop: 6,
-                        maxHeight: 260,
-                        overflowY: 'auto',
-                        padding: '8px 10px',
-                        borderRadius: 8,
-                        background: 'var(--surface-2)',
-                        border: '1px solid var(--line)',
-                        fontSize: 12,
-                        lineHeight: 1.55,
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                        color: 'var(--ink-2)',
-                      }}
-                    >
-                      {String(verdictDetail.transcript).split('\n').map((line, i) => {
-                        const m = /^(Agent|User):\s?(.*)$/.exec(line);
-                        if (!m) return line ? <div key={i}>{line}</div> : <div key={i}>&nbsp;</div>;
-                        return (
-                          <div key={i} style={{ marginBottom: 3 }}>
-                            <span style={{ fontWeight: 700, color: m[1] === 'Agent' ? 'var(--accent-text)' : 'var(--ink)' }}>
-                              {m[1] === 'Agent' ? 'Sarah' : p.firstName || 'Lead'}:
-                            </span>{' '}
-                            {m[2]}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </details>
-                )}
-                {/* Attempts that produced no verdict write no verdictDetail, so
-                    the block above says nothing about them. Their own evidence
-                    is the only record of WHY — e.g. a requested callback. */}
-                {attempts.some((a) => a.outcome === 'no_verdict' || a.outcome === 'unanswered') && (
-                  <div style={{ marginTop: 8, display: 'grid', gap: 3 }}>
-                    {attempts.map((a, i) => (
-                      (a.outcome === 'no_verdict' || a.outcome === 'unanswered') ? (
-                        <div key={a.token || i} style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.45 }}>
-                          Attempt {i + 1} — {a.outcome === 'unanswered'
-                            ? String(a.disconnectionReason || 'no answer').replace(/_/g, ' ')
-                            : a.reason || 'no verdict'}
-                        </div>
-                      ) : null
-                    ))}
-                  </div>
-                )}
-                {attempts.some((a) => a.recordingUrl) && (
-                  <div style={{ marginTop: 6, display: 'grid', gap: 10 }}>
-                    {attempts.filter((a) => a.recordingUrl).map((a, i) => (
-                      <div key={a.token || i} style={{ display: 'grid', gap: 4 }}>
-                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-                          <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
-                            Recording — attempt {i + 1} ({fmtDateTime(a.startedAt)})
-                          </span>
-                          {/* Download stays available; `download` is honoured for
-                              same-origin/blob, and for the cross-origin CDN URL the
-                              browser opens the file in a new tab — either way the raw
-                              file is one click away, separate from playback. */}
-                          <a
-                            href={a.recordingUrl}
-                            download={`screening-attempt-${i + 1}.wav`}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ fontSize: 11, color: 'var(--ink)', textDecoration: 'underline', flex: 'none' }}
-                          >
-                            Download
-                          </a>
-                        </div>
-                        {/* Streams in-page; preload=none so opening the drawer
-                            never fetches audio until the operator hits play. */}
-                        <audio
-                          controls
-                          preload="none"
-                          src={a.recordingUrl}
-                          style={{ width: '100%', height: 34 }}
-                        >
-                          <a href={a.recordingUrl} target="_blank" rel="noreferrer">Play recording</a>
-                        </audio>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            );
-          })()}
-          <section>
-            <div className="av2-microcaps" style={{ marginBottom: 6 }}>Consent</div>
-            <div className="av2-kv"><span>marketing</span><span>{p.sourceMetadata?.consent_contact === true ? 'yes' : p.sourceMetadata?.consent_contact === false ? 'no' : '—'}</span></div>
-            <div className="av2-kv"><span>terms</span><span>{p.sourceMetadata?.consent_terms === true ? 'yes' : p.sourceMetadata?.consent_terms === false ? 'no' : '—'}</span></div>
-            <div className="av2-kv"><span>third-party</span><span>{p.sourceMetadata?.consent_third_party === true ? 'yes' : p.sourceMetadata?.consent_third_party === false ? 'no' : '—'}</span></div>
-          </section>
-          <section>
-            <div className="av2-microcaps" style={{ marginBottom: 6 }}>Timeline</div>
-            <div className="av2-kv"><span>created</span><span>{fmtDateTime(p.createdAt)}</span></div>
-            <div className="av2-kv"><span>last contact</span><span>{fmtDateTime(p.lastContactDate)}</span></div>
-            <div className="av2-kv"><span>converted</span><span>{fmtDateTime(p.conversionDate)}</span></div>
-          </section>
-        </div>
-        {/* ── Action footer (pinned; mirrors the bulk bar for this one lead) ── */}
-        <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderTop: '1px solid var(--line)', background: 'var(--surface)' }}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button type="button" className="av2-btn av2-btn--sm" disabled={assignMutation.isPending}>Assign to agent ▾</button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="admin-v2" align="start" side="top">
-              <DropdownMenuLabel>Assign to</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {(agentOptions.data || []).map((a) => (
-                <DropdownMenuItem key={a.id} onSelect={() => assignMutation.mutate({ agentId: a.id, agentName: a.name })}>
-                  {a.name}
-                </DropdownMenuItem>
-              ))}
-              {agentOptions.isLoading && <DropdownMenuItem disabled>Loading agents…</DropdownMenuItem>}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <button type="button" className="av2-btn av2-btn--sm" disabled={returnMutation.isPending} onClick={() => returnMutation.mutate()}>Return to held</button>
-          <span style={{ flex: 1 }} />
-          <button type="button" className="av2-btn av2-btn--sm" style={{ borderColor: 'var(--bad)', color: 'var(--bad)' }} onClick={() => setConfirmDelete(true)}>Delete</button>
-        </div>
-        <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-          <AlertDialogContent className="admin-v2" style={{ background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--line)' }}>
-            <AlertDialogHeader>
-              <AlertDialogTitle style={{ color: 'var(--ink)' }}>Delete this lead?</AlertDialogTitle>
-              <AlertDialogDescription style={{ color: 'var(--ink-2)' }}>
-                This permanently removes the lead and its activity history. It cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={(e) => { e.preventDefault(); deleteMutation.mutate(); }}
-                disabled={deleteMutation.isPending}
-                style={{ background: 'var(--bad)', color: '#fff' }}
-              >
-                {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </SheetContent>
-    </Sheet>
-  );
-}
 
 export default function AdminV2Prospects() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = useMemo(() => readFilters(searchParams), [searchParams]);
   const [searchDraft, setSearchDraft] = useState(filters.search);
   const [selected, setSelected] = useState(() => new Set());
-  const [drawer, setDrawer] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Open a lead's full-page profile, carrying the CURRENT list URL as
+  // state.from so the page's back link restores these exact filters (§3.8).
+  const openLead = (id) => navigate(`/admin/leads/${id}`, {
+    state: { from: `${location.pathname}${location.search}` },
+  });
 
   // Live view of the params for timers created in older renders. RR v7's
   // setSearchParams closes over ITS render's params (even the functional
@@ -501,23 +162,22 @@ export default function AdminV2Prospects() {
   // Selection is per-page; changing the result set clears it.
   useEffect(() => { setSelected(new Set()); }, [queryParams]);
 
-  // Palette deep-link: /AdminProspects?q=…&lead=<id> auto-opens that lead's
-  // drawer once the row set arrives, then consumes the param (found or not —
-  // a stale id must not re-trigger on every later fetch). Guard on isFetching,
-  // not isLoading: when the palette navigates while this page is already
-  // mounted, only isFetching flips — isLoading is first-load-only in RQ v5,
-  // and matching against the previous filter's rows would eat the param.
-  // On error, keep the param so a retry can still open the drawer.
+  // Legacy deep-link: ?lead=<id> (the old drawer contract — saved links and
+  // any un-migrated caller still emit it) → redirect to the Lead Profile
+  // page. No need to wait for the row set: the page detail-fetches by id.
+  // The CLEANED list URL rides along as state.from for the back link.
   const leadParam = searchParams.get('lead');
   useEffect(() => {
-    if (!leadParam || prospects.isFetching || prospects.isError) return;
-    const hit = rows.find((r) => r.id === leadParam);
-    // Off-page ids open too: the drawer detail-fetches by id, so palette /
-    // Person-card deep-links work from any filter or page.
-    setDrawer(hit || { id: leadParam });
-    patch({ lead: null });
+    if (!leadParam) return;
+    const cleaned = new URLSearchParams(searchParams);
+    cleaned.delete('lead');
+    const qs = cleaned.toString();
+    navigate(`/admin/leads/${leadParam}`, {
+      replace: true,
+      state: { from: `/AdminProspects${qs ? `?${qs}` : ''}` },
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leadParam, prospects.isFetching, prospects.isError]);
+  }, [leadParam]);
 
   const toggleList = (key, value) => {
     const current = new Set(filters[key]);
@@ -716,10 +376,17 @@ export default function AdminV2Prospects() {
         {rows.map((p) => {
           const held = !!p.quarantinedAt;
           const isSelected = selected.has(p.id);
+          // Selection mode: while ANY rows are selected, a row click toggles
+          // that row (Gmail-style) instead of navigating — navigation unmounts
+          // this component and would silently drop the whole selection.
+          const openRow = () => {
+            if (selected.size > 0) toggleOne(p.id);
+            else openLead(p.id);
+          };
           return (
             <div key={p.id} className="av2-row" data-selected={isSelected} role="button" tabIndex={0}
-              onClick={() => setDrawer(p)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDrawer(p); } }}
+              onClick={openRow}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRow(); } }}
             >
               <button
                 type="button"
@@ -837,11 +504,6 @@ export default function AdminV2Prospects() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <LeadDrawer
-        prospect={drawer}
-        onClose={() => setDrawer(null)}
-        onOpenLead={(id) => setDrawer({ id })}
-      />
     </div>
   );
 }
