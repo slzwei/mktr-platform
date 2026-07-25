@@ -244,14 +244,17 @@ describe('draw-copy overrides', () => {
     });
   });
 
-  it('empty/whitespace overrides fall back to the composed defaults', async () => {
+  it('empty/whitespace overrides fall back to the composed defaults (scam line has NO default — T&C-only)', async () => {
     setViewport(390);
     const { container } = renderTemplate(
       fullDoc('nightfall', { drawCopy: { trustRow: '', scamLine: '   ' } })
     );
     await waitFor(() => {
       expect(container.textContent).toContain('SMS-VERIFIED · ONE ENTRY PER NUMBER · FREE TO ENTER');
-      expect(container.textContent).toContain('We never ask for payment to release a prize.');
+      // 2026-07-25: whitespace scam override falls back to NOTHING — the
+      // payment-integrity line lives only in the T&Cs now.
+      expect(container.textContent).not.toContain('We never ask for payment');
+      expect(container.textContent).toContain('Masked results at');
     });
   });
 

@@ -191,9 +191,13 @@ export const CALLBACK_TEMPLATES = [
     components: [
       { type: 'HEADER', format: 'TEXT', text: 'About your lucky draw entry' },
       {
+        // Trimmed 2026-07-25 (wordiness audit — 66→44 words). Kept on purpose:
+        // "financial consultants" (meet-up honesty), the record condition
+        // (promise precision) and the ×N-total register. The edit was pushed
+        // to the approved template via Graph POST /<template-id>.
         type: 'BODY',
         text:
-          "Hi {{1}}, it's the Redeem draw team about the {{2}} — sorry we missed you on the phone!\n\nYour entry is in with 1 chance. Meet one of our licensed financial consultants for a short, no-obligation session, and when your consultant records your completed session, your 1 entry becomes {{3}} — that's ×{{3}} chances at {{4}}.\n\nTap below and we'll ring you to arrange it, at a time that suits you.",
+          "Hi {{1}}, sorry we missed you on the phone about the {{2}}!\n\nMeet one of our financial consultants — once your session is recorded, your 1 entry becomes {{3}}: ×{{3}} chances at {{4}}.\n\nTap below and we'll call you at a time that suits you.",
         example: {
           body_text: [['Shawn', 'iPhone 17 Pro Lucky Draw', '10', 'an iPhone 17 Pro']],
         },

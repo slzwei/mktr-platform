@@ -30,7 +30,6 @@ import { MediaBlock } from './templates';
 import { accentTextOn, resolveTheme } from '@/lib/designConfigV2';
 import {
   DRAW_TRUST_ROW_DEFAULT,
-  DRAW_SCAM_LINE_DEFAULT,
   drawWinnersNoteDefault,
   drawCtaSublineDefault,
   drawBoostBodyDefault,
@@ -102,7 +101,10 @@ function drawStrings(luckyDraw, campaignName, drawCopy = {}) {
     kicker: (campaignName || '').toUpperCase(),
     boostBody: ov(drawCopy.boostBody) || drawBoostBodyDefault(m, boostFull),
     trustRow: ov(drawCopy.trustRow) || DRAW_TRUST_ROW_DEFAULT,
-    scamLine: ov(drawCopy.scamLine) || DRAW_SCAM_LINE_DEFAULT,
+    // No default since 2026-07-25 — the payment-integrity line is T&C-only
+    // (drawTermsTemplate "Integrity" clause). Renders ONLY when an operator
+    // sets content.drawCopy.scamLine.
+    scamLine: ov(drawCopy.scamLine) || '',
     winnersNote: ov(drawCopy.winnersNote) || drawWinnersNoteDefault(winners),
     ctaSubline: ov(drawCopy.ctaSubline) || drawCtaSublineDefault(m),
     /** Site default varies (FREE ENTRY / LUCKY DRAW · FREE ENTRY / ADMIT 1
@@ -193,7 +195,7 @@ function DrawFootnotes({ draw, scamLine, linkColor, mutedColor, faintColor, cont
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, textAlign: align }}>
       {draw && (
         <div data-se="content.drawCopy.scamLine" style={{ fontSize: 13.5, color: mutedColor, fontFamily: SANS }}>
-          {scamLine || DRAW_SCAM_LINE_DEFAULT} Masked results at <WinnersLink color={linkColor} />.
+          {scamLine ? `${scamLine} ` : ''}Masked results at <WinnersLink color={linkColor} />.
         </div>
       )}
       <div data-se="content.footer.regulatory" style={{ fontSize: 11, color: faintColor, fontFamily: SANS }}>

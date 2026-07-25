@@ -23,6 +23,12 @@ export function drawBoostLine(multiplier, boostDateLong) {
  * Overrides are STATIC text: they do not re-derive when draw config changes.
  */
 export const DRAW_TRUST_ROW_DEFAULT = 'SMS-VERIFIED · ONE ENTRY PER NUMBER · FREE TO ENTER';
+/**
+ * NOT rendered by default since 2026-07-25 (Shawn: the payment-integrity line
+ * lives in the T&Cs ONLY — drawTermsTemplate.js "Integrity" clause + the AI
+ * terms drafter). Kept as the Studio placeholder SUGGESTION for operators who
+ * opt a campaign back in via content.drawCopy.scamLine.
+ */
 export const DRAW_SCAM_LINE_DEFAULT = 'We never ask for payment to release a prize.';
 
 export function drawWinnersNoteDefault(winners) {
