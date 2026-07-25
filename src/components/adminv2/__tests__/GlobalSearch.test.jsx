@@ -68,13 +68,13 @@ describe('GlobalSearch', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('typing surfaces lead results and Enter deep-links with the drawer param', async () => {
+  it('typing surfaces lead results and Enter opens the lead profile page', async () => {
     setup();
     const input = openPalette();
     fireEvent.change(input, { target: { value: 'sam' } });
     await screen.findByText('Sam Tan');
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(screen.getByTestId('loc')).toHaveTextContent('/AdminProspects?q=%2B6589279750&lead=p1');
+    expect(screen.getByTestId('loc')).toHaveTextContent('/admin/leads/p1');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 

@@ -239,9 +239,8 @@ function RecentLeads() {
             const held = !!p.quarantinedAt;
             const utm = p.sourceMetadata?.utm?.utm_source;
             const agent = p.assignedAgent ? `${p.assignedAgent.firstName || ''} ${p.assignedAgent.lastName || ''}`.trim() : '';
-            const search = p.phone || `${p.firstName || ''} ${p.lastName || ''}`.trim();
             return (
-              <Link key={p.id} to={`/AdminProspects?q=${encodeURIComponent(search)}`} className="av2-qrow" style={{ padding: '7px 16px', minHeight: 47 }}>
+              <Link key={p.id} to={`/admin/leads/${p.id}`} className="av2-qrow" style={{ padding: '7px 16px', minHeight: 47 }}>
                 <span className="av2-mono" style={{ width: 38, flex: 'none', fontSize: 11, color: 'var(--ink-3)' }}>{fmtAgoShort(p.createdAt)}</span>
                 <span style={{ flex: 1.2, minWidth: 0 }}>
                   <span style={{ display: 'block', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.firstName} {p.lastName}</span>

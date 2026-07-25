@@ -56,6 +56,16 @@ export async function fetchProspectDetail(id) {
   return resp?.data?.prospect ?? null;
 }
 
+/**
+ * Lead Profile page (/admin/leads/:id): the full admin enrichment —
+ * per-signup draw standing, scoped consent + reward diagnostics, delivery
+ * receipts, broadcasts, session, Lyfe delivery (?include=profile, PR #269).
+ */
+export async function fetchProspectProfile(id) {
+  const resp = await apiClient.get(`/prospects/${encodeURIComponent(id)}?include=profile`);
+  return resp?.data?.prospect ?? null;
+}
+
 /** Campaign leaderboard source — extended admin list (B6). */
 export async function fetchCampaignsList(period) {
   const resp = await apiClient.get(`/campaigns?period=${encodeURIComponent(period)}&limit=100`);
