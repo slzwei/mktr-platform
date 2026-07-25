@@ -23,10 +23,14 @@ import * as campaignSvc from '@/services/campaignService';
  * workspace, never from a bulk bar), archive accepts any non-archived status,
  * and permanent delete is archived-only (the server 400s otherwise and 409s
  * on pending commissions — per-row failures surface in the summary toast).
+ * Duplicate takes any status (even archived — the copy is a fresh draft); the
+ * server mints "<name> (Copy)", resets metrics, and never clones publication
+ * state, pricing, or the lucky draw (campaignService.duplicateCampaign).
  */
 const BULK_ACTIONS = [
   { key: 'pause', label: 'Pause', eligible: (c) => c.status === 'active', run: (id) => campaignSvc.setCampaignLaunchState(id, { state: 'paused' }) },
   { key: 'activate', label: 'Resume', eligible: (c) => c.status === 'paused', run: (id) => campaignSvc.setCampaignLaunchState(id, { state: 'active' }) },
+  { key: 'duplicate', label: 'Duplicate', eligible: () => true, run: (id) => campaignSvc.duplicateCampaign(id) },
   { key: 'archive', label: 'Archive', eligible: (c) => c.status !== 'archived', run: (id) => campaignSvc.archiveCampaign(id) },
   { key: 'restore', label: 'Restore', eligible: (c) => c.status === 'archived', run: (id) => campaignSvc.restoreCampaign(id) },
   { key: 'delete', label: 'Delete', destructive: true, eligible: (c) => c.status === 'archived', run: (id) => campaignSvc.permanentDeleteCampaign(id) },
@@ -275,11 +279,13 @@ export default function AdminV2Campaigns() {
         description={confirmAction ? [
           confirmAction.key === 'delete'
             ? 'Permanent deletion cannot be undone. Campaigns with pending or approved commissions are refused by the server.'
-            : confirmAction.key === 'archive'
-              ? 'Archived campaigns stop accepting signups and move to the archived filter; restore them anytime.'
-              : confirmAction.key === 'activate'
-                ? 'Resumes paused campaigns. Drafts are never launched from here — use the campaign workspace.'
-                : 'Paused campaigns stop accepting public signups until resumed.',
+            : confirmAction.key === 'duplicate'
+              ? 'Each copy starts as a fresh draft named “… (Copy)”. Design, media, and agent assignments carry over; leads, QR codes, lead pricing, and marketplace/homepage/draw publication do not.'
+              : confirmAction.key === 'archive'
+                ? 'Archived campaigns stop accepting signups and move to the archived filter; restore them anytime.'
+                : confirmAction.key === 'activate'
+                  ? 'Resumes paused campaigns. Drafts are never launched from here — use the campaign workspace.'
+                  : 'Paused campaigns stop accepting public signups until resumed.',
           eligibleFor(confirmAction).length !== selected.size
             ? ` ${selected.size - eligibleFor(confirmAction).length} of the selected campaigns are not eligible and will be skipped.`
             : '',
