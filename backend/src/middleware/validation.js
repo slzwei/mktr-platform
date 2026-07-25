@@ -136,7 +136,11 @@ export const schemas = {
     slug: Joi.string().max(80).optional().allow(null, ''),
     // PR 5 rollout escape hatch: admin-only explicit v1-snapshot restore over a
     // stored v2 doc (service enforces role + logs; see the rollout runbook).
-    confirmDesignRollback: Joi.boolean().optional()
+    confirmDesignRollback: Joi.boolean().optional(),
+    // Draw pass colourway — a narrow top-level field rather than a design_config
+    // write (a Studio-saved doc rejects an untagged one, and a display change
+    // must not read as a draw-fact edit). Service enforces admin + the enum.
+    drawPassTheme: Joi.string().max(16).optional()
   }).min(1),
 
   // Car schemas
