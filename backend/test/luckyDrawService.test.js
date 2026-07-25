@@ -397,14 +397,19 @@ describe('sealDraw', () => {
     expect(result.totalChances).toBe(13);
   });
 
-  it('blocks sealing while a button unlock is undecided, listing it', async () => {
-    const { deps } = boostScenario();
+  it('veto model: an UNREVIEWED button unlock counts and never blocks the seal', async () => {
+    // Operator decision 2026-07-25 — the approval queue was friction; button
+    // unlocks weight the draw by default and ops can only STRIKE one
+    // (decision 'rejected') before seal.
+    const { deps, state } = boostScenario();
     const svc = makeLuckyDrawService(deps);
-    const err = await svc.sealDraw(DRAW_ID, ADMIN).catch((e) => e);
-    expect(err.statusCode).toBe(409);
-    expect(err.data.undecided).toEqual([
-      expect.objectContaining({ entitlementId: 'ent-2', prospectId: 'p2' }),
-    ]);
+    const sealed = await svc.sealDraw(DRAW_ID, ADMIN);
+    const byId = Object.fromEntries(state.entries.map((e) => [e.id, e.chances]));
+    expect(byId.e1).toBe(10); // scan
+    expect(byId.e2).toBe(10); // unreviewed button — counts by default
+    expect(byId.e3).toBe(1); // auto_on_capture never boosts
+    expect(byId.e4).toBe(1); // manually-issued entitlement never boosts
+    expect(sealed.totalChances).toBe(22);
   });
 
   it('PR-4 (CX23): an unlock_reversed event kills EXACTLY its unlock; a later genuine re-scan boosts again', async () => {
@@ -459,22 +464,32 @@ describe('sealDraw', () => {
     expect(result2.totalChances).toBe(13);
   });
 
-  it('never boosts auto_on_capture unlocks, and manual unlocks need a review like buttons', async () => {
-    // auto_on_capture (ev-3/p3) is present in every boostScenario — the
-    // approved run above already proved e3 stays 1×. Now: an admin/manual
-    // unlock must be review-gated, not treated as a scan.
-    const scenario = boostScenario({
+  it('never boosts auto_on_capture unlocks; a manual-via unlock counts by default but a rejection strikes it', async () => {
+    // auto_on_capture (ev-3/p3) is present in every boostScenario — the runs
+    // above prove e3 stays 1×. Under the veto model an admin/manual unlock
+    // counts like a button — until ops rejects it.
+    const counted = boostScenario({
       reviews: [{ id: 'r1', drawId: DRAW_ID, entitlementId: 'ent-2', decision: 'rejected' }],
     });
-    scenario.deps.RedemptionEvent.findAll = jest.fn().mockResolvedValue([
+    counted.deps.RedemptionEvent.findAll = jest.fn().mockResolvedValue([
       { id: 'ev-m', type: 'unlocked', entitlementId: 'ent-1', metadata: { via: 'manual' }, createdAt: new Date('2026-09-01T00:00:00Z') },
     ]);
-    const svc = makeLuckyDrawService(scenario.deps);
-    const err = await svc.sealDraw(DRAW_ID, ADMIN).catch((e) => e);
-    expect(err.statusCode).toBe(409);
-    expect(err.data.undecided).toEqual([
-      expect.objectContaining({ entitlementId: 'ent-1', via: 'manual' }),
+    const sealed = await makeLuckyDrawService(counted.deps).sealDraw(DRAW_ID, ADMIN);
+    expect(Object.fromEntries(counted.state.entries.map((e) => [e.id, e.chances])).e1).toBe(10);
+    expect(sealed.totalChances).toBe(13);
+
+    const vetoed = boostScenario({
+      reviews: [
+        { id: 'r1', drawId: DRAW_ID, entitlementId: 'ent-2', decision: 'rejected' },
+        { id: 'r2', drawId: DRAW_ID, entitlementId: 'ent-1', decision: 'rejected' },
+      ],
+    });
+    vetoed.deps.RedemptionEvent.findAll = jest.fn().mockResolvedValue([
+      { id: 'ev-m', type: 'unlocked', entitlementId: 'ent-1', metadata: { via: 'manual' }, createdAt: new Date('2026-09-01T00:00:00Z') },
     ]);
+    const sealed2 = await makeLuckyDrawService(vetoed.deps).sealDraw(DRAW_ID, ADMIN);
+    expect(Object.fromEntries(vetoed.state.entries.map((e) => [e.id, e.chances])).e1).toBe(1);
+    expect(sealed2.totalChances).toBe(4);
   });
 });
 

@@ -80,7 +80,7 @@ function heroFor(draw, rewards, diagnostic) {
       case 'provisional_in':
         return draw.boosted
           ? { big: `On track for ×${draw.multiplier}`, tail: ` — ${BOOST_VIA_COPY[draw.boostVia] || 'boost'} recorded`, tone: 'ink', meta: draw.closesAt ? `CLOSES ${drawWindowDayUpper(draw.closesAt)}` : null }
-          : { big: '1 chance so far', tail: draw.boostReviewPending ? ' — boost pending ops review' : ' — boost window open', tone: 'ink', meta: (draw.boostClosesAt || draw.closesAt) ? `BOOST BY ${drawWindowDayUpper(draw.boostClosesAt || draw.closesAt)}` : null };
+          : { big: '1 chance so far', tail: ' — boost window open', tone: 'ink', meta: (draw.boostClosesAt || draw.closesAt) ? `BOOST BY ${drawWindowDayUpper(draw.boostClosesAt || draw.closesAt)}` : null };
       case 'provisional_out':
         return { big: 'Not counted yet', tail: ` — ${NOT_ELIGIBLE_COPY[draw.notEligibleReason] || 'not eligible'}`, tone: 'quiet', meta: draw.closesAt ? `CLOSES ${drawWindowDayUpper(draw.closesAt)}` : null };
       case 'frozen_in':

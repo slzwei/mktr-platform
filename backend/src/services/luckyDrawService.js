@@ -33,8 +33,9 @@ import { getSystemAgentId } from './systemAgent.js';
  *    entitlement cancellation can't erase an earned boost), scoped to the
  *    draw's designated activation, excluding manual issuance
  *    (issuedVia='manual' fabricates the OTP stamp), inside boostClosesAt.
- *    agent_scan boosts automatically; agent_button requires an approved
- *    DrawBoostReview (§8.1).
+ *    agent_scan and agent_button both count by default (veto model,
+ *    2026-07-25 — superseded §8.1's approval queue); a DrawBoostReview
+ *    'rejected' row strikes a button unlock before seal.
  */
 
 const CLAIM_WINDOW_DAYS = 14; // the public /winners promise
@@ -360,11 +361,14 @@ export function makeLuckyDrawService(overrides = {}) {
    * prospects that hold a frozen entry. Two-step query (no association
    * dependency). Returns { byProspect, undecidedButtons }.
    *
-   * via WHITELIST (Codex finding #1): ONLY `agent_scan` boosts automatically —
-   * it is the token-backed evidence the routes derive server-side.
-   * `agent_button` (consultant assertion) and `manual` (admin/support unlock,
-   * no meeting evidence at all) both require an explicit approved review.
-   * `auto_on_capture` (voucher issued without any meeting) NEVER boosts.
+   * via rules: `agent_scan` is the token-backed evidence the routes derive
+   * server-side — always counts, always wins for the prospect. `agent_button`
+   * (consultant assertion) and `manual`-via (admin/support unlock) count BY
+   * DEFAULT under the veto model (operator decision 2026-07-25; the original
+   * approval queue was friction for a team this small) — a DrawBoostReview
+   * 'rejected' row is the strike. `auto_on_capture` (voucher issued without
+   * any meeting) NEVER boosts, and manually-ISSUED entitlements
+   * (issuedVia='manual') stay excluded at the query.
    */
   async function collectBoostEvidence(draw, entries) {
     if (!draw.activationId) return { byProspect: new Map(), undecidedButtons: [] };
@@ -416,7 +420,7 @@ export function makeLuckyDrawService(overrides = {}) {
     const reviewByEntitlement = new Map(reviews.map((r) => [String(r.entitlementId), r.decision]));
 
     const byProspect = new Map(); // prospectId -> { via, eventId }
-    const undecidedButtons = [];
+    const undecidedButtons = []; // counted by default — listed for OPTIONAL veto
     for (const ev of events) {
       const ent = entitlementById.get(String(ev.entitlementId));
       if (!ent) continue;
@@ -426,20 +430,31 @@ export function makeLuckyDrawService(overrides = {}) {
         // Token-backed scan — the strongest evidence; always wins for the prospect.
         byProspect.set(key, { via, eventId: ev.id, at: ev.createdAt });
       } else if (via === 'agent_button' || via === 'manual') {
+        // VETO model (operator decision 2026-07-25, supersedes the approval
+        // queue): a consultant's button unlock COUNTS by default — the team is
+        // small and routine approvals were pure friction. A DrawBoostReview
+        // 'rejected' row strikes exactly this unlock before seal; 'approved'
+        // stays a recordable affirmation. Unreviewed buttons are surfaced
+        // (CLI `reviews`) but never block anything.
         const decision = reviewByEntitlement.get(String(ev.entitlementId));
-        if (decision === 'approved') {
+        if (decision !== 'rejected') {
           if (!byProspect.has(key)) byProspect.set(key, { via: 'agent_button', eventId: ev.id, at: ev.createdAt });
-        } else if (decision !== 'rejected') {
-          undecidedButtons.push({ entitlementId: ent.id, prospectId: ent.prospectId, eventId: ev.id, via });
+          if (!decision) {
+            undecidedButtons.push({ entitlementId: ent.id, prospectId: ent.prospectId, eventId: ev.id, via });
+          }
         }
-        // rejected → no boost, no block.
+        // rejected → vetoed: no boost.
       }
       // Any other via (auto_on_capture, unknown) → never session evidence.
     }
     return { byProspect, undecidedButtons };
   }
 
-  /** Virtual (agent_button) unlocks awaiting a boost decision for this draw. */
+  /**
+   * Button (agent_button/manual-via) unlocks with no review row — they COUNT
+   * by default; this list exists so ops can veto one (reviewBoost 'rejected')
+   * before seal. Purely informational, never blocking.
+   */
   async function listPendingBoostReviews(drawId) {
     const draw = await getDrawOr404(drawId);
     const entries = await d.DrawEntry.findAll({ where: { drawId: draw.id } });
@@ -447,7 +462,11 @@ export function makeLuckyDrawService(overrides = {}) {
     return undecidedButtons;
   }
 
-  /** Approve/reject one agent_button unlock for ×N weighting (voucher untouched). */
+  /**
+   * Record a decision on one button unlock's ×N weighting (voucher untouched).
+   * Under the veto model 'rejected' is the operative verb — it strikes the
+   * boost before seal; 'approved' is an optional recorded affirmation.
+   */
   async function reviewBoost({ drawId, entitlementId, decision, reason }, user) {
     if (!['approved', 'rejected'].includes(decision)) {
       throw new AppError("decision must be 'approved' or 'rejected'", 422);
@@ -477,8 +496,9 @@ export function makeLuckyDrawService(overrides = {}) {
 
   /**
    * Seal: write chances + boost evidence onto the frozen entries and commit
-   * poolHash. Refuses while any agent_button unlock is undecided (the review
-   * step cannot be silently skipped) and never runs before boostClosesAt.
+   * poolHash. Never runs before boostClosesAt. Button unlocks count by
+   * default (veto model) — unreviewed ones are logged for the audit trail,
+   * never a blocker; a 'rejected' review before seal is the strike.
    */
   async function sealDraw(drawId, user) {
     const draw = await getDrawOr404(drawId);
@@ -497,12 +517,11 @@ export function makeLuckyDrawService(overrides = {}) {
 
     const { byProspect, undecidedButtons } = await collectBoostEvidence(draw, entries);
     if (undecidedButtons.length > 0) {
-      const err = new AppError(
-        `${undecidedButtons.length} virtual (agent_button) unlock(s) await boost review — approve/reject them first`,
-        409
-      );
-      err.data = { undecided: undecidedButtons };
-      throw err;
+      d.logger.info('lucky_draw.sealing_with_unreviewed_buttons', {
+        drawId: draw.id,
+        count: undecidedButtons.length,
+        entitlementIds: undecidedButtons.map((u) => String(u.entitlementId)),
+      });
     }
 
     const boosted = [];
@@ -960,7 +979,6 @@ export function makeLuckyDrawService(overrides = {}) {
         boosted: false,
         boostVia: null,
         boostedAt: null,
-        boostReviewPending: false,
         notEligibleReason: null,
         outcome: null,
         drawHistory: sel.history,
@@ -991,7 +1009,6 @@ export function makeLuckyDrawService(overrides = {}) {
 
         const evidence = data.evidenceByDraw.get(String(dr.id));
         const boost = evidence?.byProspect.get(pid) || null;
-        const pendingReview = (evidence?.undecidedButtons || []).some((u) => String(u.prospectId) === pid);
         out.set(pid, {
           ...block,
           state: notEligibleReason ? 'provisional_out' : 'provisional_in',
@@ -999,7 +1016,6 @@ export function makeLuckyDrawService(overrides = {}) {
           boosted: !notEligibleReason && Boolean(boost),
           boostVia: boost?.via || null,
           boostedAt: boost?.at || null,
-          boostReviewPending: pendingReview && !boost,
           notEligibleReason,
         });
         continue;
@@ -1014,7 +1030,6 @@ export function makeLuckyDrawService(overrides = {}) {
       if (dr.status === 'frozen') {
         const evidence = data.evidenceByDraw.get(String(dr.id));
         const boost = evidence?.byProspect.get(pid) || null;
-        const pendingReview = (evidence?.undecidedButtons || []).some((u) => String(u.prospectId) === pid);
         out.set(pid, {
           ...block,
           state: 'frozen_in',
@@ -1022,7 +1037,6 @@ export function makeLuckyDrawService(overrides = {}) {
           boosted: Boolean(boost), // provisional — applies at seal
           boostVia: boost?.via || null,
           boostedAt: boost?.at || null,
-          boostReviewPending: pendingReview && !boost,
         });
         continue;
       }
