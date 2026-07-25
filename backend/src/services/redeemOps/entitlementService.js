@@ -394,6 +394,12 @@ export function makeEntitlementService(overrides = {}) {
         presentationToken: presentation.raw,
         voucherToken: voucher ? voucher.raw : null,
         emailQueued,
+        // A queued draw-pass email IS the lead-confirmation email (the merged
+        // Onyx send, 2026-07-25) — the capture controller chains on this flag
+        // to skip its own confirmation instead of double-sending. Only the
+        // reservation kind qualifies: an on_capture voucher email confirms a
+        // reward, not a draw entry.
+        drawEmailQueued: Boolean(!onCapture && drawCtx && emailQueued),
       };
     } catch (err) {
       if (err?._soft) return fail(err.message);

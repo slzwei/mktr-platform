@@ -49,7 +49,7 @@ export const createProspect = asyncHandler(async (req, res) => {
     ttp: req.body?.ttp,
   };
 
-  const { prospect, assignedAgentId, assignedAgent, prospectWithCampaign, shareUrl } = await prospectService.createProspect(
+  const { prospect, assignedAgentId, assignedAgent, prospectWithCampaign, shareUrl, leadCapturedOutcome } = await prospectService.createProspect(
     req.body,
     req.user,
     { cookies: req.cookies, headers: req.headers, meta }
@@ -66,9 +66,19 @@ export const createProspect = asyncHandler(async (req, res) => {
   // the function itself filters out synthetic Retell emails and missing fields.
   // Pass the canonical shareUrl minted at creation so the email's "Refer a friend"
   // link is byte-identical to the one the SPA shows post-submit.
-  sendLeadConfirmationEmail(prospectWithCampaign || prospect, { shareUrl }).catch(err =>
-    console.error(`Failed to send confirmation email to lead for prospect ${prospect.id}:`, err.message || err)
-  );
+  // ONE email per signup: chained on the entitlement hook's outcome — when the
+  // hook queued the merged draw confirmation (Onyx + entry pass, sent by
+  // fulfilmentNotify), this generic send would be its near-duplicate, so it is
+  // skipped. Any other outcome (no draw, issuance skipped, hook off/failed)
+  // falls through to sending, exactly as before the 2026-07-25 merge.
+  Promise.resolve(leadCapturedOutcome ?? null)
+    .then((outcome) => {
+      if (outcome?.drawEmailQueued) return null;
+      return sendLeadConfirmationEmail(prospectWithCampaign || prospect, { shareUrl });
+    })
+    .catch(err =>
+      console.error(`Failed to send confirmation email to lead for prospect ${prospect.id}:`, err.message || err)
+    );
 
   // Public, unauthenticated endpoint: echo only what the SPA needs — the id
   // drives the post-submit referral share link. Returning the full row would

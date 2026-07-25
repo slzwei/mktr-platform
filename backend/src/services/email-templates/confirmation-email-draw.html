@@ -99,10 +99,11 @@
           <!-- ============ HERO ============ -->
           <tr>
             <td class="px anim-1" style="padding:34px 40px 0 40px;">
-              <div style="font-family:'JetBrains Mono','SFMono-Regular',Consolas,Menlo,monospace; font-size:11px; letter-spacing:0.2em; color:{{c_eyebrow}}; padding-bottom:16px;">YOU&rsquo;RE IN THE DRAW</div>
+              <!-- No eyebrow kicker: the CONFIRMED pill and the H1 already say it —
+                   a third repetition above the headline was cut 2026-07-25. -->
               <div class="h1" style="font-family:'Spectral',Georgia,'Times New Roman',serif; font-size:44px; line-height:46px; color:{{c_h1}}; letter-spacing:-0.015em;">You&rsquo;re in the draw.</div>
               <div style="font-family:'Spectral',Georgia,'Times New Roman',serif; font-size:17px; line-height:27px; color:{{c_body}}; padding-top:16px;">
-                Hello {{firstName}}, your entry is in for <span style="color:{{c_bodyStrong}}; font-weight:600;">{{campaignName}}</span> &mdash; {{prize}}.
+                Hello {{firstName}}, your entry is in for <span style="color:{{c_bodyStrong}}; font-weight:600;">{{campaignName}}</span>.
               </div>
             </td>
           </tr>
@@ -153,28 +154,18 @@
             </td>
           </tr>
 
-          <!-- ============ STANDING ============ -->
-          <tr>
-            <td class="px" style="padding:28px 40px 0 40px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid {{c_hair}};">
-                <tr>
-                  <td width="{{statWidth}}" valign="top" style="padding:20px 12px 0 0;">
-                    <div style="font-family:'JetBrains Mono','SFMono-Regular',Consolas,Menlo,monospace; font-size:10px; letter-spacing:0.16em; color:{{c_statKey}}; padding-bottom:7px;">ENTRANT</div>
-                    <div style="font-family:'Spectral',Georgia,'Times New Roman',serif; font-size:17px; line-height:22px; color:{{c_statVal}};">{{firstName}}</div>
-                  </td>
-                  <td width="{{statWidth}}" valign="top" style="padding:20px 12px 0 0;">
-                    <div style="font-family:'JetBrains Mono','SFMono-Regular',Consolas,Menlo,monospace; font-size:10px; letter-spacing:0.16em; color:{{c_statKey}}; padding-bottom:7px;">STATUS</div>
-                    <div style="font-family:'Spectral',Georgia,'Times New Roman',serif; font-size:17px; line-height:22px; color:{{c_statVal}};">In the draw</div>
-                  </td>
-                  {{stat3Cell}}
-                </tr>
-              </table>
-            </td>
-          </tr>
+          <!-- ============ ENTRY PASS (only when the send carries one) ============ -->
+          {{passRow}}
+
+          <!-- ============ STANDING ============
+               One honest date, or nothing — the entrant/status echo cells were
+               cut 2026-07-25: the greeting names the entrant, the H1 states the
+               status. -->
+          {{standingRow}}
 
           <!-- ============ REFERRAL ============ -->
           <tr>
-            <td class="px" style="padding:30px 40px 0 40px;">
+            <td class="px" style="padding:30px 40px 36px 40px;">
               <table role="presentation" class="anim-3" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid {{c_boxBorder}}; border-radius:16px;">
                 <tr>
                   <td class="card-px" style="padding:26px 28px 26px 28px;">
@@ -205,25 +196,15 @@
                         </td>
                       </tr>
                     </table>
-                    <div style="padding-top:12px; text-align:center; font-family:'JetBrains Mono','SFMono-Regular',Consolas,Menlo,monospace; font-size:10px; letter-spacing:0.1em; color:{{c_hint}};">TAP A BUTTON TO SHARE, OR COPY THE LINK ABOVE</div>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
 
-          <!-- ============ REASSURANCE + SIGN-OFF ============ -->
-          <tr>
-            <td class="px" align="center" style="padding:30px 40px 0 40px; font-family:'Spectral',Georgia,'Times New Roman',serif; font-size:14px; line-height:21px; color:{{c_quiet}};">
-              Did not request this? No action is needed &mdash; you can safely ignore this email.
-            </td>
-          </tr>
-          <tr>
-            <td class="px" align="center" style="padding:24px 40px 34px 40px;">
-              <div style="font-family:'Spectral',Georgia,'Times New Roman',serif; font-style:italic; font-size:16px; line-height:22px; color:{{c_signItalic}};">Warm regards,</div>
-              <div style="font-family:'Spectral',Georgia,'Times New Roman',serif; font-size:19px; line-height:26px; color:{{c_signName}}; padding-top:2px;">The {{brandName}} team</div>
-            </td>
-          </tr>
+          <!-- No reassurance line or warm-regards block above the footer: both
+               duplicated the footer's receiving-because line and wordmark — cut
+               2026-07-25. The footer is the single sign-off. -->
 
           <!-- ============ FOOTER ============ -->
           <tr>

@@ -1,6 +1,6 @@
 import QRCode from 'qrcode';
 import { RewardOffer, PartnerOrganisation, Campaign, Activation } from '../../models/index.js';
-import { sendEmail } from '../mailer.js';
+import { sendEmail, sendLeadConfirmationEmail } from '../mailer.js';
 import { logger } from '../../utils/logger.js';
 import { maskEmail } from '../../utils/redactTokens.js';
 import { customerHostOrigin, normalizeCustomerHostChoice } from '../../utils/customerHost.js';
@@ -31,7 +31,8 @@ export function canEmailProspect(prospect) {
 
 export function makeFulfilmentNotify(overrides = {}) {
   const d = {
-    RewardOffer, PartnerOrganisation, Campaign, Activation, sendEmail, logger, QRCode,
+    RewardOffer, PartnerOrganisation, Campaign, Activation, sendEmail, sendLeadConfirmationEmail,
+    logger, QRCode,
     renderQrCard: renderQrCardPng, ...overrides,
   };
 
@@ -113,7 +114,19 @@ export function makeFulfilmentNotify(overrides = {}) {
     }
   }
 
-  /** Reservation-pass email at capture (agent_unlock policy). */
+  /**
+   * Reservation-pass email at capture (agent_unlock policy).
+   *
+   * Draw rails do NOT get a standalone pass email any more (2026-07-25): a
+   * draw signup used to land TWO near-identical "You're in the draw" emails in
+   * the same minute — this one and the controller's Onyx confirmation, with
+   * the same subject, threading together in Gmail. Now the ONE Onyx
+   * confirmation carries the pass (card + /r/ link) and this sender delegates
+   * to it; the controller skips its own send whenever this leg was queued
+   * (issueForProspect returns drawEmailQueued). The delegated send still
+   * resolves the normalized `{ sent, to?, error? }` so receipts — and the
+   * missed-delivery sweep that re-sends on notify_failed — keep working.
+   */
   async function sendReservationEmail({ entitlement, prospect, presentationToken, drawCtx = null }) {
     if (!canEmailProspect(prospect)) return { sent: false, skipped: 'no_email' };
     const { activation, rewardName, partnerName } = await loadOfferContext(entitlement);
@@ -123,19 +136,30 @@ export function makeFulfilmentNotify(overrides = {}) {
       state: 'pass', qrContent: link, entitlement, prospect, rewardName, partnerName, hostChoice,
       draw: drawCtx ? drawCardFacts(drawCtx) : null,
     });
-    // Draw voice (PR-4, F13/D5): an entrant who just joined a lucky draw must
-    // read DRAW copy — "1 chance now, ×N when you meet the consultant" — not
-    // partner-reward reservation copy (Shawn's D5 line, verbatim register).
-    const html = drawCtx ? `
-      <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
-        <h2 style="margin:0 0 8px">You're in the draw 🎉</h2>
-        <p>Hi ${escapeHtml(prospect.firstName || 'there')},</p>
-        <p>Your entry to <strong>${escapeHtml(drawCtx.drawName)}</strong> is confirmed — you hold <strong>1 chance</strong> in the draw right now.</p>
-        <p><strong>${drawCtx.multiplier}x your chances when you meet with a consultant:</strong> complete your complimentary 20-minute financial review and they will scan this pass at the session.</p>
-        <p style="text-align:center;margin:20px 0"><img src="cid:reservation-qr" width="320" height="320" style="max-width:100%" alt="Entry pass QR"/></p>
-        <p style="text-align:center"><a href="${link}" style="color:#2563eb">View your entry pass</a></p>
-        <p style="color:#6b7280;font-size:12px">Reviews must be completed by ${escapeHtml(boostDeadlineLong(drawCtx.boostClosesAt) || 'the close date')} to count. We never ask you to pay to release a prize.</p>
-      </div>` : `
+
+    if (drawCtx) {
+      const campaign = drawCtx.campaignId
+        ? await d.Campaign.findByPk(drawCtx.campaignId, { attributes: ['id', 'name', 'design_config'] })
+        : null;
+      if (!campaign) {
+        // Unreachable in practice (drawCtx was derived from this campaign) —
+        // fail receipted rather than silently, so the sweep retries.
+        return { sent: false, to: maskEmail(prospect.email), error: 'draw campaign missing' };
+      }
+      const plain = typeof prospect.get === 'function' ? prospect.get({ plain: true }) : { ...prospect };
+      try {
+        const r = await d.sendLeadConfirmationEmail(
+          { ...plain, campaign },
+          { drawPass: { png: qrPng, link, deadlineLong: boostDeadlineLong(drawCtx.boostClosesAt) } }
+        );
+        if (r?.success === true) return { sent: true, to: maskEmail(prospect.email) };
+        return { sent: false, to: maskEmail(prospect.email), error: r?.message || 'mailer not configured' };
+      } catch (err) {
+        return { sent: false, to: maskEmail(prospect.email), error: err?.message || 'send failed' };
+      }
+    }
+
+    const html = `
       <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px">
         <h2 style="margin:0 0 8px">Your ${escapeHtml(rewardName)} is reserved 🎁</h2>
         <p>Hi ${escapeHtml(prospect.firstName || 'there')},</p>
@@ -148,13 +172,11 @@ export function makeFulfilmentNotify(overrides = {}) {
       </div>`;
     return deliver({
       to: prospect.email,
-      subject: drawCtx ? `You're in the draw — ${drawCtx.drawName}` : `Reserved for you: ${rewardName}`,
+      subject: `Reserved for you: ${rewardName}`,
       html,
-      text: drawCtx
-        ? `Your entry to ${drawCtx.drawName} is confirmed — 1 chance now. ${drawCtx.multiplier}x your chances when you meet with a consultant (scan this pass at the session): ${link}`
-        : `Your ${rewardName} from ${partnerName} is reserved. Show this link's QR to your consultant at your review to unlock it: ${link}`,
+      text: `Your ${rewardName} from ${partnerName} is reserved. Show this link's QR to your consultant at your review to unlock it: ${link}`,
       context: hostChoice === 'mktr' ? 'mktr' : 'redeem',
-      attachments: [{ filename: drawCtx ? 'entry-pass.png' : 'reservation.png', content: qrPng, cid: 'reservation-qr' }],
+      attachments: [{ filename: 'reservation.png', content: qrPng, cid: 'reservation-qr' }],
     }, prospect.email);
   }
 

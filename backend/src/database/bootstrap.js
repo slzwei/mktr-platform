@@ -296,9 +296,10 @@ export async function bootstrapDatabase() {
           // INSIDE the wired service now — one choke point for hook, sweep and
           // manual issuance (trial-reward-funnel-hardening PR A).
           const entitlements = makeWiredEntitlementService();
-          registerLeadCapturedHook(async (prospect) => {
-            await entitlements.issueForProspect(prospect, { via: 'hook' });
-          });
+          // The issuance result flows BACK through the hook: the controller
+          // chains its confirmation email on it and skips the send when the
+          // merged draw email (drawEmailQueued) already covers it.
+          registerLeadCapturedHook((prospect) => entitlements.issueForProspect(prospect, { via: 'hook' }));
           logger.info('[RedeemOps] entitlement capture hook registered');
         });
 
