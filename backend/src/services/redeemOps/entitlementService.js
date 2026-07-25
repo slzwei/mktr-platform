@@ -19,8 +19,9 @@ const DEFAULT_RESERVATION_DAYS = 30;
 const DEFAULT_REDEMPTION_DAYS = 90;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 // Statuses that hold the per-phone slot (matches uq_re_activation_phone's
-// partial WHERE) — expired/cancelled rows free it.
-const LIVE_PHONE_STATUSES = ['eligible', 'issued', 'redeemed'];
+// partial WHERE) — expired/cancelled rows free it. Exported for the Lead
+// Profile diagnostic, which mirrors issueForProspect's duplicate-phone check.
+export const LIVE_PHONE_STATUSES = ['eligible', 'issued', 'redeemed'];
 
 /**
  * Anti-farming dedupe key: digits-only phone (`+65 9123 4567` → `6591234567`).
