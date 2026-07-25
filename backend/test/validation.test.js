@@ -76,6 +76,14 @@ describe('schemas.campaignUpdate', () => {
     expect(ok).toBe(true);
   });
 
+  // The schema rejects unknown keys, so every new top-level field the UI sends
+  // has to be declared here too — a service-side implementation alone gets a
+  // 400 at the door. (drawPassTheme shipped without this and did exactly that.)
+  it('accepts the draw pass colourway', () => {
+    const { ok } = valid(schemas.campaignUpdate, { drawPassTheme: 'gold' });
+    expect(ok).toBe(true);
+  });
+
   it('rejects empty update body (.min(1))', () => {
     const { ok } = valid(schemas.campaignUpdate, {});
     expect(ok).toBe(false);
