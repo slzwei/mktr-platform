@@ -80,7 +80,7 @@ describe('the multiplier is the TOTAL, not the extra', () => {
   });
 });
 
-describe('the third stat follows the honest-date rule', () => {
+describe('the standing stat follows the honest-date rule', () => {
   test('a draw day is stated as the draw date', () => {
     const { html, text } = render({ luckyDraw: drawOf({ drawOn: '2026-10-22' }) });
     expect(html).toContain('DRAW DATE');
@@ -96,12 +96,60 @@ describe('the third stat follows the honest-date rule', () => {
     expect(html).not.toContain('30 Sep 2026');
   });
 
-  test('with neither date the cell disappears and the row rebalances', () => {
-    const { html } = render({ luckyDraw: drawOf({ drawOn: undefined, closesAt: undefined }) });
+  test('with neither date the standing row disappears entirely', () => {
+    const { html, text } = render({ luckyDraw: drawOf({ drawOn: undefined, closesAt: undefined }) });
     expect(html).not.toContain('DRAW DATE');
     expect(html).not.toContain('ENTRIES CLOSE');
-    expect(html).toContain('width="50%"');
-    expect(html).not.toContain('width="33%"');
+    expect(text).not.toContain('Draw date:');
+    expect(html).not.toMatch(/\{\{\w+\}\}/);
+  });
+});
+
+describe('the entry pass rides the confirmation (2026-07-25 one-email merge)', () => {
+  const pass = { link: 'https://redeem.sg/r/tok123', deadlineLong: '30 September 2026', hasImage: true };
+
+  test('with a pass: cid card, live link and the review deadline — in both parts', () => {
+    const { html, text } = render({ drawPass: pass });
+    expect(html).toContain('YOUR ENTRY PASS');
+    expect(html).toContain('cid:draw-pass');
+    expect(html).toContain('https://redeem.sg/r/tok123');
+    expect(html).toContain('30 September 2026');
+    expect(text).toContain('https://redeem.sg/r/tok123');
+    expect(text).toContain('30 September 2026');
+    expect(html).not.toMatch(/\{\{\w+\}\}/);
+    expect(text).not.toMatch(/\{\{\w+\}\}/);
+  });
+
+  test('a failed card render degrades to the link — never a broken image', () => {
+    const { html } = render({ drawPass: { ...pass, hasImage: false } });
+    expect(html).not.toContain('cid:draw-pass');
+    expect(html).toContain('https://redeem.sg/r/tok123');
+    expect(html).toContain('YOUR ENTRY PASS');
+  });
+
+  test('without a pass the block is absent, with no placeholder residue', () => {
+    const { html, text } = render();
+    expect(html).not.toContain('YOUR ENTRY PASS');
+    expect(html).not.toContain('cid:draw-pass');
+    expect(html).not.toMatch(/\{\{\w+\}\}/);
+    expect(text).not.toMatch(/\{\{\w+\}\}/);
+  });
+});
+
+describe('the 2026-07-25 copy cuts stay cut', () => {
+  test('one prize mention (the meter), no eyebrow dup, no entrant/status echo, no double sign-off', () => {
+    const { html, text } = render({ luckyDraw: drawOf({ prize: 'PRIZE-SENTINEL' }) });
+    expect((html.match(/PRIZE-SENTINEL/g) || []).length).toBe(1);
+    expect((text.match(/PRIZE-SENTINEL/g) || []).length).toBe(1);
+    expect(html).not.toContain('YOU&rsquo;RE IN THE DRAW'); // uppercase eyebrow above the H1
+    expect(html).not.toContain('ENTRANT');
+    expect(html).not.toContain('STATUS');
+    expect(html).not.toContain('TAP A BUTTON TO SHARE');
+    expect(html).not.toContain('Warm regards');
+    expect(html).not.toContain('Did not request this?');
+    expect(text).not.toContain('Did not request this?');
+    expect(text).not.toContain('Entrant:');
+    expect(text).not.toContain('Status:');
   });
 });
 

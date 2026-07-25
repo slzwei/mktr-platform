@@ -165,7 +165,7 @@ function buildMocks() {
   };
 }
 
-function makeService(mocks) {
+function makeService(mocks, extra = {}) {
   return makeProspectService({
     models: mocks.models,
     sequelize: mocks.sequelize,
@@ -181,6 +181,7 @@ function makeService(mocks) {
     processLeadOutcome: mocks.processLeadOutcome,
     // PR-2 (CX13): stub the lazy default — the real one reaches the live DB.
     cancelLiveEntitlementsForProspectTx: mocks.cancelLiveEntitlementsForProspectTx,
+    ...extra,
   });
 }
 
@@ -585,6 +586,45 @@ describe('prospectService (unit)', () => {
   // ────────────────────────────────────────────────
   // assignProspect
   // ────────────────────────────────────────────────
+
+  // ────────────────────────────────────────────────
+  // createProspect → leadCapturedOutcome (the draw one-email dedupe seam:
+  // the controller chains its confirmation send on this observed outcome)
+  // ────────────────────────────────────────────────
+
+  describe('createProspect — leadCapturedOutcome', () => {
+    const user = { id: 'admin-1', role: 'admin' };
+    const body = { firstName: 'Test', phone: '91234567', campaignId: 'camp-1' };
+
+    it('hands the hook result back as an always-resolving promise', async () => {
+      const onLeadCaptured = jest.fn(async () => ({ drawEmailQueued: true }));
+      service = makeService(mocks, { onLeadCaptured });
+
+      const res = await service.createProspect(body, user, {});
+
+      expect(onLeadCaptured).toHaveBeenCalledTimes(1);
+      await expect(res.leadCapturedOutcome).resolves.toEqual({ drawEmailQueued: true });
+    });
+
+    it('a hook failure resolves null (logged) — the caller then sends the plain confirmation', async () => {
+      service = makeService(mocks, {
+        onLeadCaptured: jest.fn(async () => { throw new Error('redeem ops down'); }),
+      });
+
+      const res = await service.createProspect(body, user, {});
+
+      await expect(res.leadCapturedOutcome).resolves.toBeNull();
+      expect(mocks.logger.error).toHaveBeenCalledWith(
+        '[RedeemOps] onLeadCaptured error',
+        expect.objectContaining({ error: 'redeem ops down' })
+      );
+    });
+
+    it('without a registered hook the outcome is null', async () => {
+      const res = await service.createProspect(body, user, {});
+      expect(res.leadCapturedOutcome).toBeNull();
+    });
+  });
 
   describe('assignProspect', () => {
     const user = { id: 'admin-1', role: 'admin', firstName: 'Admin' };

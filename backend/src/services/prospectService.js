@@ -1296,13 +1296,23 @@ export function makeProspectService(overrides = {}) {
     // Screening holds ARE reward-eligible (plan D8): the consumer earned the
     // signup reward by verified signup — screening gates AGENT delivery, not
     // consumer rewards. Quota/DNC/external holds stay excluded as before.
+    // The hook's ISSUANCE result is kept as an always-resolving promise for the
+    // caller: the controller chains the confirmation email on it so a queued
+    // merged draw email (drawEmailQueued) suppresses the near-duplicate generic
+    // confirmation — an observed outcome, never a prediction, so a skip can
+    // never orphan a signup with zero emails. Still fire-and-forget for the
+    // capture path itself (errors resolve to null, logged as before).
+    let leadCapturedOutcome = null;
     if (!quarantined || heldReason === 'screening_pending') {
       try {
         const hookResult = d.onLeadCaptured?.(prospect);
-        if (hookResult && typeof hookResult.catch === 'function') {
-          hookResult.catch((err) =>
-            d.logger.error('[RedeemOps] onLeadCaptured error', { error: err?.message || String(err) })
-          );
+        if (hookResult && typeof hookResult.then === 'function') {
+          leadCapturedOutcome = hookResult.catch((err) => {
+            d.logger.error('[RedeemOps] onLeadCaptured error', { error: err?.message || String(err) });
+            return null;
+          });
+        } else if (hookResult != null) {
+          leadCapturedOutcome = Promise.resolve(hookResult);
         }
       } catch (err) {
         d.logger.error('[RedeemOps] onLeadCaptured error', { error: err?.message || String(err) });
@@ -1360,7 +1370,7 @@ export function makeProspectService(overrides = {}) {
       );
     }
 
-    return { prospect, assignedAgentId, assignedAgent, prospectWithCampaign, quarantined, shareUrl };
+    return { prospect, assignedAgentId, assignedAgent, prospectWithCampaign, quarantined, shareUrl, leadCapturedOutcome };
   }
 
   /**

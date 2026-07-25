@@ -239,7 +239,14 @@ function getModernTemplate(title, content, action, options = {}) {
 }
 
 
-export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOverride } = {}) {
+/**
+ * The ONE confirmation email per signup. `drawPass` ({ png, link, deadlineLong })
+ * is how a draw signup's entry pass rides INSIDE this email instead of as a
+ * second, near-duplicate send: fulfilmentNotify passes it when it owns the
+ * delivery (entitlement issued at capture), and the standalone reservation
+ * email is not sent for draws at all (2026-07-25 merge).
+ */
+export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOverride, drawPass = null } = {}) {
   if (!prospect?.email) {
     logger.warn('Skipping lead confirmation email: prospect has no email', { prospectId: prospect?.id });
     return { success: false, message: 'Missing prospect email' };
@@ -318,11 +325,16 @@ export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOv
       }
     : undefined;
 
+  // The pass only exists on the draw template; the card PNG rides as a
+  // CID-inline attachment (renders with remote images blocked; the pass token
+  // stays out of image-proxy logs, same rationale as fulfilmentNotify).
+  const pass = isDraw && drawPass?.link ? drawPass : null;
   const { html, text } = renderLeadConfirmation({
     firstName, campaignName, luckyDraw, isMktrHost, shareUrl, unsubscribeUrl, unsubscribeTextLine,
+    drawPass: pass ? { link: pass.link, deadlineLong: pass.deadlineLong || '', hasImage: Boolean(pass.png) } : null,
   });
 
-  logger.info('Sending lead confirmation email', { to: prospect.email, prospectId: prospect.id, campaign: campaignName, brand: brandName });
+  logger.info('Sending lead confirmation email', { to: prospect.email, prospectId: prospect.id, campaign: campaignName, brand: brandName, withPass: Boolean(pass) });
 
   return sendEmail({
     to: prospect.email,
@@ -331,6 +343,7 @@ export async function sendLeadConfirmationEmail(prospect, { shareUrl: shareUrlOv
     text,
     context: hostChoice,
     ...(unsubHeaders ? { headers: unsubHeaders } : {}),
+    ...(pass?.png ? { attachments: [{ filename: 'entry-pass.png', content: pass.png, cid: 'draw-pass' }] } : {}),
   });
 }
 
