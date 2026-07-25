@@ -49,7 +49,7 @@ const prizeSummary = (rows) =>
  * (enforceLeadQuota) and per-campaign tracking pixels. Controlled form; the
  * workspace owns create-vs-update. PHV tablet media stays in the classic editor.
  */
-export default function CampaignDetailsTab({ initial, type, draw = false, isEdit, saving, designing = false, onSubmit }) {
+export default function CampaignDetailsTab({ initial, type, draw = false, drawEdit = false, isEdit, saving, designing = false, onSubmit }) {
   const campaignType = initial?.type || type || 'lead_generation';
   const [form, setForm] = useState({
     name: initial?.name || '',
@@ -68,7 +68,9 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
     drawClosesAt: '',
     drawBoostClosesAt: '',
     drawMultiplier: 10,
-    drawPassTheme: 'titanium',
+    // On edit this is the only draw field that is safe to change on a LIVE draw
+    // — pure display, no bearing on entries, dates or the accepted T&Cs.
+    drawPassTheme: initial?.design_config?.luckyDraw?.passTheme || 'titanium',
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -131,6 +133,31 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
   const removePrizeRow = (i) =>
     setForm((f) => ({ ...f, drawPrizes: f.drawPrizes.filter((_, idx) => idx !== i) }));
 
+  // Shared by the create block and the edit-only card below — one control, so
+  // the two paths can never drift on what the colourway means.
+  const themePicker = (
+    <div className="space-y-2">
+      <Label htmlFor="draw_theme">Pass colourway</Label>
+      <div className="flex flex-wrap gap-2" id="draw_theme">
+        {PASS_THEMES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            aria-pressed={form.drawPassTheme === t.id}
+            onClick={() => set('drawPassTheme', t.id)}
+            className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs capitalize transition ${
+              form.drawPassTheme === t.id ? 'border-foreground' : 'border-input text-muted-foreground hover:border-foreground/40'
+            }`}
+          >
+            <span className="h-3.5 w-3.5 rounded-full border border-black/20" style={{ background: t.swatch }} />
+            {t.id}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">Colours the entry pass on WhatsApp and the confirmation email. Pick what suits the prize.</p>
+    </div>
+  );
+
   const prizeRows = cleanPrizeRows(form.drawPrizes);
   const totalPrizeQty = prizeRows.reduce((sum, p) => sum + p.qty, 0);
 
@@ -185,6 +212,10 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
     // page after create — it is transient input, never persisted as a field.
     onSubmit({
       ...drawConfig,
+      // Narrow top-level field on edit, NOT a design_config write: a
+      // Studio-saved campaign rejects an untagged design_config outright, and
+      // the server merges this into the stored luckyDraw after every draw gate.
+      ...(drawEdit ? { drawPassTheme: form.drawPassTheme } : {}),
       name: form.name.trim(),
       type: campaignType,
       min_age: Number(form.min_age) || 18,
@@ -328,26 +359,7 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
                 <Input id="draw_multiplier" type="number" min={2} max={100} value={form.drawMultiplier} onChange={(e) => set('drawMultiplier', e.target.value)} />
                 <p className="text-xs text-muted-foreground">A completed, consultant-scanned review session multiplies the entry.</p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="draw_theme">Pass colourway</Label>
-                <div className="flex flex-wrap gap-2" id="draw_theme">
-                  {PASS_THEMES.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      aria-pressed={form.drawPassTheme === t.id}
-                      onClick={() => set('drawPassTheme', t.id)}
-                      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs capitalize transition ${
-                        form.drawPassTheme === t.id ? 'border-foreground' : 'border-input text-muted-foreground hover:border-foreground/40'
-                      }`}
-                    >
-                      <span className="h-3.5 w-3.5 rounded-full border border-black/20" style={{ background: t.swatch }} />
-                      {t.id}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">Colours the entry pass on WhatsApp and the confirmation email. Pick what suits the prize.</p>
-              </div>
+              {themePicker}
             </div>
             {form.drawClosesAt ? (
               <p className="text-xs text-muted-foreground">
@@ -355,6 +367,20 @@ export default function CampaignDetailsTab({ initial, type, draw = false, isEdit
               </p>
             ) : null}
           </CardContent>
+        </Card>
+      )}
+
+      {/* Editing a LIVE draw: the colourway is the ONLY draw setting exposed
+          here. Prizes, dates and the multiplier are promises entrants already
+          accepted in the pinned T&Cs — changing those is a deliberate ops act,
+          not a details-tab edit. This one is pure display. */}
+      {drawEdit && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Draw pass &amp; email</CardTitle>
+            <CardDescription>How this draw&apos;s entry pass and confirmation email look to entrants.</CardDescription>
+          </CardHeader>
+          <CardContent>{themePicker}</CardContent>
         </Card>
       )}
 

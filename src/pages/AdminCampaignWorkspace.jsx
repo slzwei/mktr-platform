@@ -251,6 +251,7 @@ export default function AdminCampaignWorkspace() {
               initial={isCreate ? null : campaign}
               type={typeParam}
               draw={isDrawCreate}
+              drawEdit={!isCreate && campaign?.design_config?.luckyDraw?.enabled === true}
               isEdit={!isCreate}
               saving={savingDetails}
               designing={designingPage}

@@ -8,6 +8,7 @@ import { normalizeCustomerHostChoice } from '../utils/customerHost.js';
 import { sgtDayEndExclusiveMs } from '../utils/sgtTime.js';
 import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
 import { applyLuckyDrawPolicy, normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
+import { PASS_THEMES } from '../utils/drawTheme.js';
 import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/marketplaceContent.js';
 import { checkDrawConsistency } from '../utils/drawConsistency.js';
 import {
@@ -726,6 +727,27 @@ export async function updateCampaign(id, body, req) {
       const rail = await ensureRail({ campaign, designConfig: nextDoc, user: req.user });
       const stamped = stampRailActivationId(nextDoc, rail.activationId);
       if (stamped !== nextDoc) updateData.design_config = stamped;
+    }
+  }
+
+  // Draw pass colourway — a NARROW, top-level field rather than a design_config
+  // write, for two reasons. A Studio-saved (v2) campaign rejects an untagged
+  // design_config outright (the conflict guard above), and passTheme is pure
+  // display: routing it through the doc would make a palette change look like a
+  // draw-fact edit and re-run the promise gate on a live campaign. Applied here,
+  // AFTER every draw gate, so it can never block or alter a save.
+  if (body.drawPassTheme !== undefined && req.user?.role === 'admin') {
+    const nextDoc = updateData.design_config !== undefined ? updateData.design_config : campaign.design_config;
+    // Spread the RAW stored draw (conservative — it is already normalized by the
+    // save path) but decide on the normalized copy, so a hand-written row can't
+    // fake `enabled`.
+    const ld = getStoredLuckyDraw(nextDoc);
+    if (drawEnabledIn(nextDoc)) {
+      const theme = String(body.drawPassTheme || '').trim().toLowerCase();
+      if (!PASS_THEMES.includes(theme)) {
+        throw new AppError(`drawPassTheme must be one of: ${PASS_THEMES.join(', ')}.`, 422);
+      }
+      updateData.design_config = { ...nextDoc, luckyDraw: { ...ld, passTheme: theme } };
     }
   }
 
