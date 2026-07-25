@@ -24,6 +24,7 @@ import { bulkAssign, bulkReturnToHeld, bulkDelete } from '@/api/adminV2';
 import { STATUS_LABELS, SOURCE_LABELS, heldLabel } from '@/lib/adminV2/constants';
 import { fmtDateTime, fmtDate, fmtDay, fmtSGDExact } from '@/lib/adminV2/format';
 import { Card, Chip, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
+import { rowChipFor, drawWindowDay } from '@/lib/adminV2/outcome';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
@@ -36,11 +37,6 @@ const fullName = (o) => `${o?.firstName || ''} ${o?.lastName || ''}`.trim();
 const sameName = (a, b) => fullName(a).toLowerCase() === fullName(b).toLowerCase();
 const sgtTime = (v) => new Date(v).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: SGT });
 const sgtDayKey = (v) => new Intl.DateTimeFormat('en-CA', { timeZone: SGT }).format(new Date(v));
-const sgtDayMonth = (v) => new Date(v).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', timeZone: SGT });
-// Draw windows are stored as SGT end-of-day EXCLUSIVE instants (the first
-// moment AFTER the window — sgtTime.js); the operator-facing day is the last
-// INCLUDED instant, one ms earlier.
-const drawWindowDay = (v) => sgtDayMonth(new Date(new Date(v).getTime() - 1));
 const drawWindowDayUpper = (v) => drawWindowDay(v).toUpperCase();
 /** House phone display: +6591234567 → "+65 9123 4567" (root CLAUDE.md rule). */
 const fmtPhone = (v) => {
@@ -124,37 +120,6 @@ function heroFor(draw, rewards, diagnostic) {
       : { big: 'No reward', tail: ` — ${DIAGNOSTIC_COPY[diagnostic] || diagnostic}`, tone: 'quiet', meta: null };
   }
   return { big: 'No outcome recorded', tail: '', tone: 'quiet', meta: null };
-}
-
-/** Compact right-edge status chip on a campaigns-list row. */
-function rowChipFor(draw, rewards) {
-  if (draw) {
-    switch (draw.state) {
-      case 'provisional_in': return { label: draw.closesAt ? `open · closes ${drawWindowDay(draw.closesAt)}` : 'open', tone: '' };
-      case 'provisional_out': return { label: 'not counted', tone: 'warn' };
-      case 'frozen_in': return { label: 'in the pool', tone: '' };
-      case 'excluded_at_freeze': return { label: 'excluded', tone: 'warn' };
-      case 'sealed': {
-        const s = draw.outcome?.status;
-        if (s === 'selected_claimed') return { label: '🏆 winner', tone: 'ok' };
-        if (s === 'selected_pending') return { label: 'selected', tone: 'accent' };
-        if (s === 'not_selected_final') return { label: 'not selected', tone: '' };
-        return { label: 'sealed', tone: '' };
-      }
-      case 'void': return { label: 'void', tone: '' };
-      case 'erased_draw_unavailable': return { label: '⊘ erased', tone: 'bad' };
-      case 'no_draw_record': return { label: 'no draw record', tone: 'warn' };
-      default: break;
-    }
-  }
-  const ent = rewards?.[0];
-  if (ent) {
-    if (ent.state === 'redeemed') return { label: '✓ redeemed', tone: 'ok' };
-    if (ent.state === 'unlocked') return { label: 'unlocked', tone: 'ok' };
-    if (ent.state === 'reserved') return { label: 'reserved', tone: 'accent' };
-    return { label: ent.state || ent.status, tone: '' };
-  }
-  return null;
 }
 
 function receiptBits(delivery) {

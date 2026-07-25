@@ -124,6 +124,57 @@ export function makeLeadProfileService(overrides = {}) {
     return railIds;
   }
 
+  /**
+   * List-page outcome facts (docs/plans/admin-prospects-outcome-column.md):
+   * per-row draw standing (trimmed of drawHistory) plus the newest
+   * non-draw-linked entitlement's presentation state — the STATUS column's
+   * raw material. Batched for a 25-row page: the draw side is bounded per
+   * DISTINCT draw (getProspectDrawStatus), the reward side is one entitlement
+   * query (idx_re_prospect) plus the rail lookup.
+   * Returns Map<prospectId(string), { draw, reward }>.
+   */
+  async function getProspectOutcomes(prospects) {
+    const rows = (prospects || []).filter((p) => p && p.id);
+    const out = new Map();
+    if (rows.length === 0) return out;
+    const campaignIds = [...new Set(rows.map((p) => String(p.campaignId)).filter(Boolean))];
+
+    const [drawMap, railIds, entitlements] = await Promise.all([
+      d.getProspectDrawStatus(rows),
+      drawRailActivationIds(campaignIds),
+      d.RewardEntitlement.findAll({
+        where: { prospectId: { [Op.in]: rows.map((p) => p.id) } },
+        attributes: ['id', 'prospectId', 'status', 'expiresAt', 'activationId', 'createdAt'],
+        include: [{ association: 'rewardOffer', attributes: ['id', 'title', 'publicTitle'] }],
+        order: [['createdAt', 'DESC'], ['id', 'DESC']],
+      }),
+    ]);
+
+    // Newest non-draw-linked entitlement per prospect (DESC order → first
+    // eligible wins; draw passes are the boost rail, never the voucher voice).
+    const rewardByProspect = new Map();
+    for (const e of entitlements) {
+      const key = String(e.prospectId);
+      if (rewardByProspect.has(key)) continue;
+      if (e.activationId && railIds.has(String(e.activationId))) continue;
+      rewardByProspect.set(key, {
+        state: d.presentState(e, d.now()),
+        rewardTitle: e.rewardOffer ? (e.rewardOffer.publicTitle || e.rewardOffer.title) : null,
+      });
+    }
+
+    for (const p of rows) {
+      const block = drawMap.get(String(p.id)) ?? null;
+      let draw = block;
+      if (block && 'drawHistory' in block) {
+        const { drawHistory: _history, ...rest } = block;
+        draw = rest;
+      }
+      out.set(String(p.id), { draw, reward: rewardByProspect.get(String(p.id)) || null });
+    }
+    return out;
+  }
+
   /** Bounded person-level broadcast history: recent page + full status tallies. */
   async function broadcastHistory(consumerId) {
     try {
@@ -373,6 +424,7 @@ export function makeLeadProfileService(overrides = {}) {
     getSignupProfile,
     getSessionContext,
     getLyfeDelivery,
+    getProspectOutcomes,
     deriveRewardDiagnostic,
   };
 }
@@ -382,3 +434,4 @@ export const enrichJourneyProfile = _default.enrichJourneyProfile;
 export const getSignupProfile = _default.getSignupProfile;
 export const getSessionContext = _default.getSessionContext;
 export const getLyfeDelivery = _default.getLyfeDelivery;
+export const getProspectOutcomes = _default.getProspectOutcomes;

@@ -18,6 +18,7 @@ import {
 } from '@/lib/adminV2/constants';
 import { fmtDateTime, fmtRelative } from '@/lib/adminV2/format';
 import { prospectsToCsv, downloadCsv } from '@/lib/adminV2/csv';
+import { rowChipFor } from '@/lib/adminV2/outcome';
 import { Chip, PageHeader, Skeleton, ErrorState, EmptyState } from '@/components/adminv2/primitives';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
@@ -146,6 +147,9 @@ export default function AdminV2Prospects() {
   const queryParams = useMemo(() => ({
     page: filters.page,
     limit: PAGE_SIZE,
+    // The STATUS column speaks the campaign-outcome voice — admin-only,
+    // opt-in enrichment (the palette and agent surfaces never send this).
+    include: 'outcome',
     ...(filters.status.length ? { leadStatus: filters.status.join(',') } : {}),
     ...(filters.source.length ? { leadSource: filters.source.join(',') } : {}),
     ...(filters.assignment ? { assignment: filters.assignment } : {}),
@@ -353,7 +357,9 @@ export default function AdminV2Prospects() {
           </button>
           <SortHeader label="Lead" field="firstName" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} />
           <span className="av2-microcaps" style={{ width: 110, flex: 'none' }}>Phone</span>
-          <SortHeader label="Status" field="leadStatus" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} width={130} />
+          {/* Outcome isn't a DB column — no sort affordance (ordering by
+              new/contacted was never useful anyway). */}
+          <span className="av2-microcaps" style={{ width: 130, flex: 'none' }}>Status</span>
           <span className="av2-microcaps" style={{ flex: 1 }}>Campaign</span>
           <span className="av2-microcaps" style={{ width: 100, flex: 'none' }}>Agent</span>
           <SortHeader label="Created" field="createdAt" sort={filters.sort} onSort={(s) => patch({ sort: s, page: null })} width={100} align="right" />
@@ -403,13 +409,33 @@ export default function AdminV2Prospects() {
               </span>
               <span className="av2-mono" style={{ width: 110, flex: 'none', fontSize: 11, color: 'var(--ink-2)' }}>{p.phone || '—'}</span>
               <span style={{ width: 130, flex: 'none', display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                {/* Campaign-outcome precedence (plan: admin-prospects-outcome-column):
+                    held alarm → outcome in the campaign's own voice → pipeline
+                    status ONLY when it isn't the default 'new' → screening.
+                    A lead with nothing yet is silent (muted dash) — no "New" wall. */}
                 {held
                   ? <Chip tone="hold" glyph="◆">{heldLabel(p).short}</Chip>
-                  : <Chip tone={STATUS_CHIP_CLASS[p.leadStatus]?.replace('av2-chip--', '') || ''}>{STATUS_LABELS[p.leadStatus] || p.leadStatus}</Chip>}
+                  : (() => {
+                    const chip = rowChipFor(p.draw, p.reward ? [p.reward] : []);
+                    const pipeline = p.leadStatus && p.leadStatus !== 'new' && (
+                      <Chip tone={STATUS_CHIP_CLASS[p.leadStatus]?.replace('av2-chip--', '') || ''}>
+                        {STATUS_LABELS[p.leadStatus] || p.leadStatus}
+                      </Chip>
+                    );
+                    if (!chip && !pipeline) {
+                      return <span className="av2-mono" aria-label="No outcome yet" style={{ fontSize: 11, color: 'var(--ink-3)', paddingTop: 2 }}>—</span>;
+                    }
+                    return (
+                      <>
+                        {chip && <Chip tone={chip.tone}>{chip.label}</Chip>}
+                        {pipeline}
+                      </>
+                    );
+                  })()}
                 {/* AI-screening verdict — a permanent fact independent of the
                     pipeline status. Skipped when the row is already a screening
                     HOLD (the hold chip conveys it); the useful case is a
-                    RELEASED lead that passed, which otherwise reads only "New". */}
+                    RELEASED lead that passed, which otherwise reads only silence. */}
                 {p.screeningVerdict && !String(p.quarantineReason || '').startsWith('screening_') && (
                   <span
                     title={p.screeningVerdict === 'qualified'
@@ -430,7 +456,12 @@ export default function AdminV2Prospects() {
                   </span>
                 )}
               </span>
-              <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.campaign?.name || '—'}</span>
+              <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+                {p.campaign && (
+                  <span aria-hidden="true" style={{ width: 16, height: 16, flex: 'none', borderRadius: 5, background: p.draw ? 'var(--hold-soft)' : 'var(--surface-2)', color: p.draw ? 'var(--hold)' : 'var(--ink-3)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 8 }}>◆</span>
+                )}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.campaign?.name || '—'}</span>
+              </span>
               <span style={{ width: 100, flex: 'none', fontSize: 12, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {p.assignedAgent
                   ? `${p.assignedAgent.firstName || ''}`
