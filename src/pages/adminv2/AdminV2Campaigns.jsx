@@ -25,7 +25,9 @@ import * as campaignSvc from '@/services/campaignService';
  * on pending commissions — per-row failures surface in the summary toast).
  * Duplicate takes any status (even archived — the copy is a fresh draft); the
  * server mints "<name> (Copy)", resets metrics, and never clones publication
- * state, pricing, or the lucky draw (campaignService.duplicateCampaign).
+ * state or pricing. A still-OPEN lucky draw carries as the copy's own draw
+ * (fresh terms version, its own rail/engine at launch); a closed draw is
+ * dropped (campaignService.duplicateCampaign).
  */
 const BULK_ACTIONS = [
   { key: 'pause', label: 'Pause', eligible: (c) => c.status === 'active', run: (id) => campaignSvc.setCampaignLaunchState(id, { state: 'paused' }) },
@@ -280,7 +282,7 @@ export default function AdminV2Campaigns() {
           confirmAction.key === 'delete'
             ? 'Permanent deletion cannot be undone. Campaigns with pending or approved commissions are refused by the server.'
             : confirmAction.key === 'duplicate'
-              ? 'Each copy starts as a fresh draft named “… (Copy)”. Design, media, and agent assignments carry over; leads, QR codes, lead pricing, and marketplace/homepage/draw publication do not.'
+              ? 'Each copy starts as a fresh draft named “… (Copy)”. Design, media, and agent assignments carry over, and a still-open lucky draw carries as the copy’s own draw with freshly minted terms. Leads, QR codes, lead pricing, and marketplace/homepage publication never carry.'
               : confirmAction.key === 'archive'
                 ? 'Archived campaigns stop accepting signups and move to the archived filter; restore them anytime.'
                 : confirmAction.key === 'activate'

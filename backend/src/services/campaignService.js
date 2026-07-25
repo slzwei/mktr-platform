@@ -11,6 +11,7 @@ import { applyFeaturedDropPolicy } from '../utils/featuredDrop.js';
 import { applyLuckyDrawPolicy, normalizeLuckyDraw, totalPrizeQuantity } from '../utils/luckyDraw.js';
 import { PASS_THEMES } from '../utils/drawTheme.js';
 import { normalizeMarketplaceContent, applyMarketplacePolicy } from '../utils/marketplaceContent.js';
+import { buildDrawTermsHtml } from '../utils/drawTermsTemplate.js';
 import { checkDrawConsistency } from '../utils/drawConsistency.js';
 import {
   classifyDesignConfigVersion,
@@ -1024,11 +1025,26 @@ export async function duplicateCampaign(id, body, req) {
   if (!original) throw new AppError('Campaign not found or access denied', 404);
 
   const { metrics: _discardedMetrics, ...rest } = original.toJSON();
+  const copyName = body.name || `${original.name} (Copy)`;
+  // An OPEN draw (SGT close date still in the future) carries onto the copy —
+  // ADMIN duplicates only, matching applyLuckyDrawPolicy (luckyDraw is an
+  // admin-only key; anyone else keeps the historical strip). What carries is
+  // the SHAPE — prizes, dates, multiplier, colourway — never the original's
+  // operational stamps: activationId (the copy's rail is provisioned at ITS
+  // launch), termsVersionId/termsHash (the copy mints its OWN terms v1 after
+  // create, naming the copy). A CLOSED or dateless draw does not carry at
+  // all: draw dates are create-time-only in every editor, so a copy born
+  // with a past close date could never be edited into a launchable draw.
+  const origDraw = req.user?.role === 'admin'
+    ? normalizeLuckyDraw(getStoredLuckyDraw(rest.design_config))
+    : undefined;
+  const origDrawCloseMs = origDraw?.enabled === true ? sgtDayEndExclusiveMs(origDraw.closesAt) : null;
+  const carryDraw = origDrawCloseMs !== null && origDrawCloseMs > Date.now();
   // Never clone homepage publication: a duplicate of a featured campaign must
-  // not silently appear on redeem.sg when it is later activated. Never clone
-  // luckyDraw either — its dates, activation, and terms version are all
-  // campaign-specific (docs/plans/lucky-draw-10x.md §4.1); a duplicate must be
-  // deliberately re-enabled as its own draw.
+  // not silently appear on redeem.sg when it is later activated. luckyDraw is
+  // stripped by default (dates, activation, and terms version are all
+  // campaign-specific — docs/plans/lucky-draw-10x.md §4.1) and re-added below
+  // only under the carryDraw rules above.
   const dupDesign = (() => {
     if (!rest.design_config || typeof rest.design_config !== 'object') return rest.design_config;
     // marketplaceListed never clones either — a duplicate of a listed campaign
@@ -1053,6 +1069,39 @@ export async function duplicateCampaign(id, body, req) {
       }
       copy.distribution = distribution;
     }
+    if (carryDraw) {
+      // Whitelisted, normalized shape only — the stamps named above can never
+      // ride along, whatever the stored row accumulated.
+      const carried = {};
+      for (const key of ['enabled', 'prizes', 'prize', 'winners', 'closesAt', 'boostClosesAt', 'drawOn', 'multiplier', 'passTheme', 'bookingUrl']) {
+        if (origDraw[key] !== undefined) carried[key] = origDraw[key];
+      }
+      copy.luckyDraw = carried;
+      // The copy's terms state the COPY's name and facts — cloning the
+      // original's terms verbatim would pin a T&C naming a different
+      // campaign. Same deterministic template as the workspace create flow
+      // (backend twin); minAge/maxAge/verification come from the cloned row
+      // so the rebuilt terms can never contradict the copy's own gates.
+      const isV2 = classifyDesignConfigVersion(copy) === 'v2';
+      const termsHtml = buildDrawTermsHtml({
+        campaignName: copyName,
+        prizes: origDraw.prizes,
+        prize: origDraw.prize,
+        closesAt: origDraw.closesAt,
+        boostClosesAt: origDraw.boostClosesAt,
+        multiplier: origDraw.multiplier,
+        minAge: Number(rest.min_age) || 18,
+        maxAge: Number(rest.max_age) || null,
+        verification: (isV2 ? copy.form?.verification : copy.otpChannel) === 'whatsapp' ? 'whatsapp' : 'sms',
+      });
+      if (isV2) {
+        const form = copy.form && typeof copy.form === 'object' ? copy.form : {};
+        const terms = form.terms && typeof form.terms === 'object' ? form.terms : {};
+        copy.form = { ...form, terms: { ...terms, html: termsHtml } };
+      } else {
+        copy.termsContent = termsHtml;
+      }
+    }
     return copy;
   })();
   // A versioned (v2 Studio) duplicate goes through the SAME write gate as
@@ -1072,7 +1121,7 @@ export async function duplicateCampaign(id, body, req) {
     ...rest,
     design_config: dupDesignFinal,
     id: undefined,
-    name: body.name || `${original.name} (Copy)`,
+    name: copyName,
     status: 'draft',
     createdBy: req.user.id,
     spentAmount: 0,
@@ -1087,6 +1136,15 @@ export async function duplicateCampaign(id, body, req) {
     createdAt: undefined,
     updatedAt: undefined
   });
+
+  // A carried draw pins the COPY's own terms v1 — the version row needs the
+  // new campaign id, so this mirrors createCampaign's ensure-after-create
+  // ordering (a crash between create and this pin self-heals: the next
+  // design_config save re-runs ensureDrawTermsVersion idempotently).
+  if (carryDraw) {
+    const withTerms = await ensureDrawTermsVersion(dupDesignFinal, copy.id, req.user.id);
+    await copy.update({ design_config: withTerms });
+  }
 
   // Duplicate agent assignments from the original campaign
   const originalAgents = await CampaignAgentAssignment.findAll({

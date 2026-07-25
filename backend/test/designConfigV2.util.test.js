@@ -314,11 +314,17 @@ describe('campaignService guards', () => {
     ).rejects.toMatchObject({ statusCode: 409, data: { code: 'DESIGN_CONFIG_VERSION_CONFLICT' } });
   });
 
-  it('duplicateCampaign strips v2 publication state at the v2 paths (flag on)', async () => {
+  it('duplicateCampaign strips v2 publication state; an OPEN draw carries stampless with copy-named terms (flag on)', async () => {
     flagOn(); // a versioned duplicate is only allowed to persist while the gate is open
+    // Pin the draw OPEN with a stable far-future close — the fixture's own
+    // 2026-08-30 would silently flip this test to the closed-draw (strip)
+    // branch once the calendar passes it.
+    const doc = structuredClone(v2Rich);
+    doc.luckyDraw = { ...doc.luckyDraw, closesAt: '2099-12-31', boostClosesAt: '2099-11-30', activationId: '33333333-3333-4333-8333-333333333333' };
     const original = {
+      name: 'Rich',
       toJSON: () => ({
-        id: 'c2', name: 'Rich', status: 'active', design_config: structuredClone(v2Rich),
+        id: 'c2', name: 'Rich', status: 'active', design_config: doc,
         slug: 'rich', firstActivatedAt: new Date(), leadPriceCents: 500,
       }),
     };
@@ -326,11 +332,22 @@ describe('campaignService guards', () => {
     models.Campaign.create.mockImplementation(async (data) => {
       const row = { id: 'c3', ...data };
       row.toJSON = () => ({ ...row });
+      row.update = jest.fn(async () => row);
       return row;
     });
     await duplicateCampaign('c2', {}, { user: { id: 'u1', role: 'admin' } });
     const created = models.Campaign.create.mock.calls[0][0];
-    expect(created.design_config.luckyDraw).toBeUndefined();
+    // Draw SHAPE carries (admin, still open); the original's stamps never do —
+    // the copy pins its own terms v1 after create (stub id dtv-1).
+    expect(created.design_config.luckyDraw).toMatchObject({ enabled: true, closesAt: '2099-12-31', multiplier: 10 });
+    expect(created.design_config.luckyDraw.activationId).toBeUndefined();
+    expect(created.design_config.luckyDraw.termsVersionId).toBeUndefined();
+    expect(created.design_config.luckyDraw.termsHash).toBeUndefined();
+    expect(getStoredTermsHtml(created.design_config)).toContain('Rich (Copy)');
+    const copyRow = await models.Campaign.create.mock.results[0].value;
+    const pinned = copyRow.update.mock.calls[0][0].design_config;
+    expect(pinned.luckyDraw.termsVersionId).toBe('dtv-1');
+    // Publication strips are unchanged by the carry.
     expect(created.design_config.distribution.featuredDrop.enabled).toBe(false);
     expect(created.design_config.distribution.marketplace.listed).toBeUndefined();
     expect(created.design_config.version).toBe(2);

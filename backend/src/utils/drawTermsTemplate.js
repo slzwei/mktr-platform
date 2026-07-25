@@ -1,21 +1,18 @@
 /**
- * Starter Terms & Conditions for a lucky-draw campaign created from the
- * workspace. Modeled clause-for-clause on the live Tokyo Getaway draw terms
- * (the first pinned draw_terms_versions row): promoter, prize(s), verified-entry
- * eligibility, SGT close, witnessed draw + session ×N boost, 14-day claim and
- * redraw, masked results, DNC posture, and the never-pay-for-a-prize line.
+ * Deterministic starter Terms & Conditions for a lucky-draw campaign — the
+ * BACKEND twin of src/components/campaigns/workspace/drawTermsTemplate.js
+ * (same twin discipline as designConfigV2 / listingDerivation: byte-identical
+ * template logic, edit BOTH or the copies drift; the frontend file's unit
+ * suite pins the wording, the backend port test pins parity of this port).
  *
- * Structured prizes ([{qty, name}], array order = award order) pluralize the
- * prize/draw/notification clauses; a single prize unit produces the exact
- * legacy wording. The server pins whatever is saved as an immutable
- * draw_terms_versions row (campaignService.ensureDrawTermsVersion), and later
- * edits mint a NEW version — so this scaffold is a safe starting point, not
- * final legal copy. Campaigns start as drafts; review the generated terms in
- * the designer before launching.
+ * The workspace create flow builds these terms in the browser and the server
+ * pins whatever arrives (ensureDrawTermsVersion). This twin exists for the
+ * server-side paths that must mint terms WITHOUT a browser payload — today:
+ * duplicateCampaign carrying an open draw onto the copy, where the terms must
+ * state the COPY's campaign name and facts, never the original's.
  *
- * TWIN: backend/src/utils/drawTermsTemplate.js is the server-side port (used
- * where terms must be minted without a browser payload, e.g. duplicating an
- * open draw). Edit BOTH files together or the copies drift.
+ * Never LLM output — draw terms are deterministic template facts
+ * (docs/plans/studio-ai-full-coverage-plan.md).
  */
 
 const MONTHS = [
